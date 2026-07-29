@@ -926,7 +926,22 @@ impl Client {
             }
         };
         let bootstrap_manifest_wire = crate::error::expect_bootstrap_manifest(bootstrap_manifest_msg)?;
-        crate::error::validate_bootstrap_manifest_v1(&bootstrap_manifest_wire)?;
+        let bootstrap_manifest = crate::error::validate_bootstrap_manifest_v1(&bootstrap_manifest_wire)?;
+        // `T4.2` chunk B (`BOOT-007`): freshness admission runs AFTER slot
+        // validation, on the SAME manifest, before `GameSync` is awaited --
+        // no second FSM surgery, cashing in chunk A's ledger the same way
+        // chunk 2a/2b cashed in chunk 1's reserved wire field. The ledger
+        // is fresh per connection attempt (parked scope, per the
+        // orchestrator's ruling: cross-reconnect persistence is not yet
+        // needed since the client persists nothing else across
+        // reconnects either -- `server_boot_id` + a per-connection floor
+        // covers today's surface).
+        let mut bootstrap_freshness_ledger = common::apex::bootstrap_freshness::BootstrapFreshnessLedgerV1::new(
+            server_info.server_boot_id,
+            register_session_binding.session_id,
+            register_session_binding.epoch,
+        );
+        crate::error::admit_bootstrap_freshness_v1(&mut bootstrap_freshness_ledger, &bootstrap_manifest)?;
 
         // `APEX-T3.3.16`: V1-envelope GameSync iff negotiation selected
         // `NetEnvelopeV1` -- packet: "Legacy keeps direct GameSync;

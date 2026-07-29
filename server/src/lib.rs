@@ -21,6 +21,7 @@ pub use bastion_server::{
     bastion_actions, bastion_chop, bastion_flat_arena, bastion_flight_recorder, bastion_jobs,
     bastion_mood, bastion_path, bastion_piles, bastion_traversal, bastion_traversal_tooling,
 };
+pub mod bootstrap_freshness_minter;
 mod character_creator;
 pub mod chat;
 pub mod chunk_generator;
@@ -581,6 +582,11 @@ impl Server {
         // once here and never mutated afterward (systems read it via
         // ReadExpect<ServerBootId>, never write it).
         state.ecs_mut().insert(server_boot_id);
+        // `APEX-T4.2` chunk B: the per-boot bootstrap freshness minter,
+        // inserted once here alongside `ServerBootId` (never reset, never
+        // reinserted -- one minter per process, same lifetime as the boot
+        // ID it chains manifests to).
+        state.ecs_mut().insert(crate::bootstrap_freshness_minter::BootstrapFreshnessMinterV1::default());
         // APEX-T3.2: memory-only, empty on every fresh process (canary
         // SES-105) -- inserted once here alongside ServerBootId, never
         // persisted/reloaded from a save.

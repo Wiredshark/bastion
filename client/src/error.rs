@@ -91,6 +91,12 @@ pub enum Error {
     /// one slot failed T0.5's `evaluate_compatibility_v1` -- a TOTAL
     /// report, every mismatched slot named, not just the first found.
     BootstrapManifestIncompatible { mismatches: Vec<String> },
+    /// `T4.2` chunk B (`BOOT-007`): the manifest's freshness tuple (when
+    /// present) was refused by `BootstrapFreshnessLedgerV1` -- an
+    /// authentic-but-stale manifest replayed from earlier in the boot
+    /// (or a foreign lineage / chain fork). The wrapped rejection names
+    /// which of the five distinct failure modes fired.
+    BootstrapFreshnessRejected(common::apex::bootstrap_freshness::BootstrapFreshnessRejectionV1),
 }
 
 impl From<SpecsError> for Error {
@@ -163,10 +169,12 @@ pub fn expect_bootstrap_manifest(
 /// `server/src/sys/msg/register.rs::bootstrap_manifest_v1`), and evaluate
 /// through T0.5's `evaluate_compatibility_v1` (never short-circuited, so
 /// every slot is checked). Fails closed with every mismatched slot named,
-/// not just the first.
+/// not just the first. Returns the decoded manifest on success --
+/// `T4.2` chunk B's freshness admission needs it (the `freshness` field),
+/// so the caller doesn't decode twice.
 pub fn validate_bootstrap_manifest_v1(
     wire: &common_net::msg::bootstrap_manifest_wire::BootstrapManifestWireV1,
-) -> Result<(), Error> {
+) -> Result<common::apex::bootstrap_manifest::BootstrapManifestV1, Error> {
     use common::apex::{
         digest::{ContentIdentityV1, hash_artifact_bytes_v1},
         subsystem::{
@@ -195,7 +203,7 @@ pub fn validate_bootstrap_manifest_v1(
 
     let report = evaluate_compatibility_v1(&profile, &input);
     if report.is_fully_compatible() {
-        Ok(())
+        Ok(manifest)
     } else {
         let mismatches: Vec<String> = report
             .results()
@@ -205,6 +213,31 @@ pub fn validate_bootstrap_manifest_v1(
             .collect();
         Err(Error::BootstrapManifestIncompatible { mismatches })
     }
+}
+
+/// `T4.2` chunk B (`BOOT-007`): admits `manifest`'s freshness tuple (if
+/// present -- absence is a no-op pass, see the module-level rationale in
+/// `common::apex::bootstrap_freshness`'s doc: the current threat model is
+/// staleness-of-an-authentic-manifest, not a stripped/tampered one, which
+/// would require the nonce/liveness handshake this row deliberately
+/// parked) through `ledger`. `candidate_root` is computed by RE-encoding
+/// `manifest` under the canonical encoding -- deterministic, so it
+/// reproduces the exact root the server chained from, without needing
+/// access to `BootstrapManifestWireV1`'s private raw bytes.
+pub fn admit_bootstrap_freshness_v1(
+    ledger: &mut common::apex::bootstrap_freshness::BootstrapFreshnessLedgerV1,
+    manifest: &common::apex::bootstrap_manifest::BootstrapManifestV1,
+) -> Result<(), Error> {
+    use common::apex::{
+        digest::hash_artifact_bytes_v1,
+        manifest::encode_manifest_v1,
+    };
+
+    let Some(freshness) = manifest.freshness else { return Ok(()) };
+    let bytes = encode_manifest_v1(manifest, &common_net::msg::bootstrap_manifest_wire::bootstrap_manifest_limits_v1())
+        .expect("a manifest just decoded under these limits must re-encode under the same limits");
+    let candidate_root = hash_artifact_bytes_v1(&bytes).digest;
+    ledger.admit_v1(freshness, candidate_root).map_err(Error::BootstrapFreshnessRejected)
 }
 
 #[cfg(test)]
@@ -359,5 +392,92 @@ mod tests {
             Err(Error::BootstrapManifestIncompatible { mismatches }) => assert!(!mismatches.is_empty()),
             other => panic!("expected BootstrapManifestIncompatible, got {other:?}"),
         }
+    }
+
+    fn manifest_with_freshness(
+        freshness: common::apex::bootstrap_freshness::BootstrapFreshnessV1,
+    ) -> common::apex::bootstrap_manifest::BootstrapManifestV1 {
+        common::apex::bootstrap_manifest::BootstrapManifestV1 {
+            descriptors: Vec::new(),
+            peer_selector: None,
+            peer_capabilities: Vec::new(),
+            freshness: Some(freshness),
+        }
+    }
+
+    /// The exact re-encode-and-hash `admit_bootstrap_freshness_v1` does
+    /// internally -- duplicated here ONLY to construct a validly-chained
+    /// "later" fixture (its `predecessor_root` must point at the earlier
+    /// manifest's real root, the same way a real server would compute
+    /// it); the function under test still independently recomputes its
+    /// own root and does the real admission check.
+    fn manifest_root(manifest: &common::apex::bootstrap_manifest::BootstrapManifestV1) -> common::apex::digest::ArtifactDigestV1 {
+        use common::apex::{digest::hash_artifact_bytes_v1, manifest::encode_manifest_v1};
+        let bytes = encode_manifest_v1(manifest, &common_net::msg::bootstrap_manifest_wire::bootstrap_manifest_limits_v1()).unwrap();
+        hash_artifact_bytes_v1(&bytes).digest
+    }
+
+    /// `T4.2` chunk B (`BOOT-007`) falsifier, through the exact function
+    /// the FSM calls (`admit_bootstrap_freshness_v1`), not a duplicate
+    /// check: a captured earlier-in-boot manifest, replayed against a
+    /// ledger that has already admitted a later one, is refused as
+    /// Rollback -- "live through the real FSM path" per the
+    /// orchestrator's ruling.
+    #[test]
+    fn admit_bootstrap_freshness_v1_refuses_a_replayed_earlier_manifest() {
+        use common::apex::bootstrap_freshness::{BootstrapFreshnessLedgerV1, BootstrapFreshnessRejectionV1, BootstrapFreshnessV1};
+        use common::apex::identity::{SessionId, SnapshotEpoch};
+
+        let boot = ServerBootId::generate(&mut FixedRandomBytesSourceV1([1; 16])).unwrap();
+        let session = SessionId::generate(&mut FixedRandomBytesSourceV1([2; 16])).unwrap();
+        let epoch = ConnectionEpoch::new(1).unwrap();
+        let mut ledger = BootstrapFreshnessLedgerV1::new(boot, session, epoch);
+
+        let earlier = manifest_with_freshness(BootstrapFreshnessV1 {
+            server_boot_id: boot,
+            session_id: session,
+            epoch,
+            sequence: 5,
+            snapshot_epoch: SnapshotEpoch::new(0),
+            predecessor_root: None,
+        });
+        assert!(admit_bootstrap_freshness_v1(&mut ledger, &earlier).is_ok(), "the first (earlier) manifest must admit");
+        let earlier_root = manifest_root(&earlier);
+
+        let later = manifest_with_freshness(BootstrapFreshnessV1 {
+            server_boot_id: boot,
+            session_id: session,
+            epoch,
+            sequence: 9,
+            snapshot_epoch: SnapshotEpoch::new(0),
+            predecessor_root: Some(earlier_root),
+        });
+        assert!(admit_bootstrap_freshness_v1(&mut ledger, &later).is_ok(), "a genuinely later, correctly-chained manifest must admit");
+
+        // The CAPTURED earlier manifest, replayed against the ledger that
+        // has since moved on to the later one.
+        match admit_bootstrap_freshness_v1(&mut ledger, &earlier) {
+            Err(Error::BootstrapFreshnessRejected(BootstrapFreshnessRejectionV1::Rollback { floor, candidate })) => {
+                assert_eq!(floor, 9);
+                assert_eq!(candidate, 5);
+            },
+            other => panic!("expected BootstrapFreshnessRejected(Rollback), got {other:?}"),
+        }
+    }
+
+    /// Non-vacuity / positive control: a manifest with NO freshness tuple
+    /// at all is a no-op pass, never a rejection -- the current threat
+    /// model (staleness ordering, not liveness) treats absence as
+    /// nothing to check, per the module's own disclosed scope.
+    #[test]
+    fn admit_bootstrap_freshness_v1_is_a_no_op_when_freshness_is_absent() {
+        use common::apex::bootstrap_freshness::BootstrapFreshnessLedgerV1;
+        use common::apex::identity::SessionId;
+
+        let boot = ServerBootId::generate(&mut FixedRandomBytesSourceV1([3; 16])).unwrap();
+        let session = SessionId::generate(&mut FixedRandomBytesSourceV1([4; 16])).unwrap();
+        let mut ledger = BootstrapFreshnessLedgerV1::new(boot, session, ConnectionEpoch::new(1).unwrap());
+        let without_freshness = common::apex::bootstrap_manifest::BootstrapManifestV1::default();
+        assert!(admit_bootstrap_freshness_v1(&mut ledger, &without_freshness).is_ok());
     }
 }

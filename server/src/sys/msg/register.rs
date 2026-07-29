@@ -154,6 +154,7 @@ impl<'a> System<'a> for Sys {
         WriteStorage<'a, PendingLogin>,
         WriteExpect<'a, EditableSettings>,
         WriteExpect<'a, SessionRegistry>,
+        WriteExpect<'a, crate::bootstrap_freshness_minter::BootstrapFreshnessMinterV1>,
     );
 
     const NAME: &'static str = "msg::register";
@@ -162,7 +163,7 @@ impl<'a> System<'a> for Sys {
 
     fn run(
         _job: &mut Job<Self>,
-        (read_data, mut clients, mut players, mut pending_logins, mut editable_settings, mut session_registry): Self::SystemData,
+        (read_data, mut clients, mut players, mut pending_logins, mut editable_settings, mut session_registry, mut bootstrap_freshness_minter): Self::SystemData,
     ) {
         let mut make_admin_emitter = read_data.make_admin_events.emitter();
         // Player list to send new players, and lookup from UUID to entity (so we don't
@@ -442,10 +443,10 @@ impl<'a> System<'a> for Sys {
                         }
                         read_data.client_disconnect_events.emitter().emit(ClientDisconnectEvent(old_entity, common::comp::DisconnectReason::NewerLogin));
                     }
-                    finalize_admission(&read_data, &mut clients, &editable_settings, &player_list, &mut new_players, admission, admitted);
+                    finalize_admission(&read_data, &mut clients, &editable_settings, &player_list, &mut new_players, &mut bootstrap_freshness_minter, admission, admitted);
                 },
                 Ok(admitted @ SessionAdmissionV1::Created { .. }) => {
-                    finalize_admission(&read_data, &mut clients, &editable_settings, &player_list, &mut new_players, admission, admitted);
+                    finalize_admission(&read_data, &mut clients, &editable_settings, &player_list, &mut new_players, &mut bootstrap_freshness_minter, admission, admitted);
                 },
             }
         }
@@ -535,19 +536,39 @@ impl<'a> System<'a> for Sys {
 /// deployment, schedule/numeric/world via rows that have not built their
 /// identity-root functions yet); adding them here ahead of that wiring
 /// would be fabricated content pretending to be checked, which this
-/// program's own standing rule forbids. `freshness` stays `None` here --
-/// `T4.2` chunk A landed the typed tuple and the checking ledger, but
-/// the real per-boot sequence counter + root chain this function would
-/// need to populate it honestly is banked for that chunk's own
-/// follow-up (see `common::apex::bootstrap_freshness`'s module doc).
-fn bootstrap_manifest_v1() -> common::apex::bootstrap_manifest::BootstrapManifestV1 {
+/// program's own standing rule forbids.
+///
+/// `T4.2` chunk B: `freshness` is now REAL, minted from `minter` --
+/// `(sequence, predecessor_root)` from [`BootstrapFreshnessMinterV1::next_v1`],
+/// committed via [`BootstrapFreshnessMinterV1::commit_v1`] once the
+/// manifest is fully assembled and its own content root is known (the
+/// standard hash-chain construction: this manifest's root, computed
+/// AFTER `predecessor_root` is embedded, becomes the NEXT manifest's
+/// `predecessor_root`). `snapshot_epoch` is honestly `SnapshotEpoch::new(0)`
+/// -- no snapshot epoch has occurred at bootstrap time, which is the
+/// real state, not a placeholder standing in for unbuilt wiring (unlike
+/// the un-populated descriptor slots above, there is nothing further to
+/// build here). A mint whose encode fails is logged and the send above
+/// is skipped (same policy as before `T4.2`); the minter's own chain
+/// head simply does not advance for that attempt
+/// ([`BootstrapFreshnessMinterV1::commit_v1`]'s doc).
+fn bootstrap_manifest_v1(
+    minter: &mut crate::bootstrap_freshness_minter::BootstrapFreshnessMinterV1,
+    server_boot_id: ServerBootId,
+    session_id: common::apex::identity::SessionId,
+    epoch: common::apex::identity::ConnectionEpoch,
+) -> common::apex::bootstrap_manifest::BootstrapManifestV1 {
     use common::apex::{
+        bootstrap_freshness::BootstrapFreshnessV1,
         digest::{ContentIdentityV1, hash_artifact_bytes_v1},
+        identity::SnapshotEpoch,
+        manifest::encode_manifest_v1,
         scalar::SchemaVersion,
         subsystem::{SubsystemDescriptorV1, SubsystemSlotIdV1},
     };
 
-    common::apex::bootstrap_manifest::BootstrapManifestV1 {
+    let (sequence, predecessor_root) = minter.next_v1();
+    let manifest = common::apex::bootstrap_manifest::BootstrapManifestV1 {
         descriptors: vec![SubsystemDescriptorV1 {
             slot: SubsystemSlotIdV1::NetEnvelope,
             schema: SchemaVersion::new(1),
@@ -558,8 +579,21 @@ fn bootstrap_manifest_v1() -> common::apex::bootstrap_manifest::BootstrapManifes
         }],
         peer_selector: None,
         peer_capabilities: Vec::new(),
-        freshness: None,
+        freshness: Some(BootstrapFreshnessV1 {
+            server_boot_id,
+            session_id,
+            epoch,
+            sequence,
+            snapshot_epoch: SnapshotEpoch::new(0),
+            predecessor_root,
+        }),
+    };
+
+    match encode_manifest_v1(&manifest, &common_net::msg::bootstrap_manifest_wire::bootstrap_manifest_limits_v1()) {
+        Ok(bytes) => minter.commit_v1(hash_artifact_bytes_v1(&bytes).digest),
+        Err(e) => warn!(?e, "bootstrap manifest freshness root: encode failed, chain head not advanced"),
     }
+    manifest
 }
 
 fn try_send_gamesync_v1<T>(client: &mut Client, payload: &T) -> bool
@@ -597,6 +631,7 @@ fn finalize_admission(
     editable_settings: &EditableSettings,
     player_list: &HashMap<Uid, PlayerInfo>,
     new_players: &mut HashMap<Uuid, (Entity, Player, Option<AdminRole>, Option<crate::client::PreparedMsg>)>,
+    bootstrap_freshness_minter: &mut crate::bootstrap_freshness_minter::BootstrapFreshnessMinterV1,
     admission: CollectedAdmissionV1,
     admitted: SessionAdmissionV1,
 ) {
@@ -649,7 +684,13 @@ fn finalize_admission(
     // own construction rather than anywhere else in this function.
     // Encode failure is logged and the send is skipped, never a reason
     // to fail the admission this manifest is meant to protect.
-    match common_net::msg::bootstrap_manifest_wire::BootstrapManifestWireV1::from_typed_v1(&bootstrap_manifest_v1()) {
+    let manifest = bootstrap_manifest_v1(
+        bootstrap_freshness_minter,
+        *read_data.server_boot_id,
+        session_binding.session_id,
+        session_binding.epoch,
+    );
+    match common_net::msg::bootstrap_manifest_wire::BootstrapManifestWireV1::from_typed_v1(&manifest) {
         Ok(wire) => client.send_fallible(ServerGeneral::BootstrapManifest(wire)),
         Err(e) => warn!(?e, "bootstrap manifest encode failure"),
     }
