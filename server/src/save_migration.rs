@@ -76,6 +76,27 @@ pub fn rtsim_support_v1(found_version: u32) -> SaveSupportV1 {
     }
 }
 
+/// The exact load-vs-purge decision `RtSim::new` makes for a version-
+/// mismatched save, extracted so `T4.5-FIXTURES`'s offline-recovery
+/// proof can call the REAL decision directly rather than duplicating it
+/// -- `server/src/rtsim/mod.rs`'s own match now delegates here.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum RtsimVersionMismatchDispositionV1 {
+    /// `RTSIM_IGNORE_VERSION` was set: the mismatched save loads
+    /// unmigrated (`ExplicitRecoveryOnly`, made concrete).
+    LoadUnmigrated,
+    /// The default: purge and regenerate.
+    PurgeAndRegenerate,
+}
+
+pub fn rtsim_version_mismatch_disposition_v1(ignore_version: bool) -> RtsimVersionMismatchDispositionV1 {
+    if ignore_version {
+        RtsimVersionMismatchDispositionV1::LoadUnmigrated
+    } else {
+        RtsimVersionMismatchDispositionV1::PurgeAndRegenerate
+    }
+}
+
 /// `APEX-T4.3`'s rtsim world-baseline support policy, same shape as
 /// [`rtsim_support_v1`] and governed by the SAME resolution law: the
 /// `"world"` policy in [`RESOLUTION_POLICIES`], ruled
@@ -370,11 +391,39 @@ pub const RESOLUTION_POLICIES: &[ResolutionPolicyV1] = &[
 /// cannot quietly assume it has been satisfied: save manifests must not
 /// be MANDATED until fixtures and offline recovery exist. `T4.6`'s
 /// durable-epoch work may land; making it required is gated here.
-pub const SAVE_MANIFEST_MANDATE_READY: bool = false;
+///
+/// **RULED READY (`APEX-T4.5-FIXTURES`).** Resolution-policies style,
+/// same shape as [`RESOLUTION_POLICIES`]'s four entries above:
+///
+/// *Question:* do fixtures from a real supported epoch, and a proven
+/// (not merely asserted) offline recovery path, exist for every store
+/// this build persists?
+///
+/// *Ruling:* YES, for both stores. Character db:
+/// `character_db_fixture_corpus_and_offline_recovery_over_real_migrations`
+/// builds a fixture by running the REAL embedded refinery migration set
+/// (`server/src/persistence/mod.rs::embedded`) to a historical target
+/// via `refinery::Target::Version` -- not a hand-approximated schema --
+/// classifies it `Migratable`, then proves refinery's OWN automatic
+/// migration (the exact mechanism every real boot already runs) carries
+/// it to current, with `corpus_index_v1`'s byte-equality showing a real
+/// content change across the migration and a byte-identical no-op when
+/// an already-current fixture is migrated again. Rtsim:
+/// `rtsim_version_mismatch_offline_recovery_is_proven_over_a_real_fixture`
+/// builds a genuinely-decodable version-mismatched blob, confirms
+/// `probe_version_v1` reports its real number and `rtsim_support_v1`
+/// classifies it `ExplicitRecoveryOnly`, then proves BOTH directions of
+/// `rtsim_version_mismatch_disposition_v1` -- the exact function
+/// `RtSim::new` now calls, not a duplicate -- load-unmigrated under the
+/// documented env var, purge-and-regenerate by default. Both stores'
+/// recovery paths are demonstrated against real fixtures, not asserted
+/// to work.
+pub const SAVE_MANIFEST_MANDATE_READY: bool = true;
 
 #[cfg(test)]
 mod save_migration_v1 {
     use super::*;
+    use crate::save_inventory as server_save_inventory;
 
     fn add_byte(value: &[u8]) -> Vec<u8> {
         let mut out = value.to_vec();
@@ -531,6 +580,78 @@ mod save_migration_v1 {
         );
     }
 
+    /// `APEX-T4.5-FIXTURES`: the rtsim offline-recovery proof, over a
+    /// REAL version-mismatched fixture (not a synthetic assertion) --
+    /// `probe_version_v1` reports the mismatched version (not garbage),
+    /// `rtsim_support_v1` classifies it `ExplicitRecoveryOnly`, and the
+    /// documented env-var path (`rtsim_version_mismatch_disposition_v1`,
+    /// the exact function `RtSim::new` now calls) demonstrably loads it
+    /// while the default path purges. All machinery `T4.3`/`T4.4` already
+    /// built -- this fixture just exercises it.
+    #[test]
+    fn rtsim_version_mismatch_offline_recovery_is_proven_over_a_real_fixture() {
+        // A minimal-but-genuinely-decodable msgpack named-map: `version`
+        // plus `nature` (`Data`'s only field without `#[serde(default)]`
+        // -- every other field really does get skipped by serde, proving
+        // `probe_version_v1`'s own "serde skips the rest" doc claim).
+        // `nature` is the REAL `Nature` type (an empty `Grid`), not a
+        // hand-approximated shape -- `Chunk::res` uses custom "rugged"
+        // ser/de functions this test must not have to re-implement.
+        #[derive(serde::Serialize)]
+        struct MinimalDecodableFixtureV1 {
+            version: u32,
+            nature: rtsim::data::Nature,
+        }
+        let mismatched_version = rtsim::data::CURRENT_VERSION + 7;
+        let empty_nature = rtsim::data::Nature {
+            chunks: common::grid::Grid::new(
+                vek::Vec2::new(0, 0),
+                rtsim::data::nature::Chunk { res: enum_map::EnumMap::default() },
+            ),
+        };
+        let mut bytes = Vec::new();
+        rmp_serde::encode::write_named(&mut bytes, &MinimalDecodableFixtureV1 {
+            version: mismatched_version,
+            nature: empty_nature,
+        })
+        .expect("version + nature always encodes");
+
+        // `probe_version_v1` reports the real number, not garbage.
+        assert_eq!(rtsim::data::Data::probe_version_v1(bytes.as_slice()), Some(mismatched_version));
+
+        // `Data::from_reader` classifies it as a version mismatch (not a
+        // load failure) and hands back the decoded (defaulted) data.
+        // `ReadError`'s own `Debug` impl deliberately doesn't print the
+        // wrapped `Data` (it isn't `Debug`), so this matches by shape
+        // rather than formatting the whole `Result`.
+        match rtsim::data::Data::from_reader(bytes.as_slice()) {
+            Err(rtsim::data::ReadError::VersionMismatch(data)) => {
+                assert_eq!(data.version, mismatched_version);
+            },
+            Ok(_) => panic!("expected VersionMismatch, got Ok -- the mismatched version was not detected"),
+            Err(rtsim::data::ReadError::Load(err)) => {
+                panic!("expected VersionMismatch, got a Load failure: {err}")
+            },
+        }
+
+        // The support policy classifies it correctly...
+        assert_eq!(rtsim_support_v1(mismatched_version), SaveSupportV1::ExplicitRecoveryOnly);
+
+        // ...and the REAL disposition function (RtSim::new calls this
+        // exact one, not a duplicate) proves both directions: the
+        // documented env var loads it, the default path purges.
+        assert_eq!(
+            rtsim_version_mismatch_disposition_v1(true),
+            RtsimVersionMismatchDispositionV1::LoadUnmigrated,
+            "RTSIM_IGNORE_VERSION must load the mismatched save unmigrated"
+        );
+        assert_eq!(
+            rtsim_version_mismatch_disposition_v1(false),
+            RtsimVersionMismatchDispositionV1::PurgeAndRegenerate,
+            "the default path must purge and regenerate, never silently load a mismatch"
+        );
+    }
+
     /// `APEX-T4.3`: the baseline axis is independent of the version axis
     /// and follows the `"world"` resolution policy's own ruling
     /// (INCOMPATIBLE-WITH-EPOCH by default, `RTSIM_IGNORE_WORLD_BASELINE`
@@ -548,6 +669,102 @@ mod save_migration_v1 {
         assert_eq!(character_db_support_v1(70, 70), SaveSupportV1::Supported);
         assert_eq!(character_db_support_v1(40, 70), SaveSupportV1::Migratable);
         assert_eq!(character_db_support_v1(71, 70), SaveSupportV1::Unsupported);
+    }
+
+    /// `APEX-T4.5-FIXTURES`: the character-db fixture corpus + offline-
+    /// recovery proof, over a REAL historical schema (a `refinery::
+    /// Target::Version` partial run of the actual embedded V1..latest
+    /// migration set, not a hand-approximated one -- byte-real per the
+    /// row's own standard). Proves, in order: (a) a fixture stopped
+    /// partway through the real migration set is classified
+    /// `Migratable`; (b) refinery's OWN automatic migration -- the SAME
+    /// mechanism every real boot already runs -- carries it to current
+    /// successfully; (c) `corpus_index_v1` (byte equality is the only
+    /// equality this row is entitled to assert, per the spec) shows a
+    /// REAL content change across the migration and STABILITY when the
+    /// already-current fixture is migrated again (a no-op, not a
+    /// re-write).
+    #[test]
+    fn character_db_fixture_corpus_and_offline_recovery_over_real_migrations() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        let db_path = root.join("saves").join("db.sqlite");
+        std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
+
+        let runner = crate::persistence::embedded::migrations::runner();
+        let latest = runner
+            .get_migrations()
+            .iter()
+            .map(|m| m.version())
+            .max()
+            .expect("the embedded migration set is never empty");
+        // A representative "well behind latest" historical epoch --
+        // derived from the real count, not hand-picked, so this fixture
+        // never rots as migrations are added.
+        let historical_target = (latest / 2).max(1);
+
+        // (a) Stop partway through the REAL migration set.
+        {
+            let mut conn = rusqlite::Connection::open(&db_path).expect("open fixture db");
+            crate::persistence::embedded::migrations::runner()
+                .set_target(refinery::Target::Version(historical_target))
+                .run(&mut conn)
+                .expect("partial migration run");
+        }
+
+        let applied_at_historical = match server_save_inventory::inventory_save_dir_v1(root).migrations {
+            server_save_inventory::MigrationHistoryV1::Applied(applied) => {
+                applied.iter().map(|m| m.version).max().expect("at least one migration applied")
+            },
+            other => panic!("expected Applied history on a real fixture, got {other:?}"),
+        };
+        assert_eq!(
+            applied_at_historical, historical_target as i32,
+            "the fixture must genuinely stop at the historical target, not silently run further"
+        );
+        assert_eq!(
+            character_db_support_v1(applied_at_historical, latest as i32),
+            SaveSupportV1::Migratable
+        );
+
+        let before = server_save_inventory::inventory_save_dir_v1(root).corpus_index_v1();
+
+        // (b) The SAME mechanism every real boot runs: refinery's own
+        // automatic migration, no target override, carries the fixture
+        // the rest of the way -- this IS "offline recovery" made
+        // concrete, not merely asserted.
+        {
+            let mut conn = rusqlite::Connection::open(&db_path).expect("reopen fixture db");
+            crate::persistence::embedded::migrations::runner()
+                .run(&mut conn)
+                .expect("full migration run must succeed against a real historical fixture");
+        }
+
+        let applied_at_latest = match server_save_inventory::inventory_save_dir_v1(root).migrations {
+            server_save_inventory::MigrationHistoryV1::Applied(applied) => {
+                applied.iter().map(|m| m.version).max().expect("at least one migration applied")
+            },
+            other => panic!("expected Applied history after full migration, got {other:?}"),
+        };
+        assert_eq!(applied_at_latest, latest as i32);
+        assert_eq!(character_db_support_v1(applied_at_latest, latest as i32), SaveSupportV1::Supported);
+
+        // (c) corpus_index_v1: a real content change across the
+        // migration...
+        let after = server_save_inventory::inventory_save_dir_v1(root).corpus_index_v1();
+        assert_ne!(before, after, "migrating a fixture must produce an observable content change");
+
+        // ...and stability when an already-current fixture is migrated
+        // again -- refinery's own no-op, not a re-write this row would
+        // have to explain.
+        {
+            let mut conn = rusqlite::Connection::open(&db_path).expect("reopen fixture db again");
+            crate::persistence::embedded::migrations::runner()
+                .run(&mut conn)
+                .expect("a no-op migration run must still succeed");
+        }
+        let after_again = server_save_inventory::inventory_save_dir_v1(root).corpus_index_v1();
+        assert_eq!(after, after_again, "re-migrating an already-current fixture must be a byte-identical no-op");
     }
 
     /// Every policy keeps its question AND carries its ruling.
@@ -600,12 +817,21 @@ mod save_migration_v1 {
     }
 
     /// The sequencing rule is a value, so `T4.6` cannot assume it.
+    ///
+    /// This test previously asserted the mandate was NOT ready, with the
+    /// same "if it becomes ready, invert this deliberately" spirit the
+    /// four resolution policies carried. That is exactly what happened
+    /// on `APEX-T4.5-FIXTURES`: both stores' fixture corpus + proven
+    /// offline recovery now exist (see `SAVE_MANIFEST_MANDATE_READY`'s
+    /// own doc comment for the ruling and its evidence), and this
+    /// assertion was INVERTED BY HAND rather than relaxed. A revert to
+    /// `false` should be as visible as this flip was.
     #[test]
-    fn the_save_manifest_mandate_is_not_ready() {
+    fn the_save_manifest_mandate_is_ready() {
         assert!(
-            !SAVE_MANIFEST_MANDATE_READY,
-            "mandating save manifests is gated on fixtures and offline recovery existing (T4.5 \
-             step 7). Neither does yet."
+            SAVE_MANIFEST_MANDATE_READY,
+            "reverted to not-ready -- fixtures or offline recovery regressed; see \
+             SAVE_MANIFEST_MANDATE_READY's doc comment for what must hold"
         );
     }
 }

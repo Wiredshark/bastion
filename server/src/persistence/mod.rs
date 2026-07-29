@@ -49,7 +49,10 @@ pub type EditableComponents = (comp::Body,);
 // See: https://docs.rs/refinery/0.5.0/refinery/macro.embed_migrations.html
 // This macro is called at build-time, and produces the necessary migration info
 // for the `run_migrations` call below.
-mod embedded {
+// `pub(crate)`, not private: `APEX-T4.5-FIXTURES` needs the real embedded
+// migration set to build byte-real historical-schema fixtures (a partial
+// `Target::Version` run), not a hand-approximated one.
+pub(crate) mod embedded {
     use refinery::embed_migrations;
     embed_migrations!("./src/migrations");
 }

@@ -73,9 +73,16 @@ impl RtSim {
                         info!("Rtsim data found. Attempting to load...");
 
                         let ignore_version = std::env::var("RTSIM_IGNORE_VERSION").is_ok();
+                        // `APEX-T4.5-FIXTURES`: the exact decision, extracted
+                        // so the offline-recovery proof calls the real
+                        // function rather than a duplicate of this guard.
+                        let load_unmigrated = matches!(
+                            crate::save_migration::rtsim_version_mismatch_disposition_v1(ignore_version),
+                            crate::save_migration::RtsimVersionMismatchDispositionV1::LoadUnmigrated
+                        );
 
                         match Data::from_reader(io::BufReader::new(file)) {
-                            Err(ReadError::VersionMismatch(_)) if !ignore_version => {
+                            Err(ReadError::VersionMismatch(_)) if !load_unmigrated => {
                                 warn!(
                                     "Rtsim data version mismatch (implying a breaking change), \
                                      rtsim data will be purged"
