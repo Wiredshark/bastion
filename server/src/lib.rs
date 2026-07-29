@@ -4326,6 +4326,39 @@ impl Server {
         let mut character_updater = self.state.ecs().write_resource::<CharacterUpdater>();
         let updater_messages: Vec<CharacterUpdaterMessage> = character_updater.messages().collect();
 
+        // `E11-1b` (premise-checked, CLOSED negative -- orchestrator-ruled):
+        // this drain processes `CharacterUpdaterMessage`s in raw crossbeam
+        // `try_iter` arrival order, the same shape as `ChunkGenerator`'s
+        // pre-fix completion channel (see `chunk_generator.rs`'s
+        // `recv_new_chunks_sorted`/`recv_new_chunks_deterministic` --
+        // request-tick stamp + hold + due-release + sort-by-key). That
+        // pattern does NOT apply here today, traced per handler:
+        //   - `DatabaseBatchCompletion` -> `process_batch_completion` is a
+        //     `HashMap::retain` keyed on its own `batch_id`; two calls with
+        //     different ids commute regardless of order.
+        //   - `CharacterScreenResponse` handlers (`CharacterList`,
+        //     `CharacterCreation`, `CharacterEdit`, `CharacterData` ->
+        //     `handle_loaded_character_data`) write ONLY to that message's
+        //     own `target_entity`'s own components/subscription and send to
+        //     that entity's own connection -- never shared/authoritative
+        //     state another player's simulation outcome depends on. Unlike
+        //     a chunk (shared world state every viewer depends on), this is
+        //     ordinary per-connection arrival ordering, not a determinism
+        //     hazard.
+        //   - A universal sort key doesn't even exist today: the variants
+        //     are heterogeneous and don't uniformly carry a `CharacterId`
+        //     (`CharacterList`/`DatabaseBatchCompletion` have none at all;
+        //     `CharacterCreation`/`CharacterEdit` carry one only inside
+        //     `Ok(..)`) -- building one would mean threading a new request-
+        //     sequence field through `CharacterLoaderRequestKind` and
+        //     `CharacterUpdaterAction` for zero current consumers.
+        // ARMED TRIGGER: the moment any handler here starts writing shared/
+        // authoritative state beyond its own response's entity, this
+        // reasoning no longer holds and the chunk-gen stamp+hold+due-
+        // release+sort mechanism (cited above, already implemented once)
+        // becomes MANDATORY, not optional -- start from this trace, not
+        // from scratch.
+        //
         // Get character-related database responses and notify the requesting client
         character_loader
             .messages()
