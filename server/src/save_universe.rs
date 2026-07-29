@@ -762,4 +762,206 @@ mod tests {
         assert!(count >= 0, "the vacuumed snapshot must be a valid, queryable database");
         let _ = payload;
     }
+
+    // =====================================================================
+    // `APEX-T4.6` chunk 4 -- the `SAVE-001..` crash-injection canary sketch.
+    //
+    // Each canary constructs the ON-DISK STATE a crash at that exact step
+    // would leave behind -- directly, via `std::fs`, not by actually
+    // killing a process mid-write -- and proves `recover_v1` resolves it
+    // exactly as the row's directional acceptance criterion demands:
+    // complete state without a pointer is INACTIVE, and a manifest
+    // without complete (verified) state is UNREADABLE. Same fixture-
+    // constructed standard as `T4.5-FIXTURES`'s local corpus, not a VM
+    // filesystem matrix -- "across supported filesystems" is explicitly
+    // a deployment-matrix value per the spec's own closing disclaimer,
+    // out of a single builder's scope.
+    //
+    // Several canaries in the spec's own sketch are already proven by
+    // tests ABOVE this section, from before chunk 4 existed to number
+    // them -- restated here as cross-references rather than duplicated:
+    //   SAVE-001 crash before staging            -> `an_untouched_directory_recovers_as_epoch_zero`
+    //             (identical observable state to "old pointer-less save
+    //             directory on first boot" -- recovery cannot distinguish
+    //             a directory that never had anything staged from one
+    //             that predates this row entirely; both are `EpochZero`.)
+    //   SAVE-005 pointer names a missing payload -> `a_manifest_naming_a_missing_payload_is_refused`
+    //   SAVE-006 manifest bytes don't match the pointer's claim -> `a_corrupted_manifest_is_refused`
+    //   SAVE-007 a payload's bytes don't match the manifest's claim -> `a_corrupted_payload_is_refused`
+    //   SAVE-004 (a) after manifest, before pointer -> `a_fully_staged_but_never_published_epoch_is_inactive`
+    //             (this section's own `save_004b_...` below is the same
+    //             step with a PRIOR committed epoch present too -- the
+    //             realistic live-server shape, not just the empty-history
+    //             case.)
+    //
+    // Two of the spec's named canaries are deliberately NOT fabricated,
+    // with the reasoning recorded rather than silently skipped:
+    //   SAVE-008 "during pointer rename"   -- `AtomicFile`'s rename is the
+    //             OS's own atomicity primitive (a single filesystem
+    //             rename syscall); there is no observable third state
+    //             between "old pointer still in place" and "new pointer
+    //             fully in place" to construct. What CAN be tested
+    //             faithfully, and is below, is the artifact a crash
+    //             leaves behind either way: `AtomicFile`'s own randomized
+    //             `.atomicwrite*/tmpfile.tmp` staging directory,
+    //             abandoned next to an untouched real pointer.
+    //   SAVE-009 "two pointers"            -- N/A for this row's single-
+    //             pointer-file design (`pointer.bin`, always overwritten,
+    //             never a set). The analogous, buildable property --
+    //             a NEW commit atomically supersedes the old one, never
+    //             leaving an ambiguous choice between two candidates --
+    //             is exactly what `a_second_committed_epoch_supersedes_
+    //             the_first` (above) already proves.
+    //   SAVE-011 "GC racing a reader"      -- GC is BANKED, not built
+    //             (orchestrator-ruled: retention policy is a deployment
+    //             value, not a builder's to invent). The structural
+    //             property that would make such a race impossible BY
+    //             CONSTRUCTION once GC exists is provable now, without
+    //             GC: `save_010_stale_staged_epochs_are_present_but_
+    //             ignored` below proves recovery never opens any epoch
+    //             directory the current pointer doesn't name -- a future
+    //             GC deleting those same untouched directories cannot
+    //             race a reader that never looks at them.
+
+    /// SAVE-002: a crash mid-write of a NEW epoch's payload, with a PRIOR
+    /// epoch already fully committed (the realistic live-server case --
+    /// by the time a second epoch is ever attempted, a first one exists).
+    /// The truncated in-progress payload for epoch 2 sits on disk; no
+    /// manifest or pointer for epoch 2 was ever written. Recovery must
+    /// be completely unaffected, still returning epoch 1.
+    #[test]
+    fn save_002_a_truncated_mid_write_payload_for_a_newer_epoch_does_not_affect_recovery_of_the_committed_one() {
+        let (_dir, layout) = layout();
+        let p1 = stage_payload_v1(&layout, SaveEpoch::new(1), SaveStoreIdV1::RtsimData, |f| f.write_all(b"epoch-1-complete")).unwrap();
+        let m1 = manifest_for(1, None, vec![p1]);
+        commit_epoch_v1(&layout, &m1).unwrap();
+
+        // Simulate the crash: a payload path for epoch 2 exists but is
+        // an obviously truncated fragment, written directly (bypassing
+        // `stage_payload_v1`, which this crash never got to finish).
+        let epoch2_payload_path = layout.payload_path(SaveEpoch::new(2), SaveStoreIdV1::RtsimData);
+        fs::create_dir_all(epoch2_payload_path.parent().unwrap()).unwrap();
+        fs::write(&epoch2_payload_path, b"trunc").unwrap();
+        // No manifest, no pointer update for epoch 2 -- the crash never
+        // reached either step.
+
+        match recover_v1(&layout).unwrap() {
+            SaveUniverseRecoveryV1::Recovered { manifest, .. } => assert_eq!(manifest.lineage.epoch, SaveEpoch::new(1)),
+            SaveUniverseRecoveryV1::EpochZero => panic!("epoch 1 was genuinely committed; must not read as epoch zero"),
+        }
+    }
+
+    /// SAVE-003: a crash after EVERY payload for a new epoch finished
+    /// staging (verified digests and all), but before that epoch's
+    /// manifest was ever written -- again with a prior committed epoch
+    /// present. The fully-valid, orphaned payloads must not confuse
+    /// recovery into thinking a newer epoch exists.
+    #[test]
+    fn save_003_fully_staged_payloads_with_no_manifest_do_not_affect_recovery_of_the_committed_epoch() {
+        let (_dir, layout) = layout();
+        let p1 = stage_payload_v1(&layout, SaveEpoch::new(1), SaveStoreIdV1::RtsimData, |f| f.write_all(b"epoch-1")).unwrap();
+        let m1 = manifest_for(1, None, vec![p1]);
+        commit_epoch_v1(&layout, &m1).unwrap();
+
+        // Epoch 2's payload finishes staging completely (a real,
+        // verifiable payload -- the crash happens strictly AFTER this
+        // succeeds) but its manifest is never written.
+        stage_payload_v1(&layout, SaveEpoch::new(2), SaveStoreIdV1::RtsimData, |f| f.write_all(b"epoch-2-payload-only")).unwrap();
+
+        match recover_v1(&layout).unwrap() {
+            SaveUniverseRecoveryV1::Recovered { manifest, .. } => assert_eq!(manifest.lineage.epoch, SaveEpoch::new(1)),
+            SaveUniverseRecoveryV1::EpochZero => panic!("epoch 1 was genuinely committed; must not read as epoch zero"),
+        }
+    }
+
+    /// SAVE-004b: `a_fully_staged_but_never_published_epoch_is_inactive`
+    /// (above) proves the empty-history case; this is the same crash
+    /// step -- manifest written, pointer never published -- with a PRIOR
+    /// committed epoch present, the shape every real live-server crash
+    /// at this step would actually have.
+    #[test]
+    fn save_004b_a_written_but_unpublished_manifest_does_not_affect_recovery_of_the_committed_epoch() {
+        let (_dir, layout) = layout();
+        let p1 = stage_payload_v1(&layout, SaveEpoch::new(1), SaveStoreIdV1::RtsimData, |f| f.write_all(b"epoch-1")).unwrap();
+        let m1 = manifest_for(1, None, vec![p1]);
+        let pointer1 = commit_epoch_v1(&layout, &m1).unwrap();
+
+        let p2 = stage_payload_v1(&layout, SaveEpoch::new(2), SaveStoreIdV1::RtsimData, |f| f.write_all(b"epoch-2")).unwrap();
+        let m2 = manifest_for(2, Some(pointer1.manifest_identity.digest), vec![p2]);
+        // Write the manifest but never call publish_pointer_v1/
+        // commit_epoch_v1 for it -- the crash lands exactly here.
+        write_manifest_v1(&layout, SaveEpoch::new(2), &m2).unwrap();
+
+        match recover_v1(&layout).unwrap() {
+            SaveUniverseRecoveryV1::Recovered { manifest, .. } => assert_eq!(manifest.lineage.epoch, SaveEpoch::new(1)),
+            SaveUniverseRecoveryV1::EpochZero => panic!("epoch 1 was genuinely committed; must not read as epoch zero"),
+        }
+    }
+
+    /// SAVE-008: the artifact `AtomicFile`'s own crashed rename leaves
+    /// behind -- its randomized `.atomicwrite*/tmpfile.tmp` staging
+    /// subdirectory, abandoned next to an untouched, still-valid real
+    /// pointer. See this section's own header comment for why the
+    /// in-between "torn rename" state itself cannot be fabricated (the
+    /// OS rename syscall admits no such state).
+    #[test]
+    fn save_008_an_abandoned_atomicwrite_staging_directory_does_not_affect_recovery() {
+        let (_dir, layout) = layout();
+        let p1 = stage_payload_v1(&layout, SaveEpoch::new(1), SaveStoreIdV1::RtsimData, |f| f.write_all(b"epoch-1")).unwrap();
+        let m1 = manifest_for(1, None, vec![p1]);
+        commit_epoch_v1(&layout, &m1).unwrap();
+
+        // The exact shape `atomicwrites::AtomicFile` uses (see its own
+        // source: `.atomicwrite`-prefixed tempdir, `tmpfile.tmp` inside),
+        // fabricated directly to simulate a crash between "temp file
+        // written" and "rename into place" for a HYPOTHETICAL second
+        // pointer publish that never completed.
+        let abandoned_dir = layout.root().join(".atomicwrite-crash-simulation");
+        fs::create_dir_all(&abandoned_dir).unwrap();
+        fs::write(abandoned_dir.join("tmpfile.tmp"), b"a pointer that never got renamed into place").unwrap();
+
+        match recover_v1(&layout).unwrap() {
+            SaveUniverseRecoveryV1::Recovered { manifest, .. } => assert_eq!(manifest.lineage.epoch, SaveEpoch::new(1)),
+            SaveUniverseRecoveryV1::EpochZero => panic!("epoch 1 was genuinely committed; must not read as epoch zero"),
+        }
+        // The abandoned artifact is untouched -- `recover_v1` never
+        // scans the directory, only ever reads the exact `pointer.bin`
+        // path, so it has no way to even notice this file exists.
+        assert!(abandoned_dir.join("tmpfile.tmp").exists());
+    }
+
+    /// SAVE-010: several stale, superseded epochs remain fully present
+    /// on disk (GC is banked, not built -- see this section's own header
+    /// comment). Recovery must return ONLY the current pointer's epoch,
+    /// completely ignoring the others -- proving, without GC existing
+    /// yet, that a future GC of those same directories could never race
+    /// a reader (SAVE-011): the reader never opens them in the first
+    /// place.
+    #[test]
+    fn save_010_stale_staged_epochs_are_present_but_ignored() {
+        let (_dir, layout) = layout();
+
+        let p1 = stage_payload_v1(&layout, SaveEpoch::new(1), SaveStoreIdV1::RtsimData, |f| f.write_all(b"epoch-1")).unwrap();
+        let m1 = manifest_for(1, None, vec![p1]);
+        let pointer1 = commit_epoch_v1(&layout, &m1).unwrap();
+
+        let p2 = stage_payload_v1(&layout, SaveEpoch::new(2), SaveStoreIdV1::RtsimData, |f| f.write_all(b"epoch-2")).unwrap();
+        let m2 = manifest_for(2, Some(pointer1.manifest_identity.digest), vec![p2]);
+        let pointer2 = commit_epoch_v1(&layout, &m2).unwrap();
+
+        let p3 = stage_payload_v1(&layout, SaveEpoch::new(3), SaveStoreIdV1::RtsimData, |f| f.write_all(b"epoch-3")).unwrap();
+        let m3 = manifest_for(3, Some(pointer2.manifest_identity.digest), vec![p3]);
+        commit_epoch_v1(&layout, &m3).unwrap();
+
+        match recover_v1(&layout).unwrap() {
+            SaveUniverseRecoveryV1::Recovered { manifest, .. } => assert_eq!(manifest.lineage.epoch, SaveEpoch::new(3)),
+            SaveUniverseRecoveryV1::EpochZero => panic!("epoch 3 was genuinely committed; must not read as epoch zero"),
+        }
+        // Epochs 1 and 2's own directories are still there, fully
+        // intact -- exactly what a real (not-yet-built) GC would later
+        // clean up. Their continued presence changes nothing about what
+        // was just recovered.
+        assert!(layout.root().join("epochs").join("1").exists());
+        assert!(layout.root().join("epochs").join("2").exists());
+    }
 }
