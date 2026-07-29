@@ -131,32 +131,20 @@ pub const AMBIENT_ENTROPY_SITES: &[(&str, usize, RandomDrawClassV1, &str)] = &[
     // parameter -- retyped to `&mut rand_chacha::ChaCha8Rng`, its sole
     // caller already passing the seeded stream.
     //
-    // NOT zero: `bastion-server/src/bastion_jobs.rs`'s cave-in draw
-    // (below) is UnmitigatedAuthoritativeEntropy too, and is a
-    // DIFFERENT fix shape (a damage-instance derivation via
-    // `combat::derive_attack_instance`, not an RNG stream) -- out of
-    // `E14-1b`'s stated scope ("the other five"), flagged as its own
-    // follow-on rather than silently folded in.
-    // `E14-3` chunk 2 -- `bastion-server/src` entered this scanner's
-    // roots. Exactly one site, and it is an OUTLIER rather than a
-    // pattern: every other damage-instance in the tree is derived.
-    (
-        "bastion-server/src/bastion_jobs.rs",
-        1,
-        RandomDrawClassV1::UnmitigatedAuthoritativeEntropy,
-        "cave-in injury (cavein_eject_and_injure): `instance: rand::random()` on a HealthChange \
-         applied to a colonist's Health. NOT IdentityGeneration -- the value is not an opaque \
-         handle whose unguessability is the point, it lands in Health::last_change, which is \
-         authoritative component state and is synced, so two runs diverge in any state hash. \
-         The deterministic seam for THIS EXACT FIELD already exists and is used at ~7 sites in \
-         combat.rs: derive_attack_instance(site, Option<attacker_uid>, target_uid, time, \
-         ordinal) -- attacker is already Option, so an environmental cave-in with no attacker \
-         fits it directly. (health.rs's `instance: 0` convention is only for the \
-         no-change-yet placeholder, not for real damage.) Fix is small but not a one-liner: \
-         cavein_eject_and_injure takes no `uids` storage, so the param has to be threaded \
-         through it and both callers (the live Sys::run post-loop and the harness's \
-         bastion_force_collapse_check)",
-    ),
+    // `E14-2b` (2026-07-29): `bastion-server/src/bastion_jobs.rs`'s
+    // cave-in draw -- the `E14-3` chunk 2 OUTLIER that used to sit here,
+    // "every other damage-instance in the tree is derived" made literal
+    // -- is FIXED and no longer registered, closing
+    // `UnmitigatedAuthoritativeEntropy` at ZERO. `instance: rand::random()`
+    // moved onto `combat::derive_attack_instance("bastion/cavein/v1",
+    // None, victim_uid, time, 0)` -- no attacker (an environmental
+    // collapse), the victim's own Uid as the target (already
+    // discriminates each victim within one event, so ordinal stays 0).
+    // `cavein_eject_and_injure` gained a `uids: &ReadStorage<Uid>`
+    // parameter, threaded through both callers: the live `Sys::run`
+    // post-loop (`bastion_jobs.rs`) and the harness's
+    // `bastion_force_collapse_check` (`server/src/lib.rs`, which did not
+    // previously fetch a `uids` storage at all).
     // `E14-3` chunk 3 -- `world/src` entered this scanner's roots.
     // Worldgen is where seeded-vs-ambient confusion is the classic
     // failure, so this was the chunk most likely to find debt. It found
@@ -697,6 +685,14 @@ mod tests {
              the last common/systems/src E14-3-chunk-1 site. Not zero: \
              bastion-server/src/bastion_jobs.rs's cave-in draw remains, a different fix shape \
              (derive_attack_instance, not an RNG stream), out of E14-1b's stated scope.",
+        ),
+        (
+            0,
+            "E14-2b (MIGRATION): bastion-server/src/bastion_jobs.rs's cave-in draw moved onto \
+             combat::derive_attack_instance (no attacker, victim's own Uid as target, ordinal \
+             0) -- the different fix shape the previous entry named. \
+             UnmitigatedAuthoritativeEntropy is now EMPTY: the population reached zero and the \
+             class has no members, not 'one left, see the other row'.",
         ),
     ];
 

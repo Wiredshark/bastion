@@ -27,6 +27,7 @@ use common::{
         BUILD_MATERIAL_ITEM, CHOP_DROP_ITEM, DesignationKind, Job, JobAudit, JobId, MINE_DROP_ITEM,
         Region, ZExtent,
     },
+    combat,
     comp,
     comp::{
         Item,
@@ -3056,6 +3057,7 @@ pub fn cavein_eject_and_injure<'a, D>(
     time: common::resources::Time,
     entities: &Entities<'a>,
     colonists: &specs::Storage<'a, comp::Colonist, D>,
+    uids: &ReadStorage<'a, Uid>,
     positions: &mut WriteStorage<'a, comp::Pos>,
     velocities: &mut WriteStorage<'a, comp::Vel>,
     healths: &mut WriteStorage<'a, comp::Health>,
@@ -3088,13 +3090,24 @@ where
         }
         if let Some(mut health) = healths.get_mut(entity) {
             let dmg = health.maximum() * CAVEIN_DAMAGE_FRAC;
+            // E14-2b: was `rand::random()` -- an opaque handle read is
+            // fine for IdentityGeneration, but this lands in
+            // Health::last_change, authoritative synced state. Derived
+            // instead via the same seam every other damage instance in
+            // the tree uses; no attacker (an environmental collapse),
+            // the victim's own Uid as the target, ordinal 0 (each
+            // victim already gets a distinct instance via its own Uid,
+            // nothing else to disambiguate within one cave-in event).
+            let instance = uids.get(entity).map_or(0, |target_uid| {
+                combat::derive_attack_instance("bastion/cavein/v1", None, *target_uid, time, 0)
+            });
             health.change_by(comp::HealthChange {
                 amount: -dmg,
                 by: None,
                 cause: None,
                 precise: false,
                 time,
-                instance: rand::random(),
+                instance,
             });
         }
         if let Some(mood) = moods.get_mut(entity) {
@@ -11718,6 +11731,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 *time,
                 &entities,
                 &colonists,
+                &uids,
                 &mut positions,
                 &mut velocities,
                 &mut healths,

@@ -3018,6 +3018,7 @@ impl Server {
         let time = *ecs.read_resource::<common::resources::Time>();
         let entities = ecs.entities();
         let colonists = ecs.read_storage::<comp::Colonist>();
+        let uids = ecs.read_storage::<common::uid::Uid>();
         let mut positions = ecs.write_storage::<comp::Pos>();
         let mut velocities = ecs.write_storage::<comp::Vel>();
         let mut healths = ecs.write_storage::<comp::Health>();
@@ -3029,6 +3030,7 @@ impl Server {
             time,
             &entities,
             &colonists,
+            &uids,
             &mut positions,
             &mut velocities,
             &mut healths,
