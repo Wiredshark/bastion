@@ -56,6 +56,95 @@ forward; typed boundaries surface them.
 
 ---
 
+## AMENDMENT 2 — 2026-07-29, `T7.4` item B premise-check on Decision 4
+
+**The question, verbatim, as `T7.4` (`APEX-T7-TIER-SPEC-FLEET-v1.md`)
+states it:** "Deduplicate and retract presentation effects by
+*deterministic event identity*... An effect emitted during a discarded
+prediction must be identifiable well enough to retract; an effect
+re-emitted during replay must be identifiable well enough not to
+double."
+
+**Premise-check found this question is not one question.** The
+DOUBLE-FIRE half is already solved — `T7.3b`'s `CharacterStateEventSinkV1`
+(`common/src/event.rs`) discards every event a replayed frame emits, with
+its own doc comment stating exactly why: the original predicted pass
+already fired them once, live; re-delivering on replay would be the
+double-fire hazard Decision 4 exists to prevent. That ruling stands
+unamended.
+
+**The RETRACTION half decomposes by a property Decision 4 did not
+need to state, because it precedes effect *identity* entirely: whether
+the effect physically CAN be retracted.** A played sound cannot be
+un-played. A spawned particle fades on its own schedule regardless of
+what any ledger says. For a transient effect, "retraction" is
+infrastructure serving a physical impossibility — there is nothing to
+retract, only something to wait out. Decision #31 (orchestrator-ruled,
+2026-07-28, ability sounds) already covers this shape exactly:
+**deduplicated, late beats double** — a corrected replay that concludes
+an effect should have fired may emit it late; it must never emit it
+twice. That law generalizes to every transient effect, not just sounds,
+by the same reasoning: a late effect is honest (merely late), a doubled
+one asserts two events happened, which is false.
+
+**So the only class that needs a retraction mechanism is one Decision 4
+never separately named: effects that persist visibly past their own
+moment.** An over-fired instance of one of THESE does not expire on its
+own — it is a standing visual lie until something removes it. Whether
+this class is empty decides whether `T7.4` item B needs a ledger at
+all.
+
+**It is not empty. Six of `CharacterStateEvents`' emitters qualify**
+(count corrected below), which reopens Decision 4 rather than merely
+extending it: predicting these effects at all is questionable — several
+already read as Decision 4 class 3 in spirit (authority-only,
+observable by another player, or entity-creating) even though nothing
+today enforces that at the type level for events the way
+`MayInsertComponentsV1` enforces it for `LazyUpdate` — a separate,
+disclosed finding, not silently folded into this one:
+`MayEmitAuthorityEffectsV1` (`prediction_boundary.rs`) is implemented
+for `LiveContextV1` and required by NOTHING — the fourth unwired
+instrument this tier's own family has turned up (after
+`admit_report_v1`, `PredictionHistoryV1`'s methods on
+`ClientPredictionBufferV1`, and `adopt_generation_v1`'s own live call).
+
+**Count correction.** `CharacterStateEvents` (`common/src/comp/
+character_state.rs:39-61`) carries **21** emitter channels, not the
+"20" both my own first premise-check message and the orchestrator's
+reply said. Same arithmetic-catches-holes lesson as Amendment 1: a
+count nobody re-verified against the actual declaration carried an off-
+by-one through two messages before this table forced the recount.
+
+**The classification, by what a discarded-versus-replayed divergence
+actually does to each:**
+
+| Channel | Payload names | Class | Why |
+|---|---|---|---|
+| `energy_change` | `EnergyChangeEvent{entity,change,reset_rate}` | **STATE-COVERED** | `RollingStateV1.energy` already carries the corrected truth; no separate effect identity needed. |
+| `knockback` | `KnockbackEvent{entity,impulse}` | **STATE-COVERED (self case), BORDERLINE (other-target case)** | Self-applied impulse lands in `RollingStateV1.vel`; the payload does not distinguish self-recoil from knocking back a DIFFERENT entity, and this scan did not trace every call site to rule the second case out. Flagged, not asserted. |
+| `teleport_to` | `TeleportToEvent{entity,target,max_range}` | **STATE-COVERED** | The outcome lands in `RollingStateV1.pos`; the visual snap is transient and covered by the transient ruling below regardless. |
+| `combo` | `ComboChangeEvent{entity,change}` | **GAP, NOT ITEM B'S** | Not in `RollingStateV1` today (checked: 7 fields, no combo). Self-targeted deterministic counter delta — the same shape as `energy`, and arguably belongs in Decision 1's predicted-component list, not Decision 4's effect-scope list. Named here because the search that found it was item B's; fixing it is a Decision-1 question. |
+| `change_stance` | `ChangeStanceEvent{entity,stance}` | **NEEDS VERIFICATION** | Plausibly covered by `RollingStateV1.character_activity` already; not traced far enough this pass to assert either way. |
+| `shoot`, `throw`, `shockwave`, `explosion`, `beam_pillar_summon` | projectile/AoE ability activations | **TRANSIENT-PRESENTATION** | Decision 4's own class-2 example ("ability activation effects... `CommandId`"). Expire or resolve on their own; Decision #31's law applies directly: late beats double, no ledger. |
+| `event` (Aura), `buff`, `sprite_summon`, `sprite_light`, `transform`, `regrow_head` | `AuraEvent`, `BuffEvent`, `CreateSpriteEvent`, `ToggleSpriteLightEvent`, `TransformEvent`, `RegrowHeadEvent` | **DURABLE-PRESENTATION — the non-empty class** | Each persists past its own moment (an aura zone, a buff icon, a placed sprite, a toggled light, a transformed body, a regrown head) and is visible to something other than a private, self-expiring animation. An over-fired instance from a discarded prediction does not fade on its own. |
+| `inventory_manip`, `create_npc`, `create_object`, `create_aura_entity`, `help_downed` | item transfer, entity creation ×3, reviving another entity | **ALREADY OUT OF BOUNDS (unenforced)** | Decision 4 class 3 by its own named examples ("item transfer" is verbatim; entity creation and affecting another entity's downed state are the same shape). Should already be unreachable from a predicted frame; today nothing enforces that for events specifically (see the `MayEmitAuthorityEffectsV1` finding above) — a compliance gap orthogonal to retraction. |
+
+**Verdict on the empty-or-not question: NOT EMPTY.** Six members
+(`event`/Aura, `buff`, `sprite_summon`, `sprite_light`, `transform`,
+`regrow_head`) durably persist. Per the orchestrator's own instruction,
+this reopens the row rather than sizing B2 unilaterally: several of the
+six read as questionable to predict AT ALL once named this explicitly
+(a self-cast buff or transform is a much larger commitment to predict
+than a footstep sound), which is a Decision-4-class-3-adjacent question
+the classification table surfaces but does not resolve.
+
+**What this amendment does NOT do:** it does not build a retraction
+ledger, does not change which effects a predicted frame may emit today,
+and does not wire `MayEmitAuthorityEffectsV1`. It is the ground `T7.4`
+item B's own scoping needs before either happens.
+
+---
+
 **Original status line, kept verbatim:** *PROPOSAL. Not approved, and not
 approvable by its author.*
 
@@ -301,5 +390,5 @@ is a measurement, not a decision.
 | 1 | Predicted components and replay-legal transitions | **APPROVED**, then **AMENDED** (see Amendment 1): `energy` proved from the StateUpdate From chain; `entity`/`uid` added as a fourth `Identity` role — 14 input · 21 ambient · 1 write channel · 2 identity |
 | 2 | World revision requirements and chunk-unload invalidation | **APPROVED as proposed**; chunk-key cost measured at ~1.05 KiB/client (1.6% of budget), gate and fallback removed |
 | 3 | Ridden/mounted ownership | **RULED** — no prediction for riders or carriers in v1; carry revisits as a T5.1-cohort experiment if feel complaints emerge |
-| 4 | Predicted side-effect scope | **RULED** — three classes as proposed; ability sounds deduplicated, late beats double |
+| 4 | Predicted side-effect scope | **RULED**, then **REOPENED** (see Amendment 2): three classes as proposed, ability sounds deduplicated (late beats double); `T7.4` item B's premise-check found 6 of 21 `CharacterStateEvents` channels are DURABLE-PRESENTATION (persist past their own moment, cannot rely on the sound ruling's "expires on its own"), which needs its own ruling before item B builds anything |
 | 5 | Duration, budget, fallback | **RULED** — adopted as named consts, tuned later from T5 cohort metrics |
