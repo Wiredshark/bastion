@@ -155,6 +155,8 @@ pub struct SceneData<'a> {
     pub target_entities: &'a HashSet<specs::Entity>,
     pub loaded_distance: f32,
     pub terrain_view_distance: u32, // not used currently
+    pub terrain_distance_plan_v1:
+        Option<bastion_renderer_r0d::terrain_distance::TerrainDistancePlanV1>,
     pub entity_view_distance: u32,
     pub tick: u64,
     pub gamma: f32,

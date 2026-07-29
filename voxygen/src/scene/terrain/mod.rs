@@ -430,6 +430,7 @@ pub struct Terrain<V: RectRasterableVol = TerrainChunk> {
     mesh_todo: HashMap<Vec2<i32>, ChunkMeshState>,
     mesh_todos_active: Arc<AtomicU64>,
     mesh_recv_overflow: f32,
+    mesh_queue_pruned_total: u64,
 
     // GPU data
     // Maps sprite kind + variant to data detailing how to render it
@@ -446,6 +447,44 @@ pub struct Terrain<V: RectRasterableVol = TerrainChunk> {
 
 impl TerrainChunkData {
     pub fn can_shadow_sun(&self) -> bool { self.visible.is_visible() || self.can_shadow_sun }
+}
+
+fn canonical_mesh_queue_prune_order(
+    entries: impl IntoIterator<Item = (Vec2<i32>, bool)>,
+    focus_blocks: Vec2<i64>,
+    max_total: usize,
+) -> Vec<Vec2<i32>> {
+    let mut active_count = 0usize;
+    let mut inactive = Vec::new();
+    for (position, active) in entries {
+        if active {
+            active_count = active_count.saturating_add(1);
+        } else {
+            inactive.push(position);
+        }
+    }
+    if active_count.saturating_add(inactive.len()) <= max_total {
+        return Vec::new();
+    }
+    inactive.sort_unstable_by_key(|position| {
+        let block_position = position.as_::<i64>() * TerrainChunk::RECT_SIZE.as_::<i64>();
+        (
+            block_position.distance_squared(focus_blocks),
+            position.x,
+            position.y,
+        )
+    });
+    let keep_inactive = max_total.saturating_sub(active_count).min(inactive.len());
+    let mut prune = inactive.split_off(keep_inactive);
+    prune.sort_unstable_by_key(|position| {
+        let block_position = position.as_::<i64>() * TerrainChunk::RECT_SIZE.as_::<i64>();
+        (
+            core::cmp::Reverse(block_position.distance_squared(focus_blocks)),
+            position.x,
+            position.y,
+        )
+    });
+    prune
 }
 
 pub(crate) struct SpriteRenderState {
@@ -665,6 +704,7 @@ impl<V: RectRasterableVol> Terrain<V> {
             mesh_todo: HashMap::default(),
             mesh_todos_active: Arc::new(AtomicU64::new(0)),
             mesh_recv_overflow: 0.0,
+            mesh_queue_pruned_total: 0,
             sprite_render_state: sprite_render_context.state,
             sprite_globals: renderer.bind_sprite_globals(
                 global_model,
@@ -1024,6 +1064,34 @@ impl<V: RectRasterableVol> Terrain<V> {
         }
         drop(guard);
 
+        if let Some(plan) = scene_data.terrain_distance_plan_v1 {
+            match plan.validate(plan.generation) {
+                Ok(()) => {
+                    let limit = usize::try_from(plan.max_mesh_queue).unwrap_or(usize::MAX);
+                    let focus = focus_pos.map(|value| value.trunc()).xy().as_::<i64>();
+                    let prune = canonical_mesh_queue_prune_order(
+                        self.mesh_todo
+                            .values()
+                            .map(|todo| (todo.pos, todo.is_worker_active)),
+                        focus,
+                        limit,
+                    );
+                    for position in &prune {
+                        self.mesh_todo.remove(position);
+                    }
+                    self.mesh_queue_pruned_total = self
+                        .mesh_queue_pruned_total
+                        .saturating_add(u64::try_from(prune.len()).unwrap_or(u64::MAX));
+                },
+                Err(error) => {
+                    warn!(
+                        ?error,
+                        "invalid POST-R2 terrain-distance plan; preserving existing mesh queue"
+                    );
+                },
+            }
+        }
+
         // Limit ourselves to u16::MAX even if larger textures are supported.
         let max_texture_size = renderer.max_texture_size();
         let meshing_cores = match num_cpus::get() as u64 {
@@ -1040,7 +1108,15 @@ impl<V: RectRasterableVol> Terrain<V> {
             .mesh_todo
             .values_mut()
             .filter(|todo| !todo.is_worker_active)
-            .min_by_key(|todo| ((todo.pos.as_::<i64>() * TerrainChunk::RECT_SIZE.as_::<i64>()).distance_squared(mesh_focus_pos), todo.started_tick))
+            .min_by_key(|todo| {
+                (
+                    (todo.pos.as_::<i64>() * TerrainChunk::RECT_SIZE.as_::<i64>())
+                        .distance_squared(mesh_focus_pos),
+                    todo.started_tick,
+                    todo.pos.x,
+                    todo.pos.y,
+                )
+            })
             // Find a reference to the actual `TerrainChunk` we're meshing
             .and_then(|todo| {
                 let pos = todo.pos;
@@ -1501,6 +1577,12 @@ impl<V: RectRasterableVol> Terrain<V> {
         )
     }
 
+    #[must_use]
+    pub fn mesh_queue_count(&self) -> usize { self.mesh_todo.len() }
+
+    #[must_use]
+    pub fn mesh_queue_pruned_total(&self) -> u64 { self.mesh_queue_pruned_total }
+
     pub fn get(&self, chunk_key: Vec2<i32>) -> Option<&TerrainChunkData> {
         self.chunks.get(&chunk_key)
     }
@@ -1847,4 +1929,44 @@ fn glow_normal_at_wpos_inner<'a>(
         bias * weight,
         glow_at_wpos_inner(chunk_glow_map, wpos.map(|e| e.floor() as i32)),
     )
+}
+
+#[cfg(test)]
+mod post_r2_distance_tests {
+    use super::*;
+
+    #[test]
+    fn mesh_queue_pruning_is_bounded_and_input_order_independent() {
+        let entries = vec![
+            (Vec2::new(0, 0), true),
+            (Vec2::new(1, 0), false),
+            (Vec2::new(2, 0), false),
+            (Vec2::new(3, 0), false),
+            (Vec2::new(-3, 0), false),
+        ];
+        let mut reversed = entries.clone();
+        reversed.reverse();
+        let expected = vec![Vec2::new(-3, 0), Vec2::new(3, 0), Vec2::new(2, 0)];
+        assert_eq!(
+            canonical_mesh_queue_prune_order(entries, Vec2::zero(), 2),
+            expected
+        );
+        assert_eq!(
+            canonical_mesh_queue_prune_order(reversed, Vec2::zero(), 2),
+            expected
+        );
+    }
+
+    #[test]
+    fn active_mesh_work_is_never_pruned_early() {
+        let entries = vec![
+            (Vec2::new(0, 0), true),
+            (Vec2::new(1, 0), true),
+            (Vec2::new(2, 0), false),
+        ];
+        assert_eq!(
+            canonical_mesh_queue_prune_order(entries, Vec2::zero(), 1),
+            vec![Vec2::new(2, 0)]
+        );
+    }
 }

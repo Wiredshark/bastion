@@ -50,6 +50,9 @@ pub struct GraphicsSettings {
     pub window: WindowSettings,
     pub fullscreen: FullScreenSettings,
     pub lod_detail: u32,
+    #[serde(skip)]
+    pub terrain_distance_plan_v1:
+        Option<bastion_renderer_r0d::terrain_distance::TerrainDistancePlanV1>,
 }
 
 impl Default for GraphicsSettings {
@@ -72,11 +75,24 @@ impl Default for GraphicsSettings {
             window: WindowSettings::default(),
             fullscreen: FullScreenSettings::default(),
             lod_detail: 250,
+            terrain_distance_plan_v1: None,
         }
     }
 }
 
 impl GraphicsSettings {
+    pub fn apply_terrain_distance_plan_v1(
+        &mut self,
+        plan: bastion_renderer_r0d::terrain_distance::TerrainDistancePlanV1,
+        current_generation: u64,
+    ) -> Result<(), bastion_renderer_r0d::terrain_distance::TerrainDistanceErrorV1> {
+        plan.validate(current_generation)?;
+        self.terrain_view_distance = u32::from(plan.horizon_radius_chunks);
+        self.lod_distance = plan.lod_distance_blocks;
+        self.terrain_distance_plan_v1 = Some(plan);
+        Ok(())
+    }
+
     pub fn into_minimal(self) -> Self {
         use crate::render::*;
         Self {
@@ -86,6 +102,7 @@ impl GraphicsSettings {
             sprite_render_distance: 80,
             figure_lod_render_distance: 100,
             lod_detail: 80,
+            terrain_distance_plan_v1: None,
             render_mode: RenderMode {
                 aa: AaMode::FxUpscale,
                 cloud: CloudMode::Minimal,
@@ -112,6 +129,7 @@ impl GraphicsSettings {
             sprite_render_distance: 125,
             figure_lod_render_distance: 200,
             lod_detail: 180,
+            terrain_distance_plan_v1: None,
             render_mode: RenderMode {
                 aa: AaMode::FxUpscale,
                 cloud: CloudMode::Low,
@@ -138,6 +156,7 @@ impl GraphicsSettings {
             sprite_render_distance: 250,
             figure_lod_render_distance: 350,
             lod_detail: 250,
+            terrain_distance_plan_v1: None,
             render_mode: RenderMode {
                 aa: AaMode::Fxaa,
                 cloud: CloudMode::Medium,
@@ -167,6 +186,7 @@ impl GraphicsSettings {
             sprite_render_distance: 350,
             figure_lod_render_distance: 450,
             lod_detail: 325,
+            terrain_distance_plan_v1: None,
             render_mode: RenderMode {
                 aa: AaMode::Fxaa,
                 cloud: CloudMode::Medium,
@@ -196,6 +216,7 @@ impl GraphicsSettings {
             sprite_render_distance: 800,
             figure_lod_render_distance: 600,
             lod_detail: 400,
+            terrain_distance_plan_v1: None,
             render_mode: RenderMode {
                 aa: AaMode::Fxaa,
                 cloud: CloudMode::High,
@@ -221,5 +242,40 @@ impl GraphicsSettings {
             terrain: self.terrain_view_distance,
             entity: self.entity_view_distance,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bastion_renderer_r0d::terrain_distance::{TerrainDistanceErrorV1, TerrainDistancePlanV1};
+
+    #[test]
+    fn terrain_distance_plan_applies_exact_band_and_rolls_back_on_stale_generation() {
+        let mut settings = GraphicsSettings::default().into_ultra();
+        settings
+            .apply_terrain_distance_plan_v1(TerrainDistancePlanV1::far_band(7), 7)
+            .unwrap();
+        assert_eq!(settings.terrain_view_distance, 24);
+        assert_eq!(settings.lod_distance, 675);
+        assert_eq!(
+            settings.terrain_distance_plan_v1,
+            Some(TerrainDistancePlanV1::far_band(7))
+        );
+
+        let accepted = (
+            settings.terrain_view_distance,
+            settings.lod_distance,
+            settings.terrain_distance_plan_v1,
+        );
+        assert_eq!(
+            settings.apply_terrain_distance_plan_v1(TerrainDistancePlanV1::reference(6), 7,),
+            Err(TerrainDistanceErrorV1::StaleGeneration)
+        );
+        assert_eq!(
+            (settings.terrain_view_distance, settings.lod_distance),
+            (accepted.0, accepted.1)
+        );
+        assert_eq!(settings.terrain_distance_plan_v1, accepted.2);
     }
 }
