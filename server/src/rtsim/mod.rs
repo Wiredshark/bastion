@@ -63,6 +63,11 @@ impl RtSim {
         // `common_net::msg::world_msg::world_map_geometry_root_v1`.
         map_geometry_root: common::apex::digest::ArtifactIdentityV1,
     ) -> Result<Self, ron::Error> {
+        // `APEX-T4.6` chunk 3a: `get_file_path` consumes `data_dir` below
+        // (it may push "rtsim" onto it), so the save-universe layout
+        // root -- a SIBLING of `rtsim/`, not nested under it -- is
+        // derived first, borrowing rather than needing its own clone.
+        let save_universe_layout = crate::save_universe::SaveUniverseLayoutV1::new(data_dir.join("save_universe"));
         let file_path = Self::get_file_path(data_dir);
 
         info!("Looking for rtsim data at {}...", file_path.display());
@@ -172,7 +177,32 @@ impl RtSim {
                 .expect("a locally-constructed baseline input always encodes under the domain's own limit");
             let fresh_root_bytes: [u8; 32] = *fresh_root.bytes.as_array();
 
-            if let Some(stored_root_bytes) = data.world_baseline_root
+            // `APEX-T4.6` chunk 3a: subsumption, read side. Once a
+            // durable save-universe manifest has been published, IT is
+            // the real reader per the orchestrator's own ruling ("never
+            // remove the old path before the new one is the actual
+            // reader") -- `data.world_baseline_root` stays the fallback
+            // for the `EpochZero`/pre-adoption case (no manifest exists
+            // yet) and keeps being written below either way, so an old
+            // save is never worse off. A recovery ERROR (corrupt
+            // manifest/pointer) is logged and treated the same as
+            // `EpochZero` here: this comparison is advisory, not
+            // authoritative for anything else in this chunk, so it must
+            // not block startup over a manifest-layer read failure.
+            let recovered_world_baseline_root: Option<[u8; 32]> =
+                match crate::save_universe::recover_v1(&save_universe_layout) {
+                    Ok(crate::save_universe::SaveUniverseRecoveryV1::Recovered { manifest }) => {
+                        manifest.world_baseline_root.map(|d| *d.bytes.as_array())
+                    },
+                    Ok(crate::save_universe::SaveUniverseRecoveryV1::EpochZero) => None,
+                    Err(e) => {
+                        error!(?e, "failed to recover save-universe manifest (falling back to data.world_baseline_root)");
+                        None
+                    },
+                };
+            let world_baseline_root_source = recovered_world_baseline_root.or(data.world_baseline_root);
+
+            if let Some(stored_root_bytes) = world_baseline_root_source
                 && stored_root_bytes != fresh_root_bytes
             {
                 // `RESOLUTION_LAW_V1` ("loss is recorded"): write the
