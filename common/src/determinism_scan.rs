@@ -154,8 +154,12 @@ const READ_DIR_BASELINE: [(&str, &str, u32); 16] = read_dir_baseline();
 /// growth-detector, not a verdict.
 const HASHMAP_ITERATION_BASELINE: [(&str, &str, u32); 184] = hashmap_iteration_baseline();
 
-/// 15 sites, INDIVIDUALLY CLASSIFIED (E11-6a, 2026-07-28). Fourteen are
-/// benign for two distinct reasons; one is a real misuse.
+/// 19 sites (15 at E11-6a pin time, 2026-07-28; +4 net after E11-6b's
+/// fix -- the one real misuse below was corrected in place, its old line
+/// replaced by the fixed `.map(...)` call, plus 4 new sites purely from
+/// prose comments that name `entity.id()` while explaining the fix).
+/// Eighteen are benign for three distinct reasons; the historical misuse
+/// is now fixed.
 ///
 /// **Benign — storage-slot semantics (4).** `region.rs:220/258` and
 /// `sentinel.rs:282/283` use `Entity::id()` as a `BitSet` index — into
@@ -179,11 +183,17 @@ const HASHMAP_ITERATION_BASELINE: [(&str, &str, u32); 184] = hashmap_iteration_b
 /// dependent. The verdict here is "it doesn't reach state", not "it
 /// can't", and that distinction is why these two are named.
 ///
-/// **The one real misuse (1).** `server/src/lib.rs:3318` uses a raw
-/// `entity.id()` as the SORT KEY of a returned `Vec`. That is exactly
-/// this family's hazard — an allocator slot ordering something — and the
-/// same class as the stable-`Uid` canonicalisation `DET-PHY-005` applied
-/// to spatial-grid cells. Fix: key the tuple and the sort by `Uid`.
+/// **Fixed misuse, now benign (1 site + 4 prose mentions).**
+/// `server/src/lib.rs` used a raw `entity.id()` as the SORT KEY of a
+/// returned `Vec` — exactly this family's hazard, the same class as the
+/// stable-`Uid` canonicalisation `DET-PHY-005` applied to spatial-grid
+/// cells. `E11-6b` fixed it: the join now also carries `Uid`, and the
+/// sort key moved to `Uid` via a pure, independently-tested
+/// `sort_persistent_item_snapshots_by_uid_v1`. The `.map(...)` call still
+/// reads `entity.id()` into the tuple (matching this family's textual
+/// pattern), but that field is now discarded by the sort helper and never
+/// orders anything — the other 4 new sites are doc/inline comments
+/// explaining the fix, prose only.
 ///
 /// ---
 ///
@@ -200,7 +210,7 @@ const HASHMAP_ITERATION_BASELINE: [(&str, &str, u32); 184] = hashmap_iteration_b
 /// every consumer, with the true cause several rows away. `T0.69` is the
 /// row that would make it derived rather than assumed; it is parked
 /// behind the buildables with that trigger named.
-const RAW_ENTITY_ID_BASELINE: [(&str, &str, u32); 15] = raw_entity_id_baseline();
+const RAW_ENTITY_ID_BASELINE: [(&str, &str, u32); 19] = raw_entity_id_baseline();
 
 // Baseline data lives in generated `const fn`s below purely to keep the
 // (very long) tuple literals out of the doc-commented declarations above.
@@ -217,7 +227,7 @@ const fn read_dir_baseline() -> [(&'static str, &'static str, u32); 16] {
 const fn hashmap_iteration_baseline() -> [(&'static str, &'static str, u32); 184] {
     include!("determinism_scan_baseline_hashmap_iteration.rs")
 }
-const fn raw_entity_id_baseline() -> [(&'static str, &'static str, u32); 15] {
+const fn raw_entity_id_baseline() -> [(&'static str, &'static str, u32); 19] {
     include!("determinism_scan_baseline_raw_entity_id.rs")
 }
 
