@@ -55,11 +55,11 @@ use std::{
 use atomicwrites::{AtomicFile, OverwriteBehavior};
 use common::apex::{
     digest::{ArtifactIdentityV1, ArtifactReaderErrorV1, hash_artifact_bytes_v1, hash_artifact_reader_v1},
-    identity::SaveEpoch,
+    identity::{SaveEpoch, UniverseBranchId},
     manifest::{ManifestCodecErrorV1, ManifestSchemaErrorV1, decode_manifest_v1, encode_manifest_v1},
     save_universe::{
-        SaveEpochPointerReadV1, SaveEpochPointerV1, SaveStoreIdV1, SaveStorePayloadV1, SaveUniverseManifestV1,
-        save_universe_manifest_limits_v1,
+        BranchRestorationRecordV1, SaveEpochLineageV1, SaveEpochPointerReadV1, SaveEpochPointerV1, SaveStoreIdV1, SaveStorePayloadV1,
+        SaveUniverseManifestV1, branch_restoration_record_limits_v1, save_universe_manifest_limits_v1,
     },
 };
 
@@ -409,8 +409,23 @@ pub fn recover_v1(layout: &SaveUniverseLayoutV1) -> Result<SaveUniverseRecoveryV
     let manifest: SaveUniverseManifestV1 =
         decode_manifest_v1(&manifest_bytes, &save_universe_manifest_limits_v1()).map_err(SaveUniverseRecoveryErrorV1::ManifestDecode)?;
 
-    for store_payload in &manifest.stores {
-        let payload_path = layout.payload_path(pointer.epoch, store_payload.store);
+    verify_payloads_v1(layout, pointer.epoch, &manifest.stores)?;
+
+    Ok(SaveUniverseRecoveryV1::Recovered { manifest, manifest_identity })
+}
+
+/// Every store a manifest lists, at `epoch`, actually on disk and matching
+/// the manifest's own claimed identity. Factored out of [`recover_v1`] so
+/// [`recover_at_epoch_v1`] (`APEX-T9.2`) can apply the identical check to
+/// an arbitrary historical epoch, not only the one the current pointer
+/// names.
+fn verify_payloads_v1(
+    layout: &SaveUniverseLayoutV1,
+    epoch: SaveEpoch,
+    stores: &[SaveStorePayloadV1],
+) -> Result<(), SaveUniverseRecoveryErrorV1> {
+    for store_payload in stores {
+        let payload_path = layout.payload_path(epoch, store_payload.store);
         let mut file = File::open(&payload_path).map_err(|e| {
             if e.kind() == io::ErrorKind::NotFound {
                 SaveUniverseRecoveryErrorV1::PayloadMissing { store: store_payload.store }
@@ -427,8 +442,302 @@ pub fn recover_v1(layout: &SaveUniverseLayoutV1) -> Result<SaveUniverseRecoveryV
             });
         }
     }
+    Ok(())
+}
 
-    Ok(SaveUniverseRecoveryV1::Recovered { manifest, manifest_identity })
+// =========================================================================
+// `APEX-T9.2` — authorized historical save branching.
+//
+// **Scope, self-sized.** This chunk builds the real mechanism: verified
+// arbitrary-epoch recovery (`recover_at_epoch_v1`), the actual branching
+// action (`restore_branch_v1`), and the operator-decision record it
+// writes. Deliberately NOT built here, banked as a follow-on integration
+// item, same split `T4.6` itself used (mechanism chunk, then live-trigger
+// chunk): wiring this into `server-cli`'s TUI/argv command surface as an
+// actual operator-facing subcommand. The spec's own words -- "an explicit
+// offline or UI action" -- describe WHO may call this, not that it must
+// already be reachable from a running server's command line; the function
+// below is that action, callable today, its CLI doorway a separate,
+// smaller row.
+//
+// **No new directory-layout abstraction.** A restored branch's data lives
+// under a plain, independent [`SaveUniverseLayoutV1`] -- the SAME type
+// this file has always had, rooted wherever the caller chooses (in
+// practice, keyed by the fresh [`UniverseBranchId`] this row mints, so two
+// restorations can never be pointed at the same directory -- see
+// [`restore_branch_v1`]'s own doc for why that makes the required
+// "concurrent branching directory" property hold BY CONSTRUCTION, needing
+// no lock file this row would otherwise have to invent).
+// =========================================================================
+
+/// Every way locating and verifying an arbitrary historical checkpoint can
+/// fail, beyond what [`SaveUniverseRecoveryErrorV1`] already covers (reused
+/// via [`RecoverAtEpochErrorV1::Recovery`] for the identical decode/
+/// identity/payload failure modes [`recover_v1`] already has typed
+/// terminals for).
+#[derive(Debug)]
+pub enum RecoverAtEpochErrorV1 {
+    /// `target_epoch` was epoch zero — there is no manifest to walk to;
+    /// "restore to epoch zero" is a different, degenerate operation this
+    /// row does not support.
+    EpochZeroIsNotACheckpoint,
+    /// The save-universe directory has never published anything, so there
+    /// is no committed history to walk at all.
+    NothingEverCommitted,
+    /// `target_epoch` is not an ancestor of the currently committed
+    /// epoch — either it is newer than the current pointer, or the
+    /// predecessor chain reached epoch 1's genesis before ever reaching
+    /// it (a gap this walk refuses to paper over, same discipline
+    /// [`common::apex::save_universe::SaveEpochLedgerV1`] applies at
+    /// write time).
+    TargetEpochNotAnAncestor { target: SaveEpoch, current: SaveEpoch },
+    /// A manifest read while walking the chain declares an `epoch` field
+    /// that does not match the path it was read from — a misfiled or
+    /// substituted manifest, never silently trusted.
+    ManifestEpochMismatch { path_named: SaveEpoch, declared: SaveEpoch },
+    Recovery(SaveUniverseRecoveryErrorV1),
+}
+
+impl core::fmt::Display for RecoverAtEpochErrorV1 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::EpochZeroIsNotACheckpoint => write!(f, "epoch zero has no manifest to restore from"),
+            Self::NothingEverCommitted => write!(f, "the save-universe directory has never published anything"),
+            Self::TargetEpochNotAnAncestor { target, current } => {
+                write!(f, "epoch {} is not an ancestor of the current epoch {}", target.get(), current.get())
+            },
+            Self::ManifestEpochMismatch { path_named, declared } => {
+                write!(f, "the manifest at epoch {}'s path declares epoch {} instead", path_named.get(), declared.get())
+            },
+            Self::Recovery(e) => write!(f, "{e}"),
+        }
+    }
+}
+
+impl std::error::Error for RecoverAtEpochErrorV1 {}
+
+impl From<SaveUniverseRecoveryErrorV1> for RecoverAtEpochErrorV1 {
+    fn from(e: SaveUniverseRecoveryErrorV1) -> Self { Self::Recovery(e) }
+}
+
+/// Reads and fully verifies `target_epoch`'s manifest and every payload it
+/// claims — never assumed, never trusted from the caller — even though
+/// `target_epoch` need not be the epoch the current pointer names.
+///
+/// **How an arbitrary historical epoch is verified without a pointer
+/// naming it directly.** The current pointer is still the ONE externally
+/// asserted claim in the whole system (`recover_v1`'s own discipline,
+/// unchanged). This walks the predecessor chain backward from there,
+/// epoch by epoch: at each step the manifest just read supplies BOTH the
+/// exact-byte digest the step below it must hash to
+/// (`lineage.predecessor_root`) AND its own epoch number one lower — the
+/// same two facts [`common::apex::save_universe::SaveEpochLedgerV1::
+/// admit_v1`] already required to be true at COMMIT time. Reading them
+/// back in reverse is not a new trust assumption, only a re-traversal of
+/// one already established at write time. The walk stops the moment it
+/// reaches `target_epoch`; every epoch strictly between it and the
+/// current one is verified by manifest identity alone (this row's own
+/// scope: "verify ITS full manifest and every payload" — its being the
+/// checkpoint actually being restored, not every epoch passed through to
+/// reach it).
+pub fn recover_at_epoch_v1(
+    layout: &SaveUniverseLayoutV1,
+    target_epoch: SaveEpoch,
+) -> Result<(SaveUniverseManifestV1, ArtifactIdentityV1), RecoverAtEpochErrorV1> {
+    if target_epoch.get() == 0 {
+        return Err(RecoverAtEpochErrorV1::EpochZeroIsNotACheckpoint);
+    }
+    let pointer = match read_pointer_v1(layout)? {
+        SaveEpochPointerReadV1::NeverPublished => return Err(RecoverAtEpochErrorV1::NothingEverCommitted),
+        SaveEpochPointerReadV1::Published(p) => p,
+    };
+    if target_epoch.get() > pointer.epoch.get() {
+        return Err(RecoverAtEpochErrorV1::TargetEpochNotAnAncestor { target: target_epoch, current: pointer.epoch });
+    }
+
+    let mut want_epoch = pointer.epoch;
+    let mut want_digest = pointer.manifest_identity.digest;
+    loop {
+        let manifest_path = layout.manifest_path(want_epoch);
+        let manifest_bytes = fs::read(&manifest_path).map_err(SaveUniverseRecoveryErrorV1::Io)?;
+        let manifest_identity = hash_artifact_bytes_v1(&manifest_bytes);
+        if manifest_identity.digest != want_digest {
+            return Err(SaveUniverseRecoveryErrorV1::ManifestIdentityMismatch {
+                expected: ArtifactIdentityV1 { digest: want_digest, size_bytes: manifest_identity.size_bytes },
+                actual: manifest_identity,
+            }
+            .into());
+        }
+        let manifest: SaveUniverseManifestV1 =
+            decode_manifest_v1(&manifest_bytes, &save_universe_manifest_limits_v1()).map_err(SaveUniverseRecoveryErrorV1::ManifestDecode)?;
+        if manifest.lineage.epoch != want_epoch {
+            return Err(RecoverAtEpochErrorV1::ManifestEpochMismatch { path_named: want_epoch, declared: manifest.lineage.epoch });
+        }
+
+        if want_epoch == target_epoch {
+            verify_payloads_v1(layout, target_epoch, &manifest.stores)?;
+            return Ok((manifest, manifest_identity));
+        }
+
+        let Some(predecessor_digest) = manifest.lineage.predecessor_root else {
+            return Err(RecoverAtEpochErrorV1::TargetEpochNotAnAncestor { target: target_epoch, current: pointer.epoch });
+        };
+        want_epoch = SaveEpoch::new(want_epoch.get() - 1);
+        want_digest = predecessor_digest;
+    }
+}
+
+/// Everything [`restore_branch_v1`] preserves and returns: the new
+/// branch's own committed pointer (proof it is a real, verified epoch 1,
+/// not a half-finished attempt) and the operator-decision record this
+/// row's "preserve... the operator decision" requirement asks for.
+#[derive(Debug)]
+pub struct BranchRestorationV1 {
+    pub new_branch: UniverseBranchId,
+    pub pointer: SaveEpochPointerV1,
+    pub record: BranchRestorationRecordV1,
+}
+
+/// Every way an authorized-branching attempt can fail, beyond the two
+/// error families it composes ([`RecoverAtEpochErrorV1`] for locating and
+/// verifying the checkpoint, [`SaveUniverseCommitErrorV1`] for writing the
+/// new branch's own epoch 1).
+#[derive(Debug)]
+pub enum BranchRestorationErrorV1 {
+    Source(RecoverAtEpochErrorV1),
+    Commit(SaveUniverseCommitErrorV1),
+    /// Minting the new branch's own identity failed — the entropy source
+    /// itself, never a filesystem or encoding concern, so it gets its
+    /// own variant rather than being folded into [`Self::Commit`].
+    BranchIdGeneration(common::apex::identity::IdentityGenerationErrorV1),
+    /// A store the restored checkpoint's manifest lists could not be
+    /// copied into the new branch's own epoch-1 directory.
+    PayloadCopy { store: SaveStoreIdV1, error: io::Error },
+    /// The new branch's own destination directory already has SOMETHING
+    /// staged for epoch 1 — refused rather than silently overwritten,
+    /// same discipline [`stage_payload_v1`]'s `DisallowOverwrite` already
+    /// enforces per-file; checked here up front so a caller gets one
+    /// clear reason rather than a confusing mid-copy `AlreadyExists`.
+    DestinationNotEmpty,
+    RecordEncode(common::apex::manifest::ManifestCodecErrorV1),
+}
+
+impl core::fmt::Display for BranchRestorationErrorV1 {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Source(e) => write!(f, "could not verify the restored checkpoint: {e}"),
+            Self::Commit(e) => write!(f, "could not commit the new branch's epoch 1: {e}"),
+            Self::BranchIdGeneration(e) => write!(f, "could not generate the new branch's identity: {e}"),
+            Self::PayloadCopy { store, error } => write!(f, "could not copy store {store:?} into the new branch: {error}"),
+            Self::DestinationNotEmpty => write!(f, "the new branch's destination directory already has epoch 1 staged"),
+            Self::RecordEncode(e) => write!(f, "could not encode the restoration record: {e:?}"),
+        }
+    }
+}
+
+impl std::error::Error for BranchRestorationErrorV1 {}
+
+/// `APEX-T9.2`'s central action. Verifies `source_epoch` in
+/// `source_layout` exactly as [`recover_at_epoch_v1`] does (never assumed,
+/// never taken on the caller's word), mints a fresh [`UniverseBranchId`],
+/// copies every one of the restored checkpoint's payloads into
+/// `dest_layout`'s own epoch 1 (re-verified post-copy — the SAME
+/// verify-what-actually-landed discipline [`stage_payload_v1`] already
+/// applies to a fresh write), commits that epoch 1 through the ordinary
+/// [`commit_epoch_v1`] path with `predecessor_root` chained to the
+/// restored checkpoint and `branch` set to the new id, and writes the
+/// operator-decision record as its own file next to (never inside) the
+/// new manifest. **Never continues the old forward epoch sequence** —
+/// `dest_layout` is a fresh, independent [`SaveUniverseLayoutV1`] whose
+/// own epoch numbering starts at 1 regardless of what `source_epoch` was.
+///
+/// **Why two concurrent restorations can never race each other onto the
+/// same directory.** Each call mints its OWN [`UniverseBranchId`]
+/// (`OsRandomBytesSourceV1`, fresh entropy every time — the SAME property
+/// [`common::apex::identity::opaque`]'s own tests already establish for
+/// every opaque identity in this program). The caller is expected to
+/// derive `dest_layout`'s root from that id (this function does not
+/// impose a path convention, matching [`SaveUniverseLayoutV1::new`]'s own
+/// existing caller-supplied-root design) — so two restorations, even
+/// started at the exact same instant against the exact same source, land
+/// in two different directories by construction, never contending for
+/// the same files. [`DestinationNotEmpty`](BranchRestorationErrorV1) is
+/// this function's own defense against a caller reusing a directory by
+/// mistake, not a race primitive.
+///
+/// **Why "a concurrent server start against a branching directory is
+/// refused rather than racing" needs no new mechanism.** A normal boot
+/// calling [`recover_v1`] against `dest_layout` mid-restoration (payloads
+/// copied, manifest not yet written, or written but not yet pointed at)
+/// sees [`SaveUniverseRecoveryV1::EpochZero`] — `T4.6`'s own "complete
+/// state without a pointer is inactive" invariant, unchanged, already
+/// proven for exactly this shape by `save_004b_a_written_but_unpublished_
+/// manifest_does_not_affect_recovery_of_the_committed_epoch` and friends.
+/// This row inherits that guarantee rather than re-deriving it.
+pub fn restore_branch_v1(
+    source_layout: &SaveUniverseLayoutV1,
+    source_epoch: SaveEpoch,
+    dest_layout: &SaveUniverseLayoutV1,
+    operator_note: String,
+    decided_at_unix_seconds: u64,
+    branch_id_source: &mut impl common::apex::identity::IdRandomBytesSourceV1,
+) -> Result<BranchRestorationV1, BranchRestorationErrorV1> {
+    let (source_manifest, source_manifest_identity) = recover_at_epoch_v1(source_layout, source_epoch).map_err(BranchRestorationErrorV1::Source)?;
+
+    if matches!(read_pointer_v1(dest_layout), Ok(SaveEpochPointerReadV1::Published(_))) || dest_layout.manifest_path(SaveEpoch::new(1)).exists() {
+        return Err(BranchRestorationErrorV1::DestinationNotEmpty);
+    }
+
+    let new_branch = UniverseBranchId::generate(branch_id_source).map_err(BranchRestorationErrorV1::BranchIdGeneration)?;
+
+    let new_epoch = SaveEpoch::new(1);
+    let mut copied_stores = Vec::with_capacity(source_manifest.stores.len());
+    for source_store in &source_manifest.stores {
+        let source_bytes = fs::read(source_layout.payload_path(source_epoch, source_store.store))
+            .map_err(|error| BranchRestorationErrorV1::PayloadCopy { store: source_store.store, error })?;
+        let staged = stage_payload_v1(dest_layout, new_epoch, source_store.store, |f| f.write_all(&source_bytes))
+            .map_err(BranchRestorationErrorV1::Commit)?;
+        if staged.identity != source_store.identity {
+            // The bytes just read from the SOURCE didn't match its own
+            // manifest's claim -- caught here rather than silently
+            // propagated, even though `recover_at_epoch_v1` already
+            // verified this once; a TOCTOU window between that read and
+            // this one (another process mutating the source directory)
+            // is exactly what a second, independent check catches.
+            return Err(BranchRestorationErrorV1::PayloadCopy {
+                store: source_store.store,
+                error: io::Error::other("source payload bytes changed between verification and copy"),
+            });
+        }
+        copied_stores.push(staged);
+    }
+
+    let new_manifest = SaveUniverseManifestV1 {
+        lineage: SaveEpochLineageV1 { epoch: new_epoch, predecessor_root: Some(source_manifest_identity.digest), branch: Some(new_branch) },
+        frozen_tick: source_manifest.frozen_tick,
+        stores: copied_stores,
+        world_baseline_root: source_manifest.world_baseline_root,
+        descriptors: source_manifest.descriptors.clone(),
+        migration_journal_digest: source_manifest.migration_journal_digest,
+    };
+    let pointer = commit_epoch_v1(dest_layout, &new_manifest).map_err(BranchRestorationErrorV1::Commit)?;
+
+    let record = BranchRestorationRecordV1 {
+        source_branch: source_manifest.lineage.branch,
+        source_epoch,
+        source_manifest_root: source_manifest_identity.digest,
+        new_branch,
+        operator_note,
+        decided_at_unix_seconds,
+    };
+    let record_bytes = encode_manifest_v1(&record, &branch_restoration_record_limits_v1()).map_err(BranchRestorationErrorV1::RecordEncode)?;
+    let record_path = dest_layout.root().join("restoration.bin");
+    AtomicFile::new(&record_path, OverwriteBehavior::DisallowOverwrite)
+        .write(|f| f.write_all(&record_bytes))
+        .map_err(io_from_atomic)
+        .map_err(|e| BranchRestorationErrorV1::Commit(SaveUniverseCommitErrorV1::Io(e)))?;
+
+    Ok(BranchRestorationV1 { new_branch, pointer, record })
 }
 
 #[cfg(test)]
@@ -456,7 +765,7 @@ mod tests {
 
     fn manifest_for(epoch: u64, predecessor_root: Option<common::apex::digest::ArtifactDigestV1>, stores: Vec<SaveStorePayloadV1>) -> SaveUniverseManifestV1 {
         SaveUniverseManifestV1 {
-            lineage: SaveEpochLineageV1 { epoch: SaveEpoch::new(epoch), predecessor_root },
+            lineage: SaveEpochLineageV1 { epoch: SaveEpoch::new(epoch), predecessor_root, branch: None },
             frozen_tick: 100 * epoch,
             stores,
             world_baseline_root: None,
@@ -963,5 +1272,257 @@ mod tests {
         // was just recovered.
         assert!(layout.root().join("epochs").join("1").exists());
         assert!(layout.root().join("epochs").join("2").exists());
+    }
+
+    // =====================================================================
+    // `APEX-T9.2` -- authorized historical save branching.
+    // =====================================================================
+
+    fn branch_source(tag: u8) -> common::apex::identity::FixedRandomBytesSourceV1 { common::apex::identity::FixedRandomBytesSourceV1([tag; 16]) }
+
+    /// A 3-epoch chain on `layout`: epoch 1 has store bytes `b"e1"`, epoch
+    /// 2 `b"e2"`, epoch 3 `b"e3"`, each correctly chained. Returns the
+    /// three committed pointers in order.
+    fn three_epoch_chain(layout: &SaveUniverseLayoutV1) -> [SaveEpochPointerV1; 3] {
+        let p1 = stage_payload_v1(layout, SaveEpoch::new(1), SaveStoreIdV1::RtsimData, |f| f.write_all(b"e1")).unwrap();
+        let m1 = manifest_for(1, None, vec![p1]);
+        let pointer1 = commit_epoch_v1(layout, &m1).unwrap();
+
+        let p2 = stage_payload_v1(layout, SaveEpoch::new(2), SaveStoreIdV1::RtsimData, |f| f.write_all(b"e2")).unwrap();
+        let m2 = manifest_for(2, Some(pointer1.manifest_identity.digest), vec![p2]);
+        let pointer2 = commit_epoch_v1(layout, &m2).unwrap();
+
+        let p3 = stage_payload_v1(layout, SaveEpoch::new(3), SaveStoreIdV1::RtsimData, |f| f.write_all(b"e3")).unwrap();
+        let m3 = manifest_for(3, Some(pointer2.manifest_identity.digest), vec![p3]);
+        let pointer3 = commit_epoch_v1(layout, &m3).unwrap();
+
+        [pointer1, pointer2, pointer3]
+    }
+
+    // -- `recover_at_epoch_v1` -----------------------------------------
+
+    #[test]
+    fn recover_at_epoch_reaches_an_epoch_strictly_older_than_the_current_pointer() {
+        let (_dir, layout) = layout();
+        three_epoch_chain(&layout);
+
+        let (manifest, _identity) = recover_at_epoch_v1(&layout, SaveEpoch::new(1)).unwrap();
+        assert_eq!(manifest.lineage.epoch, SaveEpoch::new(1));
+    }
+
+    #[test]
+    fn recover_at_epoch_reaches_the_current_pointers_own_epoch_too() {
+        let (_dir, layout) = layout();
+        let pointers = three_epoch_chain(&layout);
+
+        let (manifest, identity) = recover_at_epoch_v1(&layout, SaveEpoch::new(3)).unwrap();
+        assert_eq!(manifest.lineage.epoch, SaveEpoch::new(3));
+        assert_eq!(identity, pointers[2].manifest_identity);
+    }
+
+    #[test]
+    fn recover_at_epoch_refuses_a_target_newer_than_the_current_pointer() {
+        let (_dir, layout) = layout();
+        three_epoch_chain(&layout);
+
+        let err = recover_at_epoch_v1(&layout, SaveEpoch::new(4)).unwrap_err();
+        assert!(matches!(err, RecoverAtEpochErrorV1::TargetEpochNotAnAncestor { target, current } if target == SaveEpoch::new(4) && current == SaveEpoch::new(3)));
+    }
+
+    #[test]
+    fn recover_at_epoch_refuses_epoch_zero() {
+        let (_dir, layout) = layout();
+        three_epoch_chain(&layout);
+        assert!(matches!(recover_at_epoch_v1(&layout, SaveEpoch::new(0)), Err(RecoverAtEpochErrorV1::EpochZeroIsNotACheckpoint)));
+    }
+
+    #[test]
+    fn recover_at_epoch_refuses_when_nothing_was_ever_committed() {
+        let (_dir, layout) = layout();
+        assert!(matches!(recover_at_epoch_v1(&layout, SaveEpoch::new(1)), Err(RecoverAtEpochErrorV1::NothingEverCommitted)));
+    }
+
+    /// A tampered INTERMEDIATE epoch (not the target itself) still breaks
+    /// the walk -- the chain must be genuine all the way from the current
+    /// pointer down to the target, not merely at the target's own bytes.
+    #[test]
+    fn recover_at_epoch_refuses_when_an_intermediate_epoch_was_tampered_with() {
+        let (_dir, layout) = layout();
+        three_epoch_chain(&layout);
+
+        // Corrupt epoch 2's manifest -- strictly between the current
+        // pointer (epoch 3) and the target (epoch 1).
+        fs::write(layout.manifest_path(SaveEpoch::new(2)), b"not-a-real-manifest").unwrap();
+
+        let err = recover_at_epoch_v1(&layout, SaveEpoch::new(1)).unwrap_err();
+        assert!(matches!(err, RecoverAtEpochErrorV1::Recovery(SaveUniverseRecoveryErrorV1::ManifestIdentityMismatch { .. })));
+    }
+
+    /// The target epoch's own payload corruption is caught too -- the
+    /// row's "verify its full manifest and every payload" requirement,
+    /// exercised for a NON-current epoch specifically.
+    #[test]
+    fn recover_at_epoch_refuses_when_the_targets_own_payload_is_corrupted() {
+        let (_dir, layout) = layout();
+        three_epoch_chain(&layout);
+
+        fs::write(layout.payload_path(SaveEpoch::new(1), SaveStoreIdV1::RtsimData), b"corrupted").unwrap();
+
+        let err = recover_at_epoch_v1(&layout, SaveEpoch::new(1)).unwrap_err();
+        assert!(matches!(err, RecoverAtEpochErrorV1::Recovery(SaveUniverseRecoveryErrorV1::PayloadIdentityMismatch { .. })));
+    }
+
+    // -- `restore_branch_v1` --------------------------------------------
+
+    #[test]
+    fn restore_branch_creates_a_verified_epoch_one_chained_from_the_restored_checkpoint() {
+        let (_source_dir, source_layout) = layout();
+        let pointers = three_epoch_chain(&source_layout);
+        let (_dest_dir, dest_layout) = layout();
+
+        let restoration = restore_branch_v1(
+            &source_layout,
+            SaveEpoch::new(2),
+            &dest_layout,
+            "rolling back to before the griefing incident".to_owned(),
+            1_800_000_000,
+            &mut branch_source(1),
+        )
+        .unwrap();
+
+        assert_eq!(restoration.pointer.epoch, SaveEpoch::new(1));
+        assert_eq!(restoration.record.source_epoch, SaveEpoch::new(2));
+        assert_eq!(restoration.record.source_manifest_root, pointers[1].manifest_identity.digest);
+        assert_eq!(restoration.record.new_branch, restoration.new_branch);
+
+        match recover_v1(&dest_layout).unwrap() {
+            SaveUniverseRecoveryV1::Recovered { manifest, .. } => {
+                assert_eq!(manifest.lineage.epoch, SaveEpoch::new(1), "a branch NEVER continues the old forward epoch sequence");
+                assert_eq!(manifest.lineage.predecessor_root, Some(pointers[1].manifest_identity.digest));
+                assert_eq!(manifest.lineage.branch, Some(restoration.new_branch));
+            },
+            SaveUniverseRecoveryV1::EpochZero => panic!("the new branch's epoch 1 was genuinely committed"),
+        }
+
+        // The copied payload is byte-identical to the source epoch's own.
+        let copied = fs::read(dest_layout.payload_path(SaveEpoch::new(1), SaveStoreIdV1::RtsimData)).unwrap();
+        assert_eq!(copied, b"e2");
+    }
+
+    /// The required test, verbatim: repeated restoration from the SAME
+    /// checkpoint yields DISTINCT branch ids. Two real, live
+    /// `restore_branch_v1` calls against the same source and same source
+    /// epoch, into two independent destinations, must mint two different
+    /// branch ids.
+    #[test]
+    fn repeated_restoration_from_the_same_checkpoint_yields_distinct_branch_ids() {
+        let (_source_dir, source_layout) = layout();
+        three_epoch_chain(&source_layout);
+
+        let (_dest1_dir, dest1) = layout();
+        let restoration1 =
+            restore_branch_v1(&source_layout, SaveEpoch::new(1), &dest1, "first restore".to_owned(), 1_000, &mut branch_source(1)).unwrap();
+
+        let (_dest2_dir, dest2) = layout();
+        let restoration2 =
+            restore_branch_v1(&source_layout, SaveEpoch::new(1), &dest2, "second restore".to_owned(), 2_000, &mut branch_source(2)).unwrap();
+
+        assert_ne!(restoration1.new_branch, restoration2.new_branch);
+
+        // Both branches independently chain from the SAME parent -- the
+        // shared ancestor is not what distinguishes them -- yet each
+        // recovers under its OWN, distinct branch id.
+        let shared_parent = restoration1.record.source_manifest_root;
+        assert_eq!(restoration2.record.source_manifest_root, shared_parent);
+
+        for (dest, expected_branch) in [(&dest1, restoration1.new_branch), (&dest2, restoration2.new_branch)] {
+            match recover_v1(dest).unwrap() {
+                SaveUniverseRecoveryV1::Recovered { manifest, .. } => {
+                    assert_eq!(manifest.lineage.predecessor_root, Some(shared_parent));
+                    assert_eq!(manifest.lineage.branch, Some(expected_branch));
+                },
+                SaveUniverseRecoveryV1::EpochZero => panic!("both restorations were genuinely committed"),
+            }
+        }
+    }
+
+    /// A destination that already has an epoch-1 manifest staged is
+    /// refused rather than silently overwritten or merged with.
+    #[test]
+    fn restore_branch_refuses_a_non_empty_destination() {
+        let (_source_dir, source_layout) = layout();
+        three_epoch_chain(&source_layout);
+        let (_dest_dir, dest_layout) = layout();
+
+        write_manifest_v1(&dest_layout, SaveEpoch::new(1), &manifest_for(1, None, vec![])).unwrap();
+
+        let err = restore_branch_v1(&source_layout, SaveEpoch::new(1), &dest_layout, "note".to_owned(), 0, &mut branch_source(1)).unwrap_err();
+        assert!(matches!(err, BranchRestorationErrorV1::DestinationNotEmpty));
+    }
+
+    /// A restoration whose source checkpoint fails verification (a
+    /// corrupted intermediate epoch) never mints a branch or writes
+    /// anything into the destination at all -- the verify-before-anything-
+    /// else ordering the row's objective states explicitly.
+    #[test]
+    fn restore_branch_refuses_and_writes_nothing_when_the_source_fails_verification() {
+        let (_source_dir, source_layout) = layout();
+        three_epoch_chain(&source_layout);
+        fs::write(source_layout.manifest_path(SaveEpoch::new(2)), b"tampered").unwrap();
+        let (_dest_dir, dest_layout) = layout();
+
+        let err = restore_branch_v1(&source_layout, SaveEpoch::new(1), &dest_layout, "note".to_owned(), 0, &mut branch_source(1)).unwrap_err();
+        assert!(matches!(err, BranchRestorationErrorV1::Source(_)));
+        assert_eq!(recover_v1(&dest_layout).unwrap(), SaveUniverseRecoveryV1::EpochZero, "nothing should have been written to the destination");
+    }
+
+    /// The operator-decision record is a real, separately readable
+    /// artifact, not folded into or lost inside the manifest.
+    #[test]
+    fn restore_branch_writes_a_readable_restoration_record() {
+        let (_source_dir, source_layout) = layout();
+        three_epoch_chain(&source_layout);
+        let (_dest_dir, dest_layout) = layout();
+
+        let restoration = restore_branch_v1(
+            &source_layout,
+            SaveEpoch::new(3),
+            &dest_layout,
+            "operator: Ben -- rolling back after the exploit report".to_owned(),
+            1_800_000_123,
+            &mut branch_source(9),
+        )
+        .unwrap();
+
+        let record_bytes = fs::read(dest_layout.root().join("restoration.bin")).unwrap();
+        let decoded: BranchRestorationRecordV1 = decode_manifest_v1(&record_bytes, &branch_restoration_record_limits_v1()).unwrap();
+        assert_eq!(decoded, restoration.record);
+        assert_eq!(decoded.operator_note, "operator: Ben -- rolling back after the exploit report");
+    }
+
+    /// `APEX-T9.2`'s required "concurrent server start" property: a
+    /// directory mid-branching (payload copied and manifest written, but
+    /// the pointer never published -- exactly the window between
+    /// `stage_payload_v1` and `commit_epoch_v1` inside `restore_branch_v1`)
+    /// is refused/invisible to a normal boot rather than raced into a
+    /// half-formed load. No new lock mechanism: this is `T4.6`'s own
+    /// "complete state without a pointer is inactive" invariant, inherited
+    /// unchanged and re-proven in the branching directory shape
+    /// specifically, per this function's own doc comment.
+    #[test]
+    fn a_branching_directory_mid_restoration_is_invisible_to_a_concurrent_normal_boot() {
+        let (_dest_dir, dest_layout) = layout();
+        let payload = stage_payload_v1(&dest_layout, SaveEpoch::new(1), SaveStoreIdV1::RtsimData, |f| f.write_all(b"mid-restore")).unwrap();
+        let manifest = manifest_for(1, None, vec![payload]);
+        // Manifest written (the step right before the atomic pointer
+        // publish inside `commit_epoch_v1`), but never actually
+        // committed -- simulating a restoration frozen mid-flight.
+        write_manifest_v1(&dest_layout, SaveEpoch::new(1), &manifest).unwrap();
+
+        assert_eq!(
+            recover_v1(&dest_layout).unwrap(),
+            SaveUniverseRecoveryV1::EpochZero,
+            "a concurrent normal boot must see nothing, not a torn or partial branch"
+        );
     }
 }

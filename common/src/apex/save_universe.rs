@@ -52,7 +52,7 @@
 use crate::apex::digest::{
     ArtifactDigestV1, ArtifactIdentityV1, DigestDomainIdV1, DigestErrorV1, ProtocolDigestV1, digest_manifest_value_v1,
 };
-use crate::apex::identity::SaveEpoch;
+use crate::apex::identity::{SaveEpoch, UniverseBranchId};
 use crate::apex::manifest::{
     CanonicalFieldMapV1, FieldIdV1, ManifestCodecErrorCodeV1, ManifestCodecErrorV1, ManifestDecodeLimitsV1, ManifestDecodeV1,
     ManifestEncodeV1, ManifestErrorV1, ManifestSchemaErrorV1, ManifestValueV1, StructFieldsV1,
@@ -80,20 +80,23 @@ fn err(detail: &'static str) -> ManifestSchemaErrorV1 { ManifestErrorV1::new(Man
 /// `Option<T>` has no bare representation in the restricted data model —
 /// the same 0-or-1-element-array discriminant `bootstrap_freshness.rs`
 /// and `bootstrap_manifest.rs` already use, reused rather than a third
-/// encoding invented here.
-fn encode_optional_digest(v: &Option<ArtifactDigestV1>) -> Result<ManifestValueV1, ManifestCodecErrorV1> {
+/// encoding invented here. Generic since `T9.2` needs the identical shape
+/// for `Option<UniverseBranchId>` this row's `predecessor_root` already
+/// established for `Option<ArtifactDigestV1>` — one helper, not a second
+/// copy per type.
+fn encode_optional_v1<T: ManifestEncodeV1>(v: &Option<T>) -> Result<ManifestValueV1, ManifestCodecErrorV1> {
     match v {
-        Some(d) => Ok(ManifestValueV1::Array(vec![d.to_manifest_value_v1()?])),
+        Some(x) => Ok(ManifestValueV1::Array(vec![x.to_manifest_value_v1()?])),
         None => Ok(ManifestValueV1::Array(Vec::new())),
     }
 }
 
-fn decode_optional_digest(value: ManifestValueV1) -> Result<Option<ArtifactDigestV1>, ManifestSchemaErrorV1> {
+fn decode_optional_v1<T: ManifestDecodeV1>(value: ManifestValueV1) -> Result<Option<T>, ManifestSchemaErrorV1> {
     let ManifestValueV1::Array(items) = value else { return Err(err("expected an array")) };
     match <[ManifestValueV1; 1]>::try_from(items) {
-        Ok([only]) => Ok(Some(ArtifactDigestV1::from_manifest_value_v1(only)?)),
+        Ok([only]) => Ok(Some(T::from_manifest_value_v1(only)?)),
         Err(items) if items.is_empty() => Ok(None),
-        Err(_) => Err(err("optional digest array must have 0 or 1 elements")),
+        Err(_) => Err(err("optional field array must have 0 or 1 elements")),
     }
 }
 
@@ -114,15 +117,29 @@ pub struct SaveEpochLineageV1 {
     /// `epoch.get() == 1`, chaining from epoch zero — the pointer-less
     /// legacy directory this row's migration note names, which was never
     /// staged and so has no manifest root to chain from. Every later
-    /// epoch's predecessor root is `Some`.
+    /// epoch's predecessor root is `Some`. `APEX-T9.2`: an epoch 1 born
+    /// from authorized historical branching is the ONE other case where
+    /// this is `Some` despite `epoch.get() == 1` — its predecessor is the
+    /// restored checkpoint, not epoch zero.
     pub predecessor_root: Option<ArtifactDigestV1>,
+    /// `APEX-T9.2`: which save/world lineage branch this epoch belongs to
+    /// (`T0.4`'s [`UniverseBranchId`], unused anywhere in the live tree
+    /// before this row). `None` for a lineage that has never been
+    /// branched — the ordinary forward-saving path this program has
+    /// always had; fabricating a branch id for a lineage nothing ever
+    /// branched would be exactly the "not yet derived" vs "invented"
+    /// confusion this program's other optional identity fields
+    /// (`WorldBaselineInputV1::worldgen`) already refuse to make. `Some`
+    /// only from the epoch a restoration action creates onward.
+    pub branch: Option<UniverseBranchId>,
 }
 
 impl ManifestEncodeV1 for SaveEpochLineageV1 {
     fn to_manifest_value_v1(&self) -> Result<ManifestValueV1, ManifestCodecErrorV1> {
         let map = CanonicalFieldMapV1::try_from_entries(vec![
             (FieldIdV1::new(1), self.epoch.to_manifest_value_v1()?),
-            (FieldIdV1::new(2), encode_optional_digest(&self.predecessor_root)?),
+            (FieldIdV1::new(2), encode_optional_v1(&self.predecessor_root)?),
+            (FieldIdV1::new(3), encode_optional_v1(&self.branch)?),
         ])?;
         Ok(ManifestValueV1::Map(map))
     }
@@ -133,9 +150,10 @@ impl ManifestDecodeV1 for SaveEpochLineageV1 {
         let ManifestValueV1::Map(map) = value else { return Err(err("expected a map")) };
         let mut fields = StructFieldsV1::new(map);
         let epoch = SaveEpoch::from_manifest_value_v1(fields.take_required(FieldIdV1::new(1))?)?;
-        let predecessor_root = decode_optional_digest(fields.take_required(FieldIdV1::new(2))?)?;
+        let predecessor_root = decode_optional_v1(fields.take_required(FieldIdV1::new(2))?)?;
+        let branch = decode_optional_v1(fields.take_required(FieldIdV1::new(3))?)?;
         fields.finish_no_unknown()?;
-        Ok(Self { epoch, predecessor_root })
+        Ok(Self { epoch, predecessor_root, branch })
     }
 }
 
@@ -160,19 +178,46 @@ pub enum SaveEpochRejectionV1 {
     /// zero never had), or `None` when a real predecessor root was
     /// required.
     PredecessorMismatch,
+    /// `APEX-T9.2`: the candidate's declared `branch` doesn't match the
+    /// branch every prior admission in this ledger already committed to.
+    /// A lineage's branch is fixed at its own epoch 1 and never changes
+    /// underneath it — this is the ledger-level enforcement of "never
+    /// continue the old forward epoch sequence" under a different
+    /// branch's identity.
+    BranchMismatch { expected: Option<UniverseBranchId>, candidate: Option<UniverseBranchId> },
 }
 
 /// The pure epoch-lineage ledger: a floor (the last admitted epoch's
-/// number and own manifest root), `None` before the first admission.
-/// Mirrors `BootstrapFreshnessLedgerV1`'s floor half; deliberately
-/// without its rebindable-epoch half, since nothing here resumes.
+/// number, own manifest root, and branch), `None` before the first
+/// admission. Mirrors `BootstrapFreshnessLedgerV1`'s floor half;
+/// deliberately without its rebindable-epoch half, since nothing here
+/// resumes.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SaveEpochLedgerV1 {
-    floor: Option<(SaveEpoch, ArtifactDigestV1)>,
+    floor: Option<(SaveEpoch, ArtifactDigestV1, Option<UniverseBranchId>)>,
+    /// `APEX-T9.2`: the `predecessor_root` an epoch-1 candidate must
+    /// declare, checked only while `floor` is still `None`. `None` for an
+    /// ordinary from-scratch lineage (today's only case, preserved
+    /// exactly); `Some(root)` for a lineage whose epoch 1 is a NEW
+    /// branch's epoch-zero, chained from an older branch's restored
+    /// checkpoint rather than from nothing. Irrelevant once `floor`
+    /// becomes `Some` — a lineage's genesis predecessor is a one-time
+    /// fact about its epoch 1, not something later epochs re-check.
+    genesis_predecessor_root: Option<ArtifactDigestV1>,
 }
 
 impl SaveEpochLedgerV1 {
-    pub fn new() -> Self { Self { floor: None } }
+    pub fn new() -> Self { Self { floor: None, genesis_predecessor_root: None } }
+
+    /// `APEX-T9.2`: a ledger for a NEW branch's epoch-1, chained from
+    /// `parent_checkpoint_root` — the restored checkpoint's own manifest
+    /// root, verified by the caller (`recover_at_epoch_v1` or
+    /// equivalent) before this ledger is ever constructed. Distinct from
+    /// [`Self::new`] only in what it requires epoch 1's
+    /// `predecessor_root` to be; every later admission rule is identical.
+    pub fn new_branch_v1(parent_checkpoint_root: ArtifactDigestV1) -> Self {
+        Self { floor: None, genesis_predecessor_root: Some(parent_checkpoint_root) }
+    }
 
     /// `APEX-T4.6` chunk 3b: seeds a ledger from a manifest recovered
     /// from disk at process start — the floor a freshly-booted server
@@ -182,14 +227,24 @@ impl SaveEpochLedgerV1 {
     /// SAME exact-byte digest [`SaveEpochPointerV1::manifest_identity`]'s
     /// `.digest` already carries — the pointer's own integrity anchor
     /// doubles as the next epoch's chain link, not a second computation.
-    pub fn seeded_from_recovery_v1(epoch: SaveEpoch, manifest_root: ArtifactDigestV1) -> Self { Self { floor: Some((epoch, manifest_root)) } }
+    /// `branch` is the recovered manifest's own `lineage.branch` — a
+    /// resumed boot must re-admit into the SAME branch it recovered, not
+    /// silently default to `None`.
+    pub fn seeded_from_recovery_v1(epoch: SaveEpoch, manifest_root: ArtifactDigestV1, branch: Option<UniverseBranchId>) -> Self {
+        Self { floor: Some((epoch, manifest_root, branch)), genesis_predecessor_root: None }
+    }
 
     /// The last admitted epoch, or `SaveEpoch::INITIAL` (zero) before
     /// anything has ever been admitted — the same epoch-zero-as-genesis
     /// reading a pointer-less save directory gets, not a special case.
-    pub fn current_epoch(&self) -> SaveEpoch { self.floor.map_or(SaveEpoch::INITIAL, |(e, _)| e) }
+    pub fn current_epoch(&self) -> SaveEpoch { self.floor.map_or(SaveEpoch::INITIAL, |(e, ..)| e) }
 
-    pub fn current_root(&self) -> Option<ArtifactDigestV1> { self.floor.map(|(_, root)| root) }
+    pub fn current_root(&self) -> Option<ArtifactDigestV1> { self.floor.map(|(_, root, _)| root) }
+
+    /// The branch every admission so far has committed to, or `None`
+    /// before the first admission (at which point the FIRST candidate's
+    /// own declared branch becomes this value, per [`Self::admit_v1`]).
+    pub fn current_branch(&self) -> Option<UniverseBranchId> { self.floor.and_then(|(_, _, branch)| branch) }
 
     /// Classifies and, if admitted, advances the floor. `candidate_root`
     /// is the manifest's own exact-byte digest — the SAME value
@@ -206,12 +261,146 @@ impl SaveEpochLedgerV1 {
         if candidate.epoch.get() != floor_epoch.get() + 1 {
             return Err(SaveEpochRejectionV1::NotSequential { floor: floor_epoch, candidate: candidate.epoch });
         }
-        if candidate.predecessor_root != self.current_root() {
+        let required_predecessor_root = match self.floor {
+            Some((_, root, _)) => Some(root),
+            None => self.genesis_predecessor_root,
+        };
+        if candidate.predecessor_root != required_predecessor_root {
             return Err(SaveEpochRejectionV1::PredecessorMismatch);
         }
-        self.floor = Some((candidate.epoch, candidate_root));
+        if self.floor.is_some() && candidate.branch != self.current_branch() {
+            return Err(SaveEpochRejectionV1::BranchMismatch { expected: self.current_branch(), candidate: candidate.branch });
+        }
+        self.floor = Some((candidate.epoch, candidate_root, candidate.branch));
         Ok(())
     }
+}
+
+// ---------------------------------------------------------------------
+// `APEX-T9.2` — authorized historical save branching: the operator-
+// decision record, and the pure stale-client branch check.
+// ---------------------------------------------------------------------
+
+/// Decode limits for [`BranchRestorationRecordV1`] — its own function,
+/// not [`save_universe_manifest_limits_v1`], because `operator_note` is
+/// free-form human prose rather than the small closed vocabularies a
+/// manifest's other byte-strings hold, and deserves a roomier ceiling
+/// without loosening the manifest's own.
+pub const fn branch_restoration_record_limits_v1() -> ManifestDecodeLimitsV1 {
+    ManifestDecodeLimitsV1 {
+        max_input_bytes: 1 << 13,
+        max_depth: 4,
+        max_nodes: 1 << 6,
+        max_array_items: 4,
+        max_map_entries: 8,
+        max_machine_text_bytes: 64,
+        max_byte_string_bytes: 4096,
+    }
+}
+
+/// `APEX-T9.2`'s durable, typed record of one authorized historical
+/// branching action — "preserve... the operator decision" is the row's
+/// own third preservation requirement (the abandoned branch's records
+/// and the new branch's records are both already preserved simply by
+/// never overwriting or deleting either branch's directory; this is the
+/// third thing, and the only one with no other natural home). Written as
+/// its OWN small artifact alongside — never inside — the new branch's
+/// epoch-1 manifest: the manifest schema stays untouched, so no existing
+/// manifest decode path needs to know this row exists.
+#[derive(Clone, Debug, PartialEq)]
+pub struct BranchRestorationRecordV1 {
+    /// The branch the restored checkpoint itself belonged to. `None`
+    /// only if that checkpoint predates branch-awareness (its own
+    /// `SaveEpochLineageV1::branch` was `None`) — restoring FROM an
+    /// unbranched save is legitimate; this restoration is what makes the
+    /// result branched from here on.
+    pub source_branch: Option<UniverseBranchId>,
+    pub source_epoch: SaveEpoch,
+    /// The restored checkpoint's own exact-byte manifest identity — the
+    /// SAME value the new branch's epoch-1 `predecessor_root` chains
+    /// from, so this record and the chain it produced can be
+    /// cross-checked against each other rather than trusted separately.
+    pub source_manifest_root: ArtifactDigestV1,
+    pub new_branch: UniverseBranchId,
+    /// Free-form operator-supplied justification — "who decided" lives
+    /// here as prose; this row has no structured operator identity to
+    /// name instead. Bounded by [`branch_restoration_record_limits_v1`]
+    /// at decode time, same discipline every text field in this program
+    /// gets, not because of a bug this specific field must guard against.
+    pub operator_note: String,
+    pub decided_at_unix_seconds: u64,
+}
+
+impl ManifestEncodeV1 for BranchRestorationRecordV1 {
+    fn to_manifest_value_v1(&self) -> Result<ManifestValueV1, ManifestCodecErrorV1> {
+        let map = CanonicalFieldMapV1::try_from_entries(vec![
+            (FieldIdV1::new(1), encode_optional_v1(&self.source_branch)?),
+            (FieldIdV1::new(2), self.source_epoch.to_manifest_value_v1()?),
+            (FieldIdV1::new(3), self.source_manifest_root.to_manifest_value_v1()?),
+            (FieldIdV1::new(4), self.new_branch.to_manifest_value_v1()?),
+            (FieldIdV1::new(5), ManifestValueV1::Bytes(self.operator_note.as_bytes().to_vec())),
+            (FieldIdV1::new(6), ManifestValueV1::Unsigned(self.decided_at_unix_seconds)),
+        ])?;
+        Ok(ManifestValueV1::Map(map))
+    }
+}
+
+impl ManifestDecodeV1 for BranchRestorationRecordV1 {
+    fn from_manifest_value_v1(value: ManifestValueV1) -> Result<Self, ManifestSchemaErrorV1> {
+        let ManifestValueV1::Map(map) = value else { return Err(err("expected a map")) };
+        let mut fields = StructFieldsV1::new(map);
+        let source_branch = decode_optional_v1(fields.take_required(FieldIdV1::new(1))?)?;
+        let source_epoch = SaveEpoch::from_manifest_value_v1(fields.take_required(FieldIdV1::new(2))?)?;
+        let source_manifest_root = ArtifactDigestV1::from_manifest_value_v1(fields.take_required(FieldIdV1::new(3))?)?;
+        let new_branch = UniverseBranchId::from_manifest_value_v1(fields.take_required(FieldIdV1::new(4))?)?;
+        let ManifestValueV1::Bytes(note_bytes) = fields.take_required(FieldIdV1::new(5))? else {
+            return Err(err("operator_note must be a byte string"));
+        };
+        let operator_note = String::from_utf8(note_bytes).map_err(|_| err("operator_note must be valid UTF-8"))?;
+        let decided_at_unix_seconds = match fields.take_required(FieldIdV1::new(6))? {
+            ManifestValueV1::Unsigned(v) => v,
+            _ => return Err(err("decided_at_unix_seconds must be an unsigned integer")),
+        };
+        fields.finish_no_unknown()?;
+        Ok(Self { source_branch, source_epoch, source_manifest_root, new_branch, operator_note, decided_at_unix_seconds })
+    }
+}
+
+/// `APEX-T9.2`'s required test: "a stale client holding the old branch's
+/// manifest is rejected with a typed terminal that names the branch
+/// change rather than a generic mismatch." Built as a PURE decision here
+/// because the live reconnect path this terminal would flow through does
+/// not exist yet — `T9.1`'s own premise-check found step 2 (continuous-
+/// frame classification) "genuinely absent... the rule has no SUBJECT"
+/// and built no reconnect-refusal type at all. Wiring this into a live
+/// handler before that type exists would be exactly what the `T9` spec
+/// forbids ("if a builder reaches for something new here, an earlier
+/// tier under-delivered"). What CAN be built honestly today is the
+/// decision itself — decidable and tested in isolation, ready to be the
+/// branch-aware arm of whatever refusal enum `T9.1` eventually builds,
+/// not fabricated as already wired into it.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum StaleBranchRejectionV1 {
+    /// The client's remembered branch differs from the server's current
+    /// one — named explicitly rather than folded into a generic
+    /// epoch/manifest mismatch, so a client can tell "the world branched"
+    /// from "you are just behind".
+    BranchChanged { client_known: Option<UniverseBranchId>, server_current: Option<UniverseBranchId> },
+}
+
+/// `client_known_branch` is whatever the reconnecting client last saw
+/// (`None` if it connected before branching existed, or before ever
+/// receiving a branch id); `server_current_branch` is the save the
+/// server is presently authoritative for. Anything but an exact match is
+/// stale — there is no "close enough" for a branch identity.
+pub fn decide_stale_branch_v1(
+    client_known_branch: Option<UniverseBranchId>,
+    server_current_branch: Option<UniverseBranchId>,
+) -> Result<(), StaleBranchRejectionV1> {
+    if client_known_branch != server_current_branch {
+        return Err(StaleBranchRejectionV1::BranchChanged { client_known: client_known_branch, server_current: server_current_branch });
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------
@@ -401,9 +590,9 @@ impl ManifestEncodeV1 for SaveUniverseManifestV1 {
             (FieldIdV1::new(1), self.lineage.to_manifest_value_v1()?),
             (FieldIdV1::new(2), ManifestValueV1::Unsigned(self.frozen_tick)),
             (FieldIdV1::new(3), ManifestValueV1::Array(stores)),
-            (FieldIdV1::new(4), encode_optional_digest(&self.world_baseline_root)?),
+            (FieldIdV1::new(4), encode_optional_v1(&self.world_baseline_root)?),
             (FieldIdV1::new(5), ManifestValueV1::Array(descriptors)),
-            (FieldIdV1::new(6), encode_optional_digest(&self.migration_journal_digest)?),
+            (FieldIdV1::new(6), encode_optional_v1(&self.migration_journal_digest)?),
         ])?;
         Ok(ManifestValueV1::Map(map))
     }
@@ -426,7 +615,7 @@ impl ManifestDecodeV1 for SaveUniverseManifestV1 {
         for v in store_values {
             stores.push(SaveStorePayloadV1::from_manifest_value_v1(v)?);
         }
-        let world_baseline_root = decode_optional_digest(fields.take_required(FieldIdV1::new(4))?)?;
+        let world_baseline_root = decode_optional_v1(fields.take_required(FieldIdV1::new(4))?)?;
         let ManifestValueV1::Array(descriptor_values) = fields.take_required(FieldIdV1::new(5))? else {
             return Err(err("descriptors must be an array"));
         };
@@ -434,7 +623,7 @@ impl ManifestDecodeV1 for SaveUniverseManifestV1 {
         for v in descriptor_values {
             descriptors.push(SubsystemDescriptorV1::from_manifest_value_v1(v)?);
         }
-        let migration_journal_digest = decode_optional_digest(fields.take_required(FieldIdV1::new(6))?)?;
+        let migration_journal_digest = decode_optional_v1(fields.take_required(FieldIdV1::new(6))?)?;
 
         fields.finish_no_unknown()?;
         Ok(Self { lineage, frozen_tick, stores, world_baseline_root, descriptors, migration_journal_digest })
@@ -464,7 +653,7 @@ mod tests {
     }
 
     fn lineage(epoch: u64, predecessor_root: Option<ArtifactDigestV1>) -> SaveEpochLineageV1 {
-        SaveEpochLineageV1 { epoch: SaveEpoch::new(epoch), predecessor_root }
+        SaveEpochLineageV1 { epoch: SaveEpoch::new(epoch), predecessor_root, branch: None }
     }
 
     fn manifest() -> SaveUniverseManifestV1 {
@@ -582,7 +771,7 @@ mod tests {
     /// `new()`.
     #[test]
     fn a_seeded_ledger_reports_its_seed_and_admits_the_correctly_chained_next_epoch() {
-        let mut ledger = SaveEpochLedgerV1::seeded_from_recovery_v1(SaveEpoch::new(5), digest(5));
+        let mut ledger = SaveEpochLedgerV1::seeded_from_recovery_v1(SaveEpoch::new(5), digest(5), None);
         assert_eq!(ledger.current_epoch(), SaveEpoch::new(5));
         assert_eq!(ledger.current_root(), Some(digest(5)));
         assert!(ledger.admit_v1(lineage(6, Some(digest(5))), digest(6)).is_ok());
@@ -594,7 +783,7 @@ mod tests {
     /// admission rules a fresh ledger enforces.
     #[test]
     fn a_seeded_ledger_still_refuses_a_non_chaining_candidate() {
-        let mut ledger = SaveEpochLedgerV1::seeded_from_recovery_v1(SaveEpoch::new(5), digest(5));
+        let mut ledger = SaveEpochLedgerV1::seeded_from_recovery_v1(SaveEpoch::new(5), digest(5), None);
         assert_eq!(
             ledger.admit_v1(lineage(6, Some(digest(99))), digest(6)).unwrap_err(),
             SaveEpochRejectionV1::PredecessorMismatch
@@ -675,6 +864,215 @@ mod tests {
     fn the_digest_fixture_helper_produces_genuinely_distinct_digests() {
         assert_ne!(digest(1), digest(2));
         assert_ne!(digest(1), digest(99));
+    }
+
+    // -- `APEX-T9.2`: branch-root genesis + branch-consistency admission ---
+
+    fn branch_id(tag: u8) -> UniverseBranchId {
+        crate::apex::identity::UniverseBranchId::generate(&mut crate::apex::identity::FixedRandomBytesSourceV1([tag; 16])).unwrap()
+    }
+
+    fn lineage_with_branch(epoch: u64, predecessor_root: Option<ArtifactDigestV1>, branch: Option<UniverseBranchId>) -> SaveEpochLineageV1 {
+        SaveEpochLineageV1 { epoch: SaveEpoch::new(epoch), predecessor_root, branch }
+    }
+
+    /// The row's central mechanism: a branch's epoch 1 chains from the
+    /// RESTORED CHECKPOINT's root, not from nothing — the one case a
+    /// fresh (non-branch) ledger's own `epoch_one_claiming_a_predecessor_
+    /// root_is_refused` test proves is normally rejected.
+    #[test]
+    fn a_branch_root_ledger_admits_epoch_one_chained_from_the_parent_checkpoint() {
+        let parent_root = digest(7);
+        let mut ledger = SaveEpochLedgerV1::new_branch_v1(parent_root);
+        let candidate = lineage_with_branch(1, Some(parent_root), Some(branch_id(1)));
+        assert!(ledger.admit_v1(candidate, digest(1)).is_ok());
+        assert_eq!(ledger.current_epoch(), SaveEpoch::new(1));
+        assert_eq!(ledger.current_branch(), Some(branch_id(1)));
+    }
+
+    /// A branch-root ledger still refuses an epoch 1 that claims the
+    /// WRONG parent — the branch mechanism is not a bypass of the
+    /// predecessor check, only a different required value for it.
+    #[test]
+    fn a_branch_root_ledger_refuses_epoch_one_chained_from_the_wrong_parent() {
+        let mut ledger = SaveEpochLedgerV1::new_branch_v1(digest(7));
+        let candidate = lineage_with_branch(1, Some(digest(99)), Some(branch_id(1)));
+        assert_eq!(ledger.admit_v1(candidate, digest(1)).unwrap_err(), SaveEpochRejectionV1::PredecessorMismatch);
+    }
+
+    /// A branch-root ledger also refuses an epoch 1 that omits the
+    /// parent entirely — claiming to be a from-scratch genesis when this
+    /// ledger was constructed specifically to require a restored parent.
+    #[test]
+    fn a_branch_root_ledger_refuses_epoch_one_with_no_predecessor_at_all() {
+        let mut ledger = SaveEpochLedgerV1::new_branch_v1(digest(7));
+        let candidate = lineage_with_branch(1, None, Some(branch_id(1)));
+        assert_eq!(ledger.admit_v1(candidate, digest(1)).unwrap_err(), SaveEpochRejectionV1::PredecessorMismatch);
+    }
+
+    /// The required test, verbatim: repeated restoration from the SAME
+    /// checkpoint yields DISTINCT branch ids. Two independent branch-root
+    /// ledgers, seeded from the identical parent root, each admit their
+    /// own epoch 1 under a DIFFERENT branch id without colliding with or
+    /// constraining each other in any way — proving the mechanism does
+    /// not conflate "same predecessor" with "same lineage".
+    #[test]
+    fn repeated_restoration_from_the_same_checkpoint_yields_distinct_branch_ids() {
+        let parent_root = digest(7);
+        let mut first = SaveEpochLedgerV1::new_branch_v1(parent_root);
+        let mut second = SaveEpochLedgerV1::new_branch_v1(parent_root);
+
+        assert!(first.admit_v1(lineage_with_branch(1, Some(parent_root), Some(branch_id(1))), digest(101)).is_ok());
+        assert!(second.admit_v1(lineage_with_branch(1, Some(parent_root), Some(branch_id(2))), digest(102)).is_ok());
+
+        assert_ne!(branch_id(1), branch_id(2), "the fixture itself must produce distinct ids, or this test proves nothing");
+        assert_ne!(first.current_branch(), second.current_branch());
+    }
+
+    /// Once a lineage's epoch 1 commits to a branch, every later epoch
+    /// must declare that SAME branch — a second epoch silently reverting
+    /// to `None` (or claiming a different branch) is refused, never
+    /// silently accepted as if the lineage had never branched.
+    #[test]
+    fn a_second_epoch_declaring_a_different_branch_is_refused() {
+        let mut ledger = SaveEpochLedgerV1::new();
+        ledger.admit_v1(lineage_with_branch(1, None, Some(branch_id(1))), digest(1)).unwrap();
+        assert_eq!(
+            ledger.admit_v1(lineage_with_branch(2, Some(digest(1)), Some(branch_id(2))), digest(2)).unwrap_err(),
+            SaveEpochRejectionV1::BranchMismatch { expected: Some(branch_id(1)), candidate: Some(branch_id(2)) }
+        );
+    }
+
+    /// The same refusal fires when a second epoch drops the branch back
+    /// to `None` — silently forgetting a lineage was ever branched is
+    /// exactly as wrong as claiming a different one.
+    #[test]
+    fn a_second_epoch_silently_dropping_the_branch_to_none_is_refused() {
+        let mut ledger = SaveEpochLedgerV1::new();
+        ledger.admit_v1(lineage_with_branch(1, None, Some(branch_id(1))), digest(1)).unwrap();
+        assert_eq!(
+            ledger.admit_v1(lineage_with_branch(2, Some(digest(1)), None), digest(2)).unwrap_err(),
+            SaveEpochRejectionV1::BranchMismatch { expected: Some(branch_id(1)), candidate: None }
+        );
+    }
+
+    /// A never-branched lineage (today's ordinary case) is completely
+    /// unaffected by the branch-consistency rule — every epoch declares
+    /// `None` and admission proceeds exactly as it always has.
+    #[test]
+    fn an_unbranched_lineage_admits_normally_across_multiple_epochs() {
+        let mut ledger = SaveEpochLedgerV1::new();
+        ledger.admit_v1(lineage(1, None), digest(1)).unwrap();
+        assert!(ledger.admit_v1(lineage(2, Some(digest(1))), digest(2)).is_ok());
+        assert_eq!(ledger.current_branch(), None);
+    }
+
+    /// A resumed boot seeded with a recovered branch must re-admit into
+    /// that SAME branch, not silently default to `None` — proves
+    /// `seeded_from_recovery_v1`'s `branch` parameter is load-bearing,
+    /// not decorative.
+    #[test]
+    fn a_ledger_seeded_with_a_branch_enforces_it_on_the_next_admission() {
+        let mut ledger = SaveEpochLedgerV1::seeded_from_recovery_v1(SaveEpoch::new(3), digest(3), Some(branch_id(1)));
+        assert_eq!(ledger.current_branch(), Some(branch_id(1)));
+        assert_eq!(
+            ledger.admit_v1(lineage_with_branch(4, Some(digest(3)), None), digest(4)).unwrap_err(),
+            SaveEpochRejectionV1::BranchMismatch { expected: Some(branch_id(1)), candidate: None }
+        );
+        assert!(ledger.admit_v1(lineage_with_branch(4, Some(digest(3)), Some(branch_id(1))), digest(4)).is_ok());
+    }
+
+    // -- `APEX-T9.2`: `SaveEpochLineageV1.branch` codec ---------------------
+
+    #[test]
+    fn a_lineage_with_a_branch_round_trips() {
+        let original = lineage_with_branch(1, None, Some(branch_id(1)));
+        let value = original.to_manifest_value_v1().unwrap();
+        assert_eq!(SaveEpochLineageV1::from_manifest_value_v1(value).unwrap(), original);
+    }
+
+    #[test]
+    fn a_lineage_without_a_branch_round_trips_and_is_distinct_from_one_with() {
+        let unbranched = lineage(1, None);
+        let branched = lineage_with_branch(1, None, Some(branch_id(1)));
+        assert_ne!(unbranched, branched);
+        let value = unbranched.to_manifest_value_v1().unwrap();
+        assert_eq!(SaveEpochLineageV1::from_manifest_value_v1(value).unwrap(), unbranched);
+    }
+
+    // -- `APEX-T9.2`: `BranchRestorationRecordV1` ---------------------------
+
+    fn restoration_record() -> BranchRestorationRecordV1 {
+        BranchRestorationRecordV1 {
+            source_branch: Some(branch_id(1)),
+            source_epoch: SaveEpoch::new(47),
+            source_manifest_root: digest(7),
+            new_branch: branch_id(2),
+            operator_note: "rolling back a griefed capital before the next reset".to_owned(),
+            decided_at_unix_seconds: 1_800_000_000,
+        }
+    }
+
+    #[test]
+    fn a_restoration_record_round_trips() {
+        let original = restoration_record();
+        let bytes = crate::apex::manifest::encode_manifest_v1(&original, &branch_restoration_record_limits_v1()).unwrap();
+        let decoded: BranchRestorationRecordV1 = crate::apex::manifest::decode_manifest_v1(&bytes, &branch_restoration_record_limits_v1()).unwrap();
+        assert_eq!(original, decoded);
+    }
+
+    /// A restoration FROM an unbranched save (the ordinary case for the
+    /// very first branching action any server ever performs) round-trips
+    /// with `source_branch: None` — restoring from an unbranched save is
+    /// legitimate, not an error condition this codec must reject.
+    #[test]
+    fn a_restoration_record_with_no_source_branch_round_trips() {
+        let original = BranchRestorationRecordV1 { source_branch: None, ..restoration_record() };
+        let bytes = crate::apex::manifest::encode_manifest_v1(&original, &branch_restoration_record_limits_v1()).unwrap();
+        let decoded: BranchRestorationRecordV1 = crate::apex::manifest::decode_manifest_v1(&bytes, &branch_restoration_record_limits_v1()).unwrap();
+        assert_eq!(original, decoded);
+    }
+
+    #[test]
+    fn a_restoration_record_with_a_non_ascii_operator_note_round_trips() {
+        let original = BranchRestorationRecordV1 { operator_note: "opérateur décision — 回滚".to_owned(), ..restoration_record() };
+        let bytes = crate::apex::manifest::encode_manifest_v1(&original, &branch_restoration_record_limits_v1()).unwrap();
+        let decoded: BranchRestorationRecordV1 = crate::apex::manifest::decode_manifest_v1(&bytes, &branch_restoration_record_limits_v1()).unwrap();
+        assert_eq!(original, decoded);
+    }
+
+    #[test]
+    fn an_altered_operator_note_moves_the_decoded_record() {
+        let original = restoration_record();
+        let altered = BranchRestorationRecordV1 { operator_note: "a different justification entirely".to_owned(), ..original.clone() };
+        assert_ne!(original, altered);
+    }
+
+    // -- `APEX-T9.2`: stale-client branch check -----------------------------
+
+    #[test]
+    fn a_client_on_the_same_branch_as_the_server_is_not_stale() {
+        assert!(decide_stale_branch_v1(Some(branch_id(1)), Some(branch_id(1))).is_ok());
+        assert!(decide_stale_branch_v1(None, None).is_ok(), "two lineages that were never branched must also agree");
+    }
+
+    #[test]
+    fn a_client_on_a_different_branch_than_the_server_is_named_stale() {
+        assert_eq!(
+            decide_stale_branch_v1(Some(branch_id(1)), Some(branch_id(2))),
+            Err(StaleBranchRejectionV1::BranchChanged { client_known: Some(branch_id(1)), server_current: Some(branch_id(2)) })
+        );
+    }
+
+    /// A client that connected before branching ever happened (`None`)
+    /// reconnecting after a real branch now exists (`Some`) must be
+    /// caught too — `None` is not a wildcard that matches anything.
+    #[test]
+    fn a_pre_branch_client_reconnecting_after_a_real_branch_is_named_stale() {
+        assert_eq!(
+            decide_stale_branch_v1(None, Some(branch_id(1))),
+            Err(StaleBranchRejectionV1::BranchChanged { client_known: None, server_current: Some(branch_id(1)) })
+        );
     }
 
     // -- semantic root -----------------------------------------------------

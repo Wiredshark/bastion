@@ -216,11 +216,11 @@ impl RtSim {
             // rather than recovering twice.
             let (recovered_world_baseline_root, save_epoch_ledger_seed): (
                 Option<[u8; 32]>,
-                Option<(common::apex::identity::SaveEpoch, common::apex::digest::ArtifactDigestV1)>,
+                Option<(common::apex::identity::SaveEpoch, common::apex::digest::ArtifactDigestV1, Option<common::apex::identity::UniverseBranchId>)>,
             ) = match crate::save_universe::recover_v1(&save_universe_layout) {
                 Ok(crate::save_universe::SaveUniverseRecoveryV1::Recovered { manifest, manifest_identity }) => (
                     manifest.world_baseline_root.map(|d| *d.bytes.as_array()),
-                    Some((manifest.lineage.epoch, manifest_identity.digest)),
+                    Some((manifest.lineage.epoch, manifest_identity.digest, manifest.lineage.branch)),
                 ),
                 Ok(crate::save_universe::SaveUniverseRecoveryV1::EpochZero) => (None, None),
                 Err(e) => {
@@ -288,7 +288,7 @@ impl RtSim {
             data.world_baseline_root = Some(fresh_root_bytes);
 
             match save_epoch_ledger_seed {
-                Some((epoch, root)) => common::apex::save_universe::SaveEpochLedgerV1::seeded_from_recovery_v1(epoch, root),
+                Some((epoch, root, branch)) => common::apex::save_universe::SaveEpochLedgerV1::seeded_from_recovery_v1(epoch, root, branch),
                 None => common::apex::save_universe::SaveEpochLedgerV1::new(),
             }
         };
@@ -800,6 +800,13 @@ impl RtSim {
         let lineage = common::apex::save_universe::SaveEpochLineageV1 {
             epoch: candidate_epoch,
             predecessor_root: self.save_epoch_ledger.current_root(),
+            // Carry forward whatever branch the ledger already tracks
+            // (`None` for a lineage never branched, unchanged behavior;
+            // `Some(id)` once `APEX-T9.2` branching creates one) -- an
+            // ordinary forward save must not silently drop a branch
+            // identity, or the very next `admit_v1` would refuse it as a
+            // `BranchMismatch`.
+            branch: self.save_epoch_ledger.current_branch(),
         };
 
         let rtsim_payload = match crate::save_universe::stage_payload_v1(
