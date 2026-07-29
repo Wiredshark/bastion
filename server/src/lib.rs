@@ -287,6 +287,78 @@ pub struct Server {
     server_boot_id: ServerBootId,
 }
 
+/// `E11-6b`: the ordering half of `Server::bastion_persistent_item_snapshots`,
+/// extracted so the claim -- output order is a function of `Uid`, not of
+/// join/allocator iteration order -- is directly testable without a live
+/// ECS world. The `entity.id()`/amount/position fields ride along
+/// unsorted-on; only the `Uid` decides the order, and it is dropped from
+/// the output because it was never part of the caller's contract.
+fn sort_persistent_item_snapshots_by_uid_v1(
+    mut items: Vec<(u32, u64, Vec3<f32>, Uid)>,
+) -> Vec<(u32, u64, Vec3<f32>)> {
+    items.sort_by_key(|(_, _, _, uid)| *uid);
+    items.into_iter().map(|(entity_id, amount, pos, _)| (entity_id, amount, pos)).collect()
+}
+
+#[cfg(test)]
+mod bastion_persistent_item_snapshots_v1 {
+    use super::*;
+
+    fn uid(n: u64) -> Uid { Uid(std::num::NonZeroU64::new(n).unwrap()) }
+
+    /// The row's falsifier: the SAME set of `Uid`-tagged rows, presented
+    /// in two DIFFERENT pre-sort orders (standing in for two different
+    /// allocator/join iteration orders across two runs with the same
+    /// live entities), must sort to the IDENTICAL output. Before `E11-6b`
+    /// the pre-sort order was itself the (entity-id) sort key, so this
+    /// would have been vacuous; it is real here because the two input
+    /// orders below are not already `Uid`-sorted.
+    #[test]
+    fn output_order_is_a_function_of_uid_not_of_pre_sort_order() {
+        let row = |entity_id: u32, amount: u64, x: f32, uid_n: u64| {
+            (entity_id, amount, Vec3::new(x, 0.0, 0.0), uid(uid_n))
+        };
+        // entity ids deliberately DISAGREE with uid order (3's uid is
+        // smallest, 1's is largest) -- a leftover entity-id sort would
+        // produce a visibly different order than a uid sort here.
+        let forward = vec![row(1, 10, 1.0, 30), row(2, 20, 2.0, 20), row(3, 30, 3.0, 10)];
+        let shuffled = vec![row(3, 30, 3.0, 10), row(1, 10, 1.0, 30), row(2, 20, 2.0, 20)];
+
+        let a = sort_persistent_item_snapshots_by_uid_v1(forward);
+        let b = sort_persistent_item_snapshots_by_uid_v1(shuffled);
+
+        assert_eq!(a, b, "the same Uid set in a different pre-sort order produced a different result");
+        assert_eq!(
+            a,
+            vec![(3, 30, Vec3::new(3.0, 0.0, 0.0)), (2, 20, Vec3::new(2.0, 0.0, 0.0)), (1, 10, Vec3::new(1.0, 0.0, 0.0))],
+            "output must be uid-ascending, not entity-id-ascending"
+        );
+    }
+
+    /// Non-vacuity: sorting by the OLD key (entity id) on these same
+    /// fixtures gives a DIFFERENT order than the uid sort above -- proof
+    /// the two orderings are not accidentally coincident on this data,
+    /// which would make the falsifier above pass for the wrong reason.
+    #[test]
+    fn entity_id_order_and_uid_order_genuinely_differ_on_this_fixture() {
+        let row = |entity_id: u32, amount: u64, x: f32, uid_n: u64| {
+            (entity_id, amount, Vec3::new(x, 0.0, 0.0), uid(uid_n))
+        };
+        let mut by_entity_id = vec![row(1, 10, 1.0, 30), row(2, 20, 2.0, 20), row(3, 30, 3.0, 10)];
+        by_entity_id.sort_by_key(|(entity_id, _, _, _)| *entity_id);
+        let entity_id_order: Vec<u32> = by_entity_id.iter().map(|(id, _, _, _)| *id).collect();
+
+        let by_uid = sort_persistent_item_snapshots_by_uid_v1(vec![
+            row(1, 10, 1.0, 30),
+            row(2, 20, 2.0, 20),
+            row(3, 30, 3.0, 10),
+        ]);
+        let uid_order: Vec<u32> = by_uid.iter().map(|(id, _, _)| *id).collect();
+
+        assert_ne!(entity_id_order, uid_order, "fixture's entity-id and uid orders coincide -- strengthen it");
+    }
+}
+
 impl Server {
     /// Create a new `Server`
     pub fn new(
@@ -3310,15 +3382,24 @@ impl Server {
         let items = ecs.read_storage::<comp::PickupItem>();
         let positions = ecs.read_storage::<comp::Pos>();
         let piles = ecs.read_storage::<comp::bastion::BastionPile>();
-        let mut out: Vec<_> = (&entities, &items, &positions, &piles)
+        // `E11-6b`: sorted by `Uid`, not the raw `entity.id()` this
+        // returns -- `entity.id()` is an allocator SLOT, reused across
+        // despawn/respawn and dependent on join iteration order, exactly
+        // `E11-6a`'s named hazard (same class DET-PHY-005 fixed for
+        // physics candidates). The tuple keeps `entity.id()` as its
+        // first field for callers that already depend on that shape;
+        // only the SORT KEY changes -- extracted to
+        // `sort_persistent_item_snapshots_by_uid_v1` so the ordering
+        // claim is directly testable without a live ECS world.
+        let uids = ecs.read_storage::<Uid>();
+        let unsorted: Vec<_> = (&entities, &items, &positions, &piles, &uids)
             .join()
-            .filter(|(_, item, _, _)| {
+            .filter(|(_, item, _, _, _)| {
                 item.item().item_definition_id().itemdef_id() == Some(asset_id)
             })
-            .map(|(entity, item, pos, _)| (entity.id(), item.amount() as u64, pos.0))
+            .map(|(entity, item, pos, _, uid)| (entity.id(), item.amount() as u64, pos.0, *uid))
             .collect();
-        out.sort_by_key(|(entity_id, _, _)| *entity_id);
-        out
+        sort_persistent_item_snapshots_by_uid_v1(unsorted)
     }
 
     /// bastion (B5.5 deep, harness oracle): every live inventory that
