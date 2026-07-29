@@ -95,6 +95,34 @@ impl Index {
             .and_then(|s| s.economy.as_ref())
             .map(|econ| econ.get_site_prices())
     }
+
+    /// `APEX-T4.3`: the "economic baseline" component of
+    /// `WorldBaselineManifestV1` -- one composite root over every site's
+    /// own `Economy::canonical_baseline_hash_v1`, since the spec asks for
+    /// ONE economic-baseline root and `Economy` is inherently per-site.
+    /// Pairs are sorted by site id before hashing (same canonicalize-
+    /// before-hash discipline as `Civs::baseline_site_graph_v1`, `E11-3b`);
+    /// a site with no `Economy` yet contributes nothing, same as an
+    /// absent descriptor elsewhere in this program.
+    pub fn world_economy_root_v1(&self) -> common::apex::digest::ArtifactIdentityV1 {
+        let mut per_site: Vec<(u64, common::apex::digest::ArtifactDigestV1)> = self
+            .sites
+            .ids()
+            .filter_map(|id| {
+                let site = self.sites.get(id);
+                site.economy.as_ref().map(|economy| (id.id(), economy.canonical_baseline_hash_v1().digest))
+            })
+            .collect();
+        per_site.sort_unstable_by_key(|(id, _)| *id);
+
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&(per_site.len() as u64).to_be_bytes());
+        for (id, digest) in per_site {
+            buf.extend_from_slice(&id.to_be_bytes());
+            buf.extend_from_slice(digest.bytes.as_array());
+        }
+        common::apex::digest::hash_artifact_bytes_v1(&buf)
+    }
 }
 
 impl IndexOwned {

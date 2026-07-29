@@ -26,6 +26,7 @@
     ("server/src/lib.rs", "self.state.ecs().write_resource::<TickStart>().0 = Instant::now();", 0),
     ("server/src/lib.rs", "state.ecs_mut().insert(TickStart(Instant::now()));", 0),
     ("server/src/metrics.rs", "let since_the_epoch = SystemTime::now()", 0),
+    ("server/src/rtsim/mod.rs", "detected_at_unix_seconds: std::time::SystemTime::now()", 0),
     ("server/src/rtsim/mod.rs", "self.last_saved = Some(Instant::now());", 0),
     ("server/src/session_registry.rs", "fn now() -> Instant { Instant::now() }", 0),
     ("server/src/state_ext.rs", "Instant::now(),", 0),

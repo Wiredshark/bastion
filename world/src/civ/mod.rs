@@ -794,6 +794,32 @@ impl Civs {
         neighbor_ids_v1(&self.track_map, site).into_iter()
     }
 
+    /// `APEX-T4.3`: the "site identity, site origin/kind graph" component
+    /// of `WorldBaselineManifestV1` -- maps every site's stable identity
+    /// (`Id<Site>`, confirmed never-recycled at `E11-3b`'s own premise-
+    /// check), origin, kind (via `SiteKind::baseline_kind_tag_v1`), and
+    /// neighbor edges (via [`Self::neighbors`], already canonically
+    /// sorted) into `common`'s dependency-free `SiteBaselineEntryV1`.
+    /// `common::apex::world_baseline::compute_world_baseline_root_v1`
+    /// re-sorts by `site_id` regardless, so this function's own iteration
+    /// order (`Store::ids()`, insertion order) does not need to be
+    /// canonical itself.
+    pub fn baseline_site_graph_v1(&self) -> Vec<common::apex::world_baseline::SiteBaselineEntryV1> {
+        self.sites
+            .ids()
+            .map(|site_id| {
+                let site = self.sites.get(site_id);
+                common::apex::world_baseline::SiteBaselineEntryV1 {
+                    site_id: site_id.id(),
+                    origin_x: site.center.x,
+                    origin_y: site.center.y,
+                    kind_tag: site.kind.baseline_kind_tag_v1(),
+                    neighbor_site_ids: self.neighbors(site_id).map(|n| n.id()).collect(),
+                }
+            })
+            .collect()
+    }
+
     /// Find the cheapest route between two places
     fn route_between(&self, a: Id<Site>, b: Id<Site>) -> Option<(Path<Id<Site>>, f32)> {
         let heuristic = move |p: &Id<Site>| {

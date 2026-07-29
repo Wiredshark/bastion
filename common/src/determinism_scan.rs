@@ -130,11 +130,17 @@ const FAMILIES: &[FamilyV1] = &[
 // comment explaining what was found -- Rust doesn't allow a doc comment
 // on an array literal used inline in another const's initializer.
 
-/// 44 sites at pin time. Not individually classified this pass -- every
-/// one needs its OWN read to tell "this is a metrics/logging timestamp"
-/// (fine) from "this feeds an authoritative eligibility decision" (the
-/// `WeatherLerp`-class hazard this family exists to catch).
-const INSTANT_SYSTEMTIME_BASELINE: [(&str, &str, u32); 44] = instant_systemtime_baseline();
+/// 45 sites at pin time (44 + 1, `E11-2b`-era pin; `APEX-T4.3`'s
+/// `detected_at_unix_seconds` field is a diagnostic timestamp written
+/// into a sidecar file for OPERATOR information only -- never read back
+/// into the simulation, never feeds RNG or any deterministic decision --
+/// the "metrics/logging timestamp" case this family's own doc names as
+/// fine, not the `WeatherLerp`-class hazard). Not individually classified
+/// this pass otherwise -- every other site needs its OWN read to tell
+/// "this is a metrics/logging timestamp" (fine) from "this feeds an
+/// authoritative eligibility decision" (the hazard this family exists to
+/// catch).
+const INSTANT_SYSTEMTIME_BASELINE: [(&str, &str, u32); 45] = instant_systemtime_baseline();
 
 /// 3 sites at pin time, all verified: comments naming a hasher this code
 /// already avoids, zero live usage. A clean family is still worth
@@ -240,7 +246,7 @@ const RAW_ENTITY_ID_BASELINE: [(&str, &str, u32); 20] = raw_entity_id_baseline()
 // Baseline data lives in generated `const fn`s below purely to keep the
 // (very long) tuple literals out of the doc-commented declarations above.
 
-const fn instant_systemtime_baseline() -> [(&'static str, &'static str, u32); 44] {
+const fn instant_systemtime_baseline() -> [(&'static str, &'static str, u32); 45] {
     include!("determinism_scan_baseline_instant.rs")
 }
 const fn default_hasher_baseline() -> [(&'static str, &'static str, u32); 3] {

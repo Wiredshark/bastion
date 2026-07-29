@@ -45,6 +45,15 @@ pub enum SaveStoreKindV1 {
     RtsimBackup,
     /// `terrain/chunk_X_Y.dat` — persisted per-chunk block diffs.
     TerrainChunk,
+    /// `rtsim/world_baseline_mismatch.json` — `APEX-T4.3`'s recorded-loss
+    /// sidecar. Written by `RtSim::new` BEFORE a world-baseline-mismatched
+    /// rtsim save is purged and regenerated (`RESOLUTION_LAW_V1`: "loss is
+    /// recorded"), so the fact of the mismatch survives even though
+    /// `data.dat` itself gets overwritten. Same presence-is-the-diagnosis
+    /// shape as `RtsimBackup`; its content (both roots + a timestamp) is
+    /// available via the artifact's own bytes, not re-parsed here --
+    /// this row still only diagnoses, it does not interpret.
+    WorldBaselineMismatch,
 }
 
 impl SaveStoreKindV1 {
@@ -214,6 +223,9 @@ fn artifact(root: &Path, path: &Path, kind: SaveStoreKindV1) -> Option<SaveArtif
         // Chunk files carry no version word of their own; their format is
         // pinned by the terrain-persistence code, not by the file.
         SaveStoreKindV1::TerrainChunk => FoundVersionV1::Undeclared,
+        // The mismatch sidecar carries no version field either -- its
+        // PRESENCE is the diagnosis (module doc), not a version to read.
+        SaveStoreKindV1::WorldBaselineMismatch => FoundVersionV1::Undeclared,
     };
 
     Some(SaveArtifactV1 {
@@ -294,6 +306,8 @@ pub fn inventory_save_dir_v1(root: &Path) -> SaveInventoryV1 {
                 SaveStoreKindV1::RtsimData
             } else if name.starts_with("data.ron_backup") {
                 SaveStoreKindV1::RtsimBackup
+            } else if name == "world_baseline_mismatch.json" {
+                SaveStoreKindV1::WorldBaselineMismatch
             } else {
                 continue;
             };
@@ -471,6 +485,29 @@ mod save_inventory_v1 {
         assert_eq!(backups.len(), 2, "a backup was dropped: {:?}", report.artifacts);
         assert_eq!(backups[0].found_version, FoundVersionV1::Declared(4));
         assert_eq!(backups[1].found_version, FoundVersionV1::Declared(3));
+    }
+
+    /// `APEX-T4.3`: the world-baseline-mismatch sidecar is discovered the
+    /// same way an rtsim backup is -- its presence alone is the
+    /// diagnosis, and it survives being catalogued even though the live
+    /// `data.dat` next to it has already been regenerated (a fresh,
+    /// post-purge rtsim file coexists with the sidecar recording the
+    /// loss that caused the purge).
+    #[test]
+    fn world_baseline_mismatch_sidecar_is_reported() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path();
+        write(root, "rtsim/data.dat", &rtsim_bytes(10));
+        write(
+            root,
+            "rtsim/world_baseline_mismatch.json",
+            b"{\"stored_root\":\"aa\",\"observed_root\":\"bb\",\"detected_at_tick\":42}",
+        );
+
+        let report = inventory_save_dir_v1(root);
+        assert_eq!(report.artifacts_of(SaveStoreKindV1::RtsimData).count(), 1);
+        let sidecars: Vec<_> = report.artifacts_of(SaveStoreKindV1::WorldBaselineMismatch).collect();
+        assert_eq!(sidecars.len(), 1, "the mismatch sidecar was dropped: {:?}", report.artifacts);
     }
 
     /// Stores that disagree produce a report and no verdict.

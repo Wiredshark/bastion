@@ -82,6 +82,18 @@ pub struct Data {
     #[serde(default)]
     pub time_of_day: TimeOfDay,
 
+    /// `APEX-T4.3` (`T4.6-INTERIM`): the world-baseline root this rtsim
+    /// data was last checked against, raw bytes not the structured
+    /// `ProtocolDigestV1` -- `Data` is serde/`rmp_serde`, not the apex
+    /// manifest-value codec, and the two are deliberately not
+    /// cross-wired (confirmed type mismatch at premise-check). `T4.6`'s
+    /// durable save manifest is this field's REAL home; this is the
+    /// bridge until it exists -- when `T4.6` lands, this field migrates
+    /// into it and this doc comment is how that builder finds it.
+    /// Sibling `#[serde(default)]` pattern, no version bump.
+    #[serde(default)]
+    pub world_baseline_root: Option<[u8; 32]>,
+
     // If true, rtsim data will be ignored (and, hence, overwritten on next save) on load.
     #[serde(default)]
     pub should_purge: bool,

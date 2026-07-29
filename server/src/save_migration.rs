@@ -76,6 +76,26 @@ pub fn rtsim_support_v1(found_version: u32) -> SaveSupportV1 {
     }
 }
 
+/// `APEX-T4.3`'s rtsim world-baseline support policy, same shape as
+/// [`rtsim_support_v1`] and governed by the SAME resolution law: the
+/// `"world"` policy in [`RESOLUTION_POLICIES`], ruled
+/// INCOMPATIBLE-WITH-EPOCH by default with an `RTSIM_IGNORE_VERSION`-
+/// shaped escape hatch (`RTSIM_IGNORE_WORLD_BASELINE`). Not `Unsupported`
+/// (the escape hatch is a real recovery path, even if a blunt one); not
+/// `Migratable` (nothing transforms the data -- the world simply moved
+/// on). A separate function from `rtsim_support_v1`, not a combined one:
+/// version and baseline are independent axes (a save can be current-
+/// version but stale-baseline, or vice versa), matching this file's own
+/// per-axis-per-store convention (`character_db_support_v1` is likewise
+/// its own function).
+pub fn rtsim_baseline_support_v1(baseline_matches: bool) -> SaveSupportV1 {
+    if baseline_matches {
+        SaveSupportV1::Supported
+    } else {
+        SaveSupportV1::ExplicitRecoveryOnly
+    }
+}
+
 /// The character db's support policy.
 ///
 /// `applied` is the highest refinery version present in the save;
@@ -509,6 +529,16 @@ mod save_migration_v1 {
             "a FUTURE rtsim save is recoverable by the same operator flag, which is what the \
              loader does — not Unsupported"
         );
+    }
+
+    /// `APEX-T4.3`: the baseline axis is independent of the version axis
+    /// and follows the `"world"` resolution policy's own ruling
+    /// (INCOMPATIBLE-WITH-EPOCH by default, `RTSIM_IGNORE_WORLD_BASELINE`
+    /// as the declared escape hatch).
+    #[test]
+    fn rtsim_baseline_support_follows_the_world_resolution_policy() {
+        assert_eq!(rtsim_baseline_support_v1(true), SaveSupportV1::Supported);
+        assert_eq!(rtsim_baseline_support_v1(false), SaveSupportV1::ExplicitRecoveryOnly);
     }
 
     /// A character db ahead of the build is `Unsupported`. refinery has

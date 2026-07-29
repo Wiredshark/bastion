@@ -70,9 +70,13 @@ pub struct SiteBaselineEntryV1 {
 #[derive(Clone, Debug, PartialEq)]
 pub struct WorldBaselineInputV1 {
     pub world_seed: u32,
-    pub worldgen: WorldgenProtocolVersion,
-    pub content: ContentProtocolVersion,
-    pub numeric: NumericProtocolVersion,
+    /// `None` means "not yet honestly derivable" -- `T4-PV`'s own scope,
+    /// undescribed rather than fabricated, same discipline as `T4.1`'s
+    /// own bootstrap manifest leaving un-derived slots absent. `Some`
+    /// only once `T4-PV` wires a real frozen-vocabulary derivation.
+    pub worldgen: Option<WorldgenProtocolVersion>,
+    pub content: Option<ContentProtocolVersion>,
+    pub numeric: Option<NumericProtocolVersion>,
     /// Opaque caller-supplied root -- see the module doc's dependency note.
     pub map_geometry_root: DigestBytes32V1,
     /// Canonicalized by [`compute_world_baseline_root_v1`] (sorted by
@@ -90,6 +94,20 @@ fn push_i32(buf: &mut Vec<u8>, v: i32) { buf.extend_from_slice(&v.to_be_bytes())
 fn push_u16(buf: &mut Vec<u8>, v: u16) { buf.extend_from_slice(&v.to_be_bytes()); }
 fn push_bytes32(buf: &mut Vec<u8>, v: &DigestBytes32V1) { buf.extend_from_slice(v.as_array()); }
 
+/// `Option<u32>` has no bare-bytes representation that can't collide with
+/// a real value (`0` is a valid `ProtocolVersion`) -- an explicit 0/1
+/// presence marker, same discipline the manifest-value codec uses for
+/// `Option<T>` elsewhere in this program.
+fn push_option_u32(buf: &mut Vec<u8>, v: Option<u32>) {
+    match v {
+        Some(x) => {
+            buf.push(1);
+            push_u32(buf, x);
+        },
+        None => buf.push(0),
+    }
+}
+
 /// The frozen preimage encoding -- every field length-prefixed or
 /// fixed-width so no two distinct inputs can ever produce the same
 /// bytes (the classic concatenation collision, same discipline as
@@ -97,9 +115,9 @@ fn push_bytes32(buf: &mut Vec<u8>, v: &DigestBytes32V1) { buf.extend_from_slice(
 fn world_baseline_preimage_v1(input: &WorldBaselineInputV1) -> Vec<u8> {
     let mut buf = Vec::new();
     push_u32(&mut buf, input.world_seed);
-    push_u32(&mut buf, input.worldgen.get().get());
-    push_u32(&mut buf, input.content.get().get());
-    push_u32(&mut buf, input.numeric.get().get());
+    push_option_u32(&mut buf, input.worldgen.map(|w| w.get().get()));
+    push_option_u32(&mut buf, input.content.map(|c| c.get().get()));
+    push_option_u32(&mut buf, input.numeric.map(|n| n.get().get()));
     push_bytes32(&mut buf, &input.map_geometry_root);
 
     // Canonicalize by site_id -- an unrelated pre-sort permutation (the
@@ -147,9 +165,9 @@ mod tests {
     fn baseline() -> WorldBaselineInputV1 {
         WorldBaselineInputV1 {
             world_seed: 12345,
-            worldgen: WorldgenProtocolVersion::new(ProtocolVersion::new(1)),
-            content: ContentProtocolVersion::new(ProtocolVersion::new(1)),
-            numeric: NumericProtocolVersion::new(ProtocolVersion::new(1)),
+            worldgen: Some(WorldgenProtocolVersion::new(ProtocolVersion::new(1))),
+            content: Some(ContentProtocolVersion::new(ProtocolVersion::new(1))),
+            numeric: Some(NumericProtocolVersion::new(ProtocolVersion::new(1))),
             map_geometry_root: digest_root(1),
             sites: vec![site(1, 0, 0, 10, &[2]), site(2, 5, 5, 11, &[1])],
             economy_root: digest_root(2),
@@ -167,7 +185,7 @@ mod tests {
     fn altered_worldgen_protocol_identity_moves_the_root() {
         let base = baseline();
         let mut altered = base.clone();
-        altered.worldgen = WorldgenProtocolVersion::new(ProtocolVersion::new(2));
+        altered.worldgen = Some(WorldgenProtocolVersion::new(ProtocolVersion::new(2)));
         assert_ne!(compute_world_baseline_root_v1(&base).unwrap(), compute_world_baseline_root_v1(&altered).unwrap());
     }
 
@@ -177,7 +195,7 @@ mod tests {
     fn altered_content_protocol_identity_moves_the_root() {
         let base = baseline();
         let mut altered = base.clone();
-        altered.content = ContentProtocolVersion::new(ProtocolVersion::new(2));
+        altered.content = Some(ContentProtocolVersion::new(ProtocolVersion::new(2)));
         assert_ne!(compute_world_baseline_root_v1(&base).unwrap(), compute_world_baseline_root_v1(&altered).unwrap());
     }
 
@@ -199,7 +217,7 @@ mod tests {
     fn altered_numeric_protocol_identity_moves_the_root() {
         let base = baseline();
         let mut altered = base.clone();
-        altered.numeric = NumericProtocolVersion::new(ProtocolVersion::new(2));
+        altered.numeric = Some(NumericProtocolVersion::new(ProtocolVersion::new(2)));
         assert_ne!(compute_world_baseline_root_v1(&base).unwrap(), compute_world_baseline_root_v1(&altered).unwrap());
     }
 
@@ -257,6 +275,29 @@ mod tests {
         let mut b = baseline();
         b.world_seed = a.world_seed; // explicit: proves this specific field, held equal, keeps the root equal
         assert_eq!(compute_world_baseline_root_v1(&a).unwrap(), compute_world_baseline_root_v1(&b).unwrap());
+    }
+
+    /// `T4-PV`'s own scope: an unpopulated (`None`) protocol version must
+    /// hash distinctly from EVERY populated value, including the
+    /// "reserved" value `0` -- otherwise "not yet derived" would be
+    /// silently indistinguishable from a real, meaningful protocol
+    /// version once one happens to be `0`.
+    #[test]
+    fn unpopulated_protocol_version_is_distinct_from_every_populated_value() {
+        let unpopulated = WorldBaselineInputV1 { worldgen: None, ..baseline() };
+        let populated_zero = WorldBaselineInputV1 {
+            worldgen: Some(WorldgenProtocolVersion::new(ProtocolVersion::new(0))),
+            ..baseline()
+        };
+        let populated_one = baseline(); // worldgen = Some(ProtocolVersion::new(1))
+
+        let unpopulated_root = compute_world_baseline_root_v1(&unpopulated).unwrap();
+        let zero_root = compute_world_baseline_root_v1(&populated_zero).unwrap();
+        let one_root = compute_world_baseline_root_v1(&populated_one).unwrap();
+
+        assert_ne!(unpopulated_root, zero_root, "None must not collide with Some(0)");
+        assert_ne!(unpopulated_root, one_root);
+        assert_ne!(zero_root, one_root);
     }
 
     /// The domain separation is real, not decorative: the same preimage

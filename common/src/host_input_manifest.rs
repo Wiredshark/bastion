@@ -148,6 +148,14 @@ const CATALOG: &[EnvVarSiteV1] = &[
     ),
     site(
         "server/src/rtsim/mod.rs",
+        "RTSIM_IGNORE_WORLD_BASELINE",
+        Recovery,
+        "loads a world-baseline-mismatched rtsim save unmigrated instead of purging -- \
+         the ExplicitRecoveryOnly mechanism, world resolution policy \
+         (server/src/save_migration.rs, APEX-T4.3)",
+    ),
+    site(
+        "server/src/rtsim/mod.rs",
         "VELOREN_RTSIM",
         GameplayVariant,
         "data-location: which rtsim save directory this run reads/writes",

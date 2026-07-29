@@ -526,6 +526,13 @@ impl Server {
 
         #[cfg(feature = "worldgen")]
         let map = world.get_map_data(index.as_index_ref(), &pools);
+        // `APEX-T4.3`: computed here, right after `map` is built and
+        // before it's moved into an ECS resource below (`RtSim::new`,
+        // called much later, cannot borrow it by then) -- one
+        // computation, two consumers (this root, and `map` itself for
+        // the real bootstrap send).
+        #[cfg(feature = "worldgen")]
+        let map_geometry_root = common_net::msg::world_msg::world_map_geometry_root_v1(&map);
         #[cfg(not(feature = "worldgen"))]
         let map = common_net::msg::WorldMapMsg {
             dimensions_lg: Vec2::zero(),
@@ -967,6 +974,7 @@ impl Server {
                 index.as_index_ref(),
                 &world,
                 data_dir.to_owned(),
+                map_geometry_root,
             ) {
                 Ok(rtsim) => {
                     state.ecs_mut().insert(rtsim.state().data().time_of_day);

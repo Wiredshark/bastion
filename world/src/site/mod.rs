@@ -132,6 +132,43 @@ pub enum SiteKind {
 }
 
 impl SiteKind {
+    /// `APEX-T4.3`: a frozen, append-only numeric tag for the "site
+    /// origin/kind graph" component of `WorldBaselineManifestV1` --
+    /// `common` cannot depend on `world::site::SiteKind` (the dependency
+    /// runs the other way), so `SiteBaselineEntryV1::kind_tag` needs this
+    /// mapping. Tag `0` is reserved for `Site.kind == None` (a site that
+    /// has not yet been assigned a kind). Declaration order at the time
+    /// this was written; a NEW variant appends a NEW tag, never
+    /// renumbers an existing one -- same discipline as `DigestDomainIdV1`.
+    pub fn baseline_kind_tag_v1(&self) -> u16 {
+        match self {
+            SiteKind::Refactor => 1,
+            SiteKind::CliffTown => 2,
+            SiteKind::SavannahTown => 3,
+            SiteKind::DesertCity => 4,
+            SiteKind::ChapelSite => 5,
+            SiteKind::DwarvenMine => 6,
+            SiteKind::CoastalTown => 7,
+            SiteKind::Citadel => 8,
+            SiteKind::Terracotta => 9,
+            SiteKind::GiantTree => 10,
+            SiteKind::Gnarling => 11,
+            SiteKind::Bridge(_, _) => 12,
+            SiteKind::Adlet => 13,
+            SiteKind::Haniwa => 14,
+            SiteKind::PirateHideout => 15,
+            SiteKind::JungleRuin => 16,
+            SiteKind::RockCircle => 17,
+            SiteKind::TrollCave => 18,
+            SiteKind::Camp => 19,
+            SiteKind::Cultist => 20,
+            SiteKind::Sahagin => 21,
+            SiteKind::VampireCastle => 22,
+            SiteKind::GliderCourse => 23,
+            SiteKind::Myrmidon => 24,
+        }
+    }
+
     pub fn meta(&self) -> Option<SiteKindMeta> {
         match self {
             SiteKind::Refactor => Some(SiteKindMeta::Settlement(SettlementKindMeta::Default)),
@@ -197,6 +234,67 @@ impl SiteKind {
             | SiteKind::TrollCave
             | SiteKind::Camp => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod baseline_kind_tag_v1_tests {
+    use super::*;
+
+    const ALL: [SiteKind; 24] = [
+        SiteKind::Refactor,
+        SiteKind::CliffTown,
+        SiteKind::SavannahTown,
+        SiteKind::DesertCity,
+        SiteKind::ChapelSite,
+        SiteKind::DwarvenMine,
+        SiteKind::CoastalTown,
+        SiteKind::Citadel,
+        SiteKind::Terracotta,
+        SiteKind::GiantTree,
+        SiteKind::Gnarling,
+        SiteKind::Bridge(Vec2::new(0, 0), Vec2::new(1, 1)),
+        SiteKind::Adlet,
+        SiteKind::Haniwa,
+        SiteKind::PirateHideout,
+        SiteKind::JungleRuin,
+        SiteKind::RockCircle,
+        SiteKind::TrollCave,
+        SiteKind::Camp,
+        SiteKind::Cultist,
+        SiteKind::Sahagin,
+        SiteKind::VampireCastle,
+        SiteKind::GliderCourse,
+        SiteKind::Myrmidon,
+    ];
+
+    /// `APEX-T4.3`: every variant must have a distinct, explicit, nonzero
+    /// tag (zero is reserved for `Site.kind == None` at the call site) --
+    /// a collision here would silently merge two different site kinds
+    /// into one baseline-graph identity.
+    #[test]
+    fn every_variant_has_a_distinct_nonzero_tag() {
+        use std::collections::HashSet;
+        let tags: HashSet<u16> = ALL.iter().map(|k| k.baseline_kind_tag_v1()).collect();
+        assert_eq!(tags.len(), ALL.len(), "duplicate baseline_kind_tag_v1 value");
+        assert!(!tags.contains(&0), "tag 0 is reserved for the absent-kind case, never a real variant");
+    }
+
+    /// Exact frozen values, pinned so a future reordering of the enum
+    /// (which would NOT change these match arms, since they're written
+    /// as explicit literals) is caught if anyone "cleans up" the match
+    /// into a discriminant cast instead.
+    #[test]
+    fn exact_frozen_tag_table() {
+        assert_eq!(SiteKind::Refactor.baseline_kind_tag_v1(), 1);
+        assert_eq!(SiteKind::Myrmidon.baseline_kind_tag_v1(), 24);
+        assert_eq!(SiteKind::Bridge(Vec2::new(0, 0), Vec2::new(1, 1)).baseline_kind_tag_v1(), 12);
+        // Bridge's own inner data must not affect the tag -- it is a
+        // "kind of site" identity, not a full-geometry one.
+        assert_eq!(
+            SiteKind::Bridge(Vec2::new(0, 0), Vec2::new(1, 1)).baseline_kind_tag_v1(),
+            SiteKind::Bridge(Vec2::new(99, -5), Vec2::new(3, 3)).baseline_kind_tag_v1(),
+        );
     }
 }
 

@@ -56,11 +56,17 @@ impl RtSim {
         index: IndexRef,
         world: &World,
         data_dir: PathBuf,
+        // `APEX-T4.3` chunk 2: the caller (`server/src/lib.rs`) already
+        // builds `WorldMapMsg` via `World::get_map_data` for the real
+        // bootstrap send -- passed in rather than re-derived here, one
+        // computation, two consumers. See
+        // `common_net::msg::world_msg::world_map_geometry_root_v1`.
+        map_geometry_root: common::apex::digest::ArtifactIdentityV1,
     ) -> Result<Self, ron::Error> {
         let file_path = Self::get_file_path(data_dir);
 
         info!("Looking for rtsim data at {}...", file_path.display());
-        let data = 'load: {
+        let mut data = 'load: {
             if std::env::var("RTSIM_NOLOAD").map_or(true, |v| v != "1") {
                 match File::open(&file_path) {
                     Ok(file) => {
@@ -132,6 +138,87 @@ impl RtSim {
             info!("Rtsim data generated.");
             data
         };
+
+        // `APEX-T4.3` chunk 2: verify the freshly-generated world's
+        // baseline against whatever this rtsim data was last checked
+        // against, BEFORE wiring it into live simulation (`RtState::new`
+        // below is the reconciliation-commit point this row's own
+        // architecture note names -- world generation is already
+        // complete by this line, `world`/`index` are the finished
+        // product).
+        {
+            let baseline_input = common::apex::world_baseline::WorldBaselineInputV1 {
+                world_seed,
+                // `T4-PV` (parked, orchestrator-ruled): undescribed
+                // rather than fabricated, same discipline as `T4.1`'s
+                // own un-derived bootstrap-manifest slots. `T4-PV`
+                // populates these once a real frozen-vocabulary
+                // derivation exists for each.
+                worldgen: None,
+                content: None,
+                numeric: None,
+                map_geometry_root: map_geometry_root.digest.bytes,
+                sites: world.civs().baseline_site_graph_v1(),
+                economy_root: index.world_economy_root_v1().digest.bytes,
+            };
+            let fresh_root = common::apex::world_baseline::compute_world_baseline_root_v1(&baseline_input)
+                .expect("a locally-constructed baseline input always encodes under the domain's own limit");
+            let fresh_root_bytes: [u8; 32] = *fresh_root.bytes.as_array();
+
+            if let Some(stored_root_bytes) = data.world_baseline_root
+                && stored_root_bytes != fresh_root_bytes
+            {
+                // `RESOLUTION_LAW_V1` ("loss is recorded"): write the
+                // sidecar BEFORE any purge below, so the fact of the
+                // mismatch survives even though `data.dat` itself is
+                // about to be overwritten with fresh data. Best-effort:
+                // a write failure here must not block startup, since the
+                // mismatch disposition itself (purge/ignore) still has
+                // to happen either way.
+                #[derive(serde::Serialize)]
+                struct WorldBaselineMismatchRecordV1 {
+                    stored_root: Vec<u8>,
+                    observed_root: Vec<u8>,
+                    detected_at_unix_seconds: u64,
+                }
+                let record = WorldBaselineMismatchRecordV1 {
+                    stored_root: stored_root_bytes.to_vec(),
+                    observed_root: fresh_root_bytes.to_vec(),
+                    detected_at_unix_seconds: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0),
+                };
+                let sidecar_path = file_path.with_file_name("world_baseline_mismatch.json");
+                match serde_json::to_vec_pretty(&record) {
+                    Ok(bytes) => {
+                        if let Err(e) = fs::write(&sidecar_path, bytes) {
+                            error!(?e, "failed to write world-baseline-mismatch sidecar (proceeding anyway)");
+                        }
+                    },
+                    Err(e) => error!(?e, "failed to encode world-baseline-mismatch sidecar (proceeding anyway)"),
+                }
+
+                let ignore_baseline = std::env::var("RTSIM_IGNORE_WORLD_BASELINE").is_ok();
+                if ignore_baseline {
+                    warn!(
+                        "Rtsim data's recorded world baseline does not match this world \
+                         (RTSIM_IGNORE_WORLD_BASELINE set, loading unmigrated -- the ExplicitRecoveryOnly path)"
+                    );
+                } else {
+                    warn!(
+                        "Rtsim data's recorded world baseline does not match this world \
+                         (worldgen/content/economy changed since this save was written); \
+                         rtsim data will be purged and regenerated"
+                    );
+                    data = Data::generate(settings, world, index);
+                }
+            }
+
+            // Stamp the current baseline as the new floor -- covers both
+            // the first-ever check (`None`) and every check that agreed.
+            data.world_baseline_root = Some(fresh_root_bytes);
+        }
 
         let mut this = Self {
             last_saved: None,

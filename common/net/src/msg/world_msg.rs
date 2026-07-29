@@ -129,6 +129,23 @@ pub struct WorldMapMsg {
     pub default_chunk: Arc<TerrainChunk>,
 }
 
+/// `APEX-T4.3` chunk 2: the "canonical map geometry" component of
+/// `WorldBaselineManifestV1` -- reuses `WorldMapMsg` (already the
+/// canonical, wire-serialized map representation `GameSync` itself sends
+/// as `world_map`) rather than deriving a second, parallel geometry
+/// encoding. Takes an already-built `WorldMapMsg` (the caller, `server/
+/// src/lib.rs`, already computes one via `World::get_map_data` for the
+/// real bootstrap send) rather than owning its own threadpool access --
+/// one computation, two consumers, no re-derivation. `WorldMapMsg`'s own
+/// fields are `Vec`s built from deterministic worldgen output (no
+/// `HashMap` on the struct itself), so hashing its canonical bincode
+/// bytes is a real identity, not an iteration-order artifact.
+pub fn world_map_geometry_root_v1(map: &WorldMapMsg) -> common::apex::digest::ArtifactIdentityV1 {
+    let bytes = bincode::serde::encode_to_vec(map, bincode::config::legacy())
+        .expect("WorldMapMsg is the same type GameSync sends over the wire; it always encodes");
+    common::apex::digest::hash_artifact_bytes_v1(&bytes)
+}
+
 pub type SiteId = common::trade::SiteId;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

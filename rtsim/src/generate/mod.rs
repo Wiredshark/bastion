@@ -115,6 +115,10 @@ impl Data {
             tick: 0,
             time_of_day: TimeOfDay(settings.start_time),
             should_purge: false,
+            // `APEX-T4.3`: stamped by `RtSim::new` right after generation,
+            // not here -- this constructor doesn't have the freshly-
+            // computed root available.
+            world_baseline_root: None,
         };
 
         let initial_factions = (0..16)
