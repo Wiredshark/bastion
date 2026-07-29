@@ -1,4 +1,7 @@
 [
+    ("bastion-harness/src/bin/apex_fresh_rebuild_record.rs", "let entry = std::fs::read_dir(&d)", 0),
+    ("bastion-harness/src/determinism_regression.rs", "let mut entries = fs::read_dir(current)", 0),
+    ("bastion-harness/src/main.rs", "for entry in std::fs::read_dir(&dir).map_err(|e| format!(\"read_dir {dir:?}: {e}\"))? {", 0),
     ("bastion-server/src/bastion_assets.rs", "match std::fs::read_dir(&vox_dir) {", 0),
     ("bastion-server/src/bastion_traversal_tooling.rs", "for entry in fs::read_dir(root).unwrap() {", 0),
     ("bastion-server/src/bastion_traversal_tooling.rs", "for entry in std::fs::read_dir(repo_root().join(\"rtsim/src/data\")).unwrap() {", 0),

@@ -182,7 +182,7 @@ pub const FAMILIES: &[FamilyV1] = &[
 /// existing line (verified via `git diff --stat` showing insertions
 /// only). Landed on top of `E13` chunk 5's own +4 (`query_server`
 /// root), so the array grows 50 -> 54 -> 77.
-const INSTANT_SYSTEMTIME_BASELINE: [(&str, &str, u32); 77] = instant_systemtime_baseline();
+const INSTANT_SYSTEMTIME_BASELINE: [(&str, &str, u32); 152] = instant_systemtime_baseline();
 
 /// 3 sites at pin time, all verified: comments naming a hasher this code
 /// already avoids, zero live usage. A clean family is still worth
@@ -193,7 +193,7 @@ const DEFAULT_HASHER_BASELINE: [(&str, &str, u32); 3] = default_hasher_baseline(
 /// scanner-file convention, sort-immediately-after; 1 is
 /// save_inventory.rs, sorts before return but not adjacently). 9 not yet
 /// reviewed.
-const READ_DIR_BASELINE: [(&str, &str, u32); 17] = read_dir_baseline();
+const READ_DIR_BASELINE: [(&str, &str, u32); 20] = read_dir_baseline();
 
 /// 184 sites at pin time -- the largest family by far, and per the module
 /// doc's standing limit, the least trustworthy one without a type-aware
@@ -239,7 +239,7 @@ const READ_DIR_BASELINE: [(&str, &str, u32); 17] = read_dir_baseline();
 /// see that registry's own note. +3 here: the fixed line itself (now
 /// SAFE, matching the family's own sort-immediately convention) plus 2
 /// self-catching comments in this fix's own prose.
-const HASHMAP_ITERATION_BASELINE: [(&str, &str, u32); 195] = hashmap_iteration_baseline();
+const HASHMAP_ITERATION_BASELINE: [(&str, &str, u32); 267] = hashmap_iteration_baseline();
 
 /// 19 sites (15 at E11-6a pin time, 2026-07-28; +4 net after E11-6b's
 /// fix -- the one real misuse below was corrected in place, its old line
@@ -341,7 +341,7 @@ const RAW_ENTITY_ID_BASELINE: [(&str, &str, u32); 23] = raw_entity_id_baseline()
 // Baseline data lives in generated `const fn`s below purely to keep the
 // (very long) tuple literals out of the doc-commented declarations above.
 
-const fn instant_systemtime_baseline() -> [(&'static str, &'static str, u32); 77] {
+const fn instant_systemtime_baseline() -> [(&'static str, &'static str, u32); 152] {
     include!("determinism_scan_baseline_instant.rs")
 }
 const fn default_hasher_baseline() -> [(&'static str, &'static str, u32); 3] {
@@ -355,10 +355,10 @@ const fn default_hasher_baseline() -> [(&'static str, &'static str, u32); 3] {
 // gone. Any regeneration must preserve `//` lines, or stop and hand the
 // merge back to a human. Caught in `E13` chunk 2, on a rebase, by six
 // deleted comment lines that no scan result explained.
-const fn read_dir_baseline() -> [(&'static str, &'static str, u32); 17] {
+const fn read_dir_baseline() -> [(&'static str, &'static str, u32); 20] {
     include!("determinism_scan_baseline_read_dir.rs")
 }
-const fn hashmap_iteration_baseline() -> [(&'static str, &'static str, u32); 195] {
+const fn hashmap_iteration_baseline() -> [(&'static str, &'static str, u32); 267] {
     include!("determinism_scan_baseline_hashmap_iteration.rs")
 }
 const fn raw_entity_id_baseline() -> [(&'static str, &'static str, u32); 23] {

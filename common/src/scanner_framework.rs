@@ -54,7 +54,7 @@ use std::{collections::HashMap, fs, path::Path};
 /// what `rng_source_registry`, `numeric_surface`, `host_input_manifest`
 /// and `selection_registry` were built against; the rest are `E13`'s
 /// widening, each recorded with what it added.
-pub const AUTHORITATIVE_SCAN_ROOTS: [&str; 10] = [
+pub const AUTHORITATIVE_SCAN_ROOTS: [&str; 11] = [
     "common/src",
     "server/src",
     "rtsim/src",
@@ -122,6 +122,21 @@ pub const AUTHORITATIVE_SCAN_ROOTS: [&str; 10] = [
     // because it carries authoritative state -- and said that way so a
     // future reader doesn't infer authority from membership.
     "common/query_server/src",
+    // E14-5 chunk 3: `bastion-harness/src` -- THE INSTRUMENT. It holds
+    // no game state and is not authoritative, so it entered on a
+    // different question from every root above it: not "is this a
+    // hazard" but "can this make the harness REPORT a wobble it did not
+    // observe, or MISS one it did".
+    //
+    // Taken LAST and deliberately: all 148 sites were bucketed
+    // (HARNESS_TRIAGE_V1), the 20 that a receiver-type check could not
+    // resolve were given per-site verdicts
+    // (HARNESS_EVIDENCE_PATH_VERDICTS), and the three real defects were
+    // FIXED (E14-5a) before this root was taken. Pinning 148 sites
+    // while any were unread would have frozen "not yet examined" into a
+    // baseline that reads like "reviewed" -- the orphan-baseline
+    // failure wearing a different hat.
+    "bastion-harness/src",
 ];
 
 /// The workspace members deliberately NOT scanned, each with the reason
@@ -140,16 +155,8 @@ pub const AUTHORITATIVE_SCAN_ROOTS: [&str; 10] = [
 /// Counts are from the `E13` chunk-5 sweep and are indicative, not
 /// pinned -- they say how much is behind each exclusion, so a reviewer
 /// can judge the cost of reversing one.
-pub const UNSCANNED_WORKSPACE_MEMBERS: [(&str, &str); 16] = [
+pub const UNSCANNED_WORKSPACE_MEMBERS: [(&str, &str); 15] = [
     // --- Deserves a follow-up judgement, ranked first deliberately ---
-    (
-        "bastion-harness",
-        "148 hits across 25.6k lines. THE LARGEST EXCLUSION AND THE MOST ARGUABLE ONE: this is \
-         the determinism harness itself. It holds no game state, so it is not authoritative -- \
-         but it PRODUCES THE EVIDENCE, and a harness whose own ordering wobbles reports wobble it \
-         did not observe. STILL EXCLUDED, but no longer unexamined: E14-5 chunk 1 triaged all 148 \
-         -- see HARNESS_TRIAGE_V1, which found one real evidence-path defect",
-    ),
     (
         "common/assets",
         "1 read_dir + 2 wall-clock. Asset DISCOVERY order, which DET-AST-024/025 already \
