@@ -1196,6 +1196,7 @@ impl<'pass> FirstPassDrawer<'pass> {
         FigureDrawer {
             render_pass,
             queue: self.borrow.queue,
+            device: self.borrow.device,
             runtime: &mut *self.figure_batch,
             legacy_pipeline: &self.pipelines.figure.pipeline,
             batch_pipeline: &self.pipelines.figure_batch.pipeline,
@@ -1295,12 +1296,23 @@ impl<'pass_ref, 'pass: 'pass_ref> DebugDrawer<'pass_ref, 'pass> {
 pub struct FigureDrawer<'pass_ref, 'pass: 'pass_ref> {
     render_pass: Scope<'pass_ref, wgpu::RenderPass<'pass>>,
     queue: &'pass wgpu::Queue,
+    device: &'pass wgpu::Device,
     runtime: &'pass_ref mut crate::render::figure_batch::FigureBatchRuntimeV1,
     legacy_pipeline: &'pass wgpu::RenderPipeline,
     batch_pipeline: &'pass wgpu::RenderPipeline,
 }
 
 impl<'pass_ref, 'pass: 'pass_ref> FigureDrawer<'pass_ref, 'pass> {
+    pub fn reconcile_cull(
+        &mut self,
+        batch: &bastion_renderer_r0d::gpu_cull::CanonicalCullBatchV1,
+    ) -> Result<
+        bastion_renderer_r0d::gpu_cull::AcceleratorResultV1,
+        crate::render::figure_batch::FigureBatchRuntimeErrorV1,
+    > {
+        self.runtime.reconcile_cull(self.device, self.queue, batch)
+    }
+
     pub fn draw<'data: 'pass>(
         &mut self,
         model: SubModel<'data, terrain::Vertex>,

@@ -86,7 +86,10 @@ use specs::{
     Entities, Entity as EcsEntity, Join, LazyUpdate, LendJoin, ReadExpect, ReadStorage, SystemData,
     WorldExt, shred,
 };
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 use treeculler::{BVol, BoundingSphere};
 use vek::*;
 
@@ -7479,6 +7482,80 @@ impl FigureMgr {
                 && token.frame_digest == evidence.frame_digest
                 && token.resource_set_digest == evidence.resource_set_digest
         });
+        // Build the complete semantic figure set before model lookup. The canonical CPU
+        // reference remains authoritative; GPU mode may affect admission only after
+        // exact ordered parity reconciliation.
+        let accelerated_admitted = ready.and_then(|token| {
+            let interpolated = ecs.read_storage::<crate::ecs::comp::Interpolated>();
+            let mut candidates = Vec::new();
+            for (entity, pos, body, _health, scale, _object, uid, _) in (
+                &ecs.entities(),
+                &ecs.read_storage::<Pos>(),
+                &ecs.read_storage::<Body>(),
+                ecs.read_storage::<Health>().maybe(),
+                ecs.read_storage::<Scale>().maybe(),
+                ecs.read_storage::<Object>().maybe(),
+                &uids,
+                &colonists,
+            )
+                .join()
+                .filter(|(_, _, _, health, _, _, _, _)| health.is_none_or(|h| !h.is_dead))
+                .filter(|(entity, _, _, _, _, _, _, _)| *entity != viewpoint_entity)
+                .filter(|(entity, _, _, _, _, object, _, _)| {
+                    !self.should_flicker(*time, *object)
+                        && !crate::r1d_tiers::decision_for_uid(
+                            uids.get(*entity).map_or(0, |uid| uid.0.get()),
+                        )
+                        .is_some_and(|decision| {
+                            decision.representation
+                                == bastion_renderer_r0d::individual_tier::RepresentationTierV1::Culled
+                        })
+                })
+            {
+                let semantic_entity = figure_semantic_digest(*uid)?;
+                let center = interpolated.get(entity).map_or(pos.0, |value| value.pos);
+                let radius = scale.map_or(1.0, |value| value.0) * 2.0;
+                let force_visible = crate::render::bastion_r0d::deterministic_capture_enabled()
+                    || matches!(body, Body::Ship(_))
+                    || center.distance_squared(camera.get_focus_pos()) < 32.0f32.powi(2);
+                candidates.push(
+                    bastion_renderer_r0d::gpu_cull::DrawCandidateV1::new(
+                        semantic_entity,
+                        bastion_renderer_r0d::gpu_cull::CullPassV1::Main,
+                        center.into_array(),
+                        radius,
+                        force_visible,
+                    )
+                    .ok()?,
+                );
+            }
+            if candidates.is_empty() {
+                return None;
+            }
+            let frustum = camera.frustum();
+            let snapshot = bastion_renderer_r0d::gpu_cull::FrustumSnapshotV1::new(
+                frustum.planes.map(|plane| [plane.x, plane.y, plane.z, plane.w]),
+                frustum.points.map(|point| [point.x, point.y, point.z]),
+            )
+            .ok()?;
+            let batch = bastion_renderer_r0d::gpu_cull::CanonicalCullBatchV1::new(
+                token.client_applied_generation,
+                snapshot,
+                candidates,
+            )
+            .ok()?;
+            let result = match drawer.reconcile_cull(&batch) {
+                Ok(result) => result,
+                Err(_) => batch.cpu_reference_result().ok()?,
+            };
+            Some(
+                result
+                    .admitted()
+                    .iter()
+                    .copied()
+                    .collect::<BTreeSet<_>>(),
+            )
+        });
         let mut groups: BTreeMap<[u8; 32], Vec<MainBatchCandidate<'_>>> = BTreeMap::new();
         for (entity, pos, body, _, inventory, scale, collider, _) in (
             &ecs.entities(),
@@ -7505,6 +7582,14 @@ impl FigureMgr {
                 decision.representation
                     == bastion_renderer_r0d::individual_tier::RepresentationTierV1::Culled
             }) {
+                continue;
+            }
+            if let Some(admitted) = accelerated_admitted.as_ref()
+                && colonists.get(entity).is_some()
+                && let Some(uid) = uids.get(entity)
+                && let Some(semantic_entity) = figure_semantic_digest(*uid)
+                && !admitted.contains(&semantic_entity)
+            {
                 continue;
             }
             if let Some((bound, model, atlas)) = self.get_model_for_render(

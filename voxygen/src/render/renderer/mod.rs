@@ -620,8 +620,16 @@ impl Renderer {
             .collect();
         let figure_gpu = super::figure_gpu::FigureGpuRuntimeV1::new(&device)
             .map_err(|error| RenderError::CustomError(format!("{error:?}")))?;
-        let figure_batch = super::figure_batch::FigureBatchRuntimeV1::new(&device, &layouts.figure)
-            .map_err(|error| RenderError::CustomError(format!("{error:?}")))?;
+        let compute_supported = adapter
+            .get_downlevel_capabilities()
+            .flags
+            .contains(wgpu::DownlevelFlags::COMPUTE_SHADERS);
+        let figure_batch = super::figure_batch::FigureBatchRuntimeV1::new(
+            &device,
+            &layouts.figure,
+            compute_supported,
+        )
+        .map_err(|error| RenderError::CustomError(format!("{error:?}")))?;
 
         Ok(Self {
             device,
