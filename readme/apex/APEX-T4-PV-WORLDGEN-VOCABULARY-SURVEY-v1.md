@@ -192,7 +192,36 @@ answers these on vibes is worse than one that flags them.
      `map`/`collect`/`for_each`; `lib.rs`'s two `threadpool.install()`
      calls only scope work onto the pool.
 
-   **Bound, stated plainly: this is a survey by reading, not an
+   **MEASURED 2026-07-29 (`T4-PV-EXP`) — THE EXPERIMENT AGREES WITH
+   THE SURVEY.** `world/examples/t4pv_thread_count_experiment.rs`
+   generates seed 1337 at 1, 2 and 8 threads and prints the canonical
+   map-geometry root. All three are bit-identical:
+
+   ```
+   threads=1  f85c6ac2f01e0b6acbb9e6545203d2fb46ccd33c34abc8a51b89f73fcc51bc89
+   threads=2  f85c6ac2f01e0b6acbb9e6545203d2fb46ccd33c34abc8a51b89f73fcc51bc89
+   threads=8  f85c6ac2f01e0b6acbb9e6545203d2fb46ccd33c34abc8a51b89f73fcc51bc89
+   ```
+
+   What the measurement does and does not cover, so nobody inherits
+   more than was measured:
+   - It compares `world_map_geometry_root_v1` — `T4.3`'s OWN identity
+     for a generated map, reused rather than a comparison invented for
+     the occasion, so a difference here is one the rest of the program
+     would also see. It covers map geometry and the site/POI listing.
+     Per-chunk block generation sits downstream of it and is separately
+     seeded per chunk by `ARCH-003`.
+   - The world is GENERATED, not loaded: `FileOpts::LoadAsset` (what
+     the default server and the existing timing example use) would read
+     a prebuilt map off disk and measure nothing about generation.
+   - One seed, three thread counts, one run each, at a 9/9 map rather
+     than the 10/10 default. The size is a cost control, disclosed:
+     order-sensitivity in a stage would show at any size, and all four
+     stages under test still run. Single-threaded 9/9 generation is
+     slow enough that a 10-minute wrapper cut the first sequence short,
+     which is worth knowing for anyone repeating this at full size.
+
+   **Bound, stated plainly: the survey was a reading, not an
    experiment.** It establishes that no stage's SHAPE admits
    order-dependence, which is a stronger claim than a passing test but
    a different one from a measurement. The confirming experiment is
