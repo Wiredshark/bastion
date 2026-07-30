@@ -15055,3 +15055,36 @@ output + nonzero exit means "never ran," and it was nearly counted as broken.
 **TALLY: 26 of 39 mapped, 13 broken.** Remaining 9 chained as batches 9-10 WITH
 10-minute cooldowns (the back-to-back launches were tripping the machine-image
 create-rate limit — my pacing error; the standing cooldown rule existed).
+
+## ★ CANDIDATE MAJOR REGRESSION: AGING WAS NEVER CORPUS-TESTED (07/30, late)
+
+5b flagged an apparent VM-vs-local contradiction: my wave 14 "5/36 mine
+failures" vs its local "16/17 fail" — **resolved: DIFFERENT COMMITS.** Wave 14
+attested `2b1b3ef0` (#55+#57, PRE-aging); 5b's control is `851ed5e952` (aging).
+**Nobody ever fanned the aging commit's b5 corpus.**
+
+**THE PROCESS GAP IS MINE AND IT'S THE DAY'S OWN RULE, SKIPPED ONCE:** aging is
+a score-perturbing arbitration change — exactly the class that re-rolls
+per-seed outcomes and requires a re-baseline. I applied that rule to
+world-writes and to 5b's #56 drain loop, and skipped it for aging because the
+MECHANISM argument ("inert: 8/9 residual excluded by blocked_by") said it
+wouldn't bite. **A mechanism argument is not a corpus run.** "No regressions in
+everything tested" was true — the corpus wasn't in the tested set.
+
+**5b's 16/17 at 851ed5e952** includes previously-always-passing seeds failing:
+74 and 129 on mine_cleared, 66 on tl_ok. Mechanistically plausible in the bad
+direction: aging BOOSTS unattempted jobs, pulling colonists to aged hard/far
+jobs ahead of the productive order that used to complete these seeds — bounded
+boost, unbounded reordering.
+
+**IN FLIGHT: wave 15** — b5 seeds 49-96 on `bastion/pin-aging` (= 851ed5e952
+exactly). Confirms or refutes at corpus scale AND doubles as the cross-platform
+check (5b's Windows 16/17 vs the VM on identical code). Sweep tail (9
+scenarios) PARKED for it — killed the batch 9-10 chain; this outranks it.
+
+**DECISION PRE-STATED: if wave 15 confirms, aging is REVERTED, not patched.**
+Unproven by its own record, zero demonstrated rescues, now a corpus regression
+against it; a clean single-commit revert is cheap, and the `times_offered`
+instrumentation can re-land separately without the behaviour. #56's verdict is
+DOWNSTREAM (its 17/17-vs-16/17 was measured against a possibly-broken
+baseline); aging-vs-pre-aging resolves first.
