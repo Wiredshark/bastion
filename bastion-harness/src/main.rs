@@ -3168,6 +3168,21 @@ fn b5_scenario(args: &Args) -> ExitCode {
         min: mine_min,
         max: mine_max,
     });
+    // First pass: which (x,y,z) cells are still open jobs at all, so the
+    // second pass can ask column-relative questions (anything above/below
+    // still open) without re-querying the board per neighbor.
+    let mut open_cells: std::collections::HashSet<(i32, i32, i32)> = std::collections::HashSet::new();
+    for x in mine_min.x..=mine_max.x {
+        for y in mine_min.y..=mine_max.y {
+            for z in mine_min.z..=mine_max.z {
+                if let Some(common::comp::bastion::BastionInspectKind::Job(_)) =
+                    server.bastion_inspect_cell(Vec3::new(x, y, z))
+                {
+                    open_cells.insert((x, y, z));
+                }
+            }
+        }
+    }
     let mut mine_cell_diag: Vec<serde_json::Value> = Vec::new();
     for x in mine_min.x..=mine_max.x {
         for y in mine_min.y..=mine_max.y {
@@ -3176,17 +3191,78 @@ fn b5_scenario(args: &Args) -> ExitCode {
                 if let Some(common::comp::bastion::BastionInspectKind::Job(j)) =
                     server.bastion_inspect_cell(pos)
                 {
+                    // Attribution, not magnitude (Fable's fan finding,
+                    // 2026-07-30): total corpus-wide friction doesn't
+                    // discriminate pass/fail, but "how many timeouts fired
+                    // on a job that's STILL open right now" might -- this
+                    // cell being present in mine_cell_diag at all already
+                    // means it never completed, so its timeout count here
+                    // is exactly the "timeouts on a never-completed job"
+                    // figure for this cell.
+                    //
+                    // Demoted per Fable's 2026-07-30 correction: the SUM of
+                    // this field across all still-open cells
+                    // (timeouts_on_never_completed_mine_cells, below) is
+                    // tautological -- 0 by construction on every passing
+                    // seed (no open cells to sum), positive by construction
+                    // on every failing seed. Kept per-cell because it's
+                    // still useful WITHIN a single failure to see where
+                    // friction concentrated; not read as a pass/fail
+                    // discriminator on its own.
+                    let timeouts_here = server.bastion_timeout_count_for_pos(pos);
+                    // STRUCTURAL POSITION (Fable-directed, 2026-07-30):
+                    // magnitude metrics (raw timeouts, max_same_target)
+                    // proved not to discriminate pass/fail across the
+                    // corpus (seed 76: 29 timeouts, passed; seed 55: 13,
+                    // failed). Fable's new hypothesis is that WHERE a
+                    // never-completed cell sits in the volume's dependency
+                    // structure -- not how much friction it saw -- is what
+                    // discriminates. No new probing needed: `open_cells`
+                    // (first pass, above) already has everything required.
+                    // cells_above_open / cells_below_open count OTHER
+                    // still-open cells in the same (x,y) column; a cell
+                    // with nothing open above it is the exposed "frontier"
+                    // of its column right now (is_column_frontier) -- if a
+                    // frontier cell is still stuck, nothing structural is
+                    // blocking it, which points at mechanism 2 directly. A
+                    // cell with open cells below it is one whose own
+                    // non-completion is, by definition, sitting on top of
+                    // (gating exposure of) further job(s) in that column.
+                    let cells_above_open = ((z + 1)..=mine_max.z)
+                        .filter(|zz| open_cells.contains(&(x, y, *zz)))
+                        .count();
+                    let cells_below_open = (mine_min.z..z)
+                        .filter(|zz| open_cells.contains(&(x, y, *zz)))
+                        .count();
                     mine_cell_diag.push(serde_json::json!({
                         "pos": [x, y, z],
                         "progress": j.progress,
                         "claimant": j.claimant,
                         "unreachable": j.unreachable,
                         "needs_materials": j.needs_materials,
+                        "timeouts_on_this_cell": timeouts_here,
+                        "is_top_layer": z == mine_max.z,
+                        "cells_above_open": cells_above_open,
+                        "cells_below_open": cells_below_open,
+                        "is_column_frontier": cells_above_open == 0,
                     }));
                 }
             }
         }
     }
+    // ATTRIBUTION, not magnitude (Fable's fan finding, 2026-07-30):
+    // max_same_target_timeouts and raw travel_timeouts both failed to
+    // discriminate pass/fail across the corpus (seed 76 took 29 timeouts
+    // and passed; seed 55 took 13 and failed). Summing timeouts_on_this_
+    // cell across every STILL-OPEN cell answers a sharper question:
+    // "how much of this run's friction landed on a job that never
+    // completed" -- the same self-protecting shape as `mine_jobs == 27`
+    // (a designation-time invariant, not a completion-window guess).
+    let timeouts_on_never_completed_mine_cells: u64 = mine_cell_diag
+        .iter()
+        .filter_map(|c| c.get("timeouts_on_this_cell"))
+        .filter_map(|v| v.as_u64())
+        .sum();
     // MECHANISM-2 TERRAIN-REACHABILITY PROBE (Ben/Fable-directed,
     // 2026-07-30): for every mine cell STILL on the board after the full
     // budget, ask the offline (unbounded-budget), read-only reachability
@@ -3194,8 +3270,10 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // "(a) no path exists" (a correctness bug: the local exposure+stance
     // heuristic claims a job is doable when it isn't) and "(b) a path
     // exists but the live per-tick A* budget can't find it" (a tuning
-    // problem). `climb_reach = 2` matches this file's own scramble-reach
-    // convention at colonist skill level 0. node_cap 100000, generous --
+    // problem). Three ascent tiers -- step/jump/scramble, matching the
+    // live pathfinder's actual `neighbors` fn (see the probe's own doc
+    // comment in bastion_jobs.rs for why the tiers land at +1/+2/+3 and
+    // which one is skill-gated). node_cap 100000, generous --
     // this runs once, offline, and can afford to be slow; a cap firing
     // reads as `probe_incomplete` ("couldn't determine"), never as
     // `path_exists: false` ("determined, no path") -- Fable's ruling:
@@ -3224,22 +3302,65 @@ fn b5_scenario(args: &Args) -> ExitCode {
         let min_distance = server.bastion_min_distance_to_target(target);
         let last_timeout = server.bastion_last_timeout_pos(target);
         let probe_from = |from: Vec3<i32>| -> serde_json::Value {
-            let (standable, strict, lenient, incomplete, cols_strict, cols_lenient) =
-                server.bastion_offline_reachability_probe(from, target, 2, 100_000);
+            let (standable, step, jump, scramble, incomplete, cols_step, cols_jump, cols_scramble) =
+                server.bastion_offline_reachability_probe(from, target, 100_000);
             serde_json::json!({
                 "from": [from.x, from.y, from.z],
                 "standable_target": standable.map(|s| [s.x, s.y, s.z]),
-                "path_exists_strict": strict,
-                "path_exists_lenient": lenient,
+                // Corrected tier model (Fable's ruling, matching the live
+                // pathfinder's actual neighbors fn): STEP = ordinary
+                // walking (height +1, unconditional); JUMP = height +2,
+                // UNIVERSALLY available (ground-contact gated only, not
+                // skill-gated) -- a false result here is the more
+                // surprising/concerning one; SCRAMBLE = height +3, gated
+                // on scramble_reach>=3 (climbing_level>=1), the actual
+                // skill-gated tier. Descent is asymmetric/near-unbounded
+                // in all three (matches the live "Falls" branch).
+                "path_exists_step": step,
+                "path_exists_jump": jump,
+                "path_exists_scramble": scramble,
                 "probe_incomplete": incomplete,
-                "columns_visited_strict": cols_strict,
-                "columns_visited_lenient": cols_lenient,
+                "columns_visited_step": cols_step,
+                "columns_visited_jump": cols_jump,
+                "columns_visited_scramble": cols_scramble,
             })
+        };
+        // Fable's last discriminator: does the live A* fail to FIND a
+        // route the offline probe proves exists, or find one the mover
+        // then fails to EXECUTE? Reads the Chaser's own existing
+        // read-only diagnostic_snapshot() at EVERY timeout on this
+        // position, in order -- (route existed, was it complete, how far
+        // along). No route at all -> search never produced one. Fable's
+        // refinement: route_next_idx PINNED across the sequence -> stuck
+        // at one waypoint; ADVANCING -> real route progress that still
+        // times out, a different failure than getting stuck.
+        let route_states = server.bastion_timeout_route_states(target);
+        let route_states_json: Vec<serde_json::Value> = route_states
+            .iter()
+            .map(|(exists, complete, idx)| {
+                serde_json::json!({
+                    "route_exists": exists,
+                    "route_complete": complete,
+                    "route_next_idx": idx,
+                })
+            })
+            .collect();
+        // Cheap summary so a reader doesn't have to scan the sequence by
+        // hand: is next_idx the SAME across every recorded timeout
+        // (pinned) or does it ever change (advancing)? None if there
+        // aren't at least two samples to compare, or any sample lacked an
+        // idx at all.
+        let route_next_idx_pinned: Option<bool> = {
+            let idxs: Option<Vec<usize>> = route_states.iter().map(|(_, _, idx)| *idx).collect();
+            idxs.filter(|v| v.len() >= 2)
+                .map(|v| v.windows(2).all(|w| w[0] == w[1]))
         };
         serde_json::json!({
             "target": [target.x, target.y, target.z],
             "min_distance_to_target": min_distance,
             "last_timeout_pos": last_timeout.map(|p| [p.x, p.y, p.z]),
+            "timeout_route_states": route_states_json,
+            "route_next_idx_pinned": route_next_idx_pinned,
             "from_spawn": probe_from(spawn_pos),
             "from_last_timeout": last_timeout.map(|p| {
                 probe_from(Vec3::new(p.x.floor() as i32, p.y.floor() as i32, p.z.floor() as i32))
@@ -3258,6 +3379,43 @@ fn b5_scenario(args: &Args) -> ExitCode {
             ))
         })
         .map(probe_target)
+        .collect();
+    // STRUCTURAL-POSITION TEST (Fable-directed, 2026-07-30, corrected):
+    // her first version of this test (classifying still-OPEN cells'
+    // position) repeats the same tautology the attribution metric just
+    // got demoted for -- a passing seed has no open cells, so the field is
+    // undefined for every pass and the test could only ever "confirm" on
+    // failures. Fixed by classifying TIMEOUT POSITIONS instead
+    // (bastion_all_timeout_positions): every seed, pass or fail, can have
+    // timeouts on a position that later completes anyway -- so this field
+    // is defined and comparable across BOTH failing seeds (51/54/55/61/71)
+    // and the high-friction PASSES (76/52/74/66) her message named as the
+    // test that can actually kill the hypothesis. Classification reads
+    // live terrain (bastion_block_kind), not the job board, so it's valid
+    // for cells that already got mined.
+    let mine_timeout_position_diag: Vec<serde_json::Value> = server
+        .bastion_all_timeout_positions()
+        .into_iter()
+        .filter(|(pos, _)| {
+            (mine_min.x..=mine_max.x).contains(&pos.x)
+                && (mine_min.y..=mine_max.y).contains(&pos.y)
+                && (mine_min.z..=mine_max.z).contains(&pos.z)
+        })
+        .map(|(pos, count)| {
+            let cells_below_filled = (mine_min.z..pos.z)
+                .filter(|&z| {
+                    server
+                        .bastion_block_kind(Vec3::new(pos.x, pos.y, z))
+                        .is_some_and(|k| k.is_filled())
+                })
+                .count();
+            serde_json::json!({
+                "pos": [pos.x, pos.y, pos.z],
+                "timeout_count": count,
+                "is_top_layer": pos.z == mine_max.z,
+                "cells_below_filled": cells_below_filled,
+            })
+        })
         .collect();
     // MINE MODE-1 ROOT-CAUSE PROBE (Ben/Fable-directed, 2026-07-30): the
     // "exposure" check (bastion_jobs.rs, the once-per-cycle Mine-reachability
@@ -3303,6 +3461,14 @@ fn b5_scenario(args: &Args) -> ExitCode {
     } else {
         Some(probe_target(chop_base))
     };
+    // Same attribution figure as the mine cells above, for chop_base.
+    let timeouts_on_never_completed_chop: u64 = if chop_cleared {
+        0
+    } else {
+        server.bastion_timeout_count_for_pos(chop_base) as u64
+    };
+    let timeouts_on_never_completed_jobs: u64 =
+        timeouts_on_never_completed_mine_cells + timeouts_on_never_completed_chop;
     // B5.5: drops now MERGE into piles (should_merge + persistent), so the
     // conservation assertion is the amount SUM (entity counts undercount by
     // design). Radius 16 comfortably covers the gentle-toss scatter while
@@ -4040,13 +4206,24 @@ fn b5_scenario(args: &Args) -> ExitCode {
         // MECHANISM-2 TERRAIN-REACHABILITY PROBE: report-only, does not
         // gate `pass`. One entry per still-open mine cell -- see the probe
         // definition (bastion_jobs::offline_reachability_probe) for the
-        // strict/lenient/probe_incomplete meanings. `path_exists_*: false`
-        // is evidence toward "no path exists" (a correctness bug in the
-        // exposure+stance heuristic), never proof -- the probe is a
-        // simplified column flood-fill, not the live Chaser's own model.
+        // step/jump/scramble/probe_incomplete meanings. `path_exists_*:
+        // false` on ALL THREE tiers is evidence toward "no path exists"
+        // (a correctness bug in the exposure+stance heuristic), never
+        // proof -- the probe is a simplified column flood-fill, not the
+        // live Chaser's own model.
         "b5_mine_reachability_probe": mine_reachability_probe,
         // Same probe against chop_base, only when chop never completed.
         "b5_chop_reachability_probe": chop_reachability_probe,
+        // STRUCTURAL-POSITION TEST (Fable-directed, 2026-07-30, corrected
+        // to use timeout positions, defined for every seed pass or fail --
+        // see the comment at mine_timeout_position_diag's construction).
+        // The falsifiable question: do FAILING seeds' timeouts concentrate
+        // on gating positions (is_top_layer or cells_below_filled > 0)
+        // while high-friction PASSES' timeouts land on non-gating ones?
+        // Seed 76 (worst friction in the corpus, passes) is the test this
+        // hypothesis has to survive -- if its timeouts sit on gating cells
+        // too, position isn't the discriminator either.
+        "b5_mine_timeout_position_diag": mine_timeout_position_diag,
         // MINE MODE-1 ROOT-CAUSE PROBE: Some(pos, kind) if a filled block
         // sits directly above the dig footprint's top layer -- the one
         // spot the rim-fill loop never explicitly clears to air (only the
@@ -4088,6 +4265,13 @@ fn b5_scenario(args: &Args) -> ExitCode {
         // gates `pass` -- these are measured variables, not verdicts.
         "b5_travel_timeouts": locomotion.1,
         "b5_max_same_target_timeouts": max_same_target_timeouts,
+        // ATTRIBUTION over magnitude (Fable's fan finding, 2026-07-30):
+        // both fields above failed to discriminate pass/fail across the
+        // 36-seed wave (seed 76: 29 timeouts, passes; seed 55: 13
+        // timeouts, fails). This sums timeouts that fired on a job
+        // position which is STILL open right now (never completed) --
+        // "friction happened AND stuck", not just "friction happened".
+        "b5_timeouts_on_never_completed_jobs": timeouts_on_never_completed_jobs,
         // Reported for completeness; does NOT discriminate (fires at
         // similar rates in passing and failing runs) -- never gate on this
         // alone (Fable's ruling, 2026-07-30).

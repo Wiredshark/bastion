@@ -2524,30 +2524,40 @@ impl Server {
     /// "does a walkable route exist from `from` to a valid standing
     /// position adjacent to `target`" -- see
     /// [`bastion_jobs::offline_reachability_probe`] for the full design
-    /// rationale (the strict/lenient distinction, why it isn't a
-    /// byte-perfect Chaser replica, and the `probe_incomplete` discipline).
-    /// Flattened to a plain tuple (matching this file's other harness-hook
-    /// shapes): `(standable_target, path_exists_strict,
-    /// path_exists_lenient, probe_incomplete, columns_visited_strict,
-    /// columns_visited_lenient)`.
+    /// rationale, including the corrected three-tier (step/jump/scramble)
+    /// model matching the live pathfinder's actual `neighbors` fn, and the
+    /// `probe_incomplete` discipline. Flattened to a plain tuple (matching
+    /// this file's other harness-hook shapes): `(standable_target,
+    /// path_exists_step, path_exists_jump, path_exists_scramble,
+    /// probe_incomplete, columns_visited_step, columns_visited_jump,
+    /// columns_visited_scramble)`.
     pub fn bastion_offline_reachability_probe(
         &self,
         from: vek::Vec3<i32>,
         target: vek::Vec3<i32>,
-        climb_reach: i32,
         node_cap: usize,
-    ) -> (Option<vek::Vec3<i32>>, bool, bool, bool, u32, u32) {
+    ) -> (
+        Option<vek::Vec3<i32>>,
+        bool,
+        bool,
+        bool,
+        bool,
+        u32,
+        u32,
+        u32,
+    ) {
         let ecs = self.state.ecs();
         let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
-        let r =
-            bastion_jobs::offline_reachability_probe(&terrain, from, target, climb_reach, node_cap);
+        let r = bastion_jobs::offline_reachability_probe(&terrain, from, target, node_cap);
         (
             r.standable_target,
-            r.path_exists_strict,
-            r.path_exists_lenient,
+            r.path_exists_step,
+            r.path_exists_jump,
+            r.path_exists_scramble,
             r.probe_incomplete,
-            r.columns_visited_strict,
-            r.columns_visited_lenient,
+            r.columns_visited_step,
+            r.columns_visited_jump,
+            r.columns_visited_scramble,
         )
     }
 
@@ -3304,6 +3314,53 @@ impl Server {
     }
 
     /// bastion (mechanism-2 friction instrument, harness hook, 2026-07-30):
+    /// travel-timeout count for ONE specific job position -- lets the
+    /// harness compute the ATTRIBUTION metric Fable's fan data called for
+    /// (magnitude alone doesn't discriminate pass/fail; "did the job THIS
+    /// timeout fired on ultimately complete" might). 0 if this position
+    /// never timed out.
+    pub fn bastion_timeout_count_for_pos(&self, job_pos: vek::Vec3<i32>) -> u32 {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .timeout_counts_by_pos
+            .get(&job_pos)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// bastion (mechanism-2 friction instrument, harness hook, 2026-07-30):
+    /// EVERY job position that ever timed out this run, with its count --
+    /// unlike `bastion_timeout_count_for_pos` (single position) or the
+    /// still-open-cell diag (undefined for passing seeds, since a pass has
+    /// no open cells), this enumeration exists for EVERY seed regardless of
+    /// outcome, because a position can time out one or more times and still
+    /// go on to complete. That's the point: it's the only friction-location
+    /// signal Fable's structural-position test can use without repeating
+    /// the same tautology on still-open-cell positions (undefined for
+    /// passes) one level down. Read-only, no world writes.
+    pub fn bastion_all_timeout_positions(&self) -> Vec<(vek::Vec3<i32>, u32)> {
+        let mut v: Vec<(vek::Vec3<i32>, u32)> = self
+            .state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .timeout_counts_by_pos
+            .iter()
+            .map(|(pos, count)| (*pos, *count))
+            .collect();
+        // Opus's E14-5a lesson (2026-07-30): a HashMap-order Vec reaching
+        // JSON as an array makes run-to-run diffs noisy for a reason that
+        // has nothing to do with the simulation (hashbrown's per-process
+        // random iteration seed). Count descending, position ascending as
+        // tiebreak, so the array is canonical and a diff means something.
+        v.sort_unstable_by(|a, b| {
+            b.1.cmp(&a.1)
+                .then((a.0.x, a.0.y, a.0.z).cmp(&(b.0.x, b.0.y, b.0.z)))
+        });
+        v
+    }
+
+    /// bastion (mechanism-2 friction instrument, harness hook, 2026-07-30):
     /// total TGT-DRIFT (Chaser astar-reset) events this run. On the record
     /// per Fable's ruling: this does NOT discriminate ambient friction from
     /// the failure-tail signature (fires at similar rates in passing and
@@ -3343,6 +3400,27 @@ impl Server {
             .last_timeout_pos
             .get(&job_pos)
             .copied()
+    }
+
+    /// bastion (mechanism-2 terrain probe, harness hook, 2026-07-30): the
+    /// Chaser's own route-diagnostic state at EVERY travel timeout on
+    /// `job_pos`, in order -- `(route_exists, route_complete,
+    /// route_next_idx)` per timeout. Fable's refinement: `route_next_idx`
+    /// PINNED across the sequence means stuck at one waypoint;
+    /// ADVANCING means real route progress that still times out -- a
+    /// different failure than getting stuck. Empty if this position
+    /// never timed out.
+    pub fn bastion_timeout_route_states(
+        &self,
+        job_pos: vek::Vec3<i32>,
+    ) -> Vec<(bool, Option<bool>, Option<usize>)> {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .timeout_route_states
+            .get(&job_pos)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// bastion (B5.5 deep, harness probe): full source attribution for every

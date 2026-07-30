@@ -1760,16 +1760,39 @@ fn column_height_near(terrain: &TerrainGrid, x: i32, y: i32, z_hint: i32) -> Opt
 /// outcome exactly like the terraform commits earlier today; this one
 /// cannot, by design, so it never invalidates a baseline or a repro.
 ///
-/// NOT a byte-perfect replica of the live Chaser/astar's own movement
-/// model (physics, jump arcs, water, the scramble heuristics elsewhere in
-/// this file) -- it's a column-to-column flood-fill using two connectivity
-/// rules reported SEPARATELY: STRICT (adjacent columns within 1 block of
-/// height difference -- ordinary walking, no special ability) and LENIENT
-/// (within this project's own documented scramble-reach constant, `2 +
-/// climbing_level.min(1)`, the SAME formula the carve/access code already
-/// uses elsewhere in this file). The gap between the two answers is itself
-/// informative: LENIENT-only-reachable means scramble capability is doing
-/// the work; STRICT-reachable means ordinary walking already suffices.
+/// TIER MODEL CORRECTED (Fable's ruling, 2026-07-30, after reading the
+/// live pathfinder's actual `neighbors` fn in `common/src/path.rs`): the
+/// first version's two tiers were STRICT (step<=1) and "LENIENT"
+/// (step<=climb_reach, using this crate's `2 + climbing_level.min(1)`
+/// scramble-reach constant) -- but that constant governs a DIFFERENT
+/// gate than the one this probe needs. Reading the real `neighbors`
+/// closure shows THREE distinct ascent tiers, asymmetric with descent:
+/// - STEP (height +1): ordinary walking, unconditional.
+/// - JUMP (height +2): `JUMPS` edges, gated only on ground-contact (or
+///   can_climb/can_fly) -- UNIVERSALLY available to any grounded
+///   colonist, not skill-gated at all.
+/// - SCRAMBLE (height +3): `SCRAMBLES` edges, gated on
+///   `scramble_reach >= 3` specifically (climbing_level >= 1) -- this is
+///   the ACTUAL skill-gated tier; `climbing_level.min(1)` giving reach 2
+///   or 3 means "novice" (reach 2) unlocks nothing beyond the universal
+///   jump, and only a colonist who has actually leveled climbing reaches
+///   the scramble tier at all.
+/// - DESCENT is asymmetric and effectively unbounded (the real `neighbors`
+///   fn's "Falls" branch searches down to 11 blocks, costed but not
+///   forbidden) -- modeled here as "any descent connects, ascent is
+///   tier-bounded", not a symmetric height-difference check.
+/// Getting this tier mapping wrong previously would have mislabeled a
+/// "needs an ordinary universal jump" result as "needs scramble" -- a very
+/// different, much stronger claim about failure mechanism.
+///
+/// Still NOT a byte-perfect replica (no diagonal moves modeled -- the live
+/// `neighbors` fn's own diagonal table is commented out and unused there
+/// too, so cardinal-only is actually a faithful match on that axis; no
+/// physics/water/ladder-edge modeling). Reported per tier so the gap
+/// between them is informative: SCRAMBLE-only-reachable means the
+/// colonist's actual climbing skill level is load-bearing; JUMP-only
+/// means an ordinary universal capability was needed and STILL the live
+/// colonist failed, which is the more surprising and concerning result.
 ///
 /// `probe_incomplete` (not `path_exists: false`) fires if the flood-fill
 /// exhausts its node budget before reaching a verdict -- "couldn't decide"
@@ -1777,24 +1800,24 @@ fn column_height_near(terrain: &TerrainGrid, x: i32, y: i32, z_hint: i32) -> Opt
 /// distinction `TreeGroundTruthOutcome::ScanIncomplete` already enforces
 /// for the chop ground-truth scan. A `path_exists: false` result is
 /// evidence TOWARD "(a) no path by this approximation" -- not proof the
-/// live game can't route there, given the approximation's own known gaps
-/// (no swim/jump/fall modeling). State that limitation with the result,
-/// never overclaim it.
+/// live game can't route there, given the approximation's own known gaps.
+/// State that limitation with the result, never overclaim it.
 #[derive(Debug, Clone)]
 pub struct ReachabilityProbeResult {
     pub standable_target: Option<Vec3<i32>>,
-    pub path_exists_strict: bool,
-    pub path_exists_lenient: bool,
+    pub path_exists_step: bool,
+    pub path_exists_jump: bool,
+    pub path_exists_scramble: bool,
     pub probe_incomplete: bool,
-    pub columns_visited_strict: u32,
-    pub columns_visited_lenient: u32,
+    pub columns_visited_step: u32,
+    pub columns_visited_jump: u32,
+    pub columns_visited_scramble: u32,
 }
 
 pub fn offline_reachability_probe(
     terrain: &TerrainGrid,
     from: Vec3<i32>,
     target: Vec3<i32>,
-    climb_reach: i32,
     node_cap: usize,
 ) -> ReachabilityProbeResult {
     use std::collections::{HashSet, VecDeque};
@@ -1802,11 +1825,13 @@ pub fn offline_reachability_probe(
     let Some(stance_offset) = has_standable_stance(terrain, target) else {
         return ReachabilityProbeResult {
             standable_target: None,
-            path_exists_strict: false,
-            path_exists_lenient: false,
+            path_exists_step: false,
+            path_exists_jump: false,
+            path_exists_scramble: false,
             probe_incomplete: false,
-            columns_visited_strict: 0,
-            columns_visited_lenient: 0,
+            columns_visited_step: 0,
+            columns_visited_jump: 0,
+            columns_visited_scramble: 0,
         };
     };
     let standing_pos = target + stance_offset;
@@ -1818,18 +1843,23 @@ pub fn offline_reachability_probe(
         // "measured, found nothing".
         return ReachabilityProbeResult {
             standable_target: Some(standing_pos),
-            path_exists_strict: false,
-            path_exists_lenient: false,
+            path_exists_step: false,
+            path_exists_jump: false,
+            path_exists_scramble: false,
             probe_incomplete: true,
-            columns_visited_strict: 0,
-            columns_visited_lenient: 0,
+            columns_visited_step: 0,
+            columns_visited_jump: 0,
+            columns_visited_scramble: 0,
         };
     };
     let from_col = (from.x, from.y);
 
-    // Two independent flood-fills (strict, then lenient) -- kept separate
+    // Three independent flood-fills (step/jump/scramble) -- kept separate
     // rather than interleaved for clarity; each has its own node cap.
-    let run = |step_bound: i32| -> (bool, bool, u32) {
+    // Connectivity is ASYMMETRIC: any descent connects (matches the real
+    // `neighbors` fn's costed-but-unbounded "Falls" branch); ascent is
+    // bounded by `ascent_bound` (1=step, 2=jump, 3=scramble).
+    let run = |ascent_bound: i32| -> (bool, bool, u32) {
         let mut visited: HashSet<(i32, i32)> = HashSet::new();
         let mut queue: VecDeque<((i32, i32), i32)> = VecDeque::new();
         visited.insert(from_col);
@@ -1852,7 +1882,8 @@ pub fn offline_reachability_probe(
                 let Some(nh) = column_height_near(terrain, next.0, next.1, ch) else {
                     continue;
                 };
-                if (nh - ch).abs() > step_bound {
+                let ascent = nh - ch;
+                if ascent > ascent_bound {
                     continue;
                 }
                 visited.insert(next);
@@ -1865,16 +1896,19 @@ pub fn offline_reachability_probe(
         (found, incomplete, visited.len() as u32)
     };
 
-    let (found_strict, incomplete_strict, visited_strict) = run(1);
-    let (found_lenient, incomplete_lenient, visited_lenient) = run(climb_reach.max(1));
+    let (found_step, incomplete_step, visited_step) = run(1);
+    let (found_jump, incomplete_jump, visited_jump) = run(2);
+    let (found_scramble, incomplete_scramble, visited_scramble) = run(3);
 
     ReachabilityProbeResult {
         standable_target: Some(standing_pos),
-        path_exists_strict: found_strict,
-        path_exists_lenient: found_lenient,
-        probe_incomplete: incomplete_strict || incomplete_lenient,
-        columns_visited_strict: visited_strict,
-        columns_visited_lenient: visited_lenient,
+        path_exists_step: found_step,
+        path_exists_jump: found_jump,
+        path_exists_scramble: found_scramble,
+        probe_incomplete: incomplete_step || incomplete_jump || incomplete_scramble,
+        columns_visited_step: visited_step,
+        columns_visited_jump: visited_jump,
+        columns_visited_scramble: visited_scramble,
     }
 }
 
@@ -3667,6 +3701,21 @@ pub struct JobBoard {
     /// different questions, and only the second matches the observed
     /// failure.
     pub last_timeout_pos: HashMap<Vec3<i32>, Vec3<f32>>,
+    /// bastion (mechanism-2 terrain probe, Fable-directed, 2026-07-30): the
+    /// last question the corrected reachability probe can't answer alone --
+    /// does the live A* fail to FIND a route the probe proves exists, or
+    /// does it find one the mover then fails to EXECUTE? Reads the
+    /// Chaser's own existing `diagnostic_snapshot()` (`common/src/path.rs`,
+    /// already read-only, already built for exactly this) at EVERY timeout
+    /// on this position (not just the most recent -- Fable's refinement:
+    /// `route_next_idx` PINNED across successive timeouts means stuck at
+    /// one waypoint; ADVANCING means real progress along a route that
+    /// still times out, a different failure than getting stuck). Each
+    /// entry is `(route_target.is_some(), route_complete,
+    /// route_next_idx)`. No route at all points at the search itself
+    /// never producing one, consistent with TGT-DRIFT's astar-reset
+    /// repeatedly discarding whatever was found.
+    pub timeout_route_states: HashMap<Vec3<i32>, Vec<(bool, Option<bool>, Option<usize>)>>,
     /// bastion (DPA-2 §5): the classified access-block reason — `Some(def)`
     /// while the descent frontier is HELD because dig-provisioned rung jobs
     /// need `def` (wood) and the colony has none reservable; `None`
@@ -10576,6 +10625,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 board.travel_timeouts += 1;
                                 *board.timeout_counts_by_pos.entry(job.pos).or_insert(0) += 1;
                                 board.last_timeout_pos.insert(job.pos, pos.0);
+                                if let Some(a) = agent.as_deref() {
+                                    let snap = a.chaser.diagnostic_snapshot();
+                                    board
+                                        .timeout_route_states
+                                        .entry(job.pos)
+                                        .or_default()
+                                        .push((
+                                            snap.route_target.is_some(),
+                                            snap.route_complete,
+                                            snap.route_next_idx,
+                                        ));
+                                }
                                 // B6 SOFT-0 QUEUE RELEASE: a stall while
                                 // STAGED at an anchor (steer != target) is
                                 // usually WAITING for a single-file
