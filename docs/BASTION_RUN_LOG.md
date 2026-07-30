@@ -14508,3 +14508,83 @@ verdict held. **LIMIT: seeds 61 and 71 were NOT covered** (create-quota losses),
 and 61 is Opus's own paired-comparison subject. **Wave 11 running 61-84 to close
 exactly that gap** — a neutrality result that skips the seed the experiment
 depends on is not the result the experiment needs.
+
+## BEN'S TWO QUESTIONS REDIRECTED THE DAY (07/30, close)
+
+**"Have we made any real progress — like in fixing anything?"** Honest answer:
+**four test-harness fixes landed, ZERO gameplay fixes.** The 27/27 gate,
+`failed_clauses`, the build-site terraform, the chop expanding search and the
+mine footprint air-clear are all repairs to our INSTRUMENTS. The 33.3% -> 9.3%
+improvement is the ruler straightening, not colonists mining better; a player
+would notice nothing. The instrument work was necessary — shipping pathfinding
+changes against a number that was 79% test artifact would have been worse than
+useless — but it ran too long. **The tell: I kept finding new things to verify
+instead of peeling off something shippable, and it took Ben asking to notice.**
+Corrective: blocked-designation feedback greenlit as a real player-facing row
+(DECISIONS #39), reversing my own earlier parking of it as a "design question."
+
+**"Does tree clearing even work? it never worked in game."** I MEASURED IT
+instead of answering from impression. **It does not: chop fails on 8/72 =
+11.1% of seeds** (69, 78, 80, 123, 132, 146, 148, 156). Every case:
+`chop_jobs=1` (designation forms), `ch_trees`=1-3 (**trees ARE detected** — not
+the detection bug we fixed), `chop_cleared=false` (**tree never felled**),
+`log_sum=0` (**zero wood — not partial, nothing**). **5 of 8 have mining
+completely clean**, so chop is INDEPENDENTLY broken.
+
+**AND IT IS NOT ALL TRAVEL FRICTION — a counterexample to the unified story.**
+Seed 78 fails chop at **2 timeouts**, seed 80 at 4 — deep in the band with ZERO
+mine failures across 55 seeds. "Chop failure = mechanism (2)" is falsified in
+the general case.
+
+**★ THIS KILLED PART OF MY OWN RULING, ONE HOUR OLD.** DECISIONS #39 part 3 let
+the colony auto-clear a blocking tree by generating a chop job. **I ruled that
+without ever checking whether chopping works.** At 11.1% silent total failure,
+auto-clear would replace a silent stall with a silent stall one level deeper, on
+a job the player never asked for — strictly worse than doing nothing. **Part 3
+BLOCKED; parts 1-2 (visibility, name the blocking cell) ship — and they write
+nothing to the world, so no re-baseline.** The corpus had the answer for hours.
+
+**★ FULL 32-CLAUSE SWEEP — EVERY MEMBER OF BOTH "MATCHED PAIRS" WAS
+CONTAMINATED, 4 OF 4.** Checking all clauses instead of the two we tracked:
+148 fails 7 clauses · 146 fails 8 · 52 fails 1 (`ch_leaf_cleared`) · **and 61,
+the carve-cascade TREATMENT, fails 5** (mine_cleared, build_placed,
+any_needs_materials, ch_leaf_cleared, mine_blocks_mined) — so it was never a
+mine-only failure either. Across 72 seeds: **exactly 2 mine-only failures**
+(54@22, 71@20) and **5 fully-clean high-friction controls** (76@29, 74@12,
+66@11, 129@11, 142@10) — **no friction match between any of them. No sound pair
+exists in this corpus even in principle.**
+
+**RULED: CASCADE EXPERIMENT PARKED** (not cancelled). 1 seed of 72, contaminated
+treatment, instrument needs a rebuild for per-member rows, no valid control —
+against two player-facing rows and Ben's direct question. Opus stood down with a
+clean handover (`a68f04664c` pre-registered reading table + `0d829c2a3e`
+void-control preconditions + `4bdb9c658d` suspension-with-reason).
+
+**OPUS SUSPENDED ITS OWN PRE-REGISTERED READING TABLE, unprompted**, after
+finding `bastion_cascade_probe` folds four per-Uid maps to MAXIMA: the four
+numbers **need not describe the same colonist**, so a "confirmed" tuple could be
+two unrelated members — it would have confirmed its own diagnosis off a
+composite describing nobody. **It is the same `.values().max()` error it had
+flagged in 5b's position map the same day, committed in its own probe.** The
+strongest evidence today that the discipline is real rather than performed.
+
+**OPUS'S GENERALISATION, recorded verbatim:** *"Matching is a rigour move, so a
+matched pair carries more authority than an unmatched one — which is exactly why
+an UNSOUND match is worse than NO match."* Confidence rises while validity
+falls. That is the shape of nearly every expensive failure today: a tolerance
+that looked like engineering judgement, a scanner that looked like independent
+verification, a build stamp that looked like a stale-binary guard, pairs that
+looked like the cleanest evidence in the set. **Whenever a step exists to make a
+result more trustworthy, audit THAT step hardest — it carries the authority.**
+
+**WAVE 11 — PROBE NEUTRALITY CLOSED.** 24 seeds (61-84), 0 create-fails, zero
+drift on 6 deterministic fields vs probe-free `54c22680`. **Seeds 61 and 71 now
+covered** (the pair wave 10 missed). Combined 36 seeds, zero drift. Wave 9's
+friction corpus is therefore validated, and 61's five failing clauses predate
+the probe rather than being an artifact of it.
+
+**NEXT, IN ORDER:** report the in-flight no-wrapper build (route diagnostic +
+structural data + the sccache-hypothesis test) → **#55 blocked-designation
+visibility** → **#56 chop reliability**, starting at **seed 52, the cleanest
+single-defect repro in the corpus** (one failing clause, everything else green),
+then 78/80 (low friction, no cascade confound).
