@@ -219,6 +219,8 @@ pub struct SceneCountersV1 {
     pub visible_horizon_camera_pitch_microradians: i64,
     pub visible_horizon_camera_distance_mm: u64,
     pub visible_horizon_camera_fov_microradians: u64,
+    pub visible_horizon_camera_fixation_millionths: u64,
+    pub visible_horizon_camera_target_fixation_millionths: u64,
     pub visible_horizon_camera_aspect_millionths: u64,
     pub visible_horizon_frustum_ground_width_mm: u64,
     pub visible_horizon_frustum_ground_depth_mm: u64,
@@ -621,6 +623,8 @@ fn visible_horizon_json_fields_v1(scene: SceneCountersV1) -> String {
             "\"visible_horizon_camera_pitch_microradians\":{},",
             "\"visible_horizon_camera_distance_mm\":{},",
             "\"visible_horizon_camera_fov_microradians\":{},",
+            "\"visible_horizon_camera_fixation_millionths\":{},",
+            "\"visible_horizon_camera_target_fixation_millionths\":{},",
             "\"visible_horizon_camera_aspect_millionths\":{},",
             "\"visible_horizon_frustum_ground_width_mm\":{},",
             "\"visible_horizon_frustum_ground_depth_mm\":{},",
@@ -648,6 +652,8 @@ fn visible_horizon_json_fields_v1(scene: SceneCountersV1) -> String {
         scene.visible_horizon_camera_pitch_microradians,
         scene.visible_horizon_camera_distance_mm,
         scene.visible_horizon_camera_fov_microradians,
+        scene.visible_horizon_camera_fixation_millionths,
+        scene.visible_horizon_camera_target_fixation_millionths,
         scene.visible_horizon_camera_aspect_millionths,
         scene.visible_horizon_frustum_ground_width_mm,
         scene.visible_horizon_frustum_ground_depth_mm,
@@ -1022,12 +1028,14 @@ mod tests {
             visible_horizon_camera_valid: true,
             visible_horizon_camera_mode: 3,
             visible_horizon_projection: 1,
-            visible_horizon_camera_focus_mm: [1, 2, 400_000],
+            visible_horizon_camera_focus_mm: [1, 2, 1_000],
             visible_horizon_camera_position_mm: [3, 4, 5],
             visible_horizon_camera_yaw_microradians: 0,
             visible_horizon_camera_pitch_microradians: 349_066,
             visible_horizon_camera_distance_mm: 384_000,
             visible_horizon_camera_fov_microradians: 1_100_000,
+            visible_horizon_camera_fixation_millionths: 1_000_000,
+            visible_horizon_camera_target_fixation_millionths: 1_000_000,
             visible_horizon_camera_aspect_millionths: 1_777_778,
             visible_horizon_frustum_ground_width_mm: 837_000,
             visible_horizon_frustum_ground_depth_mm: 1_376_000,
@@ -1044,8 +1052,10 @@ mod tests {
         });
         assert!(fields.contains("\"visible_horizon_fixture_selected\":true"));
         assert!(fields.contains("\"visible_horizon_camera_valid\":true"));
-        assert!(fields.contains("\"visible_horizon_camera_focus_mm\":[1,2,400000]"));
+        assert!(fields.contains("\"visible_horizon_camera_focus_mm\":[1,2,1000]"));
         assert!(fields.contains("\"visible_horizon_camera_pitch_microradians\":349066"));
+        assert!(fields.contains("\"visible_horizon_camera_fixation_millionths\":1000000"));
+        assert!(fields.contains("\"visible_horizon_camera_target_fixation_millionths\":1000000"));
         assert!(fields.contains("\"visible_horizon_frustum_ground_depth_mm\":1376000"));
         assert!(fields.contains(&format!(
             "\"visible_horizon_camera_token\":\"{}\"",

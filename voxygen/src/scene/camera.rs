@@ -800,6 +800,19 @@ impl Camera {
     /// precise aiming. Fixation is applied on top of the regular FoV.
     pub fn set_fixate(&mut self, fixate: f32) { self.tgt_fixate = fixate; }
 
+    /// Set current and target fixation together without interpolation.
+    ///
+    /// This is used by exact diagnostic camera fixtures that must take
+    /// post-maintenance ownership of the effective field of view.
+    pub fn set_fixate_instant(&mut self, fixate: f32) {
+        self.tgt_fixate = fixate;
+        self.fixate = fixate;
+    }
+
+    /// Return current and target fixation for exact camera-authority evidence.
+    #[must_use]
+    pub fn fixation_state_v1(&self) -> (f32, f32) { (self.fixate, self.tgt_fixate) }
+
     /// Set the FOV in degrees
     pub fn set_fov_deg(&mut self, fov: u16) {
         //Magic value comes from pi/180; no use recalculating.
@@ -901,4 +914,20 @@ fn lerp_angle(a: f32, b: f32, rate: f32) -> f32 {
         .min_by_key(|offs: &&f32| ((a - (b + *offs)).abs() * 1000.0) as i32)
         .unwrap();
     Lerp::lerp(a, b + *offs, rate)
+}
+
+#[cfg(test)]
+mod post_r2_visible_horizon_tests {
+    use super::{Camera, CameraMode};
+
+    #[test]
+    fn immediate_fixation_updates_current_and_target_coherently() {
+        let mut camera = Camera::new(16.0 / 9.0, CameraMode::Overseer);
+        camera.set_fixate(0.4);
+        assert_eq!(camera.fixation_state_v1(), (1.0, 0.4));
+
+        camera.set_fixate_instant(1.0);
+        assert_eq!(camera.fixation_state_v1(), (1.0, 1.0));
+        assert_eq!(camera.get_effective_fov(), 1.1);
+    }
 }
