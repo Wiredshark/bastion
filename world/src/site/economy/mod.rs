@@ -1786,6 +1786,68 @@ mod t8_3_order_sensitivity_tests {
         delivered_amount_v1(&deliveries, 100, flour)
     }
 
+    /// REVIEW ADDITION (`T8.3` cross-review): the path the chunk's own
+    /// doc named as untested -- a customer who PAYS in the same good
+    /// another customer is BUYING.
+    ///
+    /// Why this is the axis that could still break the negative: the
+    /// payment loop does `self.stocks[*g2] += amount2`, mutating LIVE
+    /// stock mid-call, and `paid_amount` is clamped by
+    /// `.min(self.stocks[*g])` -- the one place live, depleting stock
+    /// reaches the delivered amount. If a payment credit lands in the
+    /// same good slot a later customer draws from, the clamp could see
+    /// a different stock depending on who was processed first. The
+    /// chunk's fixtures all used distinct good/coin, so none of them
+    /// could exercise it.
+    ///
+    /// Customer 100 buys Flour and pays Coin. Customer 200 buys Coin and
+    /// pays FLOUR -- so 200's payment credits `stocks[Flour]`, the very
+    /// slot 100 draws from.
+    fn cross_paying_customer_100_delivery_v1(orders_100_then_200: bool) -> f32 {
+        let flour = GoodIndex::try_from(Good::Flour).expect("Flour is a valid Good");
+        let coin = GoodIndex::try_from(Good::Coin).expect("Coin is a valid Good");
+        // 100 wants Flour, pays Coin. 200 wants Coin, pays Flour.
+        let order_100 = hungry_order_v1(100, flour, coin, 50.0, 100.0);
+        let order_200 = hungry_order_v1(200, coin, flour, 20.0, 40.0);
+        let mut orders = if orders_100_then_200 {
+            vec![order_100, order_200]
+        } else {
+            vec![order_200, order_100]
+        };
+        let mut economy = scarce_provider_v1(flour, 5.0);
+        // The provider must also hold some Coin, or 200's order has no
+        // ratio and the cross-payment never runs.
+        economy.stocks[coin] = 30.0;
+        let mut deliveries: DHashMap<Id<Site>, Vec<TradeDelivery>> = DHashMap::default();
+        economy.trade_at_site(Id::new(1), &mut orders, &mut deliveries);
+
+        // PRECONDITION, asserted rather than assumed: customer 200's
+        // order must actually have been processed through the ratio
+        // path, or no Flour payment was ever credited and this fixture
+        // proves nothing about the clamp. A cross-payment test that
+        // silently never cross-pays is a vacuous green -- the exact
+        // shape this program keeps catching.
+        assert!(
+            delivered_amount_v1(&deliveries, 200, coin) > 0.0,
+            "customer 200 received no Coin, so its Flour payment never ran and this fixture did              not exercise the cross-payment path it exists to test"
+        );
+
+        delivered_amount_v1(&deliveries, 100, flour)
+    }
+
+    /// The cross-review's own falsification target. A DIFFERENCE here
+    /// would bound `T8.3` chunk 1's negative to the distinct-good case;
+    /// equality extends it to the mixed case the chunk left open.
+    #[test]
+    fn cross_paying_orders_are_also_order_independent() {
+        let when_first = cross_paying_customer_100_delivery_v1(true);
+        let when_second = cross_paying_customer_100_delivery_v1(false);
+        assert_eq!(
+            when_first, when_second,
+            "a customer paying in the good another customer buys routes a payment credit into              the live stock slot the clamp reads -- if processing order reached the delivered              amount anywhere, it would be here"
+        );
+    }
+
     /// Required test (this axis): a scarce-good order, permuted, is
     /// localized to a minimal `trade_at_site` fixture and classified.
     /// Two customers (IDs 100 and 200) with deliberately ASYMMETRIC
