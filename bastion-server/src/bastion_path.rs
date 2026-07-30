@@ -117,12 +117,25 @@ pub struct PathScheduler {
     pub grants_total: u64,
     pub peak_tick_iters: u64,
     pub peak_wait: u32,
-    /// LEG-C DIAG (env-gated, Sonnet's tgt-stability test): last observed
-    /// Goto target per requester — drift² > 2.0 between consecutive
-    /// observations is EXACTLY the Chaser's astar-reset trigger
-    /// (path.rs `last_search_tgt` wipe), logged as a TGT-DRIFT event.
-    /// Never touched with the env unset (empty map, zero cost).
+    /// Last observed Goto target per requester — drift² > 2.0 between
+    /// consecutive observations is EXACTLY the Chaser's astar-reset
+    /// trigger (path.rs `last_search_tgt` wipe), a TGT-DRIFT event.
+    /// Ben/Fable-directed 2026-07-30: promoted from env-gated-only
+    /// (Sonnet's original tgt-stability test) to always-on tracking, since
+    /// [`Self::drift_events_total`] needs it every run, not just under
+    /// BASTION_LEGC_DIAG. Tiny (bounded by active-requester count), so
+    /// making it unconditional costs nothing measurable.
     pub diag_last_tgt: std::collections::BTreeMap<u64, Vec3<f32>>,
+    /// bastion (mechanism-2 friction instrument, Ben/Fable-directed,
+    /// 2026-07-30): always-on TGT-DRIFT count — cheap counter, distinct
+    /// from the verbose BASTION_LEGC_DIAG log line (still env-gated; the
+    /// log path costs real time and would perturb timing, the counter
+    /// costs an increment). NOTE (on the record per Fable's ruling): drift
+    /// alone does NOT discriminate ambient friction from the failure-tail
+    /// signature -- it fires at similar rates in both passing and failing
+    /// runs. Sustained TIMEOUT count (`JobBoard::timeout_counts_by_pos`)
+    /// is the signal; never gate anything on this field alone.
+    pub drift_events_total: u64,
 }
 
 #[derive(Default)]
@@ -178,15 +191,24 @@ impl<'a> System<'a> for Sys {
                     },
                 )
                 .collect();
-        // LEG-C DIAG (Sonnet's tgt-stability test): a drift² > 2.0 between
-        // consecutive candidate observations for the same uid is the exact
-        // condition that wipes the Chaser's partial A* — event-logged so a
-        // restart storm is directly countable against grant volume.
-        if std::env::var_os("BASTION_LEGC_DIAG").is_some() {
-            for (uid64, _, tgt, _) in &cands {
-                if let Some(prev) = sched.diag_last_tgt.get(uid64) {
-                    let d2 = tgt.distance_squared(*prev);
-                    if d2 > 2.0 {
+        // Sonnet's tgt-stability test, ALWAYS ON since 2026-07-30 (was
+        // env-gated): a drift² > 2.0 between consecutive candidate
+        // observations for the same uid is the exact condition that wipes
+        // the Chaser's partial A* — counted every run
+        // (`drift_events_total`) so a restart storm is directly countable
+        // against grant volume without needing the env var. The verbose
+        // per-event LOG line stays behind BASTION_LEGC_DIAG (real time
+        // cost, would perturb timing); the counter increment does not.
+        let legc_diag_log = std::env::var_os("BASTION_LEGC_DIAG").is_some();
+        for (uid64, _, tgt, _) in &cands {
+            // Copy `prev` out to an owned value immediately -- the
+            // borrow of `sched.diag_last_tgt` must end here so the
+            // mutable `drift_events_total` increment below is legal.
+            if let Some(prev) = sched.diag_last_tgt.get(uid64).copied() {
+                let d2 = tgt.distance_squared(prev);
+                if d2 > 2.0 {
+                    sched.drift_events_total += 1;
+                    if legc_diag_log {
                         tracing::info!(
                             uid = uid64,
                             d2,
@@ -196,8 +218,8 @@ impl<'a> System<'a> for Sys {
                         );
                     }
                 }
-                sched.diag_last_tgt.insert(*uid64, *tgt);
             }
+            sched.diag_last_tgt.insert(*uid64, *tgt);
         }
         // Sweep waits for needs that disappeared (arrived/reassigned) —
         // only live requesters accrue deferral.

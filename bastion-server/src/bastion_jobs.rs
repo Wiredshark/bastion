@@ -1735,6 +1735,149 @@ fn has_standable_stance(terrain: &TerrainGrid, pos: Vec3<i32>) -> Option<Vec3<i3
     None
 }
 
+/// Real terrain-kind-agnostic topmost SOLID z near a height hint, bounded to
+/// a window either side rather than the full 0..2048 scan `ground_z` does --
+/// the offline reachability probe below calls this per column visited in a
+/// flood-fill, so an unbounded per-call scan would multiply badly.
+fn column_height_near(terrain: &TerrainGrid, x: i32, y: i32, z_hint: i32) -> Option<i32> {
+    (z_hint - 60..=z_hint + 60)
+        .rev()
+        .find(|&z| terrain.get(Vec3::new(x, y, z)).map(|b| b.is_filled()).unwrap_or(false))
+}
+
+/// bastion (mechanism-2 terrain-reachability probe, Ben/Fable-directed,
+/// 2026-07-30): the discriminator between the two live hypotheses for the
+/// "travel keeps timing out here" signature (51/54/55/61/71 + the chop
+/// cases) -- (a) NO VALID PATH EXISTS AT ALL, so the local exposure+stance
+/// heuristic is claiming a job is doable when it isn't (a correctness bug),
+/// vs (b) a path exists but the LIVE per-tick A* budget can't find it in
+/// time (a performance/tuning problem). Answers it OFFLINE: given an
+/// unlimited (not per-tick) search budget, does a walkable route exist from
+/// `from` to ANY valid standing position adjacent to `target`?
+///
+/// READ-ONLY BY CONSTRUCTION -- only `terrain.get`, never `state_mut`/
+/// `set_block`. A world-writing probe here would re-roll every seed's
+/// outcome exactly like the terraform commits earlier today; this one
+/// cannot, by design, so it never invalidates a baseline or a repro.
+///
+/// NOT a byte-perfect replica of the live Chaser/astar's own movement
+/// model (physics, jump arcs, water, the scramble heuristics elsewhere in
+/// this file) -- it's a column-to-column flood-fill using two connectivity
+/// rules reported SEPARATELY: STRICT (adjacent columns within 1 block of
+/// height difference -- ordinary walking, no special ability) and LENIENT
+/// (within this project's own documented scramble-reach constant, `2 +
+/// climbing_level.min(1)`, the SAME formula the carve/access code already
+/// uses elsewhere in this file). The gap between the two answers is itself
+/// informative: LENIENT-only-reachable means scramble capability is doing
+/// the work; STRICT-reachable means ordinary walking already suffices.
+///
+/// `probe_incomplete` (not `path_exists: false`) fires if the flood-fill
+/// exhausts its node budget before reaching a verdict -- "couldn't decide"
+/// must never share a return value with "decided, no path", the same
+/// distinction `TreeGroundTruthOutcome::ScanIncomplete` already enforces
+/// for the chop ground-truth scan. A `path_exists: false` result is
+/// evidence TOWARD "(a) no path by this approximation" -- not proof the
+/// live game can't route there, given the approximation's own known gaps
+/// (no swim/jump/fall modeling). State that limitation with the result,
+/// never overclaim it.
+#[derive(Debug, Clone)]
+pub struct ReachabilityProbeResult {
+    pub standable_target: Option<Vec3<i32>>,
+    pub path_exists_strict: bool,
+    pub path_exists_lenient: bool,
+    pub probe_incomplete: bool,
+    pub columns_visited_strict: u32,
+    pub columns_visited_lenient: u32,
+}
+
+pub fn offline_reachability_probe(
+    terrain: &TerrainGrid,
+    from: Vec3<i32>,
+    target: Vec3<i32>,
+    climb_reach: i32,
+    node_cap: usize,
+) -> ReachabilityProbeResult {
+    use std::collections::{HashSet, VecDeque};
+
+    let Some(stance_offset) = has_standable_stance(terrain, target) else {
+        return ReachabilityProbeResult {
+            standable_target: None,
+            path_exists_strict: false,
+            path_exists_lenient: false,
+            probe_incomplete: false,
+            columns_visited_strict: 0,
+            columns_visited_lenient: 0,
+        };
+    };
+    let standing_pos = target + stance_offset;
+    let target_col = (standing_pos.x, standing_pos.y);
+
+    let Some(from_h) = column_height_near(terrain, from.x, from.y, from.z) else {
+        // The colonist's own column has no resolvable surface within the
+        // window -- can't even start the flood-fill. Couldn't measure, not
+        // "measured, found nothing".
+        return ReachabilityProbeResult {
+            standable_target: Some(standing_pos),
+            path_exists_strict: false,
+            path_exists_lenient: false,
+            probe_incomplete: true,
+            columns_visited_strict: 0,
+            columns_visited_lenient: 0,
+        };
+    };
+    let from_col = (from.x, from.y);
+
+    // Two independent flood-fills (strict, then lenient) -- kept separate
+    // rather than interleaved for clarity; each has its own node cap.
+    let run = |step_bound: i32| -> (bool, bool, u32) {
+        let mut visited: HashSet<(i32, i32)> = HashSet::new();
+        let mut queue: VecDeque<((i32, i32), i32)> = VecDeque::new();
+        visited.insert(from_col);
+        queue.push_back((from_col, from_h));
+        let mut found = from_col == target_col;
+        let mut incomplete = false;
+        while let Some(((cx, cy), ch)) = queue.pop_front() {
+            if found {
+                break;
+            }
+            if visited.len() >= node_cap {
+                incomplete = true;
+                break;
+            }
+            for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+                let next = (cx + dx, cy + dy);
+                if visited.contains(&next) {
+                    continue;
+                }
+                let Some(nh) = column_height_near(terrain, next.0, next.1, ch) else {
+                    continue;
+                };
+                if (nh - ch).abs() > step_bound {
+                    continue;
+                }
+                visited.insert(next);
+                if next == target_col {
+                    found = true;
+                }
+                queue.push_back((next, nh));
+            }
+        }
+        (found, incomplete, visited.len() as u32)
+    };
+
+    let (found_strict, incomplete_strict, visited_strict) = run(1);
+    let (found_lenient, incomplete_lenient, visited_lenient) = run(climb_reach.max(1));
+
+    ReachabilityProbeResult {
+        standable_target: Some(standing_pos),
+        path_exists_strict: found_strict,
+        path_exists_lenient: found_lenient,
+        probe_incomplete: incomplete_strict || incomplete_lenient,
+        columns_visited_strict: visited_strict,
+        columns_visited_lenient: visited_lenient,
+    }
+}
+
 /// The 6 axis-aligned neighbour offsets (shared by the support flood-fill).
 const NEIGHBOURS6: [Vec3<i32>; 6] = [
     Vec3::new(1, 0, 0),
@@ -3492,6 +3635,38 @@ pub struct JobBoard {
     /// measured base rate justifies a real threshold.
     pub no_progress_ticks: u64,
     pub travel_timeouts: u64,
+    /// bastion (mechanism-2 friction instrument, Ben/Fable-directed,
+    /// 2026-07-30): per-job-POSITION travel-timeout tally — cheap always-on
+    /// counters, distinct from the verbose BASTION_LEGC_DIAG log path
+    /// (which stays env-gated; counters cost an increment, the log path
+    /// costs real time and would perturb the run's timing profile).
+    /// `max(values)` at report time is the TAIL signature: a target that
+    /// keeps getting retried and never resolves, vs. ambient one-off
+    /// friction spread across many targets. Keyed by position (not job id,
+    /// which churns as jobs complete/get recreated) so "same target"
+    /// literally means the same position. `.values().max()` is a
+    /// commutative reduction, so HashMap iteration order never leaks into
+    /// the reported value — no determinism surface despite the hash map.
+    pub timeout_counts_by_pos: HashMap<Vec3<i32>, u32>,
+    /// bastion (mechanism-2 terrain probe, Fable-directed, 2026-07-30):
+    /// closest approach EVER achieved toward each job position, across
+    /// every claim attempt (not reset per-claim, unlike the watchdog's own
+    /// `active.best_dist`). A PURE position measurement -- shares no
+    /// dependency with `has_standable_stance`, so it can catch what a
+    /// path-exists probe built on that predicate structurally cannot: the
+    /// colonist arriving close (predicate wrong / work-start bug) vs.
+    /// never getting near (genuine travel/pathing failure). Updated every
+    /// tick a colonist is actively traveling toward a job, unconditionally
+    /// -- cheap (one comparison + maybe one write per active traveler).
+    pub min_distance_to_target: HashMap<Vec3<i32>, f32>,
+    /// bastion (mechanism-2 terrain probe, Fable-directed, 2026-07-30): the
+    /// colonist's ACTUAL position at the moment of each job's most recent
+    /// travel timeout. Lets the offline reachability probe run from where
+    /// the failing attempt actually stood, not just from the colony's
+    /// spawn point -- "reachable from spawn" and "reachable from here" are
+    /// different questions, and only the second matches the observed
+    /// failure.
+    pub last_timeout_pos: HashMap<Vec3<i32>, Vec3<f32>>,
     /// bastion (DPA-2 §5): the classified access-block reason — `Some(def)`
     /// while the descent frontier is HELD because dig-provisioned rung jobs
     /// need `def` (wood) and the colony has none reservable; `None`
@@ -10333,6 +10508,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // before this row; no release-path/escalation
                         // logic inside it changed.
                         if auton_travel_ok {
+                        // Closest-approach tracker (Fable-directed,
+                        // 2026-07-30): unconditional, every tick, never
+                        // reset across claim attempts -- see the field doc
+                        // on `min_distance_to_target`.
+                        {
+                            let closest = board
+                                .min_distance_to_target
+                                .entry(job.pos)
+                                .or_insert(f32::INFINITY);
+                            if sdist < *closest {
+                                *closest = sdist;
+                            }
+                        }
                         if sdist + STUCK_EPSILON < active.best_dist {
                             active.best_dist = sdist;
                             // R3 fix-1 HYSTERESIS: zero the stall clock
@@ -10360,6 +10548,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             board.no_progress_ticks += 1;
                             if active.stuck_time > STUCK_TIMEOUT {
                                 board.travel_timeouts += 1;
+                                *board.timeout_counts_by_pos.entry(job.pos).or_insert(0) += 1;
+                                board.last_timeout_pos.insert(job.pos, pos.0);
                                 // B6 SOFT-0 QUEUE RELEASE: a stall while
                                 // STAGED at an anchor (steer != target) is
                                 // usually WAITING for a single-file

@@ -3187,6 +3187,78 @@ fn b5_scenario(args: &Args) -> ExitCode {
             }
         }
     }
+    // MECHANISM-2 TERRAIN-REACHABILITY PROBE (Ben/Fable-directed,
+    // 2026-07-30): for every mine cell STILL on the board after the full
+    // budget, ask the offline (unbounded-budget), read-only reachability
+    // oracle whether a path exists at all -- the discriminator between
+    // "(a) no path exists" (a correctness bug: the local exposure+stance
+    // heuristic claims a job is doable when it isn't) and "(b) a path
+    // exists but the live per-tick A* budget can't find it" (a tuning
+    // problem). `climb_reach = 2` matches this file's own scramble-reach
+    // convention at colonist skill level 0. node_cap 100000, generous --
+    // this runs once, offline, and can afford to be slow; a cap firing
+    // reads as `probe_incomplete` ("couldn't determine"), never as
+    // `path_exists: false` ("determined, no path") -- Fable's ruling:
+    // raise the cap rather than read caps as negatives.
+    //
+    // TWO ORIGINS, not one (Fable's gap #1): "reachable from spawn"
+    // answers "is this job reachable by the colony at all"; "reachable
+    // from the colonist's actual position at its last timeout" answers
+    // "why did THIS attempt fail" -- a spawn-only probe can read
+    // path_exists:true while the specific stuck colonist was genuinely
+    // unable to route from wherever it actually was.
+    //
+    // CLOSEST APPROACH (Fable's gap #2): the probe shares
+    // has_standable_stance with the subject under test, so path_exists
+    // alone can't separate "A* budget" from "the stance predicate itself
+    // is wrong" -- both would show up as path_exists:true (or false) with
+    // no way to tell them apart. min_distance shares no dependency with
+    // that predicate: arrived within 1-2 blocks and still timed out means
+    // the stance/work-start path is the real bug, not travel; never got
+    // within 20-30 blocks means a genuine travel/pathing failure.
+    //
+    // Report-only, read-only (only terrain.get + plain resource reads
+    // underneath), does not gate `pass`.
+    let spawn_pos = Vec3::new(site_wpos.x as i32, site_wpos.y as i32, cz + 2);
+    let probe_target = |target: Vec3<i32>| -> serde_json::Value {
+        let min_distance = server.bastion_min_distance_to_target(target);
+        let last_timeout = server.bastion_last_timeout_pos(target);
+        let probe_from = |from: Vec3<i32>| -> serde_json::Value {
+            let (standable, strict, lenient, incomplete, cols_strict, cols_lenient) =
+                server.bastion_offline_reachability_probe(from, target, 2, 100_000);
+            serde_json::json!({
+                "from": [from.x, from.y, from.z],
+                "standable_target": standable.map(|s| [s.x, s.y, s.z]),
+                "path_exists_strict": strict,
+                "path_exists_lenient": lenient,
+                "probe_incomplete": incomplete,
+                "columns_visited_strict": cols_strict,
+                "columns_visited_lenient": cols_lenient,
+            })
+        };
+        serde_json::json!({
+            "target": [target.x, target.y, target.z],
+            "min_distance_to_target": min_distance,
+            "last_timeout_pos": last_timeout.map(|p| [p.x, p.y, p.z]),
+            "from_spawn": probe_from(spawn_pos),
+            "from_last_timeout": last_timeout.map(|p| {
+                probe_from(Vec3::new(p.x.floor() as i32, p.y.floor() as i32, p.z.floor() as i32))
+            }),
+        })
+    };
+    let mine_reachability_probe: Vec<serde_json::Value> = mine_cell_diag
+        .iter()
+        .filter_map(|c| c.get("pos").cloned())
+        .filter_map(|p| {
+            let arr = p.as_array()?;
+            Some(Vec3::new(
+                arr[0].as_i64()? as i32,
+                arr[1].as_i64()? as i32,
+                arr[2].as_i64()? as i32,
+            ))
+        })
+        .map(probe_target)
+        .collect();
     // MINE MODE-1 ROOT-CAUSE PROBE (Ben/Fable-directed, 2026-07-30): the
     // "exposure" check (bastion_jobs.rs, the once-per-cycle Mine-reachability
     // sweep) requires a filled cell to have at least one non-filled face
@@ -3222,6 +3294,15 @@ fn b5_scenario(args: &Args) -> ExitCode {
             break;
         }
     }
+    // MECHANISM-2 TERRAIN-REACHABILITY PROBE, chop_base: only meaningful
+    // when the chop job never completed. Same oracle, same two-origin +
+    // closest-approach design as the mine probe above -- see that comment
+    // block for the full rationale.
+    let chop_reachability_probe: Option<serde_json::Value> = if chop_cleared {
+        None
+    } else {
+        Some(probe_target(chop_base))
+    };
     // B5.5: drops now MERGE into piles (should_merge + persistent), so the
     // conservation assertion is the amount SUM (entity counts undercount by
     // design). Radius 16 comfortably covers the gentle-toss scatter while
@@ -3917,11 +3998,31 @@ fn b5_scenario(args: &Args) -> ExitCode {
         .collect();
     let pass = failed_clauses.is_empty();
 
+    // MECHANISM-2 FRICTION INSTRUMENT (Ben/Fable-directed, 2026-07-30):
+    // promoted from BASTION_LEGC_DIAG-only log-reading to permanent,
+    // always-on JSON fields -- see the field doc comments below for what
+    // each one means and (for drift) its known non-discriminating
+    // limitation. Cheap counter reads, no world writes.
+    let max_same_target_timeouts = server.bastion_max_same_target_timeouts();
+    let drift_events_total = server.bastion_drift_events_total();
+
     let result = serde_json::json!({
         "b5_mine_jobs": mine_jobs,
         "b5_chop_jobs": chop_jobs,
         "b5_build_ok_jobs": build_ok_jobs,
         "b5_build_stall_jobs": build_stall_jobs,
+        // BUILD-INTEGRITY STAMP (Fable-directed, 2026-07-30): the same
+        // stale-exe guard `--version`/the VM fan already assert on
+        // (BUILD_STAMP, this file's own commit-sha+build-time constant),
+        // surfaced here so a LOCAL run can be checked the same way a fan
+        // run is instead of discovering a stale binary by hand -- exactly
+        // what just cost real time today. Systematic rule this pairs
+        // with: any run adding new instrumentation must confirm the new
+        // fields are actually PRESENT before its results are read --
+        // "the measurement didn't happen" must never read as "measured,
+        // came back empty," the same discipline as `scan_incomplete`/
+        // `probe_incomplete`.
+        "b5_build_stamp": BUILD_STAMP,
         "b5_gave_item": gave_item,
         "b5_mine_cleared": mine_cleared,
         "b5_mine_blocks_mined": mine_blocks_mined,
@@ -3934,6 +4035,16 @@ fn b5_scenario(args: &Args) -> ExitCode {
         // problem instead.
         "b5_mine_jobs_remaining": mine_jobs_remaining,
         "b5_mine_cell_diag": mine_cell_diag,
+        // MECHANISM-2 TERRAIN-REACHABILITY PROBE: report-only, does not
+        // gate `pass`. One entry per still-open mine cell -- see the probe
+        // definition (bastion_jobs::offline_reachability_probe) for the
+        // strict/lenient/probe_incomplete meanings. `path_exists_*: false`
+        // is evidence toward "no path exists" (a correctness bug in the
+        // exposure+stance heuristic), never proof -- the probe is a
+        // simplified column flood-fill, not the live Chaser's own model.
+        "b5_mine_reachability_probe": mine_reachability_probe,
+        // Same probe against chop_base, only when chop never completed.
+        "b5_chop_reachability_probe": chop_reachability_probe,
         // MINE MODE-1 ROOT-CAUSE PROBE: Some(pos, kind) if a filled block
         // sits directly above the dig footprint's top layer -- the one
         // spot the rim-fill loop never explicitly clears to air (only the
@@ -3947,6 +4058,20 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_cavein_drop_cells": cavein_drop_cells,
         // FR15 baseline (reported): (no_progress_ticks, timeouts, teleports).
         "b5_locomotion": locomotion,
+        // MECHANISM-2 FRICTION INSTRUMENT (Ben/Fable-directed, 2026-07-30):
+        // permanent, always-on. b5_travel_timeouts is a named top-level
+        // alias for locomotion[1] (same counter, clearer name). The
+        // discriminator is b5_max_same_target_timeouts: high = the SAME
+        // target retried repeatedly and never resolved (the failure-tail
+        // signature); low with a high raw total = ambient friction spread
+        // across many targets, which usually resolves on its own. Neither
+        // gates `pass` -- these are measured variables, not verdicts.
+        "b5_travel_timeouts": locomotion.1,
+        "b5_max_same_target_timeouts": max_same_target_timeouts,
+        // Reported for completeness; does NOT discriminate (fires at
+        // similar rates in passing and failing runs) -- never gate on this
+        // alone (Fable's ruling, 2026-07-30).
+        "b5_drift_events": drift_events_total,
         // RULING (Opus fan review, 2026-07-30): `locomotion.2`
         // (failsafe_teleports, B24's ultimate-rescue mechanism) does NOT
         // belong in the mine-completion conjunction -- it says nothing

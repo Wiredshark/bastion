@@ -2519,6 +2519,38 @@ impl Server {
         )
     }
 
+    /// bastion (mechanism-2 terrain-reachability probe, harness hook,
+    /// 2026-07-30): OFFLINE (unbounded-budget), READ-ONLY answer to
+    /// "does a walkable route exist from `from` to a valid standing
+    /// position adjacent to `target`" -- see
+    /// [`bastion_jobs::offline_reachability_probe`] for the full design
+    /// rationale (the strict/lenient distinction, why it isn't a
+    /// byte-perfect Chaser replica, and the `probe_incomplete` discipline).
+    /// Flattened to a plain tuple (matching this file's other harness-hook
+    /// shapes): `(standable_target, path_exists_strict,
+    /// path_exists_lenient, probe_incomplete, columns_visited_strict,
+    /// columns_visited_lenient)`.
+    pub fn bastion_offline_reachability_probe(
+        &self,
+        from: vek::Vec3<i32>,
+        target: vek::Vec3<i32>,
+        climb_reach: i32,
+        node_cap: usize,
+    ) -> (Option<vek::Vec3<i32>>, bool, bool, bool, u32, u32) {
+        let ecs = self.state.ecs();
+        let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
+        let r =
+            bastion_jobs::offline_reachability_probe(&terrain, from, target, climb_reach, node_cap);
+        (
+            r.standable_target,
+            r.path_exists_strict,
+            r.path_exists_lenient,
+            r.probe_incomplete,
+            r.columns_visited_strict,
+            r.columns_visited_lenient,
+        )
+    }
+
     /// bastion (chop-oracle ground-truth audit, harness hook, 2026-07-30):
     /// does a trunk-plus-canopy (Wood with Leaves above it, same column)
     /// physically exist anywhere in this XY footprint, independent of
@@ -3192,6 +3224,66 @@ impl Server {
             board.travel_timeouts,
             board.failsafe_teleports,
         )
+    }
+
+    /// bastion (mechanism-2 friction instrument, harness hook, 2026-07-30):
+    /// the TAIL signature -- the highest travel-timeout count any single
+    /// job POSITION accumulated this run. A target retried many times that
+    /// never resolves reads high here even if `travel_timeouts` (the raw
+    /// total) is unremarkable; ambient one-off friction spread across many
+    /// different targets does not. Always-on counter, read-only, no world
+    /// writes -- cannot re-roll a seed's outcome.
+    pub fn bastion_max_same_target_timeouts(&self) -> u32 {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .timeout_counts_by_pos
+            .values()
+            .max()
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// bastion (mechanism-2 friction instrument, harness hook, 2026-07-30):
+    /// total TGT-DRIFT (Chaser astar-reset) events this run. On the record
+    /// per Fable's ruling: this does NOT discriminate ambient friction from
+    /// the failure-tail signature (fires at similar rates in passing and
+    /// failing runs) -- report it, never gate on it alone.
+    pub fn bastion_drift_events_total(&self) -> u64 {
+        self.state
+            .ecs()
+            .read_resource::<bastion_path::PathScheduler>()
+            .drift_events_total
+    }
+
+    /// bastion (mechanism-2 terrain probe, harness hook, 2026-07-30): the
+    /// closest approach EVER achieved toward `job_pos`, across every claim
+    /// attempt -- a pure position measurement sharing no dependency with
+    /// `has_standable_stance`, so it can discriminate what a path-exists
+    /// probe built on that predicate structurally cannot (arrived-close vs.
+    /// never-got-near). `None` if this position never had an active
+    /// traveler.
+    pub fn bastion_min_distance_to_target(&self, job_pos: vek::Vec3<i32>) -> Option<f32> {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .min_distance_to_target
+            .get(&job_pos)
+            .copied()
+    }
+
+    /// bastion (mechanism-2 terrain probe, harness hook, 2026-07-30): the
+    /// colonist's actual position at the moment of `job_pos`'s most recent
+    /// travel timeout -- lets the offline reachability probe run from
+    /// where a failing attempt actually stood, not just from spawn.
+    /// `None` if this position never timed out.
+    pub fn bastion_last_timeout_pos(&self, job_pos: vek::Vec3<i32>) -> Option<vek::Vec3<f32>> {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .last_timeout_pos
+            .get(&job_pos)
+            .copied()
     }
 
     /// bastion (B5.5 deep, harness probe): full source attribution for every
