@@ -3483,6 +3483,13 @@ pub struct JobBoard {
     /// (`stuck_time > STUCK_TIMEOUT`); `failsafe_teleports` = ULTIMATE
     /// FAIL-SAFE fires. Baselined BEFORE the fix-1 movement change
     /// (playbook: instrument failure/progress first), compared after.
+    /// This stayed true even through a brief 2026-07-30 detour:
+    /// `b5_scenario` (bastion-harness/src/main.rs) briefly gated
+    /// `failsafe_teleports == 0` inside the mine-completion invariant, an
+    /// Opus fan-corpus review caught it conflating two unrelated failure
+    /// classes, and it was reverted to report-only (`b5_rescue_fired`) —
+    /// exactly what this doc always said. Keep it that way until a
+    /// measured base rate justifies a real threshold.
     pub no_progress_ticks: u64,
     pub travel_timeouts: u64,
     /// bastion (DPA-2 §5): the classified access-block reason — `Some(def)`

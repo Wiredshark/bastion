@@ -3049,6 +3049,33 @@ fn b5_scenario(args: &Args) -> ExitCode {
     let build_carrier = names.get(1).cloned().unwrap_or_default();
     let gave_item = server.bastion_give_colonist_item(&build_carrier, BUILD_MATERIAL_ITEM);
     let build_ok_gz = ground_z(&server, cx, cy + 20).unwrap_or(cz);
+    // TERRAFORM-DETERMINISM (build-stall cluster fix, 2026-07-30): this
+    // probe used to trust `gz+1` was clear air on `ground_z`'s say-so
+    // alone. `ground_z` only fixes the HEIGHT lookup (ignores tree
+    // wood/leaves so it doesn't return canopy height) -- it does not
+    // guarantee the cell immediately above that height is actually
+    // empty. A tree rooted at exactly (cx, cy+20) has its trunk's base
+    // block sitting right there, so in seeds where worldgen happens to
+    // place one, the Build designation's target is already filled and
+    // `place_designation` (job_wanted: `!block.is_filled()`) silently
+    // creates 0 jobs. Every OTHER probe site in this scenario
+    // (mine_min/mine_max, chop_base) already flattens+clears its target
+    // pad first; this one and build_stall_pos below did not. Same
+    // 7x7-pad-plus-clear-air recipe as chop_base, applied here too.
+    for x in (cx - 3)..=(cx + 3) {
+        for y in (cy + 17)..=(cy + 23) {
+            server.state_mut().set_block(
+                Vec3::new(x, y, build_ok_gz),
+                Block::new(BlockKind::Rock, Rgb::new(120, 120, 120)),
+            );
+            for z in (build_ok_gz + 1)..=(build_ok_gz + 8) {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    tick(&mut server, 2);
     let build_ok_pos = Vec3::new(cx, cy + 20, build_ok_gz + 1);
     let build_ok_jobs = server
         .bastion_place_designation(
@@ -3125,6 +3152,27 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // built with the only unit), so this designation is unsatisfiable and
     // must stall + flag `needs_materials`, not silently claim-and-block.
     let build_stall_gz = ground_z(&server, cx, cy - 20).unwrap_or(cz);
+    // TERRAFORM-DETERMINISM (build-stall cluster fix, 2026-07-30): same
+    // gap as build_ok_pos above -- see that comment. This is the exact
+    // site the "build-stall cluster" (5/48 local seeds, corroborated in
+    // the fan) traced back to: `build_stall_jobs == 0` because a tree
+    // (or other worldgen solid) happened to occupy this column's gz+1,
+    // so `job_wanted` rejected the designation before it could ever
+    // stall on materials. Terraform first, same as every other probe.
+    for x in (cx - 3)..=(cx + 3) {
+        for y in (cy - 23)..=(cy - 17) {
+            server.state_mut().set_block(
+                Vec3::new(x, y, build_stall_gz),
+                Block::new(BlockKind::Rock, Rgb::new(120, 120, 120)),
+            );
+            for z in (build_stall_gz + 1)..=(build_stall_gz + 8) {
+                server
+                    .state_mut()
+                    .set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    tick(&mut server, 2);
     let build_stall_pos = Vec3::new(cx, cy - 20, build_stall_gz + 1);
     let build_stall_jobs = server
         .bastion_place_designation(
@@ -3562,6 +3610,121 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // MINE-COMPLETION-INVARIANT (Ben-directed, 2026-07-30): captured once,
     // read by both the report and the gate below.
     let locomotion = server.bastion_locomotion_stats();
+    let cavein_drop_cells = server.bastion_cavein_drop_cells();
+
+    // B5-EXIT-CODE-DISAMBIGUATION (Ben-directed, 2026-07-30): the pass gate
+    // is a ~40-clause conjunction; at corpus scale a bare exit code only
+    // says "one of 40 things failed". Name every clause here and derive
+    // `pass` FROM this list (single source of truth -- a hand-maintained
+    // parallel bool can't drift out of sync with what actually failed).
+    let clauses: Vec<(&str, bool)> = vec![
+        ("mine_jobs", mine_jobs == 27),
+        ("chop_jobs", chop_jobs == 1),
+        ("build_ok_jobs", build_ok_jobs == 1),
+        ("build_stall_jobs", build_stall_jobs == 1),
+        ("gave_item", gave_item),
+        // MINE-COMPLETION-INVARIANT (Ben-directed, 2026-07-30, supersedes
+        // the prior ">=26/27" tolerance): "if we mine a space it needs
+        // 100% of the blocks removed in all cases" -- not a fidelity
+        // ratio. EXACT MEASURE: mine_blocks_mined == 27 (every cell in
+        // the 3x3x3 mine_min..=mine_max volume, the same volume
+        // mine_jobs==27 above already asserts was fully designated).
+        // B78 (readme/BASTION_COMMON_ISSUES.md) is the filed positive
+        // control: a real, deterministic, reproducible 2-of-27-stuck
+        // case this invariant must catch, not tolerate.
+        //
+        // `mine_cleared` and `mine_blocks_mined == 27` are LOGICALLY
+        // EQUIVALENT (Opus review, 2026-07-30 fan finding): both reduce
+        // to the identical per-cell predicate `is_none_or(|k|
+        // !k.is_filled())` over the identical volume, one as
+        // "all(...)" and one as "count(...) == 27". Kept as two named
+        // clauses deliberately (a corpus report that says WHICH failed
+        // is more useful when the all/count framing differs even though
+        // the predicate doesn't) -- not two independent checks, and not
+        // safe to "simplify" one away believing the other covers
+        // something different.
+        ("mine_cleared", mine_cleared),
+        ("mine_blocks_mined", mine_blocks_mined == 27),
+        ("chop_cleared", chop_cleared),
+        ("build_placed", build_placed),
+        // B5.5 + DETRNG: the CONSERVATION invariant -- every cleared
+        // block yielded exactly one stone (cleared = mined +
+        // collapse-severed; both drop).
+        ("stone_sum_lower", stone_sum >= mine_blocks_mined),
+        (
+            "stone_sum_upper",
+            stone_sum <= mine_blocks_mined + cavein_drop_cells,
+        ),
+        ("stone_entities", stone_entities <= 10),
+        ("log_sum", log_sum == 1),
+        ("build_stall_untouched", build_stall_untouched),
+        ("any_needs_materials", any_needs_materials),
+        ("any_mining_xp", any_mining_xp),
+        ("any_woodcutting_xp", any_woodcutting_xp),
+        // B5.6b-2 slope coverage (B5.MINE-COVERAGE closure): surface
+        // path covers every column exactly; echoed bounds are tight AND
+        // cancel through them is complete; the legacy flat path
+        // demonstrably under-covers the same staircase (regression
+        // witness: 45 < 72).
+        ("sl_jobs_total", sl_jobs_total == 72),
+        ("sl_columns_ok", sl_columns_ok),
+        ("sl_bounds_ok", sl_bounds_ok),
+        ("sl_cancel_clean", sl_cancel_clean),
+        ("sl_legacy_jobs", sl_legacy_jobs == 45),
+        // B5.6b-2.1 flat-floor: staircase -> 108 jobs bottoming at ONE z.
+        ("fl_total", fl_total == 108),
+        ("fl_bounds_ok", fl_bounds_ok),
+        ("fl_floor_flat", fl_floor_flat),
+        ("fl_hint_decoupled", fl_hint_decoupled),
+        // BUILD 2a flatten-hill (Ben live-bug #4): a hill cresting 60
+        // above the base (>48) flat-floored from its base reaches the
+        // TRUE crest -- every column floor..crest as jobs, bounds at
+        // base+60, PAST the old base+48 truncation cap.
+        ("hh_total_ok", hh_total_ok),
+        ("hh_reaches_crest", hh_reaches_crest),
+        ("hh_past_old_cap", hh_past_old_cap),
+        // BUILD 2b B15 standability (reviewer FR12): on-top control
+        // still claimed (no regression); an adjacent-only (rock-capped)
+        // block IS claimed via the adjacent stance (the +1-gap fix); an
+        // isolated floater is CLEAN-SKIPPED (exposure != standability --
+        // never claimed, no churn).
+        ("b15_ontop_claimed", b15_ontop_claimed),
+        ("b15_adjacent_claimed", b15_adjacent_claimed),
+        ("b15_floater_skipped", b15_floater_skipped),
+        // CHOP redesign (FR10): a real worldgen tree detected via the
+        // SHARED oracle path; every fell cell became a job; the tree box
+        // holds BOTH Wood and Leaves (whole tree, not a slab); per-tree
+        // cancel through the echoed AABB is clean; a chopped Leaves
+        // block CLEARS with NO log drop.
+        ("ch_trees_found", ch_trees >= 1),
+        // jobs <= cells is EXPECTED (adjacent trees' shared canopy cells
+        // dedupe at placement), and in DENSE forest per-tree sets may
+        // legitimately clip at the cap (bounded work per seed -- the cap
+        // IS the guarantee). Gate the INVARIANTS: trees found, jobs
+        // placed, bounded by construction, whole-tree (mixed kinds),
+        // per-tree cancel through the echoed box, leaves clear with no
+        // drop.
+        ("ch_jobs_positive", ch_jobs > 0),
+        ("ch_jobs_le_cells", ch_jobs <= ch_cells),
+        (
+            "ch_cells_bounded",
+            ch_cells <= ch_trees * server::bastion_jobs::TREE_FELL_CELL_CAP,
+        ),
+        ("ch_mixed", ch_mixed),
+        ("ch_cancel_clean", ch_cancel_clean),
+        ("ch_leaf_cleared", ch_leaf_cleared),
+        ("ch_leaf_no_drop", ch_leaf_no_drop),
+        // TOOL-0: equipped-tool factor end-to-end (stone 1.5, steel 2.0,
+        // wrong-verb 1.0); the curve itself is unit-pinned.
+        ("tl_ok", tl_ok),
+        ("avg_tick_ms_budget", avg_tick_ms < 100.0),
+    ];
+    let failed_clauses: Vec<&str> = clauses
+        .iter()
+        .filter(|(_, ok)| !ok)
+        .map(|(name, _)| *name)
+        .collect();
+    let pass = failed_clauses.is_empty();
 
     let result = serde_json::json!({
         "b5_mine_jobs": mine_jobs,
@@ -3574,12 +3737,24 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_chop_cleared": chop_cleared,
         "b5_build_placed": build_placed,
         "b5_stone_sum": stone_sum,
-        "b5_cavein_drop_cells": server.bastion_cavein_drop_cells(),
+        "b5_cavein_drop_cells": cavein_drop_cells,
         // FR15 baseline (reported): (no_progress_ticks, timeouts, teleports).
-        // MINE-COMPLETION-INVARIANT: `locomotion.2` (failsafe_teleports) is
-        // ALSO used below in the exact-completion gate -- captured once
-        // here so the JSON report and the gate read the identical value.
         "b5_locomotion": locomotion,
+        // RULING (Opus fan review, 2026-07-30): `locomotion.2`
+        // (failsafe_teleports, B24's ultimate-rescue mechanism) does NOT
+        // belong in the mine-completion conjunction -- it says nothing
+        // about whether the volume got cleared, so gating it there
+        // conflated "mine incomplete" with "a colonist needed rescue at
+        // some unrelated moment" (wave-1 fan proof: 6 seeds had a fully
+        // cleared, fully counted mine AND a rescue fired). REPORT-ONLY
+        // per bastion_jobs.rs's own doc on the field ("REPORTED
+        // telemetry, never gated") until a fan-measured base rate can
+        // set a real threshold -- deferred, not dropped.
+        "b5_rescue_fired": locomotion.2 > 0,
+        // B5-EXIT-CODE-DISAMBIGUATION: WHICH clause(s) failed, not just a
+        // bool. Derived from the same `clauses` list `pass` is derived
+        // from -- one source of truth, report can't drift from gate.
+        "b5_failed_clauses": failed_clauses,
         "b5_stone_entities": stone_entities,
         "b5_log_sum": log_sum,
         "b5_build_stall_untouched": build_stall_untouched,
@@ -3613,99 +3788,11 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_tool_ok": tl_ok,
         "b5_soak_avg_tick_ms": avg_tick_ms,
     });
-    let pass = mine_jobs == 27
-        && chop_jobs == 1
-        && build_ok_jobs == 1
-        && build_stall_jobs == 1
-        && gave_item
-        // MINE-COMPLETION-INVARIANT (Ben-directed, 2026-07-30, supersedes
-        // the prior ">=26/27" tolerance): "if we mine a space it needs
-        // 100% of the blocks removed in all cases" — not a fidelity ratio.
-        // EXACT MEASURE: mine_blocks_mined == 27 (every cell in the 3x3x3
-        // mine_min..=mine_max volume, the same volume mine_jobs==27 above
-        // already asserts was fully designated). B78 (readme/
-        // BASTION_COMMON_ISSUES.md) is the filed positive control: a
-        // real, deterministic, reproducible 2-of-27-stuck case this
-        // invariant must catch, not tolerate. The prior ">=26" reading of
-        // "one window short" as mere scheduling throughput conflated a
-        // genuine stuck-forever failure with a timing flake; 180 windows
-        // (5400 ticks) was already enough for B78's stuck cells to stay
-        // stuck, so this is not a timing-budget problem the tolerance was
-        // covering for.
-        && mine_cleared
-        && mine_blocks_mined == 27
-        // No colonist required the ultimate fail-safe rescue during this
-        // scenario (`locomotion.2` = failsafe_teleports, same tuple the
-        // report above carries) — a real, already-instrumented "did a
-        // colonist end up stuck" signal (B24's teleport-rescue mechanism),
-        // gated here for the first time rather than only ever reported.
-        && locomotion.2 == 0
-        && chop_cleared
-        && build_placed
-        // B5.5 + DETRNG: the CONSERVATION invariant — every cleared block
-        // yielded exactly one stone (cleared = mined + collapse-severed;
-        // both drop).
-        && stone_sum >= mine_blocks_mined
-        && stone_sum <= mine_blocks_mined + server.bastion_cavein_drop_cells()
-        && stone_entities <= 10
-        && log_sum == 1
-        && build_stall_untouched
-        && any_needs_materials
-        && any_mining_xp
-        && any_woodcutting_xp
-        // B5.6b-2 slope coverage (B5.MINE-COVERAGE closure): surface path
-        // covers every column exactly; echoed bounds are tight AND cancel
-        // through them is complete; the legacy flat path demonstrably
-        // under-covers the same staircase (regression witness: 45 < 72).
-        && sl_jobs_total == 72
-        && sl_columns_ok
-        && sl_bounds_ok
-        && sl_cancel_clean
-        && sl_legacy_jobs == 45
-        // B5.6b-2.1 flat-floor: staircase → 108 jobs bottoming at ONE z.
-        && fl_total == 108
-        && fl_bounds_ok
-        && fl_floor_flat
-        && fl_hint_decoupled
-        // BUILD 2a flatten-hill (Ben live-bug #4): a hill cresting 60 above
-        // the base (>48) flat-floored from its base reaches the TRUE crest —
-        // every column floor..crest as jobs, bounds at base+60, PAST the old
-        // base+48 truncation cap.
-        && hh_total_ok
-        && hh_reaches_crest
-        && hh_past_old_cap
-        // BUILD 2b B15 standability (reviewer FR12): on-top control still
-        // claimed (no regression); an adjacent-only (rock-capped) block IS
-        // claimed via the adjacent stance (the +1-gap fix); an isolated floater
-        // is CLEAN-SKIPPED (exposure≠standability — never claimed, no churn).
-        && b15_ontop_claimed
-        && b15_adjacent_claimed
-        && b15_floater_skipped
-        // CHOP redesign (FR10): a real worldgen tree detected via the SHARED
-        // oracle path; every fell cell became a job; the tree box holds BOTH
-        // Wood and Leaves (whole tree, not a slab); per-tree cancel through
-        // the echoed AABB is clean; a chopped Leaves block CLEARS with NO
-        // log drop.
-        && ch_trees >= 1
-        // jobs <= cells is EXPECTED (adjacent trees' shared canopy cells
-        // dedupe at placement), and in DENSE forest per-tree sets may
-        // legitimately clip at the cap (bounded work per seed — the cap IS
-        // the guarantee). Gate the INVARIANTS: trees found, jobs placed,
-        // bounded by construction, whole-tree (mixed kinds), per-tree cancel
-        // through the echoed box, leaves clear with no drop.
-        && ch_jobs > 0
-        && ch_jobs <= ch_cells
-        && ch_cells <= ch_trees * server::bastion_jobs::TREE_FELL_CELL_CAP
-        && ch_mixed
-        && ch_cancel_clean
-        && ch_leaf_cleared
-        && ch_leaf_no_drop
-        // TOOL-0: equipped-tool factor end-to-end (stone 1.5, steel 2.0,
-        // wrong-verb 1.0); the curve itself is unit-pinned.
-        && tl_ok
-        && avg_tick_ms < 100.0;
     println!("{}", result);
     println!("B5 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+    if !pass {
+        println!("B5 FAILED CLAUSES: {:?}", failed_clauses);
+    }
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
