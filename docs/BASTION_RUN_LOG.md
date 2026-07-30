@@ -15088,3 +15088,38 @@ against it; a clean single-commit revert is cheap, and the `times_offered`
 instrumentation can re-land separately without the behaviour. #56's verdict is
 DOWNSTREAM (its 17/17-vs-16/17 was measured against a possibly-broken
 baseline); aging-vs-pre-aging resolves first.
+
+## WAVE 15 VERDICT: AGING REVERTED — AND THREE QUESTIONS CLOSED AT ONCE (07/30, close)
+
+48/48 seeds, 0 create-fails, attested 851ed5e9 (the aging commit), vs wave 14
+(2b1b3ef0, pre-aging), all-clause:
+
+**1. AGING IS A CONFIRMED REGRESSION — real but MODEST: 14/48 → 16/48.** Newly
+failing: 74 (mine_cleared/mine_blocks_mined) and 76 (build_placed/
+any_needs_materials). Fixed: ZERO. Net -2/+0 from a change with zero
+demonstrated rescues ⇒ **the pre-stated rule fires: REVERT** (boundary: keep
+report-only instrumentation only if the diff splits cleanly; acceptance: the
+revert commit's corpus returns to wave 14's exact profile).
+
+**2. NO CROSS-PLATFORM DIVERGENCE: 9/9 shared seeds agree clause-for-clause.**
+5b's alarming "16/17" was correct measurement through a different LENS on an
+ENRICHED SET: ~13 of its 17 seeds were already failing pre-aging under
+all-clause counting (the mine residual, the wave-9 fails, 52/66/148). All-clause
+counting on known-failing pools read as catastrophe; the true aging delta is 2.
+
+**3. ★ #56 LARGELY EXONERATED: the seed-76 flip that froze its push was AGING's
+doing** — 76 fails build_placed at 851ed5e952 with zero #56 code present. 5b's
+17/17-vs-16/17 was measured against a baseline aging had already broken. #56
+re-runs against the post-revert baseline; 142's flip is the one datum still
+pointing at it.
+
+**PROCESS NOTE (mine): aging went unfanned because a MECHANISM ARGUMENT was
+accepted in place of a corpus run** — the re-baseline rule existed and was
+skipped exactly once, costing a day-end fire drill. It resolved in ONE fan
+because the framework held: pre-stated decision, deterministic witnesses,
+enriched-set arithmetic. And because 5b flagged the anomaly instead of pushing
+#56 onto a broken baseline.
+
+**Sequence from here: revert → re-baseline fan (acceptance = wave-14 profile) →
+#56 verdict on the clean baseline → the queue as it stood** (chopfell fell-set
+diff, access/reachability family, sweep tail: 9 scenarios).
