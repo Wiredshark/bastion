@@ -3559,6 +3559,10 @@ fn b5_scenario(args: &Args) -> ExitCode {
     let soak_elapsed = soak_started.elapsed();
     let avg_tick_ms = soak_elapsed.as_secs_f64() * 1000.0 / soak_ticks as f64;
 
+    // MINE-COMPLETION-INVARIANT (Ben-directed, 2026-07-30): captured once,
+    // read by both the report and the gate below.
+    let locomotion = server.bastion_locomotion_stats();
+
     let result = serde_json::json!({
         "b5_mine_jobs": mine_jobs,
         "b5_chop_jobs": chop_jobs,
@@ -3572,7 +3576,10 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_stone_sum": stone_sum,
         "b5_cavein_drop_cells": server.bastion_cavein_drop_cells(),
         // FR15 baseline (reported): (no_progress_ticks, timeouts, teleports).
-        "b5_locomotion": server.bastion_locomotion_stats(),
+        // MINE-COMPLETION-INVARIANT: `locomotion.2` (failsafe_teleports) is
+        // ALSO used below in the exact-completion gate -- captured once
+        // here so the JSON report and the gate read the identical value.
+        "b5_locomotion": locomotion,
         "b5_stone_entities": stone_entities,
         "b5_log_sum": log_sum,
         "b5_build_stall_untouched": build_stall_untouched,
@@ -3611,16 +3618,33 @@ fn b5_scenario(args: &Args) -> ExitCode {
         && build_ok_jobs == 1
         && build_stall_jobs == 1
         && gave_item
-        // mine_cleared: REPORTED (see the conservation block below).
+        // MINE-COMPLETION-INVARIANT (Ben-directed, 2026-07-30, supersedes
+        // the prior ">=26/27" tolerance): "if we mine a space it needs
+        // 100% of the blocks removed in all cases" — not a fidelity ratio.
+        // EXACT MEASURE: mine_blocks_mined == 27 (every cell in the 3x3x3
+        // mine_min..=mine_max volume, the same volume mine_jobs==27 above
+        // already asserts was fully designated). B78 (readme/
+        // BASTION_COMMON_ISSUES.md) is the filed positive control: a
+        // real, deterministic, reproducible 2-of-27-stuck case this
+        // invariant must catch, not tolerate. The prior ">=26" reading of
+        // "one window short" as mere scheduling throughput conflated a
+        // genuine stuck-forever failure with a timing flake; 180 windows
+        // (5400 ticks) was already enough for B78's stuck cells to stay
+        // stuck, so this is not a timing-budget problem the tolerance was
+        // covering for.
+        && mine_cleared
+        && mine_blocks_mined == 27
+        // No colonist required the ultimate fail-safe rescue during this
+        // scenario (`locomotion.2` = failsafe_teleports, same tuple the
+        // report above carries) — a real, already-instrumented "did a
+        // colonist end up stuck" signal (B24's teleport-rescue mechanism),
+        // gated here for the first time rather than only ever reported.
+        && locomotion.2 == 0
         && chop_cleared
         && build_placed
         // B5.5 + DETRNG: the CONSERVATION invariant — every cleared block
         // yielded exactly one stone (cleared = mined + collapse-severed;
-        // both drop). mine_cleared (all 27 within the window) is REPORTED,
-        // not gating — the b58 d_all_cleared precedent (throughput under
-        // load, registry B8/P6); ≥26/27 gates that the dig SUBSTANTIALLY
-        // ran (a stall would fail loudly), the accounting gates correctness.
-        && mine_blocks_mined >= 26
+        // both drop).
         && stone_sum >= mine_blocks_mined
         && stone_sum <= mine_blocks_mined + server.bastion_cavein_drop_cells()
         && stone_entities <= 10
