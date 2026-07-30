@@ -104,3 +104,38 @@ frontier "complete but useless" — which is precisely what refills bound 1.
 In that case the cascade is not an independent defect but the *amplifier* of
 mechanism 2, and fixing friction alone could collapse both. Worth checking
 jointly rather than either of us assuming our own mechanism is primary.
+
+---
+
+## Probe status, and a discipline the probe does not by itself earn
+
+**`2e62ec811f` (the A/B probe) is COMPILE-VERIFIED, NOT RUN-VERIFIED as
+of writing.** Hooks are in the right places by code reading and
+behaviour-neutrality is grep-proven (every probe field appears only in
+write positions in sim code; the sole reads are in the accessor). Runtime
+emission is unverified. **Nobody should read a zero out of it until it
+has been shown capable of a nonzero.**
+
+That distinction is not pedantry. 5b hit a build-integrity failure the
+same day — a "successful" release build with a matching build stamp and a
+fresh exe timestamp silently reused a stale `bastion-server` compile, and
+it was caught only because 5b verifies field-presence on every new field
+before trusting output.
+
+**The generalisable form, which cost two people time today on two
+different pieces of work:**
+
+> A stale binary and an uninstrumented binary produce the SAME output —
+> silence — and both read as "no problem found."
+
+A counter that compiles and never increments is indistinguishable from a
+counter reporting genuine health. `present: true` in the harness JSON
+separates "the counters say zero" from "this binary has no counters", but
+it only helps if someone has demonstrated the counters can be nonzero at
+least once. Field-presence plus a demonstrated nonzero is the pair;
+either alone is a false all-clear, which is the same shape as this
+diagnosis's own ceiling-versus-resets trap one level up.
+
+**So the order of operations for reading A/B results is:** confirm
+`b5_cascade_probe.present`, confirm at least one counter nonzero
+somewhere, and only then treat a zero elsewhere as evidence.
