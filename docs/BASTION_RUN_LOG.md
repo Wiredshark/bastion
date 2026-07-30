@@ -15041,3 +15041,17 @@ run FAIL · selfgen FAIL · auton FAIL · values pass · season pass.
 
 **TALLY: 24 mapped, 13 broken (54%).** Batch 8 (spiral/auton3/bag1/belt/season1)
 in flight; ~6 remain after.
+
+## BATCH 8 + A PHANTOM IN MY OWN INSTRUMENT (07/30)
+
+belt-exercise PASSES · 3 of 5 VMs lost to the create-rate limit (retrying) ·
+**spiral rc=2 RECLASSIFIED: `--spiral-scenario` DOES NOT EXIST.** `fn
+spiral_scenario` is invoked by `--autonomy-death-spiral-scenario` (already
+counted, FAIL). My 40-scenario enumeration carried a phantom entry, so the true
+surface is **39 scenarios**, and rc=2-with-zero-output was clap rejecting an
+unknown flag — **an INVALID RUN, not a failure.** The silence class again: no
+output + nonzero exit means "never ran," and it was nearly counted as broken.
+
+**TALLY: 26 of 39 mapped, 13 broken.** Remaining 9 chained as batches 9-10 WITH
+10-minute cooldowns (the back-to-back launches were tripping the machine-image
+create-rate limit — my pacing error; the standing cooldown rule existed).
