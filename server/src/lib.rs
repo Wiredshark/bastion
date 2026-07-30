@@ -3238,6 +3238,18 @@ impl Server {
     /// which is why prediction B measured as a ceiling is a false
     /// all-clear.
     ///
+    /// `members_seen` is a TRUE COUNT: it unions all four maps, so a member
+    /// that hit an abort without completing a frontier or emitting a plan is
+    /// still counted. (It chained only two maps until 2026-07-30 and was a
+    /// silent lower bound — undercounting precisely the members whose
+    /// bound-1 behaviour this probe exists to observe.)
+    ///
+    /// The four *maxima* remain four INDEPENDENT maxima and need not describe
+    /// the same member; they answer "was there a big cascade somewhere", not
+    /// "was it one cascade". Per-member rows are required before the A/B
+    /// reading table can be evaluated — see
+    /// `readme/CARVE-CASCADE-DIAGNOSIS-seed61.md`.
+    ///
     /// Maxima folded over members in SORTED order so no hash-iteration
     /// order reaches the output. Pure telemetry; `JobBoard` feeds no
     /// canonical hash (checked), so this cannot move the 72/72
@@ -3249,9 +3261,17 @@ impl Server {
             vals.sort_unstable();
             vals.into_iter().map(|(_, v)| v).max().unwrap_or(0)
         };
+        // `members_seen` unions ALL FOUR maps. Chaining only completes and
+        // emissions (as this did) makes any member that reached an ABORT
+        // without ever completing a frontier or emitting a plan invisible —
+        // i.e. it undercounts exactly the members whose bound-1 behaviour the
+        // carve-cascade row studies, turning a count into a silent lower
+        // bound. Reported by the harness as a count, so it must be one.
         let mut members: Vec<u64> = board
             .cascade_frontier_completes
             .keys()
+            .chain(board.cascade_abort_resets.keys())
+            .chain(board.cascade_abort_max.keys())
             .chain(board.cascade_access_emissions.keys())
             .map(|u| u.0.get())
             .collect();
