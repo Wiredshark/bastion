@@ -15123,3 +15123,18 @@ enriched-set arithmetic. And because 5b flagged the anomaly instead of pushing
 **Sequence from here: revert → re-baseline fan (acceptance = wave-14 profile) →
 #56 verdict on the clean baseline → the queue as it stood** (chopfell fell-set
 diff, access/reachability family, sweep tail: 9 scenarios).
+
+## WAVE 16: REVERT ACCEPTANCE MET EXACTLY — DAY CLOSE BASELINE ESTABLISHED (07/30)
+
+48/48 seeds, 0 create-fails, attested `07fcc478` (the isolated aging revert).
+**Corpus = wave 14's profile TO THE CLAUSE: 14/48 failing, ZERO per-seed
+clause-set mismatches.** Aging's damage fully undone; nothing else moved; the
+kept report-only instrumentation is thereby proven behaviour-neutral at corpus
+scale (clause sets match a commit predating it).
+
+**STANDING BASELINE for tomorrow: `07fcc47893` — 14/48, membership + clause
+sets persisted (wave16_FULL.json ≡ wave14).** Queue head: 5b lands #56-(c)
+(reporting-only chop visibility; acceptance pre-stated) → one confirmation fan →
+close. Tomorrow: the fell-set vs plain-chop Goto diff (movement-initiation
+suspect), the vantage-point reachability gate row (b), the access/reachability
+family, aging's owed starvation acceptance test, 9 unswept scenarios.
