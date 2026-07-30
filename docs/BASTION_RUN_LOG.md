@@ -14348,3 +14348,163 @@ prove only that b15 never fails INDEPENDENTLY — the discriminating seeds sat i
 range whose full clause JSON was overwritten before I persisted it. **Third
 data-loss of the day from the same cause; the workflow now dumps the COMPLETE
 JSON rather than the fields I expect to need.**
+
+## FRICTION DISTRIBUTION + THREE FALSIFICATIONS (07/30, wave 8 onward)
+
+**WAVE 8 (36 seeds, tip 54c22680) — 5b's instrumentation VERIFIED READ-ONLY at
+scale:** residual identical before and after ([51,54,55,61,71] both times). The
+6.9% baseline and every repro survive.
+
+**FRICTION IS BIMODAL, NOT A GRADIENT** (n=36, suggestive not established):
+0 timeouts 14 seeds · 1-4 12 seeds · **5-9 ONE seed** · 10+ 9 seeds.
+min 0 / median 1.5 / mean 5.4 / max 29. **Zero failures below 10 timeouts; all
+5 failures inside the 9-seed high band.** High friction is NECESSARY but NOT
+SUFFICIENT.
+
+**★ FALSIFICATION 1 — `max_same_target_timeouts` DOES NOT DISCRIMINATE.** The
+metric built for precisely this question fails at it: FAIL [2,2,2,3,5] vs pass
+[2,2,3,4], fully overlapping. Total count overlaps too — **seed 76 takes 29
+timeouts, the worst in the corpus, and PASSES**; seed 55 takes 13 and fails.
+The dose-response framing was too simple: dose gets you into the danger zone,
+something else decides. **Seed 76 is now the test any explanation must pass.**
+
+**★ FALSIFICATION 2 — TWO METRICS THAT ARE TAUTOLOGIES (both caught BEFORE they
+produced numbers; one was Fable's own suggestion).** `timeouts_on_never_
+completed_jobs` is **0 by construction for every passing seed** (no open jobs
+exist) — it separates pass/fail perfectly and explains nothing, being a
+restatement of the outcome. Then the structural-position test as first scoped
+had the same defect one level down: positioning of **still-open cells** is
+UNDEFINED for passes, so it could only inspect failures, find clustering, and
+"confirm" a hypothesis it never risked. **Corrected to use TIMEOUT POSITIONS,
+which exist for every seed** — and the control group is the high-friction
+PASSES (76/52/74/66). **The standing rule: a metric defined in terms of the
+outcome cannot explain the outcome.**
+
+**★ FALSIFICATION 3 — THE SCRAMBLE LEAD IS RETIRED, and the replacement is
+worse.** 5b read `path.rs`'s real `neighbors()` rather than trusting its model:
+the tier it had called "scramble" is actually the **JUMP edge (+2), gated only
+on ground contact — universally available to every grounded colonist.** True
+scramble (+3, climbing_level>=1) was never tested. So "55/61/71 need a rare
+skill" becomes **"a route exists using a maneuver any colonist can always
+perform, and they still don't arrive."** Also corrected: descent is asymmetric
+and near-unbounded (costed Falls branch to 11 blocks); diagonals are
+defined-but-commented-out, so cardinal-only was faithful by luck.
+
+**ARRIVE_DIST = 2.5 KILLED A CATEGORY.** Seed 51's best approach across all 9
+stuck cells was **3.1** — it never entered arrival range. The "arrived close, so
+the destination failed" reading (Fable's, flagged at the time as load-bearing)
+is dead; it's a near-miss travel failure.
+
+**TERRAIN PROBE, 11 cases — the (a)/(b) framework was too coarse; >=4 categories
+exist:** no-path-at-all (chop 80, maybe 38) · path-by-walking-but-never-arrived
+(51/54, chop 119) · needs-jump (55/61/71, chop 18) · colonist-wandered-somewhere-
+disconnected (chop 16, min_dist 30.9) · probe_incomplete (chop 26, cap fired at
+100k). **Two-axis finding: seed 61 is NOT unique on reachability** (shares the
+jump-dependent geometry with 55/71) **and IS unique on carve escalation**
+(job=916 vs bounded 26/28). Kept as two axes rather than collapsed.
+
+**ROW 1 GETS A FALSIFIABLE ENTRY CONDITION instead of an evidence-volume gate.**
+Opus's amplifier hypothesis (friction refills bound 1's progress-reset) + 5b's
+geometry finding ⇒ **fix mechanism (2) first, then re-measure 61. If it still
+cascades, Row 1 is independent and earns its surgery; if the cascade vanishes,
+Row 1 closes as a downstream symptom and nobody touches carve/access/dormancy.**
+Row 1's evidence base is ONE seed in 72 — surgery was never justifiable on that.
+
+**BUILD INTEGRITY — SECOND STALE-CACHE INCIDENT, AND FABLE'S GUARD DOESN'T CATCH
+IT.** cargo reported "Finished" with a **correct build_stamp** and fresh exe
+timestamp while the binary was missing fields committed well earlier. The stamp
+derives from git HEAD, not from compiled objects, so a stale-`.rlib` build AT
+THE CURRENT COMMIT stamps clean. **Field-presence is the primary guard; the
+stamp is a weak secondary.** **FABLE'S FIRST ROOT CAUSE WAS WRONG AND OPUS FALSIFIED IT
+WITH EVIDENCE.** I blamed my own role change — two sessions racing one target
+dir. Opus checked `cargo metadata` rather than complying quietly: the two agents
+were **already isolated** (cargo puts `target/` at each WORKSPACE root and a
+worktree is its own workspace), so that mechanism was never possible and my
+"ruling" cost nothing and fixed nothing. **The real shared mutable state is
+sccache** — `.cargo/config.toml` sets `rustc-wrapper = "sccache"` with
+`SCCACHE_DIR` unset, so every worktree/session reuses ONE user-global cache,
+which exactly produces the symptom: a cache keyed on inputs serves an object
+predating a source change while cargo honestly reports `Finished` and the
+HEAD-derived stamp comes out correct. **FIX: `RUSTC_WRAPPER="" cargo build` for
+any build whose output must be trusted.** Target-dir isolation kept (free, but
+not the cure). **Opus's general form: a stale binary and an uninstrumented
+binary emit the same thing — SILENCE — and both read as "no problem found."** No corrupted
+numbers entered the record (verified: the suspect build's only run was the one
+where 5b caught it; ARRIVE_DIST and the tier correction are source-derived).
+
+**LANE ROLES CHANGED (Ben-directed):** Opus is now 5b's day-to-day working
+partner on live investigation, not a gate-time reviewer; T8.4/T8.1/T8.5/T9.2
+parked; Fable takes broad/architectural review. Ben's reasoning: Opus's chop
+review was the highest-value review of the day BECAUSE it was on live work.
+
+## MAGNITUDE IS DEAD; THE DISCRIMINATOR IS CATEGORICAL (07/30, waves 9-11)
+
+**WAVE 9 (36 seeds, 121-156) + WAVE 8 = 72-seed friction corpus:**
+0 timeouts 33 · 1-4 19 · 5-9 3 · 10+ 17. **ZERO failures among all 55
+low-friction seeds** (was 0/27). High friction is NECESSARY for failure.
+
+**★ AND PLAINLY NOT SUFFICIENT. High-friction band = 17 seeds, 10 fail / 7 pass,
+and NO quantitative measure separates them:**
+```
+max_same  FAIL [2,2,2,2,3,3,3,3,3,5]  pass [1,2,2,2,3,3,4]
+timeouts  FAIL [13,16,18,20,21,22,22,23,23,25]  pass [10,11,11,12,16,21,29]
+```
+Seed 76 takes **29** timeouts and PASSES; seed 55 takes 13 and FAILS. **Seeds 61
+and 148 take EXACTLY 16 each — one fails, one passes.** Magnitude is dead as an
+explanation; the discriminator is categorical, not quantitative.
+
+**RATE REVISED UPWARD, HONESTLY: 10/108 = 9.3%** across seeds 49-156 post-fix,
+versus the 6.9% quoted from the narrower 49-120 window. The wider sample is the
+more trustworthy number.
+
+**TWO EXACT-MATCHED PAIRS FOUND IN THE CORPUS (Fable, from the fan data):**
+61 (16, FAIL) vs 148 (16, pass) · 146 (21, FAIL) vs 52 (21, pass). Two
+independent pairs at identical friction — the difference between a finding and
+an anecdote, for one extra seed.
+
+**★ THE PAIRS ARE MATCHED ON THE WRONG AXIS AND CANNOT CURRENTLY BE FIXED.**
+Fable's caution (a control matched on an irrelevant axis is worse than none,
+because it looks rigorous) turned out to describe the only data we have: Opus
+checked and `JobBoard::timeout_counts_by_pos` IS a real position map, but its
+sole accessor does `.values().max()` — **the keys are discarded**, so
+`b5_max_same_target_timeouts` is a whole-run scalar. Nothing currently answers
+"did 148's friction land in the mine volume or on chop?" **Axis check is a
+PRECONDITION of the pair experiment, not a footnote.** Opus designed a bounded,
+canonically-ordered positional summary and sent it to 5b (one surface, one
+owner) rather than landing it.
+
+**FABLE'S REFINEMENTS: (1) emit the RAW top-N positions alongside any derived
+classification** — a derived-only field can't answer the question after the one
+you asked, and rebuilds have been today's most expensive resource; **(2) BOUND
+THE DETAIL, NEVER THE AGGREGATE** — top-8 for inspection is fine, but compute
+in-volume vs elsewhere totals over the WHOLE map, because a truncated aggregate
+undercounts diffuse friction more than concentrated friction, which is exactly
+the axis the pairs turn on. Truncation correlated with the variable under study
+is a bias, not a rounding error.
+
+**★ PATTERN, FOURTH INSTANCE TODAY — AGGREGATE LATE, KEEP THE STRUCTURE.** The
+40-clause conjunction collapsed to one bool (couldn't say WHICH clause). The
+rescue counter was folded into a mine verdict (couldn't say which FAILURE
+CLASS). The chop oracle collapsed to a count (couldn't say whether it RAN). Now
+`.values().max()` collapses a position map to a scalar (can't say WHERE). Every
+one destroyed information at the moment of measurement; every one cost a rebuild
+to recover.
+
+**OPUS RETRACTED THE QUANTITY FORM OF ITS AMPLIFIER HYPOTHESIS — and the
+mechanism SURVIVED because it was already categorical.** Bound-1's refill fires
+on a BINARY event (a frontier either reaches frontier-complete or doesn't), so
+"same friction, opposite outcome" is what it predicts. It did not reshape the
+hypothesis to fit the data; the data selected the form already there. Standing
+commitment: if `frontier_completes` fails to separate the matched pairs,
+bound-1 is dead on its own terms.
+
+**WAVE 10 — OPUS'S PROBE IS BEHAVIOUR-NEUTRAL, with its limit stated.** 12 seeds
+(49-60) on `a68f0466`; verified the only delta from wave 9's tip is a doc-only
+pre-registration commit, so this is a genuine single-variable test against
+probe-free `54c22680`. Failures identical [51,54,55]; **zero drift on ALL FOUR
+fields**, not merely the verdict — stronger evidence, since perturbed
+allocation/iteration order would have moved timeout counts even where the
+verdict held. **LIMIT: seeds 61 and 71 were NOT covered** (create-quota losses),
+and 61 is Opus's own paired-comparison subject. **Wave 11 running 61-84 to close
+exactly that gap** — a neutrality result that skips the seed the experiment
+depends on is not the result the experiment needs.
