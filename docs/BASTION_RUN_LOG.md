@@ -13899,3 +13899,57 @@ seeds 121-264. Written to memory. **Second infra trap: `vm-pool.sh` does
 `rm -f /tmp/bastion-pool/*.log` at startup, so each wave DESTROYS the previous
 wave's raw logs** — wave 1's were lost after extraction. Every wave's results
 are now persisted to `bastion-test-evidence/` immediately.
+
+## FAN WAVE 2 — the rate holds at 31.3% across 144 seeds (07/30)
+
+72 more seeds (121-192), attested `COMMIT=5413915f`, 493s, $0.53. Evidence:
+`bastion-test-evidence/b5-mine-corpus-wave2.md`. 3 VMs lost to the
+machine-image create-rate limit — **self-inflicted**: the standing rule is a
+~10min cooldown between fans and I launched wave 2 immediately after wave 1.
+My error, not a test failure.
+
+**COMBINED 144 seeds: 45 TRUE mine-completion violations = 31.3%.** Per-wave
+33.3% -> 29.2% across independent seed ranges. The headline is stable, not a
+small-sample artifact. 66/144 (45.8%) fully clean.
+
+**MODE SHARES HELD ACROSS BOTH WAVES:**
+- **ONE BLOCK SHORT: 18/45 = 40% of failures** (42% then 40%). The single most
+  common failure in the game remains the exact case the retired `>=26/27`
+  tolerance existed to permit.
+- **ZERO MINED: 11/45 = 24% of failures, 7.6% of ALL seeds.** Roughly one run
+  in thirteen assigns a colonist who mines, earns XP, and removes nothing.
+  Not an edge case.
+- PARTIAL STALL: 16/45 = 36%.
+
+**RESCUE BASE RATE, both waves: 45/144 = 31.3%** (27.8% -> 34.7%) against a
+design target of "a RARE backstop". Gating `== 0` would fail nearly a THIRD of
+all runs, **18 of them with perfectly mined 27/27 holes.** DECISIONS #37 was
+the right call on a guess; it is now the right call on measurement.
+
+**FALSE-FAILURE CLASS FOUND AND CLOSED — 15/144 (10.4%) were NEVER GAME BUGS.**
+5b root-caused the build-stall cluster: `build_ok_pos`/`build_stall_pos` were
+never terraformed while mine/chop were, so a worldgen tree rooted at that
+column leaves the target filled and the designation is rejected. Seed-dependent
+-> looked like a mystery cluster. **It violates a rule b5's own source already
+states** ("test terraforms must fully determine geometry" — cited in the
+slope-coverage phase, not applied here); every phase is now being audited.
+**MY CAUSAL HYPOTHESIS WAS WRONG AND 5b KILLED IT BY READING THE CODE:** I
+inferred chop-failure -> no-material -> build-stall from co-occurring JSON
+fields; BUILD_MATERIAL_ITEM=stones is independent of CHOP_DROP_ITEM=wood.
+Correlation among output fields is not a causal chain — builders should kill
+orchestrator hypotheses this way, and this one is on the record as an example.
+
+**THE STANDING LESSON: a corpus contains BOTH real bugs and instrument
+defects, and a failure COUNT cannot tell them apart.** Every cluster now gets
+"game or fixture?" before a root-cause hunt. Checked in that spirit, the mine
+number SURVIVES: designation only creates a job for a FILLED cell and the gate
+asserts `mine_jobs == 27`, so all 27 cells were verified solid before mining
+began — pre-existing air cannot inflate the mine result the way an untended
+tree deflated the build result. Mine measurement self-protecting, build
+measurement not. That asymmetry tells us which future measurements need a guard.
+
+**OPEN LEAD, explicitly not closed:** seeds 80/111/119 still show `log_sum=0` +
+`chop_cleared=false`. The terraform fix explains their needs_materials, NOT
+their chop failure. A hypothesis dies only when its own prediction is tested
+absent. Next fan is a BEFORE/AFTER on the SAME failing seeds once 5b's fix
+lands — identical seeds, not a fresh random sample.
