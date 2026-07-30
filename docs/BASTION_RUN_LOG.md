@@ -14744,3 +14744,73 @@ came back, which no total captures. **Steered 5b OFF a colony-level
 supply/demand model** (a fifth hypothesis needing a whole measurement apparatus)
 and onto the arbitration re-offer path: a code read plus one `times_offered`
 counter. Anomalies beat models.
+
+## ★ THE MECHANISM: GREEDY ARBITRATION WITH NO AGING (07/30, #59)
+
+**5b's code read — no apparatus built, per the steer off the supply/demand model —
+found what four statistical hypotheses could not.**
+
+**There is NO penalty, cooldown or deprioritisation after a failed attempt.** At
+timeout/churn release `job.claimed_by = None` fires immediately and the job is
+fully eligible again next cycle (~0.5s at 30 TPS). The one stateful memory —
+the stigmergic saturation field — **deposits only for colonists at `Arrived`**, so
+a repeatedly-timed-out cell never accrues saturation and reads as **MORE**
+attractive, not less. **5b ruled out the repulsion story before proposing its
+own, and the field points the OPPOSITE way** — which is what makes the finding
+load-bearing rather than convenient.
+
+**What arbitration actually does: it is straightforwardly GREEDY.** Every cycle,
+every free colonist takes whichever unclaimed job scores lowest
+(dist + depth + clump + saturation) across **ALL open jobs colony-wide, every
+kind mixed in one comparison.** So a hard-to-reach cell is never punished — **it
+simply LOSES the comparison every cycle for as long as easier unclaimed work
+exists anywhere.** It gets attempted only when it happens to be nearest to
+whichever colonist is free, which grows rarer the more total work competes.
+
+**★ THIS EXPLAINS EVERY ANOMALY THAT KILLED THE OTHER HYPOTHESES:**
+- **"abandoned after 2 attempts"** — the releasing colonist immediately took
+  better-scored work; nothing brought the cell back.
+- **why raw timeout COUNT never discriminated** — the operative variable is how
+  much *other, cheaper* work existed, not how often the cell failed.
+- **why identical counts landed on opposite outcomes** (61 vs 148, both 16) —
+  the difference was never in the failing seed's timeouts; it was in the rest of
+  the colony's job load.
+- **#56's leaf job and the farm till/sow phases** — same starvation, different
+  subsystems, which is why all three present as "ran out of window."
+
+**KILL CONDITION SET BEFORE MEASURING** (four coherent stories died today; a story
+that explains everything is when to trust it least): **a residual cell that sat
+unattempted through many cycles while the field was NOT crowded.** Starvation
+with nothing to be starved by ⇒ something else blocks re-offer and the greedy
+reading is wrong. Measurement: per residual cell, arbitration cycles between last
+attempt and window end, and the count of cheaper unclaimed alternatives at each.
+
+**FIX DIRECTION NAMED (not built — measure first, then rule):** this is the
+textbook **starvation** failure of greedy lowest-score selection. Standard remedy
+is **AGING** — a job's effective score improves the longer it goes unattempted,
+so a hard cell eventually outranks easy work. Alternatives: a fairness quota, or
+an explicit starvation guard (nothing waits more than N cycles). **This is an
+arbitration DESIGN change, not a pathfinding fix — and it would address mine,
+chop and farm simultaneously, which no per-subsystem fix can.**
+
+**FARM TRIAGE, still open:** `farm-scenario` and `autonomy-death-spiral-scenario`
+both exit 1. 5b's reading is per-phase windows (tilled/sown checked in 360/600
+ticks; matured/harvested/cycled in larger later windows), so work finishing just
+past its own window reads false while the crop still matures. **Fable's pushback:
+the windows did NOT change — the run log records farm-scenario PASSING at leg 27
+("all 9 cells till, all 9 sow") against these same budgets — so "the window is too
+tight" and "the work got SLOWER" are the same observation and only the second is a
+finding.** Same trap as the >=26/27 tolerance and #56's 40→200. Pre-#57 control
+still building; regression-vs-pre-existing not concluded.
+**Open independently: `job_still_wanted`'s catch-all arm
+`Designated(d) => job_wanted(*d, block)` covers SEVEN unaudited kinds** (Mine,
+Chop, Build, Stockpile, Ladder, Zone, Gather). Farm was special-cased because 5b
+noticed it; nothing checked the rest. **Gather is the suspect** — its jobs are per
+collectible plant SPRITE, so a block-filledness test would sweep every Gather job
+every cycle. **Auditing the one kind you noticed is not auditing the predicate.**
+
+**INFRA: `ZONE_RESOURCE_POOL_EXHAUSTED` cost two fan waves** (12 VMs, ~$0.45, zero
+seeds). GCP capacity, not quota — every create fails including the first, and the
+message names the resource pool rather than a numeric limit. e2-standard-32 AND
+e2-standard-16 both exhausted in us-central1-a. `vm-pool.sh` ZONE is now
+overridable (`ZONE="${ZONE:-us-central1-a}"`); retrying in us-central1-b.

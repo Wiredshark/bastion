@@ -11,7 +11,7 @@
 # bounces creates). vCPU per VM = the trailing number of the machine type (e2-standard-4 -> 4).
 set -u
 GCLOUD="/c/Program Files (x86)/Google/Cloud SDK/google-cloud-sdk/bin/gcloud.cmd"
-ZONE=us-central1-a; IMAGE=bastion-golden; KEY="$HOME/.ssh/id_ed25519"; SSHKEYS_FILE="C:/Users/q/.ssh/bastion-sshkeys.txt"
+ZONE="${ZONE:-us-central1-a}"; IMAGE=bastion-golden; KEY="$HOME/.ssh/id_ed25519"; SSHKEYS_FILE="C:/Users/q/.ssh/bastion-sshkeys.txt"
 BRANCH="${BRANCH:-bastion/builder}"   # every VM lands on this branch's remote tip; override e.g. BRANCH=codex/boot-cache
 N="$1"; MACHINE="$2"; SPV="$3"; FIRST="$4"; ARGS="$5"; MAX_USD="${6:-5}"; MAX_MIN="${7:-30}"
 VCPU_PER=$(echo "$MACHINE" | sed 's/.*-//'); TOTAL_VCPU=$((N * VCPU_PER)); RATE=0.035  # $/vCPU-hr, conservative
