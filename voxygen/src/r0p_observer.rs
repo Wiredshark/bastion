@@ -228,6 +228,18 @@ pub struct SceneCountersV1 {
     pub visible_horizon_frustum_ground_width_mm: u64,
     pub visible_horizon_frustum_ground_depth_mm: u64,
     pub visible_horizon_camera_token: [u8; 32],
+    pub horizon_camera_path_id: u64,
+    pub horizon_camera_path_ordinal: u64,
+    pub horizon_camera_path_token: [u8; 32],
+    pub horizon_surface_authority_available: bool,
+    pub horizon_cutaway_solid: bool,
+    pub horizon_underworld_rejected: bool,
+    pub horizon_sky_ground_expected: bool,
+    pub horizon_focus_surface_mm: i64,
+    pub horizon_camera_surface_mm: i64,
+    pub horizon_minimum_clearance_mm: i64,
+    pub horizon_terrain_revision: u64,
+    pub horizon_meshed_high_detail_chunks: u64,
     pub visible_horizon_near_0_8_chunks: u64,
     pub visible_horizon_reference_9_16_chunks: u64,
     pub visible_horizon_far_17_24_chunks: u64,
@@ -635,6 +647,18 @@ fn visible_horizon_json_fields_v1(scene: SceneCountersV1) -> String {
             "\"visible_horizon_frustum_ground_width_mm\":{},",
             "\"visible_horizon_frustum_ground_depth_mm\":{},",
             "\"visible_horizon_camera_token\":\"{}\",",
+            "\"horizon_camera_path_id\":{},",
+            "\"horizon_camera_path_ordinal\":{},",
+            "\"horizon_camera_path_token\":\"{}\",",
+            "\"horizon_surface_authority_available\":{},",
+            "\"horizon_cutaway_solid\":{},",
+            "\"horizon_underworld_rejected\":{},",
+            "\"horizon_sky_ground_expected\":{},",
+            "\"horizon_focus_surface_mm\":{},",
+            "\"horizon_camera_surface_mm\":{},",
+            "\"horizon_minimum_clearance_mm\":{},",
+            "\"horizon_terrain_revision\":{},",
+            "\"horizon_meshed_high_detail_chunks\":{},",
             "\"visible_horizon_near_0_8_chunks\":{},",
             "\"visible_horizon_reference_9_16_chunks\":{},",
             "\"visible_horizon_far_17_24_chunks\":{},",
@@ -667,6 +691,18 @@ fn visible_horizon_json_fields_v1(scene: SceneCountersV1) -> String {
         scene.visible_horizon_frustum_ground_width_mm,
         scene.visible_horizon_frustum_ground_depth_mm,
         hex_digest(&scene.visible_horizon_camera_token),
+        scene.horizon_camera_path_id,
+        scene.horizon_camera_path_ordinal,
+        hex_digest(&scene.horizon_camera_path_token),
+        scene.horizon_surface_authority_available,
+        scene.horizon_cutaway_solid,
+        scene.horizon_underworld_rejected,
+        scene.horizon_sky_ground_expected,
+        scene.horizon_focus_surface_mm,
+        scene.horizon_camera_surface_mm,
+        scene.horizon_minimum_clearance_mm,
+        scene.horizon_terrain_revision,
+        scene.horizon_meshed_high_detail_chunks,
         scene.visible_horizon_near_0_8_chunks,
         scene.visible_horizon_reference_9_16_chunks,
         scene.visible_horizon_far_17_24_chunks,
@@ -1052,6 +1088,18 @@ mod tests {
             visible_horizon_frustum_ground_width_mm: 837_000,
             visible_horizon_frustum_ground_depth_mm: 1_376_000,
             visible_horizon_camera_token: [0xab; 32],
+            horizon_camera_path_id: 4,
+            horizon_camera_path_ordinal: 9_001,
+            horizon_camera_path_token: [0xcd; 32],
+            horizon_surface_authority_available: true,
+            horizon_cutaway_solid: true,
+            horizon_underworld_rejected: false,
+            horizon_sky_ground_expected: true,
+            horizon_focus_surface_mm: 40_000,
+            horizon_camera_surface_mm: 41_000,
+            horizon_minimum_clearance_mm: 8_000,
+            horizon_terrain_revision: 9_001,
+            horizon_meshed_high_detail_chunks: 1_790,
             visible_horizon_near_0_8_chunks: 17,
             visible_horizon_reference_9_16_chunks: 53,
             visible_horizon_far_17_24_chunks: 89,
@@ -1076,6 +1124,18 @@ mod tests {
             "\"visible_horizon_camera_token\":\"{}\"",
             "ab".repeat(32)
         )));
+        assert!(fields.contains("\"horizon_camera_path_id\":4"));
+        assert!(fields.contains("\"horizon_camera_path_ordinal\":9001"));
+        assert!(fields.contains(&format!(
+            "\"horizon_camera_path_token\":\"{}\"",
+            "cd".repeat(32)
+        )));
+        assert!(fields.contains("\"horizon_surface_authority_available\":true"));
+        assert!(fields.contains("\"horizon_cutaway_solid\":true"));
+        assert!(fields.contains("\"horizon_underworld_rejected\":false"));
+        assert!(fields.contains("\"horizon_minimum_clearance_mm\":8000"));
+        assert!(fields.contains("\"horizon_terrain_revision\":9001"));
+        assert!(fields.contains("\"horizon_meshed_high_detail_chunks\":1790"));
         assert!(fields.contains("\"visible_horizon_far_17_24_chunks\":89"));
         assert!(fields.contains("\"visible_horizon_max_distance_blocks\":800"));
         assert!(fields.contains("\"visible_horizon_lod_terrain_draw_ready\":true"));

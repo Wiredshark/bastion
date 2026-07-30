@@ -25,6 +25,7 @@ pub mod key_state;
 pub mod menu;
 pub mod mesh;
 pub mod panic_handler;
+mod post_r2_horizon_multicamera;
 mod post_r2_visible_horizon;
 pub mod profile;
 pub mod r0p_observer;

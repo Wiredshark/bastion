@@ -47,6 +47,7 @@ pub fn parse_visible_horizon_fixture_v1(declaration: Option<&str>) -> Result<boo
     match declaration {
         None => Ok(false),
         Some(VISIBLE_HORIZON_FIXTURE_V1) => Ok(true),
+        Some(crate::post_r2_horizon_multicamera::MULTICAMERA_FIXTURE_V1) => Ok(true),
         Some(_) => Err("POST_R2_VISIBLE_HORIZON_INVALID_DECLARATION"),
     }
 }
@@ -266,6 +267,12 @@ mod tests {
         assert_eq!(parse_visible_horizon_fixture_v1(None), Ok(false));
         assert_eq!(
             parse_visible_horizon_fixture_v1(Some(VISIBLE_HORIZON_FIXTURE_V1)),
+            Ok(true)
+        );
+        assert_eq!(
+            parse_visible_horizon_fixture_v1(Some(
+                crate::post_r2_horizon_multicamera::MULTICAMERA_FIXTURE_V1
+            )),
             Ok(true)
         );
         assert_eq!(
