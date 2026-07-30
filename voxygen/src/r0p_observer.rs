@@ -218,6 +218,9 @@ pub struct SceneCountersV1 {
     pub visible_horizon_camera_yaw_microradians: i64,
     pub visible_horizon_camera_pitch_microradians: i64,
     pub visible_horizon_camera_distance_mm: u64,
+    pub visible_horizon_configured_base_fov_microradians: u64,
+    pub visible_horizon_camera_base_fov_microradians: u64,
+    pub visible_horizon_camera_target_base_fov_microradians: u64,
     pub visible_horizon_camera_fov_microradians: u64,
     pub visible_horizon_camera_fixation_millionths: u64,
     pub visible_horizon_camera_target_fixation_millionths: u64,
@@ -622,6 +625,9 @@ fn visible_horizon_json_fields_v1(scene: SceneCountersV1) -> String {
             "\"visible_horizon_camera_yaw_microradians\":{},",
             "\"visible_horizon_camera_pitch_microradians\":{},",
             "\"visible_horizon_camera_distance_mm\":{},",
+            "\"visible_horizon_configured_base_fov_microradians\":{},",
+            "\"visible_horizon_camera_base_fov_microradians\":{},",
+            "\"visible_horizon_camera_target_base_fov_microradians\":{},",
             "\"visible_horizon_camera_fov_microradians\":{},",
             "\"visible_horizon_camera_fixation_millionths\":{},",
             "\"visible_horizon_camera_target_fixation_millionths\":{},",
@@ -651,6 +657,9 @@ fn visible_horizon_json_fields_v1(scene: SceneCountersV1) -> String {
         scene.visible_horizon_camera_yaw_microradians,
         scene.visible_horizon_camera_pitch_microradians,
         scene.visible_horizon_camera_distance_mm,
+        scene.visible_horizon_configured_base_fov_microradians,
+        scene.visible_horizon_camera_base_fov_microradians,
+        scene.visible_horizon_camera_target_base_fov_microradians,
         scene.visible_horizon_camera_fov_microradians,
         scene.visible_horizon_camera_fixation_millionths,
         scene.visible_horizon_camera_target_fixation_millionths,
@@ -1033,6 +1042,9 @@ mod tests {
             visible_horizon_camera_yaw_microradians: 0,
             visible_horizon_camera_pitch_microradians: 349_066,
             visible_horizon_camera_distance_mm: 384_000,
+            visible_horizon_configured_base_fov_microradians: 1_100_000,
+            visible_horizon_camera_base_fov_microradians: 1_100_000,
+            visible_horizon_camera_target_base_fov_microradians: 1_100_000,
             visible_horizon_camera_fov_microradians: 1_100_000,
             visible_horizon_camera_fixation_millionths: 1_000_000,
             visible_horizon_camera_target_fixation_millionths: 1_000_000,
@@ -1054,6 +1066,9 @@ mod tests {
         assert!(fields.contains("\"visible_horizon_camera_valid\":true"));
         assert!(fields.contains("\"visible_horizon_camera_focus_mm\":[1,2,1000]"));
         assert!(fields.contains("\"visible_horizon_camera_pitch_microradians\":349066"));
+        assert!(fields.contains("\"visible_horizon_configured_base_fov_microradians\":1100000"));
+        assert!(fields.contains("\"visible_horizon_camera_base_fov_microradians\":1100000"));
+        assert!(fields.contains("\"visible_horizon_camera_target_base_fov_microradians\":1100000"));
         assert!(fields.contains("\"visible_horizon_camera_fixation_millionths\":1000000"));
         assert!(fields.contains("\"visible_horizon_camera_target_fixation_millionths\":1000000"));
         assert!(fields.contains("\"visible_horizon_frustum_ground_depth_mm\":1376000"));

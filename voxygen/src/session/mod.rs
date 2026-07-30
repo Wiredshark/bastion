@@ -2369,6 +2369,7 @@ impl PlayState for SessionState {
         let horizon_camera = crate::post_r2_visible_horizon::camera_evidence_v1(
             self.scene.camera(),
             horizon_fixture_selected,
+            global_state.settings.graphics.fov,
         )
         .unwrap_or_default();
         let horizon_terrain = self
@@ -2420,6 +2421,11 @@ impl PlayState for SessionState {
             visible_horizon_camera_yaw_microradians: horizon_camera.yaw_microradians,
             visible_horizon_camera_pitch_microradians: horizon_camera.pitch_microradians,
             visible_horizon_camera_distance_mm: horizon_camera.distance_mm,
+            visible_horizon_configured_base_fov_microradians: horizon_camera
+                .configured_base_fov_microradians,
+            visible_horizon_camera_base_fov_microradians: horizon_camera.base_fov_microradians,
+            visible_horizon_camera_target_base_fov_microradians: horizon_camera
+                .target_base_fov_microradians,
             visible_horizon_camera_fov_microradians: horizon_camera.fov_microradians,
             visible_horizon_camera_fixation_millionths: horizon_camera.fixation_millionths,
             visible_horizon_camera_target_fixation_millionths: horizon_camera
@@ -2487,7 +2493,11 @@ impl PlayState for SessionState {
             }
 
             if crate::post_r2_visible_horizon::visible_horizon_fixture_selected_v1() == Ok(true) {
-                crate::post_r2_visible_horizon::apply_post_maintenance_camera_v1(camera, true);
+                crate::post_r2_visible_horizon::apply_post_maintenance_camera_v1(
+                    camera,
+                    true,
+                    global_state.settings.graphics.fov,
+                );
             }
 
             // Compute camera data
