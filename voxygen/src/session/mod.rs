@@ -716,6 +716,16 @@ impl SessionState {
         if let Some(pos) = pos {
             camera.force_focus_pos(pos);
         }
+        match crate::post_r2_visible_horizon::visible_horizon_fixture_selected_v1() {
+            Ok(true) => {
+                let horizon_spawn = pos.unwrap_or_else(|| camera.get_focus_pos());
+                crate::post_r2_visible_horizon::configure_camera_v1(camera, horizon_spawn);
+            },
+            Ok(false) => {},
+            Err(terminal) => {
+                tracing::error!(target: "bastion_post_r2", %terminal);
+            },
+        }
         // God mode runs with a free, visible cursor (grab-drag needs it).
         global_state.window.grab_cursor(false);
         self.bastion_sync_context(global_state);
@@ -2305,6 +2315,17 @@ impl PlayState for SessionState {
         let server_completed_tick = terrain_streaming
             .and_then(|_| crate::render::bastion_r0d::certification_server_latch_v1())
             .map_or(0, |latch| latch.completed_tick);
+        let horizon_fixture_selected =
+            crate::post_r2_visible_horizon::visible_horizon_fixture_selected_v1().unwrap_or(false);
+        let horizon_camera = crate::post_r2_visible_horizon::camera_evidence_v1(
+            self.scene.camera(),
+            horizon_fixture_selected,
+        )
+        .unwrap_or_default();
+        let horizon_terrain = self
+            .scene
+            .terrain()
+            .visible_horizon_census_v1(self.scene.camera().get_focus_pos());
         crate::r0p_observer::record_scene_counters(crate::r0p_observer::SceneCountersV1 {
             terrain_chunks: u64::try_from(self.scene.terrain().chunk_count()).unwrap_or(u64::MAX),
             visible_terrain_chunks: u64::try_from(self.scene.terrain().visible_chunk_count())
@@ -2341,6 +2362,28 @@ impl PlayState for SessionState {
             terrain_mesh_queue: u64::try_from(self.scene.terrain().mesh_queue_count())
                 .unwrap_or(u64::MAX),
             terrain_mesh_queue_pruned_total: self.scene.terrain().mesh_queue_pruned_total(),
+            visible_horizon_fixture_selected: horizon_fixture_selected,
+            visible_horizon_camera_valid: horizon_camera.camera_valid,
+            visible_horizon_camera_mode: u64::from(horizon_camera.mode_tag),
+            visible_horizon_projection: u64::from(horizon_camera.projection_tag),
+            visible_horizon_camera_focus_mm: horizon_camera.focus_mm,
+            visible_horizon_camera_position_mm: horizon_camera.position_mm,
+            visible_horizon_camera_yaw_microradians: horizon_camera.yaw_microradians,
+            visible_horizon_camera_pitch_microradians: horizon_camera.pitch_microradians,
+            visible_horizon_camera_distance_mm: horizon_camera.distance_mm,
+            visible_horizon_camera_fov_microradians: horizon_camera.fov_microradians,
+            visible_horizon_camera_aspect_millionths: horizon_camera.aspect_millionths,
+            visible_horizon_frustum_ground_width_mm: horizon_camera.frustum_ground_width_mm,
+            visible_horizon_frustum_ground_depth_mm: horizon_camera.frustum_ground_depth_mm,
+            visible_horizon_camera_token: horizon_camera.camera_token,
+            visible_horizon_near_0_8_chunks: horizon_terrain.near_0_8,
+            visible_horizon_reference_9_16_chunks: horizon_terrain.reference_9_16,
+            visible_horizon_far_17_24_chunks: horizon_terrain.far_17_24,
+            visible_horizon_beyond_24_chunks: horizon_terrain.beyond_24,
+            visible_horizon_max_radius_chunks: horizon_terrain.max_radius_chunks,
+            visible_horizon_max_distance_blocks: horizon_terrain.max_distance_blocks,
+            visible_horizon_lod_terrain_draw_ready: self.scene.lod.terrain_draw_ready_v1(),
+            visible_horizon_lod_terrain_detail: u64::from(self.scene.lod.terrain_detail_v1()),
             figures: u64::try_from(self.scene.figure_mgr().figure_count()).unwrap_or(u64::MAX),
             visible_figures: u64::try_from(self.scene.figure_mgr().figure_count_visible())
                 .unwrap_or(u64::MAX),

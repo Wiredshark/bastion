@@ -59,6 +59,20 @@ struct Visibility {
     in_frustum: bool,
 }
 
+/// Diagnostic census of the high-detail terrain chunks admitted by the
+/// production terrain frustum. This deliberately does not pretend that the
+/// separate global LOD-terrain draw is a collection of high-detail chunks.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct VisibleTerrainHorizonV1 {
+    pub total: u64,
+    pub near_0_8: u64,
+    pub reference_9_16: u64,
+    pub far_17_24: u64,
+    pub beyond_24: u64,
+    pub max_radius_chunks: u64,
+    pub max_distance_blocks: u64,
+}
+
 impl Visibility {
     /// Should the chunk actually get rendered?
     fn is_visible(&self) -> bool {
@@ -1596,6 +1610,21 @@ impl<V: RectRasterableVol> Terrain<V> {
             .count()
     }
 
+    #[must_use]
+    pub fn visible_horizon_census_v1(&self, focus_pos: Vec3<f32>) -> VisibleTerrainHorizonV1 {
+        let focus_chunk = Vec2::from(focus_pos)
+            .map2(TerrainChunk::RECT_SIZE, |position: f32, size: u32| {
+                (position as i32).div_euclid(size as i32)
+            });
+        visible_horizon_census_from_keys_v1(
+            self.chunks
+                .iter()
+                .filter_map(|(key, chunk)| chunk.visible.is_visible().then_some(*key)),
+            focus_chunk,
+            u64::from(TerrainChunk::RECT_SIZE.x),
+        )
+    }
+
     pub fn shadow_chunk_count(&self) -> usize { self.shadow_chunks.len() }
 
     pub fn render_shadows<'a>(
@@ -1859,6 +1888,29 @@ impl<V: RectRasterableVol> Terrain<V> {
         drop(guard);
     }
 }
+
+fn visible_horizon_census_from_keys_v1(
+    keys: impl IntoIterator<Item = Vec2<i32>>,
+    focus_chunk: Vec2<i32>,
+    chunk_width_blocks: u64,
+) -> VisibleTerrainHorizonV1 {
+    let mut census = VisibleTerrainHorizonV1::default();
+    for key in keys {
+        let dx = i64::from(key.x).saturating_sub(i64::from(focus_chunk.x));
+        let dy = i64::from(key.y).saturating_sub(i64::from(focus_chunk.y));
+        let radius = dx.unsigned_abs().max(dy.unsigned_abs());
+        census.total = census.total.saturating_add(1);
+        match radius {
+            0..=8 => census.near_0_8 = census.near_0_8.saturating_add(1),
+            9..=16 => census.reference_9_16 = census.reference_9_16.saturating_add(1),
+            17..=24 => census.far_17_24 = census.far_17_24.saturating_add(1),
+            _ => census.beyond_24 = census.beyond_24.saturating_add(1),
+        }
+        census.max_radius_chunks = census.max_radius_chunks.max(radius);
+    }
+    census.max_distance_blocks = census.max_radius_chunks.saturating_mul(chunk_width_blocks);
+    census
+}
 /// Find the glow level (light from lamps) at the given world position.
 fn glow_at_wpos_inner<'a>(
     chunk_glow_map: impl Fn(Vec2<i32>) -> Option<&'a LightMapFn>,
@@ -1967,6 +2019,42 @@ mod post_r2_distance_tests {
         assert_eq!(
             canonical_mesh_queue_prune_order(entries, Vec2::zero(), 1),
             vec![Vec2::new(2, 0)]
+        );
+    }
+
+    #[test]
+    fn visible_horizon_ring_census_is_bounded_and_permutation_independent() {
+        let keys = vec![
+            Vec2::new(0, 0),
+            Vec2::new(8, -8),
+            Vec2::new(9, 0),
+            Vec2::new(-16, 2),
+            Vec2::new(17, 0),
+            Vec2::new(24, 24),
+            Vec2::new(25, 0),
+        ];
+        let mut reversed = keys.clone();
+        reversed.reverse();
+        let expected = VisibleTerrainHorizonV1 {
+            total: 7,
+            near_0_8: 2,
+            reference_9_16: 2,
+            far_17_24: 2,
+            beyond_24: 1,
+            max_radius_chunks: 25,
+            max_distance_blocks: 800,
+        };
+        assert_eq!(
+            visible_horizon_census_from_keys_v1(keys, Vec2::zero(), 32),
+            expected
+        );
+        assert_eq!(
+            visible_horizon_census_from_keys_v1(reversed, Vec2::zero(), 32),
+            expected
+        );
+        assert_eq!(
+            expected.near_0_8 + expected.reference_9_16 + expected.far_17_24 + expected.beyond_24,
+            expected.total
         );
     }
 }

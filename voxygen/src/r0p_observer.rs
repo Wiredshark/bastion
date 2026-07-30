@@ -209,6 +209,28 @@ pub struct SceneCountersV1 {
     pub terrain_view_distance_chunks: u64,
     pub terrain_mesh_queue: u64,
     pub terrain_mesh_queue_pruned_total: u64,
+    pub visible_horizon_fixture_selected: bool,
+    pub visible_horizon_camera_valid: bool,
+    pub visible_horizon_camera_mode: u64,
+    pub visible_horizon_projection: u64,
+    pub visible_horizon_camera_focus_mm: [i64; 3],
+    pub visible_horizon_camera_position_mm: [i64; 3],
+    pub visible_horizon_camera_yaw_microradians: i64,
+    pub visible_horizon_camera_pitch_microradians: i64,
+    pub visible_horizon_camera_distance_mm: u64,
+    pub visible_horizon_camera_fov_microradians: u64,
+    pub visible_horizon_camera_aspect_millionths: u64,
+    pub visible_horizon_frustum_ground_width_mm: u64,
+    pub visible_horizon_frustum_ground_depth_mm: u64,
+    pub visible_horizon_camera_token: [u8; 32],
+    pub visible_horizon_near_0_8_chunks: u64,
+    pub visible_horizon_reference_9_16_chunks: u64,
+    pub visible_horizon_far_17_24_chunks: u64,
+    pub visible_horizon_beyond_24_chunks: u64,
+    pub visible_horizon_max_radius_chunks: u64,
+    pub visible_horizon_max_distance_blocks: u64,
+    pub visible_horizon_lod_terrain_draw_ready: bool,
+    pub visible_horizon_lod_terrain_detail: u64,
     pub figures: u64,
     pub visible_figures: u64,
     pub particles: u64,
@@ -497,6 +519,7 @@ pub fn record_cpu_frame(phases: CpuFramePhasesV1) {
         let work = state.work;
         let scene = state.scene;
         let terrain_streaming = terrain_streaming_json_fields_v1(scene);
+        let visible_horizon = visible_horizon_json_fields_v1(scene);
         let interval = timing
             .presented_interval_ns
             .map_or_else(|| "null".to_owned(), |value| value.to_string());
@@ -522,6 +545,7 @@ pub fn record_cpu_frame(phases: CpuFramePhasesV1) {
                 "\"texture_upload_bytes\":{},\"submissions\":{},",
                 "\"terrain_chunks\":{},\"visible_terrain_chunks\":{},",
                 "\"shadow_terrain_chunks\":{},",
+                "{},",
                 "{},",
                 "\"loaded_distance_blocks\":{},",
                 "\"terrain_view_distance_chunks\":{},\"terrain_mesh_queue\":{},",
@@ -559,6 +583,7 @@ pub fn record_cpu_frame(phases: CpuFramePhasesV1) {
             scene.visible_terrain_chunks,
             scene.shadow_terrain_chunks,
             terrain_streaming,
+            visible_horizon,
             scene.loaded_distance_blocks,
             scene.terrain_view_distance_chunks,
             scene.terrain_mesh_queue,
@@ -581,6 +606,61 @@ pub fn record_cpu_frame(phases: CpuFramePhasesV1) {
             state.failed = true;
         }
     });
+}
+
+fn visible_horizon_json_fields_v1(scene: SceneCountersV1) -> String {
+    format!(
+        concat!(
+            "\"visible_horizon_fixture_selected\":{},",
+            "\"visible_horizon_camera_valid\":{},",
+            "\"visible_horizon_camera_mode\":{},",
+            "\"visible_horizon_projection\":{},",
+            "\"visible_horizon_camera_focus_mm\":[{},{},{}],",
+            "\"visible_horizon_camera_position_mm\":[{},{},{}],",
+            "\"visible_horizon_camera_yaw_microradians\":{},",
+            "\"visible_horizon_camera_pitch_microradians\":{},",
+            "\"visible_horizon_camera_distance_mm\":{},",
+            "\"visible_horizon_camera_fov_microradians\":{},",
+            "\"visible_horizon_camera_aspect_millionths\":{},",
+            "\"visible_horizon_frustum_ground_width_mm\":{},",
+            "\"visible_horizon_frustum_ground_depth_mm\":{},",
+            "\"visible_horizon_camera_token\":\"{}\",",
+            "\"visible_horizon_near_0_8_chunks\":{},",
+            "\"visible_horizon_reference_9_16_chunks\":{},",
+            "\"visible_horizon_far_17_24_chunks\":{},",
+            "\"visible_horizon_beyond_24_chunks\":{},",
+            "\"visible_horizon_max_radius_chunks\":{},",
+            "\"visible_horizon_max_distance_blocks\":{},",
+            "\"visible_horizon_lod_terrain_draw_ready\":{},",
+            "\"visible_horizon_lod_terrain_detail\":{}"
+        ),
+        scene.visible_horizon_fixture_selected,
+        scene.visible_horizon_camera_valid,
+        scene.visible_horizon_camera_mode,
+        scene.visible_horizon_projection,
+        scene.visible_horizon_camera_focus_mm[0],
+        scene.visible_horizon_camera_focus_mm[1],
+        scene.visible_horizon_camera_focus_mm[2],
+        scene.visible_horizon_camera_position_mm[0],
+        scene.visible_horizon_camera_position_mm[1],
+        scene.visible_horizon_camera_position_mm[2],
+        scene.visible_horizon_camera_yaw_microradians,
+        scene.visible_horizon_camera_pitch_microradians,
+        scene.visible_horizon_camera_distance_mm,
+        scene.visible_horizon_camera_fov_microradians,
+        scene.visible_horizon_camera_aspect_millionths,
+        scene.visible_horizon_frustum_ground_width_mm,
+        scene.visible_horizon_frustum_ground_depth_mm,
+        hex_digest(&scene.visible_horizon_camera_token),
+        scene.visible_horizon_near_0_8_chunks,
+        scene.visible_horizon_reference_9_16_chunks,
+        scene.visible_horizon_far_17_24_chunks,
+        scene.visible_horizon_beyond_24_chunks,
+        scene.visible_horizon_max_radius_chunks,
+        scene.visible_horizon_max_distance_blocks,
+        scene.visible_horizon_lod_terrain_draw_ready,
+        scene.visible_horizon_lod_terrain_detail,
+    )
 }
 
 fn terrain_streaming_json_fields_v1(scene: SceneCountersV1) -> String {
@@ -933,5 +1013,47 @@ mod tests {
                 "\"terrain_pending_chunk_requests\":7,\"terrain_server_completed_tick\":9000"
             )
         );
+    }
+
+    #[test]
+    fn visible_horizon_telemetry_binds_camera_frustum_rings_and_lod_draw() {
+        let fields = visible_horizon_json_fields_v1(SceneCountersV1 {
+            visible_horizon_fixture_selected: true,
+            visible_horizon_camera_valid: true,
+            visible_horizon_camera_mode: 3,
+            visible_horizon_projection: 1,
+            visible_horizon_camera_focus_mm: [1, 2, 400_000],
+            visible_horizon_camera_position_mm: [3, 4, 5],
+            visible_horizon_camera_yaw_microradians: 0,
+            visible_horizon_camera_pitch_microradians: 349_066,
+            visible_horizon_camera_distance_mm: 384_000,
+            visible_horizon_camera_fov_microradians: 1_100_000,
+            visible_horizon_camera_aspect_millionths: 1_777_778,
+            visible_horizon_frustum_ground_width_mm: 837_000,
+            visible_horizon_frustum_ground_depth_mm: 1_376_000,
+            visible_horizon_camera_token: [0xab; 32],
+            visible_horizon_near_0_8_chunks: 17,
+            visible_horizon_reference_9_16_chunks: 53,
+            visible_horizon_far_17_24_chunks: 89,
+            visible_horizon_beyond_24_chunks: 2,
+            visible_horizon_max_radius_chunks: 25,
+            visible_horizon_max_distance_blocks: 800,
+            visible_horizon_lod_terrain_draw_ready: true,
+            visible_horizon_lod_terrain_detail: 450,
+            ..SceneCountersV1::default()
+        });
+        assert!(fields.contains("\"visible_horizon_fixture_selected\":true"));
+        assert!(fields.contains("\"visible_horizon_camera_valid\":true"));
+        assert!(fields.contains("\"visible_horizon_camera_focus_mm\":[1,2,400000]"));
+        assert!(fields.contains("\"visible_horizon_camera_pitch_microradians\":349066"));
+        assert!(fields.contains("\"visible_horizon_frustum_ground_depth_mm\":1376000"));
+        assert!(fields.contains(&format!(
+            "\"visible_horizon_camera_token\":\"{}\"",
+            "ab".repeat(32)
+        )));
+        assert!(fields.contains("\"visible_horizon_far_17_24_chunks\":89"));
+        assert!(fields.contains("\"visible_horizon_max_distance_blocks\":800"));
+        assert!(fields.contains("\"visible_horizon_lod_terrain_draw_ready\":true"));
+        assert!(fields.ends_with("\"visible_horizon_lod_terrain_detail\":450"));
     }
 }
