@@ -1714,26 +1714,53 @@ mod t8_1_phase_localization_tests {
 /// anything found here.
 ///
 /// **Finding, CLASSIFIED NEGATIVE (not the positive the structural read
-/// predicted).** Both tests below permute processing order across
-/// symmetric AND asymmetric scarce-stock scenarios; in every case the
-/// scarce-stock customer received the BIT-IDENTICAL amount regardless
-/// of which order was processed first. Read the reason directly in
-/// `trade_at_site`: `order_stock_ratio[g]` is computed ONCE, from
-/// `total_orders[g]` (summed BEFORE the per-order loop starts) against
-/// the ORIGINAL stock captured before any order is processed -- so
+/// predicted) -- and holds BY CONSTRUCTION, not merely for the fixtures
+/// tested.** Every test below permutes processing order across symmetric,
+/// asymmetric, and cross-paying scarce-stock scenarios; in every case the
+/// scarce-stock customer received the BIT-IDENTICAL amount regardless of
+/// which order was processed first. `order_stock_ratio[g]` is computed
+/// ONCE, from `total_orders[g]` (summed BEFORE the per-order loop starts)
+/// against the ORIGINAL stock captured before any order is processed, as
+/// `total_orders[g] / (stock[g] - next_demand[g])` -- so
 /// `allocated_amount = amount / order_stock_ratio.max(1.0)` is a pure,
-/// proportional function of each order's OWN amount and a ratio fixed
-/// for the whole call, not of what earlier orders already consumed.
-/// The `.min(self.stocks[*g])` clamp on `paid_amount` (which DOES read
-/// the live, depleting stock) never actually bites for these fixtures
-/// because the ratio's own design keeps cumulative allocation within
-/// bounds. This is the same class of result `T8.2`'s `world/src/lib.rs`
-/// chunk found for worldgen RNG: the STRUCTURAL read (raw code shape)
-/// suggested a hazard; TRACING the actual arithmetic proved it absent
-/// for the mechanism tested. Not yet tested: the payment-side inner
-/// loop (`sorted_buy`, which credits `self.stocks[*g2] += amount2` for
-/// payment goods) and the delivery-collection reduction/last-writer
-/// sites in `collect_deliveries` -- open for a next chunk.
+/// proportional function of each order's OWN amount and a ratio fixed for
+/// the whole call.
+///
+/// The proof the `.min(self.stocks[*g])` clamp on `paid_amount` (which
+/// DOES read the live, depleting stock) can never actually bite, for ANY
+/// input, not just the ones tested: summing `allocated_amount` over every
+/// order sharing good `g` telescopes to exactly `total_orders[g] /
+/// order_stock_ratio[g].max(1.0)`, which is `(stock[g] - next_demand[g])`
+/// when the ratio rations (`order_stock_ratio[g] > 1`, by direct
+/// substitution) and at most that same bound when it doesn't (the ratio's
+/// own `<= 1` condition is `total_orders[g] <= stock[g] - next_demand[g]`
+/// by definition). Since `paid_amount <= allocated_amount` for every
+/// individual order (the payment-balance subtraction only ever shrinks
+/// it, never grows it), the cumulative amount drawn from `self.stocks[g]`
+/// by any PREFIX of the processing order, plus the next order's own
+/// `allocated_amount`, never exceeds `stock[g] - next_demand[g] <=
+/// stock[g]` (`next_demand` is asserted `>= 0.0` at construction, twice,
+/// above) -- so the live stock the clamp reads is always still large
+/// enough. A cross-payment credit (`self.stocks[*g2] += amount2`, the one
+/// path that could raise live stock mid-call instead of only depleting
+/// it) only ever makes the bound MORE slack, never less. This is the same
+/// class of result `T8.2`'s `world/src/lib.rs` chunk found for worldgen
+/// RNG: the STRUCTURAL read (raw code shape) suggested a hazard; TRACING
+/// the actual arithmetic proved it structurally absent, not merely absent
+/// from the cases exercised.
+///
+/// **Cross-review addition** (Opus 5, `bastion/apex-t34`): the
+/// cross-paying-customer fixture below, and the arithmetic proof above,
+/// are the review's own finding -- flagged rather than silently folded
+/// in, and independently re-derived and confirmed here before being
+/// adopted into this doc, per this program's own "never trust a claim
+/// without independent re-verification" discipline. The chunk's original
+/// "not yet tested" list is now closed: the payment-side inner loop is
+/// covered by `cross_paying_orders_are_also_order_independent` below, and
+/// `collect_deliveries`'s reduction/last-writer sites were covered by
+/// this row's own later chunks 2-3 (`collect_deliveries_last_writer_
+/// keeps_the_last_delivery_not_the_first`,
+/// `collect_deliveries_stock_accumulation_is_order_independent`).
 #[cfg(test)]
 mod t8_3_order_sensitivity_tests {
     use super::*;
