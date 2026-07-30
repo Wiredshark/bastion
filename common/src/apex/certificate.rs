@@ -23,13 +23,23 @@
 //! `world_baseline.rs` and `save_universe.rs` already document: this
 //! module cannot depend on `world`/`server`, where the real build,
 //! content, plugin, manifest, numeric, schedule, fixture, and output
-//! roots are computed. [`ApexCertificateRootsV1`] is therefore eight
-//! caller-supplied [`ArtifactDigestV1`]s — the pure binding, not the
-//! computation. Verifying each one actually resolves to a real artifact
-//! in the tree ("every named root resolves to an artifact") is
-//! necessarily an integration-level check living where those roots are
+//! roots are computed. [`RootAttestationV1`] is therefore a caller-
+//! supplied claim about ONE named root — the pure binding, not the
+//! computation. Verifying a `Present` root actually resolves to a real
+//! artifact in the tree ("every named root resolves to an artifact") is
+//! necessarily an integration-level check living where that root is
 //! computed, not a `common`-crate unit test; this chunk builds the
 //! binding the check attaches to, not the check itself.
+//!
+//! **Roots obey the same structural-absence law as properties.** A root
+//! this program cannot honestly compute today (Fable's ruling on this
+//! row: "if a root genuinely has no computable artifact today, that is a
+//! FINDING, not a placeholder... name it structurally absent the same
+//! way `CrossTargetExecution` is") is [`RootAttestationV1::Absent`] with
+//! a real reason, landing in [`ApexCertificateV1::absent_roots`] — never
+//! a fabricated digest standing in for one. [`ApexCertificateV1::
+//! present_roots`] can only ever hold a root some caller actually
+//! claimed to have computed; there is no path that manufactures one.
 //!
 //! **Multiple attestations per property, aggregated not overwritten.**
 //! The tier spec's own evidence matrix cites several properties from
@@ -186,19 +196,59 @@ pub struct CertifiedPropertyV1 {
 }
 
 /// The eight named roots the tier spec requires: "build, content,
-/// plugin, manifest, numeric, schedule, fixture, and output." Caller-
-/// supplied opaque digests — see the module doc's dependency note for
-/// why `common` cannot compute any of them itself.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct ApexCertificateRootsV1 {
-    pub build: ArtifactDigestV1,
-    pub content: ArtifactDigestV1,
-    pub plugin: ArtifactDigestV1,
-    pub manifest: ArtifactDigestV1,
-    pub numeric: ArtifactDigestV1,
-    pub schedule: ArtifactDigestV1,
-    pub fixture: ArtifactDigestV1,
-    pub output: ArtifactDigestV1,
+/// plugin, manifest, numeric, schedule, fixture, and output." Frozen
+/// vocabulary, same discipline as [`CertifiedPropertyIdV1`] and every
+/// other closed enum in this program.
+#[repr(u8)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum ApexCertificateRootIdV1 {
+    Build = 1,
+    Content = 2,
+    Plugin = 3,
+    Manifest = 4,
+    Numeric = 5,
+    Schedule = 6,
+    Fixture = 7,
+    Output = 8,
+}
+
+impl ApexCertificateRootIdV1 {
+    pub const fn as_u8(self) -> u8 { self as u8 }
+
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Build => "bastion/apex-certificate/root/build/v1",
+            Self::Content => "bastion/apex-certificate/root/content/v1",
+            Self::Plugin => "bastion/apex-certificate/root/plugin/v1",
+            Self::Manifest => "bastion/apex-certificate/root/manifest/v1",
+            Self::Numeric => "bastion/apex-certificate/root/numeric/v1",
+            Self::Schedule => "bastion/apex-certificate/root/schedule/v1",
+            Self::Fixture => "bastion/apex-certificate/root/fixture/v1",
+            Self::Output => "bastion/apex-certificate/root/output/v1",
+        }
+    }
+
+    pub const ALL: [ApexCertificateRootIdV1; 8] =
+        [Self::Build, Self::Content, Self::Plugin, Self::Manifest, Self::Numeric, Self::Schedule, Self::Fixture, Self::Output];
+}
+
+/// One caller's claim about one named root: either a real, computed
+/// digest with its own citation, or a named, reasoned absence — the same
+/// two-way split [`PropertyAttestationV1`] makes for cases, applied to
+/// roots. There is no third shape and no way to construct a `Present`
+/// without a real [`ArtifactDigestV1`] already in hand.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RootAttestationV1 {
+    Present { root: ApexCertificateRootIdV1, digest: ArtifactDigestV1, source: &'static str },
+    Absent { root: ApexCertificateRootIdV1, reason: OpenCaseV1 },
+}
+
+impl RootAttestationV1 {
+    pub const fn root(&self) -> ApexCertificateRootIdV1 {
+        match self {
+            Self::Present { root, .. } | Self::Absent { root, .. } => *root,
+        }
+    }
 }
 
 /// The certificate itself. Every field here is the OUTPUT of
@@ -207,7 +257,13 @@ pub struct ApexCertificateRootsV1 {
 /// actually generated from a real attestation set, never hand-assembled.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ApexCertificateV1 {
-    pub roots: ApexCertificateRootsV1,
+    /// Canonically sorted by root tag. Only roots a caller actually
+    /// claimed `Present` — never a fabricated stand-in for one that
+    /// wasn't.
+    pub present_roots: Vec<(ApexCertificateRootIdV1, ArtifactDigestV1, &'static str)>,
+    /// Every root a caller claimed `Absent`, with its real reason.
+    /// Canonically sorted by root tag.
+    pub absent_roots: Vec<(ApexCertificateRootIdV1, OpenCaseV1)>,
     /// Canonically sorted by property tag — never insertion order, same
     /// discipline every canonicalized collection in this program follows
     /// (permuting the input attestations must not move this).
@@ -225,8 +281,11 @@ pub struct ApexCertificateV1 {
 /// `certified_properties`) if and only if its summed `covered_cases > 0`
 /// — the structural-absence rule this row's whole design exists to
 /// enforce. Every attestation's open cases reach `open_set`
-/// unconditionally, whether or not their property was stated.
-pub fn generate_certificate_v1(roots: ApexCertificateRootsV1, attestations: &[PropertyAttestationV1]) -> ApexCertificateV1 {
+/// unconditionally, whether or not their property was stated. Roots
+/// split the same way: `Present` claims reach `present_roots`, `Absent`
+/// claims reach `absent_roots` — no root is ever silently dropped or
+/// defaulted.
+pub fn generate_certificate_v1(roots: &[RootAttestationV1], attestations: &[PropertyAttestationV1]) -> ApexCertificateV1 {
     use std::collections::BTreeMap;
 
     struct Aggregate {
@@ -262,7 +321,25 @@ pub fn generate_certificate_v1(roots: ApexCertificateRootsV1, attestations: &[Pr
 
     open_set.sort_by(|(pa, oa), (pb, ob)| pa.as_u8().cmp(&pb.as_u8()).then_with(|| oa.id.cmp(&ob.id)));
 
-    ApexCertificateV1 { roots, certified_properties, open_set }
+    let mut present_roots: Vec<(ApexCertificateRootIdV1, ArtifactDigestV1, &'static str)> = roots
+        .iter()
+        .filter_map(|r| match r {
+            RootAttestationV1::Present { root, digest, source } => Some((*root, *digest, *source)),
+            RootAttestationV1::Absent { .. } => None,
+        })
+        .collect();
+    present_roots.sort_by_key(|(root, ..)| root.as_u8());
+
+    let mut absent_roots: Vec<(ApexCertificateRootIdV1, OpenCaseV1)> = roots
+        .iter()
+        .filter_map(|r| match r {
+            RootAttestationV1::Absent { root, reason } => Some((*root, reason.clone())),
+            RootAttestationV1::Present { .. } => None,
+        })
+        .collect();
+    absent_roots.sort_by_key(|(root, _)| root.as_u8());
+
+    ApexCertificateV1 { present_roots, absent_roots, certified_properties, open_set }
 }
 
 #[cfg(test)]
@@ -272,20 +349,21 @@ mod tests {
 
     fn digest(tag: u8) -> ArtifactDigestV1 { hash_artifact_bytes_v1(&[tag]).digest }
 
-    fn roots() -> ApexCertificateRootsV1 {
-        ApexCertificateRootsV1 {
-            build: digest(1),
-            content: digest(2),
-            plugin: digest(3),
-            manifest: digest(4),
-            numeric: digest(5),
-            schedule: digest(6),
-            fixture: digest(7),
-            output: digest(8),
-        }
+    fn open_case(id: &str, reason: &str) -> OpenCaseV1 { OpenCaseV1 { id: id.to_owned(), reason: reason.to_owned() } }
+
+    fn present_root(root: ApexCertificateRootIdV1, tag: u8) -> RootAttestationV1 {
+        RootAttestationV1::Present { root, digest: digest(tag), source: "test-fixture" }
     }
 
-    fn open_case(id: &str, reason: &str) -> OpenCaseV1 { OpenCaseV1 { id: id.to_owned(), reason: reason.to_owned() } }
+    fn absent_root(root: ApexCertificateRootIdV1) -> RootAttestationV1 {
+        RootAttestationV1::Absent { root, reason: open_case("TEST-ABSENT", "no computable artifact in this fixture") }
+    }
+
+    /// All eight roots present -- the fixture most tests below don't
+    /// care about roots at all want.
+    fn all_roots_present() -> Vec<RootAttestationV1> {
+        ApexCertificateRootIdV1::ALL.into_iter().enumerate().map(|(i, root)| present_root(root, i as u8 + 1)).collect()
+    }
 
     fn fully_covered(property: CertifiedPropertyIdV1, total: u32) -> PropertyAttestationV1 {
         PropertyAttestationV1::new(property, total, total, Vec::new(), vec!["test-fixture"]).unwrap()
@@ -307,7 +385,7 @@ mod tests {
     #[test]
     fn a_wholly_covered_property_is_stated_with_zero_open_cases() {
         let attestation = fully_covered(CertifiedPropertyIdV1::MultiStoreCrashCutpoints, 11);
-        let cert = generate_certificate_v1(roots(), &[attestation]);
+        let cert = generate_certificate_v1(&all_roots_present(), &[attestation]);
         assert_eq!(cert.certified_properties, vec![CertifiedPropertyV1 {
             property: CertifiedPropertyIdV1::MultiStoreCrashCutpoints,
             covered_cases: 11,
@@ -330,7 +408,7 @@ mod tests {
             vec!["T6.4", "T8.2"],
         )
         .unwrap();
-        let cert = generate_certificate_v1(roots(), &[attestation]);
+        let cert = generate_certificate_v1(&all_roots_present(), &[attestation]);
         assert!(cert.certified_properties.is_empty(), "zero covered cases must never produce a stated property");
         assert_eq!(cert.open_set.len(), 1);
         assert_eq!(cert.open_set[0].0, CertifiedPropertyIdV1::CrossTargetExecution);
@@ -345,7 +423,7 @@ mod tests {
     #[test]
     fn failing_a_previously_passing_attestation_removes_the_property_on_regeneration() {
         let passing = fully_covered(CertifiedPropertyIdV1::PhysicsWeatherNumericVectors, 4);
-        let before = generate_certificate_v1(roots(), &[passing]);
+        let before = generate_certificate_v1(&all_roots_present(), &[passing]);
         assert_eq!(before.certified_properties.len(), 1);
 
         let now_failing = PropertyAttestationV1::new(
@@ -356,7 +434,7 @@ mod tests {
             vec!["test-fixture"],
         )
         .unwrap();
-        let after = generate_certificate_v1(roots(), &[now_failing]);
+        let after = generate_certificate_v1(&all_roots_present(), &[now_failing]);
         assert!(after.certified_properties.is_empty(), "the property must vanish once its attestation no longer covers anything");
         assert_eq!(after.open_set.len(), 4);
     }
@@ -381,7 +459,7 @@ mod tests {
             vec!["T3.5"],
         )
         .unwrap();
-        let cert = generate_certificate_v1(roots(), &[a, b]);
+        let cert = generate_certificate_v1(&all_roots_present(), &[a, b]);
         let expected: usize = 22 + 9;
         assert_eq!(cert.open_set.len(), expected);
     }
@@ -401,7 +479,7 @@ mod tests {
             vec!["T8.4"],
         )
         .unwrap();
-        let cert = generate_certificate_v1(roots(), &[from_t43, from_t83, from_t84]);
+        let cert = generate_certificate_v1(&all_roots_present(), &[from_t43, from_t83, from_t84]);
         assert_eq!(cert.certified_properties.len(), 1, "one property, not three");
         let stated = &cert.certified_properties[0];
         assert_eq!(stated.covered_cases, 13);
@@ -420,8 +498,8 @@ mod tests {
         let b = fully_covered(CertifiedPropertyIdV1::PluginPermutations, 1);
         let c = fully_covered(CertifiedPropertyIdV1::MultiStoreCrashCutpoints, 1);
 
-        let forward = generate_certificate_v1(roots(), &[a.clone(), b.clone(), c.clone()]);
-        let reversed = generate_certificate_v1(roots(), &[c, b, a]);
+        let forward = generate_certificate_v1(&all_roots_present(), &[a.clone(), b.clone(), c.clone()]);
+        let reversed = generate_certificate_v1(&all_roots_present(), &[c, b, a]);
 
         let forward_order: Vec<_> = forward.certified_properties.iter().map(|p| p.property).collect();
         let reversed_order: Vec<_> = reversed.certified_properties.iter().map(|p| p.property).collect();
@@ -439,8 +517,74 @@ mod tests {
 
     #[test]
     fn an_empty_attestation_set_produces_an_empty_certificate() {
-        let cert = generate_certificate_v1(roots(), &[]);
+        let cert = generate_certificate_v1(&all_roots_present(), &[]);
         assert!(cert.certified_properties.is_empty());
         assert!(cert.open_set.is_empty());
+    }
+
+    #[test]
+    fn root_tags_are_frozen_and_unique() {
+        use std::collections::HashSet;
+        let tags: HashSet<u8> = ApexCertificateRootIdV1::ALL.iter().map(|r| r.as_u8()).collect();
+        assert_eq!(tags.len(), ApexCertificateRootIdV1::ALL.len());
+        let labels: HashSet<&str> = ApexCertificateRootIdV1::ALL.iter().map(|r| r.label()).collect();
+        assert_eq!(labels.len(), ApexCertificateRootIdV1::ALL.len());
+    }
+
+    /// A `Present` root reaches `present_roots` with its real digest and
+    /// source, and contributes nothing to `absent_roots`.
+    #[test]
+    fn a_present_root_reaches_present_roots_with_its_real_digest() {
+        let roots = vec![present_root(ApexCertificateRootIdV1::Content, 42)];
+        let cert = generate_certificate_v1(&roots, &[]);
+        assert_eq!(cert.present_roots, vec![(ApexCertificateRootIdV1::Content, digest(42), "test-fixture")]);
+        assert!(cert.absent_roots.is_empty());
+    }
+
+    /// The row's own central rule for roots, mirroring the property rule:
+    /// an `Absent` root reaches `absent_roots` with its named reason and
+    /// NEVER produces a fabricated entry in `present_roots` -- there is
+    /// no digest to put there, and none is invented.
+    #[test]
+    fn an_absent_root_reaches_absent_roots_and_never_fabricates_a_present_entry() {
+        let roots = vec![absent_root(ApexCertificateRootIdV1::Output)];
+        let cert = generate_certificate_v1(&roots, &[]);
+        assert!(cert.present_roots.is_empty(), "an absent root must never appear in present_roots under any digest");
+        assert_eq!(cert.absent_roots.len(), 1);
+        assert_eq!(cert.absent_roots[0].0, ApexCertificateRootIdV1::Output);
+    }
+
+    /// Roots are canonicalized by tag, independent of input order --
+    /// same discipline as properties.
+    #[test]
+    fn permuted_root_order_does_not_move_the_certificates_own_root_order() {
+        let forward = vec![present_root(ApexCertificateRootIdV1::Build, 1), present_root(ApexCertificateRootIdV1::Content, 2)];
+        let reversed = vec![present_root(ApexCertificateRootIdV1::Content, 2), present_root(ApexCertificateRootIdV1::Build, 1)];
+        let cert_forward = generate_certificate_v1(&forward, &[]);
+        let cert_reversed = generate_certificate_v1(&reversed, &[]);
+        assert_eq!(cert_forward.present_roots, cert_reversed.present_roots);
+    }
+
+    /// A full, real-shaped roots set: some present, some absent, exactly
+    /// like this row's actual finding (two present, six absent) -- proves
+    /// the two lists partition correctly rather than one silently eating
+    /// the other's entries.
+    #[test]
+    fn a_mixed_present_and_absent_roots_set_partitions_correctly() {
+        let roots = vec![
+            present_root(ApexCertificateRootIdV1::Content, 1),
+            present_root(ApexCertificateRootIdV1::Fixture, 2),
+            absent_root(ApexCertificateRootIdV1::Build),
+            absent_root(ApexCertificateRootIdV1::Plugin),
+            absent_root(ApexCertificateRootIdV1::Manifest),
+            absent_root(ApexCertificateRootIdV1::Numeric),
+            absent_root(ApexCertificateRootIdV1::Schedule),
+            absent_root(ApexCertificateRootIdV1::Output),
+        ];
+        let cert = generate_certificate_v1(&roots, &[]);
+        assert_eq!(cert.present_roots.len(), 2);
+        assert_eq!(cert.absent_roots.len(), 6);
+        let present_ids: std::collections::HashSet<_> = cert.present_roots.iter().map(|(r, ..)| *r).collect();
+        assert_eq!(present_ids, std::collections::HashSet::from([ApexCertificateRootIdV1::Content, ApexCertificateRootIdV1::Fixture]));
     }
 }

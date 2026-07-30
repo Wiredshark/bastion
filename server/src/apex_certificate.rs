@@ -34,10 +34,141 @@
 //! cases**, per Fable's own ruling merging `T6.4` and `T8.2` into a
 //! single open item: one artifact executed against two genuinely
 //! distinct compiler/target cells, unbuilt for either citing row.
+//!
+//! **The eight named roots, audited the same way.** Fable's ruling on
+//! this row: a root with no computable artifact today is a FINDING, not
+//! a placeholder — named structurally absent exactly like
+//! `CrossTargetExecution`, never a fabricated digest. Audited one at a
+//! time against what genuinely exists in this tree without a running
+//! server or a new, un-scoped scan:
+//! - `content`: PRESENT. `net_envelope_profile_descriptor_v1()`
+//!   (`common/net/src/msg/envelope.rs`, `T3.3`) is real, zero-argument,
+//!   and computed live at call time — no fixture, no server, no
+//!   fabrication.
+//! - `fixture`: PRESENT. The `T3.5` command-idempotency canary catalog
+//!   (`readme/apex/PROJECT-BASTION-APEX-T3.5-COMMAND-IDEMPOTENCY-
+//!   CANARIES-v1.json`) is a real, checked-in file this row reads and
+//!   hashes live — the same file `net_command_canaries.rs`'s own pin
+//!   test already re-verifies every run.
+//! - `build`: ABSENT. `SourceClosureTreeV1::root()` (`T1.2`) exists and
+//!   is tested against fixtures, but no invocation against the actual
+//!   current source tree is checked into this tree — that scan is real,
+//!   separate work this chunk did not attempt.
+//! - `plugin`: ABSENT. `PluginActivationPlanV1::activation_root()`
+//!   (`T2.5`) exists and is tested, but every real instance found is a
+//!   test fixture; no live (non-test) activation plan exists to compute
+//!   it from. (The `T2.5` catalog file itself is real, but citing it
+//!   here would conflate plugin-system evidence with the `fixture` root
+//!   — kept separate rather than double-counted.)
+//! - `manifest`: ABSENT. `compute_save_universe_manifest_root_v1`
+//!   (`T4.6`) exists and is tested, but "the" manifest root requires a
+//!   live, running save-universe with a real committed epoch; saves are
+//!   runtime-created and not checked into the tree.
+//! - `numeric`: ABSENT. `NumericProfileV1::id_v1()` (`T6.4`) exists and
+//!   is tested, but a genuine profile needs real `rustc_version`/
+//!   `llvm_version`/`dependency_set_root` introspection this row did not
+//!   perform — hardcoding plausible-looking version strings would be
+//!   exactly the fabrication this row must not do.
+//! - `schedule`: ABSENT. No schedule-identity root computation was found
+//!   anywhere in the tree — unlike the other absent roots, this one has
+//!   no tested mechanism yet waiting for real data either.
+//! - `output`: ABSENT. No build output (a compiled binary) is checked
+//!   into the tree or hashed anywhere; computing one would require an
+//!   actual build invocation outside this row's scope.
 
-use common::apex::certificate::{CertifiedPropertyIdV1, OpenCaseV1, PropertyAttestationV1};
+use common::apex::certificate::{ApexCertificateRootIdV1, CertifiedPropertyIdV1, OpenCaseV1, PropertyAttestationV1, RootAttestationV1};
+use common::apex::digest::hash_artifact_bytes_v1;
 
 fn open_case(id: &str, reason: &str) -> OpenCaseV1 { OpenCaseV1 { id: id.to_owned(), reason: reason.to_owned() } }
+
+fn absent_root(root: ApexCertificateRootIdV1, id: &str, reason: &str) -> RootAttestationV1 {
+    RootAttestationV1::Absent { root, reason: open_case(id, reason) }
+}
+
+/// `content`: PRESENT. Live-computed, zero-argument, no fixture.
+pub fn content_root_v1() -> RootAttestationV1 {
+    let digest = common_net::msg::envelope::net_envelope_profile_descriptor_v1().content.artifact.digest;
+    RootAttestationV1::Present {
+        root: ApexCertificateRootIdV1::Content,
+        digest,
+        source: "T3.3 (common/net/src/msg/envelope.rs::net_envelope_profile_descriptor_v1, live-computed)",
+    }
+}
+
+/// `fixture`: PRESENT. Reads and hashes the real, checked-in `T3.5`
+/// canary catalog file — the same file `net_command_canaries.rs`'s own
+/// `the_catalog_this_map_covers_is_the_pinned_file` test re-verifies.
+pub fn fixture_root_v1() -> RootAttestationV1 {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("server has a parent")
+        .join("readme/apex/PROJECT-BASTION-APEX-T3.5-COMMAND-IDEMPOTENCY-CANARIES-v1.json");
+    let bytes = std::fs::read(&path).expect("the T3.5 canary catalog is checked into the tree");
+    RootAttestationV1::Present {
+        root: ApexCertificateRootIdV1::Fixture,
+        digest: hash_artifact_bytes_v1(&bytes).digest,
+        source: "T3.5.20 (readme/apex/PROJECT-BASTION-APEX-T3.5-COMMAND-IDEMPOTENCY-CANARIES-v1.json, real checked-in fixture corpus)",
+    }
+}
+
+pub fn build_root_v1() -> RootAttestationV1 {
+    absent_root(
+        ApexCertificateRootIdV1::Build,
+        "ROOT-BUILD",
+        "SourceClosureTreeV1::root() (T1.2, common/src/apex/source_closure.rs) exists and is tested against fixtures, but no invocation against the actual current source tree is checked into this tree",
+    )
+}
+
+pub fn plugin_root_v1() -> RootAttestationV1 {
+    absent_root(
+        ApexCertificateRootIdV1::Plugin,
+        "ROOT-PLUGIN",
+        "PluginActivationPlanV1::activation_root() (T2.5, common/state/src/plugin/activation_plan.rs) exists and is tested, but every real instance found is a test fixture; no live activation plan exists to compute it from",
+    )
+}
+
+pub fn manifest_root_v1() -> RootAttestationV1 {
+    absent_root(
+        ApexCertificateRootIdV1::Manifest,
+        "ROOT-MANIFEST",
+        "compute_save_universe_manifest_root_v1 (T4.6, common/src/apex/save_universe.rs) exists and is tested, but requires a live, running save-universe with a real committed epoch; saves are runtime-created and not checked into the tree",
+    )
+}
+
+pub fn numeric_root_v1() -> RootAttestationV1 {
+    absent_root(
+        ApexCertificateRootIdV1::Numeric,
+        "ROOT-NUMERIC",
+        "NumericProfileV1::id_v1() (T6.4, common/src/apex/numeric_profile.rs) exists and is tested, but a genuine profile needs real rustc_version/llvm_version/dependency_set_root introspection this row did not perform -- fabricating plausible version strings was refused",
+    )
+}
+
+pub fn schedule_root_v1() -> RootAttestationV1 {
+    absent_root(ApexCertificateRootIdV1::Schedule, "ROOT-SCHEDULE", "no schedule-identity root computation was found anywhere in the tree")
+}
+
+pub fn output_root_v1() -> RootAttestationV1 {
+    absent_root(
+        ApexCertificateRootIdV1::Output,
+        "ROOT-OUTPUT",
+        "no build output (a compiled binary) is checked into the tree or hashed anywhere; computing one requires an actual build invocation outside this row's scope",
+    )
+}
+
+/// Every root attestation this row could ground today — two present, six
+/// absent, per the module doc's per-root audit.
+pub fn all_roots_v1() -> Vec<RootAttestationV1> {
+    vec![
+        content_root_v1(),
+        fixture_root_v1(),
+        build_root_v1(),
+        plugin_root_v1(),
+        manifest_root_v1(),
+        numeric_root_v1(),
+        schedule_root_v1(),
+        output_root_v1(),
+    ]
+}
 
 /// Splits a `(id, claim)` coverage-map entry into a covered/open
 /// classification, stripping the `"OPEN: "` prefix into the reason text
@@ -316,12 +447,63 @@ pub fn all_attestations_v1() -> Vec<PropertyAttestationV1> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use common::apex::certificate::{ApexCertificateRootsV1, generate_certificate_v1};
-    use common::apex::digest::hash_artifact_bytes_v1;
+    use common::apex::certificate::{ApexCertificateRootIdV1, generate_certificate_v1};
 
-    fn placeholder_roots() -> ApexCertificateRootsV1 {
-        let d = hash_artifact_bytes_v1(b"placeholder").digest;
-        ApexCertificateRootsV1 { build: d, content: d, plugin: d, manifest: d, numeric: d, schedule: d, fixture: d, output: d }
+    /// Every root id named in the tier spec has exactly one attestation
+    /// -- the same "unclaimed name fails" discipline
+    /// `net_command_canaries.rs` already enforces for cases, applied to
+    /// roots.
+    #[test]
+    fn every_root_id_has_exactly_one_attestation() {
+        let roots = all_roots_v1();
+        for root in ApexCertificateRootIdV1::ALL {
+            let claims: Vec<_> = roots.iter().filter(|r| r.root() == root).collect();
+            assert_eq!(claims.len(), 1, "{root:?} must have exactly one attestation, found {}", claims.len());
+        }
+    }
+
+    /// The row's own required test, verbatim: "every named root resolves
+    /// to an artifact in the tree." For each `Present` root this
+    /// independently re-reads/re-computes the SAME real source the
+    /// attestation function used and confirms the digest matches --
+    /// proving the claimed digest is not fabricated, not merely that a
+    /// function returned successfully.
+    #[test]
+    fn every_present_root_resolves_to_a_real_artifact_in_the_tree() {
+        use common::apex::certificate::RootAttestationV1;
+        use common::apex::digest::hash_artifact_bytes_v1;
+
+        for attestation in all_roots_v1() {
+            let RootAttestationV1::Present { root, digest, .. } = attestation else { continue };
+            match root {
+                ApexCertificateRootIdV1::Content => {
+                    let independent = common_net::msg::envelope::net_envelope_profile_descriptor_v1().content.artifact.digest;
+                    assert_eq!(digest, independent, "content root must match an independent re-computation");
+                },
+                ApexCertificateRootIdV1::Fixture => {
+                    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .parent()
+                        .unwrap()
+                        .join("readme/apex/PROJECT-BASTION-APEX-T3.5-COMMAND-IDEMPOTENCY-CANARIES-v1.json");
+                    let bytes = std::fs::read(&path).expect("the fixture file must actually exist on disk");
+                    assert_eq!(digest, hash_artifact_bytes_v1(&bytes).digest, "fixture root must match an independent re-hash of the real file");
+                },
+                other => panic!("unexpected Present root {other:?} -- this test must be extended when a new root goes live"),
+            }
+        }
+    }
+
+    /// The absent-side mirror: every `Absent` root's reason is real
+    /// prose, not an empty or stub placeholder -- an absence with no
+    /// real reason would be exactly as dishonest as a fabricated digest.
+    #[test]
+    fn every_absent_root_carries_a_substantive_reason() {
+        use common::apex::certificate::RootAttestationV1;
+        for attestation in all_roots_v1() {
+            if let RootAttestationV1::Absent { root, reason } = attestation {
+                assert!(reason.reason.len() > 20, "{root:?}'s absence reason is too short to be substantive: {:?}", reason.reason);
+            }
+        }
     }
 
     /// Every property named in the tier spec's evidence matrix has at
@@ -366,7 +548,7 @@ mod tests {
     /// naming both `T6.4` and `T8.2`.
     #[test]
     fn the_real_certificate_states_every_property_except_cross_target_execution() {
-        let cert = generate_certificate_v1(placeholder_roots(), &all_attestations_v1());
+        let cert = generate_certificate_v1(&all_roots_v1(), &all_attestations_v1());
 
         let stated: std::collections::HashSet<CertifiedPropertyIdV1> = cert.certified_properties.iter().map(|p| p.property).collect();
         for property in CertifiedPropertyIdV1::ALL {
@@ -388,7 +570,7 @@ mod tests {
     /// silent-omission failure mode this row exists to prevent.
     #[test]
     fn the_t9_2_named_follow_ons_reach_the_open_set() {
-        let cert = generate_certificate_v1(placeholder_roots(), &all_attestations_v1());
+        let cert = generate_certificate_v1(&all_roots_v1(), &all_attestations_v1());
         let ids: Vec<&str> = cert
             .open_set
             .iter()
