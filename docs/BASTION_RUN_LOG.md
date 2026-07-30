@@ -14010,3 +14010,44 @@ Tracked, not chased: chop_cleared/log_sum (5/48), build_placed throughput
 residual (seeds 5/43/44, build_ok_jobs==1 so the designation is fine, it just
 never builds within 180 windows), b15 (4/48, co-occurs only with mine
 failures). Wave 3 (same seeds 49-192, fixed commit) running.
+
+## DETERMINISM CONTROL — 72/72 IDENTICAL, cross-machine (07/30)
+
+Wave 4: same commit `b59ac664`, same seeds 49-120, DIFFERENT VM instances,
+0 create-fails, 729s, $0.56. **Every one of the 72 seeds returned byte-identical
+(mine_blocks_mined, mine_cleared, failsafe_teleports).** b5 is deterministic
+run-to-run AND cross-machine. Guarded: the comparison script aborts on a
+COMMIT mismatch, since 5b pushes to the same branch and a mid-run push would
+have silently invalidated the result.
+
+**WHY THIS WAS RUN AT ALL:** the wave1->wave3 before/after held the AGGREGATE
+at exactly 24/72 while individual seeds moved hard (108: 19/27 -> 2/27; 52:
+15 -> 8; 107 failing -> perfect 27/27; 113 clean -> failing). Two candidate
+explanations — the commit legitimately perturbing the sim, or run-to-run
+nondeterminism — and the data could not separate them. Reported as an open
+question rather than a finding, and settled with $0.56.
+
+**RESULT 1 — ALL RATES STAND**, and the per-seed movement is now explained: it
+was the terraform genuinely perturbing the simulation, not noise.
+
+**RESULT 2 — EVERY FAILING SEED IS AN EXACT PERMANENT REPRO.** All 24 mine
+failures reproduce identically on demand. No flake hunting on this scenario,
+ever. Seed 110 always mines 0/27; seed 108 always 2/27.
+
+**RESULT 3, NEW STANDING RULE — A FIXTURE CHANGE RE-ROLLS PER-SEED OUTCOMES
+EVEN IN A DETERMINISTIC SIM.** Writing blocks into the world at setup shifts
+colonist pathing before the mine phase, so every downstream per-seed number
+moves. Therefore: **when measuring a GAME fix, freeze the fixture.** A row
+changing both cannot be measured per-seed — it is confounded by construction,
+and you would credit your fix with outcomes the fixture change caused. If both
+must change, land the fixture alone and re-baseline, THEN land the game fix.
+Aggregate rates survive a fixture change; individual seeds do not.
+Current clean baseline for the mine fix: **24/72 (33.3%) on b59ac664, seeds
+49-120.**
+
+**METHOD NOTE:** none of this would have been visible from fresh random samples
+— those showed a rock-stable 33.3% every wave while the membership churned
+underneath. Re-running the SAME seeds is what exposed it. And wave 3's raw logs
+were destroyed by wave 4's startup `rm` (same trap that ate wave 1's), so the
+comparison ran against a per-seed table reconstructed and persisted BEFORE
+launching the control.
