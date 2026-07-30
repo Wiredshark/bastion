@@ -14051,3 +14051,56 @@ underneath. Re-running the SAME seeds is what exposed it. And wave 3's raw logs
 were destroyed by wave 4's startup `rm` (same trap that ate wave 1's), so the
 comparison ran against a per-seed table reconstructed and persisted BEFORE
 launching the control.
+
+## CHOP ORACLE — the largest cluster was NEVER A BUG (07/30, 8c271de993)
+
+**THE SPLIT: 18/18 `precondition_unmet`, 0/18 `real_detection_miss`.** The
+entire 37.5% ch_* cluster — the biggest in b5 — is genuine tree absence in the
+searched areas. **Zero observed false negatives in the detection oracle.** A
+test that could not run was reporting itself as a broken game.
+
+**THE PREDICATE FIX IS WHY THE RESULT IS BELIEVABLE.** 5b's first version
+scanned for bare Wood-or-Leaves and would have fabricated misses at any site
+near a worldgen wooden structure (house, bridge, fence — Wood blocks that are
+correctly not trees). Corrected on instruction to require **Leaves above Wood
+in the same column** within TREE_FELL_HEIGHT_CAP: trunk-plus-canopy, not "wood
+exists." Without that fix "zero false negatives" would have been an artifact of
+a sloppy predicate rather than a finding.
+
+**WITNESSES MAKE THE ZERO CHECKABLE, NOT MERELY COUNTED.** All 30 passing seeds
+carry {area_index, wood_pos, leaves_pos}; spot-checks (seeds 1/7/12) show
+trunk-to-canopy z-gaps of 13, 1 and 8 in the same (x,y) column — the shape a
+real tree makes, not the flat signature of a structure. All 18 unmet seeds
+carry witness:null. Ground truth uses ONLY the World altitude sampler
+(`col.alt`) to bound Z and never touches `get_area_trees`/`tree_valid_at` — the
+subject under test cannot be its own oracle.
+
+**READ-ONLY CONFIRMED EMPIRICALLY, not just by design:** fresh 48-seed corpus
+returned the identical 17/48 pass — zero perturbation, so the fixture-freeze
+rule and the 24/72 baseline are untouched.
+
+**RULED (DECISIONS #38) — ADAPTIVE REAL-TREE SEARCH, NOT A PLANTED TREE.** 5b
+leaned toward guaranteeing a tree at the site (the rule that fixed build-stall).
+Ruled against, and the builder was right about the PROBLEM but not the fix: a
+gate whose precondition fails 37.5% of the time is not a useful regression gate,
+but planting a tree converts FR10 from "the oracle finds REAL worldgen trees —
+real trunk heights, canopy shapes, generator edge cases" into "the oracle finds
+the tree we built." That keeps the green light and throws away the reason for
+it. Instead: (a) `precondition_unmet` is NEVER a gate failure — removes 18/48
+false reds outright; (b) expanding-ring search for a real tree, lifting
+engagement from 62.5% toward ~100% while keeping real geometry; (c) engagement
+rate becomes a permanent first-class metric, so the gate cannot decay toward
+vacuous-green unnoticed. Genuinely treeless regions stay precondition_unmet
+WITH a recorded reason — a fact about the world, not a defect.
+
+**SEQUENCING:** (b) moves the chop site, so it IS a fixture change and re-rolls
+per-seed outcomes — lands ALONE with a re-baseline, never combined with a game
+fix. First application of the rule the determinism control produced.
+
+**THE FALSE-FAILURE FRACTION OF THIS CORPUS IS NOW LARGE AND MEASURED:**
+build-stall fixture 15/144 (10.4%) + chop precondition-unmet 18/48 (37.5%).
+b5's real failure picture is far smaller than its red count ever suggested.
+**THE MINE BUG IS NOW THE LARGEST KNOWN REAL DEFECT** — 24/72 (33.3%), and it
+is next. Mode 1 first (zero-mined, 11 permanent exact repros), starting at seed
+110: locomotion [104, 0, 0] — low no-progress, no timeouts, no rescues, and
+still zero blocks removed. Nothing looks wrong except the outcome.
