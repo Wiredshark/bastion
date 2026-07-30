@@ -1,0 +1,6 @@
+# batch 7 — pinned baseline
+--run-scenario
+--selfgen-scenario
+--values-scenario
+--season-scenario
+--auton-scenario

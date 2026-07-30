@@ -14962,3 +14962,26 @@ exonerated by pinned controls. b55's signature (`remainder_progressed=false`,
 drive-gate prediction from the design review; b73's needs-legs may too.
 
 Batch 6 (path/leash/run/arena/derive) on the pin. 22 scenarios remain.
+
+## ★ path-scenario: THE CODEBASE ALREADY HAD A STARVATION ASSERTION, AND IT'S RED (07/30)
+
+Batch 6 on the pin: **path FAIL** · leash/arena/derive pass · run lost to
+create-rate (retrying). **Tally: 19 mapped, 10 broken.**
+
+**`path_no_starvation: false`** — telemetry `grants=10452 peak_tick_iters=3000
+peak_wait=75 cap=3000`, 18 colonists / 46 mine jobs, cap held, no embeds.
+This is the **PATHFINDING COMPUTE SCHEDULER**: per-tick A* iteration budget,
+grants to requesters — and under load a requester waited peak_wait=75 past the
+assertion's bound. **Someone anticipated scheduler starvation, wrote the test,
+and it sat unrun and red while we rediscovered starvation empirically one layer
+up.** The coverage gap's cost, exhibit A.
+
+**MECHANISM IMPLICATION — a THIRD scheduler layer between "job created" and
+"work performed":** (1) job arbitration — greedy, no aging (5b's find); (2) the
+drive gate — engaged-but-coupling-defective (my find; one transiently-stuck job
+zeroes the colony work signal when it's the only job, demonstrated live in
+chopfell); (3) **path-compute scheduling — starving under load, per its own
+test.** A starved ROUTE REQUEST leaves a colonist standing still with no route,
+accruing stuck_time to the 10s timeout with NO terrain difficulty — exactly
+mechanism-2's bounded-retry signature. Chopfell (1 colonist, no competition)
+may still be distinct; 5b's min_dist/route-state run discriminates.
