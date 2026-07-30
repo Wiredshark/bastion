@@ -13844,3 +13844,58 @@ mask the mine signal. Triage therefore classifies on the JSON FIELDS, never
 the exit code. 5b's next row makes b5 emit `b5_failed_clauses` and derives the
 pass bool FROM that list, so the report cannot drift out of sync with the gate
 it describes — the doc-self-match lesson applied to a gate.
+
+## FAN WAVE 1 LANDED — 33.3%, and "one bug" was three (07/30)
+
+72 seeds delivered (49-120), all attested `COMMIT=5413915f`, 12.7 min, **$0.74**.
+Full evidence: `bastion-test-evidence/b5-mine-corpus-wave1.md`.
+
+**REVIEWER CAUGHT IT MID-FAN.** Opus reviewed 5413915f71 while the fan burned
+and found `locomotion.2 == 0` gates the B24 colonist-RESCUE counter — a
+different failure class from "did the volume get cleared". It reordered its
+queue to take the time-sensitive item first and said plainly which four
+clusters it therefore skipped. Correct judgment: a finding landing mid-fan is
+worth many times one landing after. **The conflation was real, not
+theoretical — 6 seeds (56, 62, 66, 85, 96, 104) mined 27/27 clean with a
+rescue firing.** Conflated rate 30/72 (41.7%) vs TRUE rate **24/72 (33.3%)**.
+The local 19/48 carried the same over-count; the honest number is ~32%.
+Ruling (DECISIONS #37): keep `== 27`, split the rescue clause out, hold it
+REPORT-ONLY until the base rate is measured rather than replacing a too-loose
+tolerance with a too-tight one on a guess.
+
+**THAT MEASUREMENT CAME BACK THE SAME HOUR: rescue base rate = 20/72 (27.8%).**
+A mechanism whose own source defines success as reverting to "a RARE backstop"
+fires on more than a quarter of seeds. Gating `== 0` would have failed ~28% of
+runs including 6 with perfect holes. Filed as its own bug.
+
+**"MINE INCOMPLETE" DECOMPOSED INTO THREE MODES** (the shortfall distribution
+separates them cleanly — `0:4 15:1 19:2 22:2 23:1 24:2 25:2 26:10`):
+- **Mode 1, ZERO MINED (4):** 51, 76, 92, 110. `mine_jobs=27`,
+  `chop_cleared=true`, **`any_mining_xp=true`**, `stone_sum=0`. A colonist was
+  assigned, did mining work, gained XP, and removed ZERO blocks. Work with no
+  effect — a wholly different defect, structurally invisible under `>=26/27`.
+  Seed 110 is its own sub-mode: `[104, 0, 0]` — low no-progress, no timeouts,
+  no teleports, still zero mined.
+- **Mode 2, ONE BLOCK SHORT (10):** 42% of all failures sit at exactly 26/27 —
+  **the single most common failure in the game was the precise case the old
+  tolerance was written to permit.**
+- **Mode 3, PARTIAL STALL (10):** 15-25/27.
+
+**DISCRIMINATOR, already instrumented:** `no_progress_ticks` failing median
+**3485** vs clean median **600** — and 600 is exactly the zero-input soak
+length, so clean runs have essentially NO unexplained no-progress. ~6x
+separation, free.
+
+**5b's "other 18" CORROBORATED:** 5 seeds (59, 80, 103, 111, 119) all with
+`any_needs_materials=false`; 80/111/119 also `log_sum=0` + `chop_cleared=false`.
+Probable causal direction: chop failed -> no material -> build couldn't place ->
+needs_materials never set. Several of the 18 may collapse into ONE cause.
+
+**INFRA: THE BINDING QUOTA IS `IN_USE_ADDRESSES`=8, NOT CPUS.** 5 of 11 VMs
+bounced despite 200 vCPU of headroom — every VM takes an external IP. Correct
+geometry is FEWEST-BIGGEST: 6 x e2-standard-32 = 192 vCPU across 6 addresses
+(8 x e2-standard-16 would waste 72 vCPU). Wave 2 launched on that shape,
+seeds 121-264. Written to memory. **Second infra trap: `vm-pool.sh` does
+`rm -f /tmp/bastion-pool/*.log` at startup, so each wave DESTROYS the previous
+wave's raw logs** — wave 1's were lost after extraction. Every wave's results
+are now persisted to `bastion-test-evidence/` immediately.
