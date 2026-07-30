@@ -20,7 +20,8 @@ const FIXED_SCALE: f32 = 1_000_000.0;
 const MILLIMETRES_PER_BLOCK: f32 = 1_000.0;
 const RADIANS_PER_DEGREE: f32 = 0.01745329;
 const MIN_CAMERA_CLEARANCE_MM_V1: i64 = 2_000;
-const FOCUS_CLEARANCE_MM_V1: i64 = MIN_CAMERA_CLEARANCE_MM_V1;
+const CAMERA_QUANTIZATION_GUARD_MM_V1: i64 = 16;
+const FOCUS_CLEARANCE_MM_V1: i64 = MIN_CAMERA_CLEARANCE_MM_V1 + CAMERA_QUANTIZATION_GUARD_MM_V1;
 const MOVING_PERIOD_TICKS_V1: u64 = 3_600;
 
 #[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
@@ -78,6 +79,22 @@ pub struct CameraPathEvidenceV1 {
     pub minimum_clearance_mm: i64,
     pub path_token: [u8; 32],
     pub camera_token: [u8; 32],
+    pub mode_tag: u8,
+    pub projection_tag: u8,
+    pub focus_mm: [i64; 3],
+    pub position_mm: [i64; 3],
+    pub yaw_microradians: i64,
+    pub pitch_microradians: i64,
+    pub distance_mm: u64,
+    pub configured_base_fov_microradians: u64,
+    pub base_fov_microradians: u64,
+    pub target_base_fov_microradians: u64,
+    pub effective_fov_microradians: u64,
+    pub fixation_millionths: u64,
+    pub target_fixation_millionths: u64,
+    pub aspect_millionths: u64,
+    pub frustum_ground_width_mm: u64,
+    pub frustum_ground_depth_mm: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -154,7 +171,7 @@ pub fn apply_post_maintenance_path_v1(
         bastion::ground_z(terrain, xy, 1.0).and_then(|z| fixed_i64(z, MILLIMETRES_PER_BLOCK))
     });
 
-    let sample = match sample {
+    let mut sample = match sample {
         Ok(sample) => sample,
         Err(error) => {
             state.last_failure = Some(error);
@@ -176,6 +193,7 @@ pub fn apply_post_maintenance_path_v1(
         sample.focus_mm[1] as f32 / MILLIMETRES_PER_BLOCK,
         sample.focus_mm[2] as f32 / MILLIMETRES_PER_BLOCK,
     ));
+    canonicalize_applied_sample_v1(camera, &mut sample)?;
     state.last_sample = Some(sample);
     state.last_failure = None;
     Ok(sample)
@@ -304,6 +322,22 @@ pub fn camera_path_evidence_v1(
         minimum_clearance_mm: sample.minimum_clearance_mm,
         path_token: sample.path_token,
         camera_token,
+        mode_tag,
+        projection_tag,
+        focus_mm: focus_mm.unwrap_or([0; 3]),
+        position_mm: position_mm.unwrap_or([0; 3]),
+        yaw_microradians: yaw.unwrap_or(0),
+        pitch_microradians: pitch.unwrap_or(0),
+        distance_mm: distance.unwrap_or(0),
+        configured_base_fov_microradians: configured_fov.unwrap_or(0),
+        base_fov_microradians: base_fov.unwrap_or(0),
+        target_base_fov_microradians: target_fov.unwrap_or(0),
+        effective_fov_microradians: effective_fov.unwrap_or(0),
+        fixation_millionths: fixation.unwrap_or(0),
+        target_fixation_millionths: target_fixation.unwrap_or(0),
+        aspect_millionths: aspect.unwrap_or(0),
+        frustum_ground_width_mm: frustum_ground_width_mm.unwrap_or(0),
+        frustum_ground_depth_mm: frustum_ground_depth_mm.unwrap_or(0),
     }
 }
 
@@ -327,7 +361,8 @@ fn sample_camera_path_v1(
     let camera_surface =
         surface_at(camera_xy).ok_or("POST_R2_HORIZON_CAMERA_SURFACE_UNAVAILABLE")?;
 
-    let mut lift = (camera_surface + MIN_CAMERA_CLEARANCE_MM_V1 - nominal_camera[2]).max(0);
+    let required_clearance = MIN_CAMERA_CLEARANCE_MM_V1 + CAMERA_QUANTIZATION_GUARD_MM_V1;
+    let mut lift = (camera_surface + required_clearance - nominal_camera[2]).max(0);
     for numerator in [1_i64, 2, 3] {
         let point = [
             focus[0] + (nominal_camera[0] - focus[0]) * numerator / 4,
@@ -336,7 +371,7 @@ fn sample_camera_path_v1(
         ];
         let surface = surface_at([point[0], point[1]])
             .ok_or("POST_R2_HORIZON_SIGHTLINE_SURFACE_UNAVAILABLE")?;
-        lift = lift.max(surface + MIN_CAMERA_CLEARANCE_MM_V1 - point[2]);
+        lift = lift.max(surface + required_clearance - point[2]);
     }
     focus[2] = focus[2]
         .checked_add(lift)
@@ -422,7 +457,9 @@ fn path_parameters_v1(
             let mut selected = None;
             for offset in offsets {
                 let xy = [origin[0] + offset[0], origin[1] + offset[1]];
-                let height = surface_at(xy).ok_or("POST_R2_HORIZON_RIDGE_SURFACE_UNAVAILABLE")?;
+                let Some(height) = surface_at(xy) else {
+                    continue;
+                };
                 let candidate = (height, -xy[0], -xy[1], xy);
                 if selected.is_none_or(|best| candidate > best) {
                     selected = Some(candidate);
@@ -479,6 +516,27 @@ fn camera_position_v1(
     Ok(result)
 }
 
+fn canonicalize_applied_sample_v1(
+    camera: &Camera,
+    sample: &mut CameraPathSampleV1,
+) -> Result<(), &'static str> {
+    sample.focus_mm = fixed_vec3_i64(camera.get_focus_pos(), MILLIMETRES_PER_BLOCK)
+        .ok_or("POST_R2_HORIZON_APPLIED_FOCUS_INVALID")?;
+    sample.position_mm = fixed_vec3_i64(
+        camera.get_focus_pos() - camera.forward() * camera.get_distance(),
+        MILLIMETRES_PER_BLOCK,
+    )
+    .ok_or("POST_R2_HORIZON_APPLIED_POSITION_INVALID")?;
+    let orientation = camera.get_orientation();
+    sample.yaw_microradians =
+        fixed_i64(orientation.x, FIXED_SCALE).ok_or("POST_R2_HORIZON_APPLIED_YAW_INVALID")?;
+    sample.pitch_microradians =
+        fixed_i64(orientation.y, FIXED_SCALE).ok_or("POST_R2_HORIZON_APPLIED_PITCH_INVALID")?;
+    sample.distance_mm = fixed_u64(camera.get_distance(), MILLIMETRES_PER_BLOCK)
+        .ok_or("POST_R2_HORIZON_APPLIED_DISTANCE_INVALID")?;
+    Ok(())
+}
+
 fn fixed_vec2_i64(value: Vec2<f32>, scale: f32) -> Option<[i64; 2]> {
     Some([fixed_i64(value.x, scale)?, fixed_i64(value.y, scale)?])
 }
@@ -509,7 +567,7 @@ mod tests {
 
     fn flat_surface(_: [i64; 2]) -> Option<i64> { Some(40_000) }
 
-    fn camera_and_state(sample: CameraPathSampleV1) -> (Camera, CameraPathStateV1) {
+    fn camera_and_state(mut sample: CameraPathSampleV1) -> (Camera, CameraPathStateV1) {
         let mut camera = Camera::new(16.0 / 9.0, CameraMode::Overseer);
         camera.set_orientation_instant(Vec3::new(
             sample.yaw_microradians as f32 / FIXED_SCALE,
@@ -524,6 +582,7 @@ mod tests {
             sample.focus_mm[1] as f32 / MILLIMETRES_PER_BLOCK,
             sample.focus_mm[2] as f32 / MILLIMETRES_PER_BLOCK,
         ));
+        canonicalize_applied_sample_v1(&camera, &mut sample).expect("canonical applied sample");
         let state = CameraPathStateV1 {
             origin_mm: Some(sample.origin_mm),
             last_sample: Some(sample),
@@ -623,6 +682,29 @@ mod tests {
         let drifted = camera_path_evidence_v1(&camera, &state, Some(sample.path), 70, true);
         assert!(drifted.camera_valid);
         assert_ne!(accepted.camera_token, drifted.camera_token);
+    }
+
+    #[test]
+    fn every_large_world_path_publishes_complete_post_apply_camera_evidence() {
+        let origin = [16_384_500, 16_384_430];
+        for path in [
+            CameraPathV1::GroundForwardOpen,
+            CameraPathV1::ElevatedObliqueOpen,
+            CameraPathV1::DenseForestForward,
+            CameraPathV1::RidgeHighGroundForward,
+            CameraPathV1::MovingForwardTurn,
+        ] {
+            let sample = sample_camera_path_v1(path, origin, 1_484, flat_surface).expect("sample");
+            let (camera, state) = camera_and_state(sample);
+            let evidence = camera_path_evidence_v1(&camera, &state, Some(path), 70, true);
+            assert!(evidence.camera_valid, "{path:?}");
+            assert_eq!(
+                evidence.focus_mm,
+                fixed_vec3_i64(camera.get_focus_pos(), MILLIMETRES_PER_BLOCK).expect("focus")
+            );
+            assert_eq!(evidence.path_ordinal, 1_484);
+            assert_ne!(evidence.camera_token, [0; 32]);
+        }
     }
 
     #[test]

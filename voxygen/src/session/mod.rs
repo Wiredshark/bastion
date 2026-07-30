@@ -2489,6 +2489,9 @@ impl PlayState for SessionState {
             visible_horizon_max_distance_blocks: horizon_terrain.max_distance_blocks,
             visible_horizon_lod_terrain_draw_ready: self.scene.lod.terrain_draw_ready_v1(),
             visible_horizon_lod_terrain_detail: u64::from(self.scene.lod.terrain_detail_v1()),
+            visible_horizon_lod_distance_blocks: u64::from(
+                global_state.settings.graphics.lod_distance,
+            ),
             figures: u64::try_from(self.scene.figure_mgr().figure_count()).unwrap_or(u64::MAX),
             visible_figures: u64::try_from(self.scene.figure_mgr().figure_count_visible())
                 .unwrap_or(u64::MAX),
@@ -2552,17 +2555,62 @@ impl PlayState for SessionState {
                         .map_or(r0d_simulation_tick, |latch| latch.completed_tick);
                     let client = self.client.borrow();
                     let terrain = client.state().terrain();
-                    if let Err(terminal) =
-                        crate::post_r2_horizon_multicamera::apply_post_maintenance_path_v1(
-                            camera,
-                            &terrain,
-                            &mut self.post_r2_horizon_camera,
-                            path,
-                            server_tick,
-                            global_state.settings.graphics.fov,
-                        )
-                    {
-                        tracing::error!(target: "bastion_post_r2", %terminal);
+                    match crate::post_r2_horizon_multicamera::apply_post_maintenance_path_v1(
+                        camera,
+                        &terrain,
+                        &mut self.post_r2_horizon_camera,
+                        path,
+                        server_tick,
+                        global_state.settings.graphics.fov,
+                    ) {
+                        Ok(_) => {
+                            let evidence =
+                                crate::post_r2_horizon_multicamera::camera_path_evidence_v1(
+                                    camera,
+                                    &self.post_r2_horizon_camera,
+                                    Some(path),
+                                    global_state.settings.graphics.fov,
+                                    horizon_cutaway_solid,
+                                );
+                            crate::r0p_observer::record_post_apply_horizon_camera_counters(
+                                crate::r0p_observer::PostApplyHorizonCameraCountersV1 {
+                                    camera_valid: evidence.camera_valid,
+                                    camera_mode: u64::from(evidence.mode_tag),
+                                    projection: u64::from(evidence.projection_tag),
+                                    focus_mm: evidence.focus_mm,
+                                    position_mm: evidence.position_mm,
+                                    yaw_microradians: evidence.yaw_microradians,
+                                    pitch_microradians: evidence.pitch_microradians,
+                                    distance_mm: evidence.distance_mm,
+                                    configured_base_fov_microradians: evidence
+                                        .configured_base_fov_microradians,
+                                    base_fov_microradians: evidence.base_fov_microradians,
+                                    target_base_fov_microradians: evidence
+                                        .target_base_fov_microradians,
+                                    effective_fov_microradians: evidence.effective_fov_microradians,
+                                    fixation_millionths: evidence.fixation_millionths,
+                                    target_fixation_millionths: evidence.target_fixation_millionths,
+                                    aspect_millionths: evidence.aspect_millionths,
+                                    frustum_ground_width_mm: evidence.frustum_ground_width_mm,
+                                    frustum_ground_depth_mm: evidence.frustum_ground_depth_mm,
+                                    camera_token: evidence.camera_token,
+                                    path_id: u64::from(evidence.path as u8),
+                                    path_ordinal: evidence.path_ordinal,
+                                    path_token: evidence.path_token,
+                                    surface_authority_available: evidence
+                                        .surface_authority_available,
+                                    cutaway_solid: evidence.cutaway_solid,
+                                    underworld_rejected: evidence.underworld_rejected,
+                                    sky_ground_expected: evidence.sky_ground_expected,
+                                    focus_surface_mm: evidence.focus_surface_mm,
+                                    camera_surface_mm: evidence.camera_surface_mm,
+                                    minimum_clearance_mm: evidence.minimum_clearance_mm,
+                                },
+                            );
+                        },
+                        Err(terminal) => {
+                            tracing::error!(target: "bastion_post_r2", %terminal);
+                        },
                     }
                 },
                 Ok(None)
