@@ -14301,3 +14301,50 @@ The Row-1 prediction (cascade fix -> rescue rate drops) still stands and is
 still worth testing, but expectations should be low given this.
 
 **SPEND: $4.91 across 7 waves.**
+
+## MECHANISM MAP AFTER THE FIXTURE FIXES (07/30, end of day)
+
+**TWO real mechanisms remain in the mine/chop path, confirmed DISTINCT:**
+
+**(1) CARVE CASCADE — seed 61 only.** B56's family but NOT textually B56 (that
+was amnesty re-arming an unreachable flag; this is carve minting new remote
+access jobs). Job IDs escalate to 916, targets march 20 then 50 units out and
+17-20 z-levels deeper. **Does not self-terminate** — a B24 failsafe rescue cut
+it off mid-cascade with the job still incomplete. Architect-gated row, Opus
+reviews the design. Acceptance is mechanism-level (bounded job-ID growth, no
+monotonic TGT-DRIFT escalation, demonstrated termination, bounded carve
+distance/depth) because B56's own first fix was SILENTLY NUMERICALLY IDENTICAL.
+
+**(2) BOUNDED TRAVEL-ARRIVAL FRICTION — and it is NOT mine-specific.** Bounded
+job IDs, single z-layer, same target retried, no escalation. Hits mine cells
+(51/54/55/71) AND a standalone chop job (119/80, job=27 timing out twice at the
+identical position). **It is a general travel property that lands on whatever
+designation sits in its way for a given seed's terrain.** Usually resolves
+(74/83/114 show the signature and still pass); occasionally never does (51).
+**PRIORITY INVERTED: (2) now outranks (1)** — six seeds and two work types
+versus one seed.
+
+**★ THE HYPOTHESIS THAT COULD MERGE THE DAY'S TWO BIGGEST OPEN FINDINGS.**
+First version — "the ~26% rescue rate is unconverged recovery loops" — looked
+falsified: the footprint fix removed 79% of mine failures and moved the rescue
+rate 1.4 pp. But that tested the wrong mechanism (it removed OBSTRUCTIONS, not
+friction). **Revised: mechanism (2) is the common cause of BOTH the residual
+failures AND the rescue rate.** Colonists repeatedly fail to arrive, the
+failsafe teleports them, the run USUALLY completes anyway, occasionally doesn't.
+That fits the actual shape — 19 rescues, only 5 mine failures — where the first
+version didn't. Seed 51 is the tail of a distribution, not a separate disease.
+**TEST IN FLIGHT** on the 15 seeds that mined PERFECTLY yet fired the backstop
+(52,56,62,66,69,74,76,80,83,85,97,104,107,108,114 — seed 76 fires SIX), with a
+zero-rescue control group (49,50,53,57,58). Signature present in passing runs =>
+the rescue rate measures how often friction occurs, and two findings become one.
+Signature absent => dead, and a quarter of clean games invoke emergency recovery
+for an unidentified reason, which is worse.
+
+**B15 — PROVISIONALLY CLOSED, downstream of mine, not independent.** 0 standalone
+b15 failures across 36 fan seeds; 5b's local data carries the co-occurrence half
+(fails only alongside mine failures; cleared on 74/83/114 when mine cleared).
+Limitation recorded honestly: the fan's 36 seeds had no mine failures, so they
+prove only that b15 never fails INDEPENDENTLY — the discriminating seeds sat in a
+range whose full clause JSON was overwritten before I persisted it. **Third
+data-loss of the day from the same cause; the workflow now dumps the COMPLETE
+JSON rather than the fields I expect to need.**
