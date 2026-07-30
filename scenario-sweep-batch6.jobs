@@ -1,0 +1,6 @@
+# batch 6 — pinned baseline (bastion/pin-preaging = 2b1b3ef0)
+--path-scenario
+--leash-scenario
+--run-scenario
+--arena-scenario
+--derive-scenario

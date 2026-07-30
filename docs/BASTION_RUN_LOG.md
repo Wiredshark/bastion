@@ -14931,3 +14931,34 @@ simultaneously (3 waves, 18 VMs, ~$0.60, zero seeds — `ZONE_RESOURCE_POOL_
 EXHAUSTED`, not quota). `us-east1-b` works; `vm-pool.sh` ZONE and `vm-jobs.sh`
 VM_ZONE are overridable. Sweep batches capped at 5-6 jobs: IN_USE_ADDRESSES is 8
 PER REGION, and the machine-image create-rate limit costs a VM per batch at 6.
+
+## SWEEP ATTRIBUTION + THE HALFWAY MARK: 18 MAPPED, 9 BROKEN (07/30)
+
+**Batch 4 ran on a MOVED TIP (851ed5e9, the aging commit) while batches 1-3 ran
+2b1b3ef0 — my sweep let the baseline drift, the same stitched-across-commits
+error Opus caught in the matched pairs.** Fixed structurally: sweeps now run on a
+pinned branch (`bastion/pin-preaging` = 2b1b3ef0), and the ambiguous three were
+re-run on the pin before counting.
+
+**ATTRIBUTION: b55/b58/b73 all PRE-EXISTING. Aging exonerated by field-level
+diff:** b55 and b58 fail with IDENTICAL flags on both commits (only
+`soak_avg_tick_ms` differs — wall-clock, non-comparable by design, per the
+comparable-field-set classes).
+
+**★ AND THE DIFF PRODUCED AGING'S FIRST CANDIDATE EVIDENCE:**
+`b73_resumed_after_break` — FALSE pre-aging, TRUE with aging. A colonist resumed
+interrupted work with aging in place and didn't without it. Exactly the shape
+aging should produce (an interrupted job's score rises until it wins
+re-selection), but n=1 on a score-perturbing change ⇒ **filed as candidate
+evidence, not proof.** A resume-after-interruption leg belongs in aging's owed
+acceptance test. b73 still fails overall (ate/hunger_first/resumed — the
+needs/eat legs, which are Survive-vs-Work arbitration territory).
+
+**TALLY ON THE FIXED BASELINE: 18 of 40 mapped, 9 BROKEN — exactly half.**
+farm · autonomy-death-spiral · chopfell · bed · preempt · zone · b55 · b58 ·
+b73. All pre-existing; both of today's behaviour-changing fixes formally
+exonerated by pinned controls. b55's signature (`remainder_progressed=false`,
+`all_idle_after_whole=true` — work on the board, colony idle) matches the
+drive-gate prediction from the design review; b73's needs-legs may too.
+
+Batch 6 (path/leash/run/arena/derive) on the pin. 22 scenarios remain.
