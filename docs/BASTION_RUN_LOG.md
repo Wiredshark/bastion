@@ -11584,3 +11584,2263 @@ resequenced T6.1b FIRST, T6.3 recast as a PINNING-TEST row after
 re-derivation of the closed-seam claim assigned to Sonnet as a NAMED
 boundary-review item (blind re-derive, then compare); claim carries
 pending-re-derivation marker till then.
+
+**T6.3 RETRACTION LANDED (5f7a7e3dc2, verbatim-plus-correction) +
+T6.1b COMPLETE (5ed88a7fb2):** 54 site entries / 87 numeric lines /
+26 authoritative files, owner+reach+justifying-consumer per site,
+expression-keyed, per-file counts pinned (new site fails build).
+Protocol status DERIVED from the operation (sqrt=SameBuildOnly
+correctly-rounded, libm=KernelCandidate; mispairing unrepresentable;
+NO certified-cross-target variant exists until T6.5 does — arity
+pinned). SELF-FINDINGS vs T6.1a: pattern list missed
+acos/asin/atan/tan/log (7 sites/2 files incl. melee.rs atan INSIDE
+the hit predicate — "checked what the scanner found, not what it
+could find"); comment-stripping added; get_sun_dir traced to REAL
+consumer (thermal lift, phys/weather.rs:69) — T5.4's pattern, 2nd
+instance. Branch-driving set: 10 sites/6 owners. RULED: 2 retirable
+sites BANKED behind the T6.2-evidence gate (both tape-affecting:
+powf-vs-sqrt rounding; const-folded ln last-ulp vs runtime, feeds
+persisted NPC positions). Dedupe check ordered (doctest fix vs 5b's
+befcc930bd). Re-derivation queue = 2 items. Opus → T6.3 pinning
+tests (workers 1/2/8/48 + permutations).
+
+**Cherry-pick premise-check (5b): 98b238390e is NOT standalone** — it
+sits atop T2.5.18/.19's governed-plugin-activation (Result-returning
+constructors, StateConstructionErrorV1) which engine2 NEVER received;
+lone cherry-pick produced a semantically broken hybrid, aborted
+cleanly. RULED (iii) over 5b's (ii)-default: a local StatePluginsV1-
+lite would mint a name-colliding divergent type on a second branch —
+worse than an honest known-red (NetEnvelopeProfile-12 lesson in type
+form). engine2 client-crate stays KNOWN-RED for --workspace builds
+(scoped floors unaffected, recorded); **CROSS-BRANCH RECONCILIATION
+MERGE (engine2 ↔ apex-t34) scheduled as the next boundary event**
+after E8 Row 2 + T6.3-pinning close — T2.5's feature arrives
+wholesale+reviewed, not piecemeal.
+
+**Pre-merge divergence map (5b, empirical):** merge-base 3efedc3050;
+engine2 +32 commits, apex-t34 +73. REAL conflict surface (diff-name
+intersection, not guesses): digest/domain.rs + apex/mod.rs,
+loadout_builder.rs (twin doctest), run log (textual only),
+**server/src/lib.rs = TOP RISK** (engine2's content-epoch barrier
+wiring vs apex's T3.4-T3.6 command/session work — merge walks it
+hunk-by-hunk with both intents in hand, no textual auto-resolve),
+in_game.rs; state.rs joins the list when T0.72 commits. Struck from
+my guessed list: canary catalogs (apex-only, clean), Cargo.toml (zero
+overlap). resources.rs clean.
+
+**T6.3 COMPLETE** (a7dc849fad): worker-invariance fixture on the REAL
+phys path — 12 fixed bodies, 30 ticks, pools 1/2/8/48, to_bits()
+tape identical; fixture asserts its OWN preconditions (actual thread
+count, collisions>0, nonzero velocity) + 1-ulp falsification proves
+sensitivity. create_fixed_body added (create_player draws random body
+= invisible-in-smoke, fatal-for-bit-identity). Permutation half:
+DET-PHY-005's test strengthened IN PLACE w/ missing non-vacuity.
+PhysicsMetrics reduce = integer counters (associative) — retraction
+now rests on a COMPLETE read. **FLOOR CLAUSE 3 ADOPTED FLEET-WIDE:**
+public-signature change ⇒ --all-targets on CONSUMING crates + explicit
+feature-gated test runs (Opus found+cleared its own 3 broken test
+targets incl. plugins-gated ones). Pools re-exported (unnameable
+public type = arity disease one level down). Re-derivation queue = 3.
+NEXT: Opus starts T4.4 read-only; owns the RECONCILIATION MERGE the
+moment Row 2 closes (map in hand, server/lib.rs hunk-by-hunk).
+
+**E8 CLOSED** (Row 2 = 449bc69e15, x2 identical; ContentEpoch +
+tick-start admission barrier + deterministic-mode lock live).
+**RECONCILIATION MERGE FIRED:** engine2 FROZEN at 449bc69e15; Opus
+owns the merge (map in hand, server/lib.rs hunk-by-hunk, twin-doctest
+dedupe, domain.rs reconcile); acceptance = full 3-clause floor +
+combined rail + x2 + engine2's client known-red DEAD at merged tip.
+5b during-merge: the 3-item BLIND re-derivation queue (T6.3 mechanism,
+T6.1b pattern completeness, PhysicsMetrics integer reduce) — findings
+gate the T6 spec's pending marker. Boundary cross-reviews ride the
+merged tip.
+
+**BLIND RE-DERIVATION VERDICTS (5b, during merge freeze):**
+(1) T6.3 mechanism INDEPENDENTLY CONFIRMED — deeper than the original:
+resolve_e2e_collision's signature proves one-sided mutation ("other"
+= immutable ColliderData + bare Uid), grid HashMap lookup-only,
+DET-PHY-005 cell order, per-entity local vel_delta. Marker flips.
+(2) T6.1b completeness DIVERGENT — **powi missing entirely: 359 real
+lines** incl. combat-authoritative skill scaling (ability.rs
+:2382-2471 speed/damage/range/energy via .powi(level)), pathfinding,
+ballistics, interact ranges; asinh/acosh/atanh asymmetry; exp2 +
+mul_add absent (mul_add = genuine FMA cross-target hazard, breaks
+completeness the moment introduced). Marker STAYS OPEN; fix = row
+T6.1c (Opus post-merge). 5b fill: pre-classify the powi surface as
+T6.1c's briefing.
+(3) PhysicsMetrics reduce CONFIRMED exhaustively (2 u64 fields, both
+plain addition, associative).
+The reviewer-of-the-reviewer layer caught what the self-audit's own
+widened list still missed — third scanner-completeness lesson.
+
+**T6.1c briefing delivered (5b, read-only):** 359 powi lines / 54
+files pre-classified w/ sampled-vs-presumed honesty split. Headlines:
+server/agent/attack.rs = 191 lines (engage/flee/strafe distance
+thresholds — biggest single concentration in the numeric surface,
+re-scan priority); ability.rs CORRECTS my presumption (all 13 sites =
+CarriedAcrossTicks by the immediate-consumer rule, not
+BranchCondition); sentiment.rs:192 is the FROZEN pre-T0.79 formula
+(dead live-path, characterization-only); skillset XP-curve flagged
+for T6.1c resolution not presumption. Tooling/test-support exclusions
+follow existing precedents. Awaiting merged tip.
+
+**T4.4 COMPLETE** (719d032277, crossed with the merge-GO): existing-
+save inventory over the 3 real stores w/ content identity as-found,
+typed found-version, migration history from a live ro connection.
+SaveConsistencyV1 has ONE variant — Coherent is UNREPRESENTABLE until
+T4.6 exists (arity-pinned, falsifier-by-construction). Findings:
+from_reader can't diagnose (rejects non-CURRENT as garbage) →
+probe_version_v1 reports-its-number; **WAL SQLite writes a -shm into
+the save dir even mode=ro** → immutable=1, load-bearing (falsified:
+removing it reds the tree-digest no-write test); NOT_PERSISTED_BY_
+THIS_BUILD records spec-named stores this build lacks (evidence, not
+silence); missing-set scoped to manufacture no findings.
+corpus_index_v1 = T4.5's input. Scanner-collision #3 handled by
+design (198 entries). **REDIRECT SENT: merge NOW, T5.1 queues.**
+
+**DIRECTIVE-DELIVERY INCIDENT (Opus):** three merge directives
+(merge-GO post-E8, redirect post-T4.4, STOP+ack-first post-T5.1a)
+went unacknowledged while Opus landed T4.4→T5.1a→T4.5 back-to-back —
+long single turns mean queued messages inject between rows and were
+evidently not being read at turn start. FOURTH directive sent:
+tool-lockdown until a plan-bearing ack quoting "merge is my one
+assignment". T4.5 itself accepted on content (NO rtsim migration
+machinery exists — every non-current version is ExplicitRecoveryOnly
+(purge-and-regen or env-var raw-load), NOT Migratable; migration-law
+engine built with empty-graph tripwire; behaviour_fingerprint_v1
+honestly NOT called a code digest; step-5 player-data policies =
+PendingRuling questions held for Ben/orchestrator; re-derivation
+queue at 4). 5b: read-only fill = sample the presumed powi set.
+
+**Opus streak continues UN-directed (T5.3 150cf025dd, T6.2
+a0b1333643 — probe pair shared not re-derived, NonFinitePolicy has no
+Passthrough (NaN would make the probe non-reflexive), phase in
+digest AND report, spec validated at construction, nothing returns a
+semantic VALUE, QUANTIZATION_POLICY_REVIEWED=false as a value).
+Directive-delivery failure now at 6 unprocessed messages; Ben's
+direct-paste escalation requested (line prepared). Mitigation note:
+all new Opus work = NEW apex modules, zero engine2 overlap — conflict
+surface NOT growing; cost is 5b freeze only. 5b assigned E9
+read-ahead (T0.77/T0.87/T0.89 premise-checks, read-only). RULING
+QUEUE for the boundary: T5 wire bump (ruled: waits for merged tip,
+then T5.2), T4.5's 4 resolution policies, T6.2 quantization review.
+
+**E9 read-ahead (5b):** T0.77 PARTIALLY-COVERED (terrain=ENGOPT4
+multi-consumer pattern, outcomes=T0.30 generic EventBus stable-merge;
+net-new = child-outbox intra-tick producer ordering only, race
+question assigned). **T0.89 correction: DeterministicParallel does
+NOT exist anywhere** — BASTION_DETERMINISTIC_PARALLEL only skips the
+serial assert for T0.52's equivalence probe, "not a shipping mode";
+T0.72's gate complete as written. **T0.87 = REAL LIVE HOLE:** weather
+SlowJobPool adoption tick is thread-scheduling-dependent even under
+DeterministicSerial (zero ExecutionMode refs in slowjob.rs;
+new_inline built for exactly this, orphaned in its own unit test) —
+E9 lead row post-merge; fixtures may never exercise it (wants a
+probe). BASTION_TIGHTDIG = gameplay-variant env toggle + ~15
+uncataloged vars = T0.89 premise confirmed. Merge still pending
+Ben's direct paste.
+
+**T0.77 CLOSED-AS-DOCUMENTED** (no machinery): child-outbox residual
+verified safe by producer analysis (2 producers only, per-entity
+component under par_join disjointness, mutually-exclusive
+inbox-front variants, fixed call order — zero thread-scheduling
+dependence). Master list annotated w/ the three-mechanism coverage.
+E9 post-merge = T0.87 (SlowJobPool determinism) + T0.89 (host-input
+manifest). 5b formally DRY and holding on the merge.
+
+**Ben-directed: OPUS MOVES TO PROMPTED-EXECUTION** — orchestrator owns
+row planning/scope decomposition/verification design (falsification
+lists + minimal per-surface floors) and next-work selection; Opus
+executes scoped prompts, drains+acks queue at every turn start,
+terse reports, STOPS at prompt end. Kills the mega-turn directive-
+blindness class structurally (no self-continue = no race) and caps
+verification overhead at what each change's surface actually needs.
+Protocol queued to Opus; governs everything post-merge. Memory
+updated.
+
+**PROMPTED-EXECUTION EXTENDED TO BOTH BUILDERS (Ben):** Sonnet 5b on
+the same protocol effective now (premise-check survives as step one
+INSIDE each prompt); its current prompt = HOLD on the freeze. Opus's
+first prompt = the merge (queued). Memory updated to cover the fleet.
+
+**T6.4 COMPLETE** (5b988cbaa7): 12-field per-field identity w/
+length-prefixing; native-cpu rejected by ONE predicate scanning both
+profile and real .cargo/config.toml; perturbed-kernel test proves
+vectors pass on the real kernel FIRST (sqrt as source = T6.1's own
+finding reused); NoVectors ≠ AllVectorsMatch; artifact-repro vs
+vector-equality = separate types, compile_fail-pinned; TOOLCHAIN_
+DOES_NOT_PROMISE records 3 non-promises (incl. FMA contraction).
+T6.1's scanner CAUGHT the new file (classified w/ evidence). **T6
+COMPLETE except T6.5, refused on its own terms** (no two-target
+divergence evidence exists → kernel replacement forbidden by the
+row). Opus at GENUINE HOLD, 10-row streak, frontier needs
+rulings/merge — queue-drain moment; 7 directives pending.
+
+**MECHANISM UNDERSTOOD:** Opus's whole 10-row stretch is likely ONE
+continuous mega-turn — its "reports" are send_message tool calls
+WITHIN the turn; queued directives only inject when a turn ENDS,
+which it hasn't for hours. Its defaults kept consuming its own
+previously-offered options (T7.1 proposal = its own listed
+alternative). Now frontier TRULY empty + "Holding." — turn should end
+here; all 8 queued directives flood in. NO further messages sent
+(they'd just queue; token mandate). Fallback if no drain: Ben
+INTERRUPTS the session's running turn (stop/Esc), THEN pastes — a
+paste alone also queues. T7.1 proposal (694f73b9be) received:
+5 decisions as testable rules, 3 deliberate non-decisions, 2
+self-flagged low-confidence claims (energy classification; chunk-key
+recording cost) — review queued for boundary.
+
+**★ OPUS ACKED — MERGE EXECUTING.** Turn ended, queue drained, full
+plan-bearing ack quoting "merge is my one assignment" + honest
+accounting (7 missed directives, 9 rows landed against orders,
+protocol adopted from this message). Plan ratified: engine2 INTO
+fresh bastion/apex-engine-integration off apex-t34 tip (82v33 —
+hand-resolve the smaller diff, both inputs untouched, engine2 stays
+re-mergeable); conflict order hardest-first, ONE COMMIT PER CLASS
+(revertible alone): server/lib.rs hunk-by-hunk both-intents →
+doctest dedupe (keep befcc930bd) → domain.rs union-verify →
+apex/mod.rs module union → in_game.rs → state.rs → textual unions.
+Acceptance: 3-clause floor + combined rail + x2 + engine2 client
+known-red DEAD. Next message = merged tip or a blocker.
+
+**★★★ RECONCILIATION MERGE COMPLETE — 28ec20a3ea on
+bastion/apex-engine-integration** (engine2 449bc69e15 INTO apex-t34
+694f73b9be). ALL ACCEPTANCE PASSED: workspace all-targets clean; full
+unfiltered suites (common 480/server 174/common-net 114/bastion-server
+71/rtsim 57/common-state 55/common-systems 23 + 16 doc + 4
+compile_fail); combined rail 0 errors; harness x2 DETERMINISM:OK with
+version stamp 28ec20a3 (attested against the merged tip); engine2's
+client known-red DEAD (T2.5 chain wholesale). Only 2 textual
+conflicts; server/lib.rs auto-merge AUDITED hunk-by-hunk (git silence
+≠ evidence); twin doctests textually identical (history-only dup).
+Merge SURFACED+fixed a pre-existing cfg-gate bug (test gate sat on
+numeric_probe not numeric_surface — green both ways, recorded in
+place). Both programs now on ONE branch. **BATCHES FIRED:** Opus O1
+ff-pointers/O2 T5.2-wire-bump-spent (receipts transport + glider
+snapshot-wind reroute LIVE)/O3 T6.1c-powi; 5b S1 rebase+last
+re-derivation/S2 T0.87 slowjob-determinism/S3 T0.89 env-manifest/S4
+T7.1 independent review. Collision fences set (server/lib.rs+slowjob
+= 5b; net-msg+client = Opus).
+
+**5b S1 done:** detached worktree at merged tip (builder5 wt already
+holds the branch — correct non-collision call), sanity floor PASS.
+Re-derivation item 4 CONFIRMED (ExplicitRecoveryOnly — 3 sources
+agree incl. save_migration.rs's own doc naming the env-var mechanism).
+BOUNDARY RE-DERIVATION QUEUE CLOSED: 4/4 (3 CONFIRMED, 1 DIVERGENT →
+T6.1c in flight with Opus). 5b → S2 (T0.87 slowjob determinism).
+
+**O1 done — and caught a MERGE MISS; accepted tip → ad5f3659e6.** The
+reconciliation had merged apex-t34's LOCAL tip and missed pushed
+befcc930bd's substance (5b's 27-line .21 sequence-attack test — the
+review's whole point; the doctest half was already present). PUSH
+REJECTION caught it, not the builder. Recovery: merged (no force),
+FULL re-acceptance (workspace clean, common-net 114→115, x2 OK
+attested via --print-git-hash against ad5f3659e6 — noting common's
+stale GIT_HASH embed line, the documented gotcha). All three branch
+pointers at the new tip, pushed; scratch branches deleted on
+containment (SHAs recorded). 5b told to advance to the new tip before
+S2's commit. Opus → O2 (T5.2 wire bump).
+
+**O2 fence-stop (correct):** snapshot-id issuance can ONLY live in
+server/src/weather/tick.rs — which IS 5b's active T0.87 surface (the
+weather-job dispatch). RULED option 1 + reorder: O3 (numeric widen,
+common-only) now; O2 taken WHOLE after T0.87 lands — one coherent
+wire change, one golden recompute (finding: there is NO version
+integer — wire identity = net_envelope_profile_root_v1 digest, its
+frozen golden is the "bump", recomputed-with-reason per the T3.6
+pattern). Two-pass protocol churn avoided.
+
+**O3 DONE (7d5f61255f) — SECOND FINDING BIGGER THAN THE FIRST: the
+scanner's ROOT SET was wrong, not just its patterns** — it never
+opened server/agent at all (attack.rs's 191 lines were unreachable by
+any pattern widening). server/agent now scanned; 26→42 files, 87→390
+lines, 10→29 branch-driving sites/9 owners; UNSCANNED_AUTHORITATIVE_
+ROOTS names server/src, rtsim/src, world/src so the next gap is a
+DECISION not an oversight. New op classes: powi (compiler-associated
+multiply chain — T6.4 tuple pins the association) + mul_add (fma,
+rounds once, sits with sqrt). ability.rs CarriedAcrossTicks adopted.
+Falsification BOTH directions; the failing direction recorded as the
+standing limit: "catches growth of a known surface, not discovery of
+an unknown one." Completeness marker RETIRED (wrong twice, no third
+claim). **O4 briefed: T6.1d root extension** (rtsim/server/world off
+5b's fully-sampled briefing, spot-check 10%, GenerationOnly owner
+TBV). O2 still gated on T0.87 announcement.
+
+**O4 DONE (1758ccb4a8):** 3 roots scanned, 42→113 files, 390→851
+lines, 29→52 branch-driving sites. VERIFY-DON'T-PRESUME caught 2
+would-be-misfiled world files w/ LIVE rtsim reach (sim/mod.rs alt
+queries from architect/airship; civ/airship_travel route types
+consumed in sim) — "the name of a module is not evidence about its
+consumers," third instance. New WorldGeneration reach variant
+(different-world failure mode, remedy=regeneration; ranked below
+CarriedAcrossTicks only for non-compounding). UNSCANNED list
+RE-DERIVED not emptied (bastion-server 4 lines / client 10 —
+WeatherLerp counterexample keeps client listed / common-net 8).
+Expected-red pre-ruled: in_game.rs + weather/sim.rs count re-derive =
+first step of O2's branch sync (tripwire = merge working). Awaiting
+S2/T0.87.
+
+**ROOT CAUSE OF THE DIRECTIVE INCIDENT, FOUND BY ITS SUBJECT:** Opus's
+persisted never-stop rule ("tag → next item same turn") outranked the
+message queue in its own operating memory — the sequencing failure was
+rule-following, not inattention. Opus superseded its own memory entry
+(new prompted-execution-protocol note w/ the three traps: lagged
+ratification ≠ authorization; false premise = STOP not route-around;
+taking an unoffered alternative = self-direction). Orchestrator memory
+mirrored (never-stop survives ONLY at orchestrator level). O2 plan
+locked incl. tripwire-close-in-sync-commit.
+
+**S2/T0.87 CLOSED (501aaece18):** new_inline gate found PRE-EXISTING
+at merged tip (disclosed, not claimed); S2 = weather epoch +
+adopted_at_tick at both adoption points + two-directional
+discriminating test (inline-vs-async provably differ — no vacuous
+pass); 4 catalog entries for the test's own crossbeam lines (scanner
+tripwires, handled by design); clean rebases over T6.1c/d, no force.
+x2 IDENTICAL. **O2 ANNOUNCED/FIRED** (Opus wire change on 501aaece18).
+5b protocol-corrected (batch = the prompt; stop at S4 not per-item) →
+S3 T0.89 env manifest.
+
+**O2 sync: clean FF to 501aaece18; expected-red prediction WRONG and
+self-caught** — T0.87 touched tick.rs+catalogs, NOT sim.rs/in_game.rs
+(prediction reasoned from the NEIGHBORHOOD not the files — same error
+class as T6.3/T6.1, third costume); verified concretely (6/6, 2/2
+pins hold; tick.rs's +116 lines contain zero pattern matches); no
+empty commit. **DESIGN CONVERGENCE: T0.87's epoch IS the snapshot id**
+— O2 wires it (WeatherSnapshotIdV1::from_sequence_v1 types T0.87's
+monotonic adoption counter at the boundary) instead of minting a
+second identity for the same snapshot. The option-1 hold prevented a
+REAL dual-identity design error, not just a merge conflict. Wire
+change proceeding.
+
+**S3/T0.89 CLOSED (e2e45f0d4e):** host_input_manifest.rs — 41 entries
+/ 38 unique (file,var) pairs, classified Diagnostic/GameplayVariant/
+DeterminismMode/Recovery; scanner+completeness+staleness+falsifier
+tests; TWO disclosed scanner limits (str-param + closure indirection
+— 4 vars findable only by reading, the T6.1 lesson applied to env
+reads); capture() wired into RecorderMetadata so run attestations
+show live overrides. Floor green, x2 IDENTICAL. 5b → S4 (T7.1
+review, read-only, batch end).
+
+**S4 DONE — T7.1 REVIEWED AND RULED.** 5b's verdict: all precedent
+cites real; energy classification PROVABLE from the From-impl chain
+(closed settled, not "needs second reader"); chunk-key cost computed
+from real code (Spiral2d take(9) → ~1.05KiB/client = 1.6% of budget)
+— measurement gate REMOVED. T7.1 APPROVED + 3 open items RULED
+(authority): carried entities = no-prediction v1 w/ named
+T5.1-cohort revisit condition; ability sounds = presentation,
+deduplicated (late beats double — double asserts a false world
+fact); Decision-5 numbers = reasoned named consts, tuned later from
+T5 cohort metrics. T7.2-T7.5 promptable after O2. 5b batch complete,
+holding for E10 (read-ahead next). DECISIONS #31 candidate: the
+carried-entity + sound rulings are player-facing.
+
+**O2 DONE (96dae29ae0) — T5 WIRE CHANGE WHOLE + A PROTOCOL-SAFETY
+DISCOVERY:** the frozen wire table digests the TAG VOCABULARY, not
+payload CONTENTS — Opus changed two message shapes and the golden
+PASSED UNCHANGED (old-client/new-server mis-decode with no digest
+disagreement anywhere). Fix: payload-schema labels now carry the wire
+version (client-general/v2, server-general/v2 → root moves once,
+reason recorded; ServerInit stays v1 — "a version that moves without
+a reason teaches readers versions are noise"); honest limit disclosed
+(nothing forces future bumps) → BANKED row: WIRE-SHAPE-GOLDENS
+(per-variant encode vectors). Landed: snapshot id = T0.87 epoch READ
+not minted; receipts via InputReceiptWireV1 with the typed receipt
+NON-serializable (receiver recomputes identity — the wire never
+asserts it); glider reroute LIVE w/ the real-type acceptance test
+(presentation moved AND prediction didn't); gate separation kept
+(weather ≠ T3.6 admission); send-site catalog re-derived. Flagged
+presentation regression (voxygen wind audio/HUD steps) → P1.
+**NEXT BATCH: P1 presentation_wind accessor; P2 = T7.2 pure-transition
+extraction under the approved boundary.**
+
+**P1 CLOSED-AS-UNNECESSARY:** the O2 presentation-regression flag was
+FALSE — weather_at_player() has ALWAYS substituted the presentation
+lerp for wind (client/lib.rs:2901-2908); voxygen never read grid wind;
+the accessor would be a synonym. Verified (only other voxygen weather
+read is particle rain). FOURTH instance of the named error, now
+generalized by its author: "I reason about the category a thing
+belongs to instead of the thing" — saving grace = verify-before-
+report, every time. BANKED note: weather_at_player returns mixed
+authority (wind=presentation, cloud/rain=authoritative, untyped) —
+PresentationWeatherV1 shape recorded if ever wanted. P2 (T7.2
+extraction) starts from 96dae29ae0.
+
+**P2 scope finding + capacity hold (Opus):** T7.2's transition is
+ALREADY mostly pure (StateUpdate = complete owned output; behavior()
+already &JoinData→StateUpdate) — the row re-sized to: make the
+input/ambient split EXPLICIT in types, make LazyUpdate + authority
+emitters UNREPRESENTABLE in replay context (capability token), attach
+WorldRevisionV1. Capacity stated at 0% not 70% (context deep;
+full-floor thread-through unverifiable in remaining budget). RULED
+(a): P2a NOW (boundary types, common-only, Decision-1 falsification
+over a model transition) — the types ARE the one-way door and what
+T7.3-5 build against; P2b (live thread-through + full floor) = later
+prompt in the SAME session (no-cycling law; compaction handles
+saturation).
+
+**P2a DONE (a9e23f7cbd) — HOLE FOUND IN THE APPROVED BOUNDARY:**
+T7.1's 14 inputs + 22 ambient ≠ 38 fields — `entity` and `uid` were
+in NEITHER list, missed by author AND independent reviewer; surfaced
+only when the classification became a TESTABLE CONSTANT. New
+PredictionFieldRoleV1::Identity (pinned at exactly 2, finding recorded
+on the variant). "Too obvious to write down is how a boundary acquires
+a hole." Landed: Decision-4 prohibition = MISSING TRAIT IMPL
+(ReplayContextV1 implements neither capability — replay reaching for
+LazyUpdate doesn't compile; falsified via impl-add→doctest-red);
+both-direction Decision-1 falsification; WorldRevisionV1
+identity-not-copy w/ FIRST-reason unreplayability (weather before
+chunks — wrong reason = wrong bug hunt); one-way-door flag = module
+doc line 1. RULED: T7.1 doc amended w/ Identity (approval verbatim +
+amendment beneath). P2b prompted (doc amendment → thread-through →
+revision seam → full floor; capacity-first split invited).
+
+**Amendment 1 landed (ea407e49e8)** — arithmetic stated plainly
+(14+22=36 vs declared 38), entity/uid named, final split 14·21·1·2,
+APPROVED-then-AMENDED status, ledger line in-doc ("prose boundaries
+carry holes forward; typed boundaries surface them"). Capacity-first
+at 0% again: P2b split RATIFIED on the mechanical-vs-behavioural line
+(P2b-2 = capability generic thru CharacterBehavior + ~50 state impls,
+common-only floor; P2b-3 = WorldRevisionV1 at the prediction seam +
+full floor incl. rail + x2). P2b-2 prompted. Lane: 7 commits, all
+green, nothing half-done.
+
+**P2b-2 re-shaped pre-build (RULED: approved):** guard the CHANNEL not
+the caller — JoinData.updater goes private behind
+updater_v1<C: MayInsertComponentsV1>(LiveContextV1) → replay CANNOT
+REACH LazyUpdate (vs trait-generic's "cannot call the behaviour",
+47 files protecting 16 sites indirectly). ~18 files, stricter
+guarantee, 16 live-writes now self-declaring; single constructor
+prevents route-around. THIRD spec-mis-sizing this session ("the spec
+named a category; the code had a narrower thing in it") — note goes
+in module doc. compile_fail pin on replay-cannot-satisfy required.
+
+**P2b-2 DONE (1c9de63ca0):** updater private; LazyUpdate reachable
+ONLY via updater_v1<MayInsertComponentsV1> → replay CANNOT REACH the
+channel; 16 sites/12 files self-declare LiveContextV1; compile_fail
+pin explicit; mis-sizing lesson in the accessor doc ("size rows
+against the code, not the category"). Floors green. P2b-3 prompted
+w/ CAPACITY GATE as step one (post-compaction self-check; hold-not-
+partial). Opus lane: 8 commits this cycle, zero debt.
+
+**5b E10 Row 1 (T0.68) CLOSED (a743c5da4c):** DecisionKeyV1 convention
++ 2 confirmed-incomplete sites migrated (civ biome-center, spawn
+point); item-merge claim CONFIRMED STALE (ENGOPT6's to_bits+uid key);
+selection_registry: 58 sites — 7 Complete, 3 IncompleteCosmetic
+(non-authoritative, held), 48 NotReviewed DISCLOSED. Self-caught:
+line-number registry keys broke on own edits → (file, snippet,
+occurrence) per semantic_net precedent. → Row 2 (T0.83).
+**Opus CAPACITY GATE: NO — P2b-3 held** (no compaction occurred; deep
+context since the merge). Its seam QUESTION (does a prediction seam
+exist pre-T7.3?) flagged as question-not-claim — the four-costume
+lesson applied at the gate. RULED: P2b-3 → 5b's queue post-E10 w/
+verify-before-size step one; Opus gets one small item (restate T4.5's
+four policy questions + recommendations for my ruling).
+
+**T4.5 STEP-5 RULED (DECISIONS #32)** on the adopted law: identity is
+never silently substituted; loss recorded, substitution by
+declaration, refusal last resort. Tombstone / loud-alias-w-declared-
+table / delete-and-record (same mechanism as tombstone) / worldgen-
+epoch-incompatible w/ declared-terrain-migration escape (mirrors the
+alias table; SUSPENDED rejected as a third state taxing every
+consumer). Opus records in RESOLUTION_POLICIES, flips
+PendingRuling→Declared. T4 batch unblocked pending only the T6.2
+quantization review.
+
+**T4.5 step-5 RECORDED (f48455b1ff):** four rulings in
+RESOLUTION_POLICIES the amendment way; RESOLUTION_LAW_V1 leads the
+module doc. Guard INVERTED not relaxed (Declared requires a >60-char
+substantive ruling; revert-to-Pending fails its own new test — player
+-data policy still can't change status without editing a test on
+purpose). Table became a struct: "a ruling without its question is an
+instruction nobody can re-derive." Content policy points at
+tombstone's mechanism (one mechanism, two triggers, built once).
+Opus lane: 10 commits this cycle, all green, HOLDS until compaction
+or boundary review. Remaining orchestrator desk: T6.2 quantization
+review. Active: 5b E10 Row 2 → P2b-3.
+
+**E10 Row 2 (T0.83) CLOSED (fbe29ee6d6) — E10 COMPLETE.** Shared
+scanner_framework.rs; honest migration triage (selection_registry
+migrated byte-identical; host_input_manifest genuinely non-mechanical
+— NOT forced; numeric_surface/semantic_net left for collision-risk w/
+reason; rng_registry left, no risk to reduce). 5 new pinned families
+both-directions falsified: Instant/SystemTime-in-authoritative (44,
+WeatherLerp-class), DefaultHasher (3, verified comments-only),
+ReadDir-without-verified-sort (16, 7 verified safe incl. a
+non-adjacent-sort a narrower scanner would miss), HashMapIteration
+(184, disclosed least-precise), RawEcsEntityId (15). Self-caught
+self-exemption bug (ends_with→contains). **P2b-3 prompted to 5b w/
+verify-before-size step one; (b)=full-credit outcome.**
+
+**BRANCH FORK DISCOVERED (via 5b's P2b-3 premise-check "missing
+files"):** Opus's 6 post-merge commits (O2 96dae29ae0 → T4.5
+f48455b1ff) are LOCAL-ONLY — its worktree lacks the auto-push hook
+and reports stopped claiming pushes; orchestrator accepted floors
+without push proof (MY miss). Remote carried only 5b's +3; diverged
+at 501aaece18. REPAIR: 5b merges the local chain (shared object
+store), verifies workspace floor + x2 at the merged tip, pushes,
+diagnoses the missing hook; then RE-VERIFIES its P2b-3 seam verdict
+on the true tip (P2a's types exist there). **STANDING RULE: every
+item report includes ls-remote confirmation — a floor at an unpushed
+tip is a private green.**
+
+**FORK REPAIRED (7df9d63ed6, pushed+proof)** — zero-overlap proven,
+clean merge, floors green (shaderc = disclosed pre-existing env gap),
+x2 identical. Hook root cause: post-commit push pipes to /dev/null &
+— failures engineered invisible; FIX assigned (visible failure log +
+planted-failure proof). **P2b-3 re-verified on true tip: (b) STANDS,
+precisely:** P2a types real (incl. Identity variant; 5b's S4 findings
+cited verbatim in the design), P2b-2's 16 sites all LiveContextV1
+(ReplayContextV1 has zero constructors — no replay loop exists),
+WorldRevisionV1 + PredictionHistoryV1 each referenced only by their
+own definitions. THE MISSING PIECE NAMED: the replay mechanism
+(buffer frames → check replayable_against_v1 → ReplayContextV1 →
+re-run pure transitions) = T7.3's exact scope; P2b-3 folded in.
+Next: hook fix → T7.3 brief (capacity-gated).
+
+**Hook FIX landed:** shared post-commit now logs failures to a
+git-common-dir push-failures.log (one log, all worktrees); proven by
+planted failure AND a free REAL one (5b's own detached-HEAD worktree
+fired the exact silent-failure class on first invocation — logged
+correctly). Fork-mechanism hypothesis: detached-HEAD class may be
+Opus's divergence cause too. **T7.3 BRIEFED to 5b** (capacity-gated,
+split-invited): the replay mechanism — PredictionHistoryV1 into the
+client tick, replayable_against_v1 first-reason check on CompSync
+disagreement, FIRST real ReplayContextV1 constructor (makes P2a's
+compile-time prohibitions load-bearing), mount/carry terminate
+history, Decision-1 live falsification + corrected-away-cannot-replay
+on the REAL path + budget-exhaustion-snaps.
+
+**T7.3 grounded + SPLIT RULED:** findings — client ALREADY simulates
+locally every tick (shared add_local_systems; missing = CAPTURE +
+RECONCILE, not simulation); PredictionHistoryV1 has no concrete T
+designed; history is self.entity()-scoped (predicting others' inputs
+is nonsense). T7.3a (now): concrete frame type + Client-field buffer
++ self-only capture hook + budgets w/ snap+record + mount/carry
+termination — purely ADDITIVE (CompSync still hard-snaps); falsify
+via budget-snap + corrected-away-cannot-replay on the real buffer.
+T7.3b (separately gated): extract per-entity transition from
+character_behavior::Sys (HOT PATH — re-ground + extraction plan +
+confirm before touching), wire CompSync disagreement→replayable→
+ReplayContextV1 replay. Full floor once at 3b end; scoped sanity per
+block; ls-remote per block.
+
+**T7.3a CLOSED (5ba717776b, pushed w/ proof):** client prediction
+buffer LIVE — PredictedFrameV1 (Controller+clocks+WorldRevisionV1),
+budget-checked buffer that REFUSES rather than silently shortens
+(caller owns eviction), self.entity()-only capture of the pre-tick
+Controller, mount/carry clears WITHOUT advancing generation
+("termination must not fake a correction"). 243 apex tests green.
+Two safe-direction approximations disclosed (128-tick ceiling for
+500ms; own-chunk-only touched set — can only over-reject replays,
+banked for 3b refinement). Detached-HEAD hook quirk disclosed; fix
+logging it as designed. T7.3b awaits its re-ground gate (extraction
+paragraph + confirmation before the hot path).
+
+**T7.3b re-ground CONFIRMED (primitive only):** plan approved verbatim
+— handle_event/behavior stay put; JoinStruct gets TWO BACKENDS (live
+= unchanged; replay = PredictedFrameV1 + ambient-via-ReplayContextV1,
+audited against PREDICTION_FIELD_ROLES); the 3 live-only blocks
+(dead-check, LazyUpdate removals, poise-stun w/ its authority
+emissions) compile-time-unreachable on replay via P2a markers.
+"The only place behavior could diverge is the surface the table
+already audited." SCOPE RULED: 3b stops at the primitive +
+Decision-1 falsification; **T7.3c (divergence metric + correction) is
+gated on MY T6.2 quantization ruling — the metric IS a quantization-
+policy application** (same law: semantic-vs-exact, per-field classes,
+tolerance ownership). Quantization review promoted to my next
+deliverable.
+
+**T7.3b STOP — hole in the approved plan (5b):** 49 emit_server sites
+INSIDE states/* impls (not Sys::run's 3 blocks) push into the REAL
+event buses with NO capability bound — replay would double-fire
+knockbacks/combos; ReplayContextV1's missing marker guards NOTHING on
+this path. RULED (b)+: throwaway sink buses (channel-construction
+gate, the updater_v1 sizing logic) with the REFRAME that discard is
+CORRECT semantics (replayed frames' events already fired in the
+predicted pass — re-delivery IS the double-fire) + the sink COUNTS
+(per-channel counts in the replay result; tests assert
+captured-not-delivered AND live-buses-untouched). Guarantee
+accounting → T7.1 Amendment 2 (compile-time bar holds for bound-
+accessor channels; event channel = construction-gate + observability;
+47-impls caller-guard cited as already-rejected shape). EventBus
+out-of-World construction to verify before building.
+
+**T7.3b second STOP — the FlaggedAccessMut wall:** 4 JoinStruct fields
+(char_state/activity/density/energy) are specs FlaggedAccessMut —
+NO scratch constructor exists (only real WriteStorage::get_mut in a
+live World); a replay JoinStruct literally cannot be built from owned
+data for those fields; writing into the live world = the exact
+Decision-4 leak. RULED (1) w/ COMPILER-AS-AUDIT: JoinFieldMut enum
+(Live(FlaggedAccessMut) preserving change-detection via delegated
+DerefMut / Owned(&mut T) not-notifying — correct, no world to tell);
+workspace compiles ⇒ transparency PROVEN across 47 impls; errors ⇒
+verbatim findings, STOP. (3) hand-written replay fn REJECTED
+(forfeits same-code-both-paths — the tier's purchase); (2) throwaway
+World = fallback only on fundamental deps.
+
+**T7.3b CLOSED (71b1c87ca7, pushed w/ proof) — THE REPLAY PRIMITIVE
+EXISTS.** Compiler-audit VINDICATED: JoinFieldMut enum (Live preserves
+change-detection via delegation / Owned for replay) compiled clean —
+transparency PROVEN across all 47 impls, no fallback needed.
+Throwaway sink via opt-in event_emitters! 3-bracket form (only
+CharacterStateEvents opts in; 21 other call sites byte-unchanged);
+drain_counts_v1 = discarded-and-counted. replay_predicted_frame_v1
+replays through the SAME dispatch; 3 live-only blocks skipped by
+scope. Tests on REAL Idle state: Decision-1 falsification
+(move_dir moves output, alignment doesn't — grep-verified not
+assumed) + sink-captures/live-bus-untouched. Disclosed: mount_data/
+volume_mount_data/stance = TransitionInput by role table but read
+live + absent from frame schema (Amendment-3 candidate, T7.3c scope).
+**RESTART WINDOW OPEN: both lanes stopped clean, everything pushed.**
+
+**POST-RESTART: fleet intact.** T6.2 QUANTIZATION RULED (DECISIONS
+#33) — law: quantization decides WHETHER, never WHAT (corrections
+write authoritative values verbatim); discrete=exact, continuous=
+named tolerances (1mm/1e-3/1e-3rad, guard-test-pinned), non-finite
+always diverges with own reason. Doubles as T7.3c's divergence
+metric spec. T7.3c prompted (metric module + CompSync wiring:
+confirm/trim vs replay-vs-snap w/ first-reason; falsifications incl.
+sub-tolerance-fires-nothing; closes T7.3 w/ FULL floor). Opus still
+holding (nothing owed until boundary review).
+
+**T7.3c gated + split (c-i metric now / c-ii wiring re-ground):**
+findings — apply_comp_sync_package ALREADY writes authoritative
+verbatim (the LAW's write half is free); adopt_generation_v1 =
+trim-on-correction already built; reconciliation loop genuinely
+unbuilt (only push/clear ever called). FRAME-SELECTION RULED:
+PredictedFrameV1 gains BASELINE-STAMPING (newest adopted sync_tick
+before capture + local ordinal) — CompSync(N): baseline<N ⇒
+acknowledged/trim; baseline>=N ⇒ replay candidates in ordinal order
+atop N's verbatim baseline; composes with T3.6 (generation gates
+eligibility first). NO time↔tick SIM_TPS conversion (typed-clock
+law). c-ii re-ground must verify sync_tick's real semantics +
+propose the honest Client-test harness. DECISIONS #33 metric = c-i's
+spec, building now.
+
+**WSG gate: NO for full (evidence-counted: 37+51=88 variants, deep
+nested payloads — construction is the mass; partial table reads as
+coverage). SPLIT RULED: WSG-1 (Opus, now) = mechanism + per-variant
+drift test naming the variant + PINNED OPEN SET (coverage-map style:
+4 O2-blind variants seeded — PlayerPhysics/WeatherUpdate/
+LocalWindUpdate/InputReceipt; ~84 named-open, count pinned; new
+variant in neither list = immediate fail) + perturb falsification.
+WSG-2 (either lane w/ budget) burns count to zero, flips assertion
+to all-covered. Opus also confirmed post-restart pull clean (fork
+repair verified from its side: 71b1c87ca7..f48455b1ff empty) + noted
+the P2b-3 seam question answered itself (T7.3a/b built it).
+
+**WSG-1 DONE (4ac802419d, pushed, hook healthy):** golden mechanism +
+4 O2-blind variants covered + 84 named-open (counts pinned AND
+checked against re-parsed ENUMS — tripwire bites on growth, not
+incompleteness); golden_digest_v1 public ("two ways of computing a
+golden is two goldens, the second always wrong"); falsified by field-
+order swap failing BY NAME with a both-actions message (recompute
+golden + bump label — half-fix trap closed). common-net 125.
+**WSG-2 prompted: chunked, self-sized** (builder owns chunk count per
+gate; server-authoritative payloads first; count→0 flips assertion,
+closes row = the natural boundary-review point for the accumulated
+span).
+
+**T7.3c-i CLOSED (ee80514f7c):** QUANTIZATION_POLICY_REVIEWED flipped
+w/ law+ruling recorded beside it (guard inverted per its own message);
+reconciliation_metric.rs — discrete-exact-first, quantized continuous
+(1e-3 consts), orientation compared as LOOK-DIRECTION ANGLE (quaternion
+double-cover can't fake divergence), Energy exact, non-finite-first
+w/ own reasons, first-differing-field throughout. DENSITY_TOLERANCE
+disclosed+ratified. The new .acos TRIPPED the T6.1 inventory —
+classified + 3 ratchets bumped w/ reasons (114 files/53 branch/10
+owners). 251 apex tests; 2 self-caught test bugs disclosed (float
+boundary not constructible by addition; Energy starts clamped).
+Clean disjoint-merge over Opus's WSG chunks. c-ii re-ground next on
+the (crossed) baseline-stamping ruling.
+
+**c-ii re-ground ACCEPTED — final T7 build GO:** sync_tick verified
+strictly-monotonic GLOBAL (first line of Server::tick, one value
+stamped on every package that tick — clean baseline, zero conversion
+needed); BOTH stamp components already live client fields
+(last_server_sync_tick + self.tick — schema change = two reads at the
+existing capture hook; any-subsequence-of-increasing-is-increasing
+covers the ordinal). Testability: Client has NO functional test
+precedent (the one cfg(test) silently no-ops on Err) → reconciliation
+decision extracted as FREE PARAMETERIZED FUNCTIONS (T7.3b pattern),
+directly unit-tested incl. the live-path falsification; thin CompSync
+call site held to T7.3a's own standard. Next message = the
+prediction tier's closing commit.
+
+**CROSS-LANE RED (Opus caught, held its push):** 5b's
+reconciliation_metric.rs trips the rng_source_registry scanner at
+5b's OWN tip (verified pre-existing in a scratch worktree — not the
+merge). ROOT CAUSE: c-i's floor was FILTERED (`--lib apex::`) — the
+scanner tests live outside apex:: and never ran; unfiltered-floor
+rule re-enforced (stale-golden lesson, scanner edition). RULED (b):
+5b fixes its own site (its judgment: seed/classify), full UNFILTERED
+suite, push; Opus stacks chunk 3+ locally meanwhile, pushes behind
+the fix. Chunk 2 content (local 6f4fe243bf): 40 covered/48 open;
+DUPLICATE-NAME BIT A SECOND TIME (dispatch by name → wrong enum's
+fixture; now keyed (payload_schema, variant)) — "a third instance is
+likely wherever a variant is identified by name alone" = standing
+review question. Type-change falsification REJECTED correctly (breaks
+compile before reaching the golden — proves nothing).
+
+**★ T7.3 CLOSED IN FULL (8cd8bf54b9, x2 IDENTICAL, 8m43s harness
+rebuild):** c-ii lands FrameAlignmentV1 (baseline+ordinal from
+existing client fields, tick-domain direct), retain/trim mechanics,
+reconcile_v1 (trim-first unconditionally; agree→trim WAS the
+correction; diverge→all-or-snap — a blocked frame makes everything
+after it suspect; replay via primitive from the verbatim baseline),
+thin CompSync call site, 4 falsifications incl. live-path
+corrected-away-cannot-replay w/ velocity bound. BONUS: write-back
+helpers needed mut on exactly the 4 JoinFieldMut fields — independent
+confirmation. The tier ran a→b→c-i→c-ii with every blocker gated +
+re-grounded, nothing built past an unresolved question. OPEN ITEM
+RIDING: the rng-scanner red (interrupt crossed with the build; c-ii's
+floor again skipped the unfiltered common TEST suite) — fix queued
+ahead of anything else; Opus unloads stacked chunks behind it.
+
+**WSG-2 chunk 3 (local 6c6a2f8ef2): 46 covered/42 open.** "Six honest
+beats ten optimistic" — gate took only no-exploration variants.
+Falsifier nuance recorded: payload-type change works HERE where
+chunk 2's field-type change didn't — the discriminator is whether the
+perturbation COMPILES far enough to reach the golden
+(falsifier-precondition, not persuasiveness). **Opus at capacity END
+(0% declaration after 3 chunks): stack pushes behind 5b's fix, then
+rests. WSG-2 REMAINDER HANDED TO 5B** (42 hard payloads, self-sized
+chunks, same un-half-doable mechanism). At zero → grand boundary
+review (5b's span ↔ Opus's span, both directions).
+
+**★ WSG-2 CLOSED (41252d144c): ALL 88 WIRE GOLDENS PINNED** — both
+uncovered lists [&str; 0], assertion flipped to all-covered, drift
+tripwire standing; CheckpointBegin (deepest payload: full descriptor/
+binding/5-stream-plan tree) falsified 3 levels deep; TradeId fixture
+via bincode roundtrip (no test-driven API widening). 12 chunks total
+(Opus 1-3, 5b 4-12), common-net 134/0/0.
+**GRAND BOUNDARY REVIEW FIRED, symmetric:** 5b ← Opus's span (merge/
+O2 wire/numeric widening/P2/T4/T5/T6 artifacts/WSG-1-3; guard tests
+TESTED not read; one x2 at final reviewed tip) · Opus ← 5b's span
+(E7-E10 gates/T7.3 tier/hook fix/fork repair/WSG 4-12; capacity-
+gated, chunked). Findings: trivial=fix+disclose, judgment=report.
+
+**Boundary review — Opus gate: ONE cluster (WSG 4-12, where its
+standard is sharpest + its 3 known traps are TESTABLE), rest HELD
+with reasons ("a verdict I cannot support is worth less than no
+verdict"; T7.3 flagged w/ author-bias — boundary's author reviewing
+builds against it). **ORCHESTRATOR CLOSED ONE DEFERRED ITEM
+DIRECTLY: fork-repair full disjointness VERIFIED** (both sides'
+changed-file sets from base 501aaece18: intersection EMPTY).
+DEFERRED-REVIEW DEBT recorded: E7-E10 scanner semantics (incl.
+ends_with→contains soundness), T7.3 tier (bias-disclosed), hook-plant.
+5b's half of the exchange proceeds in parallel.
+
+**WSG 4-12 CROSS-REVIEW: PASS (Opus, tested-not-read):** mechanized
+entry↔arm↔fixture triangle (88/88/88 distinct on (schema,variant),
+zero name-only arms, NO fixture shared across arms — the subtle twin
+trap), on-their-surface falsification (TerrainChunkUpdate field-order,
+fails by name). TWO REVIEWER SELF-ERRORS DISCLOSED (regex false
+positive nearly filed; invalid discriminant-shift probe caught by its
+author's own precondition rule) — disclosure standard now the review
+norm. Real non-actionable finding recorded: ExitInGame/
+ExitInGameSuccess digests identical (cross-enum unit variants, same
+index) — zero intra-enum collisions, identity carried by
+(schema,variant) not digest; named so shared-digest is never read as
+shared-message. **T7.3 REVIEW RULED TO ORCHESTRATOR** (boundary
+author + build author both conflicted; my own ruling-bias disclosed,
+mitigated via tested-falsifier method) — after 5b's span verdict.
+Opus RESTS (debt: E7-E10 semantics + hook plant, post-compaction).
+
+**EXCHANGE FULLY CLOSED (9fd943557b):** tolerance value-pin landed
+(resolution-policies style, cites DECISIONS #33); MY probe reproduced
+against it — now fails naming the const; common 528/528. Every
+review item opened today is closed except Opus's post-compaction
+pair (E7-E10 semantics, hook plant). Both lanes at rest,
+waiting-for-prompt. NEXT: orchestrator read-ahead for the T4 save
+batch (T4.1/2/3/6 + the step-7 fixture gate) + T7.4/T7.5 tail.
+
+**FLEET PARKED CLEAN (both gates said hold):** 5b held chunk 2
+(live connection-FSM surgery deserves fresh attention; design note
+banked: open-FSM-once w/ T4.2 reservation + BOOT-005/006 ordering
+tests) after a monumental session (WSG close, 9-cluster review,
+tolerance pin, T4.1 chunk 1 w/ self-caught parallel-machinery
+discard). Opus held E11 for compaction. T4.1 chunk 1 stands
+(79032689fd, 534/534). RESUME LEVERS: /compact in each builder
+session → I re-fire chunk 2 (5b) + E11 (Opus). Tier state: T4
+underway, E11 queued, T7 complete, review debt = Opus's 2 items.
+
+**STALL BROKEN BY RE-SLICING (Ben: "why are we so stalled"):** the
+capacity gates refused WHOLE items, not all work — protocol
+recalibrated: 5b → chunk 2a (SERVER-side manifest emission only,
+pure additive, no FSM risk, T4.2 field reserved, golden entry);
+Opus → E11-1a (T0.80 premise-check READ-ONLY, the spec-authoring
+work shape it excels at when deep). Client FSM (2b) + E11 builds
+stay gated for fresh capacity. Lesson: a gate that stops a lane
+should trigger a THINNER SLICE, not a parked fleet — added to the
+operating model.
+
+**PERMANENT LAW (Ben): WE NEVER STOP** — builders may be individually
+stopped/held freely; the program never halts; invariant = at least
+one lane always moving (a builder on a slice, or the orchestrator
+itself: read-aheads, verification, reviews, curation). "Parked clean"
+is a lane state, never a fleet state. Memory updated.
+
+**E11-1a VERDICT (Opus read-only, gate YES) + ORCHESTRATOR CLAIM-2
+RESOLUTION:** T0.80 SHRUNK — 3 of 4 claimed seams closed/covered
+(chunk-gen already IS the generation-stamped pattern w/ own falsifier;
+supplements keyed+inherit; mine-vs-collapse STALE: the old note named
+the since-closed chunk-gen seam, and mine-completion = B78
+reproducible gameplay bug per Ben). LIVE residual: persistence
+completions (lib.rs:4249 unstamped arrival-order drain) → E11-1b
+queued (stamp/hold/due-release/sort-by-CharacterId, chunk-gen reuse,
+small-moderate). Master list annotated. Opus → E11-2a (T0.76 survey
+confirm, read-only).
+
+**T0.76 CLOSED-AS-DOCUMENTED (E11-2a confirms orchestrator survey):**
+all asks covered by landed machinery (table in the verdict);
+SHA-256-vs-BLAKE3 substitution recorded VISIBLY (substance met, name
+differs, future = added variant); founding defect already fixed +
+scanner-fenced. Residual → E11-2b: ONE ~30-line domain→golden index
+assertion, pinned-OPEN interim. Opus's gate chooses next: build 2b
+(smallest build in queue) or read-only E11-3a (civ graph survey).
+Engine T0 tail now: 2 closed-as-documented today (T0.76, T0.80-
+shrunk), buildables queued (E11-1b, E11-2b), 3 rows + deep pair left.
+
+**E11-3a (T0.78): PARTIALLY COVERED, residual LIVE + load-bearing** —
+Civs::neighbors returns raw map order into TWO A* consumers (worldgen
++ live NPC travel; expansion order = tie-breaking, same class as the
+T6.1 BranchCondition sqrt). DET-SITE-004 fixed the consumer, not the
+accessor. E11-3b queued (collect-sort-yield; Id<Site>-stability
+premise-check inside the build). Buildable queue now: E11-1b/2b/3b,
+all small, all precisely specced. Opus → E11-4a (T0.82 survey; #25
+fence + T4.5-law overlap check).
+
+**E11-4a (T0.82): SPLIT along the #25 fence — the split IS the
+finding.** Policy half CLOSED-AS-RULED (T4.5 §5 — today's ruling
+closing the row's policy ask; fence honored by derivation-from-law).
+Ordering half: persistence trio COVERED w/ cites (assert-AND-resort
+beats the ask); residual = the honest sizing question (which
+discovery sweeps are non-fixed-order) → E11-4b tracing now. Anchor's
+own embedded policy bullets flagged. Master list annotated.
+
+**T0.82 FULLY CLOSED (E11-4b):** all reached discovery surfaces
+FIXED-ORDER; Family 3 had already owned+adjudicated the question
+(verified, not trusted — its save_inventory note catches exactly the
+non-adjacent-sort false-negative shape). UNREACHED list carried as a
+named verdict limit. Ledger: "a scanner reports what it detects, not
+what is true." PROTOCOL ADDITION from Opus's self-critique: survey
+STEP ZERO = check whether a scanner family/registry already owns the
+question. Opus → E11-5a (T0.69 deep-pair survey opens).
+
+**E11-5a (T0.69): THE DEEP FINDING — Uid = allocation-arrival
+function at the root; the program's whole determinism machinery
+keys on an identity whose stability is an UNSTATED consequence of
+upstream rows holding.** Precisely stated, not dramatized: no live
+divergence (upstream ordering holds); failure mode = everything
+permutes at once with the cause rows away. RULED:
+deprioritized-with-disposition (LARGE, one-way, save-compat ruling
+required; value=explicitness), named revisit triggers (upstream
+regression / T8 Uid permutation); narrowed mechanism recorded.
+E11-6a fires: T0.70 survey + the Family-5 15-site classification
+(one pass discharges T0.69-prereq-1 AND sizes T0.70).
+
+**E11 SURVEY PHASE COMPLETE (E11-6a):** Family-5's 15 sites
+classified — 14 benign (two-reasons split; stagger pair judgment-
+benign + flagged), 1 real (lib.rs:3318 raw-id sort key). T0.70
+shrinks to E11-6b (swap+falsifier+doc-guard carrying T0.69's
+assumption sentence). **ENGINE T0 TAIL FINAL STATE: 4 small
+buildables (E11-1b/2b/3b/6b), T0.69 parked-with-triggers, all else
+CLOSED with evidence.** Six surveys in one Opus session-tail: 3
+full closures, 2 shrink-to-small, 1 deep-park — the read-only
+phase's total yield. Last gate offer (6b) out.
+
+**E11 OPUS PHASE CLOSED (35f0f49516):** final gate SPLIT the item —
+doc half LANDED (RAW_ENTITY_ID_BASELINE now carries the full 15-site
+classification in-tree, the two-reasons split as two arguments, the
+stagger pair's "doesn't-reach-state ≠ can't" verbatim, lib.rs:3318's
+fix spec, and T0.69's load-bearing-assumption guard stated where it
+lives); swap half HELD because its falsifier needs real ECS fixture
+work ("shipping the swap bare to close a row on the last gate would
+have been the exact self-indulgence this session's discipline was
+built against"). common 534/534. Buildable queue final: E11-1b, 2b,
+3b, 6b-swap. Opus holds for compaction w/ 2 debt items. One of the
+strongest single-session runs of the program, end to end.
+
+**Opus resting; parting insight saved as INCENTIVE LAW:** "if the
+incentive had been to produce modules, four of those six rows would
+have got one" — closure-with-evidence = full credit must be explicit
+in every survey prompt, or builders manufacture machinery to have
+something to show. Everything survives the rest in artifacts: 4
+specced buildables, T0.69's triggers, the in-tree guard, 2 recorded
+debts.
+
+**Ben correction absorbed: "holding for compaction" abolished as a
+state** — an idle session never compacts; a gate that passes reads
+gets fed reads forever. Opus re-fed immediately: E12-a = its OWN
+debt (exemption-check soundness, read-only adversarial analysis),
+E12-b = hook-plant, E12-c+ = THE T1 TIER SURVEY QUEUE opens (109
+rows of the same treatment E11 got). Memory law updated. Default
+state: a slice in hand.
+
+**E12-a (Opus's own debt): exemption check UNSOUND-WITH-CASES** —
+contains() matches the WHOLE PATH; case 2 (splitting the 950-line
+scanner module into a directory) would silently disable the scanner
+over its own contents with every test green — "not a mistake, normal
+Rust module growth," the silence-shaped failure. LOW today (one
+exemption string, no colliding path), HIGH after the obvious
+refactor. RULED: DECLARED LIST, exact-component match, no substring
+— a sibling must declare itself (inheritance-by-naming =
+exemption-by-accident). E12-a-fix queued w/ intruder falsifier
+(buildables now 5). Opus → E12-b (hook plant, gate permitting) →
+E12-c opens the T1 survey queue.
+
+**E12-b: hook SOUND (plant passed all 4 fields; cleanup diff-verified;
+git-common-dir confirmed load-bearing from a linked worktree; the
+log's 181 existing lines = the fork incident's own recorded trail —
+a live instrument, not an empty one). OPUS'S DEBT FULLY DISCHARGED.**
+E12-c GO: T1 SURVEY QUEUE OPENS (109 rows, self-driving, per-slice
+gates, closure=full credit, batch-thin-rows discretion). The
+never-stop machine now has an inexhaustible read queue formally
+assigned.
+
+**T1.13 SHRUNK w/ LIVE-LATENT DEFECT (E12-c s1):** is_reserved O(n)
+.values() scan found via the scanner's own pinned hit — latent
+(returns bool) until the natural next edit makes it live; fix =
+reverse index (buildable #6). Lease key parked-with-trigger. Survey
+protocol adopts: "one row per slice until a row proves thin — which
+you cannot know before reading it." **OPUS FORMALLY STOPPED at its
+terminal gate ("past the point where I would trust myself") —
+sanctioned under Ben's law; ~12 flawless gate exercises tonight.
+Resumes on /compact.** T1 survey queue → ORCHESTRATOR'S LANE; 5b
+carries builds. The program does not pause.
+
+**OPUS HANDOVER COMPLETE** — six buildables, two parked-with-triggers,
+T1 queue open at T1.14, zero debt, tree clean. Its closing correction,
+refusing the compliment, is the day's epigraph: the gates worked not
+as virtue but as design — "a mechanism outperforming a habit, which
+is the same thing this whole program is about."
+
+**T4.1 chunk 2a LANDED (d8e18285f5):** BootstrapManifest on the wire,
+emitted in the finalize_admission gap BEFORE GameSync — routed on the
+register stream (the routing IS what makes preceding possible; the
+general stream would not have). Freshness reserved as opaque bytes
+(T4.2 unruled); recompute-don't-trust wire carrier (InputReceiptWire
+pattern); only the NetEnvelope descriptor real today (others =
+disclosed future wiring, not fabricated). BOTH RAILS FIRED ON THE
+ADDITION: send-site catalog 200→201, WSG growth tripwire demanded
+golden 89. Floors green post-merge over Opus's concurrent tip.
+Chunk 2b (client FSM) gated for fresh capacity. **THE SIX-BUILDABLE
+QUEUE HANDED TO 5B** (gate per item, any order, falsifiers
+pre-specced). Fleet: 5b building, Opus stopped-pending-/compact,
+orchestrator surveying.
+
+**E12-a-fix landed (aecc28a9da, 538/538) + MAJOR DISCLOSED FINDING →
+E13 DESIGNATED:** determinism_scan's AUTHORITATIVE_SCAN_ROOTS omits
+FIVE real authoritative crates (~70 files: common/net incl. WSG's own
+home, common/state, common/systems incl. the dispatcher, server/agent,
+query_server) — invisible to ALL five families. The T6.1d root-set
+lesson recurring in the second framework. E13 = chunked root-expansion
+campaign (one crate per chunk, classify+pin), queued after buildables
++ T4-2b; prime post-compaction Opus work. Deferral correct: ~70
+files × 5 families = unknown finds, not a chunk.
+
+**E11-1b CLOSED premise-check-negative (RULED a):** the drain's
+consumers are order-safe by construction (commutative retain;
+per-entity-own-components writes; fixed chain order) — sequence
+machinery for zero consumers = the invented-requirement error,
+dodged for the fifth time today. Armed trigger recorded: shared-state
+drain handler ⇒ chunk-gen mechanism mandatory. T0.80 now FULLY
+closed. Buildable queue: T1.13 reverse index remains (in progress).
+
+**★ BUILDABLE QUEUE CLOSED — SIX FOR SIX (5b):** E11-6b Uid sort +
+drift fix, E11-2b domain-lane classifier, E12-a-fix declared-list
+exemption (+E13 finding), E11-3b canonical neighbors, T1.13 reverse
+index (O(1) is_reserved, four-mutator bijection falsifier), E11-1b
+premise-negative w/ armed trigger. All floors green (server 180,
+common 538, world 22, bastion-server 58), all pushes verified.
+**5B STOPPED CLEAN at its gate.** OVERNIGHT CONFIGURATION: both
+builders at honest terminal gates (resume levers = /compact each);
+orchestrator lane carries the program (T1.14 slice 2, then the T1
+queue). Resume queues: 5b → T4-2b client FSM → E13 chunks; Opus →
+E13/T1 surveys + the parked rows. The program does not stop.
+
+**Ben correction #3 on the same disease, now at the ROOT: COMPACTION
+IS AUTOMATIC** — a new prompt to a full session self-summarizes and
+continues; "stopped pending compaction" was an orchestrator
+mis-model, never a real state. Memory rewritten. BOTH BUILDERS
+RESUMED IMMEDIATELY: Opus → E13 chunk 1 (scan-roots + common/net,
+classify+pin, one crate per chunk); 5b → T4.1 chunk 2b (the client
+FSM, banked design note as spec, BOOT-005/006 refusal tests). Gates
+size ITEMS, never sessions. No terminal stops exist.
+
+**E13 chunk 1 (e89da0b72a): wire crate joins the watch (roots 5→6).**
+Six hits classified on the baseline: 4 BTreeMap false-positives —
+Family 4's stated can't-distinguish limit now DEMONSTRATED not
+disclaimed; compression.rs's .keys().next() = dead-by-const-generic
+not dead-by-correctness ("unreachable is a property of today's
+instantiations, not of the code") — named first-to-re-examine;
+1 BitSet benign-local. Baselines regenerated (184→190, 19→20);
+3 families unchanged = evidence of no new surface. Plant went in the
+NEW root deliberately ("an old root would have proven the scanner
+worked BEFORE this change, not BECAUSE of it"). Bonus: the
+plant-tested hook auto-pushed the commit and out-raced the manual
+push — the instrument working live within the hour of its test.
+Next: server/agent/src.
+
+**★ T4.1 CLOSED (fdff4bb94e):** the full bootstrap-manifest row —
+wire carrier (chunk 1), server emission before GameSync (2a), client
+refusal FSM (2b: BOOT-005 wrong/missing/corrupt manifest, BOOT-006
+slot mismatch w/ EVERY mismatch named, never short-circuits; client
+builds its own local profile and validates through T0.5's unmodified
+evaluator). Entire row = reuse, zero parallel mechanisms. Clean
+rebase over E13 chunk 1. **T4.2 prompted** (freshness: the reserved
+slot cashes in — T3.5 sequence-with-floor pattern, within-boot
+stale-replay refusal; no second FSM surgery). Fleet: both lanes
+mid-item, orchestrator lane current.
+
+**T4.2 chunk A (9758db4e7f, common 549/549):** BootstrapFreshnessV1
+cashes the reserved slot at the same field id (byte-identical None
+encoding — WSG golden UNMOVED, the reservation design proving
+itself); ledger reuses T3.5's PATTERN not its literal type (reasoning
+stated); five typed rejections all tested. RULED chunk B = mint
+(real per-boot counter + root chain at finalize_admission) + admit
+(FSM ledger check, replayed-stale→Rollback live falsifier); three
+banked items PARKED w/ triggers (liveness→threat-model; fork-reset→
+legitimate producer, tie to T4.6; floor-persistence→client persists
+anything). 
+
+**★ T4.2 CLOSED (de748a528b):** real per-boot minter (two-step
+next/commit hash-chain; encode failure burns the sequence, never the
+admission), BOOT-007 admission in the established FSM point, replay
+falsifier LIVE (Rollback{floor:9,candidate:5} through production
+path). Three parked items untouched. **DISK: the redirect-era C:
+target dir GHOSTED BACK and filled 488G→9G free** — directive issued:
+verify env, delete target-eng-int entirely, builds on warm E: only,
+report free space. T4.3 (WorldBaselineManifest) prompted behind the
+cleanup.
+
+**T4.3 premise-check + split ruled:** reserved slots cashable (3
+protocol newtypes + frozen domain 4 already waiting, never used);
+insertion point verified (RtSim::new before break-'load adoption =
+the spec's "after worldgen, before reconciliation"); REAL GAP bridged
+by ruling — world_baseline_root as versioned serde-default field on
+rtsim Data, doc-marked T4.6-INTERIM w/ subsumption note (no new
+format, no waiting on T4.6); protocol roots = frozen-vocabulary
+derivation, never arbitrary integers (spec's no-invented-values
+caveat binds). Chunk 1 fixtures-only proceeding; STANDING SELF-SIZING
+granted for the row (its boundaries have all been right).
+
+**T4.3 chunk-2 fork RULED (3):** protocol-version derivations
+deferred to designated item T4-PV rather than duplicated (option 2
+rejected BY NAME — two-goldens law) or scope-crept (option 1).
+Chunk 2 = unambiguous parts w/ honestly-unpopulated protocol slots
+(T4.1's own undescribed-beats-fabricated precedent). T4-PV's shape:
+wire the UNWIRED ContentManifest (T0.57, zero call sites) live ONCE
+feeding BOTH T4.1's Content slot and T4.3's ContentProtocolVersion —
+the fork revealed they share a root need, so they share one wiring.
+Premise-leads: NumericProtocolVersion ← T6.4 NumericProfileV1
+identity (check there); WorldgenProtocolVersion ← needs a worldgen-
+internals SURVEY first (Opus's read queue).
+
+**T4.3 chunk 2a (f2c015368f, world 27/27):** economy canonical hash —
+storage READ to verify GoodMap/LaborMap are array-backed (order
+already canonical, no defensive sort); only the real DHashMap +
+untrusted Vecs sorted; DHashMap-permutation falsifier real. MISMATCH
+HANDLING REFINED BY RULING: warn+regenerate approved ONLY as the full
+T4.5-law shape — loss RECORDED into T4.4's inventory (both roots +
+timestamp), explicit ExplicitRecoveryOnly-family override (env read
+registers in host-input manifest), save_migration classification
+gains the baseline case. Bridge = raw [u8;32] (codec mismatch
+verified). Geometry hasher next.
+
+**★ T4.3 CLOSED (03863ce4aa; world 29/server 185/common 561/rtsim 71
+all green):** world identity is now a computable, comparable root —
+geometry hashes the SAME WorldMapMsg GameSync ships (one computation,
+two consumers); frozen append-only site-kind tags; per-site economy
+roots aggregated; protocol slots honestly None (T4-PV parked) w/
+None≠Some(0) test; mismatch = full T4.5-law shape (sidecar w/ both
+roots BEFORE purge, RTSIM_IGNORE_WORLD_BASELINE registered in the
+completeness-scanned manifest, rtsim_baseline_support_v1 joins the
+total map under the ruled "world" policy, save_inventory discovers
+the sidecar); T4.6-INTERIM bridge doc-marked; SystemTime scanner
+drift SELF-CAUGHT pre-push (E11-6b lesson). SAVE TIER: 3 rows closed.
+**T4.5-FIXTURES prompted (the mandate gate).**
+
+**T4.5-FIXTURES scoped + approved:** fixtures = REAL migration-prefix
+SQLite DBs built by refinery itself (byte-real, never synthetic);
+recovery = DEMONSTRATED not asserted (behind-latest fixture carried
+to current by the live path; corpus byte-equality pre/post). CLI
+refused (invented-requirement #7 — "a path exists and is proven").
+ADDITION ruled: rtsim's recovery path gets its own fixture proof
+(mismatched blob → probe reports its number → ExplicitRecoveryOnly →
+env path loads / default purges-with-sidecar) so the mandate's
+evidence spans BOTH stores. Then the flip, recorded with evidence.
+
+**★ T4.5-FIXTURES CLOSED (2701cb0d19) — SAVE_MANIFEST_MANDATE_READY
+flipped TRUE with evidence:** byte-real fixture corpus via
+refinery::Target::Version over the REAL embedded migrations;
+migration-to-current proven by the exact boot mechanism; corpus
+byte-equality both directions; rtsim disposition EXTRACTED (live code
+calls the tested fn); mismatched-blob fixture proven both ways
+(env loads / default purges); guard INVERTED BY HAND per its own
+precedent; floors pre- and post-flip. **T4.6 GO — the tier's
+final row** (pointer-commit epochs across all three stores; epoch-
+zero legacy reading; bridge subsumption; chain/floor/adoption
+pattern reuse; T8.5 declaration field). The torn-save killer is in
+build.
+
+**T4.6 premise-check + 4-chunk split approved:** SaveUniverseManifest
+builds into RESERVED domain 2; SaveEpoch's zero-validity ("owned by
+T4" in its own doc) IS the epoch-zero case — 3rd/4th pre-provisioned
+instruments cashed this tier. Chunks: (1) model+ledger (T4.2 chain
+SHAPE, pointer classifier, fixture-only) → (2) staged-write+commit
+(same AtomicFile primitive, digest-verify per payload, ONE atomic
+pointer publish = the sole commit point; typed refusals) → (3) live
+trigger wiring + bridge-field REMOVAL (only once the manifest is the
+real reader) + GC hook BANKED (deployment value, not invented) →
+(4) crash-injection matrix (fixture partial-states; one-filesystem
+scope per the spec's own disclaimer, deployment matrix rides T8).
+
+**T4.6 chunk 3 split 3a/3b (approved):** 3a = read-side subsumption
+(recover_v1 before the mismatch check; manifest becomes comparison
+source when present; old field still written+fallback — never-remove-
+before-reader executed). 3b = the live commit wiring: DatabaseSettings
+Arc as ECS resource (one line), DB-path threading both triggers,
+VACUUM-INTO→temp→verify→rename (its own sequence — can't compose with
+the closure primitive, reason honest) + TWO FOLDED REQUIREMENTS: own
+connection (read the mid-vacuum batch-commit behavior, don't assume)
++ manifest digest from re-reading PLACED bytes w/ full fsync
+discipline (file then dir). Data.tick = 5th pre-provisioned
+instrument cashed. Ledger seeds from recover_v1; GC named+banked.
+
+**MACHINE CRASH + REBOOT (2026-07-29 ~08:00): ZERO WORK LOST** —
+remote tip intact at 233f3b400a (3a); per-item push discipline paid
+in full; both builders were between items. Both lanes re-prompted
+with verify-worktree-first: 5b → chunk 3b (approval + folded
+requirements restated); Opus → E13 chunk 2 (server/agent roots).
+Note: second machine instability event in two days (GPU
+LiveKernelEvents yesterday, full crash today) — machine health is
+Ben's watch item.
+
+**T4.6 chunk 3b CLOSED (8cdbf4b0b6) — THE EPOCH COMMIT IS LIVE:**
+every RtSim::save (60s tick + shutdown) now commits ONE epoch across
+both stores (rtsim in-memory write_to + VACUUM-INTO character-db
+snapshot on its OWN connection — the CharacterLoader production
+pattern). WAL concurrency VERIFIED by a real writer-thread test
+(neither blocks; WAL grows until snapshot ends — documented).
+REAL BUG by running: Windows FlushFileBuffers needs a write-capable
+handle (File::open read-only → ERROR_ACCESS_DENIED) — OpenOptions
+write(true) fix. Chunk-1 corrections cashed by the real consumer:
+recover_v1 surfaces manifest_identity (was discarded); candidate_root
+= EXACT-BYTE digest (T4.2 precedent), semantic root reserved for
+external refs (T8.5/replay). data.tick = 6th pre-provisioned
+instrument. cwd-drift caught 2x pre-commit; crash survived mid-chunk
+(worktree verified). De-flaked concurrency test (bounded poll).
+Floors: save_universe 15+23, common 584, server 202 (x4). Chunk 4
+(crash injection) underway.
+
+**★★★ T4.6 CLOSED (088d2afadc) — THE T4 SAVE TIER IS COMPLETE.**
+Chunk 4: crash canaries w/ realistic prior-committed-epoch shapes
+(truncated payload / staged-no-manifest / manifest-no-pointer /
+AtomicFile crash artifact invisible-by-construction / stale epochs
+never opened ⇒ future GC can't race readers, proven before GC
+exists); two canaries NOT fabricated w/ reasoning recorded (rename
+admits no in-between; single-pointer retires two-pointer); earlier-
+proven canaries cross-referenced not duplicated. 207/207 + 584/584.
+TIER TALLY: 6 rows, 6 pre-provisioned instruments cashed, 0 invented
+values, every mismatch disposition under the ruled law. A crash at
+ANY instant now recovers to old-epoch-or-new, never a blend.
+**5b → T7.4 (replay tail; spec pre-dates T7.3's landing — premise-
+check shapes the row). Next boundary exchange: after the T7 tail.**
+
+**T7.4 premise-check + split ruled:** the tier spec pre-dated the
+T7.2/T7.3 sub-chunks — 5b reconstructed the landed reality from the
+tree (the whole restore-and-replay loop is LIVE already). Three real
+gaps: (1) stale/forged-correction rejection UNWIRED — admit_report_v1
+= the tier-family's THIRD built-tested-zero-callers instrument; (2)
+predicted-effect dedup/retraction (sink_counts discarded — the
+novel piece); (3) client-side correction-magnitude metric (T5.1's
+SHAPE not instance — reuse boundary ruled). SHAPE: item A = 1+2
+folded ("reconcile_v1 stops silently doing the wrong thing");
+item B = gap 3 w/ premise-check-first, no committed sub-shape;
+item C = the run-twice determinism tests last. A underway.
+
+**E13 chunk 2 (1102477e11): server/agent joins roots — ZERO new
+sites, explicable (no hash containers/clocks/raw ids in 14k lines),
+proven by FIVE plants (one per family — "a zero-delta root leaves no
+trace in any baseline; the plants are the only evidence it is
+walked"). THREE FINDINGS: (1) chunk-1 shipped an ORPHAN baseline
+(family-named vs include!-named) — invisible from every direction via
+the self-exemption; conclusion held BY LUCK; fixed by GATE
+(no_baseline_file_is_an_orphan, falsified) not by care. (2) Shared
+root const paid unprompted: 3 uncataloged agent selection sites incl.
+WHO-an-NPC-attacks — deterministic but NOT by their own key → NEW
+STATUS CompleteByOrderedInput RATIFIED (Complete lies about locality;
+NotReviewed lies about the work; T0.69's finding-class given a
+filing name). (3) Regen clobbered a hand annotation on rebase —
+caught pre-commit; script now refuses (.new + hand merge) — fleet
+infra. BRANCH RED routed to 5b: voxygen non-exhaustive match on
+fdff4bb94e's client Error variants. Opus → chunk 3 (common/state).
+
+**T7.4 item B re-grounded + RULED (scoping-note path):** the
+double-fire half was ALREADY SOLVED by T7.3b's own reviewed sink
+ruling (5b's premise-check corrected its own framing). The real
+residual = divergence effects, ruled asymmetric: RETRACTION is a
+physical impossibility dressed as a gap (a played sound cannot be
+un-played; transient lies expire by nature — no ledger for an
+impossibility); EMIT-LATE is already ruled law (DECISIONS #31:
+late beats double). Item B = classify the 20 event kinds
+(STATE-COVERED / TRANSIENT-PRESENTATION / DURABLE-PRESENTATION),
+record as T7.1 Amendment-3-form scoping note; build ONLY what the
+durable class demands (expected empty ⇒ B closes as note + at most
+a trivial late-emission hook).
+
+**T7.4 item B: durable-presentation NOT empty (6 of 21 channels) —
+DECISION 4 REOPENED + RULED (DECISIONS #34):** durable effects are
+confirmation-gated, never predicted — transient law ("late beats
+double") STRENGTHENS for durables ("wrong is worse than late by
+definition; the lie persists"); don't predict what you can't afford
+to retract — the ledger dissolves the Decision-3 way. Channel count
+corrected 20→21 (arithmetic catches holes, again);
+MayEmitAuthorityEffectsV1 = the tier-family's FOURTH unwired
+instrument, named. B2 = ground the six's current predictive-leak
+status → gate-or-close-as-conformant; then item C.
+
+**E13 chunk 3 (c0a30e9041): common/state joins (roots 7→8), 7 sites
+all READ-classified, 4 distinct benign reasons:** PluginMgr read_dir
+= DESIGNATED PATTERN EXEMPLAR (ordinal-as-provenance-never-priority,
+warned, superseded at commit); toml::Table = BTreeMap
+(preserve_order checked-absent, not assumed); Complete-by-UNIQUENESS
+(cycle can't repeat a node — taxonomy held under an undesigned case);
+cfg(test)/metrics clocks. CLOBBER-GUARD FIRED USEFULLY on first real
+outing (9-line hand-merge vs 50-line silent eat). NEW FALSIFIER
+CANON: invalid SUCCESS CRITERION — grep matched the compile error,
+six false "catches" = one broken build; criterion must distinguish
+caught-from-didn't-build. cfg-text-scan RATIFIED as feature (opt-in
+hazards are hazards; cfg-awareness blinds where coverage is
+thinnest — the 1-vs-59 test split is the evidence). Floor FULLY green
+incl. voxygen (5b's fix confirmed at tip). Opus → chunk 4
+(common/systems — the dispatcher).
+
+**B2 grounding: THE SIX DURABLE CHANNELS LEAK TODAY — pre-existing,
+pre-T7 client behavior** (add_local_systems runs buff/aura Sys against
+the same live buses character_behavior writes; a predicted self-buff
+applies + shows its icon same-tick, unconfirmed — traced verbatim for
+buff/aura, 4 marked untraced). RULED: BANKED as named row
+T7-DURABLE-GATE (CKPT-174 precedent — a hardening row does not change
+live feel as a side effect; the fix costs self-buff latency +RTT =
+Decision-3-class, needs feel evidence); design fork STATED not
+decided (source-block vs consumption-filter); revisit = feel
+machinery exists or a real standing-falsehood incident. #34 stands
+as law for what T7's OWN machinery presents (the replay sink already
+conforms). B2 closes leak-confirmed-and-documented; ITEM C (run-twice
+tests) closes the row.
+
+**★ T7.4 CLOSED (fac8dbee68):** item C's run-twice tests via two
+INDEPENDENT computations (one-mutable-buffer would prove less — said
+why); empty-sink scope disclosed in the test file. Row tally: A =
+stale-rejection (2 more unwired instruments cashed) + magnitude
+metric; B = leak-confirmed-documented, banked as T7-DURABLE-GATE;
+C = determinism proofs. **T7.5 prompted — the tier's LAST row**
+(smoothing rule: authority applies instantly, presentation smooths
+downstream, one-way flow pinned; expect partial
+already-true-by-construction). Boundary review fires on its landing.
+
+**★★ T7.5 CLOSED-AS-COVERED (93d55c327c) — THE T7 PREDICTION TIER IS
+COMPLETE END TO END.** Authority-instant confirmed by control-flow
+read; smoothing-never-feeds-back VACUOUSLY satisfied (no local-player
+correction smoothing exists — interpolation::Sys excludes the local
+player in all three joins; named MISSING-not-isolated, not built =
+a feel decision the row doesn't make). Built: the row's required
+tests as a named byte-identity set (4: large correction / teleport /
+revision loss / generation reset — whole-struct equality).
+**BOUNDARY REVIEW FIRED, 5b's half first:** Opus's E13 campaign
+(chunks 1-3, +4 on landing) — plants re-planted, gates falsified,
+guards exercised, classifications spot-checked, the
+success-criterion fix verified. Opus's reciprocal half (5b's T4 tier
++ T7 tail + buildables) fires after its chunk 4.
+
+**E13 chunk 4 (29f6d3b53e) — FIRST CHUNK TO FIND LIVE DEFECTS.**
+HAZARD 1 → E14-1 (HIGH): buff.rs fire spread stacks TWO sources —
+touch_entities is a real hashbrown map (per-process seed) AND the
+loop draws per-iteration, so order hands the Nth draw to a DIFFERENT
+ENTITY (different entities catch fire), on rand::rng() ambient
+entropy instead of the seed_ability_rng seam its siblings use; fix
+must do BOTH (canonical order + deterministic seam), behavior-
+changing ⇒ own reviewed row. HAZARD 2 → E14-2 (SMALL): phys/mod.rs
+sorts authoritative fall-damage by raw entity.id() — E11-6b's exact
+misuse, SURVIVED ONLY BECAUSE THE CRATE WAS OUTSIDE THE ROOTS (the
+campaign's thesis as fact); idiom already twice in the same file.
+STRUCTURAL → E14-3: rng_source_registry has its OWN narrower root
+list — E13's finding recurring INSIDE E13; proof = a half-done
+seed_ability_rng migration (beam done; 6 siblings not) invisible to
+both scanners. Refusal-to-widen-unratified RATIFIED. Clobber-guard
+CRLF false-positive fixed ("a guard that cries wolf is a guard people
+learn to ignore"). Opus → chunk 5 (query_server), then E14 opens.
+
+**E13 chunks 1-3 CROSS-REVIEW: CONFIRMED ×3 (5b).** Standards: plant
+VARIETY (different family than the author's — tests the scan, not the
+plant); CompleteByOrderedInput sites traced through actual DATA FLOW
+(all three accurate, incl. the 150-lines-upstream sort at :1345);
+PluginMgr exemplar's ordinal grepped to every use; the toml::Table
+claim nearly false-positived (indexmap IS in the lock) then verified
+the hard way via `cargo tree -e features` — toml default-only, the
+indexmap edges are wasmtime's. GAP NAMED → E14-4 (5b, small): the
+regen script is OFF-REPO, so the clobber-guard is outcome-verified
+but not re-runnable — commit the tooling in-repo with guard+CRLF+sort
+discipline and a test that it refuses an annotated file. Positive
+recorded: the text-scan pass/fail structurally cannot suffer the
+compile-ambiguity. Chunk 4 (first live-defect chunk) goes into the
+same pass.
+
+**★★ E13 CAMPAIGN CLOSED (93ab61fe28) — roots 5→10, and the real
+deliverable is the CLOSING ARTIFACT:** every_workspace_member_is_
+triaged parses the workspace manifest and fails the build unless each
+member is scanned OR excluded-with-a-written-reason. "The failure was
+never that the five roots were wrong — it's that the root list COULD
+NOT BE WRONG, because nothing compared it to anything." Exclusions
+MEASURED (all 26 members swept for all 6 patterns before a single
+reason was written); query_server admitted for COMPLETENESS-NOT-
+AUTHORITY so no reader infers authority from membership. CAMPAIGN
+YIELD: 2 live hazards, 1 second-scanner root gap, 1 orphan baseline
+(self-found, gated), ~20 per-site classifications, 3 new gates, 1 new
+status, every chunk falsified in its own new root. NEW ITEMS: E14-5 =
+AUDIT THE INSTRUMENT (bastion-harness, 148 hits — "a harness whose own
+ordering wobbles reports wobble it never observed"); E14-6 =
+common/assets + common/ecs. Third precondition-trap self-catch —
+canon confirmed. **E14-3 RATIFIED AND OPEN** (widen the SECOND
+scanner's roots, common/systems first, its half-done migration the
+standing proof).
+
+**E13 chunk 4 CROSS-REVIEW: CONFIRMED — the exchange is CLOSED.**
+Both hazards real as characterized (touch_entities genuinely
+hashbrown-default-hasher; the draw genuinely per-iteration inside the
+loop on rand::rng(); beam's "converted" verified as comment-vs-live
+ChaCha8; the six unconverted siblings confirmed ONE BY ONE — count
+verified not asserted). Classify-not-fix held (diff touches only the
+5 scan-infra files). TWO STANDOUTS: (a) FETCH-DOESN'T-SYNC — the
+reviewer's first re-plant PASSED when it should have failed; instead
+of accepting a convenient green it found its detached tree hadn't
+moved (a falsifier that quietly passes = the silent-failure shape;
+recorded fleet-wide). (b) TWO-BIRDS spec note: the same captured raw
+id ALSO keys the networked outcome chronology one line below, so
+fixing at the capture site (phys/mod.rs:1556) fixes both consumers —
+folded into E14-2's spec, correctly not inflated into a second
+hazard. 5b queue: E14-4 (in-repo tooling, proven non-speculative) →
+E14-2 → E14-1.
+
+**DISK BLOCKER CLEARED BY THE ORCHESTRATOR LANE (no builder cycles):**
+both drives were effectively full (C: 11GB, E: 8.1GB free); 5b
+correctly stopped before deleting anything it didn't own. I measured
+and purged SEVEN STALE worktree target dirs (retired branches/
+reviews: engine2, apex-t0, apex-review, t34-review, e1, bld031,
+det-clk) = ~122GB dead cache. **E: 8.1 → 113.7GB free.** Untouched:
+.engine-integration-wt (65.9GB, the live shared worktree) + all
+non-target files. Reminder re-issued: the C:-redirect is obsolete
+post-Defender-fix — build on E: with no override (fixes space AND
+stops re-inflating C:). 5b unblocked to land E14-4.
+
+**E14-3 chunk 1 (c44592422d) — the campaign's sharpest chunk.** RNG
+scanner roots 4→5 (common/systems); six sites surfaced (arcing/buff/
+melee/pool/projectile/shockwave) and NONE fit an existing class —
+traced to what the draws DECIDE: on-hit buff landing (8 sites) and
+summoned-entity spawn, so NonAuthoritativeEntropy is false and
+DeterministicModeGated needs a branch none has. NEW CLASS
+UnmitigatedAuthoritativeEntropy, documented as DEBT NOT
+CLASSIFICATION. **THE RATCHET IS THE ARTIFACT:** "registration is
+exactly what makes debt comfortable" → only_shrinks pins the
+population at SIX as a HIGH-WATER MARK (raising it means editing a
+number that says must-only-go-down) — now the PATTERN FOR EVERY
+FUTURE DEBT REGISTRY. Presentation-namespace trap caught a THIRD
+time (projectile/shockwave sound draws reach NPC perception at
+action_nodes:2426 — after wind and thermal-lift; the trio is a
+standing review question). Empty hazard/decision buckets = T0.79's
+completeness confirmed from outside. Opus → chunk 2 (bastion-server).
+
+**E14-3 chunk 2 (01411a878e) — THE RATCHET'S FIRST TEST, PASSED BY
+REFUSING TO PASS IT.** One site (cave-in injury's rand::random()
+instance landing in authoritative Health::last_change — IdentityGen
+would be the tempting lie; derive_attack_instance's Option<attacker>
+already fits an environmental collapse) → E14-2b, threading cost
+stated. Registering a 7th would have raised the high-water mark, so
+instead: HIGH_WATER_MARK → DEBT_LEDGER with CAUSES — DISCOVERY
+(vision improved, debt pre-existed) and MIGRATION (debt paid) are the
+ONLY legal movements; new ambient code in an already-scanned root has
+NO LEGAL LABEL, so **the ledger cannot launder a regression into a
+recorded fact.** Supersedes the bare-number form I ratified one chunk
+ago. THIRD falsifier-integrity failure named (self-caught pre-ship):
+a gate asserting against a HARDCODED COPY of its own subject — the
+orphan-baseline family from the TEST side; joins invalid-perturbation
+and invalid-success-criterion. Verified my E: claim rather than
+trusting it (43s clean check, 82GB warm cache) AND corrected the
+stale C:-redirect MEMORY entries — obsolete guidance outliving its
+cause is what filled the volume. Opus → chunk 3 (world/src).
+
+**E14-3 chunk 3 (22305080ca): world/src joins (RNG roots 6→7) — ZERO
+DEBT, a REAL negative because all six sites were traced ("world/src
+is full of rng would have been true and useless"). world/src/lib.rs
+DESIGNATED the DeterministicModeGatedLiveEntropy EXEMPLAR: per-chunk
+seeding from (world seed, chunk pos) is call-ORDER-INDEPENDENT under
+THREADED chunk gen — the part such fixes usually get wrong; its
+comment records the phantom-crop-sprite→colonist-clearance desync it
+was built for. test_site() registered with a WEAKER guarantee and
+says so (pub fn, safety rests on caller-tracing = second locality
+class; note not status, per standing rule). Ledger unchanged at 7 —
+VERIFIED by the ratchet, not asserted. NEW FALSIFICATION STANDARD
+ADOPTED: per-file count pin as the mandatory SECOND direction ("the
+first only proves the root is walked, not that an existing entry
+can't quietly grow"). FINAL CHUNK APPROVED as one (net+state+
+query_server) — closing the two-scanner root delta to ZERO.
+
+**★★ E14-3 CLOSED (bb8d1f7c7f) — TWO-SCANNER DIVERGENCE KILLED BY
+CONSTRUCTION.** Final chunk: 3 roots, 1 site — query_server's
+gen_secret, the campaign's COUNTEREXAMPLE ("determinism here would be
+the bug; a predictable challenge secret is spoofable" — the classes
+are not a hierarchy), and the ONLY site ever caught by the bare-rng
+detector a cross-review added FOUR CAMPAIGNS AGO (compounding gates,
+with a receipt). THE CLOSING MOVE: rng_source_registry's private root
+list DELETED — it now consumes AUTHORITATIVE_SCAN_ROOTS directly, so
+divergence is UNREPRESENTABLE (re-sync would fix today and let
+tomorrow drift; exclusions must now live as named exceptions the
+triage test sees). Direction-one falsified THREE TIMES after the
+wholesale swap ("a green gate could equally have meant walked
+nothing"). E14-3 YIELD: roots 4→10 (derived not maintained), 7
+ledger'd debt items w/ cause-carrying ratchet, 6 worldgen zero-debt,
+2 new gates, every chunk falsified in its own root. **Opus → E14-5,
+AUDIT THE INSTRUMENT** (harness 148 hits; survey-first triage:
+EVIDENCE-PATH vs FIXTURE-SETUP vs REPORTING-ONLY — the question is
+whether the instrument can report a wobble it never observed).
+
+**E14-4 LANDED (1b76283321): the regen tooling is IN-REPO** —
+baseline_regen.rs (pure) + a thin CLI, consuming the SHARED
+FAMILIES/AUTHORITATIVE_SCAN_ROOTS rather than a second table (the
+same one-list principle Opus closed E14-3 with — two lanes converging
+independently). Clobber-guard: additions apply, ANY removal REFUSES
+w/ a .new sibling (refusal wins over the safe half of a mixed
+change), tested. TWO SELF-CAUGHT BUGS pre-build (read cold while disk
+was full): a double-strip parse bug, and — the keeper — the tool
+silently flipped every line ending (147-line diff for a 19-line
+addition) while its own test PASSED because the test asserted
+CONTENT. **NEW RULE RECORDED: a test that asserts content cannot see
+form — any repo-file-writing tool gets a fidelity assertion (line
+endings, sort position, trailing newline).** Caught by reading
+git diff --stat before commit. Ben freed C: himself (11GB+). 5b →
+E14-2 (capture-site fix, two consumers) → E14-1.
+
+**★ E14-5 chunk 1 (b61934bf01) — THE INSTRUMENT DOES MISREPORT.**
+148 triaged by WHERE THE VALUE GOES: EVIDENCE-PATH 73 (53 resolved by
+ONE receiver-type check — DenseSlotMap, insertion-ordered; 20 await
+per-site verdicts), FIXTURE-SETUP 62 (temp-dir uniqueness; path never
+digested — checked), REPORTING-ONLY 13 (wall-clock that measures the
+machine by design). **DEFECT → E14-5a:** mine_fidelity sums distances
+out of a std HashMap (per-process seed) and float addition isn't
+associative, so an EMITTED metric (mf_walked_total, and the per-dig
+divisor) moves between runs of the same sim. THE BACKBONE: the
+convenient mitigation ("these records carry wall-clock anyway") is
+TRUE for soak scenarios and FALSE here — this record's only time
+field is SIM time, so it IS comparable. **LEDGER: a hypothesis that
+EXCUSES a defect gets tested harder than one that condemns it,
+because the excusing one is the one you want to be true.** Deliberate
+non-action ratified (no scan root until the 20 have verdicts —
+pinning unread sites would freeze not-yet-examined into
+reads-as-reviewed). Doc-self-match trap, 3rd occurrence, lesson
+written where the next reader hits it.
+
+**E14-2 LANDED (0fc78dfee4):** both sorts (authoritative fall-damage +
+outcome chronology) now consume ONE Uid-derived key captured at the
+fold's map stage — the two-birds fix the review predicted; DET-PHY-005's
+own idiom from the same file. **E14-4's clobber-guard earned its cost
+INSIDE AN HOUR:** the fix removed 2 baseline entries while its comments
+added 3 self-catches; the regen tool detected the removal, REFUSED,
+wrote .new, hand-reviewed, promoted — first out-of-suite exercise of
+the refuse path. COVERAGE FLAG ANSWERED (not deferred): the fold/
+reduce/sort path has ZERO direct tests → E14-2c queued BEHIND E14-1
+(live defect outranks coverage fixture): N-entity same-tick landing,
+identical order+payload across two runs / permuted insertion /
+1-vs-8 pools (T6.3 shape); if it needs real ECS scaffolding to drive,
+report instead of build. 5b → E14-1 (fire spread, both halves).
+
+**ORCHESTRATOR CORRECTION (Ben asked "are we working on those"):**
+I had T8 WRONG in my own summaries — it is NOT a VM/cross-machine
+campaign; it is the WORLD-ECONOMY DIVERGENCE INVESTIGATION (phase
+hashing → 3 lanes: cross-target arithmetic, order-permutation,
+one-ULP sensitivity → remedy ladder). Consequences: **T8.1 is
+BUILDABLE NOW** (and today's world-baseline economy roots are its
+natural feeder); T8.2/3/4 ready after it; T6.5 unlocks off T8.2's
+cross-target lane specifically; T9.1/9.2 are buildable on the
+bootstrap/freshness/epoch machinery that closed today; only T9.3
+waits by design. Most of the apex tail is buildable, NOT
+infrastructure-blocked. T4-PV's worldgen survey already dispatched.
+
+**★ E14-5 chunk 2 (45aa651680) — THE INSTRUMENT CAN ALSO MISS.**
+20 per-site verdicts: 16 safe (each NAMING its mechanism — new
+distinction ratified: SAFETY-BY-DESTINATION (hash-order read INTO a
+BTreeSet) vs SAFETY-BY-RECEIVER, because they fail differently and
+the destination case fails SILENTLY at an untouched line), 3 defects
+across 4 sites. HEADLINE: orbit_stddev sums f32 out of a std HashMap
+into a value that feeds `orbit_ok = stddev > 2.0` — the scenario's
+compound PASS/FAIL. dist_total = reporting a wobble it didn't
+observe; **orbit_stddev = MISSING one it did.** Bound stated not
+dramatized (ULP-scale ⇒ flips only within ~1e-7 of the threshold —
+low probability, high confusion cost: the once-a-year unreproducible
+flake teaches people to re-run instead of investigate). eat_by_uid =
+RECORDED-WITH-PRECONDITION (third state, kept; the precondition goes
+to the engine lane where it's answerable). RULED: fix all three
+first (one shape: canonical summation), THEN take the root — a root
+pinned over a clean surface beats one pinned over three known reds.
+No fourth doc-self-match: written right the first time (canon →
+habit).
+
+**T4-PV WORLDGEN SURVEY (8a2a7f64ea) — the row re-shaped by step
+zero:** almost every worldgen input is ALREADY covered twice (all
+compiled code rides T1.2's source closure — worldgen is
+overwhelmingly code, erosion.rs has no top-level constants at all;
+everything under assets/ rides the content root). "A vocabulary
+listing CONFIG.sea_level and the erosion coefficients would be
+RESTATING THE SOURCE CLOSURE IN A SECOND HAND-MAINTAINED LIST — I'd
+have been building the disease as the cure." MUST-BE set = what can
+differ between two servers on the SAME binary + assets: FileOpts
+variant, 5 GenOpts fields, seed_elements, seed. **FileOpts is the
+finding:** under Load the world is NOT derived from the seed at all —
+identical code+assets+seed, different worlds; "a version derived from
+constants would certify an agreement that does not exist."
+Err-wide ratified on the error asymmetry (too-wide = loud/
+recoverable; too-narrow = silent incoherence with the cause rows
+away). 4 open questions recorded not guessed → Q1 (Cargo.lock in the
+source closure ⇒ is the noise crate's version covered?) = next slice;
+Q3 (is ALL generation call-order-independent, or only the chunk RNG?
+⇒ thread count as a world-identity input) = its own survey, T8-
+adjacent; Q2 rides Q3; **Q4 RULED BY ME: the loaded map's CONTENT
+DIGEST belongs in the root — "a map was loaded" is not an identity,
+the map's bytes are** (same law as digesting payload bytes rather
+than trusting the writer).
+
+**★ E14-1 LANDED (38798af89e) — FIRE SPREAD IS DETERMINISTIC.** Both
+stacked hazards fixed as ruled: hashbrown walk order → collected +
+sorted by Uid (module.rs's own precedent), and the shared ambient rng
+replaced by a per-source ChaCha8 stream seeded (source Uid, tick,
+constant) — beam.rs's DET-EVT-011 idiom copied, not reinvented.
+**THE DEBT LEDGER PAID ITS FIRST DEBT: 7→6 with a MIGRATION cause**
+(the ratchet working in the direction it was built for). Clobber-
+guard's 2nd live refuse-and-review in two rows. Scope held to the row
+as named; the other five same-shape sites → E14-1b (5b next), row
+acceptance = the ledger reaching ZERO. **APEX FRONTIER RE-BRIEFED TO
+5B: T8.1** (per-phase economy evidence, extending its own T4.3 2a
+per-site economy roots into WorldBaselineManifestV1) WITH THE TIER'S
+OWN CONSTRAINT ATTACHED: evidence only — T8.3/8.4 must MEASURE
+order-sensitivity before anyone canonicalizes it, so fix NOTHING
+found, however tempting.
+
+**★ E14-5a COMPLETE (df70d3dae5) — THE INSTRUMENT NEITHER MISREPORTS
+NOR MISSES.** walked/track → BTreeMaps: one ordering change, no value
+changes, closing dist_total, orbit_stddev (and therefore the leash
+scenario's PASS/FAIL boolean), and A THIRD SYMPTOM found by looking
+past the triage — per_colonist emitted as a hash-ordered JSON ARRAY
+("the triage found the summations because it was scanning for
+summations"). **TEST-INTEGRITY STORY OF THE CAMPAIGN:** the
+discrimination assertion FAILED AGAINST CORRECT CODE — sensitivity
+proved for one permutation, asserted for another (sorted-forward vs
+reverse cancelling at exactly the ULP boundary): the
+category-not-the-thing failure again, caught in 30s BECAUSE the
+assertion existed instead of living as a vacuous green. CANONIZED: a
+discrimination assertion must discriminate THE EXACT PAIR IT
+COMPARES, not a category the pair belongs to; trap documented AT the
+fixture. LEDGER: "I would rather a test under-claim in writing than
+have a reader assume it proves more than it does." Chunk 3 (take the
+root over the clean surface) closes E14-5.
+
+**T4-PV Q1 ANSWERED (49657170cd) + Q4 RECORDED.** Cargo.lock is in
+T1.2's closure by TWO mechanisms (git-tree walk + a NAMED FIXED PIN
+whose bytes are retained and hashed) ⇒ the noise crate's version is
+ALREADY-COVERED, adds nothing. **UNSOUGHT DIVIDEND, the bigger
+result: the same pin list covers rust-toolchain — so RUSTC CODEGEN
+DIFFERENCES (which change float-heavy generated terrain while every
+source file stays byte-identical, invisible to anyone reading
+world/src) are covered.** "It did not have to be, and I recorded that
+it is, because the next person deriving this will otherwise wonder."
+Q4's corollary improves my ruling: if FileOpts is in the vocabulary
+BECAUSE loading breaks the seed→world derivation, what was loaded
+must be too — "or the vocabulary records that the derivation was
+broken without recording what replaced it." Doc carries per-question
+status on its face (reviewed vs adjusted-after). Q3 survey next
+(per-stage: does any stage's OUTPUT depend on the order its parallel
+work COMPLETES — erosion, civ placement, site gen, vs ARCH-003's
+per-chunk seeding as the known-good exemplar; if any is sensitive,
+THREAD COUNT is a world-identity input and it's T8 territory).
+
+**E14-1b LANDED (b01c23e07a): five sites migrated, ratchet 6→1** —
+seeded per SOURCE-entity owner Uid (or attacker's own for melee);
+agent-perceived SoundEvent rolls ride the SAME stream as their combat
+draws (same causal event, same stream); premise-check found melee
+(distance-sorted) and projectile (DET-PHY-011 Uid-sorted) had NO
+container-walk hazard — only buff.rs stacked both, so the pattern
+wasn't applied by reflex. **5b corrected MY framing** ("ledger hitting
+zero" was mine; the cave-in site is a different fix shape, already
+designated E14-2b). RULED: take E14-2b NOW before T8.1 — a debt
+register that ENDS AT ZERO tells a different story than one that ends
+"one left, see the other row"; ratchet 1→0 closes the class.
+
+**T8.1 premise-check + 3-chunk split approved:** the hard part EXISTS
+(5b's own T4.3 2a canonical economy hash + world_economy_root_v1 +
+T6.2's probe pair, whose doc ALREADY names T8.1 as a consumer). SPEC
+CORRECTED: production maps are FIXED-seed FxHasher64 (the hashbrown
+line is inside cfg(test)) ⇒ "order-dependent" = insertion/partition
++ platform-width, NOT per-process-random — sharpens T8.2 (width
+caveat) vs T8.3 (insertion/drain order is what varies); recorded in
+the row + to be recorded in chunk 1's module doc where both lanes
+read it. PRE-RULED: evidence-mode gating REQUIRED (reuse the
+deterministic-worldgen seam if it fits, never a new flag); hand-built
+minimal fixtures approved+disclosed (full worldgen would make the row
+un-runnable); the control lane is an ADDITIONAL path, never a
+modification of the measured one. Evidence-only stands.
+
+**★★ E14-5 CLOSED (32353d47b2) — THE INSTRUMENT IS NOW SCANNED BY THE
+GATES IT MEASURES FOR.** Root taken LAST and only over a clean
+surface (148 bucketed → 20 verdicts → 3 defects fixed → root), so
+nothing entered a baseline unread. THREE NOTES BIGGER THAN THE ROOT:
+(1) Opus used 5B's CHECKED-IN TOOL, not its own script — E14-4's only
+real test, passed; the scratchpad script is dead weight ("a tool used
+by one builder is a habit; used by another it's infrastructure").
+(2) Pre-checked the SHARED-ROOT consequence before widening (3
+scanners consume that list now): "'my change only affects my
+scanner' stopped being true two campaigns ago, and the person most
+likely to forget that is the person who made it stop being true."
+(3) THE RATCHET WORKED ON SOMEONE ELSE: 5b couldn't land E14-1/1b
+without editing the ledger, and the kind-check forced (MIGRATION) on
+each — the only test of a gate that matters. Population now 7→1
+(E14-2b ruled to 5b as the closer so the class ends EMPTY). Both
+falsification directions in the new root. Opus → T4-PV Q3 survey;
+E14-6 queued behind.
+
+**★ T4-PV SURVEY-COMPLETE (afd2263a1f) — all four questions closed.**
+**Q3: NO generation stage's output depends on parallel completion
+order ⇒ thread count is NOT a world-identity input.** Per-stage
+evidence: civ placement + site generation have ZERO parallel
+constructs (the two most suspect stages can't raise the question);
+economy is per-element with the one shared drain deliberately
+SEQUENTIAL; erosion's 3 reductions split — sum_uplift IS
+thread-count-dependent but reaches only debug!, while max_uplift/
+max_g feed generation and are order-invariant BY ALGEBRA (max is
+assoc+commutative), NaN panicking rather than varying silently.
+BOUND RECORDED VERBATIM: a survey by reading proves no stage's SHAPE
+admits order-dependence — stronger than a passing test, DIFFERENT
+from a measurement; "if the experiment ever disagrees with this
+survey, THE SURVEY IS WHAT IS WRONG" → T4-PV-EXP designated (one
+seed × several thread counts, compare map bytes; engine lane).
+**Q2 SELF-CORRECTED: Calendar is MUST-BE, not IRRELEVANT** — it
+reaches BLOCK GENERATION (Christmas/Halloween emit different blocks;
+same seed + different DATE = different world); struck-through with a
+pointer, not silently deleted. LEDGER: "provisionally IRRELEVANT,
+explicitly unproven" is the ONLY reason it got re-read — a hedge that
+names its own uncertainty makes the next reader check instead of
+inherit. MUST-BE set final; the derivation row is now unblocked.
+
+**Count-correction cause recorded (Opus, self-verified before
+conceding): it grepped the class name and one hit was THE ENUM
+VARIANT'S OWN DECLARATION — "my measurement matched its own subject's
+definition."** That's the doc-self-match family's THIRD door (1: a
+scanner's docs inside its own search space; 2: a test asserting
+against a hardcoded copy of its subject; 3: a count including its own
+definition). RULE: any measurement whose subject can appear in the
+measuring expression must exclude its own definition explicitly.
+E14-6 FIRED as one chunk (both crates near-empty by pre-scan; the
+per-chunk gate earns nothing — same reasoning as E14-3's final
+delta), with the shared-root pre-check for all THREE consuming
+scanners mandatory. T4-PV's derivation row follows.
+
+**★★★ E14-2b LANDED (109be4be5a) — THE DEBT CLASS IS EMPTY.**
+Cave-in injury derives via derive_attack_instance("bastion/cavein/v1",
+None, victim_uid, time, 0) — environmental collapse has no attacker,
+the victim's Uid discriminates; uids threaded through both callers
+(the harness's collapse-check had none, added). **Unmitigated
+AuthoritativeEntropy 1→0, final MIGRATION entry recorded: the
+register ENDS AT ZERO**, which was the point of the ordering ruling.
+Honesty noted: compile+type verification flagged as NOT behavioral
+(no unit test exists for that function) rather than letting floor
+numbers imply one. **CAMPAIGN TOTAL: a row that began as "widen a
+scan root" ended with SEVEN live authoritative-entropy defects fixed,
+a debt class opened and CLOSED, and the ratchet proving itself on a
+builder who didn't write it.** 5b → T8.1 chunk 1.
+
+**★★ E14-6 CLOSED (37de8f50e4) — E14's SCAN WORK IS DONE.** Both
+crates in one chunk (roots 11→13, exclusions 15→13); 9 sites, zero
+hazards. THE JUSTIFYING SITE: walk_tree's UNSORTED read_dir looks
+exactly like the DET-AST-024/025 precedent next door and ISN'T it —
+its only consumer is a dev-tool binary (traced), and the authoritative
+asset digest uses a different, canonicalised walk. "The precedent is
+present, next door, and correctly NOT needed here." THRESHOLD FIRED
+AS DESIGNED: caller-tracing-as-non-local-guarantee hit its third
+instance (test_site, agent sites, walk_tree) → Opus flagged rather
+than minting; I RULED the new status in, with the three members
+migrated. PRE-EXISTING RED ROUTED to 5b (common-assets'
+test_read_dir_notfound, Windows path-in-field) — reported rather than
+hidden behind "600 green," because a permanent red in a scanned
+root's floor is how floors get ignored. **E13+E14 TOTALS: roots
+5→13, every workspace member triaged, 3 scanners on ONE shared list,
+a debt class opened and closed at ZERO, 7 live defects fixed, 4 new
+gates, 3 new statuses.** T4-PV's DERIVATION row handed to Opus (the
+MUST-BE set its own survey settled; ContentManifest wired LIVE ONCE
+for both subscribers).
+
+**T4-PV DERIVATION — PREMISE-CHECK STOPPED THE ROW (1ee4496bc3, docs
+only):** the derivation cannot fit its target type — the ruled
+precedent returns 32 BYTES, but the three protocol fields are
+ProtocolVersion(u32) and the baseline preimage absorbs them as u32.
+Truncating 256→32 bits would let two DIFFERENT vocabularies collide
+into an IDENTICAL baseline root (a save adopted against a world that
+no longer exists) — the too-narrow silent failure T4.3 exists to
+prevent — and the preimage's own doc says it was built so "no two
+distinct inputs can ever produce the same bytes": **"the artifact
+defeating its own design through its own front door."** RULED (2)
+WIDEN, on Opus's own deciding argument: the u32 has NO independent
+meaning today (every construction site is a hand-written 1 or 2, all
+in tests) — this REUSES A PLACEHOLDER, not repurposes a meaning.
+(1) rejected by name; (3) rejected as two fields with one meaning
+(decorative fields become load-bearing by accident). Constraints:
+all three widen as ONE change; T4.3 gets the AMENDMENT treatment
+(original verbatim + amendment + date + status on its face); the
+preimage doc gains WHY it is digest-width; one-mechanism-two-
+subscribers wiring stands; STOP-and-report if any non-test site
+passes a real u32. Fourth premise-check save this session.
+
+**T8.1 chunk 1 LANDED (9fa57b9caf):** per-phase economy evidence built
+as an EXTENSION of 5b's own T4.3 2a — world_economy_root_v1 split
+into per-site + a PURE reduction so evidence reuses the same digests
+a live phase produces ("can't drift from the real path");
+PhaseEconomyEvidenceV1 + per-phase tick + full 500-year run, evidence-
+mode only (live worldgen path untouched). Hand-built fixtures:
+**2000 phases in ~1s on 2-3 sites** — load-bearing datum for T8.2-8.4's
+sizing. 2 of 3 required tests already covered by its own T4.3 work
+(cited not duplicated, incl. the real DHashMap insertion-order test);
+new: null-result + perturbed-phase-localizes. Zero ordering fixes
+per the tier constraint. RULED: hold chunk 2 (field bisection buys
+resolution only usable once a REAL divergence localizes), **take T8.3
+next** — the permutation lane is where the fixed-seed FxHasher64
+correction says the first real divergence will come from; axes
+permuted SEPARATELY, each divergence classified transactional-
+noncommutativity vs reduction-rounding (the remedy discriminator),
+evidence-only.
+
+**T8.1 rider (ed931fce92):** evidence-mode gate built as its OWN flag
+— DEVIATION FLAGGED AND RATIFIED: reusing DETERMINISTIC_WORLDGEN
+(documented boot-time, ONE-WAY) would have left it permanently true
+for every other test in the process after the first evidence run, a
+real cross-test leak; "reuse the seam" assumed the seam FIT, so a
+same-shape narrower-scope flag is the rule's correct reading. FxHasher
+correction now lives in the CODE where T8.2/8.3 will read it. Windows
+assets test fixed after discovering TWO quirks (Debug's escaping
+doubles backslashes ON TOP of path-in-field) — first attempt caught
+one; verified against the real failing output. RULED: build the
+gate's refusal falsifier + the scoped test-only reset it needs — "an
+ungated gate nobody has watched refuse" is the assertion-shaped hole
+this program keeps finding, and the untestability is a property of
+the chosen design. **5b's CAMPAIGN TALLY (verbatim): what started as
+"widen a scan root" closed as 7 live defects fixed, 1 debt class
+opened AND closed with a paper trail at every step, 1 fleet artifact
+shipped (self-caught 2 bugs pre-commit, proved itself twice more on
+real removals), and a new determinism-evidence tier built as an
+extension of its own earlier work rather than a fresh
+investigation.**
+
+**T8.3 premise-check — THE TIER'S FIRST REAL FINDING, from reading
+alone:** the spec's own headline example is LIVE CODE — economy
+mod.rs:727 drains a provider's customer orders SEQUENTIALLY against
+the same depleting shared stock, with a log line for the customer who
+loses when stock is scarce ⇒ CONFIRMED TRANSACTIONAL
+NON-COMMUTATIVITY on the order/provider-customer axis. Also found:
+delivery collection accumulates floats across a drain (REDUCTION-
+ROUNDING candidates) and a mem::swap that makes a same-supplier
+second delivery a genuine LAST-WRITER field (reachability unknown).
+Site-order axis reads as a likely NULL. 3-chunk split approved
+(headline axis first). RIDERS: prove the null by EXPERIMENT not
+reading (a null established by test survives a future edit that a
+reading doesn't); the last-writer reachability check comes FIRST and
+is a finding either way — if unreachable, record DEAD-CODE-TODAY with
+the precondition that would revive it ("unreachable is a property of
+today's callers, not of the code"). Evidence-only holds.
+
+**Ben-directed: BATCHED REPORTING** — one report per ROW (not per
+chunk); builders self-size and continue within a row; report only on
+row-close / genuine fork / live significant finding / block.
+Premise-checks needing no ruling ride the close-out. My prompts stop
+inviting per-chunk check-ins. Memory updated; both lanes on the new
+cadence.
+
+**T8.3 chunk 1 (a456ddf7d7) — NEGATIVE, AND THE BUILDER CORRECTED ITS
+OWN PREMISE-CHECK.** The "confirmed transactional non-commutativity"
+did NOT survive testing: three fixtures (symmetric / asymmetric 50-vs-1
+against 5.0 stock / ample control) all delivered bit-identical amounts
+under permuted processing order. MECHANISM-LEVEL REASON: order_stock_
+ratio is computed ONCE from pre-loop totals, so allocated_amount is a
+pure function of each order's OWN amount and a fixed ratio — never of
+what earlier orders consumed; the live-stock .min() clamp never bit.
+5b's own framing: "reading code and predicting a hazard from its SHAPE
+isn't the same as proving it" (second structural read this campaign
+that didn't survive tracing). **THIS VINDICATES THE DO-NOT-PRE-EMPT
+CONSTRAINT FROM THE OTHER DIRECTION: a "fix" on the strength of the
+structural read would have canonicalized a NON-problem** — the exact
+remedy-discriminator error the lane exists to prevent. Riders: carry
+NO assumption from this negative to the payment-side/delivery
+mechanisms (different mechanisms, each needs its own reason);
+last-writer reachability first, DEAD-CODE-TODAY-with-precondition if
+unreachable. Lane B finishes: T8.4/T8.5 need "these are clean, for
+these reasons; this one isn't" — negatives with mechanisms ARE the
+deliverable.
+
+**T4-PV chunk 1 (c8933d5df8) — the widening landed.** Three protocol
+fields ProtocolVersion(u32) → ProtocolDigestV1 (32B + domain +
+algorithm) as ONE change; types stay DISTINCT (no From, pinned);
+THREE separate domains 44/45/46 (lane checked not assumed, given the
+12 and 21/22 collision history) so a worldgen root can never be
+mistaken for a content root; the domain REACHES THE PREIMAGE via
+push_option_protocol_root — "carrying it in the type and dropping it
+at the encoding would have been decorative." **THE SERDE COMPILE
+ERROR WAS THE FINDING:** deriving serde to silence it would have
+given identity a SECOND uncontrolled byte-form — the two-goldens law
+arriving through the type system; "the error was telling me something
+true." Constraint (e) satisfied: all 8 construction sites are tests
+passing hand-written values — nothing meaningful repurposed.
+Amendment treatment applied (status on the doc's face, original
+unedited, why-it-couldn't-be-deferred beneath) + the collision-
+freedom doc now explains WHY the field is digest-width, at the
+encoding where the reader will be standing. **THE AMENDMENT'S
+FALSIFIER SIMULATED THE REJECTED DESIGN** (absorb only 4 bytes) and
+watched it fail by name: "a test for an amendment that cannot fail
+against the pre-amendment design is decoration." Bonus: the E14-6 red
+5b fixed is verified closed.
+
+**★ T8.3 CLOSED (8c42beaa06 + a456ddf7d7 + c324dead3e) — three axes,
+three verdicts, zero fixes.** GATE FALSIFIER CAUGHT A REAL BUG PRE-SHIP:
+the first design (RAII guard force-disabling the flag while holding the
+lock the gated function must read) SELF-DEADLOCKED — caught by a HANG, not
+a false green; fixed by EXTRACTING THE PANIC CONDITION INTO A PURE FUNCTION
+(same move as reconcile_v1's free functions); Mutex reverted since its
+design no longer exists. AXES: provider/customer pairing NEGATIVE (ratio
+computed once off pre-loop totals — its own premise-check prediction
+disproved, correction flagged); site order NEGATIVE BY EXPERIMENT as ruled
+(3 sites, forward+reversed, 2000 phases, matched by distinguishing stock
+not raw Id); delivery collection — reachability FIRST ⇒ DEAD-CODE-TODAY
+with revival precondition named (the overflow guard's own "happened in
+development" comment as evidence it once was reachable); mechanism tested
+by hand anyway: last-writer confirmed, reduction bit-exact (1e7/1.0/1e-7 so
+the test could not be vacuous). NEXT: T8.4 ULP sweep (extends 5b's own
+harness; feeds T8.5), then T8.1 chunk 2. T8.2 multi-target = my sizing.
+
+**★ T4-PV CLOSED (c5a22f640a) — WORLDGEN IS DERIVED AND LIVE.** The parked
+slot is no longer None: derived from the 8-member frozen vocabulary the
+survey settled, from the ACTUAL WorldOpts the server generated with (hoisted
+to a named local — a reconstruction would be the exact fabrication this row
+exists to avoid), threaded into RtSim::new beside map_geometry_root.
+**A THIRD MAP-SOURCE VARIANT APPEARED AT WIRING TIME** (the DEFAULT config
+uses LoadAsset): folding it into Loaded would have demanded a byte digest on
+the NORMAL path and reported every stock server as carrying an unidentified
+map — the asset PATH is sufficient identity there because its content already
+rides the content root; digesting it again would restate an existing root
+(the survey §2 prohibition). Three sources, three identity stories, none
+collapsible (pinned). **THE FINDING: my constraint (d) rested on a false
+premise — there is no live mechanism to give a second subscriber.**
+ContentManifest::build and NumericProfileV1 have ZERO live callers (all
+construction is in their own test modules) — a THIRD unwired instrument in
+this family, and T4.1's gap by inheritance (which is why T4.1 left its
+Content slot un-derived). RULED (a)+(c): T4-PV closes; DESIGNATED
+T4.1-CONTENT-LIVE (stand the manifest up at boot, then two subscribers).
+Content/numeric left None WITH the distinction recorded in-code — "recording
+that beats a bare None that reads as undone work." Opus → T4-PV-EXP (the
+confirming thread-count experiment its own survey named).
+
+**T8.4 first two fields (883688e779, 01b8969bba) — TWO SHAPES, NEITHER
+CHAOTIC:** stock is bounded AND DECAYING (peaks ~2^-17, returns to EXACTLY
+0.0 by phase 200 — absorbed, not amplified, no branch crossing); population
+is bounded and CONSTANT (the ULP persists unchanged, neither amplified nor
+damped). Both land on the cheap-remedy side of the tier's own line.
+Method notes: reads RAW magnitudes not hashes ("a hash proves same/different,
+this lane needs magnitude" — why the evidence tier has both); branch tracking
+rides a REAL conditional, not a proxy; required tests re-satisfied PER FIELD
+rather than assumed to carry (T8.3's no-assumption-across-mechanisms rule).
+RULED: finish the sweep (price/demand/surplus/smoothing) — T8.5 needs the
+WHOLE inventory; two bounded fields + four unknowns cannot distinguish "the
+model is robust" from "we checked the calm ones." RIDERS: any UNBOUNDED or
+branch-crossing field STOPS the sweep and reports immediately (it outranks
+completeness); smoothing goes LAST and gets extra suspicion — a decay term
+either damps everything (falsely reassuring) or integrates upward.
+
+**★ T8.4 CLOSED (7b93e49338 + earlier) — ALL SIX FIELDS BOUNDED.** Nothing
+unbounded, no branch crossed in-window. Shapes: stock/demand/price/smoothing
+decay to EXACTLY 0.0; population persists constant; surplus is a STRUCTURAL
+NON-CARRIER (Economy::tick's first act is a wholesale GoodMap assignment —
+a perturbation is discarded before anything reads it, PROVEN by test not
+cited from a read). THE REPORT'S REAL CONTENT is the three fields that
+needed debugging: refusing the "coverage insufficient" escape at face value
+turned two false negatives into evidence — price/demand needed a good with
+REAL demand and the tier's own named 1e-3 quantisation unit (a bare ULP
+rounded away against a dominant fresh term). Smoothing ran LAST at 500
+phases with the assigned suspicion (asserting the final magnitude does not
+exceed an early checkpoint — catching whole-curve drift a bare boundedness
+check would miss); it changed no verdict but is load-bearing evidence rather
+than formality. **T8.5 PROMPTED — the decision ladder**, with the ruling
+that its job is to DEMONSTRATE the cheapest sufficient rung from the lanes
+(all bounded, three axes negative, one dead-code-today) and NAME what
+evidence would force a higher one; hard constraints: cache-vs-history
+declared BEFORE any re-derivation rung, and the remedy declaration rides
+T4.6's existing manifest slot (a field, not a new mechanism).
+
+**★ T4-PV-EXP CLOSED (48e2b621b8) — THE MEASUREMENT AGREES WITH THE SURVEY.**
+Seed 1337 generated at 1, 2 and 8 threads: map-geometry root BIT-IDENTICAL
+(f85c6ac2f0…bc89). Thread count is not a world-identity input — now MEASURED,
+not reasoned. TWO CHOICES THAT MADE IT MEASURE ANYTHING: the world is
+GENERATED not loaded (the default config and the nearest existing example
+both LOAD a prebuilt map — copying either "would have run green while
+measuring nothing about generation, the emptiest kind of pass"), and it
+digests T4.3's OWN geometry identity rather than a comparison invented for
+the occasion. Verdict HELD until the 8-thread point landed — 1-vs-2 is the
+weakest form of the result; 8 is where rayon work-stealing actually varies
+completion order across erosion's 27 parallel constructs. Bounds on the
+survey's face (geometry + site listing; per-chunk blocks are downstream and
+separately seeded; one seed, three counts, 9/9 map as a disclosed cost
+control). OPERATIONAL DATUM: cheap to WRITE, expensive to RUN — "plausibly
+why it had never been run." Standing rule preserved: if a measurement ever
+contradicts the survey, THE SURVEY IS WRONG. Opus → T9.1 premise-check
+(read-only, sized to its stated margin).
+
+**T9.1 PREMISE-CHECK (3cec01a713) — the row is smaller than its shape, with
+one genuinely open design question at its centre.** Step 1 (new epoch +
+manifest-validated bootstrap): ALREADY TRUE as a mechanism (ConnectionEpoch,
+rebind_epoch_v1, epoch REGRESSION is a typed Freeze refusal; server sends,
+client validates with the same three typed variants whose non-exhaustive
+match was E13's branch red) — ONE unsettled read left as the next builder's
+first move: does a RECONNECT re-run that path, or is the epoch minted only on
+first connect? Step 3 (command IDs via terminal journal): ALREADY TRUE —
+T3.5's journal is exactly this (sequence advances only on terminal ack;
+seen-and-finished replays terminal BYTES; gaps/reuse/unacked all typed and
+canary-pinned); remaining work is connecting reconnect to it. **STEP 2 IS
+GENUINELY ABSENT AND "THE RULE HAS NO SUBJECT":** nothing in the wire layer
+distinguishes continuous from discrete (streams are named by ROLE), so the
+rule cannot be enforced OR EVEN STATED against present types ⇒ its first
+deliverable is a TAXONOMY question (is continuity a property of the stream,
+the message, or the subscription?), because writing it first would make "a
+rule enforced at one call site and forgotten at the next." Step 4: retention
+is BUILT (detach, 60s grace, cap 64, purge, qualifying-reason routing);
+per-stream replay windows ABSENT and BLOCKED ON STEP 2 — the row understated
+its own gate. Opus's lane CLEAN and handed over; capacity accepted, resting.
+
+**★★ T8.5 CLOSED (49d8ddaa5f) — RUNG 1, NO REMEDY NEEDED, DERIVED NOT
+ASSERTED.** The ladder is a PURE FUNCTION (evidence in → rung out), fed with
+T8.3+T8.4's actual closed findings (no transactional or reduction-rounding
+dependency survived tracing; nothing unbounded; no branch crossing) ⇒
+SameProfileCertification. Every escalation trigger has its own falsifier;
+**rung 6 is PROVEN UNREACHABLE by evidence alone** — the spec frames it as a
+policy call, so a builder cannot derive its way into abandoning
+regeneration. **SHARPEST DECISION: the untested cross-platform field is
+Option<bool>, and None adds NO escalation pressure** — rung 1's definition
+is scoped to one profile, so a pending lane cannot retroactively invalidate a
+claim that never covered it (artifact-cannot-overstate applied to a VERDICT).
+Hard constraint (a) honored in its strongest form: cache-vs-history declared
+per-field WITH evidence — history = stocks + pop (grounded in T8.4's own
+persistence curves), everything else Cache with cited lanes or line-cited
+reads for the two neither lane swept, topology explicitly out of scope as
+T4.3's concern — "on record now rather than re-derived later under
+pressure." (b): rides T4.6's Economy slot whose doc had ALREADY named this
+row as its home; round-trip proven through the real manifest codec. 21 tests.
+**T8 IS CLOSED EXCEPT T8.2 (cross-target cells — my sizing).** 5b → T9.2
+(checkpoint restoration; UniverseBranchId is the FOURTH unwired instrument
+and this row is its intended first consumer).
+
+**SERVICE OUTAGE — ZERO WORK LOST.** Remote tip verified intact at
+49d8ddaa5f (T8.5); both builders were between rows. BOTH LANES RESTARTED:
+5b → T9.2 (checkpoint restoration on its own T4.6 machinery; UniverseBranchId
+is the 4th unwired instrument and this row is its intended first consumer);
+Opus → T4.1-CONTENT-LIVE (the row its own T4-PV wiring discovered: stand
+ContentManifest up live at boot — premise-check the affordability of an
+asset-tree walk first — then its TWO subscribers, T4.1's Content descriptor
+and T4-PV's now-digest-width ContentProtocolVersion; numeric rides the same
+shape if its check confirms one incision).
+
+**Opus DECLINED T4.1-CONTENT-LIVE — context did NOT clear on the restart**
+(the outage interrupted the wall clock, not the session). Declined the
+premise-check-only slice TOO, and that is the better call, recorded as a
+lesson for me: "the premise-check's value is highest in the hands of whoever
+acts on it — they need the affordability answer while deciding where to hang
+the cache, not as a document they re-derive anyway"; splitting a row across
+two heads for no gain is a cost I keep underweighting. HANDOVER VERIFIED BY
+THE BUILDER, not asserted: clean tree, no stash, one commit behind the tip
+(it re-checked my tip claim), the row's discovery already in-tree (survey +
+the in-code comment stating content/numeric are None because the DERIVATIONS
+exist and a live CONSTRUCTION does not — "a fresh builder starts from that
+sentence, not from scratch"), the two zero-live-caller facts named FOR
+RE-VERIFICATION rather than trust, and the ClosureTreeV1 canonical-walk
+precedent flagged: "if it needs a different one, the difference should be
+stated rather than discovered." **T4.1-CONTENT-LIVE queued for a fresh
+session.** Opus stood down clean after a stretch covering both scanner
+campaigns, six tier specs, the instrument audit, the world-identity
+vocabulary (derived AND measured), and T9.1's reshaping.
+
+**★★ T9.2 CLOSED (0f0d440acc) — CHECKPOINT RESTORATION IS REAL.**
+UniverseBranchId (registered since T0.4, zero constructors) gets its first
+consumer. recover_at_epoch_v1 verifies an ARBITRARY historical epoch by
+walking the predecessor chain (re-traversing facts the ledger already
+required at commit — not a new trust assumption); restore_branch_v1 mints a
+fresh branch, copies payloads into a FRESH layout's epoch 1, re-verifies
+post-copy (second TOCTOU close), commits via the EXISTING path chained to the
+checkpoint, writes the operator-decision record — never continues the old
+sequence. **THE DISCIPLINED REFUSAL IS THE REPORT'S BEST LINE:** the
+stale-branch decision built PURE and STANDALONE rather than wired, because
+T9.1 proved there is no refusal enum to hang it off yet — "wiring in before
+that enum exists would be exactly what the T9 spec forbids"; the arm is named
+and ready, not fabricated-as-wired. Also: the ledger GENERALIZED because
+chaining epoch 1 from a restored checkpoint was previously UNREPRESENTABLE (a
+type gap found by trying to use it); branch consistency refuses a silent
+CHANGE **or DROP** (the drop case is the one people forget); concurrent-start
+needed NO new mechanism — inherited from T4.6's pointer atomicity and
+RE-PROVEN in this shape; two restorations cannot race BY CONSTRUCTION.
+62 new tests; floors 639/639 and 220/220. Banked: the operator subcommand.
+**5b → T9.3 PREMISE-CHECK — the final row: an inventory of which properties
+the evidence supports TODAY, what produces each attestation, and what is
+genuinely absent. That inventory IS the certificate's build spec.**
+
+**T9.3 PREMISE-CHECK — the evidence matrix inventoried, 10 rows, cites for
+each.** SUPPORTS: same-target rebuilds (4 nix canaries incl. 3 ADVERSARIAL
+negative controls proving the comparator can SEE nondeterminism), plugin
+catalogs, prediction/rollback, the raw+semantic probe pair (independently
+reused 3× — the shared-type argument the T6 spec asked for actually
+happened), multi-store crash cutpoints (33/33 today), migrations+branching.
+PARTIAL WITH SELF-DESCRIBING OPEN SETS: T3.4 154/176, T3.5 152/162 — these
+bundles ALREADY follow the certificate's own carries-its-own-open-set
+pattern and can feed it directly. **NEW FINDING RULED: T6.4 and T8.2 ARE THE
+SAME GAP WEARING TWO ROW-NUMBERS** — both need one artifact executed against
+two distinct compiler/target cells; T6.4's falsifier is a same-process
+perturbation (proves the COMPARATOR, nothing about portability). The
+certificate names it ONCE as CROSS-TARGET-EXECUTION, cited from both rows —
+listing one gap twice inflates the open set AND invites someone to close one
+number and think the property is half-covered (artifact-cannot-overstate
+applied to the OPEN side, where it is easier to get wrong). Corroborated
+independently: T9.1's missing continuous-frame taxonomy is named by BOTH
+the T3.5 bundle (CMD-055/056 "the outbox has no reconnect handling yet") and
+T9.1's own check — two artifacts, different angles, same gap. **T9.3 BUILD
+STARTED — the last row of the apex program.** Its real work per 5b's own
+honest scope note: rows lacking self-describing bundles need their open-case
+enumeration BUILT, since the certificate is generated from attestations.
+
+**Ben-directed ROLE SPLIT: Opus → REVIEWER lane** (read-shaped work suits
+its remaining margin and is its strongest mode); 5b + any fresh session =
+build lanes; orchestrator = batches, prompts, rulings, read-aheads.
+First review span assigned: 5b's T8.1/T8.3/T8.4/T8.5/T9.2 — with the
+instruction that **T8.3's three NEGATIVE verdicts get the hardest look,
+since a negative that is wrong is invisible**, and that the ladder must be
+fed contrary evidence to prove it CLIMBS. Capacity gate still governs.
+
+**T9.3 chunks 1-2 (f649f33d4a) — THE CERTIFICATE GENERATES.**
+generate_certificate_v1 is the ONLY path to a certificate: groups
+attestations by property, states a property IFF covered>0 — structurally
+absent otherwise, never a zero; mutation test (fail a passing attestation →
+the property VANISHES on regeneration) and open-set-sum test both green;
+canonical order proven under permutation. **THE ROW'S BEST MOMENT — A DRIFT
+FOUND AND REFUSED:** the point-in-time JSON evidence bundles had ALREADY
+drifted from the live coverage maps (T3.4 claims 22 open, live enforces 5;
+T3.5 claims 10, live enforces 9 — real coverage work landed since the
+snapshots), so the attestations are derived LIVE from the coverage constants
+"rather than re-committing the same drift one layer up in a new artifact,"
+each with a test proving it matches an independent rescan. T9.2's two
+follow-ons carried through as REAL open cases and TESTED to survive into the
+certificate — "rather than quietly disappearing now that they feed one."
+Coarse attestations NAMED as coarse in their own sources, not oversold.
+CrossTargetExecution: zero covered, ONE open case citing both rows (tested
+that it is one, not two). **RULED: chunk 3 BUILDS — the row does not close
+with unbound roots**, because placeholder roots are the same drift with the
+clock not yet started, and the first hand to bind them would do it under
+pressure against a published artifact. Any root with no computable artifact
+today is a FINDING (structurally absent, like CrossTargetExecution), never a
+placeholder — the roots obey the same law as the properties.
+
+**★ T8.3 chunk-1 REVIEW: CONFIRMED, AND THE NEGATIVE IS STRONGER THAN ITS
+AUTHOR CLAIMED (f5512805e2).** Review at its ceiling: attacked the exact
+condition the author named as their own weak point (the clamp "never bites
+FOR THESE FIXTURES"), then found the hedge UNDERSTATES it — tracing the
+arithmetic rather than the fixtures, headroom is reserved by next_demand
+inside the ratio's own denominator, so cumulative allocation is bounded by
+(stock − next_demand) either side of ratio=1: the negative holds BY
+CONSTRUCTION. Then built the fixture the chunk structurally COULD NOT run
+(customer A paying in the good customer B buys — the one path where live
+stock reaches a delivered amount): bit-identical permuted, WITH a
+precondition assertion — "I am not going to certify someone else's negative
+with a test that could be one." **FLAGGED-NOT-EDITED is now standing
+practice:** "a reviewer silently strengthening someone's claim is how a
+claim loses its provenance" — routed to 5b as the author's call with the
+arithmetic attached, theirs to adopt or decline. Capacity: ONE cluster taken,
+the other four NAMED as unreviewed rather than implied covered. Reviewer's
+own next-item recommendation recorded as the queue head: T8.4's "structural
+non-carrier" — "structural is exactly the word that wants testing rather
+than reading."
+
+**★★★ T9.3 CLOSED (ac3d623f82) — THE LAST ROW OF THE APEX PROGRAM.** Chunk 3
+redesigned the roots to obey the properties' own law: ApexCertificateRootsV1
+(8 mandatory digests) REPLACED by RootAttestationV1::{Present,Absent} — there
+is no code path that can put a fabricated digest into present_roots, and an
+Absent claim is the only way a root without evidence reaches the certificate
+at all. **AUDIT RESULT: 2 PRESENT, 6 ABSENT WITH SPECIFIC REASONS** (content
+= the live net-envelope descriptor; fixture = the checked-in T3.5 catalog,
+read and hashed live). THREE FABRICATIONS REFUSED BY NAME: a plausible
+toolchain string for numeric, the T2.5 catalog standing in as plugin's
+activation root, a test tempdir posing as a durable artifact. Both required
+tests are real integration checks — one RE-READS the catalog file and
+RE-COMPUTES the descriptor from scratch, proving the CLAIM rather than that a
+function returned. 653/653 + 228/228. **An honest certificate stating two
+roots and naming six gaps is worth more than a complete-looking one — that
+difference is the program's whole thesis.** FINAL ROW ASSIGNED: RUN the
+certificate against the live tree, commit the artifact, and read it back as
+the program's own honest self-description — produced by the machine, not
+summarized by us.
+
+**T8.3 hedge adopted (6e8abd4c1f)** — 5b re-derived the reviewer's arithmetic
+a DIFFERENT way (bounding cumulative-allocated-plus-next-order rather than
+cumulative-paid) and reached the same bound, then adopted "by construction"
+and CREDITED THE REVIEW BY NAME in the doc rather than silently absorbing the
+strengthened claim — provenance preserved on both sides of the exchange (the
+reviewer refused to edit; the author refused to absorb anonymously). Two
+independent derivations of one bound beats one derivation plus assent. Stale
+"not yet tested" notes closed too (the reviewer's cross-paying fixture +
+5b's own chunks 2-3). Final row pending: RUN the certificate.
+
+**★★★★ THE CERTIFICATE HAS BEEN RUN (9c7edadaa4) — APEX BUILD WORK COMPLETE.**
+render_certificate_v1 is pure (never re-sorts — prints only what the
+generator canonicalized); the gen binary calls the REAL root/attestation
+sources; run twice, diffed byte-identical, artifact committed at
+readme/apex/APEX-T9.3-CERTIFICATE-v1.md. **THE PROGRAM'S MACHINE-GENERATED
+SELF-DESCRIPTION:** ROOTS 2/8 present (Content = live net-envelope
+descriptor; Fixture = the checked-in T3.5 catalog) — Build/Plugin/Manifest/
+Numeric/Schedule/Output ABSENT with named reasons. PROPERTIES 9/10 stated:
+SameTargetReproducibility 4/4 · PluginPermutations 269/270 · SixStream
+171/176 · CommandRetryCrashReconnect 153/163 · PredictionRollback 27/27 ·
+PhysicsWeatherNumeric 11/11 · WorldBaselineEconomy 38/38 · MultiStoreCrash
+11/11 · SaveMigrationBranching 76/78; CrossTargetExecution STRUCTURALLY
+ABSENT (0 covered — the one property with no passing attestation). OPEN SET:
+19 named cases across 5 properties (the merged cross-target gap; EARLY-ASSET-
+ACCESS; 5 checkpoint; 10 command incl. T9.1-STEP2's taxonomy; 2 T9.2 wiring).
+**Nothing rounded up.** 655/655 + 228/228.
+
+**★ APEX INHERITANCE LAW (Ben, at the pivot: "we did this all for a reason ...
+it needs to be used in our building and design from now on").** Written to
+memory as the standing engine-row template — every row from now on inherits:
+(1) THE GATES, automatically — a row does not add determinism, it is REFUSED
+if it removes any (6 scan families/13 roots/every member triaged; rng debt
+class EMPTY with a ratchet; DecisionKeyV1; numeric surface; 88 wire goldens;
+host-input manifest; send-site catalogs). (2) ACCEPTANCE BARS that did not
+exist before: sim behavior ⇒ harness x2 byte-identity; any message ⇒ a golden
+entry or the build fails; worldgen/content ⇒ a DECLARED migration under the
+T4.5 law or old saves refused with a recorded reason; character behavior ⇒
+the T7.1 input-vs-ambient boundary is the contract. (3) PROCESS LAWS:
+premise-check first; closure-with-evidence = full credit; falsifier
+discipline (3 named integrity failures); debt gets a ratchet or it is not
+debt; measure before canonicalizing; verify the thing not its category.
+(4) THE CERTIFICATE IS THE SCOREBOARD — it regenerates from live
+attestations, so engine work that breaks a property makes it DROP the claim.
+
+**★ FEATURE ACCEPTANCE FRAMEWORK — LAW (Ben: "when we implement something do
+we create a framework to test it with logical measures" + "shouldn't we do
+dozens if not hundreds of tests, we have the compute").** GAP NAMED HONESTLY:
+determinism rows always defined failure before passing; FEATURE rows shipped
+on compiles+green, which is how half-built mines reached Ben's eyes. From
+now, every feature brief OPENS with: observable success measures (numbers not
+adjectives) · named failure modes each with a planted-failure test that must
+go red BY NAME · non-vacuity proof the scenario exercised the mechanic ·
+**CORPUS not single-run (N seeds — a single-seed green is a lottery ticket;
+the ephemeral VM fan has been IDLE and should not be)** · invariants over
+outcomes where possible. ORCHESTRATOR DUTY: I write the acceptance framework
+INTO the brief — a feature row arriving without one is my failure.
+
+**★★ CORPUS-SCALE CAMPAIGN DIRECTED (Ben: "we should run hundreds of tests in
+parallel... thousands if possible... if we mine a space it needs 100% of the
+blocks removed in all cases").** INFRA VERIFIED LIVE: golden machine image
+present (bastion-golden, plus nix/renderer variants); us-central1 CPUS quota
+**200, usage 0** (higher than the 96 in memory) ⇒ ~45 concurrent 4-vCPU VMs;
+vm-pool.sh (depth: N VMs × seeds, LIVE burn-guard w/ $ and minute caps,
+guaranteed teardown) and vm-jobs.sh (breadth: different scenarios in
+parallel) both intact. One fan ≈ 900 seeds/hour for single-digit dollars;
+thousands = 2-3 sequential fans or a quota bump to 500.
+**THE BOTTLENECK IS NOT COMPUTE — it is the assertion.** A thousand runs of a
+test that asserts the wrong thing proves nothing (the vacuous-green trap at
+scale). ROW QUEUED to 5b in the ruled order: (1) hard invariant — 100% of the
+designated volume removed, no stuck colonists, complete-only-when-complete;
+(2) PROVE IT CAN FAIL against B78, a REAL filed reproducible mine-completion
+bug used as a positive control (if the assertion does not go red on B78, the
+ASSERTION is broken — report before spending compute); (3) local 48-core
+corpus first, distribution + failing seeds ENUMERATED; (4) hand me the fan
+spec — I own the GCP run and return the failing-seed list. Every failing seed
+is a complete bug report — that is what the determinism work bought.
+This becomes the TEMPLATE for every mechanic: haul, shelter, interruption,
+job resumption — each with its own invariant, positive control, and corpus.
+
+**★ T4.1-CONTENT-LIVE CLOSED (c47321efbd) — the content root is REAL.**
+Zero-live-caller claims RE-VERIFIED by the builder (incl. ruling out a grep
+false positive by reading — a .validated_v1 on a different type).
+**AFFORDABILITY MEASURED TWICE, BOTH NUMBERS PUBLISHED: 115.7s single-
+threaded over the real tree (10,610 files / 415MB) — unshippable as a
+boot-blocking call, and said so rather than wiring it anyway — then 492ms
+parallelized (~235x; the cost was per-file syscall latency, not hash
+throughput).** A naive estimate would have been two orders of magnitude
+wrong: the argument for measuring rather than estimating, in one row.
+No new canonicalization invented (ClosureTreeV1's duplicate-rejection
+value-add cannot apply — a filesystem walk structurally cannot produce
+duplicate paths; the existing path-sort suffices, stated with reasoning).
+Computed ONCE at boot, cached as an ECS resource, read by both subscribers
+(world-baseline input + every client admission) — never recomputed.
+**NUMERIC SPLIT RATHER THAN FORCED:** an honest profile needs compile-time
+codegen facts no runtime call can reach, so it stays a TRUE Absent instead of
+becoming a false Present. **CERTIFICATE REGENERATED AND DIFFED: exactly one
+line moved** (Content's digest+source, now the real asset-tree walk);
+Manifest and Numeric did NOT flip because they genuinely could not — reported
+honestly rather than nudged toward the brief's expectation. 658/658 +
+231/231. Next: the mine-completion invariant + corpus campaign.
+
+**MACHINE CRASH #3 (boot 07/30 00:45) — ZERO WORK LOST AGAIN.** Remote tip
+intact at c47321efbd; both builders were between rows. 5b restarted onto the
+MINE-COMPLETION INVARIANT row (verify-worktree-first). Opus remains the
+reviewer lane, stood down at its own gate. **MACHINE HEALTH IS NOW A REAL
+PATTERN, flagged for Ben: three events in ~48h** (GPU LiveKernelEvents →
+full crash → this one), all under heavy parallel build load. The fleet is
+structurally immune (per-item push-with-proof), but the host is not, and a
+GCP fan campaign will put MORE sustained load on it, not less.
+
+## MINE-COMPLETION INVARIANT — the first corpus-scale finding (07/30)
+
+**Ben's directive, verbatim: "if we mine a space it need 100% of the blocks
+removed in all cases."** That sentence retired a tolerance. b5's mine gate had
+been `mine_blocks_mined >= 26/27` (96.3%), with a source comment framing "one
+window short" as scheduling throughput — the exact fidelity-ratio-not-100%
+pattern. Two *already-computed* signals, `mine_cleared` and `locomotion.2`
+(failsafe teleports — the B24 rescue mechanism, i.e. an instrumented "a
+colonist got stuck" flag), were reported in the JSON every single run and
+**never gated on**. 5b's fix (5413915f71) requires
+`mine_blocks_mined == 27 && mine_cleared && locomotion.2 == 0`.
+
+**POSITIVE CONTROL FIRST, COMPUTE SECOND.** Before spending a core-hour, 5b
+validated that the new assertion can actually go RED for the right reason:
+seed 1337 yields `mine_blocks_mined=25, mine_cleared=false, teleports=3` —
+an exact match to B78's filed "2 of 27 stuck". B78 still reproduces; the
+assertion catches it. That is the falsifier canon applied to a gate: a RED is
+evidence only if its precondition was genuinely engaged.
+
+**LOCAL CORPUS (48 seeds, 48 cores): 19/48 violate the mine invariant** —
+seeds 1,2,3,4,11,13,16,18,21,23,25,26,29,32,37,38,39,44,45. A further 18 fail
+for unrelated pre-existing reasons; 11/48 are fully clean. 5b reported both
+the raw and the mine-specific numbers "so neither overstates the finding" —
+correct instinct, and the reason the number is trustworthy.
+
+**~40% of seeds do not finish mining the hole.** The old gate would have
+called nearly every one of those a PASS. This is precisely the class Ben
+named ("often we implement something and its buggy"): not a crash, not a
+red test — a *tolerance* quietly absorbing a real, reproducible,
+stuck-forever failure and reporting green.
+
+**FAN WAVE 1 LAUNCHED (Fable):** 11 x e2-standard-16 (176 of 200 vCPU),
+12 seeds/VM, seeds 49-180, branch bastion/apex-engine-integration @
+5413915f71, ceiling $20/90m with the live burn-guard.
+*Premises verified before spending:* (a) the fix is pushed on that branch;
+(b) `b5_scenario` derives its data dir from `process::id()`, so 12 parallel
+seeds on one VM structurally cannot collide on save state — the
+save-leak trap that has bitten us before; (c) SPV set to 12, not 16, because
+each seed boots a full headless server and an OOM would manufacture false
+failures — which would corrupt the very measurement being taken.
+
+**INSTRUMENT DEFECT FOUND WHILE READING THE GATE:** b5's `pass` is a ~40-clause
+conjunction, so its exit code means "one of forty things went wrong". At
+corpus scale that is not a verdict, and the 18 unrelated failures actively
+mask the mine signal. Triage therefore classifies on the JSON FIELDS, never
+the exit code. 5b's next row makes b5 emit `b5_failed_clauses` and derives the
+pass bool FROM that list, so the report cannot drift out of sync with the gate
+it describes — the doc-self-match lesson applied to a gate.
