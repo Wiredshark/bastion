@@ -14163,3 +14163,42 @@ rather than listed at equal weight, which is what makes a review usable.
 
 **NEW STANDING ROUTING RULE: a NULL result gets MORE adversarial review than a
 positive one.** Adopted.
+
+## RE-BASELINE (wave 5, b9cca12224) — IDENTICAL 16 SEEDS, ZERO CHURN (07/30)
+
+48 seeds delivered (2 create-fails), attested `COMMIT=b9cca122`, 1101s, $0.95.
+Slower per seed than prior waves, exactly as 5b's wall-time signal predicted —
+the expanding-ring search does real extra chunk-gen work.
+
+**PREMISE CHECK BEFORE READING THE NUMBER:** only VMs 0/1/2/5 delivered, so the
+population is seeds 49-84 + 109-120 — NOT the full 49-120 of the prior
+baseline. Comparing a raw 33.3% against the old 33.3% would have been sloppy
+(right number, wrong denominator). Baseline restricted to the identical 48
+seeds before comparing.
+
+**APPLES-TO-APPLES: 16/48 (33.3%) BEFORE, 16/48 (33.3%) AFTER. Delta +0.0 pp.
+The SAME 16 seeds, all 16 stable, zero seeds gained, zero lost.**
+
+**THIS REFINES THE FIXTURE-FREEZE RULE — the discriminator is WORLD WRITES, not
+"fixture change" in general.** The terraform commit (wrote blocks into the world
+at setup) re-rolled per-seed outcomes hard: 108 went 19/27 -> 2/27, 52 went
+15 -> 8, seeds crossed the pass/fail line in both directions. This commit
+changed what the fixture LOOKS AT — expanding-ring tree search plus a read-only
+ground-truth scan — and wrote nothing, producing perfect per-seed stability.
+So the question to ask of any fixture edit is **"does it WRITE to the world?"**,
+not how big the diff is. 5b predicted this locally (identical 17/48 pass
+pre/post) and it now holds at fan scale.
+
+**THE MINE RATE HAS NOW BEEN MEASURED SIX WAYS AND WON'T MOVE:** 33.3% (w1),
+29.2% (w2), 31.3% (w1+w2 combined, 144 seeds), 33.3% (w3), 33.3% (w5), and
+31.25% on 5b's independent local 48-seed corpus on Windows. Different seed
+ranges, different machines, different OSes, three different commits, and one
+fixture change. **It is the most thoroughly established fact in this codebase.**
+
+**THE CHOP LEAD SURVIVES AND IS NOW CLEANLY ISOLATED.** The "other" bucket is
+down to 3 seeds: 111 and 119 show ONLY `log_sum=0` + `chop_cleared=false`, and
+80 additionally retains the build_placed/needs_materials throughput residual.
+Every build-fixture artifact is gone; what remains is the real lead 5b confirmed
+separate both by retest and mechanically.
+
+Spend across all five waves today: **$3.59.**
