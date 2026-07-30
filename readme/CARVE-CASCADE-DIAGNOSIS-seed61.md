@@ -176,3 +176,38 @@ touching shared carve machinery, and only on more than one seed.
 **Standing caveat that survives any result:** n=1. Seed 61 is one seed in
 72. Nothing here justifies surgery on shared access/carve/dormancy code
 until the entry condition (fix mechanism 2, re-measure 61) has been run.
+
+---
+
+## Control-matching preconditions (learned the expensive way — read before running the pairs)
+
+The paired comparison is `61(16 timeouts, FAIL)` vs `148(16, pass)` and
+`146(21, FAIL)` vs `52(21, pass)` — matched on friction so the
+discriminator can be something categorical rather than quantitative.
+**Two ways that match can be void, both found before running rather than
+after, and both invisible in the numbers themselves.**
+
+**1. MATCHED ON THE WRONG AXIS.** Timeout count is a scalar over the
+WHOLE run, and `b5` places mine, chop, build, slope, hill and b15
+designations. If one member's timeouts landed in the mine volume and the
+other's on chop, they are two unrelated runs with a coincidentally equal
+number. Check the positions (`b5_mine_timeout_position_diag`, which
+classifies in-volume vs elsewhere) before treating any pair as a control.
+
+**2. MATCHED ACROSS TWO BUILDS.** Confirmed real: wave 8 covered seeds
+49-84 on `54c22680` (probe-FREE) and wave 9 covered 121-156 on
+`b55c0911` (probe-ACTIVE). So `61` and `52` came from one commit while
+`148` and `146` came from another — **every pair was stitched across two
+different systems.** Nothing about the numbers looks wrong; they are the
+same kind of number, which is exactly what makes this worse than the
+axis problem. Resolution: one fan covering 49-156 on a SINGLE tip, and
+take all four counts from it.
+
+**The rule both cases point at:** a control is only a control if the two
+members were measured *the same way, on the same system, over comparable
+work*. A pair matched on a number alone looks more rigorous than an
+unmatched one and is not — which is the whole hazard. **Delay a wave
+rather than run on stitched counts.**
+
+**Do not run the pairs until all four members' counts come from one
+wave on one commit.**
