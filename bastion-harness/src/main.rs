@@ -3245,6 +3245,12 @@ fn b5_scenario(args: &Args) -> ExitCode {
                         "cells_above_open": cells_above_open,
                         "cells_below_open": cells_below_open,
                         "is_column_frontier": cells_above_open == 0,
+                        // TASK #55: does this cell's designation carry a
+                        // recorded blocking cell (from a genuine
+                        // plan_access "no route" failure)? Real-seed
+                        // evidence for the feature, alongside the
+                        // synthetic fixture's negative-case coverage.
+                        "blocked_by": server.bastion_blocked_by(pos).map(|p| [p.x, p.y, p.z]),
                     }));
                 }
             }
@@ -3988,6 +3994,14 @@ fn b5_scenario(args: &Args) -> ExitCode {
     tick(&mut server, 2);
     server.bastion_place_designation(one(leaf_pos), DesignationKind::Chop);
     let mut ch_leaf_cleared = false;
+    // REVERTED to 40 per Fable's ruling, 2026-07-30: the 200-iteration
+    // diagnostic run confirmed this IS a budget problem (seed 52 passes
+    // at 200), but widening the window until a failure disappears is a
+    // tolerance -- the same shape as the >=26/27 pattern this whole day
+    // was spent undoing, just relocated to a different file. The real
+    // finding is investigated separately (why does one timeout consume
+    // ~40 ticks of budget, and does the same mechanism explain mine
+    // friction) rather than shipped as a wider number.
     for _ in 0..40 {
         tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL);
         if server.bastion_block_kind(leaf_pos) != Some(BlockKind::Leaves) {
@@ -3997,8 +4011,86 @@ fn b5_scenario(args: &Args) -> ExitCode {
     }
     let ch_leaf_no_drop =
         server.bastion_count_items_near(leaf_pos.map(|e| e as f32), 4.0, CHOP_DROP_ITEM) == 0;
+    // CHOP RELIABILITY DIAGNOSTIC (Fable-directed, 2026-07-30, task #56):
+    // seed 52's fan run failed ONLY ch_leaf_cleared -- every other clause
+    // green -- the cleanest single-defect repro in the corpus. Report-only,
+    // read-only, does not gate `pass`. Answers whether the job was ever
+    // claimed (arbitration never assigned this 1-cell designation within
+    // the 40*ARBITRATION_INTERVAL budget) or claimed-but-stuck (a colonist
+    // took it and never finished -- travel/execution, mechanism-2 shape).
+    let ch_leaf_diag = if ch_leaf_cleared {
+        None
+    } else {
+        let inspect = server.bastion_inspect_cell(leaf_pos);
+        let (claimant, progress, unreachable) = match inspect {
+            Some(common::comp::bastion::BastionInspectKind::Job(j)) => {
+                (j.claimant, Some(j.progress), j.unreachable)
+            },
+            _ => (None, None, false),
+        };
+        Some(serde_json::json!({
+            "claimant": claimant,
+            "progress": progress,
+            "unreachable": unreachable,
+            "timeouts_on_this_cell": server.bastion_timeout_count_for_pos(leaf_pos),
+        }))
+    };
     server.bastion_cancel_designation(one(leaf_pos));
     tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
+
+    // 7.8 (TASK #55, blocked-designation visibility, 2026-07-30): a single
+    // cell buried deep underground, deliberately isolated (far from the
+    // mine/chop/build fixtures above) so it can't be confused with their
+    // designations. CORRECTED CLAIM (was wrong on the first pass): this
+    // does NOT reliably exercise the carve-planner's `plan_access` failure
+    // -- reaching a buried cell is a DESCENT/flat approach, and the carve
+    // planner only fires for a STUCK ASCENT beyond climbing reach (see the
+    // gate at `job.pos.z - feet.z > reach`, bastion_jobs.rs). Verified via
+    // b55_diag: this cell instead goes `unreachable=true` through the
+    // routine churn-release path, which is DELIBERATELY not hooked (see
+    // that site's own comment -- it's transient congestion, not a
+    // permanent block, and notifying on it would be false-alarm spam).
+    // So what this fixture actually demonstrates: the churn path does NOT
+    // spuriously populate blocked_regions (the negative case). The
+    // positive case (plan_access genuinely failing) is verified instead
+    // against real corpus seeds known to exercise stuck-ascent carve
+    // requests, not synthesized here.
+    let buried_pos = Vec3::new(bpx + 40, bpy + 40, cz - 30);
+    server.bastion_place_designation(one(buried_pos), DesignationKind::Mine);
+    let b55_count_before = server.bastion_blocked_regions_count();
+    let mut b55_blocked_by: Option<(i32, i32, i32)> = None;
+    let mut b55_count_after: usize = b55_count_before;
+    // 300 iterations (was 60): this cell competes with every other
+    // designation in the scenario for the single-access-plan-per-tick
+    // budget (bastion_jobs.rs's `access_pending` gate), so it may sit
+    // queued for a while before it's the carve planner's turn. Diagnostic
+    // capture (claimant/unreachable) if the window still expires, to tell
+    // "never claimed" from "claimed, access-plan starved."
+    for _ in 0..300 {
+        tick(&mut server, 30);
+        if let Some(p) = server.bastion_blocked_by(buried_pos) {
+            b55_blocked_by = Some((p.x, p.y, p.z));
+            b55_count_after = server.bastion_blocked_regions_count();
+            break;
+        }
+    }
+    let b55_notified_once = b55_count_after == b55_count_before + 1;
+    let b55_names_blocker = b55_blocked_by.is_some();
+    let b55_diag = if b55_blocked_by.is_none() {
+        match server.bastion_inspect_cell(buried_pos) {
+            Some(common::comp::bastion::BastionInspectKind::Job(j)) => Some(serde_json::json!({
+                "claimant": j.claimant,
+                "unreachable": j.unreachable,
+                "progress": j.progress,
+            })),
+            _ => None,
+        }
+    } else {
+        None
+    };
+    server.bastion_cancel_designation(one(buried_pos));
+    tick(&mut server, server::bastion_jobs::ARBITRATION_INTERVAL + 2);
+    let b55_clears_on_cancel = server.bastion_blocked_by(buried_pos).is_none();
 
     // 7.7 (TOOL-0): the tool factor end-to-end — equip a stone pick into a
     // colonist's mainhand (Quality::Low → 1.5×), then a steel pick
@@ -4351,6 +4443,15 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_ch_cancel_clean": ch_cancel_clean,
         "b5_ch_leaf_cleared": ch_leaf_cleared,
         "b5_ch_leaf_no_drop": ch_leaf_no_drop,
+        "b5_ch_leaf_diag": ch_leaf_diag,
+        // TASK #55 (blocked-designation visibility): report-only for now,
+        // does not gate `pass` -- new feature, want to see it fire
+        // reliably across a corpus before promoting to a gated clause.
+        "b5_55_notified_once": b55_notified_once,
+        "b5_55_names_blocker": b55_names_blocker,
+        "b5_55_blocked_by": b55_blocked_by,
+        "b5_55_clears_on_cancel": b55_clears_on_cancel,
+        "b5_55_diag": b55_diag,
         "b5_tool_stone": tl_stone,
         "b5_tool_steel": tl_steel,
         "b5_tool_ok": tl_ok,

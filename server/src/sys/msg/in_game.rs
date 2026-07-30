@@ -691,6 +691,7 @@ fn resolve_cell_inspect(
             needs_materials: job.needs_materials,
             is_access: job.is_access,
             stuck_strikes: job.stuck_strikes,
+            blocked_by: board.blocked_by(job.pos),
         }));
     }
 

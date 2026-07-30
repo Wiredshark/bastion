@@ -589,6 +589,16 @@ pub struct BastionJobInspect {
     /// True for a self-carved stair/ladder access job.
     pub is_access: bool,
     pub stuck_strikes: u8,
+    /// bastion (task #55, 2026-07-30): `Some(cell)` when this job's pos
+    /// falls inside a designation the auto-access planner gave up on --
+    /// names the specific cell that blocked the WHOLE designation, so
+    /// inspecting ANY job in a blocked volume answers "blocked by X at
+    /// (x,y,z)" rather than only the one cell whose own carve attempt
+    /// failed knowing it's unreachable. `None` if this job's designation
+    /// isn't blocked (including if `unreachable` is true for some other
+    /// reason, e.g. a stuck-strike release rather than a planner refusal).
+    #[serde(default)]
+    pub blocked_by: Option<vek::Vec3<i32>>,
 }
 
 /// bastion (UI-5): a stockpile's contents — the 51.64 legibility fix (a

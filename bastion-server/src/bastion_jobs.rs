@@ -1322,6 +1322,29 @@ fn job_wanted(kind: DesignationKind, block: &Block) -> bool {
     }
 }
 
+/// bastion (task #57, phantom-job retirement, 2026-07-30): the SAME
+/// validity predicate the mid-travel moot-check uses, extracted so a
+/// periodic board-wide sweep (which has no per-colonist `active` context)
+/// can reuse it exactly rather than re-deriving the per-kind special
+/// cases. Deliberately NOT `job_wanted` directly for every kind: Farm is
+/// hard-coded `true` here (its validity is state-driven and the
+/// completion arm moot-releases foreign states itself -- routing it
+/// through `job_wanted` mooted every Farm job into a create/claim/drop
+/// churn loop, the run-3 finding preserved in `job_wanted`'s own doc).
+/// Haul/DepositRun/RestAt/EatFrom/Despond are also `true` unconditionally
+/// -- their validity is owned by their own arms, not the block state.
+fn job_still_wanted(kind: &common::bastion::JobKind, block: &Block) -> bool {
+    match kind {
+        common::bastion::JobKind::Designated(DesignationKind::Farm) => true,
+        common::bastion::JobKind::Designated(d) => job_wanted(*d, block),
+        common::bastion::JobKind::Haul { .. }
+        | common::bastion::JobKind::DepositRun { .. }
+        | common::bastion::JobKind::RestAt { .. }
+        | common::bastion::JobKind::EatFrom { .. }
+        | common::bastion::JobKind::Despond { .. } => true,
+    }
+}
+
 /// bastion (COORDINATION-stigmergic-v1, FR13-REV): the field's tuning. CELL =
 /// coarse-grid size in blocks. A worked cell gains DEPOSIT per worker per
 /// cycle and the whole field decays by DECAY per cycle → a single steady
@@ -3500,6 +3523,14 @@ fn clear_verified_emergency_exit_movement(
     }
 }
 
+/// bastion (task #55, 2026-07-30): one designation Region the auto-access
+/// planner gave up on. See `JobBoard::blocked_regions`.
+#[derive(Clone, Debug)]
+pub struct BlockedRegionInfo {
+    pub region: Region,
+    pub blocking_cell: Vec3<i32>,
+}
+
 /// The job board resource.
 #[derive(Default)]
 pub struct JobBoard {
@@ -3518,6 +3549,17 @@ pub struct JobBoard {
     /// Maintained by place (append) / cancel (exact AABB subtraction —
     /// the unit-tested `Region::subtract`).
     pub designated: Vec<Region>,
+    /// bastion (task #55, blocked-designation visibility, 2026-07-30): a
+    /// designation Region the auto-access planner has given up on (its
+    /// `plan_access` call returned `None`) -- names the specific cell that
+    /// blocked it, so inspecting ANY job whose pos falls inside the Region
+    /// answers "blocked by X at (x,y,z)" instead of only the one cell whose
+    /// own carve attempt failed knowing it's unreachable. A Vec, not a map,
+    /// keyed by equality on `region` (Region has no Hash impl; colonies are
+    /// small, a linear scan is fine) -- checked before insert so the SAME
+    /// region isn't re-recorded (and re-notified) every tick it stays
+    /// blocked. Cleared when the region is cancelled (see the cancel path).
+    pub blocked_regions: Vec<BlockedRegionInfo>,
     /// bastion (B5.8): ACCESS ANCHORS — base cells of the colony's vertical
     /// links (auto-built ladder pillars + player-built ladder lines). Travel
     /// stages an over-reach ascent through the nearest anchor (walk there
@@ -4535,6 +4577,13 @@ impl JobBoard {
                 }
             })
             .collect();
+        // TASK #55: a cancelled/re-designated region's blocked-state record
+        // must not survive it -- the exact `Region` value this was keyed on
+        // no longer exists in `designated` after the subtraction above, and
+        // leaving the stale entry would report "blocked" on a designation
+        // the player already erased.
+        self.blocked_regions
+            .retain(|b| !b.region.intersects(&region));
         let mut released = Vec::new();
         let mut dead_rids = Vec::new();
         self.jobs.retain(|_, job| {
@@ -4825,6 +4874,17 @@ impl JobBoard {
         }
         self.total_claims += 1;
         id
+    }
+
+    /// bastion (task #55, 2026-07-30): is this cell inside a designation
+    /// the auto-access planner gave up on? Returns the specific blocking
+    /// cell (not `cell` itself, unless `cell` IS the blocking cell) so an
+    /// inspector query on any job in the volume can answer "blocked by X".
+    pub fn blocked_by(&self, cell: Vec3<i32>) -> Option<Vec3<i32>> {
+        self.blocked_regions
+            .iter()
+            .find(|b| b.region.contains_point(cell))
+            .map(|b| b.blocking_cell)
     }
 
     /// bastion (B6): is this cell inside a stockpile footprint? XY + a
@@ -7648,6 +7708,52 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         let queue_snapshot: Vec<Vec3<f32>> =
             (&colonists, &positions).join().map(|(_, p)| p.0).collect();
 
+        // ── TASK #57 (phantom jobs, 2026-07-30): retire designated jobs
+        // whose target cell went empty (or otherwise stopped matching
+        // `job_wanted`) by ANY means, regardless of claim state. ──────────
+        // The only existing re-validation (`job_wanted` at the mid-travel
+        // moot-check, further below) fires exclusively inside a colonist's
+        // `ActiveJobState::Traveling` handling -- it never runs for a job
+        // nobody currently owns. A cave-in severing a NEIGHBORING cell that
+        // also carried its own Mine job leaves that job's `remove_job` call
+        // uncalled (only the actively-completed cell's job is removed; see
+        // the cave-in block above), so the sibling job sits UNCLAIMED on
+        // the board forever -- until arbitration next offers it, at which
+        // point it enters Traveling and the moot-check finally catches it
+        // one claim cycle later, or (if arbitration keeps skipping it for
+        // any reason) never. Fable's fan: 41 such orphaned jobs across 6
+        // seeds, up to 17 on one seed (mine_blocks_mined==27, every cell
+        // physically empty, jobs still on the board) -- colonists
+        // repeatedly dispatched to mine nothing, wasting travel/timeout
+        // cycles that were misread all day as unexplained "friction."
+        // Cheap and general: one terrain read per still-open designated
+        // job per firing, same cadence discipline as the other passes
+        // here.
+        if tick.0 % ARBITRATION_INTERVAL as u64 == 12 {
+            let stale: Vec<JobId> = board
+                .jobs
+                .iter()
+                .filter_map(|(id, j)| {
+                    let wanted = terrain
+                        .get(j.pos)
+                        .ok()
+                        .is_some_and(|b| job_still_wanted(&j.kind, b));
+                    (!wanted).then_some(*id)
+                })
+                .collect();
+            for id in stale {
+                if let Some(job) = board.jobs.get(&id) {
+                    info!(
+                        job = id,
+                        pos = ?job.pos,
+                        kind = ?job.kind,
+                        "bastion: phantom job retired (task #57) — target cell no longer matches the designation"
+                    );
+                }
+                board.remove_job(id);
+            }
+        }
+
         // ── ZONE-0: mirror activity zones for the agent magnet ───────────
         // (Arbitration cadence; zones are few — a rewrite beats dirty
         // tracking at this size. The mirror is read-only geometry; the
@@ -8991,32 +9097,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // B5.8: moot-check DURING travel too — a carve stair (or
                     // any other edit) can consume the claimed block before
                     // the claimant arrives; without this the zombie job
-                    // cycles claim→stuck→unreachable forever. Same predicate
-                    // the completion re-validation uses.
-                    let still_wanted = terrain.get(job.pos).ok().is_some_and(|b| match job.kind {
-                        // FARM (row 46): job_wanted is the PAINT
-                        // predicate (deliberately false — the trigger
-                        // owns creation); a farm job's validity is
-                        // STATE-DRIVEN and the completion arm
-                        // moot-releases foreign states itself — so
-                        // mid-travel it stays wanted (run-3 find:
-                        // routing Farm through job_wanted mooted
-                        // every job mid-travel into a create/claim/
-                        // drop churn loop, 6729 creations, zero
-                        // completions).
-                        common::bastion::JobKind::Designated(DesignationKind::Farm) => true,
-                        common::bastion::JobKind::Designated(d) => job_wanted(d, b),
-                        // Haul validity = the ITEM still exists — owned
-                        // by the Haul arm, not the block moot-check.
-                        // DepositRun validity = the ZONE still exists —
-                        // owned by its own Arrived arm. RestAt: the
-                        // BED slot — likewise its own arm.
-                        common::bastion::JobKind::Haul { .. }
-                        | common::bastion::JobKind::DepositRun { .. }
-                        | common::bastion::JobKind::RestAt { .. }
-                        | common::bastion::JobKind::EatFrom { .. }
-                        | common::bastion::JobKind::Despond { .. } => true,
-                    });
+                    // cycles claim→stuck→unreachable forever. Shared with
+                    // the task #57 board-wide sweep (`job_still_wanted`) so
+                    // the two never drift apart on the per-kind special
+                    // cases (Farm, Haul, etc.).
+                    let still_wanted = terrain
+                        .get(job.pos)
+                        .ok()
+                        .is_some_and(|b| job_still_wanted(&job.kind, b));
                     if !still_wanted {
                         info!(
                             job = active.job,
@@ -10850,6 +10938,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         colonist = ?feet,
                                         "bastion: job unreachable — claim released"
                                     );
+                                    // TASK #55: deliberately NOT hooked
+                                    // here. This is the routine churn path
+                                    // (the "60-tick amnesty"/"humanitarian
+                                    // bubble" this file's own comments
+                                    // describe) -- transient congestion
+                                    // that RETRIES and often resolves
+                                    // itself, not a permanent block. Firing
+                                    // "designation is blocked" on every
+                                    // occurrence would be a false-alarm
+                                    // spam source; only the carve-planner's
+                                    // genuine "no route exists" failure
+                                    // (plan_access returning None, below)
+                                    // is a strong enough signal to surface.
                                 }
                                 to_release.push(entity);
                             }
@@ -12217,6 +12318,42 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         job = parent,
                         "bastion: auto-access refused (no in-claim route) — job unreachable"
                     );
+                    // TASK #55 (blocked-designation visibility, 2026-07-30):
+                    // name the blocked designation and the specific cell
+                    // that blocked it, and notify once. Edge-triggered on
+                    // first insert into `blocked_regions` -- a per-tick
+                    // message while the region stays blocked would be spam
+                    // that gets muted, which is the same as not existing.
+                    // `to` is the cell the access plan tried to reach;
+                    // whichever designated Region contains it is the
+                    // blocked volume (Fable's ruling: never a silent
+                    // no-op, delivered over the already-proven chat
+                    // pipeline rather than unverifiable new HUD code).
+                    if let Some(region) =
+                        board.designated.iter().find(|r| r.contains_point(to)).copied()
+                    {
+                        let already_recorded =
+                            board.blocked_regions.iter().any(|b| b.region == region);
+                        if !already_recorded {
+                            board.blocked_regions.push(BlockedRegionInfo {
+                                region,
+                                blocking_cell: to,
+                            });
+                            chat_emitter.emit(common::event::ChatEvent {
+                                msg: comp::UnresolvedChatMsg::meta(common::comp::Content::Plain(
+                                    format!(
+                                        "A designation is blocked — obstruction at ({}, {}, {}) can't be reached.",
+                                        to.x, to.y, to.z
+                                    ),
+                                )),
+                                from_client: false,
+                            });
+                            info!(
+                                blocking_cell = ?to,
+                                "bastion: designation marked BLOCKED (task #55) — notified"
+                            );
+                        }
+                    }
                 },
             }
         }

@@ -2212,6 +2212,7 @@ impl Server {
                 needs_materials: job.needs_materials,
                 is_access: job.is_access,
                 stuck_strikes: job.stuck_strikes,
+                blocked_by: board.blocked_by(job.pos),
             }));
         }
 
@@ -3327,6 +3328,31 @@ impl Server {
             .get(&job_pos)
             .copied()
             .unwrap_or(0)
+    }
+
+    /// bastion (task #55, harness hook, 2026-07-30): how many designation
+    /// Regions are currently recorded as blocked. The acceptance test's
+    /// edge-trigger check: this must reach exactly 1 (not re-increment
+    /// every tick) once a designation is genuinely blocked, and must go
+    /// back to 0 once that designation is cancelled.
+    pub fn bastion_blocked_regions_count(&self) -> usize {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .blocked_regions
+            .len()
+    }
+
+    /// bastion (task #55, harness hook, 2026-07-30): the blocking cell for
+    /// whichever blocked Region (if any) contains `pos` -- the same lookup
+    /// the inspector uses, exposed directly so the harness can assert on a
+    /// designation's blocking cell without going through the full
+    /// `BastionInspectKind` payload.
+    pub fn bastion_blocked_by(&self, pos: vek::Vec3<i32>) -> Option<vek::Vec3<i32>> {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .blocked_by(pos)
     }
 
     /// bastion (mechanism-2 friction instrument, harness hook, 2026-07-30):

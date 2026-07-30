@@ -222,6 +222,15 @@ impl<G> GenericChatMsg<G> {
         Self { chat_type, content }
     }
 
+    /// bastion (task #55, 2026-07-30): a server-originated system message
+    /// with no speaker (e.g. a blocked-designation notice) — delivered over
+    /// the same already-proven chat pipeline as every other message here,
+    /// rather than unverifiable new HUD/render code.
+    pub fn meta(content: Content) -> Self {
+        let chat_type = ChatType::Meta;
+        Self { chat_type, content }
+    }
+
     pub fn npc_say(uid: Uid, content: Content) -> Self {
         let chat_type = ChatType::NpcSay(uid);
         Self { chat_type, content }
