@@ -192,6 +192,9 @@ pub struct SessionState {
     r1e_interiors: crate::r1e_interiors::InteriorAdapterStateV1,
     /// Renderer-owned projection of authoritative entity-volume membership.
     r1e_islands: crate::r1e_islands::IslandAdapterStateV1,
+    /// Diagnostic-only surface-cleared horizon camera authority. It remains
+    /// inert unless the exact multicamera declaration is present.
+    post_r2_horizon_camera: crate::post_r2_horizon_multicamera::CameraPathStateV1,
 }
 
 /// bastion: state of an overseer grab-drag.
@@ -367,6 +370,8 @@ impl SessionState {
             r1e_cutaway: crate::r1e_cutaway::CutawayFixtureStateV1::default(),
             r1e_interiors: crate::r1e_interiors::InteriorAdapterStateV1::default(),
             r1e_islands: crate::r1e_islands::IslandAdapterStateV1::default(),
+            post_r2_horizon_camera: crate::post_r2_horizon_multicamera::CameraPathStateV1::default(
+            ),
         }
     }
 
@@ -707,6 +712,14 @@ impl SessionState {
 
     fn bastion_enter_overseer(&mut self, global_state: &mut GlobalState) {
         let pos = self.client.borrow().position();
+        if crate::post_r2_horizon_multicamera::selected_camera_path_v1()
+            .is_ok_and(|path| path.is_some())
+        {
+            let spawn = pos.unwrap_or_else(|| self.scene.camera().get_focus_pos());
+            if let Err(terminal) = self.post_r2_horizon_camera.initialize(spawn) {
+                tracing::error!(target: "bastion_post_r2", %terminal);
+            }
+        }
         let camera = self.scene.camera_mut();
         camera.set_mode(CameraMode::Overseer);
         // Snap yaw to the nearest 90° step and set the default oblique pitch.
@@ -2366,6 +2379,19 @@ impl PlayState for SessionState {
             .map_or(0, |latch| latch.completed_tick);
         let horizon_fixture_selected =
             crate::post_r2_visible_horizon::visible_horizon_fixture_selected_v1().unwrap_or(false);
+        let horizon_camera_path = crate::post_r2_horizon_multicamera::selected_camera_path_v1()
+            .ok()
+            .flatten();
+        let horizon_cutaway_solid = self.scene.bastion_occlusion().active_mode()
+            == crate::bastion::occlusion::mode::SOLID
+            && self.scene.bastion_slice_z().is_none();
+        let horizon_path_evidence = crate::post_r2_horizon_multicamera::camera_path_evidence_v1(
+            self.scene.camera(),
+            &self.post_r2_horizon_camera,
+            horizon_camera_path,
+            global_state.settings.graphics.fov,
+            horizon_cutaway_solid,
+        );
         let horizon_camera = crate::post_r2_visible_horizon::camera_evidence_v1(
             self.scene.camera(),
             horizon_fixture_selected,
@@ -2413,7 +2439,11 @@ impl PlayState for SessionState {
                 .unwrap_or(u64::MAX),
             terrain_mesh_queue_pruned_total: self.scene.terrain().mesh_queue_pruned_total(),
             visible_horizon_fixture_selected: horizon_fixture_selected,
-            visible_horizon_camera_valid: horizon_camera.camera_valid,
+            visible_horizon_camera_valid: if horizon_path_evidence.selected {
+                horizon_path_evidence.camera_valid
+            } else {
+                horizon_camera.camera_valid
+            },
             visible_horizon_camera_mode: u64::from(horizon_camera.mode_tag),
             visible_horizon_projection: u64::from(horizon_camera.projection_tag),
             visible_horizon_camera_focus_mm: horizon_camera.focus_mm,
@@ -2433,7 +2463,24 @@ impl PlayState for SessionState {
             visible_horizon_camera_aspect_millionths: horizon_camera.aspect_millionths,
             visible_horizon_frustum_ground_width_mm: horizon_camera.frustum_ground_width_mm,
             visible_horizon_frustum_ground_depth_mm: horizon_camera.frustum_ground_depth_mm,
-            visible_horizon_camera_token: horizon_camera.camera_token,
+            visible_horizon_camera_token: if horizon_path_evidence.selected {
+                horizon_path_evidence.camera_token
+            } else {
+                horizon_camera.camera_token
+            },
+            horizon_camera_path_id: u64::from(horizon_path_evidence.path as u8),
+            horizon_camera_path_ordinal: horizon_path_evidence.path_ordinal,
+            horizon_camera_path_token: horizon_path_evidence.path_token,
+            horizon_surface_authority_available: horizon_path_evidence.surface_authority_available,
+            horizon_cutaway_solid: horizon_path_evidence.cutaway_solid,
+            horizon_underworld_rejected: horizon_path_evidence.underworld_rejected,
+            horizon_sky_ground_expected: horizon_path_evidence.sky_ground_expected,
+            horizon_focus_surface_mm: horizon_path_evidence.focus_surface_mm,
+            horizon_camera_surface_mm: horizon_path_evidence.camera_surface_mm,
+            horizon_minimum_clearance_mm: horizon_path_evidence.minimum_clearance_mm,
+            horizon_terrain_revision: r0d_simulation_tick,
+            horizon_meshed_high_detail_chunks: u64::try_from(self.scene.terrain().chunk_count())
+                .unwrap_or(u64::MAX),
             visible_horizon_near_0_8_chunks: horizon_terrain.near_0_8,
             visible_horizon_reference_9_16_chunks: horizon_terrain.reference_9_16,
             visible_horizon_far_17_24_chunks: horizon_terrain.far_17_24,
@@ -2451,6 +2498,13 @@ impl PlayState for SessionState {
                 .unwrap_or(u64::MAX),
         });
         if let Some(presence) = client_presence {
+            if crate::post_r2_horizon_multicamera::selected_camera_path_v1()
+                .is_ok_and(|path| path.is_some())
+            {
+                let occlusion = self.scene.bastion_occlusion_mut();
+                occlusion.view_mode = crate::bastion::occlusion::ViewMode::Solid;
+                occlusion.slice_z = None;
+            }
             let camera = self.scene.camera_mut();
 
             // Clamp camera's vertical angle if the toggle is enabled
@@ -2492,12 +2546,39 @@ impl PlayState for SessionState {
                 camera.set_fixate(1.0);
             }
 
-            if crate::post_r2_visible_horizon::visible_horizon_fixture_selected_v1() == Ok(true) {
-                crate::post_r2_visible_horizon::apply_post_maintenance_camera_v1(
-                    camera,
-                    true,
-                    global_state.settings.graphics.fov,
-                );
+            match crate::post_r2_horizon_multicamera::selected_camera_path_v1() {
+                Ok(Some(path)) => {
+                    let server_tick = crate::render::bastion_r0d::certification_server_latch_v1()
+                        .map_or(r0d_simulation_tick, |latch| latch.completed_tick);
+                    let client = self.client.borrow();
+                    let terrain = client.state().terrain();
+                    if let Err(terminal) =
+                        crate::post_r2_horizon_multicamera::apply_post_maintenance_path_v1(
+                            camera,
+                            &terrain,
+                            &mut self.post_r2_horizon_camera,
+                            path,
+                            server_tick,
+                            global_state.settings.graphics.fov,
+                        )
+                    {
+                        tracing::error!(target: "bastion_post_r2", %terminal);
+                    }
+                },
+                Ok(None)
+                    if crate::post_r2_visible_horizon::visible_horizon_fixture_selected_v1()
+                        == Ok(true) =>
+                {
+                    crate::post_r2_visible_horizon::apply_post_maintenance_camera_v1(
+                        camera,
+                        true,
+                        global_state.settings.graphics.fov,
+                    );
+                },
+                Ok(None) => {},
+                Err(terminal) => {
+                    tracing::error!(target: "bastion_post_r2", %terminal);
+                },
             }
 
             // Compute camera data
