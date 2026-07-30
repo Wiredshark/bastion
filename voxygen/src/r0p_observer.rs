@@ -198,6 +198,13 @@ pub struct SceneCountersV1 {
     pub terrain_chunks: u64,
     pub visible_terrain_chunks: u64,
     pub shadow_terrain_chunks: u64,
+    pub terrain_requested_view_distance_chunks: u64,
+    pub terrain_server_authorized_view_distance_chunks: u64,
+    pub terrain_server_authority_available: bool,
+    pub terrain_chunks_received_total: u64,
+    pub terrain_resident_chunks: u64,
+    pub terrain_pending_chunk_requests: u64,
+    pub terrain_server_completed_tick: u64,
     pub loaded_distance_blocks: u64,
     pub terrain_view_distance_chunks: u64,
     pub terrain_mesh_queue: u64,
@@ -263,8 +270,14 @@ fn observer() -> Option<&'static Mutex<ObserverStateV1>> {
                 json_escape(&env_text("BASTION_R0P_ASSET_TREE")),
                 json_escape(&env_text("BASTION_R0P_GRAPHICS_POLICY")),
             );
-            if atomic_write(&output.join("observer-session.json"), metadata.as_bytes()).is_err() {
-                tracing::error!(target: "bastion_r0p", "failed to initialize observer files");
+            if let Err(error) =
+                atomic_write(&output.join("observer-session.json"), metadata.as_bytes())
+            {
+                tracing::error!(
+                    target: "bastion_r0p",
+                    ?error,
+                    "failed to initialize observer files"
+                );
                 return None;
             }
             let process_started = Instant::now();
@@ -483,6 +496,7 @@ pub fn record_cpu_frame(phases: CpuFramePhasesV1) {
         let busy_ns = phases.total_wall_ns.saturating_sub(phases.pacing_ns);
         let work = state.work;
         let scene = state.scene;
+        let terrain_streaming = terrain_streaming_json_fields_v1(scene);
         let interval = timing
             .presented_interval_ns
             .map_or_else(|| "null".to_owned(), |value| value.to_string());
@@ -507,7 +521,9 @@ pub fn record_cpu_frame(phases: CpuFramePhasesV1) {
                 "\"buffer_upload_bytes\":{},\"texture_upload_ops\":{},",
                 "\"texture_upload_bytes\":{},\"submissions\":{},",
                 "\"terrain_chunks\":{},\"visible_terrain_chunks\":{},",
-                "\"shadow_terrain_chunks\":{},\"loaded_distance_blocks\":{},",
+                "\"shadow_terrain_chunks\":{},",
+                "{},",
+                "\"loaded_distance_blocks\":{},",
                 "\"terrain_view_distance_chunks\":{},\"terrain_mesh_queue\":{},",
                 "\"terrain_mesh_queue_pruned_total\":{},",
                 "\"figures\":{},\"visible_figures\":{},",
@@ -542,6 +558,7 @@ pub fn record_cpu_frame(phases: CpuFramePhasesV1) {
             scene.terrain_chunks,
             scene.visible_terrain_chunks,
             scene.shadow_terrain_chunks,
+            terrain_streaming,
             scene.loaded_distance_blocks,
             scene.terrain_view_distance_chunks,
             scene.terrain_mesh_queue,
@@ -564,6 +581,25 @@ pub fn record_cpu_frame(phases: CpuFramePhasesV1) {
             state.failed = true;
         }
     });
+}
+
+fn terrain_streaming_json_fields_v1(scene: SceneCountersV1) -> String {
+    format!(
+        concat!(
+            "\"terrain_requested_view_distance_chunks\":{},",
+            "\"terrain_server_authorized_view_distance_chunks\":{},",
+            "\"terrain_server_authority_available\":{},",
+            "\"terrain_chunks_received_total\":{},\"terrain_resident_chunks\":{},",
+            "\"terrain_pending_chunk_requests\":{},\"terrain_server_completed_tick\":{}"
+        ),
+        scene.terrain_requested_view_distance_chunks,
+        scene.terrain_server_authorized_view_distance_chunks,
+        scene.terrain_server_authority_available,
+        scene.terrain_chunks_received_total,
+        scene.terrain_resident_chunks,
+        scene.terrain_pending_chunk_requests,
+        scene.terrain_server_completed_tick,
+    )
 }
 
 fn hex_digest(digest: &[u8; 32]) -> String {
@@ -873,5 +909,29 @@ mod tests {
         let end = start + Duration::from_micros(123);
         assert_eq!(checked_duration_ns(start, end), (123_000, false));
         assert_eq!(checked_duration_ns(end, start), (0, true));
+    }
+
+    #[test]
+    fn streaming_stage_telemetry_serializes_every_authority_boundary() {
+        let fields = terrain_streaming_json_fields_v1(SceneCountersV1 {
+            terrain_requested_view_distance_chunks: 24,
+            terrain_server_authorized_view_distance_chunks: 24,
+            terrain_server_authority_available: true,
+            terrain_chunks_received_total: 1_797,
+            terrain_resident_chunks: 1_790,
+            terrain_pending_chunk_requests: 7,
+            terrain_server_completed_tick: 9_000,
+            ..SceneCountersV1::default()
+        });
+        assert_eq!(
+            fields,
+            concat!(
+                "\"terrain_requested_view_distance_chunks\":24,",
+                "\"terrain_server_authorized_view_distance_chunks\":24,",
+                "\"terrain_server_authority_available\":true,",
+                "\"terrain_chunks_received_total\":1797,\"terrain_resident_chunks\":1790,",
+                "\"terrain_pending_chunk_requests\":7,\"terrain_server_completed_tick\":9000"
+            )
+        );
     }
 }

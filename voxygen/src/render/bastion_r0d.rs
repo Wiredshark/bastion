@@ -457,12 +457,45 @@ pub fn absolute_time_capture_selected() -> bool {
     std::env::var_os("BASTION_R0D_CAPTURE_AT").is_some()
 }
 
+pub const POST_R2_STREAMING_MEASUREMENT_V1: &str = "continuous-server-v1";
+
+pub fn parse_continuous_streaming_measurement_v1(
+    declaration: Option<&str>,
+) -> Result<bool, &'static str> {
+    match declaration {
+        None => Ok(false),
+        Some(POST_R2_STREAMING_MEASUREMENT_V1) => Ok(true),
+        Some(_) => Err("POST_R2_STREAMING_MEASUREMENT_INVALID_DECLARATION"),
+    }
+}
+
+pub fn continuous_streaming_measurement_selected_v1() -> Result<bool, &'static str> {
+    match std::env::var("BASTION_POST_R2_STREAMING_MEASUREMENT") {
+        Err(std::env::VarError::NotPresent) => parse_continuous_streaming_measurement_v1(None),
+        Ok(value) => parse_continuous_streaming_measurement_v1(Some(&value)),
+        Err(std::env::VarError::NotUnicode(_)) => {
+            parse_continuous_streaming_measurement_v1(Some(""))
+        },
+    }
+}
+
 pub const fn capture_waits_for_pause_v1(flat_arena: bool, absolute_time: bool) -> bool {
     flat_arena && !absolute_time
 }
 
 pub const fn certification_freeze_tick_v1(flat_arena: bool, absolute_time: bool) -> Option<u64> {
-    if flat_arena && (absolute_time || capture_waits_for_pause_v1(flat_arena, absolute_time)) {
+    certification_freeze_tick_for_runtime_v1(flat_arena, absolute_time, false)
+}
+
+pub const fn certification_freeze_tick_for_runtime_v1(
+    flat_arena: bool,
+    absolute_time: bool,
+    continuous_streaming_measurement: bool,
+) -> Option<u64> {
+    if continuous_streaming_measurement {
+        None
+    } else if flat_arena && (absolute_time || capture_waits_for_pause_v1(flat_arena, absolute_time))
+    {
         Some(300)
     } else {
         None
@@ -494,6 +527,14 @@ impl CertificationServerLatchV1 {
         &mut self,
         completed_tick: u64,
     ) -> Result<(), CertificationServerLatchErrorV1> {
+        self.record_completed_tick_for_runtime(completed_tick, true)
+    }
+
+    pub fn record_completed_tick_for_runtime(
+        &mut self,
+        completed_tick: u64,
+        freeze_at_certification_tick: bool,
+    ) -> Result<(), CertificationServerLatchErrorV1> {
         if completed_tick < self.completed_tick {
             return Err(CertificationServerLatchErrorV1::TickRegression);
         }
@@ -501,7 +542,8 @@ impl CertificationServerLatchV1 {
             return Err(CertificationServerLatchErrorV1::AdvancedAfterFreeze);
         }
         self.completed_tick = completed_tick;
-        self.frozen = completed_tick == CERTIFICATION_SERVER_TICK_V1;
+        self.frozen =
+            freeze_at_certification_tick && completed_tick == CERTIFICATION_SERVER_TICK_V1;
         Ok(())
     }
 }
@@ -528,10 +570,17 @@ pub fn reset_certification_server_latch_v1() {
 pub fn record_certification_server_tick_v1(
     completed_tick: u64,
 ) -> Result<(), CertificationServerLatchErrorV1> {
+    record_certification_server_tick_for_runtime_v1(completed_tick, true)
+}
+
+pub fn record_certification_server_tick_for_runtime_v1(
+    completed_tick: u64,
+    freeze_at_certification_tick: bool,
+) -> Result<(), CertificationServerLatchErrorV1> {
     CERTIFICATION_SERVER_LATCH
         .lock()
         .map_err(|_| CertificationServerLatchErrorV1::AdvancedAfterFreeze)?
-        .record_completed_tick(completed_tick)
+        .record_completed_tick_for_runtime(completed_tick, freeze_at_certification_tick)
 }
 
 pub fn certification_server_latch_v1() -> Option<CertificationServerLatchV1> {
@@ -2304,6 +2353,46 @@ mod tests {
             certification_freeze_tick_v1(true, true),
             Some(CERTIFICATION_SERVER_TICK_V1)
         );
+    }
+
+    #[test]
+    fn continuous_streaming_measurement_is_the_only_flat_arena_no_freeze_mode() {
+        assert_eq!(parse_continuous_streaming_measurement_v1(None), Ok(false));
+        assert_eq!(
+            parse_continuous_streaming_measurement_v1(Some(POST_R2_STREAMING_MEASUREMENT_V1)),
+            Ok(true)
+        );
+        assert_eq!(
+            parse_continuous_streaming_measurement_v1(Some("1")),
+            Err("POST_R2_STREAMING_MEASUREMENT_INVALID_DECLARATION")
+        );
+        assert_eq!(
+            certification_freeze_tick_for_runtime_v1(true, false, false),
+            Some(CERTIFICATION_SERVER_TICK_V1)
+        );
+        assert_eq!(
+            certification_freeze_tick_for_runtime_v1(true, true, false),
+            Some(CERTIFICATION_SERVER_TICK_V1)
+        );
+        assert_eq!(
+            certification_freeze_tick_for_runtime_v1(true, false, true),
+            None
+        );
+        assert_eq!(
+            certification_freeze_tick_for_runtime_v1(false, false, true),
+            None
+        );
+        let mut continuous = CertificationServerLatchV1::default();
+        continuous
+            .record_completed_tick_for_runtime(CERTIFICATION_SERVER_TICK_V1, false)
+            .unwrap();
+        continuous
+            .record_completed_tick_for_runtime(CERTIFICATION_SERVER_TICK_V1 + 1, false)
+            .unwrap();
+        assert_eq!(continuous, CertificationServerLatchV1 {
+            completed_tick: CERTIFICATION_SERVER_TICK_V1 + 1,
+            frozen: false,
+        });
     }
 
     #[test]

@@ -108,6 +108,14 @@ const PING_ROLLING_AVERAGE_SECS: usize = 10;
 const PREDICTION_BUFFER_CAPACITY_TICKS: usize = 128;
 const PREDICTION_BUFFER_BUDGET_BYTES: usize = 64 * 1024;
 
+// post-r2 (lw port): the streaming-horizon diagnostic's distance shape.
+fn loaded_distance_from_nearest_missing_squared(distance_squared: f32) -> f32 {
+    distance_squared.sqrt()
+        - ((TerrainChunkSize::RECT_SIZE.x as f32 / 2.0).powi(2)
+            + (TerrainChunkSize::RECT_SIZE.y as f32 / 2.0).powi(2))
+        .sqrt()
+}
+
 /// Client frontend events.
 ///
 /// These events are returned to the frontend that ticks the client.
@@ -500,12 +508,18 @@ pub struct Client {
 
     /// Terrrain view distance
     server_view_distance_limit: Option<u32>,
+    requested_view_distance: Option<u32>,
     view_distance: Option<u32>,
+    /// Last terrain view distance whose in-game presence creation was
+    /// acknowledged by the server. `None` means the current request has not
+    /// crossed an authoritative server boundary yet.
+    server_authorized_view_distance: Option<u32>,
     lod_distance: f32,
     // TODO: move into voxygen
     loaded_distance: f32,
 
     pending_chunks: HashMap<Vec2<i32>, Instant>,
+    terrain_chunks_received_total: u64,
     /// bastion (B1.6): overseer god-camera terrain anchor. When set, terrain
     /// chunks are requested/retained around it instead of the entity position
     /// (the entity's immediate area is still retained). Mirrored to the server
@@ -1620,11 +1634,14 @@ impl Client {
             flashing_lights_enabled: true,
 
             server_view_distance_limit: None,
+            requested_view_distance: None,
             view_distance: None,
+            server_authorized_view_distance: None,
             lod_distance: 4.0,
             loaded_distance: 0.0,
 
             pending_chunks: HashMap::new(),
+            terrain_chunks_received_total: 0,
             bastion_terrain_anchor: None,
             bastion_designations: Vec::new(),
             bastion_designations_rev: 0,
@@ -2155,6 +2172,7 @@ impl Client {
         view_distances: common::ViewDistances,
     ) {
         let view_distances = self.set_view_distances_local(view_distances);
+        self.server_authorized_view_distance = None;
         self.send_msg(ClientGeneral::Character(character_id, view_distances));
 
         if let Some(character) = self
@@ -2173,6 +2191,7 @@ impl Client {
     /// Request a state transition to `ClientState::Spectate`.
     pub fn request_spectate(&mut self, view_distances: common::ViewDistances) {
         let view_distances = self.set_view_distances_local(view_distances);
+        self.server_authorized_view_distance = None;
         self.send_msg(ClientGeneral::Spectate(view_distances));
 
         self.presence = Some(PresenceKind::Spectator);
@@ -2243,6 +2262,7 @@ impl Client {
 
     pub fn set_view_distances(&mut self, view_distances: common::ViewDistances) {
         let view_distances = self.set_view_distances_local(view_distances);
+        self.server_authorized_view_distance = None;
         self.send_msg(ClientGeneral::SetViewDistance(view_distances));
     }
 
@@ -2259,6 +2279,7 @@ impl Client {
                 .clamp(1, MAX_SELECTABLE_VIEW_DISTANCE),
             entity: view_distances.entity.max(1),
         };
+        self.requested_view_distance = Some(view_distances.terrain);
         self.view_distance = Some(view_distances.terrain);
         view_distances
     }
@@ -3094,9 +3115,21 @@ impl Client {
 
     pub fn view_distance(&self) -> Option<u32> { self.view_distance }
 
+    pub fn requested_view_distance(&self) -> Option<u32> { self.requested_view_distance }
+
+    pub fn server_authorized_view_distance(&self) -> Option<u32> {
+        self.server_authorized_view_distance
+    }
+
     pub fn server_view_distance_limit(&self) -> Option<u32> { self.server_view_distance_limit }
 
     pub fn loaded_distance(&self) -> f32 { self.loaded_distance }
+
+    pub fn terrain_pending_chunk_requests(&self) -> usize { self.pending_chunks.len() }
+
+    pub fn terrain_chunks_received_total(&self) -> u64 { self.terrain_chunks_received_total }
+
+    pub fn terrain_resident_chunks(&self) -> usize { self.state.terrain().iter().count() }
 
     pub fn position(&self) -> Option<Vec3<f32>> {
         self.state
@@ -3702,10 +3735,8 @@ impl Client {
                     }
                 }
             }
-            self.loaded_distance = self.loaded_distance.sqrt()
-                - ((TerrainChunkSize::RECT_SIZE.x as f32 / 2.0).powi(2)
-                    + (TerrainChunkSize::RECT_SIZE.y as f32 / 2.0).powi(2))
-                .sqrt();
+            self.loaded_distance =
+                loaded_distance_from_nearest_missing_squared(self.loaded_distance);
 
             // If chunks are taking too long, assume they're no longer pending.
             let now = Instant::now();
@@ -4243,6 +4274,7 @@ impl Client {
             },
             ServerGeneral::SetViewDistance(vd) => {
                 self.view_distance = Some(vd);
+                self.server_authorized_view_distance = Some(vd);
                 frontend_events.push(Event::SetViewDistance(vd));
                 // If the server is correcting client vd selection we assume this is the max
                 // allowed view distance.
@@ -4333,6 +4365,8 @@ impl Client {
             ServerGeneral::TerrainChunkUpdate { key, chunk } => {
                 if let Some(chunk) = chunk.ok().and_then(|c| c.to_chunk()) {
                     self.state.insert_chunk(key, Arc::new(chunk));
+                    self.terrain_chunks_received_total =
+                        self.terrain_chunks_received_total.saturating_add(1);
                 }
                 self.pending_chunks.remove(&key);
             },
@@ -4397,8 +4431,12 @@ impl Client {
             ServerGeneral::CharacterEdited(character_id) => {
                 events.push(Event::CharacterEdited(character_id));
             },
-            ServerGeneral::CharacterSuccess => debug!("client is now in ingame state on server"),
+            ServerGeneral::CharacterSuccess => {
+                self.server_authorized_view_distance = self.view_distance;
+                debug!("client is now in ingame state on server");
+            },
             ServerGeneral::SpectatorSuccess(spawn_point) => {
+                self.server_authorized_view_distance = self.view_distance;
                 events.push(Event::StartSpectate(spawn_point));
                 debug!("client is now in ingame state on server");
             },
@@ -5127,6 +5165,20 @@ impl Drop for Client {
 mod tests {
     use super::*;
     use client_i18n::LocalizationHandle;
+
+    #[test]
+    fn loaded_distance_is_nearest_missing_chunk_not_farthest_resident_chunk() {
+        let farther_missing = (10.0 * TerrainChunkSize::RECT_SIZE.x as f32).powi(2);
+        let nearer_missing = (6.5 * TerrainChunkSize::RECT_SIZE.x as f32).powi(2);
+        assert!(
+            loaded_distance_from_nearest_missing_squared(nearer_missing)
+                < loaded_distance_from_nearest_missing_squared(farther_missing)
+        );
+        assert!(
+            loaded_distance_from_nearest_missing_squared(nearer_missing)
+                < 6.5 * TerrainChunkSize::RECT_SIZE.x as f32
+        );
+    }
 
     #[test]
     /// THIS TEST VERIFIES THE CONSTANT API.
