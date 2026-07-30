@@ -14202,3 +14202,60 @@ Every build-fixture artifact is gone; what remains is the real lead 5b confirmed
 separate both by retest and mechanically.
 
 Spend across all five waves today: **$3.59.**
+
+## RETRACTION — TWO THIRDS OF THE "33.3% MINE BUG" WAS INSTRUMENT (07/30, wave 6)
+
+36 seeds delivered (3 create-fails), attested `COMMIT=45b7fe3d`, 757s, $0.70.
+Baseline restricted to the identical 36 before comparing.
+
+**BEFORE 12/36 (33.3%) -> AFTER 5/36 (13.9%). Delta -19.4 pp. 8 of 12 prior
+violations (67%) were fixed by a TEST FIXTURE CHANGE.**
+
+**I CALLED 33.3% "the most established fact in this codebase."** It was measured
+six independent ways — different seed ranges, machines, OSes, three commits, one
+fixture change — and every measurement was individually correct. **All six
+shared the same under-terraformed fixture.** Reproducibility is not validity:
+six careful measurements of the same broken ruler agree perfectly. The mine
+volume's footprint-top was never air-cleared (the ring was, the footprint
+wasn't), so a tree at that position made all 27 cells read unreachable through
+the exposure cascade. Recorded as a correction, not rounded away.
+
+**ALSO RETRACTED: the Mode-1 signature I repeated for hours.** "A colonist was
+assigned, mined, earned XP, and removed nothing" was WRONG. 5b found all 4 XP
+grant sites are completion-gated and the XP came from LATER scenario phases
+placing their own Mine designations. The true signature: 27 jobs on the board,
+never claimed, `unreachable=true`.
+
+**RESIDUAL — 5 seeds, and this is the real bug:** 51 (0/27), 54 (16/27),
+55 (26/27), 61 (26/27), 71 (24/27). Seed 71 newly violates; per-seed churn is
+EXPECTED across this commit because it writes to the world at setup — judge the
+aggregate, not the membership. **5/36 has wide error bars; wave 7 (seeds 85-156)
+is extending the sample rather than letting 13.9% stand on 36 seeds.**
+
+**WHAT THE TOLERANCE WAS ACTUALLY HIDING (5b, seed 61 + 51 traces) — the
+finding of the day.** The residual 26/27 cluster is **a recurrence of B56's bug
+class** (leg-C stall, diagnosed and closed 2026-07-19): unbounded carve/access
+churn. Evidence: job IDs climbing into the hundreds (job=916 at tick 6106, ~50
+units in xy and 17-20 z-levels BELOW the pit), TGT-DRIFT d2 marching
+monotonically 6 -> 770 -> 1446 -> 1961 -> 3901 -> 4082. A colonist retrying one
+cell cannot produce escalating target distance; that is a cascade generating
+fresh work further and further away, each new job timing out and spawning the
+next. **It recurred at a scale (usually 1 cell of 27) that the `>=26/27`
+tolerance absorbed every single time.** A known, already-once-fixed defect class
+was re-emerging in the mine path and the gate was configured to call it a pass.
+That is the complete answer to Ben's question — "we implement something and it's
+buggy" — with a named mechanism attached.
+
+**MY UNIFICATION HYPOTHESIS WAS HALF RIGHT.** I predicted 26/27 was seed 51's
+failure "differing only in degree" and guessed the reason was geometric (last
+cell awkward to stand beside). The unification looks right; **the mechanism I
+proposed was wrong** — runaway carve generation, not geometry. Told 5b not to
+carry my guess forward.
+
+**RULED: (a) evidence, THEN (b) architect-gated row.** No one touches
+carve/access/dormancy code yet. **★ ACCEPTANCE MEASURE CANNOT BE THE FAILURE
+RATE** — B56's own first fix was SILENTLY NUMERICALLY IDENTICAL and still
+broken, documented in this exact mechanism in our own history. Pass criteria are
+mechanism-level and defined BEFORE the fix: bounded job-ID growth, no monotonic
+TGT-DRIFT escalation, cascade demonstrably terminates, no access jobs at
+unbounded distance/depth. "The seed now mines 27" is a consequence, never proof.
