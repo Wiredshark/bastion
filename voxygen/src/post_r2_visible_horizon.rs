@@ -14,7 +14,7 @@ pub const VISIBLE_HORIZON_FIXTURE_V1: &str = "flat-arena-oblique-horizon-v1";
 pub const CAMERA_YAW_MICRORADIANS_V1: i64 = 0;
 pub const CAMERA_PITCH_MICRORADIANS_V1: i64 = 349_066;
 pub const CAMERA_DISTANCE_MM_V1: u64 = 384_000;
-pub const CAMERA_FOCUS_Z_MM_V1: i64 = 400_000;
+pub const CAMERA_FOCUS_Z_MM_V1: i64 = 1_000;
 
 const FIXED_SCALE: f32 = 1_000_000.0;
 const MILLIMETRES_PER_BLOCK: f32 = 1_000.0;
@@ -31,6 +31,8 @@ pub struct HorizonCameraEvidenceV1 {
     pub pitch_microradians: i64,
     pub distance_mm: u64,
     pub fov_microradians: u64,
+    pub fixation_millionths: u64,
+    pub target_fixation_millionths: u64,
     pub aspect_millionths: u64,
     pub frustum_ground_width_mm: u64,
     pub frustum_ground_depth_mm: u64,
@@ -61,11 +63,29 @@ pub fn configure_camera_v1(camera: &mut Camera, spawn: Vec3<f32>) {
         0.0,
     ));
     camera.set_distance_instant(CAMERA_DISTANCE_MM_V1 as f32 / MILLIMETRES_PER_BLOCK);
+    camera.set_fixate_instant(1.0);
     camera.force_focus_pos(Vec3::new(
         spawn.x,
         spawn.y,
         CAMERA_FOCUS_Z_MM_V1 as f32 / MILLIMETRES_PER_BLOCK,
     ));
+}
+
+/// Apply the exact diagnostic authority after ordinary camera maintenance.
+///
+/// The opt-in deliberately owns only focus height and fixation. Orientation,
+/// distance, aspect, and base FOV remain ordinary camera state and drift in
+/// any of them is still visible to the canonical evidence/token.
+pub fn apply_post_maintenance_camera_v1(camera: &mut Camera, fixture_selected: bool) {
+    if !fixture_selected {
+        return;
+    }
+    let focus = camera
+        .get_focus_pos()
+        .xy()
+        .with_z(CAMERA_FOCUS_Z_MM_V1 as f32 / MILLIMETRES_PER_BLOCK);
+    camera.force_focus_pos(focus);
+    camera.set_fixate_instant(1.0);
 }
 
 pub fn camera_evidence_v1(
@@ -76,6 +96,7 @@ pub fn camera_evidence_v1(
     let orientation = camera.get_orientation();
     let distance = camera.get_distance();
     let fov = camera.get_effective_fov();
+    let (fixation, target_fixation) = camera.fixation_state_v1();
     let aspect = camera.get_aspect_ratio();
     if !focus.x.is_finite()
         || !focus.y.is_finite()
@@ -85,6 +106,8 @@ pub fn camera_evidence_v1(
         || !orientation.z.is_finite()
         || !distance.is_finite()
         || !fov.is_finite()
+        || !fixation.is_finite()
+        || !target_fixation.is_finite()
         || !aspect.is_finite()
         || distance <= 0.0
         || fov <= 0.0
@@ -98,6 +121,8 @@ pub fn camera_evidence_v1(
     let pitch_microradians = fixed_i64(orientation.y, FIXED_SCALE)?;
     let distance_mm = fixed_u64(distance, MILLIMETRES_PER_BLOCK)?;
     let fov_microradians = fixed_u64(fov, FIXED_SCALE)?;
+    let fixation_millionths = fixed_u64(fixation, FIXED_SCALE)?;
+    let target_fixation_millionths = fixed_u64(target_fixation, FIXED_SCALE)?;
     let aspect_millionths = fixed_u64(aspect, FIXED_SCALE)?;
 
     let forward = camera.forward();
@@ -121,6 +146,8 @@ pub fn camera_evidence_v1(
         && pitch_microradians == CAMERA_PITCH_MICRORADIANS_V1
         && distance_mm == CAMERA_DISTANCE_MM_V1
         && focus_mm[2] == CAMERA_FOCUS_Z_MM_V1
+        && fixation_millionths == 1_000_000
+        && target_fixation_millionths == 1_000_000
         && frustum_ground_depth_mm >= 1_000_000;
 
     let mut payload = Vec::with_capacity(192);
@@ -136,6 +163,8 @@ pub fn camera_evidence_v1(
     payload.extend_from_slice(&pitch_microradians.to_le_bytes());
     payload.extend_from_slice(&distance_mm.to_le_bytes());
     payload.extend_from_slice(&fov_microradians.to_le_bytes());
+    payload.extend_from_slice(&fixation_millionths.to_le_bytes());
+    payload.extend_from_slice(&target_fixation_millionths.to_le_bytes());
     payload.extend_from_slice(&aspect_millionths.to_le_bytes());
     payload.extend_from_slice(&frustum_ground_width_mm.to_le_bytes());
     payload.extend_from_slice(&frustum_ground_depth_mm.to_le_bytes());
@@ -158,6 +187,8 @@ pub fn camera_evidence_v1(
         pitch_microradians,
         distance_mm,
         fov_microradians,
+        fixation_millionths,
+        target_fixation_millionths,
         aspect_millionths,
         frustum_ground_width_mm,
         frustum_ground_depth_mm,
@@ -222,27 +253,69 @@ mod tests {
 
     #[test]
     fn camera_evidence_binds_every_declared_field_and_rejects_drift() {
-        let spawn = Vec3::new(10_000.5, 20_000.5, 401.0);
+        let spawn = Vec3::new(10_000.5, 20_000.5, 1.0);
         let mut camera = Camera::new(16.0 / 9.0, CameraMode::ThirdPerson);
         configure_camera_v1(&mut camera, spawn);
+        apply_post_maintenance_camera_v1(&mut camera, true);
         let accepted = camera_evidence_v1(&camera, true).expect("camera evidence");
         assert!(accepted.camera_valid);
         assert_eq!(accepted.mode_tag, CameraMode::Overseer as u8);
         assert_eq!(accepted.projection_tag, 1);
         assert_eq!(accepted.focus_mm[2], CAMERA_FOCUS_Z_MM_V1);
         assert_eq!(accepted.distance_mm, CAMERA_DISTANCE_MM_V1);
+        assert_eq!(accepted.fixation_millionths, 1_000_000);
+        assert_eq!(accepted.target_fixation_millionths, 1_000_000);
         assert!(accepted.frustum_ground_depth_mm > 24 * 32 * 1_000);
 
-        camera.set_distance_instant(383.0);
+        camera.force_focus_pos(camera.get_focus_pos().xy().with_z(2.0));
         let drifted = camera_evidence_v1(&camera, true).expect("drift evidence");
         assert!(!drifted.camera_valid);
         assert_ne!(accepted.camera_token, drifted.camera_token);
+
+        apply_post_maintenance_camera_v1(&mut camera, true);
+        camera.set_fixate_instant(0.5);
+        let fixate_drifted = camera_evidence_v1(&camera, true).expect("fixate drift evidence");
+        assert!(!fixate_drifted.camera_valid);
+        assert_ne!(accepted.camera_token, fixate_drifted.camera_token);
+    }
+
+    #[test]
+    fn post_maintenance_authority_is_exact_across_reference_and_far_profiles() {
+        let spawn = Vec3::new(16_384.5, 16_384.5, 1.0);
+        let mut reference = Camera::new(16.0 / 9.0, CameraMode::ThirdPerson);
+        let mut far = Camera::new(16.0 / 9.0, CameraMode::ThirdPerson);
+        configure_camera_v1(&mut reference, spawn);
+        configure_camera_v1(&mut far, spawn);
+        reference.set_fixate(0.4);
+        far.set_fixate(0.7);
+
+        apply_post_maintenance_camera_v1(&mut reference, true);
+        apply_post_maintenance_camera_v1(&mut far, true);
+        let reference_evidence =
+            camera_evidence_v1(&reference, true).expect("reference camera evidence");
+        let far_evidence = camera_evidence_v1(&far, true).expect("far camera evidence");
+        assert!(reference_evidence.camera_valid);
+        assert_eq!(reference_evidence, far_evidence);
+    }
+
+    #[test]
+    fn absent_opt_in_leaves_ordinary_focus_and_fixation_unchanged() {
+        let mut camera = Camera::new(16.0 / 9.0, CameraMode::ThirdPerson);
+        camera.force_focus_pos(Vec3::new(7.0, 8.0, 9.0));
+        camera.set_fixate(0.4);
+        let before_focus = camera.get_focus_pos();
+        let before_fixation = camera.fixation_state_v1();
+
+        apply_post_maintenance_camera_v1(&mut camera, false);
+        assert_eq!(camera.get_focus_pos(), before_focus);
+        assert_eq!(camera.fixation_state_v1(), before_fixation);
     }
 
     #[test]
     fn overhead_camera_cannot_satisfy_horizon_authority() {
         let mut camera = Camera::new(16.0 / 9.0, CameraMode::ThirdPerson);
-        configure_camera_v1(&mut camera, Vec3::new(0.5, 0.5, 400.0));
+        configure_camera_v1(&mut camera, Vec3::new(0.5, 0.5, 1.0));
+        apply_post_maintenance_camera_v1(&mut camera, true);
         camera.set_orientation_instant(Vec3::new(0.0, crate::scene::camera::OVERSEER_PITCH, 0.0));
         let overhead = camera_evidence_v1(&camera, true).expect("bounded overhead evidence");
         assert!(!overhead.camera_valid);

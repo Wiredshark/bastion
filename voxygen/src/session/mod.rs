@@ -2372,6 +2372,9 @@ impl PlayState for SessionState {
             visible_horizon_camera_pitch_microradians: horizon_camera.pitch_microradians,
             visible_horizon_camera_distance_mm: horizon_camera.distance_mm,
             visible_horizon_camera_fov_microradians: horizon_camera.fov_microradians,
+            visible_horizon_camera_fixation_millionths: horizon_camera.fixation_millionths,
+            visible_horizon_camera_target_fixation_millionths: horizon_camera
+                .target_fixation_millionths,
             visible_horizon_camera_aspect_millionths: horizon_camera.aspect_millionths,
             visible_horizon_frustum_ground_width_mm: horizon_camera.frustum_ground_width_mm,
             visible_horizon_frustum_ground_depth_mm: horizon_camera.frustum_ground_depth_mm,
@@ -2432,6 +2435,10 @@ impl PlayState for SessionState {
                 camera.set_fixate(fov_scaling);
             } else {
                 camera.set_fixate(1.0);
+            }
+
+            if crate::post_r2_visible_horizon::visible_horizon_fixture_selected_v1() == Ok(true) {
+                crate::post_r2_visible_horizon::apply_post_maintenance_camera_v1(camera, true);
             }
 
             // Compute camera data
