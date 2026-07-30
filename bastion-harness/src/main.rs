@@ -3493,26 +3493,48 @@ fn b5_scenario(args: &Args) -> ExitCode {
 
     // 7.10 (CHOP redesign, FR10): WHOLE-TREE detection + fell-set placement,
     // through the SAME bastion_chop::detect_trees the paint handler runs
-    // (B17: the tested path is the shipping path). Search rings around the
-    // site until a real worldgen tree is found in the force-loaded area.
+    // (B17: the tested path is the shipping path).
+    //
+    // SITE SELECTION (Fable ruling, 2026-07-30 chop-oracle row): the old 9
+    // fixed offsets asked "is there a tree at exactly these 9 spots" -- a
+    // question about luck (37.5% of the local corpus: no, and every one of
+    // those was a false red, per the ground-truth audit that led to this
+    // row). Deterministic EXPANDING search asks "is there a tree anywhere
+    // reachable" -- the question FR10 actually means. Still stops at the
+    // FIRST real tree found and keeps small, non-overlapping 64x64 probe
+    // boxes -- this preserves FR10's whole point (a REAL worldgen tree,
+    // never a planted one) while pushing engagement toward ~100%.
+    // Chebyshev-ring order (nearest first), ties broken by (ox, oy) --
+    // same seed, same order, same tree, forever.
+    const CHOP_RING_SPACING: i32 = 64;
+    const CHOP_RING_STEPS: i32 = 5; // max reach ~(5*64+32) = 352 blocks
+    let mut chop_ring_offsets: Vec<(i32, i32)> = Vec::new();
+    for i in -CHOP_RING_STEPS..=CHOP_RING_STEPS {
+        for j in -CHOP_RING_STEPS..=CHOP_RING_STEPS {
+            chop_ring_offsets.push((i * CHOP_RING_SPACING, j * CHOP_RING_SPACING));
+        }
+    }
+    chop_ring_offsets
+        .sort_by_key(|(ox, oy)| (ox.abs().max(oy.abs()), ox.abs(), oy.abs(), *ox, *oy));
+
     let mut ch_trees = 0;
     let mut ch_cells = 0;
     let mut ch_jobs = 0;
     let mut ch_aabb: Option<Region> = None;
-    for (ox, oy) in [
-        (0, 0),
-        (64, 0),
-        (-64, 0),
-        (0, 64),
-        (0, -64),
-        (64, 64),
-        (-64, -64),
-        (96, 0),
-        (0, 96),
-    ] {
+    // ENGAGEMENT RATE (Fable's item (c)): how many rings it took, as a
+    // first-class, permanently-visible quality measure of the test itself
+    // -- if this ever creeps up corpus-wide, the gate is quietly decaying
+    // toward vacuous-green even while individual seeds still pass.
+    let mut ch_rings_tried: usize = 0;
+    for (ox, oy) in &chop_ring_offsets {
         let c = Vec2::new(cx + ox, cy + oy);
+        // Idempotent against the initial force-load (5-chunk/160-block
+        // radius): only probes past that original radius pay any new
+        // chunk-generation cost, keeping the common case cheap.
+        server.bastion_force_load_area(c.map(|e| e as f32), 2);
         let (t, cl, j, aabb) =
             server.bastion_place_chop_area(c - Vec2::broadcast(32), c + Vec2::broadcast(32));
+        ch_rings_tried += 1;
         if t >= 1 {
             (ch_trees, ch_cells, ch_jobs, ch_aabb) = (t, cl, j, aabb);
             break;
@@ -3523,41 +3545,55 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // (a tree actually exists in the searched volume) was ever met -- the
     // falsifier canon, same shape as the 40-clause conjunction and the
     // rescue-clause conflation earlier today. Independently scan the SAME
-    // 9 areas for a real trunk-plus-canopy (not via bastion_place_chop_area
-    // -- that's the subject under test; not a bare Wood/Leaves scan --
-    // Fable's ruling: a wooden STRUCTURE would fabricate a miss). REPORT
-    // ONLY: does not gate `pass` -- the classification itself, not a
-    // verdict on it, is this row's deliverable. Keeps the witness (which
-    // area index, which blocks) so a `real_detection_miss` is checkable.
+    // ring sequence for a real trunk-plus-canopy (not via
+    // bastion_place_chop_area -- that's the subject under test; not a bare
+    // Wood/Leaves scan -- Fable's ruling: a wooden STRUCTURE would
+    // fabricate a miss). REPORT ONLY: does not gate `pass`. Keeps the
+    // witness (which ring index, which blocks) so a `real_detection_miss`
+    // is checkable.
     let mut ch_ground_truth_witness: Option<(usize, Vec3<i32>, Vec3<i32>)> = None;
-    for (idx, (ox, oy)) in [
-        (0, 0),
-        (64, 0),
-        (-64, 0),
-        (0, 64),
-        (0, -64),
-        (64, 64),
-        (-64, -64),
-        (96, 0),
-        (0, 96),
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    // SCAN_INCOMPLETE (Opus adversarial review, 2026-07-30): "couldn't
+    // look" (unloaded terrain, no altitude sample) must not silently read
+    // as "looked and found nothing" -- especially now that the ring search
+    // reaches ~3x further out than the original 9-offset design. Tallied
+    // across every ring tried, not just the last one, so a partial-scan
+    // problem anywhere in the search is visible.
+    let mut ch_scan_incomplete_rings: usize = 0;
+    let mut ch_scan_incomplete_unreachable: u32 = 0;
+    let mut ch_scan_incomplete_total: u32 = 0;
+    for (idx, (ox, oy)) in chop_ring_offsets.iter().enumerate() {
         let c = Vec2::new(cx + ox, cy + oy);
-        if let Some(w) =
-            server.bastion_chop_ground_truth(c - Vec2::broadcast(32), c + Vec2::broadcast(32))
-        {
-            ch_ground_truth_witness = Some((idx, w.wood_pos, w.leaves_pos));
+        // Own force-load call, not just reliance on the primary loop above:
+        // if the primary search stopped early (tree found) but this
+        // predicate doesn't match until a later ring, that later ring was
+        // never force-loaded by the primary loop's own early exit.
+        server.bastion_force_load_area(c.map(|e| e as f32), 2);
+        let (witness, unreachable, total) =
+            server.bastion_chop_ground_truth(c - Vec2::broadcast(32), c + Vec2::broadcast(32));
+        if let Some((wood, leaves)) = witness {
+            ch_ground_truth_witness = Some((idx, wood, leaves));
             break;
+        }
+        if unreachable > 0 {
+            ch_scan_incomplete_rings += 1;
+            ch_scan_incomplete_unreachable += unreachable;
+            ch_scan_incomplete_total += total;
         }
     }
     let ch_ground_truth_tree_present = ch_ground_truth_witness.is_some();
-    let ch_oracle_class = match (ch_trees >= 1, ch_ground_truth_tree_present) {
-        (true, _) => "pass",
-        (false, true) => "real_detection_miss",
-        (false, false) => "precondition_unmet",
+    let ch_scan_incomplete = ch_scan_incomplete_rings > 0;
+    let ch_oracle_class = match (ch_trees >= 1, ch_ground_truth_tree_present, ch_scan_incomplete) {
+        (true, _, _) => "pass",
+        (false, true, _) => "real_detection_miss",
+        // Any unreachable column anywhere in the audit means the null
+        // isn't trustworthy -- report it as its own state rather than
+        // folding it into precondition_unmet (Fable's ruling: a bug that
+        // blinds only the auditor must not report "no bug" for the wrong
+        // reason).
+        (false, false, true) => "scan_incomplete",
+        (false, false, false) => "precondition_unmet",
     };
+    let ch_engaged = ch_oracle_class != "precondition_unmet" && ch_oracle_class != "scan_incomplete";
     // MIXED KINDS: the first tree's box contains BOTH trunk (Wood) and canopy
     // (Leaves) — the whole tree, not a Wood slab (the redesign's point).
     let ch_mixed = ch_aabb.is_some_and(|a| {
@@ -3657,7 +3693,7 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // says "one of 40 things failed". Name every clause here and derive
     // `pass` FROM this list (single source of truth -- a hand-maintained
     // parallel bool can't drift out of sync with what actually failed).
-    let clauses: Vec<(&str, bool)> = vec![
+    let mut clauses: Vec<(&str, bool)> = vec![
         ("mine_jobs", mine_jobs == 27),
         ("chop_jobs", chop_jobs == 1),
         ("build_ok_jobs", build_ok_jobs == 1),
@@ -3732,26 +3768,9 @@ fn b5_scenario(args: &Args) -> ExitCode {
         ("b15_adjacent_claimed", b15_adjacent_claimed),
         ("b15_floater_skipped", b15_floater_skipped),
         // CHOP redesign (FR10): a real worldgen tree detected via the
-        // SHARED oracle path; every fell cell became a job; the tree box
-        // holds BOTH Wood and Leaves (whole tree, not a slab); per-tree
-        // cancel through the echoed AABB is clean; a chopped Leaves
-        // block CLEARS with NO log drop.
-        ("ch_trees_found", ch_trees >= 1),
-        // jobs <= cells is EXPECTED (adjacent trees' shared canopy cells
-        // dedupe at placement), and in DENSE forest per-tree sets may
-        // legitimately clip at the cap (bounded work per seed -- the cap
-        // IS the guarantee). Gate the INVARIANTS: trees found, jobs
-        // placed, bounded by construction, whole-tree (mixed kinds),
-        // per-tree cancel through the echoed box, leaves clear with no
-        // drop.
-        ("ch_jobs_positive", ch_jobs > 0),
-        ("ch_jobs_le_cells", ch_jobs <= ch_cells),
-        (
-            "ch_cells_bounded",
-            ch_cells <= ch_trees * server::bastion_jobs::TREE_FELL_CELL_CAP,
-        ),
-        ("ch_mixed", ch_mixed),
-        ("ch_cancel_clean", ch_cancel_clean),
+        // SHARED oracle path (search-site details below); a chopped
+        // hand-placed Leaves block CLEARS with NO log drop -- this one is
+        // unconditional (always placed, never depends on the search).
         ("ch_leaf_cleared", ch_leaf_cleared),
         ("ch_leaf_no_drop", ch_leaf_no_drop),
         // TOOL-0: equipped-tool factor end-to-end (stone 1.5, steel 2.0,
@@ -3759,6 +3778,33 @@ fn b5_scenario(args: &Args) -> ExitCode {
         ("tl_ok", tl_ok),
         ("avg_tick_ms_budget", avg_tick_ms < 100.0),
     ];
+    // RULING (Fable, 2026-07-30 chop-oracle row): `precondition_unmet`
+    // stops being a gate failure -- these 6 clauses only mean anything
+    // once a real tree was actually found to test against. Gating them
+    // unconditionally is exactly the falsifier-canon mistake fixed twice
+    // already today: a test that never ran, reporting itself as a broken
+    // game. Only extend `clauses` with them when the search actually
+    // engaged (ch_oracle_class != "precondition_unmet").
+    if ch_engaged {
+        clauses.extend([
+            // every fell cell became a job; the tree box holds BOTH Wood
+            // and Leaves (whole tree, not a slab); per-tree cancel
+            // through the echoed AABB is clean.
+            ("ch_trees_found", ch_trees >= 1),
+            // jobs <= cells is EXPECTED (adjacent trees' shared canopy
+            // cells dedupe at placement), and in DENSE forest per-tree
+            // sets may legitimately clip at the cap (bounded work per
+            // seed -- the cap IS the guarantee).
+            ("ch_jobs_positive", ch_jobs > 0),
+            ("ch_jobs_le_cells", ch_jobs <= ch_cells),
+            (
+                "ch_cells_bounded",
+                ch_cells <= ch_trees * server::bastion_jobs::TREE_FELL_CELL_CAP,
+            ),
+            ("ch_mixed", ch_mixed),
+            ("ch_cancel_clean", ch_cancel_clean),
+        ]);
+    }
     let failed_clauses: Vec<&str> = clauses
         .iter()
         .filter(|(_, ok)| !ok)
@@ -3821,16 +3867,30 @@ fn b5_scenario(args: &Args) -> ExitCode {
         // "pass" = oracle found a tree; "real_detection_miss" = a real
         // trunk-plus-canopy is physically there and the oracle returned
         // zero anyway (an actual bug -- witness below is checkable);
-        // "precondition_unmet" = no tree exists anywhere in the 9 searched
-        // areas -- the oracle never had a chance to succeed, and
-        // ch_trees==0 here is a false red, not a finding.
+        // "precondition_unmet" = no tree exists anywhere in the ring search
+        // -- the oracle never had a chance to succeed, and ch_trees==0
+        // here is a false red, not a finding (and no longer gates `pass`
+        // -- Fable's ruling).
         "b5_ch_ground_truth_tree_present": ch_ground_truth_tree_present,
         "b5_ch_oracle_class": ch_oracle_class,
-        // (search-area index, wood block pos, leaves block pos) on a hit --
-        // the witness a real_detection_miss verdict must be checked against.
+        "b5_ch_engaged": ch_engaged,
+        // "couldn't look" vs "looked and found nothing" (Opus adversarial
+        // review): if this is ever true, the ground-truth null for this
+        // seed is unreliable and must not be read as confirmed absence.
+        "b5_ch_scan_incomplete": ch_scan_incomplete,
+        "b5_ch_scan_incomplete_rings": ch_scan_incomplete_rings,
+        "b5_ch_scan_incomplete_unreachable_columns": ch_scan_incomplete_unreachable,
+        "b5_ch_scan_incomplete_total_columns": ch_scan_incomplete_total,
+        // How many rings the expanding search tried before stopping --
+        // the ENGAGEMENT-RATE metric (Fable's item (c)): a first-class,
+        // permanently-visible measure of whether the chop test is actually
+        // exercising the oracle, not something to rediscover later.
+        "b5_ch_rings_tried": ch_rings_tried,
+        // (ring index, wood block pos, leaves block pos) on a hit -- the
+        // witness a real_detection_miss verdict must be checked against.
         "b5_ch_ground_truth_witness": ch_ground_truth_witness.map(|(idx, wood, leaves)| {
             serde_json::json!({
-                "area_index": idx,
+                "ring_index": idx,
                 "wood_pos": [wood.x, wood.y, wood.z],
                 "leaves_pos": [leaves.x, leaves.y, leaves.z],
             })

@@ -109,6 +109,23 @@ pub struct TreeGroundTruthWitness {
     pub leaves_pos: Vec3<i32>,
 }
 
+/// Ground-truth scan outcome: three states, not two (Opus adversarial
+/// review, 2026-07-30). `Found` and `NotFound` both mean the scan actually
+/// ran to completion; `ScanIncomplete` means some columns could not be
+/// examined at all (no altitude sample, or terrain never loaded there) --
+/// "couldn't look" must never silently read the same as "looked and found
+/// nothing," or an unloaded chunk inflates `precondition_unmet` while
+/// looking like a clean result.
+#[derive(Debug, Clone, Copy)]
+pub enum TreeGroundTruthOutcome {
+    Found(TreeGroundTruthWitness),
+    NotFound,
+    ScanIncomplete {
+        unreachable_columns: u32,
+        total_columns: u32,
+    },
+}
+
 /// bastion (chop-oracle ground-truth audit, 2026-07-30): an INDEPENDENT
 /// answer to "is a REAL TREE physically materialized anywhere in this XY
 /// footprint" -- deliberately NOT built from [`detect_trees`]'s own
@@ -119,7 +136,12 @@ pub struct TreeGroundTruthWitness {
 /// rescue-clause split already fixed twice today. The ONLY thing borrowed
 /// from the World is the altitude sampler (`col.alt`), a basic geography
 /// fact used solely to bound the Z search window per column -- not a tree
-/// judgment.
+/// judgment. NOTE this is a shared-dependency asymmetry, not a shared
+/// oracle: the SUBJECT (`detect_trees`) never consults `col.alt` at all
+/// (it goes through `get_area_trees`/`tree_valid_at` instead), so a bug in
+/// altitude sampling could blind only this auditor while leaving the
+/// subject working -- exactly why `ScanIncomplete` below exists, so that
+/// failure mode reports itself instead of masquerading as a clean null.
 ///
 /// RULING (Fable, 2026-07-30): a bare Wood-or-Leaves block scan is NOT a
 /// tree predicate -- worldgen wooden STRUCTURES (houses, bridges, fences,
@@ -129,23 +151,41 @@ pub struct TreeGroundTruthWitness {
 /// ABOVE a Wood block in the SAME (x, y) column, within a plausible canopy
 /// span (`TREE_FELL_HEIGHT_CAP`) -- a flat Wood floor/fence/deck has
 /// nothing above it and will not satisfy this; a trunk-plus-canopy will.
-/// Returns the witness block pair so a miss is checkable, not just
-/// counted. Short-circuits on the first hit.
+/// KNOWN LIMITATION (disclosed, not fixed): a canopy taller than
+/// `TREE_FELL_HEIGHT_CAP`(40) above its own trunk is invisible to this
+/// scan -- accepted, since `detect_trees`'s own fell-set walk shares the
+/// same cap, so this predicate's blind spot matches the subject's.
+/// `ArtLeaves` is deliberately unmatched -- cave-only, not a live miss on
+/// surface search sites.
+///
+/// FIX (Opus adversarial review, 2026-07-30): the wood tracked here is the
+/// NEAREST Wood block AT OR BELOW the current scan position, re-latched on
+/// every Wood block seen -- not the LOWEST Wood in the whole window
+/// (that earlier version could report a witness pairing wood and leaves
+/// from two unrelated objects, and could miss a real tree whenever any
+/// wood sat lower in the same column, e.g. a buried log).
+///
+/// Returns the witness block pair on a hit, so a miss is checkable, not
+/// just counted. Short-circuits on the first hit.
 pub fn detect_trees_ground_truth(
     world: &World,
     index: &IndexOwned,
     terrain: &TerrainGrid,
     min_xy: Vec2<i32>,
     max_xy: Vec2<i32>,
-) -> Option<TreeGroundTruthWitness> {
+) -> TreeGroundTruthOutcome {
     #[cfg(feature = "worldgen")]
     {
         let calendar = None;
         let index_ref = index.as_index_ref();
         let sampler = world.sample_columns();
+        let mut unreachable_columns: u32 = 0;
+        let mut total_columns: u32 = 0;
         for x in min_xy.x..=max_xy.x {
             for y in min_xy.y..=max_xy.y {
+                total_columns += 1;
                 let Some(col) = sampler.get((Vec2::new(x, y), index_ref, calendar)) else {
+                    unreachable_columns += 1;
                     continue;
                 };
                 let base_z = col.alt as i32;
@@ -155,16 +195,18 @@ pub fn detect_trees_ground_truth(
                 let lo = base_z - 10;
                 let hi = base_z + TREE_FELL_HEIGHT_CAP + 10;
                 let mut wood_z: Option<i32> = None;
+                let mut column_reachable = false;
                 for z in lo..=hi {
                     let Ok(block) = terrain.get(Vec3::new(x, y, z)) else {
                         continue;
                     };
+                    column_reachable = true;
                     match block.kind() {
-                        BlockKind::Wood if wood_z.is_none() => wood_z = Some(z),
+                        BlockKind::Wood => wood_z = Some(z),
                         BlockKind::Leaves => {
                             if let Some(wz) = wood_z {
                                 if z > wz && z - wz <= TREE_FELL_HEIGHT_CAP {
-                                    return Some(TreeGroundTruthWitness {
+                                    return TreeGroundTruthOutcome::Found(TreeGroundTruthWitness {
                                         wood_pos: Vec3::new(x, y, wz),
                                         leaves_pos: Vec3::new(x, y, z),
                                     });
@@ -174,13 +216,23 @@ pub fn detect_trees_ground_truth(
                         _ => {},
                     }
                 }
+                if !column_reachable {
+                    unreachable_columns += 1;
+                }
             }
         }
-        None
+        if unreachable_columns > 0 {
+            TreeGroundTruthOutcome::ScanIncomplete {
+                unreachable_columns,
+                total_columns,
+            }
+        } else {
+            TreeGroundTruthOutcome::NotFound
+        }
     }
     #[cfg(not(feature = "worldgen"))]
     {
         let _ = (world, index, terrain, min_xy, max_xy);
-        None
+        TreeGroundTruthOutcome::NotFound
     }
 }

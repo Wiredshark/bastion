@@ -2526,17 +2526,32 @@ impl Server {
     /// [`bastion_chop::detect_trees_ground_truth`] for why it must not
     /// reuse that pipeline's candidate/validity gates, and why the
     /// predicate is Wood-then-Leaves rather than either block alone.
-    /// Returns the witness block pair on a hit, so a miss is checkable.
+    /// Flattened to a plain tuple (matching this file's other harness-hook
+    /// return shapes) rather than the crate-internal enum, so callers
+    /// outside `bastion-server` don't need that type's path:
+    /// `(witness (wood_pos, leaves_pos) on a hit, unreachable_columns,
+    /// total_columns)`. `unreachable_columns > 0` means the scan could not
+    /// examine part of the footprint (unloaded terrain / no altitude
+    /// sample) -- "couldn't look," distinct from "looked, found nothing."
     pub fn bastion_chop_ground_truth(
         &self,
         min_xy: vek::Vec2<i32>,
         max_xy: vek::Vec2<i32>,
-    ) -> Option<bastion_chop::TreeGroundTruthWitness> {
+    ) -> (Option<(vek::Vec3<i32>, vek::Vec3<i32>)>, u32, u32) {
         let ecs = self.state.ecs();
         let world = ecs.read_resource::<Arc<World>>();
         let index = ecs.read_resource::<IndexOwned>();
         let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
-        bastion_chop::detect_trees_ground_truth(&world, &index, &terrain, min_xy, max_xy)
+        match bastion_chop::detect_trees_ground_truth(&world, &index, &terrain, min_xy, max_xy) {
+            bastion_chop::TreeGroundTruthOutcome::Found(w) => {
+                (Some((w.wood_pos, w.leaves_pos)), 0, 0)
+            },
+            bastion_chop::TreeGroundTruthOutcome::NotFound => (None, 0, 0),
+            bastion_chop::TreeGroundTruthOutcome::ScanIncomplete {
+                unreachable_columns,
+                total_columns,
+            } => (None, unreachable_columns, total_columns),
+        }
     }
 
     /// bastion (CHOP-FELLING, harness hook): place a base-cut from an
