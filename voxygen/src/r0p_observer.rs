@@ -248,10 +248,43 @@ pub struct SceneCountersV1 {
     pub visible_horizon_max_distance_blocks: u64,
     pub visible_horizon_lod_terrain_draw_ready: bool,
     pub visible_horizon_lod_terrain_detail: u64,
+    pub visible_horizon_lod_distance_blocks: u64,
     pub figures: u64,
     pub visible_figures: u64,
     pub particles: u64,
     pub visible_particles: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct PostApplyHorizonCameraCountersV1 {
+    pub camera_valid: bool,
+    pub camera_mode: u64,
+    pub projection: u64,
+    pub focus_mm: [i64; 3],
+    pub position_mm: [i64; 3],
+    pub yaw_microradians: i64,
+    pub pitch_microradians: i64,
+    pub distance_mm: u64,
+    pub configured_base_fov_microradians: u64,
+    pub base_fov_microradians: u64,
+    pub target_base_fov_microradians: u64,
+    pub effective_fov_microradians: u64,
+    pub fixation_millionths: u64,
+    pub target_fixation_millionths: u64,
+    pub aspect_millionths: u64,
+    pub frustum_ground_width_mm: u64,
+    pub frustum_ground_depth_mm: u64,
+    pub camera_token: [u8; 32],
+    pub path_id: u64,
+    pub path_ordinal: u64,
+    pub path_token: [u8; 32],
+    pub surface_authority_available: bool,
+    pub cutaway_solid: bool,
+    pub underworld_rejected: bool,
+    pub sky_ground_expected: bool,
+    pub focus_surface_mm: i64,
+    pub camera_surface_mm: i64,
+    pub minimum_clearance_mm: i64,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -411,6 +444,46 @@ pub fn record_submission() {
 
 pub fn record_scene_counters(counters: SceneCountersV1) {
     with_state(|state| state.scene = counters);
+}
+
+pub fn record_post_apply_horizon_camera_counters(counters: PostApplyHorizonCameraCountersV1) {
+    with_state(|state| apply_post_apply_horizon_camera_counters(&mut state.scene, counters));
+}
+
+fn apply_post_apply_horizon_camera_counters(
+    scene: &mut SceneCountersV1,
+    counters: PostApplyHorizonCameraCountersV1,
+) {
+    scene.visible_horizon_camera_valid = counters.camera_valid;
+    scene.visible_horizon_camera_mode = counters.camera_mode;
+    scene.visible_horizon_projection = counters.projection;
+    scene.visible_horizon_camera_focus_mm = counters.focus_mm;
+    scene.visible_horizon_camera_position_mm = counters.position_mm;
+    scene.visible_horizon_camera_yaw_microradians = counters.yaw_microradians;
+    scene.visible_horizon_camera_pitch_microradians = counters.pitch_microradians;
+    scene.visible_horizon_camera_distance_mm = counters.distance_mm;
+    scene.visible_horizon_configured_base_fov_microradians =
+        counters.configured_base_fov_microradians;
+    scene.visible_horizon_camera_base_fov_microradians = counters.base_fov_microradians;
+    scene.visible_horizon_camera_target_base_fov_microradians =
+        counters.target_base_fov_microradians;
+    scene.visible_horizon_camera_fov_microradians = counters.effective_fov_microradians;
+    scene.visible_horizon_camera_fixation_millionths = counters.fixation_millionths;
+    scene.visible_horizon_camera_target_fixation_millionths = counters.target_fixation_millionths;
+    scene.visible_horizon_camera_aspect_millionths = counters.aspect_millionths;
+    scene.visible_horizon_frustum_ground_width_mm = counters.frustum_ground_width_mm;
+    scene.visible_horizon_frustum_ground_depth_mm = counters.frustum_ground_depth_mm;
+    scene.visible_horizon_camera_token = counters.camera_token;
+    scene.horizon_camera_path_id = counters.path_id;
+    scene.horizon_camera_path_ordinal = counters.path_ordinal;
+    scene.horizon_camera_path_token = counters.path_token;
+    scene.horizon_surface_authority_available = counters.surface_authority_available;
+    scene.horizon_cutaway_solid = counters.cutaway_solid;
+    scene.horizon_underworld_rejected = counters.underworld_rejected;
+    scene.horizon_sky_ground_expected = counters.sky_ground_expected;
+    scene.horizon_focus_surface_mm = counters.focus_surface_mm;
+    scene.horizon_camera_surface_mm = counters.camera_surface_mm;
+    scene.horizon_minimum_clearance_mm = counters.minimum_clearance_mm;
 }
 
 pub fn record_adapter(name: &str, vendor: u32, device: u32, backend: &str, device_type: &str) {
@@ -666,7 +739,8 @@ fn visible_horizon_json_fields_v1(scene: SceneCountersV1) -> String {
             "\"visible_horizon_max_radius_chunks\":{},",
             "\"visible_horizon_max_distance_blocks\":{},",
             "\"visible_horizon_lod_terrain_draw_ready\":{},",
-            "\"visible_horizon_lod_terrain_detail\":{}"
+            "\"visible_horizon_lod_terrain_detail\":{},",
+            "\"visible_horizon_lod_distance_blocks\":{}"
         ),
         scene.visible_horizon_fixture_selected,
         scene.visible_horizon_camera_valid,
@@ -711,6 +785,7 @@ fn visible_horizon_json_fields_v1(scene: SceneCountersV1) -> String {
         scene.visible_horizon_max_distance_blocks,
         scene.visible_horizon_lod_terrain_draw_ready,
         scene.visible_horizon_lod_terrain_detail,
+        scene.visible_horizon_lod_distance_blocks,
     )
 }
 
@@ -1067,6 +1142,56 @@ mod tests {
     }
 
     #[test]
+    fn post_apply_camera_snapshot_replaces_pre_maintenance_authority() {
+        let mut scene = SceneCountersV1 {
+            visible_horizon_camera_valid: false,
+            visible_horizon_camera_focus_mm: [1, 1, 1],
+            horizon_camera_path_ordinal: 8,
+            ..SceneCountersV1::default()
+        };
+        let counters = PostApplyHorizonCameraCountersV1 {
+            camera_valid: true,
+            camera_mode: 3,
+            projection: 1,
+            focus_mm: [16_384_500, 16_384_430, 3_268],
+            position_mm: [16_384_500, 16_320_432, 3_827],
+            yaw_microradians: 0,
+            pitch_microradians: 8_727,
+            distance_mm: 64_000,
+            configured_base_fov_microradians: 1_221_730,
+            base_fov_microradians: 1_221_730,
+            target_base_fov_microradians: 1_221_730,
+            effective_fov_microradians: 1_221_730,
+            fixation_millionths: 1_000_000,
+            target_fixation_millionths: 1_000_000,
+            aspect_millionths: 1_777_778,
+            frustum_ground_width_mm: 159_336,
+            frustum_ground_depth_mm: 10_270_161,
+            camera_token: [3; 32],
+            path_id: 1,
+            path_ordinal: 1_484,
+            path_token: [4; 32],
+            surface_authority_available: true,
+            cutaway_solid: true,
+            underworld_rejected: false,
+            sky_ground_expected: true,
+            focus_surface_mm: 0,
+            camera_surface_mm: 0,
+            minimum_clearance_mm: 2_016,
+        };
+        apply_post_apply_horizon_camera_counters(&mut scene, counters);
+        assert!(scene.visible_horizon_camera_valid);
+        assert_eq!(scene.visible_horizon_camera_focus_mm, counters.focus_mm);
+        assert_eq!(
+            scene.visible_horizon_camera_position_mm,
+            counters.position_mm
+        );
+        assert_eq!(scene.visible_horizon_camera_token, counters.camera_token);
+        assert_eq!(scene.horizon_camera_path_ordinal, counters.path_ordinal);
+        assert_eq!(scene.horizon_minimum_clearance_mm, 2_016);
+    }
+
+    #[test]
     fn visible_horizon_telemetry_binds_camera_frustum_rings_and_lod_draw() {
         let fields = visible_horizon_json_fields_v1(SceneCountersV1 {
             visible_horizon_fixture_selected: true,
@@ -1107,7 +1232,8 @@ mod tests {
             visible_horizon_max_radius_chunks: 25,
             visible_horizon_max_distance_blocks: 800,
             visible_horizon_lod_terrain_draw_ready: true,
-            visible_horizon_lod_terrain_detail: 450,
+            visible_horizon_lod_terrain_detail: 400,
+            visible_horizon_lod_distance_blocks: 675,
             ..SceneCountersV1::default()
         });
         assert!(fields.contains("\"visible_horizon_fixture_selected\":true"));
@@ -1139,6 +1265,7 @@ mod tests {
         assert!(fields.contains("\"visible_horizon_far_17_24_chunks\":89"));
         assert!(fields.contains("\"visible_horizon_max_distance_blocks\":800"));
         assert!(fields.contains("\"visible_horizon_lod_terrain_draw_ready\":true"));
-        assert!(fields.ends_with("\"visible_horizon_lod_terrain_detail\":450"));
+        assert!(fields.contains("\"visible_horizon_lod_terrain_detail\":400"));
+        assert!(fields.ends_with("\"visible_horizon_lod_distance_blocks\":675"));
     }
 }
