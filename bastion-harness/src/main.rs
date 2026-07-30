@@ -3518,6 +3518,46 @@ fn b5_scenario(args: &Args) -> ExitCode {
             break;
         }
     }
+    // CHOP-ORACLE GROUND-TRUTH AUDIT (Ben/Fable-directed, 2026-07-30):
+    // `ch_trees == 0` alone can't say whether the search's PRECONDITION
+    // (a tree actually exists in the searched volume) was ever met -- the
+    // falsifier canon, same shape as the 40-clause conjunction and the
+    // rescue-clause conflation earlier today. Independently scan the SAME
+    // 9 areas for a real trunk-plus-canopy (not via bastion_place_chop_area
+    // -- that's the subject under test; not a bare Wood/Leaves scan --
+    // Fable's ruling: a wooden STRUCTURE would fabricate a miss). REPORT
+    // ONLY: does not gate `pass` -- the classification itself, not a
+    // verdict on it, is this row's deliverable. Keeps the witness (which
+    // area index, which blocks) so a `real_detection_miss` is checkable.
+    let mut ch_ground_truth_witness: Option<(usize, Vec3<i32>, Vec3<i32>)> = None;
+    for (idx, (ox, oy)) in [
+        (0, 0),
+        (64, 0),
+        (-64, 0),
+        (0, 64),
+        (0, -64),
+        (64, 64),
+        (-64, -64),
+        (96, 0),
+        (0, 96),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let c = Vec2::new(cx + ox, cy + oy);
+        if let Some(w) =
+            server.bastion_chop_ground_truth(c - Vec2::broadcast(32), c + Vec2::broadcast(32))
+        {
+            ch_ground_truth_witness = Some((idx, w.wood_pos, w.leaves_pos));
+            break;
+        }
+    }
+    let ch_ground_truth_tree_present = ch_ground_truth_witness.is_some();
+    let ch_oracle_class = match (ch_trees >= 1, ch_ground_truth_tree_present) {
+        (true, _) => "pass",
+        (false, true) => "real_detection_miss",
+        (false, false) => "precondition_unmet",
+    };
     // MIXED KINDS: the first tree's box contains BOTH trunk (Wood) and canopy
     // (Leaves) — the whole tree, not a Wood slab (the redesign's point).
     let ch_mixed = ch_aabb.is_some_and(|a| {
@@ -3777,6 +3817,24 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_b15_adjacent_claimed": b15_adjacent_claimed,
         "b5_b15_floater_skipped": b15_floater_skipped,
         "b5_ch_trees": ch_trees,
+        // CHOP-ORACLE GROUND-TRUTH AUDIT: report-only, does not gate `pass`.
+        // "pass" = oracle found a tree; "real_detection_miss" = a real
+        // trunk-plus-canopy is physically there and the oracle returned
+        // zero anyway (an actual bug -- witness below is checkable);
+        // "precondition_unmet" = no tree exists anywhere in the 9 searched
+        // areas -- the oracle never had a chance to succeed, and
+        // ch_trees==0 here is a false red, not a finding.
+        "b5_ch_ground_truth_tree_present": ch_ground_truth_tree_present,
+        "b5_ch_oracle_class": ch_oracle_class,
+        // (search-area index, wood block pos, leaves block pos) on a hit --
+        // the witness a real_detection_miss verdict must be checked against.
+        "b5_ch_ground_truth_witness": ch_ground_truth_witness.map(|(idx, wood, leaves)| {
+            serde_json::json!({
+                "area_index": idx,
+                "wood_pos": [wood.x, wood.y, wood.z],
+                "leaves_pos": [leaves.x, leaves.y, leaves.z],
+            })
+        }),
         "b5_ch_cells": ch_cells,
         "b5_ch_jobs": ch_jobs,
         "b5_ch_mixed": ch_mixed,

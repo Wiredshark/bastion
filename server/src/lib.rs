@@ -2519,6 +2519,26 @@ impl Server {
         )
     }
 
+    /// bastion (chop-oracle ground-truth audit, harness hook, 2026-07-30):
+    /// does a trunk-plus-canopy (Wood with Leaves above it, same column)
+    /// physically exist anywhere in this XY footprint, independent of
+    /// [`Self::bastion_place_chop_area`]'s own detection pipeline -- see
+    /// [`bastion_chop::detect_trees_ground_truth`] for why it must not
+    /// reuse that pipeline's candidate/validity gates, and why the
+    /// predicate is Wood-then-Leaves rather than either block alone.
+    /// Returns the witness block pair on a hit, so a miss is checkable.
+    pub fn bastion_chop_ground_truth(
+        &self,
+        min_xy: vek::Vec2<i32>,
+        max_xy: vek::Vec2<i32>,
+    ) -> Option<bastion_chop::TreeGroundTruthWitness> {
+        let ecs = self.state.ecs();
+        let world = ecs.read_resource::<Arc<World>>();
+        let index = ecs.read_resource::<IndexOwned>();
+        let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
+        bastion_chop::detect_trees_ground_truth(&world, &index, &terrain, min_xy, max_xy)
+    }
+
     /// bastion (CHOP-FELLING, harness hook): place a base-cut from an
     /// EXPLICIT base — the oracle-free path for the fixture-built trees the
     /// test_world can't grow (the oracle half degrades under the stub
