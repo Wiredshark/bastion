@@ -290,3 +290,76 @@ treatment that fails **mine only**.
 Void-control tally so far, all found before running: matched on the wrong
 AXIS; stitched across two BUILDS; and now **contaminated on a clause neither
 side was looking at**. Each was invisible in the numbers.
+
+---
+
+## PARKED (Fable ruling, 2026-07-30) — and the precondition for resuming
+
+**Parked on PRIORITY, not on a verdict.** It concerns 1 seed of 72, its
+instrument needs a rebuild, and — decisively — **no sound pair exists in this
+corpus.**
+
+### The blocking fact: there is no valid pair, even in principle
+
+A 32-clause check (rather than the two clauses we had been tracking) found
+**every member of both pairs contaminated, 4 of 4** — and the treatment too:
+
+| seed | role | failing clauses |
+|---|---|---|
+| 148 | "control" | 7 — flat_total, log_sum, chop_cleared, build_placed, flat_bounds_ok, b15_ontop, b15_adjacent |
+| 52 | "control" | 1 — ch_leaf_cleared |
+| 146 | treatment | 8 |
+| **61** | **treatment (this doc's subject)** | **5 — mine_cleared, build_placed, any_needs_materials, ch_leaf_cleared, mine_blocks_mined** |
+
+**Seed 61 is not a mine-only failure.** It fails five clauses across four
+subsystems, so the cascade may not be what makes its mine fail, and nothing in
+the current data separates those.
+
+Across all 72 seeds: **2 mine-only failures** (54 at 22 timeouts, 71 at 20)
+and **5 fully-clean high-friction controls** (76 at 29, 74 at 12, 66 at 11,
+129 at 11, 142 at 10). **No exact timeout match exists between any clean
+treatment and any clean control** — nearest gaps are 7 and 8, far too wide on
+a variable whose entire premise is that magnitude does not discriminate.
+
+**PRECONDITION FOR RESUMING — this is the line a fresh session cannot derive
+and would otherwise spend a fan rediscovering: no sound pair exists in seeds
+49-156. The row needs a WIDER CORPUS SEARCH for a mine-only failure matched
+to a fully-clean high-friction seed. Do not rebuild pairs from the seeds named
+above; all four are contaminated.**
+
+Void-control tally, all caught pre-run: wrong AXIS · stitched across BUILDS ·
+contaminated on an UNWATCHED CLAUSE · **no sound pair available at all.**
+Exact-count matching on a noisy scalar was fragile from the start.
+
+### What was NOT wrong: the probe is behaviour-neutral, empirically
+
+Waves 10+11 covered **seeds 49-84 — 36 seeds, zero drift on six deterministic
+fields** (`mine_blocks_mined`, `mine_cleared`, `travel_timeouts`,
+`max_same_target_timeouts`, `chop_cleared`, `log_sum`) against probe-free
+`54c22680`. Seeds 61 and 71 are included. Two consequences: measurements may
+be combined across the probe boundary (so the 72-seed distribution and the
+0/55 low-friction result stand), and **seed 61's five failing clauses predate
+the probe** — they are not an artifact of this instrumentation.
+
+### Carried debt: the per-member fix was written, then REVERTED unbuilt
+
+The fix for the suspension above was implemented and **deliberately discarded
+rather than committed**, because the box was on another lane's critical path
+and committing unverified code is not allowed. Re-implementing is minutes:
+
+- add `Server::bastion_cascade_probe_members() -> Vec<(u64,u32,u32,u32,u32)>`
+  beside the maxima accessor — build a `BTreeMap<u64, (u32,u32,u32,u32)>`
+  keyed on the **raw** uid (`uid.0.get()`), which sorts for free and avoids
+  reconstructing a `Uid` from a `u64` (the inner value is a `NonZeroU64`);
+- fill it from all four maps, then emit as `b5_cascade_probe.members` with
+  every row — no cap: the set is colonist-bounded and truncation would hide
+  diffuse cascades while keeping concentrated ones;
+- keep the maxima accessor for the gate-0 aggregate. Bound the detail, never
+  the aggregate.
+
+**Live defect found while writing it, still present in committed code:**
+`bastion_cascade_probe`'s `members_seen` chains only `cascade_frontier_completes`
+and `cascade_access_emissions`. A member that reached an ABORT without ever
+completing a frontier or emitting a plan is **invisible to it** — i.e. it
+undercounts exactly the members whose bound-1 behaviour this row studies.
+Anyone reading `members_seen` today should know it is a lower bound.
