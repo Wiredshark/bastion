@@ -14104,3 +14104,62 @@ b5's real failure picture is far smaller than its red count ever suggested.
 is next. Mode 1 first (zero-mined, 11 permanent exact repros), starting at seed
 110: locomotion [104, 0, 0] — low no-progress, no timeouts, no rescues, and
 still zero blocks removed. Nothing looks wrong except the outcome.
+
+## THE NULL RESULT WAS DOWNGRADED BY ADVERSARIAL REVIEW (07/30)
+
+Opus reviewed 8c271de993 — the "18/18 precondition_unmet, 0/18 detection
+misses" claim — under an explicit instruction to attack it HARDER than a
+positive finding, because "no bug exists" has no natural corrector: nothing
+downstream ever contradicts it, whereas a false positive dies the moment
+someone tries to reproduce it.
+
+**VERDICT: the claim is "zero false negatives THAT THIS GROUND TRUTH IS CAPABLE
+OF SEEING" — NOT "zero false negatives."** Still a genuine, useful result about
+what the scanner sees; NOT evidence the oracle is clean. Both readings were
+available and only one was safe to act on.
+
+**THE FIND NOBODY HAD — THE FIRST-WOOD LOCK.** `wood_z` latches the LOWEST Wood
+in the scan window and never updates, so the height cap is measured from that
+block rather than from the trunk belonging to the leaves found. (a) A real tree
+is missed with NO exotic geometry required — any wood lower in the column
+(buried log, below-grade timber, root) shifts the reference: a canopy 35 above
+its own trunk is inside the 40 cap, but 43 > 40 if that trunk sits 8 above an
+older wood block. (b) **The witness may be TWO DIFFERENT OBJECTS** — `wood_pos`
+is the lowest wood, `leaves_pos` the first leaves above it, with nothing tying
+them to one tree. That destroys the "checkable, not merely counted" property the
+row existed to provide. My own z-gap-of-1 worry was the shallow version; the
+pair need not be one object at ANY gap.
+
+**THE INTERACTION THAT MADE IT URGENT:** `terrain.get()` Err and `sampler.get()`
+None both `continue` SILENTLY, so "could not look" is indistinguishable from
+"looked and found nothing" — and 5b was mid-build on the expanding search, which
+multiplies that mode by five. Current commit is safe (128-block extent inside
+the 160-block force-load) but with only 32 blocks of margin; at ~352 blocks it
+needs radius ~11 chunks, and any shortfall would SILENTLY inflate
+`precondition_unmet` while looking clean. Both fixes routed INTO the in-flight
+commit (same files, same fixture change, no extra re-baseline): track the
+NEAREST wood BELOW each leaves block, and add a THIRD outcome `scan_incomplete`
+distinct from found/not-found.
+
+**THE REVIEWER CORRECTED MY REVIEW DIRECTION — a loose predicate makes a NULL
+result STRONGER.** If the scanner accepts wood-plus-any-leaf-above and STILL
+found nothing across 18 cases, that is MORE evidence of genuine absence, not
+less. So witness looseness does not undermine the 18 nulls; only the MISS modes
+do. I had been pushing effort toward tightening false positives, which would
+have improved nothing about the claim under test.
+
+**SHARED BLIND SPOT, ASYMMETRIC IN THE DANGEROUS DIRECTION.** I framed it as
+"both inherit `col.alt` so a bug hides." Sharper truth: the ground truth uses
+`col.alt` to place its Z window; the oracle does NOT use it at all (it goes
+through `sim.get_area_trees` + `tree_valid_at`). A `col.alt` bug therefore
+blinds ONLY THE AUDITOR while the subject keeps working, and the comparison
+reports "no bug" for entirely the wrong reason. **A shared dependency that
+blinds only the checker is worse than no sharing at all.**
+
+Disclosed, not blocking: the 40-block cap makes giant/redwood canopies invisible
+(recorded as a stated limitation). `ArtLeaves` unmatched — traced to cave.rs,
+so a predicate boundary, not a live surface miss; graded weak by the reviewer
+rather than listed at equal weight, which is what makes a review usable.
+
+**NEW STANDING ROUTING RULE: a NULL result gets MORE adversarial review than a
+positive one.** Adopted.
