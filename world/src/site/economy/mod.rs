@@ -2575,6 +2575,75 @@ mod t8_4_model_sensitivity_tests {
         );
     }
 
+    /// REVIEW ADDITION (`T8.4` cross-review): the non-carrier claim
+    /// observed through the WHOLE economy, not through the one field
+    /// that is definitionally overwritten.
+    ///
+    /// **Why the chunk-5 test above cannot establish its own claim.**
+    /// It perturbs `surplus` and then observes `e.surplus[flour]`. That
+    /// field is the one thing guaranteed to be reset by the very
+    /// overwrite under discussion, so a zero curve is nearly a
+    /// tautology: it proves the assignment at `tick()` happened, not
+    /// that the perturbation reached nothing on its way there. A leak
+    /// into a trade order, a price, or a population decision would be
+    /// invisible to that observation -- the field is clean and the
+    /// damage is already elsewhere.
+    ///
+    /// **Why a leak is plausible enough to be worth testing.** `tick()`
+    /// DOES read `self.surplus`, in three places -- `plan_trade_for_site`
+    /// (via the call at the `potential_trade` line, which filters
+    /// `**a < 0.0` / `**a > 0.0` into missing/extra goods), the
+    /// `.iter().for_each(..)` pass, and the `population_growth` test on
+    /// `FOOD_INDEX`. Two of those are SIGN TESTS, where a 1-ULP change
+    /// near zero is not damped but AMPLIFIED into a discrete flip: a
+    /// good moves between "missing" and "extra", or population growth
+    /// flips. The property that saves it is purely ORDER -- the
+    /// overwrite precedes all three readers -- and order is exactly
+    /// what a future edit can change without noticing.
+    ///
+    /// So this test observes `canonical_baseline_hash_v1()`, which
+    /// covers every hashed economy field at once. If a perturbation
+    /// leaks anywhere the economy's own identity can see, this moves
+    /// even when `surplus` itself reads clean.
+    #[test]
+    fn a_surplus_perturbation_reaches_no_hashed_economy_field() {
+        let flour = GoodIndex::try_from(Good::Flour).expect("Flour is a valid Good");
+        let setup = move |e: &mut Economy| e.surplus[flour] = 1.0;
+        let perturb = move |e: &mut Economy| {
+            let s = e.surplus[flour];
+            e.surplus[flour] = f32::from_bits(s.to_bits() + 1);
+        };
+        // Fold the whole canonical hash to a scalar the sweep can curve:
+        // any differing byte moves it.
+        let observe = move |e: &Economy| {
+            let id = e.canonical_baseline_hash_v1();
+            id.digest.bytes.as_array().iter().fold(0.0f32, |acc, b| acc * 2.0 + f32::from(*b))
+        };
+
+        // PRECONDITION on MY OWN observation, asserted because a
+        // digest folded into an f32 is NOT injective -- `acc * 2.0 + b`
+        // loses the early bytes once the accumulator passes f32's 24-bit
+        // mantissa, so a fold that silently ignores most of the digest
+        // would make this whole test a vacuous green. Prove it moves for
+        // a change to a hashed field before trusting it not to move.
+        let mut probe_a = Economy::default();
+        probe_a.stocks[flour] = 1.0;
+        let mut probe_b = Economy::default();
+        probe_b.stocks[flour] = 2.0;
+        assert_ne!(
+            observe(&probe_a),
+            observe(&probe_b),
+            "the digest-fold observation must actually discriminate a hashed-field change, or              a zero curve below proves nothing about leakage"
+        );
+
+        let curve = generic_sensitivity_curve_v1(67, true, 5, setup, perturb, observe);
+        verdict_v1("seed=67, WHOLE-ECONOMY hash after a surplus ULP (expected: 0)", &curve);
+        assert!(
+            curve.iter().all(|&d| d == 0.0),
+            "a surplus perturbation reached some hashed economy field. The chunk-5 claim is              about ORDER (the tick() overwrite precedes plan_trade_for_site's sign tests, the              iter pass and the population_growth test) -- a nonzero curve here means that              ordering no longer holds, and the sign tests turn a 1-ULP change into a discrete              flip rather than damping it: {curve:?}"
+        );
+    }
+
     /// Chunk 6 (LAST, extra scrutiny per the orchestrator's own ruling):
     /// `smoothing` -- `values[good] = smooth * values[good].unwrap_or(val)
     /// + (1.0 - smooth) * val` (mod.rs, `smooth = 0.8`) is a first-order
