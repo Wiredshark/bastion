@@ -139,3 +139,40 @@ diagnosis's own ceiling-versus-resets trap one level up.
 **So the order of operations for reading A/B results is:** confirm
 `b5_cascade_probe.present`, confirm at least one counter nonzero
 somewhere, and only then treat a zero elsewhere as evidence.
+
+---
+
+## Pre-registered reading of the A/B run (written BEFORE the data)
+
+Recorded before the probe has produced a single number, so the
+interpretation cannot be fitted to the result afterwards. Seed 61,
+release build with `RUSTC_WRAPPER=""` and `cargo clean -p` eviction.
+
+**Gate 0 — is the measurement admissible at all?**
+`b5_cascade_probe.present` must be `true` AND at least one counter
+nonzero *somewhere*. If the object is absent: stale/uninstrumented
+binary, suspect the build before the hypothesis. If present but every
+counter is zero including `frontier_completes`: **the probe did not
+emit**, which is UNPROVEN, not evidence of health — the same false
+all-clear in a third costume. Neither case licenses any claim about the
+cascade.
+
+**Then, and only then:**
+
+| Observation | Verdict |
+|---|---|
+| `abort_ceiling_max` low (≤2) AND `abort_resets_max` HIGH | **Diagnosis CONFIRMED.** The bound is being refilled, not respected; `frontier-complete` is the refill site. Resets answer "how fast". |
+| `abort_ceiling_max` low AND `abort_resets_max` 0 | **Diagnosis WRONG on bound 1.** The counter never had a nonzero value to clear, so the progress-reset story is not the generator. Look elsewhere — probably at what admits plan N+1. |
+| `abort_ceiling_max` ≥5 (bound actually exceeded) and the cascade continued | **Diagnosis WRONG.** The bound bound and something else overrode it; my prediction B fails on its own terms. |
+| `access_emissions_max` large while `frontier_completes` ≈ 0 | Plans are being minted without frontiers completing — a DIFFERENT generator from the one described here, and bound 1 is irrelevant. |
+
+**On magnitude, per the orchestrator's question:** a reset count of 2-3
+is a bound working roughly as intended under a hard case. A reset count
+in the tens is a loop. The distinction between "exceeded by one" and
+"exceeded by hundreds" is the difference between a threshold that needs
+tuning and a bound that does not bind at all — only the second justifies
+touching shared carve machinery, and only on more than one seed.
+
+**Standing caveat that survives any result:** n=1. Seed 61 is one seed in
+72. Nothing here justifies surgery on shared access/carve/dormancy code
+until the entry condition (fix mechanism 2, re-measure 61) has been run.
