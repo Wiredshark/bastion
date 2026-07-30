@@ -14662,3 +14662,85 @@ detached and was invisible until a post-hoc `git status`; caught pre-push. Same
 class as the day's theme — **an operation reporting success while the result goes
 somewhere nobody looks.** Fixed with a distinctly-named local branch tracking the
 same remote; worktree provisioning should fail loudly rather than detach.
+
+## TWO PLAYER-FACING FIXES LANDED (07/30, 2b1b3ef0d9)
+
+**#55 BLOCKED-DESIGNATION VISIBILITY — the first gameplay fix of the day.**
+`JobBoard.blocked_regions` populated only at the `plan_access` no-route site,
+edge-triggered, cleared on cancel/re-designate; `blocked_by()` wired into
+`BastionJobInspect` in BOTH the harness hook and the live wire path
+(`server/src/sys/msg/in_game.rs`), kept in lockstep. Notification via
+`ChatType::Meta` — **routed deliberately through the chat pipeline BECAUSE chat
+already renders**, converting "I can't verify the player sees it" into "it uses
+a path already proven to work." HUD/alert-panel filed as a follow-on with its
+renderer-VM requirement attached, named rather than implied.
+**Verified on 10 REAL residual seeds, not a synthetic fixture: 9/10 show every
+cell in a cascade pointing at the SAME blocking cell.** Seed 71's ZERO hits is
+the better half — a feature that fired on everything would be indistinguishable
+from one that works. 5b deliberately did NOT hook the amnesty/churn-release path
+after reading its own comments (transient congestion, not a permanent block) —
+the judgement that keeps a useful alert from becoming a muted one.
+
+**#57 PHANTOM JOBS — colonists dispatched to mine cells that no longer exist.**
+Root cause: the only re-validation (`job_wanted` at the mid-travel moot-check)
+runs **exclusively inside a colonist's Traveling state** — it never runs for a
+job nobody owns. A cave-in severing a sibling cell leaves that cell's job live
+forever. Fix: board-wide periodic sweep against current terrain regardless of
+claim state, with the predicate extracted (`job_still_wanted`) so sweep and
+moot-check cannot drift. **Seed 76: 17 live jobs on already-empty cells -> 0,
+still passes.** 66/74/148 also to zero.
+
+**★ THE NEAR-MISS INSIDE #57 IS THE MOST DANGEROUS CATCH OF THE DAY.** 5b's first
+draft called `job_wanted` for every kind, which would have **retired every Farm
+job every cycle** (`job_wanted(Farm,_)` is unconditionally false; Farm validity
+is state-driven). **b5 does not exercise Farm — the regression would have been
+structurally invisible to all 84 seeds, every clause green, farming silently
+destroyed.** Found by re-reading the moot-check's own comment, not by testing,
+because no test we ran could have. **Rule: when a fix EXTENDS a predicate across
+kinds, the corpus covers only some of those kinds, and the uncovered ones are
+exactly where the regression hides.**
+
+**★ AND THE COVERAGE GAP IS MINE.** I grepped: Farm IS exercised — `farm_scenario`
+(main.rs:7864), `inspect_scenario` (:9780), `spiral_scenario` (:10870). **We own
+the tests and ran none of them today.** All 13 fan waves were `--b5-scenario`
+exclusively. Worse than "no coverage": coverage existed and the loop didn't
+include it. **Practice changed: shared-machinery changes get fanned against more
+than b5.** Same aperture failure as the seed-61 clause set — b5 was where the
+bugs were, so it became the only thing I looked at.
+
+**#56 CHOP NO-PATH — ROOT-CAUSED, and it's the same family as the mine footprint
+bug.** `detect_trees` validates worldgen SUITABILITY only (attr existence,
+`tree_valid_at`'s alt/water/spawn-rate/path gates, physical Wood/Leaves
+presence) — **no pathing or reachability check exists before a chop job is
+placed.** Mine has an exposure gate; chop never had the equivalent. Seed 119's
+target is **4.6 blocks away in raw distance** while the offline flood-fill
+searched ~60,000 columns without connecting — all tiers FALSE, not incomplete.
+**Topologically isolated, not far away**: a cliff or chasm, which no suitability
+criterion can catch because suitability asks whether a tree GROWS there, not
+whether a colonist can stand next to it.
+**RULED:** add the reachability gate (1) AND keep #55's visibility (2) —
+complementary, not alternatives, since (2) alone leaves the game creating jobs
+that can never complete. Scope: **do NOT touch tree-detection CRITERIA** — add an
+orthogonal gate AFTER detection; **reject only when PROVABLY unreachable** (a
+budget-capped probe must never reject); **a rejected tree must be VISIBLE, not
+silently skipped**, or we fix one silent no-op by building another.
+**Check the third sibling first: does BUILD have the same gap?** Mine had it,
+chop doesn't — if Build also designates without verifying accessibility this is a
+family of three deserving one fix pattern. That's a grep, not an investigation.
+
+**#59 BUDGET HYPOTHESIS DEAD — killed by 5b's own measurement, and it reframes
+the question productively.** `no_progress_ticks` doesn't discriminate either
+(seed 52 PASSES at 11817, higher than failing 51's 8530). But the load-bearing
+fact is elsewhere: **seed 51's residual cells show only 2 timeouts EACH against a
+180s window that was mostly never spent on them.** They were not retried until
+the clock ran out — **they were abandoned after two attempts and never
+re-offered.** You cannot exhaust a budget you never spent.
+**New question, mechanical not statistical: what happens to a job after a
+timeout — is it re-offered, and how soon?** If repeated timeouts deprioritise or
+cooldown a job, then abandonment is a SCHEDULING decision, not a shortage — and
+that explains what killed four hypotheses: identical timeout counts landing on
+opposite sides, because what matters is WHEN they occurred and whether the job
+came back, which no total captures. **Steered 5b OFF a colony-level
+supply/demand model** (a fifth hypothesis needing a whole measurement apparatus)
+and onto the arbitration re-offer path: a code read plus one `times_offered`
+counter. Anomalies beat models.
