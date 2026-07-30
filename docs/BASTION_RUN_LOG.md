@@ -14588,3 +14588,77 @@ structural data + the sccache-hypothesis test) → **#55 blocked-designation
 visibility** → **#56 chop reliability**, starting at **seed 52, the cleanest
 single-defect repro in the corpus** (one failing clause, everything else green),
 then 78/80 (low friction, no cascade confound).
+
+## STRUCTURAL POSITION FALSIFIED; CHOP GIVES THE FIRST PROVABLE CORRECTNESS BUG (07/30)
+
+**★ FOURTH DEAD HYPOTHESIS — structural position, killed at n=16 by the exact
+falsifiers named in advance.** I predicted it would die to (a) a failing seed
+with all-non-gating timeouts or (b) a passing seed with gating timeouts. **Both
+appeared: seed 55 fails at 3/9 gating (majority NON-gating); seeds 66 and 142
+pass with 9/9 gating — seed 51's exact profile.** The clean 51-vs-76 separation
+was the flattering n=2 sample I'd flagged. Naming the kill conditions before the
+table existed is the only reason #55's design wasn't built on it.
+Dead today: scramble lead · dose-response · attribution · structural position.
+**Mechanism (2) currently has NO discriminator** — magnitude doesn't separate,
+position doesn't separate, the friction band is necessary but not sufficient. No
+fifth hypothesis proposed; the chop split has actual mechanism in it.
+
+**★ CHOP REACHABILITY SPLITS THREE WAYS — and one group is the correctness bug I
+hypothesised at the start and could never evidence:**
+- **119, 80, 26 — NO path exists** (all tiers false / incomplete). **The
+  reachability heuristic claims a job is doable when it provably isn't**, then
+  burns a colonist on it forever. Provable, testable, and exactly what a player
+  hits. **#56 starts here, not at seed 52.**
+- 18, 16 — path exists on all three tiers, chop still fails (execution/arrival).
+- 38 — needs the ordinary jump, still fails.
+
+**★ SEED 148 — POSSIBLE CROSS-PLATFORM DETERMINISM DEFECT, test in flight.** 5b's
+Windows build: `mine_jobs_remaining=1` (mine INCOMPLETE) + 8 failing clauses. The
+VM fan: mine complete 27/27 + the same 7 clauses minus `stone_sum_lower`. Clause
+sets nearly agree; **the mine outcome does not.** Our determinism proof was
+VM-to-VM, SAME OS — it never tested cross-platform. **If real this outranks the
+mine bug, the chop bug and both queued fixes.** Wave 12 fanning seeds 145-168 on
+5b's exact tip `0feceef806`; void if the attested commit differs. 5b held it out
+of the table rather than forcing it — correct.
+
+**DISK: C: 0.4 GB -> 46 GB FREE.** Culprits measured, not guessed: ~37 GB stale
+Claude session temp, an 8.3 GB stray cargo target on C: (leftover from the
+retired C:-redirect), 10 GB sccache. `SCCACHE_DIR` moved to `E:\sccache-cache`
+(20 GB cap). **Probable true cause of today's build anomalies: with ~0 GB free,
+sccache could READ but not WRITE — a cache that serves stale objects while cargo
+reports success is exactly both stale-binary incidents, and fits Opus's
+"output path not writable" better than permissions.** Third wrong root cause of
+mine today (target-dir collision, then sccache races) and the cheapest to have
+checked: I never ran `df`.
+
+**★★ AND THE CLEANUP BROKE A LIVE SESSION — MY ERROR, DISCLOSED.** I selected
+"stale" session dirs by **the directory's own mtime**, which on Windows does NOT
+update when files in SUBDIRECTORIES change. Opus's live session looked nine days
+idle; I deleted it mid-verification. Its background task returned **exit 0 with a
+12-byte log**, then the output file vanished. **Only its standing rule — never
+accept exit 0 with an empty log — stopped it committing a verification with no
+evidence it had run.** Nothing lost (verified: five commits present, tree clean,
+fix in HEAD; only the log died).
+**The rule already existed and I didn't apply it** ([[never-blanket-cleanup-shared-host]]:
+delete only what you created, BY NAME). **Age-based selection is
+"everything that isn't mine" wearing a timestamp.** And Opus caught that my FIX
+was also wrong: **age is not liveness** — it had been BLOCKED for hours, so a
+6-hour window deletes it too. Hardened rule recorded; durable practice adopted:
+**logs go inside the E: worktree, key lines echoed to stdout — never keep
+evidence on disk another actor may reap.**
+Opus's correction to my framing, accepted: its refusal wasn't vigilance, it was a
+RULE written that morning after three burns — **rules transfer to whoever's on
+shift; vigilance doesn't.**
+
+**LANDED:** Opus `fe82a5a8a9` — `members_seen` union of all four maps (was a
+lower bound chaining only two), verified `check --all-targets` + unfiltered
+veloren-server 231/0/0. 5b `0feceef806` — tier correction + route-diagnostic
+sequence + structural test.
+
+**INFRA DEFECT FILED: two worktrees provisioned on the SAME branch name**
+(Opus `.claude/worktrees/builder5` held `bastion/apex-engine-integration`, so 5b's
+`.engine-integration-wt` silently fell to DETACHED HEAD). 5b's first commit landed
+detached and was invisible until a post-hoc `git status`; caught pre-push. Same
+class as the day's theme — **an operation reporting success while the result goes
+somewhere nobody looks.** Fixed with a distinctly-named local branch tracking the
+same remote; worktree provisioning should fail loudly rather than detach.
