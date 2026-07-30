@@ -796,6 +796,20 @@ impl Camera {
     /// Set the field of view of the camera in radians.
     pub fn set_fov(&mut self, fov: f32) { self.tgt_fov = fov; }
 
+    /// Set current and target base FOV together without interpolation.
+    ///
+    /// Exact diagnostic camera fixtures use this after ordinary camera
+    /// maintenance so host frame cadence cannot leave a different terminal
+    /// interpolation residual in otherwise identical runs.
+    pub fn set_fov_instant(&mut self, fov: f32) {
+        self.tgt_fov = fov;
+        self.fov = fov;
+    }
+
+    /// Return current and target base FOV for exact camera-authority evidence.
+    #[must_use]
+    pub fn fov_state_v1(&self) -> (f32, f32) { (self.fov, self.tgt_fov) }
+
     /// Set the 'fixation' proportion, allowing the camera to focus in with
     /// precise aiming. Fixation is applied on top of the regular FoV.
     pub fn set_fixate(&mut self, fixate: f32) { self.tgt_fixate = fixate; }
@@ -929,5 +943,16 @@ mod post_r2_visible_horizon_tests {
         camera.set_fixate_instant(1.0);
         assert_eq!(camera.fixation_state_v1(), (1.0, 1.0));
         assert_eq!(camera.get_effective_fov(), 1.1);
+    }
+
+    #[test]
+    fn immediate_base_fov_updates_current_and_target_coherently() {
+        let mut camera = Camera::new(16.0 / 9.0, CameraMode::Overseer);
+        camera.set_fov(0.8);
+        assert_eq!(camera.fov_state_v1(), (1.1, 0.8));
+
+        camera.set_fov_instant(1.25);
+        assert_eq!(camera.fov_state_v1(), (1.25, 1.25));
+        assert_eq!(camera.get_effective_fov(), 1.25);
     }
 }
