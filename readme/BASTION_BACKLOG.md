@@ -140,6 +140,37 @@ remove an earlier block's entries.
   `assignments` tuple; harness step-numbering and mine-ramp comments
   corrected (the ramp's first hop is 2 blocks, not 1 — works, verified,
   but the comment misdescribed it).
+- **IDEA / design question, filed not fixed (Ben/Fable-directed, 2026-07-30,
+  mine Mode-1 investigation)**: a real worldgen obstruction (a tree, rock
+  outcrop, or anything else `is_filled()`) sitting directly over — or,
+  found empirically, even a couple of blocks above — a designated Mine
+  volume can silently disable the ENTIRE designation forever, with no
+  player-visible indication anything is wrong. Mechanism: the once-per-cycle
+  Mine-reachability sweep (`bastion_jobs.rs`) flags a filled cell
+  unreachable if none of its 6 face-neighbors is open, AND separately
+  requires a standable stance (on-top needs 2 blocks of headroom above the
+  cell) before a colonist may claim it; a tall enough obstruction over the
+  volume's top layer fails both checks for that layer, which never exposes,
+  which means the layer beneath it — which only exposes once the layer
+  above clears — never can either. One blocked cell cascades into the whole
+  volume: every job sits on the board, unclaimed, `unreachable: true`,
+  forever, with near-zero locomotion counters (no colonist ever attempts
+  travel, since none are ever assigned) — confirmed via the B5 harness's
+  `--b5-scenario` (seeds 110/76/92 of the ambient mine-completion corpus,
+  root-caused with a read-only per-cell job/claimant diagnostic plus a
+  "is a filled block directly above the footprint's top layer" witness
+  probe). The harness's own copy of this bug is fixed (the mine test's
+  terraform now force-clears 8 blocks above the dig footprint, matching
+  every other terraformed site in the scenario) — that only makes the TEST
+  stop depending on natural terrain being clear. It says nothing about what
+  the LIVE GAME should do when a player paints a Mine designation whose
+  access happens to be blocked this way. Candidate answers, not decided
+  here: (a) auto-clear/auto-designate the obstruction as part of the same
+  paint action; (b) surface a visible "blocked" state on the affected
+  cells/volume (the UI-4 inspector already has a `BastionJobInspect.
+  unreachable` field it could read); (c) something else. Whichever way it
+  goes, "the player gets no feedback that their mine designation silently
+  did nothing" is the part that needs an answer regardless of mechanism.
 
 ## B5.5 — Zone deletion + pile aggregation (2026-07-09)
 

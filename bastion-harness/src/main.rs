@@ -2952,9 +2952,45 @@ fn b5_scenario(args: &Args) -> ExitCode {
                     Vec3::new(x, y, mine_gz),
                     Block::new(BlockKind::Rock, Rgb::new(120, 120, 120)),
                 );
+            }
+            // TERRAFORM-DETERMINISM (mine Mode-1 fix, 2026-07-30): mine_gz+1
+            // must be air for the RING (unchanged) AND for the dig footprint
+            // itself -- previously this relied on natural terrain already
+            // being clear there, and it wasn't always. The once-per-cycle
+            // Mine-exposure sweep (bastion_jobs.rs) requires a filled cell
+            // to have at least one non-filled face neighbor; when a real
+            // worldgen tree (or any other solid structure) happened to sit
+            // directly over the footprint, the TOP layer could never
+            // expose, and every layer beneath it -- which only exposes once
+            // the layer above clears -- never could either: one missing air
+            // check cascaded into all 27 cells reading unreachable forever,
+            // with no colonist ever assigned (near-zero locomotion counters
+            // -- confirmed via b5_mine_footprint_top_witness on seed 110,
+            // the Ben/Fable Mode-1 zero-mined repro: a real Wood block
+            // sitting exactly here, absent on passing seeds). Same
+            // under-terraformed-assumption class as the build-stall fix
+            // earlier this session, reached through the exposure check
+            // instead of `job_wanted`.
+            //
+            // ONE LAYER WASN'T ENOUGH (found empirically re-testing seed
+            // 110 after the first version of this fix): clearing only
+            // mine_gz+1 flips the top layer's EXPOSURE check (it needs
+            // just one non-filled neighbor), but claiming also requires a
+            // STANCE (`has_standable_stance`), and the on-top stance needs
+            // BOTH pos+1 and pos+2 open ("body room above") -- a tall
+            // enough obstruction (a real tree trunk, easily 2+ blocks)
+            // left mine_gz+2 still solid, so the top layer went
+            // unreachable:false but stayed unclaimed anyway (0 progress,
+            // no claimant, forever). Every OTHER terraformed site in this
+            // scenario (chop_base, build_ok_pos, build_stall_pos, the b15
+            // pad) already clears 8+ blocks above ground; the mine ring's
+            // original single-block clear was already the outlier.
+            // Matching that convention here, for the ring and the
+            // footprint alike.
+            for z in (mine_gz + 1)..=(mine_gz + 8) {
                 server
                     .state_mut()
-                    .set_block(Vec3::new(x, y, mine_gz + 1), Block::empty());
+                    .set_block(Vec3::new(x, y, z), Block::empty());
             }
         }
     }
@@ -3114,6 +3150,75 @@ fn b5_scenario(args: &Args) -> ExitCode {
             .bastion_block_kind(build_ok_pos)
             .is_some_and(|k| k.is_filled());
         if mine_cleared && chop_cleared && build_placed {
+            break;
+        }
+    }
+    // MINE MODE-1 DIAGNOSTIC (Ben/Fable-directed, 2026-07-30): distinguishes
+    // the two live hypotheses for the zero-mined mystery (seed 110 et al,
+    // colonist assigned + mining + earning XP + removing nothing) --
+    // "jobs never claimed" (arbitration never engaged this volume; the XP
+    // signal must come from elsewhere in the scenario) vs "jobs completed
+    // but the block edit never landed" (progress reached threshold, XP/drop
+    // fired, job removed from the board, yet the terrain edit is missing).
+    // `bastion_jobs_in_region` on the exact designation volume answers
+    // which: 0 remaining = the completed-but-edit-missing branch; >0 =
+    // still open (unclaimed or mid-progress) after the full 5400-tick
+    // budget. Report-only, read-only, does not gate `pass`.
+    let mine_jobs_remaining = server.bastion_jobs_in_region(Region {
+        min: mine_min,
+        max: mine_max,
+    });
+    let mut mine_cell_diag: Vec<serde_json::Value> = Vec::new();
+    for x in mine_min.x..=mine_max.x {
+        for y in mine_min.y..=mine_max.y {
+            for z in mine_min.z..=mine_max.z {
+                let pos = Vec3::new(x, y, z);
+                if let Some(common::comp::bastion::BastionInspectKind::Job(j)) =
+                    server.bastion_inspect_cell(pos)
+                {
+                    mine_cell_diag.push(serde_json::json!({
+                        "pos": [x, y, z],
+                        "progress": j.progress,
+                        "claimant": j.claimant,
+                        "unreachable": j.unreachable,
+                        "needs_materials": j.needs_materials,
+                    }));
+                }
+            }
+        }
+    }
+    // MINE MODE-1 ROOT-CAUSE PROBE (Ben/Fable-directed, 2026-07-30): the
+    // "exposure" check (bastion_jobs.rs, the once-per-cycle Mine-reachability
+    // sweep) requires a filled cell to have at least one non-filled face
+    // neighbor; a cell with none is flagged unreachable. The rim-fill loop
+    // above explicitly clears mine_gz+1 to air for the RING around the dig
+    // footprint (so reachability there "never depends on natural terrain"),
+    // but never touches mine_gz+1 for cells INSIDE the footprint itself --
+    // that relies entirely on natural terrain already being air above the
+    // pit's own top layer. If it isn't (a tree, rock outcrop, or anything
+    // else `is_filled()` sitting directly over the footprint for this
+    // seed's worldgen), the TOP layer never exposes, so it never gets
+    // mined, so the layers beneath it -- which depend on the top layer
+    // opening first -- never expose either: one missing air check cascades
+    // into all 27 cells reading unreachable. This is the same under-
+    // terraformed-assumption bug class the build-stall cluster turned out
+    // to be, just reached through the exposure check instead of
+    // `job_wanted`. Report-only, read-only, does not gate `pass`.
+    let mut mine_footprint_top_witness: Option<serde_json::Value> = None;
+    for x in mine_min.x..=mine_max.x {
+        for y in mine_min.y..=mine_max.y {
+            let above = Vec3::new(x, y, mine_max.z + 1);
+            if let Some(k) = server.bastion_block_kind(above)
+                && k.is_filled()
+            {
+                mine_footprint_top_witness = Some(serde_json::json!({
+                    "pos": [above.x, above.y, above.z],
+                    "kind": format!("{:?}", k),
+                }));
+                break;
+            }
+        }
+        if mine_footprint_top_witness.is_some() {
             break;
         }
     }
@@ -3820,6 +3925,22 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_gave_item": gave_item,
         "b5_mine_cleared": mine_cleared,
         "b5_mine_blocks_mined": mine_blocks_mined,
+        // MINE MODE-1 DIAGNOSTIC: report-only, never gates `pass`. 0 means
+        // every job in the volume was removed from the board (claimed,
+        // progressed to threshold, and completed) despite the terrain
+        // edit being absent -- a completion/edit-application bug. >0 means
+        // jobs are still open (see mine_cell_diag for claimant/progress
+        // per cell) after the full budget -- an assignment/arbitration
+        // problem instead.
+        "b5_mine_jobs_remaining": mine_jobs_remaining,
+        "b5_mine_cell_diag": mine_cell_diag,
+        // MINE MODE-1 ROOT-CAUSE PROBE: Some(pos, kind) if a filled block
+        // sits directly above the dig footprint's top layer -- the one
+        // spot the rim-fill loop never explicitly clears to air (only the
+        // RING around the footprint gets that treatment). A hit here
+        // means the top layer can never expose, which cascades to every
+        // layer beneath it reading unreachable.
+        "b5_mine_footprint_top_witness": mine_footprint_top_witness,
         "b5_chop_cleared": chop_cleared,
         "b5_build_placed": build_placed,
         "b5_stone_sum": stone_sum,
