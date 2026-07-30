@@ -154,6 +154,15 @@ impl Lod {
 
     pub fn get_data(&self) -> &LodData { &self.data }
 
+    /// Whether the production first-pass LOD terrain draw has an uploaded
+    /// model available for this frame.
+    #[must_use]
+    pub fn terrain_draw_ready_v1(&self) -> bool { self.model.is_some() }
+
+    /// Exact current production LOD terrain mesh detail.
+    #[must_use]
+    pub fn terrain_detail_v1(&self) -> u32 { self.data.tgt_detail }
+
     pub fn set_detail(&mut self, detail: u32) {
         // Make sure the recorded detail is even.
         self.data.tgt_detail = (detail - detail % 2).clamp(100, 500);
