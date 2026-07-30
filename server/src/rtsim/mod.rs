@@ -74,6 +74,16 @@ impl RtSim {
         worldgen_protocol_root: Option<
             common::apex::subsystem::descriptor::WorldgenProtocolVersion,
         >,
+        // `APEX-T4.1-CONTENT-LIVE`: derived by the caller from a REAL,
+        // once-at-boot asset-tree walk (`common::content_manifest::
+        // build_from_asset_tree_v1`) -- same one-computation-two-
+        // consumers reason as `map_geometry_root`/`worldgen_protocol_root`
+        // (the other consumer being `bootstrap_manifest_v1`'s own Content
+        // descriptor). `None` only when the walk itself failed, recorded
+        // as absent rather than faked.
+        content_protocol_root: Option<
+            common::apex::subsystem::descriptor::ContentProtocolVersion,
+        >,
     ) -> Result<Self, ron::Error> {
         // `APEX-T4.6` chunk 3a: `get_file_path` consumes `data_dir` below
         // (it may push "rtsim" onto it), so the save-universe layout
@@ -177,18 +187,18 @@ impl RtSim {
         let save_epoch_ledger = {
             let baseline_input = common::apex::world_baseline::WorldBaselineInputV1 {
                 world_seed,
-                // `T4-PV`: the worldgen slot is now DERIVED, from the
-                // frozen vocabulary this row's survey settled (see
-                // `world::apex_worldgen_vocabulary`). `content` and
-                // `numeric` stay undescribed rather than fabricated --
-                // the same discipline as `T4.1`'s un-derived
-                // bootstrap-manifest slots -- because their derivations
-                // exist but are not yet wired to a live value here
-                // (`ContentManifest::root` and `NumericProfileIdV1`
-                // both already derive honestly; mapping them in is the
-                // remaining wiring, not a missing derivation).
+                // `T4-PV`: the worldgen slot is DERIVED, from the frozen
+                // vocabulary this row's survey settled (see
+                // `world::apex_worldgen_vocabulary`).
+                // `APEX-T4.1-CONTENT-LIVE`: `content` is now DERIVED too,
+                // from the caller's real, once-at-boot asset-tree walk.
+                // `numeric` stays undescribed rather than fabricated --
+                // its own premise-check (same row) found no compile-time
+                // toolchain/codegen introspection exists yet to derive it
+                // honestly (a `build.rs`-class addition, not this row's
+                // "one incision"); recorded as absent, not faked.
                 worldgen: worldgen_protocol_root,
-                content: None,
+                content: content_protocol_root,
                 numeric: None,
                 map_geometry_root: map_geometry_root.digest.bytes,
                 sites: world.civs().baseline_site_graph_v1(),

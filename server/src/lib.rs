@@ -387,6 +387,34 @@ impl Server {
             ServerBootId::generate(&mut OsRandomBytesSourceV1).map_err(Error::from)?;
         info!("Server boot ID: {}", server_boot_id.to_text_v1());
 
+        // `APEX-T4.1-CONTENT-LIVE`: ContentManifest::build had zero live
+        // callers before this row (only its own test module constructed
+        // one) -- computed ONCE, here, at boot, and cached for the
+        // server's whole lifetime. This must never be re-invoked
+        // per-connection: `bootstrap_manifest_v1`
+        // (`server/src/sys/msg/register.rs`) runs on EVERY client
+        // admission and reads this cached value, never recomputes it.
+        // `common::content_manifest::build_from_asset_tree_v1`'s own doc
+        // names the measured, one-time cost and the scoping decision
+        // (default asset tree only, `VELOREN_ASSETS_OVERRIDE` not
+        // merged). A walk failure is logged and treated as "content
+        // identity absent" (`None`), same discipline
+        // `WorldBaselineInputV1`'s other un-derived slots already use --
+        // never a reason to fail server boot over a compatibility-check
+        // amenity.
+        let content_manifest = match common::content_manifest::build_from_asset_tree_v1(format!("{:x}", *common::util::GIT_HASH), vec![], vec![]) {
+            Ok(manifest) => {
+                info!(files = manifest.files.len(), "content manifest built");
+                Some(manifest)
+            },
+            Err(e) => {
+                warn!(?e, "failed to build content manifest (content identity will be absent, not fabricated)");
+                None
+            },
+        };
+        let content_protocol_root =
+            content_manifest.as_ref().and_then(common::content_manifest::content_protocol_version_v1);
+
         report_stage(ServerInitStage::DbMigrations);
         // Run pending DB migrations (if any)
         debug!("Running DB migrations...");
@@ -619,6 +647,12 @@ impl Server {
         // once here and never mutated afterward (systems read it via
         // ReadExpect<ServerBootId>, never write it).
         state.ecs_mut().insert(server_boot_id);
+        // `APEX-T4.1-CONTENT-LIVE`: the content protocol root computed
+        // ONCE above, inserted once here alongside `ServerBootId` --
+        // `bootstrap_manifest_v1` (`server/src/sys/msg/register.rs`)
+        // reads this via `ReadExpect` on every client admission rather
+        // than recomputing the asset-tree walk per connection.
+        state.ecs_mut().insert(content_protocol_root);
         // `APEX-T4.2` chunk B: the per-boot bootstrap freshness minter,
         // inserted once here alongside `ServerBootId` (never reset, never
         // reinserted -- one minter per process, same lifetime as the boot
@@ -1018,6 +1052,7 @@ impl Server {
                 data_dir.to_owned(),
                 map_geometry_root,
                 worldgen_protocol_root,
+                content_protocol_root,
             ) {
                 Ok(rtsim) => {
                     state.ecs_mut().insert(rtsim.state().data().time_of_day);

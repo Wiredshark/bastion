@@ -86,12 +86,27 @@ fn absent_root(root: ApexCertificateRootIdV1, id: &str, reason: &str) -> RootAtt
 }
 
 /// `content`: PRESENT. Live-computed, zero-argument, no fixture.
+/// `APEX-T4.1-CONTENT-LIVE`: was `net_envelope_profile_root_v1()` (a
+/// narrower wire-protocol-tag root, real but not what `content` actually
+/// means) -- now the real, once-computed asset-tree content root
+/// `common::content_manifest::build_from_asset_tree_v1` produces. A
+/// one-off CLI invocation (this binary) has no per-connection
+/// affordability concern the way `bootstrap_manifest_v1` does; the walk
+/// (measured ~492ms warm-cache, see that function's own doc) is trivial
+/// against a manually-run certificate generator. `panic`s rather than
+/// falling back to the narrower root on a walk failure -- a silently
+/// substituted root would misreport what was actually checked, worse
+/// than the generator itself failing loudly.
 pub fn content_root_v1() -> RootAttestationV1 {
-    let digest = common_net::msg::envelope::net_envelope_profile_descriptor_v1().content.artifact.digest;
+    let manifest = common::content_manifest::build_from_asset_tree_v1(format!("{:x}", *common::util::GIT_HASH), vec![], vec![])
+        .expect("the real asset tree is readable when this binary is actually run");
+    let content_protocol_root =
+        common::content_manifest::content_protocol_version_v1(&manifest).expect("a fixed 32-byte input always hashes under this domain's limit");
+    let protocol_digest = content_protocol_root.get();
     RootAttestationV1::Present {
         root: ApexCertificateRootIdV1::Content,
-        digest,
-        source: "T3.3 (common/net/src/msg/envelope.rs::net_envelope_profile_descriptor_v1, live-computed)",
+        digest: common::apex::digest::ArtifactDigestV1 { algorithm: protocol_digest.algorithm, bytes: protocol_digest.bytes },
+        source: "T4.1-CONTENT-LIVE (common/src/content_manifest.rs::build_from_asset_tree_v1, live asset-tree walk)",
     }
 }
 
@@ -477,8 +492,10 @@ mod tests {
             let RootAttestationV1::Present { root, digest, .. } = attestation else { continue };
             match root {
                 ApexCertificateRootIdV1::Content => {
-                    let independent = common_net::msg::envelope::net_envelope_profile_descriptor_v1().content.artifact.digest;
-                    assert_eq!(digest, independent, "content root must match an independent re-computation");
+                    let manifest = common::content_manifest::build_from_asset_tree_v1("test", vec![], vec![]).expect("real asset tree readable");
+                    let independent_protocol_root = common::content_manifest::content_protocol_version_v1(&manifest).expect("hash under domain limit").get();
+                    let independent = common::apex::digest::ArtifactDigestV1 { algorithm: independent_protocol_root.algorithm, bytes: independent_protocol_root.bytes };
+                    assert_eq!(digest, independent, "content root must match an independent re-computation of the asset-tree walk");
                 },
                 ApexCertificateRootIdV1::Fixture => {
                     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

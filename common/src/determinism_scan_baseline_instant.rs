@@ -135,6 +135,7 @@
     ("common/src/clock.rs", "self.last_work = Instant::now();", 0),
     ("common/src/comp/chat.rs", "let timeout = Instant::now() + Duration::from_secs_f64(SpeechBubble::DEFAULT_DURATION);", 0),
     ("common/src/comp/presence.rs", "let now = Instant::now();", 0),
+    ("common/src/content_manifest.rs", "let started = std::time::Instant::now();", 0),
     ("common/src/slowjob.rs", "let execution_end = Instant::now();", 0),
     ("common/src/slowjob.rs", "let execution_start = Instant::now();", 0),
     ("common/src/slowjob.rs", "let queue_created = Instant::now();", 0),

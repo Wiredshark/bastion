@@ -120,6 +120,10 @@ pub struct ReadData<'a> {
     ability_map: ReadExpect<'a, comp::item::tool::AbilityMap>,
     recipe_book: ReadExpect<'a, common::recipe::RecipeBookManifest>,
     map: ReadExpect<'a, WorldMapMsg>,
+    /// `APEX-T4.1-CONTENT-LIVE`: computed once at boot
+    /// (`server/src/lib.rs`) from a real asset-tree walk, never
+    /// recomputed here -- this system runs once per client admission.
+    content_protocol_root: ReadExpect<'a, Option<common::apex::subsystem::descriptor::ContentProtocolVersion>>,
     trackers: TrackedStorages<'a>,
     #[cfg(feature = "plugins")]
     plugin_mgr: Read<'a, PluginMgr>,
@@ -527,16 +531,17 @@ impl<'a> System<'a> for Sys {
 /// `APEX-T4.1` chunk 2a: the manifest this server actually sends,
 /// immediately before `GameSync`.
 ///
-/// Deliberately minimal today: only the `NetEnvelope` slot, using the
-/// already-frozen `net_envelope_profile_root_v1()` (`T3.3`'s own
-/// registered content root) as real, honestly-computed content -- not a
-/// placeholder. Content/plugin/schedule/numeric/world identity descriptors
-/// need live server-state wiring `T4.1`'s own spec names as future work
-/// within this row (content via `ContentManifest`, plugin via the active
-/// deployment, schedule/numeric/world via rows that have not built their
-/// identity-root functions yet); adding them here ahead of that wiring
-/// would be fabricated content pretending to be checked, which this
-/// program's own standing rule forbids.
+/// `NetEnvelope` uses the already-frozen `net_envelope_profile_root_v1()`
+/// (`T3.3`'s own registered content root); `Content` (`APEX-T4.1-
+/// CONTENT-LIVE`) uses the caller's once-at-boot asset-tree walk,
+/// present only when that walk succeeded -- both real, honestly-computed
+/// content, never a placeholder. Plugin/schedule/numeric/world identity
+/// descriptors still need live server-state wiring `T4.1`'s own spec
+/// names as future work (plugin via the active deployment, schedule/
+/// numeric/world via rows that have not built their identity-root
+/// functions yet); adding them here ahead of that wiring would be
+/// fabricated content pretending to be checked, which this program's own
+/// standing rule forbids.
 ///
 /// `T4.2` chunk B: `freshness` is now REAL, minted from `minter` --
 /// `(sequence, predecessor_root)` from [`BootstrapFreshnessMinterV1::next_v1`],
@@ -557,26 +562,46 @@ fn bootstrap_manifest_v1(
     server_boot_id: ServerBootId,
     session_id: common::apex::identity::SessionId,
     epoch: common::apex::identity::ConnectionEpoch,
+    content_protocol_root: Option<common::apex::subsystem::descriptor::ContentProtocolVersion>,
 ) -> common::apex::bootstrap_manifest::BootstrapManifestV1 {
     use common::apex::{
         bootstrap_freshness::BootstrapFreshnessV1,
-        digest::{ContentIdentityV1, hash_artifact_bytes_v1},
+        digest::{ContentIdentityV1, SemanticRootV1, hash_artifact_bytes_v1},
         identity::SnapshotEpoch,
-        manifest::encode_manifest_v1,
+        manifest::{MachineTextV1, encode_manifest_v1},
         scalar::SchemaVersion,
         subsystem::{SubsystemDescriptorV1, SubsystemSlotIdV1},
     };
 
     let (sequence, predecessor_root) = minter.next_v1();
-    let manifest = common::apex::bootstrap_manifest::BootstrapManifestV1 {
-        descriptors: vec![SubsystemDescriptorV1 {
-            slot: SubsystemSlotIdV1::NetEnvelope,
+    let mut descriptors = vec![SubsystemDescriptorV1 {
+        slot: SubsystemSlotIdV1::NetEnvelope,
+        schema: SchemaVersion::new(1),
+        content: ContentIdentityV1 {
+            artifact: hash_artifact_bytes_v1(common_net::msg::envelope::net_envelope_profile_root_v1().as_array()),
+            semantic: None,
+        },
+    }];
+    // `APEX-T4.1-CONTENT-LIVE`: present only when the once-at-boot asset
+    // walk succeeded -- an absent content root is genuinely absent from
+    // the wire manifest too, never stood in for.
+    if let Some(content_protocol_root) = content_protocol_root {
+        let root_digest = content_protocol_root.get();
+        descriptors.push(SubsystemDescriptorV1 {
+            slot: SubsystemSlotIdV1::Content,
             schema: SchemaVersion::new(1),
             content: ContentIdentityV1 {
-                artifact: hash_artifact_bytes_v1(common_net::msg::envelope::net_envelope_profile_root_v1().as_array()),
-                semantic: None,
+                artifact: hash_artifact_bytes_v1(root_digest.bytes.as_array()),
+                semantic: Some(SemanticRootV1 {
+                    schema_id: MachineTextV1::new("bastion/content-manifest/v1").expect("static ASCII schema id"),
+                    canonicalization_version: 1,
+                    root: root_digest,
+                }),
             },
-        }],
+        });
+    }
+    let manifest = common::apex::bootstrap_manifest::BootstrapManifestV1 {
+        descriptors,
         peer_selector: None,
         peer_capabilities: Vec::new(),
         freshness: Some(BootstrapFreshnessV1 {
@@ -594,6 +619,69 @@ fn bootstrap_manifest_v1(
         Err(e) => warn!(?e, "bootstrap manifest freshness root: encode failed, chain head not advanced"),
     }
     manifest
+}
+
+/// `APEX-T4.1-CONTENT-LIVE`: `bootstrap_manifest_v1` is a pure function
+/// of its arguments (no ECS access inside it), so its Content-descriptor
+/// behavior is testable directly, without a live client/network harness.
+#[cfg(test)]
+mod bootstrap_manifest_content_tests {
+    use common::apex::{
+        digest::{DigestDomainIdV1, digest_canonical_bytes_v1},
+        identity::{ConnectionEpoch, FixedRandomBytesSourceV1, ServerBootId, SessionId},
+        subsystem::{SubsystemSlotIdV1, descriptor::ContentProtocolVersion},
+    };
+
+    use super::*;
+
+    fn args() -> (crate::bootstrap_freshness_minter::BootstrapFreshnessMinterV1, ServerBootId, SessionId, ConnectionEpoch) {
+        (
+            crate::bootstrap_freshness_minter::BootstrapFreshnessMinterV1::default(),
+            ServerBootId::generate(&mut FixedRandomBytesSourceV1([31; 16])).unwrap(),
+            SessionId::generate(&mut FixedRandomBytesSourceV1([32; 16])).unwrap(),
+            ConnectionEpoch::new(1).unwrap(),
+        )
+    }
+
+    fn some_content_root() -> ContentProtocolVersion {
+        ContentProtocolVersion::new(digest_canonical_bytes_v1(DigestDomainIdV1::ContentProtocolRoot, b"test-content-root", 64).unwrap())
+    }
+
+    #[test]
+    fn a_present_content_root_adds_the_content_descriptor() {
+        let (mut minter, boot_id, session_id, epoch) = args();
+        let manifest = bootstrap_manifest_v1(&mut minter, boot_id, session_id, epoch, Some(some_content_root()));
+        assert!(
+            manifest.descriptors.iter().any(|d| d.slot == SubsystemSlotIdV1::Content),
+            "a present content_protocol_root must produce a Content descriptor"
+        );
+        // NetEnvelope must still be present too -- adding Content must not
+        // displace the existing descriptor.
+        assert!(manifest.descriptors.iter().any(|d| d.slot == SubsystemSlotIdV1::NetEnvelope));
+    }
+
+    /// An absent content root (the asset-tree walk failed at boot) must
+    /// leave the Content slot genuinely absent from the wire manifest --
+    /// never a fabricated descriptor standing in for a failed walk.
+    #[test]
+    fn an_absent_content_root_omits_the_content_descriptor() {
+        let (mut minter, boot_id, session_id, epoch) = args();
+        let manifest = bootstrap_manifest_v1(&mut minter, boot_id, session_id, epoch, None);
+        assert!(!manifest.descriptors.iter().any(|d| d.slot == SubsystemSlotIdV1::Content));
+        assert!(manifest.descriptors.iter().any(|d| d.slot == SubsystemSlotIdV1::NetEnvelope));
+    }
+
+    /// The descriptor's `semantic` root carries the SAME digest the
+    /// caller supplied -- not re-derived, not truncated.
+    #[test]
+    fn the_content_descriptor_carries_the_supplied_root_bytes() {
+        let (mut minter, boot_id, session_id, epoch) = args();
+        let root = some_content_root();
+        let manifest = bootstrap_manifest_v1(&mut minter, boot_id, session_id, epoch, Some(root));
+        let content = manifest.descriptors.iter().find(|d| d.slot == SubsystemSlotIdV1::Content).expect("content descriptor present");
+        let semantic = content.content.semantic.as_ref().expect("content descriptor carries a semantic root");
+        assert_eq!(semantic.root, root.get());
+    }
 }
 
 fn try_send_gamesync_v1<T>(client: &mut Client, payload: &T) -> bool
@@ -689,6 +777,7 @@ fn finalize_admission(
         *read_data.server_boot_id,
         session_binding.session_id,
         session_binding.epoch,
+        *read_data.content_protocol_root,
     );
     match common_net::msg::bootstrap_manifest_wire::BootstrapManifestWireV1::from_typed_v1(&manifest) {
         Ok(wire) => client.send_fallible(ServerGeneral::BootstrapManifest(wire)),

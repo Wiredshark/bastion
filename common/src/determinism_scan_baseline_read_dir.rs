@@ -23,6 +23,7 @@
     // verdict without touching this line.
     ("common/assets/src/walk.rs", "for entry in std::fs::read_dir(dir)? {", 0),
     ("common/src/apex/numeric_surface.rs", "let Ok(entries) = fs::read_dir(dir) else { return };", 0),
+    ("common/src/content_manifest.rs", "for entry in std::fs::read_dir(dir)? {", 0),
     ("common/src/host_input_manifest.rs", "let Ok(entries) = fs::read_dir(dir) else { return };", 0),
     ("common/src/rng_source_registry.rs", "let Ok(entries) = std::fs::read_dir(dir) else { return };", 0),
     ("common/src/scanner_framework.rs", "let Ok(entries) = fs::read_dir(dir) else { return };", 0),
