@@ -14985,3 +14985,37 @@ test.** A starved ROUTE REQUEST leaves a colonist standing still with no route,
 accruing stuck_time to the 10s timeout with NO terrain difficulty — exactly
 mechanism-2's bounded-retry signature. Chopfell (1 colonist, no competition)
 may still be distinct; 5b's min_dist/route-state run discriminates.
+
+## CHOPFELL ANSWERED: TRAVEL NEVER INITIATES (07/30)
+
+The min_dist/route-state run came back decisive — and it's NEITHER of my two
+predicted branches. **min_dist = 12.3 / 11.05 over the WHOLE RUN** (vs
+ARRIVE_DIST 2.5): the colonist never moved meaningfully toward a tree standing
+adjacent on a flat slab. Route states at timeout: small tree
+`route_exists=false` (no route ever); big tree first timeout no route, second
+**route EXISTS with `next_idx` frozen at 0** — a plan nobody executes.
+
+**READING: a MOVEMENT-INITIATION gap, upstream of everything we chased.** Not
+arbitration (drive=Work engaged), not job-arbitration starvation (one colonist,
+one job), not path-compute starvation (no competition), not my reachability gate
+(fixture provably reachable, correctly not rejected), not terrain (flat slab).
+The mover never receives — or never acts on — a movement input.
+
+**PRIME SUSPECT: the AUTON-0 two-authorities refactor,** which made the arbiter
+the SOLE writer of `rtsim_controller.activity` (replacing bastion_jobs' 7 write
+sites) to fix the D2 two-writers risk. **A state where NEITHER writer issues the
+Goto produces exactly this:** claimed job + Work drive + colonist standing still
+11 blocks away. route_exists=false is downstream (no Goto ⇒ no chase ⇒ no route
+request); frozen-at-idx-0 is the same gap one step later.
+
+**BANKED DISCRIMINATOR (one read, next session):** b5's PLAIN chop works in most
+seeds; chopfell uses the FELL-SET machinery (`place_chop_fell`/`board.felling`).
+**Diff the Goto-issuance path for fell-set vs plain chop.** If plain chop
+travels via a write site the refactor preserved and the fell path via one it
+didn't, that's the bug in one read. b58's `b_exited=false` may be the same
+missing-writer gap in a third costume.
+
+Meanwhile: 5b HELD its #56 push on a reproducible seed-76 flip (build_placed
+false where it passed all day), building a genuine control at 851ed5e952 —
+regression-vs-legitimate-re-roll to be judged on the AGGREGATE, not the seed,
+per the waves-3/4 rule. Sweep batch 7 in flight; tally 10/19 broken.
