@@ -3234,6 +3234,14 @@ fn b5_scenario(args: &Args) -> ExitCode {
                     let cells_below_open = (mine_min.z..z)
                         .filter(|zz| open_cells.contains(&(x, y, *zz)))
                         .count();
+                    // TASK #59 (greedy-arbitration-starvation hypothesis):
+                    // starvation_crowded_cycles / starvation_cycles near 1.0
+                    // supports it -- unattempted because easier work kept
+                    // winning. Far below 1.0 with a nonzero cycles_since_
+                    // last_claim is the kill case Fable named: starved with
+                    // nothing to be starved BY.
+                    let (starv_cycles, starv_crowded, cycles_since_claim, claims_here) =
+                        server.bastion_starvation_stats(pos);
                     mine_cell_diag.push(serde_json::json!({
                         "pos": [x, y, z],
                         "progress": j.progress,
@@ -3251,6 +3259,10 @@ fn b5_scenario(args: &Args) -> ExitCode {
                         // evidence for the feature, alongside the
                         // synthetic fixture's negative-case coverage.
                         "blocked_by": server.bastion_blocked_by(pos).map(|p| [p.x, p.y, p.z]),
+                        "starvation_cycles": starv_cycles,
+                        "starvation_crowded_cycles": starv_crowded,
+                        "cycles_since_last_claim": cycles_since_claim,
+                        "times_offered": claims_here,
                     }));
                 }
             }

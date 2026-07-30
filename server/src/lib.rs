@@ -3355,6 +3355,30 @@ impl Server {
             .blocked_by(pos)
     }
 
+    /// bastion (task #59, starvation measurement, harness hook,
+    /// 2026-07-30): `(starvation_cycles, starvation_crowded_cycles,
+    /// cycles_since_last_claim)` for one job position -- see
+    /// `JobBoard::starvation_cycles`'s doc for the hypothesis this tests.
+    /// All zero if the position was never open/unclaimed during
+    /// arbitration (e.g. always claimed instantly, or never designated).
+    pub fn bastion_starvation_stats(&self, pos: vek::Vec3<i32>) -> (u32, u32, u32, u32) {
+        let board = self
+            .state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>();
+        (
+            board.starvation_cycles.get(&pos).copied().unwrap_or(0),
+            board
+                .starvation_crowded_cycles
+                .get(&pos)
+                .copied()
+                .unwrap_or(0),
+            board.cycles_since_last_claim.get(&pos).copied().unwrap_or(0),
+            // task #59 aging mechanism-level check: "times offered."
+            board.claims_by_pos.get(&pos).copied().unwrap_or(0),
+        )
+    }
+
     /// bastion (mechanism-2 friction instrument, harness hook, 2026-07-30):
     /// EVERY job position that ever timed out this run, with its count --
     /// unlike `bastion_timeout_count_for_pos` (single position) or the

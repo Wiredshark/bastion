@@ -1515,6 +1515,36 @@ const ARRIVE_DIST: f32 = 2.5;
 /// progress (seconds). `pub` so scenario harnesses can size their sampling
 /// windows against it (see `bastion-harness`'s B4 scenario).
 pub const STUCK_TIMEOUT: f32 = 10.0;
+
+/// bastion (task #59, aging, 2026-07-30): score reduction per arbitration
+/// cycle a job has sat unclaimed, applied in the claim-scoring loop
+/// (`score -= aging_bonus`, lower score wins). Chosen so a job overtakes a
+/// typical clump_penalty (12.0) after ~240 cycles (~120s at
+/// ARBITRATION_INTERVAL=15) -- comparable to the STUCK_TIMEOUT-scale
+/// friction the measurement showed residual cells experiencing, not an
+/// instant override.
+///
+/// STATUS: UNPROVEN -- no demonstrated rescue, as of 2026-07-30. Correct
+/// by inspection (greedy lowest-score selection with no aging is a known
+/// scheduling defect) and verified to change behaviour in the right
+/// direction where its precondition is met (a seed-71 mine cell:
+/// `times_offered` climbed 0->1->5 across repeat claims). But every
+/// scenario tried it against turned out to be excluded by design
+/// (`blocked_by`, task #55 -- 8/9 residual mine seeds) or a different
+/// mechanism entirely (execution-once-claimed, the 9th seed; 4 further
+/// scenarios that all read as access/reachability or execution issues on
+/// inspection, not starvation). The corpus in hand does not contain a
+/// clean "many competing jobs, none blocked, one hard-but-reachable
+/// target" case -- aging's actual precondition -- so it has never been
+/// put to a real test. Do not read its presence as evidence it fixed
+/// anything. The acceptance test it is still owed: a scenario
+/// deliberately constructed with that precondition (not yet built).
+pub const AGING_RATE: f32 = 0.05;
+/// Cap on the aging bonus -- no job can accumulate unbounded priority no
+/// matter how long it waits. Set near the largest routine score
+/// contributor (clump_penalty=12.0) so aging can overcome ordinary
+/// dispersion/distance pressure but not swamp every other signal at once.
+pub const AGING_CAP: f32 = 15.0;
 /// bastion (CASE-003 belt, persistence form): consecutive core-in-solid
 /// ticks before the EMBED WATCH relocates a colonist (~1s at 30 tps —
 /// instant on a human timescale, an eternity past any legitimate mining
@@ -3560,6 +3590,27 @@ pub struct JobBoard {
     /// region isn't re-recorded (and re-notified) every tick it stays
     /// blocked. Cleared when the region is cancelled (see the cancel path).
     pub blocked_regions: Vec<BlockedRegionInfo>,
+    /// bastion (task #59, starvation measurement, 2026-07-30): per-job-cell
+    /// arbitration-cycle counters testing the greedy-starvation hypothesis
+    /// (no cooldown/penalty after a failed attempt -- a hard cell just
+    /// loses the score comparison every cycle while easier unclaimed work
+    /// exists). `starvation_cycles` = cycles this cell was open+unclaimed;
+    /// `starvation_crowded_cycles` = of those, how many had at least one
+    /// OTHER unclaimed job competing. A ratio near 1.0 supports the
+    /// hypothesis; a cell unattempted for many cycles with an EMPTY field
+    /// (crowded_cycles far below starvation_cycles) is Fable's kill case.
+    /// Report-only, never gates `pass`, no world writes.
+    pub starvation_cycles: HashMap<Vec3<i32>, u32>,
+    pub starvation_crowded_cycles: HashMap<Vec3<i32>, u32>,
+    /// Cycles since this cell's job was last actually claimed (reset to 0
+    /// on claim, incremented once per arbitration cycle while unclaimed).
+    pub cycles_since_last_claim: HashMap<Vec3<i32>, u32>,
+    /// bastion (task #59, aging mechanism-level check, 2026-07-30): how
+    /// many times this position was actually claimed this run -- the
+    /// "times offered" Fable asked for, to show whether aging is
+    /// increasing ATTEMPTS on previously-starved cells (not just changing
+    /// which seeds pass).
+    pub claims_by_pos: HashMap<Vec3<i32>, u32>,
     /// bastion (B5.8): ACCESS ANCHORS — base cells of the colony's vertical
     /// links (auto-built ladder pillars + player-built ladder lines). Travel
     /// stages an over-reach ascent through the nearest anchor (walk there
@@ -14821,6 +14872,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             return;
         }
 
+        // ── TASK #59: starvation measurement, taken BEFORE this cycle's
+        // claiming happens, so "unclaimed" and "field size" reflect the
+        // state a colonist actually chose among. ────────────────────────
+        {
+            let unclaimed_count = board.jobs.values().filter(|j| j.claimed_by.is_none()).count();
+            let stale_positions: Vec<Vec3<i32>> = board
+                .jobs
+                .values()
+                .filter(|j| j.claimed_by.is_none())
+                .map(|j| j.pos)
+                .collect();
+            for pos in stale_positions {
+                *board.starvation_cycles.entry(pos).or_insert(0) += 1;
+                *board.cycles_since_last_claim.entry(pos).or_insert(0) += 1;
+                if unclaimed_count > 1 {
+                    *board.starvation_crowded_cycles.entry(pos).or_insert(0) += 1;
+                }
+            }
+        }
+
         // ── COORDINATION-stigmergic-v1 (FR13-REV): the saturation field ──
         // DECAY (per-cell independent → order-free, deterministic), prune the
         // near-zero tail so the map tracks only the live frontier; then
@@ -15364,7 +15435,31 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     .copied()
                     .unwrap_or(0.0)
                     * COORD_SAT_WEIGHT;
-                let score = dist + depth_score + clump_penalty + sat_penalty;
+                // TASK #59 (aging, 2026-07-30): greedy lowest-score
+                // selection with no aging is a known-bad scheduling
+                // design -- a hard cell LOSES the score comparison every
+                // cycle while easier unclaimed work exists anywhere in the
+                // colony, with no mechanism to eventually win. Measured:
+                // residual mine failures' cells sat unclaimed for up to
+                // 360 arbitration cycles with a crowded field the entire
+                // time (ratio ~1.0, never starved for lack of competition
+                // -- the kill case Fable set never fired). Bounded so no
+                // single job can monopolise selection (AGING_CAP), and
+                // EXCLUDED for jobs already known blocked (`blocked_by`,
+                // task #55) -- a provably-unreachable job aging into top
+                // priority would starve real work in favour of impossible
+                // work, which is worse than the bug this fixes.
+                let aging_bonus = if board.blocked_by(job.pos).is_some() {
+                    0.0
+                } else {
+                    let cycles = board
+                        .cycles_since_last_claim
+                        .get(&job.pos)
+                        .copied()
+                        .unwrap_or(0);
+                    (cycles as f32 * AGING_RATE).min(AGING_CAP)
+                };
+                let score = dist + depth_score + clump_penalty + sat_penalty - aging_bonus;
                 let better = match &best {
                     None => true,
                     Some((_, bp, bs)) => priority > *bp || (priority == *bp && score < *bs),
@@ -15417,14 +15512,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     }
                 }
                 let mut claimed_cell = None;
+                let mut claimed_job_pos = None;
                 if let Some(job) = board.jobs.get_mut(&job_id) {
                     job.claimed_by = Some(*uid);
                     job.reservation = job.reservation.or(fetch_rid);
                     claimed_pos.push(job.pos);
                     claimed_cell = Some(coord_cell(job.pos));
+                    claimed_job_pos = Some(job.pos);
                     // B-LIVE4: count every claim event (initial + re-claim)
                     // for the mine-oscillation claims-per-job telemetry.
                     board.total_claims += 1;
+                }
+                // TASK #59: a claim resets the starvation clock -- this is
+                // the "attempt" the measurement is counting cycles since.
+                if let Some(pos) = claimed_job_pos {
+                    board.cycles_since_last_claim.insert(pos, 0);
+                    *board.claims_by_pos.entry(pos).or_insert(0) += 1;
                 }
                 if emergency_route_owner.is_some()
                     && std::env::var_os("BASTION_EGRESS_DIAG").is_some()
