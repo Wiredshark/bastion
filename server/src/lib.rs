@@ -6,6 +6,7 @@
 #![deny(clippy::clone_on_ref_ptr)]
 #![feature(box_patterns, option_zip, const_type_name, slice_partition_dedup)]
 
+pub mod apex_certificate;
 pub mod automod;
 // bastion (B-ASSET1): the --asset-arena test chamber (env-gated). Stays in
 // this crate (unlike its 11 siblings below): it is an `impl Server` shim.

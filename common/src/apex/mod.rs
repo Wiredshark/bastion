@@ -26,6 +26,7 @@ pub mod numeric_surface;
 pub mod physics_generation;
 pub mod boundary;
 pub mod build;
+pub mod certificate;
 pub mod digest;
 pub mod economic_numeric_protocol;
 pub mod failure_seed;
