@@ -14814,3 +14814,76 @@ seeds). GCP capacity, not quota — every create fails including the first, and 
 message names the resource pool rather than a numeric limit. e2-standard-32 AND
 e2-standard-16 both exhausted in us-central1-a. `vm-pool.sh` ZONE is now
 overridable (`ZONE="${ZONE:-us-central1-a}"`); retrying in us-central1-b.
+
+## DAY CLOSE 2026-07-30 — WHAT SHIPPED, WHAT'S TRUE, WHAT'S OPEN
+
+**SHIPPED AND CORPUS-VERIFIED (2b1b3ef0d9):**
+- **#55 blocked-designation visibility** — colonists report WHAT is blocking a
+  designation and WHICH cell, via `ChatType::Meta` (routed through chat because
+  chat already renders). Verified on 10 real residual seeds: 9/10 show every cell
+  in a cascade naming the SAME blocking cell; seed 71's zero hits is the negative
+  control. **It then became an INSTRUMENT** — `blocked_by` partitioned the mine
+  residual into two mechanisms and corrected my own scoping. A fix that pays twice.
+- **#57 phantom jobs** — 28 jobs for cells that no longer exist, retired. Phantom
+  seeds 4 -> 1 across 36 seeds; seed 76's 17 phantoms -> 0, still passing.
+
+**THE HEADLINE, CORRECTED: 33.3% -> ~9%.** 79% of the "mine bug" was a test
+fixture that never cleared the ground above its own pit. My interim 13.9% also
+overstated it. Six independent measurements of the same broken ruler agreed
+perfectly — **reproducibility is not validity.**
+
+**THE MECHANISM, found by CODE READ after four statistical hypotheses died:**
+arbitration is greedy with no aging — a hard cell is never punished, it simply
+loses the score comparison every cycle while easier work exists. Explains
+"abandoned after 2 attempts," why timeout COUNT never discriminated, and why 61
+and 148 (both 16 timeouts) landed on opposite sides.
+
+**AGING FIX: KEPT, classified PRECONDITION-UNMET — not "failed."** Zero-for-four
+on the scenario tests, effectively inert on the mine corpus because **8/9 residual
+seeds are `blocked_by` and correctly excluded**. The population that could
+exercise starvation is ~zero, so the bar was never engaged — the same
+classification we gave the chop oracle's 18/18. Recorded UNPROVEN in code and row;
+owed a deliberately-constructed starvation acceptance test.
+**My error that produced that test: I grouped four scenarios by SHAPE ("job
+created, work not performed"), which is a SYMPTOM, and predicted they'd flip
+together. 5b showed that shape spans >=3 causes. Symptom similarity is not
+mechanism identity — second time today I made that class of error.**
+
+**TAXONOMY CORRECTED TWICE.** I parked mechanism-1 as "1 seed of 72" — true of
+the CASCADE (seed 61), false of the underlying defect: **8/9 residual mine seeds
+are blocked-access.** And it UNIFIES with chop's no-path: **"designate first,
+discover unreachable later," one defect class, two subsystems.** Now the largest
+measured mechanism, and provable rather than statistical.
+
+**★ HALF OUR TEST SUITE IS BROKEN AND WE DIDN'T KNOW.** The harness defines **40
+scenarios**; we had been running ~5. The sweep (with two known-broken scenarios as
+POSITIVE CONTROLS — both correctly reported red, validating the sweep) found
+**5 of 10 failing**: farm, autonomy-death-spiral (both pre-existing, #57
+exonerated by a clean control build), **chopfell, bed, preempt (all NEW)**.
+30 scenarios still unswept.
+
+**★ THE MINIMAL ROOT CANDIDATE — start here next session.** `--chopfell-scenario`:
+flat hand-placed slab, tree adjacent, **one colonist, one job, zero competition,
+provably reachable by the fixture's own construction**, and **the job never
+starts** (activity 0.0 over 3000 polls, felled false, drops 0, while
+one_job/no_orphan/topdown pass). Instrument question SETTLED: three independent
+reads (`Arbiter.activity` ECS component, `board.felling` JobBoard resource, a
+positional item query) share no storage and all agree nothing happened.
+**Every major finding today was "job created, work not performed," each explained
+differently BECAUSE each had confounds. This one has none.** The question is not
+"what is the fifth mechanism" but **"is this the root the others sit downstream
+of?" A taxonomy that keeps growing usually means the classification is wrong.**
+
+**OPEN, priority order:** chopfell root-cause · access/reachability (8/9 mine +
+chop 119/80/26; chop's cause already known — detection validates worldgen
+suitability, never reachability) · the chop reachability gate (scoped, signed
+off, unbuilt) · seed 71 execution-once-claimed · aging's owed acceptance test ·
+`job_still_wanted`'s 7 unaudited kinds · 30 unswept scenarios · carve cascade
+(parked, 5-commit handover).
+
+**PROCESS, the part worth keeping:** every expensive failure today was
+measurement infrastructure lying quietly, and **none was found by looking at a
+result.** Four of my hypotheses died; two of my metrics were tautologies; I
+deleted a live agent's evidence with a cleanup that judged liveness by a
+directory timestamp. What caught each was a rule written down earlier — not
+vigilance. **Rules transfer to whoever is on shift; vigilance does not.**

@@ -1,0 +1,7 @@
+# scenario-sweep batch 2 (Fable) — 5 jobs; batch 1 lost one VM to the
+# machine-image create-rate limit, so this batch is smaller.
+--stuckjob-scenario
+--cavein-scenario
+--needs-scenario
+--bed-scenario
+--preempt-scenario

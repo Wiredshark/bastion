@@ -1,0 +1,24 @@
+# scenario-sweep batch 1 of ~7 — the 40-scenario inventory (Fable, 2026-07-30)
+#
+# WHY: we ran ~5 of 40 harness scenarios today and 2 of those 5 were silently
+# broken (farm, autonomy-death-spiral — confirmed pre-existing, NOT caused by
+# #57). We do not currently know which of our own tests pass. This sweep
+# establishes that baseline, and gives the aging fix (#59) a regression floor.
+#
+# ★ THE FIRST TWO LINES ARE POSITIVE CONTROLS. Both are KNOWN-BROKEN as of
+# 0feceef806. If this sweep reports either of them GREEN, the sweep itself is
+# lying and every other result in it is void. Check them first.
+#
+# Batch sized to 6 VMs: IN_USE_ADDRESSES quota is 8 PER REGION, so 8 jobs would
+# schedule to the exact cap and bounce. Remaining scenarios follow in later
+# batches.
+#
+# Run: VM_ZONE=us-east1-b BRANCH=bastion/apex-engine-integration \
+#      bash vm-jobs.sh scenario-sweep-batch1.jobs e2-standard-8 25 90
+
+--farm-scenario
+--autonomy-death-spiral-scenario
+--gather-scenario
+--haulpin-scenario
+--chopfell-scenario
+--stuckjob-scenario
