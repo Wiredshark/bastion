@@ -14259,3 +14259,45 @@ broken, documented in this exact mechanism in our own history. Pass criteria are
 mechanism-level and defined BEFORE the fix: bounded job-ID growth, no monotonic
 TGT-DRIFT escalation, cascade demonstrably terminates, no access jobs at
 unbounded distance/depth. "The seed now mines 27" is a consequence, never proof.
+
+## FINAL POST-FIX CORPUS — 33.3% -> 6.9% (07/30, waves 6+7)
+
+72 seeds (49-120), attested `COMMIT=45b7fe3d`, the IDENTICAL population as the
+pre-fix baseline. Waves 6+7 combined, $1.32.
+
+| measure | BEFORE (b59ac664) | AFTER (45b7fe3d) |
+|---|--:|--:|
+| mine-completion violations | **24/72 = 33.3%** | **5/72 = 6.9%** |
+| failsafe rescue fired | 20/72 = 27.8% | 19/72 = 26.4% |
+
+**79% OF THE MINE BUG WAS THE TEST FIXTURE.** The real defect is 6.9%, not the
+33.3% I reported as "the most established fact in this codebase." My interim
+13.9% (on 36 seeds) also overstated it — the full population is lower. Stated as
+a correction, not rounded.
+
+**RESIDUAL — 5 seeds, two confirmed-distinct mechanisms:**
+- seed 51 (0/27), 55 (26/27), 71 (24/27), 54 (16/27) — bounded top-layer retry
+  friction; job IDs bounded, single z-layer, same cells retried, never escalating.
+- seed 61 (26/27) — the carve cascade, B56's family; job IDs escalating to 916,
+  targets marching 20 then 50 units out and 17-20 z-levels deeper.
+5b confirmed these are NOT one mechanism and retracted its own earlier lumping
+of 51 with 61 on evidence, unprompted.
+
+**★ MY RESCUE-RATE HYPOTHESIS IS LARGELY FALSIFIED BY THIS, AND THAT'S THE POINT
+OF HAVING MADE IT FALSIFIABLE.** I proposed that the ~31% failsafe rate was the
+visible symptom of unconverged recovery loops — that the system was routinely
+bailing itself out of churn. The footprint fix is a clean natural experiment:
+it removed **79% of mine failures** and moved the rescue rate by **1.4 pp**
+(27.8% -> 26.4%). So rescues are NOT primarily a mine-completion symptom.
+
+Strictly, this doesn't test my hypothesis head-on — the footprint fix removed
+OBSTRUCTIONS, not cascades — but it constrains it hard, and it makes the rescue
+finding MORE interesting rather than less: **19 seeds fire rescues while only 5
+fail mining, so ~15 rescues happen in runs that mine perfectly.** Something is
+causing colonists to get stuck routinely in otherwise-successful runs. The
+"rare backstop" firing in a quarter of clean runs is now a standalone
+phenomenon needing its own explanation, not a downstream symptom of the mine bug.
+The Row-1 prediction (cascade fix -> rescue rate drops) still stands and is
+still worth testing, but expectations should be low given this.
+
+**SPEND: $4.91 across 7 waves.**
