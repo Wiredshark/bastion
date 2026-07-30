@@ -15019,3 +15019,25 @@ Meanwhile: 5b HELD its #56 push on a reproducible seed-76 flip (build_placed
 false where it passed all day), building a genuine control at 851ed5e952 —
 regression-vs-legitimate-re-roll to be judged on the AGGREGATE, not the seed,
 per the waves-3/4 rule. Sweep batch 7 in flight; tally 10/19 broken.
+
+## SWEEP BATCH 7: 13 OF 24 BROKEN — and two failures point at the same seam (07/30)
+
+run FAIL · selfgen FAIL · auton FAIL · values pass · season pass.
+
+- **run-scenario:** single false flag — `run_ran_faster=false`. The colonist
+  ENTERS Running state (running_mid=true) and is not faster than walking: a
+  movement MODIFIER set but never applied. **Chopfell showed movement never
+  STARTS; run shows a modifier never APPLIES — plausibly the same
+  activity/writer seam the AUTON-0 refactor consolidated.** The fell-set vs
+  plain-chop diff may explain both for free.
+- **selfgen-scenario:** the family signature — 4 mine + 4 build plan cells
+  GENERATED, nothing built/hauled/closed. G2 self-designation produces work;
+  execution never happens.
+- **auton-scenario:** the ARBITER'S OWN acceptance scenario fails with **every
+  boolean flag green** — the failing criterion is numeric (`m1=20, m2=20`;
+  likely an improvement assert getting equality). A scenario whose verdict is
+  not derivable from its own report is the aggregate-too-early defect wearing a
+  test harness.
+
+**TALLY: 24 mapped, 13 broken (54%).** Batch 8 (spiral/auton3/bag1/belt/season1)
+in flight; ~6 remain after.
