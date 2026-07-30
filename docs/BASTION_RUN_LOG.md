@@ -13953,3 +13953,60 @@ measurement not. That asymmetry tells us which future measurements need a guard.
 their chop failure. A hypothesis dies only when its own prediction is tested
 absent. Next fan is a BEFORE/AFTER on the SAME failing seeds once 5b's fix
 lands — identical seeds, not a fresh random sample.
+
+## ROW CLOSED b59ac664f6 — and the instrument found a bigger bug than its row (07/30)
+
+5b closed the disambiguation row: rescue clause split to report-only
+(`b5_rescue_fired`), **gate now DERIVED from `failed_clauses`** so the report
+cannot drift from the gate, mine_cleared/mine_blocks_mined equivalence
+documented, bastion_jobs.rs:3479 cross-referenced ("the doc was right all
+along; the code detoured and came back").
+
+**BUILD-STALL FIXTURE FIXED AND AUDITED.** `build_ok_pos`/`build_stall_pos`
+trusted `ground_z()+1` was clear air without terraforming the column, unlike
+mine/chop which flatten+clear first. All 5 local cluster seeds now pass;
+`build_stall_jobs==0` went 5/48 -> 0/48. **The audit I ordered came back
+clean:** mine, chop, slope, hill and b15 all already fully terraform their
+geometry — build was the only offender. That is what makes the fix
+trustworthy rather than a one-off patch.
+
+**CROSS-VALIDATION OF THE HEADLINE.** 5b's post-fix local mine rate: 15/48 =
+**31.25%**. My fan over 144 DIFFERENT seeds on VM Linux: 45/144 = **31.3%**.
+Different seed ranges, different OS, different machines, same rate to a tenth
+of a percent. The number is real, and behavioral metrics remain
+cross-machine-stable.
+
+**THE CHOP LEAD WAS TESTED ON ITS OWN PREDICTION, NOT ASSUMED.** Seeds
+80/111/119 lost the build-stall symptom entirely (build_stall_jobs=1,
+any_needs_materials=true) and KEPT chop_cleared=false/log_sum=0 — confirmed
+separate both by retest and mechanically (no shared item between
+BUILD_MATERIAL_ITEM=stones and CHOP_DROP_ITEM=wood, so no causal path ever
+existed). Exactly the discipline: a fix for symptom A never closes symptom B.
+
+**NEW, LARGEST KNOWN CLUSTER — ch_* at 18/48 (37.5%).** The FR10 real-worldgen
+tree-detection oracle finds ZERO trees in over a third of seeds despite
+searching 9 ring-offsets (±64, ±96). **It was completely invisible until
+`b5_failed_clauses` existed**, buried inside the 40-clause AND. The
+instrument built as scaffolding for one row immediately surfaced a bigger
+defect than the row itself — the argument for building the instrument first.
+
+**RULED: THE ROW IS NOT "FIND THE DETECTION BUG".** `ch_trees_found == 0`
+conflates (a) no tree exists in the search volume — precondition never met,
+oracle never ran, reporting it as failure is a FALSE RED — with (b) a tree
+exists and detection missed it, the real bug. Until split, 37.5% is
+uninterpretable. 5b is giving the oracle its own INDEPENDENT ground truth
+(terrain scan, NOT `bastion_place_chop_area` — the subject under test cannot
+be its own oracle), reporting three states, with precondition-unmet recorded
+as its own named state: never a silent pass (a test that passes because it
+never ran) and never a red (a false failure inflating the rate).
+
+**FOURTH INSTANCE OF ONE SHAPE, TODAY:** the 40-clause conjunction couldn't
+say WHICH clause broke; the 2-clause sub-conjunction couldn't say which
+FAILURE CLASS fired; the build fixture couldn't say GAME vs INSTRUMENT; this
+oracle can't say whether it RAN. Every fix was making the measurement name
+what it actually measured.
+
+Tracked, not chased: chop_cleared/log_sum (5/48), build_placed throughput
+residual (seeds 5/43/44, build_ok_jobs==1 so the designation is fine, it just
+never builds within 180 windows), b15 (4/48, co-occurs only with mine
+failures). Wave 3 (same seeds 49-192, fixed commit) running.
