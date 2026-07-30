@@ -211,3 +211,82 @@ rather than run on stitched counts.**
 
 **Do not run the pairs until all four members' counts come from one
 wave on one commit.**
+
+---
+
+## AMENDMENT (before any data exists): the reading table above is SUSPENDED
+
+**Found by reading my own instrument after the control design tightened.
+No numbers have been produced, so nothing here is fitted to a result.**
+
+`Server::bastion_cascade_probe` folds four per-`Uid` maps to **maxima** and
+emits only `members.len()` — the keys are discarded. Two consequences, the
+second of which invalidates the pre-registered table as written:
+
+**1. Cascade activity cannot be attributed to a colonist, therefore not to a
+VERB.** The whole egress path (`egress_requests` → `plan_access` at ~12810)
+is keyed on `uid` and is **designation-agnostic** — nothing gates it to
+Mine. A trapped *chopper* enters the identical path and increments the
+identical counters. So on a seed that fails both mine and chop (146), the
+probe physically cannot say which verb the cascade belongs to.
+
+**2. The four numbers need not describe the SAME cascade.** They are four
+independent maxima over the member set. `frontier_completes_max` may come
+from one colonist and `abort_max` from another. The pre-registered rows read
+the tuple as one member's profile — e.g. "low ceiling + high resets =
+confirmed" — and that reading is only valid if both extrema belong to the
+same member. **As built, a high-completes/low-aborts tuple could be two
+unrelated colonists and would read as confirmation of bound 1.**
+
+**Required before the fan run:** emit one row per member —
+`(uid, frontier_completes, abort_resets, abort_max, access_emissions)` —
+totals computed over the whole set, only the inspection list bounded. Then
+the table's rows are evaluated **per member**, and the seed-level verdict is
+"does ANY member show the confirmed profile," which is the question actually
+being asked.
+
+**This is the same `.values().max()` error I flagged in another session's
+position map, committed by me, in my own probe, the same day** — see
+`aggregate-late-keep-the-structure`. It survived because the collapse was
+made where the measurement felt done: the interesting thing about a cascade
+*is* its worst member. It stopped being sufficient the moment the study
+needed to know WHICH member, and that moment arrived from an unrelated
+direction (chop contamination) rather than from anything about the cascade.
+
+**Timing note:** this is cheap now and expensive later — the fix destroys no
+baseline because nothing has been run. Discovering it from a confusing
+result after the fan would have cost the fan.
+
+## Third arm: seeds 78 and 80 as a scope test (not an explanation)
+
+Chop fails on **8/72 seeds (11.1%)**, and **78 and 80 fail chop at 2 and 4
+timeouts** — a band with zero mine failures across 55 seeds. Friction does
+not explain those, so a friction-based story has a standing counterexample.
+
+Because the egress path is designation-agnostic, the probe *can* be read on
+78/80, and the reading is meaningful in exactly one narrow way:
+
+- **zero cascade activity on 78/80** → those failures are outside this
+  mechanism, and the cascade's scope is bounded to friction-heavy seeds;
+- **nonzero** → cascade activity exists at 2–4 timeouts, and the friction
+  story breaks from the low end.
+
+**Admissibility is the same gate 0**: a zero is only evidence if the probe is
+demonstrated nonzero SOMEWHERE in the same run. An uninstrumented path and a
+quiet path emit identical silence.
+
+**What this arm does NOT do:** it says nothing about why a tree went unfelled.
+The probe measures emergency egress, not chop. It bounds my diagnosis' scope;
+it does not diagnose chop.
+
+## Control and treatment must BOTH be clean
+
+The control requirement is now "passes every clause at matched high friction,"
+not "passes mining." The same bar applies to the **treatment**: a seed failing
+two verbs at once cannot attribute the cascade to either, and per-member
+emission does not fully fix that (one colonist may chop and mine). Prefer a
+treatment that fails **mine only**.
+
+Void-control tally so far, all found before running: matched on the wrong
+AXIS; stitched across two BUILDS; and now **contaminated on a clause neither
+side was looking at**. Each was invisible in the numbers.
