@@ -14887,3 +14887,47 @@ result.** Four of my hypotheses died; two of my metrics were tautologies; I
 deleted a live agent's evidence with a cleanup that judged liveness by a
 directory timestamp. What caught each was a rule written down earlier — not
 vigilance. **Rules transfer to whoever is on shift; vigilance does not.**
+
+## SCENARIO SWEEP — 15 of 40 mapped, 6 BROKEN (07/30)
+
+**Sweep validated itself first:** batch 1 carried the two KNOWN-broken scenarios
+as positive controls; both reported red, so the sweep is not lying and its other
+results are usable.
+
+| scenario | rc | |
+|---|---|---|
+| farm | 1 | FAIL (known, pre-existing — #57 exonerated by clean control build) |
+| autonomy-death-spiral | 1 | FAIL (known, pre-existing) |
+| **chopfell** | 1 | **FAIL — NEW** |
+| **bed** | 1 | **FAIL — NEW** |
+| **preempt** | 1 | **FAIL — NEW** |
+| **zone** | 1 | **FAIL — NEW** |
+| gather · haulpin · stuckjob · cavein · needs · b4 · b6haul · magnet · coord | 0 | pass |
+
+**6 of 15 broken (40%). FOUR discovered today purely by running tests we own and
+had not executed.** 25 scenarios still unswept.
+
+**THE SHARED SIGNATURE — jobs created, work never performed:**
+```
+chopfell : 1 job/tree, trees present, activity 0.0, felled false, drops 0
+bed      : build job exists, bed_built false
+preempt  : 10 mine jobs, dug_before 0, ONE colonist
+zone     : zone_jobs 1, zone_freed false
+b5 chop  : chop_jobs 1, tree detected, chop_cleared false, log_sum 0 (11.1%)
+farm     : till/sow complete LATE, past their phase windows
+```
+Job CREATION is provably correct in each (chopfell's own `one_job`/`no_orphan`/
+`topdown` sub-assertions pass). **The break is uniformly between job-created and
+work-started.**
+
+**★ CAUTION ON THAT GROUPING — it is a SYMPTOM, not a mechanism.** I grouped four
+of these by shape and predicted the aging fix would flip them together; it went
+0-for-4, and 5b showed the shape spans at least three causes. **Symptom similarity
+is not mechanism identity** — recorded because the table above invites exactly
+that inference a second time.
+
+**INFRA:** `us-central1` was capacity-exhausted for e2-standard-32 AND -16
+simultaneously (3 waves, 18 VMs, ~$0.60, zero seeds — `ZONE_RESOURCE_POOL_
+EXHAUSTED`, not quota). `us-east1-b` works; `vm-pool.sh` ZONE and `vm-jobs.sh`
+VM_ZONE are overridable. Sweep batches capped at 5-6 jobs: IN_USE_ADDRESSES is 8
+PER REGION, and the machine-image create-rate limit costs a VM per batch at 6.
