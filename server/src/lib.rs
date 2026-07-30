@@ -3226,6 +3226,45 @@ impl Server {
         )
     }
 
+    /// CARVE-CASCADE PROBE (mechanism 1, predictions A/B — Opus,
+    /// 2026-07-30): `(frontier_completes_max, abort_resets_max,
+    /// abort_ceiling_max, access_emissions_max, members_seen)`.
+    ///
+    /// **Read the RESETS against the CEILING, never either alone.** A low
+    /// ceiling with HIGH resets is the cascade signature: the per-episode
+    /// bound is satisfied at every step because `frontier-complete` keeps
+    /// clearing it. A low ceiling with ZERO resets is a genuinely healthy
+    /// run. Reporting only the ceiling would call both of those healthy,
+    /// which is why prediction B measured as a ceiling is a false
+    /// all-clear.
+    ///
+    /// Maxima folded over members in SORTED order so no hash-iteration
+    /// order reaches the output. Pure telemetry; `JobBoard` feeds no
+    /// canonical hash (checked), so this cannot move the 72/72
+    /// determinism baseline.
+    pub fn bastion_cascade_probe(&self) -> (u32, u32, u32, u32, u32) {
+        let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
+        let fold_max = |m: &hashbrown::HashMap<common::uid::Uid, u32>| -> u32 {
+            let mut vals: Vec<(u64, u32)> = m.iter().map(|(u, v)| (u.0.get(), *v)).collect();
+            vals.sort_unstable();
+            vals.into_iter().map(|(_, v)| v).max().unwrap_or(0)
+        };
+        let mut members: Vec<u64> = board
+            .cascade_frontier_completes
+            .keys()
+            .chain(board.cascade_access_emissions.keys())
+            .map(|u| u.0.get())
+            .collect();
+        members.sort_unstable();
+        members.dedup();
+        (
+            fold_max(&board.cascade_frontier_completes),
+            fold_max(&board.cascade_abort_resets),
+            fold_max(&board.cascade_abort_max),
+            fold_max(&board.cascade_access_emissions),
+            members.len() as u32,
+        )
+    }
     /// bastion (mechanism-2 friction instrument, harness hook, 2026-07-30):
     /// the TAIL signature -- the highest travel-timeout count any single
     /// job POSITION accumulated this run. A target retried many times that

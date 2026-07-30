@@ -3872,6 +3872,8 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // MINE-COMPLETION-INVARIANT (Ben-directed, 2026-07-30): captured once,
     // read by both the report and the gate below.
     let locomotion = server.bastion_locomotion_stats();
+    // CARVE-CASCADE PROBE: captured once, beside locomotion, same reason.
+    let cascade_probe = server.bastion_cascade_probe();
     let cavein_drop_cells = server.bastion_cavein_drop_cells();
 
     // B5-EXIT-CODE-DISAMBIGUATION (Ben-directed, 2026-07-30): the pass gate
@@ -4058,6 +4060,24 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_cavein_drop_cells": cavein_drop_cells,
         // FR15 baseline (reported): (no_progress_ticks, timeouts, teleports).
         "b5_locomotion": locomotion,
+        // CARVE-CASCADE PROBE (mechanism 1, predictions A/B). Report-only.
+        // `present: true` is the FIELD-PRESENCE flag: it distinguishes
+        // "the counters say zero" from "this binary has no counters" --
+        // a stale binary reported success here earlier today, and a
+        // silent zero from an uninstrumented build is the same false
+        // all-clear in a different costume.
+        //
+        // READ resets AGAINST ceiling: low ceiling + HIGH resets is the
+        // cascade signature (the bound is refilled, not respected); low
+        // ceiling + ZERO resets is genuine health.
+        "b5_cascade_probe": {
+            "present": true,
+            "frontier_completes_max": cascade_probe.0,
+            "abort_resets_max": cascade_probe.1,
+            "abort_ceiling_max": cascade_probe.2,
+            "access_emissions_max": cascade_probe.3,
+            "members_seen": cascade_probe.4,
+        },
         // MECHANISM-2 FRICTION INSTRUMENT (Ben/Fable-directed, 2026-07-30):
         // permanent, always-on. b5_travel_timeouts is a named top-level
         // alias for locomotion[1] (same counter, clearer name). The

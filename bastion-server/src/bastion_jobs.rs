@@ -3692,6 +3692,32 @@ pub struct JobBoard {
     /// while wood is missing; cleared WHOLESALE the moment wood is
     /// reservable again (the gate pass is the single writer).
     pub starved_anchor_columns: HashSet<Vec2<i32>>,
+    /// CARVE-CASCADE PROBE (mechanism 1, predictions A/B — Opus, 2026-07-30):
+    /// PURE TELEMETRY. Nothing here is read by any decision; the board is
+    /// not hashed (checked, not assumed), so these cannot move the 72/72
+    /// determinism baseline or re-roll a per-seed outcome.
+    ///
+    /// **Why the RESET count and not just the ceiling.** Prediction B is
+    /// "`emergency_reengage_aborts` never exceeds 1-2". Measured as a
+    /// ceiling alone that is a FALSE ALL-CLEAR: under the amplifier
+    /// hypothesis a low ceiling is the SIGNATURE of the pathology, because
+    /// `frontier-complete` keeps clearing the counter ("Real progress: both
+    /// per-episode bounds reset"). A cascade that refills the budget fifty
+    /// times reports max=2 and looks healthy. The pair is the proof —
+    /// ceiling LOW while resets CLIMB — and either number alone is
+    /// misreadable.
+    ///
+    /// Keyed access only, never iterated in sim logic; the harness reads
+    /// them through a SORTED reduction so no hash order reaches output.
+    pub cascade_frontier_completes: HashMap<Uid, u32>,
+    /// Times the per-episode abort bound was CLEARED at frontier-complete
+    /// — the refill count, and the discriminating measurement.
+    pub cascade_abort_resets: HashMap<Uid, u32>,
+    /// Highest `emergency_reengage_aborts` seen before a clear (B's
+    /// ceiling). Expected LOW; that is the point.
+    pub cascade_abort_max: HashMap<Uid, u32>,
+    /// Access plans emitted per member — the escalation count.
+    pub cascade_access_emissions: HashMap<Uid, u32>,
     pub failsafe_teleports: u64,
     pub failsafe_events: Vec<FailsafeTeleportEvent>,
     /// bastion (B-LIVE3 / reviewer F5): the UNIVERSAL stuck watchdog —
@@ -12792,6 +12818,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     approach_context,
                 ) {
                     Some((kind, steps)) => {
+                        // CARVE-CASCADE PROBE: one emission for this member.
+                        *board.cascade_access_emissions.entry(uid).or_insert(0) += 1;
                         if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
                             let entity = id_maps.uid_entity(uid);
                             let actual_pos = entity
@@ -13200,6 +13228,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 board.egress_targets.remove(&member);
                                 // Real progress: both per-episode bounds reset
                                 // and the (C) progress flag is re-earned.
+                                // CARVE-CASCADE PROBE: record BEFORE the clear
+                                // -- after it, the evidence is gone, which is
+                                // exactly how this loop stays invisible.
+                                *board.cascade_frontier_completes.entry(member).or_insert(0) += 1;
+                                if let Some(aborts) = board.emergency_reengage_aborts.get(&member).copied() {
+                                    let slot = board.cascade_abort_max.entry(member).or_insert(0);
+                                    *slot = (*slot).max(aborts);
+                                    if aborts > 0 {
+                                        *board.cascade_abort_resets.entry(member).or_insert(0) += 1;
+                                    }
+                                }
                                 board.emergency_reengage_aborts.remove(&member);
                                 board.emergency_energy_wait_ticks.remove(&member);
                                 board.emergency_no_progress.remove(&member);
