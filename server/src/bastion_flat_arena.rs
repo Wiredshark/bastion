@@ -40,6 +40,10 @@ pub const FLAT_ARENA_RADIUS_CHUNKS: i32 = 16;
 /// radius keeps that seam far outside a test colony's footprint.
 pub const FLAT_ARENA_Z: i32 = 400;
 
+fn within_flat_override_radius(center_key: Vec2<i32>, key: Vec2<i32>) -> bool {
+    (key - center_key).map(i32::abs).reduce_max() <= FLAT_ARENA_RADIUS_CHUNKS
+}
+
 /// The env toggle, read once (the `BASTION_TIGHTDIG`-style dev-flag
 /// pattern): `BASTION_FLAT_ARENA` set to anything but `0` enables the
 /// arena for this server's lifetime.
@@ -89,7 +93,7 @@ pub fn override_chunk(
         return None;
     }
     let center_key = center_wpos.map2(TerrainChunkSize::RECT_SIZE, |e, sz| e as i32 / sz as i32);
-    if (key - center_key).map(|e| e.abs()).reduce_max() > FLAT_ARENA_RADIUS_CHUNKS {
+    if !within_flat_override_radius(center_key, key) {
         return None;
     }
     Some((
@@ -103,4 +107,23 @@ pub fn override_chunk(
         // nothing; Ben founds his colony through the normal command.
         ChunkSupplement::default(),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn flat_override_radius_is_bounded_and_outside_is_not_overridden() {
+        let center = Vec2::new(100, 100);
+        assert!(within_flat_override_radius(center, center));
+        assert!(within_flat_override_radius(
+            center,
+            center + Vec2::new(FLAT_ARENA_RADIUS_CHUNKS, -FLAT_ARENA_RADIUS_CHUNKS)
+        ));
+        assert!(!within_flat_override_radius(
+            center,
+            center + Vec2::new(FLAT_ARENA_RADIUS_CHUNKS + 1, 0)
+        ));
+    }
 }

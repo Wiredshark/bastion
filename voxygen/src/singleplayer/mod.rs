@@ -471,11 +471,22 @@ fn run_server(mut server: Server, stop_server_r: Receiver<()>, paused: Arc<Atomi
 
     // Set up an fps clock
     let mut clock = Clock::new(Duration::from_secs_f64(1.0 / TPS as f64));
-    let certification_freeze_tick = crate::render::bastion_r0d::certification_freeze_tick_v1(
-        std::env::var_os("BASTION_FLAT_ARENA").is_some(),
-        crate::render::bastion_r0d::absolute_time_capture_selected(),
-    );
-    if certification_freeze_tick.is_some() {
+    let continuous_streaming_measurement =
+        match crate::render::bastion_r0d::continuous_streaming_measurement_selected_v1() {
+            Ok(selected) => selected,
+            Err(fault) => {
+                crate::render::bastion_r0d::record_certification_fixture_fault_v1(fault);
+                error!(fault, "bastion: invalid streaming-measurement declaration");
+                return;
+            },
+        };
+    let certification_freeze_tick =
+        crate::render::bastion_r0d::certification_freeze_tick_for_runtime_v1(
+            std::env::var_os("BASTION_FLAT_ARENA").is_some(),
+            crate::render::bastion_r0d::absolute_time_capture_selected(),
+            continuous_streaming_measurement,
+        );
+    if certification_freeze_tick.is_some() || continuous_streaming_measurement {
         crate::render::bastion_r0d::reset_certification_server_latch_v1();
     }
     let mut certification_weather_fixture =
@@ -615,9 +626,12 @@ fn run_server(mut server: Server, stop_server_r: Receiver<()>, paused: Arc<Atomi
                 "bastion: renderer certification simulation frozen"
             );
         }
-        if certification_freeze_tick.is_some()
+        if (certification_freeze_tick.is_some() || continuous_streaming_measurement)
             && let Err(error) =
-                crate::render::bastion_r0d::record_certification_server_tick_v1(completed_ticks)
+                crate::render::bastion_r0d::record_certification_server_tick_for_runtime_v1(
+                    completed_ticks,
+                    certification_freeze_tick.is_some(),
+                )
         {
             error!(
                 ?error,

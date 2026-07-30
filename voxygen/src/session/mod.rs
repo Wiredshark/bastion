@@ -2287,12 +2287,53 @@ impl PlayState for SessionState {
             let client = self.client.borrow();
             (client.state().get_time(), client.get_tick())
         };
+        let terrain_streaming =
+            if crate::render::bastion_r0d::continuous_streaming_measurement_selected_v1()
+                .unwrap_or(false)
+            {
+                let client = self.client.borrow();
+                Some((
+                    client.requested_view_distance(),
+                    client.server_authorized_view_distance(),
+                    client.terrain_chunks_received_total(),
+                    client.terrain_resident_chunks(),
+                    client.terrain_pending_chunk_requests(),
+                ))
+            } else {
+                None
+            };
+        let server_completed_tick = terrain_streaming
+            .and_then(|_| crate::render::bastion_r0d::certification_server_latch_v1())
+            .map_or(0, |latch| latch.completed_tick);
         crate::r0p_observer::record_scene_counters(crate::r0p_observer::SceneCountersV1 {
             terrain_chunks: u64::try_from(self.scene.terrain().chunk_count()).unwrap_or(u64::MAX),
             visible_terrain_chunks: u64::try_from(self.scene.terrain().visible_chunk_count())
                 .unwrap_or(u64::MAX),
             shadow_terrain_chunks: u64::try_from(self.scene.terrain().shadow_chunk_count())
                 .unwrap_or(u64::MAX),
+            terrain_requested_view_distance_chunks: u64::from(
+                terrain_streaming
+                    .and_then(|streaming| streaming.0)
+                    .unwrap_or(0),
+            ),
+            terrain_server_authorized_view_distance_chunks: u64::from(
+                terrain_streaming
+                    .and_then(|streaming| streaming.1)
+                    .unwrap_or(0),
+            ),
+            terrain_server_authority_available: terrain_streaming
+                .and_then(|streaming| streaming.1)
+                .is_some(),
+            terrain_chunks_received_total: terrain_streaming.map_or(0, |streaming| streaming.2),
+            terrain_resident_chunks: u64::try_from(
+                terrain_streaming.map_or(0, |streaming| streaming.3),
+            )
+            .unwrap_or(u64::MAX),
+            terrain_pending_chunk_requests: u64::try_from(
+                terrain_streaming.map_or(0, |streaming| streaming.4),
+            )
+            .unwrap_or(u64::MAX),
+            terrain_server_completed_tick: server_completed_tick,
             loaded_distance_blocks: self.client.borrow().loaded_distance().max(0.0).round() as u64,
             terrain_view_distance_chunks: u64::from(
                 self.client.borrow().view_distance().unwrap_or(0),
