@@ -15333,3 +15333,24 @@ investigation as its opposite face.
 Determinism note in passing: identical telemetry across two different commits
 and two different VM CPU platforms (Broadwell vs AMD Rome) — the reproducibility
 substrate keeps proving itself wherever it's tested.
+
+## WAVE 18 (stance fix, in flight) — EXPECTATION PRE-STATED (07/31)
+
+Fanning `a057ed66cf` (Chop standability gate; task #62 small-tree mystery filed
+separately), seeds 49-96, vs the wave-16/17 baseline profile (14/48).
+
+**Corrected directional bar (my earlier "mine byte-stable" was MIS-SPECIFIED —
+claim-behaviour changes ripple through the shared colony):**
+- **NO NEW REDS anywhere** — any seed gaining a failing clause = regression.
+- **Chop-family decrease-or-hold**: candidates to flip in-range are 69/78/85/92
+  (`chop_cleared`/`log_sum`); 80 expected to STAY red (different mechanism, per
+  5b's local run).
+- **Aggregate failure count ≤ 14/48.**
+- **Improving-direction ripple EXPECTED**: seed 51 flipped clean locally
+  (mine-only seed; chop claims freeing colonist time) — the fan tests whether
+  that reproduces on the VM.
+
+Local evidence already in: big tree FIXED on the differential prediction;
+seeds 111/119 flipped green (119 carried TWO overlapping defects — probe
+vantage + live stance — both now fixed from different angles); 26 shows new
+`ch_trees:0` variance (tracked, oracle/site question, not claimed).
