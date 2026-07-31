@@ -15013,7 +15013,37 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // was the bug: a hillside `+1`-gap cell or a floating block passed
         // exposure, got claimed, then never Arrived → churn.
         let mut standable: HashMap<JobId, Vec3<i32>> = HashMap::new();
+        // TASK #56/#62 (chop stance, 2026-07-30): the on-top default
+        // below ("everything else") is wrong for Chop specifically --
+        // `job.pos` is the BOTTOM of a (possibly multi-block-tall) tree
+        // trunk, so "on top of job.pos" is frequently still solid wood,
+        // not open air, whenever the trunk continues straight up from its
+        // base column. The live pathfinder can't route to a solid cell:
+        // small/straight trees get no route at all, others get a route
+        // that's found but never followed to a destination it can't
+        // enter. Root-caused and CONFIRMED via chopfell_scenario's
+        // 6-tall synthetic trunk (felled:false -> felled:true, activity
+        // 0.0 -> 0.998, differentially predicted route-state shape landed
+        // exactly) and via b5 corpus seeds 111/119 (chop_cleared flips
+        // false -> true). chopfell's 3-tall trunk still fails post-fix,
+        // but via a DIFFERENT, separate mechanism (a travel-timeout fall
+        // into unmodified terrain below the fixture's rock-fill, tracked
+        // as its own row) -- not evidence against this fix, whose target
+        // computation was hand-verified valid for that case too. No
+        // exposure gate here (unlike Mine): a tree's base sits in open
+        // air by construction, never buried terrain, so that check
+        // doesn't apply. Same "leave unclaimed, not unreachable"
+        // discipline as Mine below -- the drive-gate coupling (AUTON-0)
+        // means a wrongly-unreachable sole job zeroes `work_available`
+        // and sleeps the whole colony; unclaimed just waits and retries
+        // next cycle.
         for (id, job) in board.jobs.iter_mut() {
+            if job.kind.is(DesignationKind::Chop) && job.claimed_by.is_none() {
+                if let Some(stance) = has_standable_stance(&terrain, job.pos) {
+                    standable.insert(*id, stance);
+                }
+                continue;
+            }
             if !job.kind.is(DesignationKind::Mine) || job.claimed_by.is_some() {
                 continue;
             }
@@ -15621,9 +15651,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     }
                 }
                 info!(job = job_id, colonist = %uid, "bastion: job claimed");
-                // The committed stance (B15/FR12): the standable set's pinned
-                // offset for a gated Mine cell; on-top (0,0,1) for everything
-                // else (non-Mine jobs, and the pre-B15 default).
+                // The committed stance (B15/FR12, extended #56/#62): the
+                // standable set's pinned offset for a gated Mine cell or a
+                // Chop base; on-top (0,0,1) for everything else (Build,
+                // Haul, and the other job kinds where on-top is a
+                // reasonable default, plus the pre-B15 fallback).
                 let stance = standable.get(&job_id).copied().unwrap_or(Vec3::unit_z());
                 assignments.push((entity, job_id, stance));
             }
