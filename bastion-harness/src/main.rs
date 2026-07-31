@@ -17093,11 +17093,23 @@ fn chopfell_scenario(args: &Args) -> ExitCode {
     // A flat rock slab with clear air above (the selfgen fixture idiom) —
     // the trees stand ON honest ground, the base-cut is trivially
     // reachable, and no worldgen terrain intrudes on the fell math.
+    //
+    // TASK #62 (2026-07-31): the original 7-block fill (gz-6..=gz) let a
+    // colonist fall through into UNMODIFIED worldgen terrain below it --
+    // this seed/site's exact small-tree column sits over a void reaching
+    // down to ~gz-10 (colonists observed resting at z=447 vs the platform
+    // surface at z=456, gz=455), triggering the mine-shaft self-rescue
+    // path (inappropriate for flat chop terrain) and eventually the
+    // ULTIMATE FAIL-SAFE teleport -- not a stance or live-gameplay bug,
+    // a fixture depth gap the comment above already intended to prevent
+    // ("no worldgen terrain intrudes"), just not deep enough to guarantee
+    // it against every seed's cave geometry. Deepened to comfortably
+    // exceed any near-surface void.
     let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
     let air = Block::empty();
     for x in (cx - 16)..=(cx + 16) {
         for y in (cy - 12)..=(cy + 12) {
-            for z in (gz - 6)..=gz {
+            for z in (gz - 24)..=gz {
                 server.state_mut().set_block(Vec3::new(x, y, z), rock);
             }
             for z in (gz + 1)..=(gz + 14) {
