@@ -15285,3 +15285,30 @@ reports that don't support it.
 **OPUS LANE: CLOSED, nothing provisional.** Full detail in its task #36,
 including the corrections to its own two wrong tables — kept visible because
 the instrument-corrections ARE the findings.
+
+## ★ THE SWEEP IS COMPLETE: ALL 39 SCENARIOS MAPPED (07/31)
+
+Batches 9-10 (pinned `14adb0be26`, attested): **auton3 FAIL · b55-deep FAIL** ·
+bag1, season1, archetype, chronicle, chronicle-capture, lod0, lod1 all pass.
+
+**FINAL MAP — 15 of 38 non-corpus scenarios BROKEN (39%), b5 tracked separately
+as the corpus:**
+```
+FAIL (15): farm · autonomy-death-spiral · chopfell · bed · preempt · zone ·
+           b55 · b58 · b73 · path · run · selfgen · auton · auton3 · b55-deep
+PASS (23): gather · haulpin · stuckjob · cavein · needs · b4 · b6haul · magnet ·
+           coord · leash · arena · derive · values · season · belt-exercise ·
+           bag1 · season1 · archetype · chronicle · chronicle-capture · lod0 ·
+           lod1 · inspect
+```
+Two days ago we were running ~5 of these and believed the suite green.
+
+**New signatures:** auton3 — single failing conjunct `scores_match:false`
+(the AUTON-3 modulation-recording check; everything else green — small,
+well-scoped). b55-deep — the work-not-performed family AT DEPTH:
+`active_route_owners_at_deadline: 0`, nothing mined by the acceptance deadline;
+candidate sighting for work-initiation or the deep-access machinery, unclassified.
+
+**FAN LANE:** the pre-#57 auton interaction check is launched on pin
+`0feceef806` (does the frozen-count assert depend on phantom jobs #57 now
+retires?). 5b's stance-fix corpus fan queued behind its push.
