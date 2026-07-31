@@ -15173,3 +15173,39 @@ persisted** (wave14/15/16/17_FULL.json). 17 fan waves today, ~$8 total.
 **TOMORROW:** fell-set vs plain-chop Goto diff (movement-initiation) → task #61
 (vantage-point gate + chop visibility) → access/reachability family → aging's
 owed acceptance test → 9-scenario sweep tail.
+
+## CORRECTION + THE auton RESOLUTION: A POLARITY TRAP AND A #57-INTERACTION SUSPECT (07/31)
+
+**CORRECTING MY OWN OVER-CLAIM:** I logged the sweep's 13 failures as "none
+caused by today's fixes — all pinned-control-exonerated." **The controls
+exonerated AGING and #56 only. The sweep pin (2b1b3ef0) INCLUDES #55+#57**, so
+auton/run/selfgen/path/bed/preempt/zone could be #55/#57-caused. Exoneration
+was claimed for a broader set than was tested.
+
+**auton, fully resolved by the Opus/Fable exchange:**
+- Opus killed my m1/m2 hypothesis (geometry checks, not improvement asserts) —
+  correct.
+- Opus classified the failure as seam-3 via `path_alive`, stating its own
+  falsifier: a failing run with peak_wait<=7 kills it. **The falsifier FIRED**
+  — batch-7 telemetry on disk: `peak_wait=0`, path_alive TRUE.
+- **The real failing conjunct is `frozen` — a POLARITY TRAP.** The pass
+  expression requires `frozen == TRUE` ("the mine2 job count did not change
+  during the flee storm"); the JSON prints `auton_frozen: false`, which reads
+  GREEN to a human. 5b and I both misread it in the original sweep report. The
+  verdict IS derivable 1:1 (Opus right) but only knowing the inverted polarity
+  (nobody did). Third flavor of reporting defect: **technically complete,
+  actively misleading.**
+- **★ CANDIDATE CAUSE: OUR OWN #57.** The sweep retires target-invalid jobs
+  regardless of claim state — including cave-in-severed cells that previously
+  lingered as phantoms. Pre-#57 a severed job kept the count frozen (PASS);
+  post-#57 the sweep retires it mid-storm (count moves, FAIL). **The assert
+  implicitly depended on phantom jobs never being cleaned.** Test queued:
+  auton on a pre-#57 pin (0feceef806) once the fan lane frees. If it passes
+  there, the fix is the ASSERT (count-delta must exclude sweep-retired jobs),
+  not the sweep.
+- Opus's delta-capture instrument fix for cumulative `peak_wait` (capture
+  before the storm, assert the delta — the neighbouring `switches0` metric
+  already does it right) stands as a real row regardless: seam 3's headline
+  evidence reads a lifetime-cumulative max that cannot localise in time, so
+  **seam 3 is UNPROVEN, not confirmed — "not a seam, an instrument" is a live
+  fourth category.**
