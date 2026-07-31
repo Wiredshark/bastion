@@ -15138,3 +15138,23 @@ sets persisted (wave16_FULL.json ≡ wave14).** Queue head: 5b lands #56-(c)
 close. Tomorrow: the fell-set vs plain-chop Goto diff (movement-initiation
 suspect), the vantage-point reachability gate row (b), the access/reachability
 family, aging's owed starvation acceptance test, 9 unswept scenarios.
+
+## WAVE 17 (closure fan, in flight) — EXPECTATION PRE-STATED (07/30)
+
+Fanning `14adb0be26` (the #56-(c) rework: probe + reporting machinery, NO
+rejection path). **Note the commit topology: the false-rejecting gate was NEVER
+on the branch** — it lived only in 5b's working tree (held unpushed throughout,
+correctly). The branch went 851ed5e952 → 07fcc47893 (revert) → 14adb0be26, so
+the delta under test is the REPORTING MACHINERY ALONE.
+
+**Pre-stated acceptance: wave 17 = wave 16's profile EXACTLY (14/48, same
+clause sets).** The (c) machinery is claimed read-only; 74/76's recovery
+happened relative to 5b's local gated tree, not the branch, so NO seed should
+move. **Any mismatch ⇒ the reporting machinery is not read-only** — same bar
+every read-only claim has been held to today.
+
+5b's push met all three ruling conditions, and caught a SECOND stale comment in
+its own diff review (Build's "unlike Chop" line, made false by the gate's
+deletion — reworded). Task #61 filed: proactive gate rebuild (real
+colonist/spawn vantage points) + the chop blocked-visibility close, one row,
+since a correct proactive gate closes the visibility gap directly.
