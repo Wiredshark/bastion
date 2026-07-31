@@ -15209,3 +15209,49 @@ was claimed for a broader set than was tested.
   evidence reads a lifetime-cumulative max that cannot localise in time, so
   **seam 3 is UNPROVEN, not confirmed — "not a seam, an instrument" is a live
   fourth category.**
+
+## OPUS LANE CLOSED: THE VERDICT-VS-DIAGNOSTIC AUDIT, FINAL (07/31)
+
+**ROOT CAUSE OF ALL FOUR REPORT-DEFECT FLAVOURS: conjunct variable names and
+emitted key names are DECOUPLED with no enforced correspondence** (evidence:
+`beds_built`→`bed_built`, `gm_final`→`selfgen_mine_total`,
+`preempted_rested`→`preempt_rested`, `dug_before_preempt` renamed AND not a
+conjunct). Subsumes: renames · the auton polarity trap · diagnostics
+indistinguishable from verdicts · **unset-zero diagnostics**
+(`preempt_jobs_at_rest_peak: 0` is the INITIAL VALUE — never assigned — and
+reads identically to a measured zero). **Harness-wide fix row filed: port b5's
+`failed_clauses` pattern (pass DERIVED from the emitted verdict set) to all 39
+scenarios, keys named after conjuncts, verdict/diag split, PLUS dependency
+annotation** — because of:
+
+**★ THE DEPENDENT-CHAIN INSIGHT (bed): one defect (`built:false`) cascades to
+13 red conjuncts. "A conjunctive verdict over a dependent chain converts one
+root failure into N red fields, and N carries no information about how many
+bugs there are."** Triage ranking scenarios by redness is systematically wrong.
+
+**Hand-verified verdicts:** preempt fails `paused`+`rested` (rest legs; dug_before
+is a diagnostic) · bed = ONE defect, built:false, everything downstream is
+cascade · selfgen = generation intact, **execution nil across ALL THREE verbs**
+(my "haul-stage" read was WRONG — Opus corrected it: drained:false means the
+mine half never ran either) · zone/b73 symptoms validated as genuine conjuncts.
+Provisional DIAGNOSTIC labels on b73/run/farm/b55/b58 are marked
+DO-NOT-CONSUME-WITHOUT-HAND-CHECK (Opus was wrong twice on unverified renames
+and said so both times).
+
+**FOURTH MECHANISM (work-initiation) now has FOUR sightings** — chopfell,
+selfgen, bed clean; preempt contaminated. Falsifier unchanged. **Cheapest
+decisive step routed to 5b: emit drive state via the EXISTING
+`bastion_colonist_drive` in those four scenarios** — separates "never entered
+Work" / "entered Work, never moved" / "stuck in Survive" in one run each.
+
+**And the wrong-tree trap bit ME:** my cwd is `bastion/block-B6HAUL`, so every
+local line citation I made this session indexed the wrong blob — caught by
+Opus's object-database reads, findings re-verified against
+`git show 14adb0be26:` (all survived, by luck not method). Memory recorded:
+engine-lane reads use `git show <tip>:path`, and NEVER cite line numbers
+without the blob they index.
+
+**Lane scoreboard (Opus):** two seams sighted into existence (work-initiation,
+rest-arbitration), one downgraded to instrument (path-compute), the
+decoupled-keys root cause, four traced verdicts, one screening tool honestly
+disclaimed, and both orchestrator misreads (dug_before, selfgen-haul) corrected.
