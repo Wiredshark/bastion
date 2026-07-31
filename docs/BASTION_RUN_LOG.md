@@ -15158,3 +15158,18 @@ its own diff review (Build's "unlike Chop" line, made false by the gate's
 deletion — reworded). Task #61 filed: proactive gate rebuild (real
 colonist/spawn vantage points) + the chop blocked-visibility close, one row,
 since a correct proactive gate closes the visibility gap directly.
+
+## WAVE 17: ACCEPTANCE MET — DAY CLOSED, BRANCH VERIFIED END-TO-END (07/30)
+
+48/48 seeds, attested `14adb0be`, **exact match to wave 16: 14/48, zero
+per-seed clause-set mismatches.** The #56-(c) reporting machinery is verified
+read-only at corpus scale. Every commit on the branch tonight is
+corpus-verified: aging (regressive, reverted) → revert (restores wave-14
+profile to the clause) → (c) (inert as claimed).
+
+**STANDING STATE: `14adb0be26`, 14/48 known-membership baseline, all evidence
+persisted** (wave14/15/16/17_FULL.json). 17 fan waves today, ~$8 total.
+
+**TOMORROW:** fell-set vs plain-chop Goto diff (movement-initiation) → task #61
+(vantage-point gate + chop visibility) → access/reachability family → aging's
+owed acceptance test → 9-scenario sweep tail.
