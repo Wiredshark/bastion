@@ -15354,3 +15354,34 @@ Local evidence already in: big tree FIXED on the differential prediction;
 seeds 111/119 flipped green (119 carried TWO overlapping defects — probe
 vantage + live stance — both now fixed from different angles); 26 shows new
 `ch_trees:0` variance (tracked, oracle/site question, not claimed).
+
+## WAVE 18: STANCE FIX ACCEPTED ON AN AMENDED BAR — AND THE AMENDMENT IS THE LESSON (07/31)
+
+48/48 seeds, attested `a057ed66`, vs the wave-16 baseline:
+**14/48 -> 12/48 failures · chop-family clauses 14 -> 11 · seeds 51/55/69 FULLY
+FIXED · 61 improved (ch_leaf cleared) · 80 unchanged exactly as predicted ·
+seed 51's local ripple-flip REPRODUCED on the VM.**
+
+**THE PRE-STATED BAR FIRED: two seeds gained new reds.** Mode analysis before
+ruling: **seed 90** went clean -> 25/27 one-short at IDENTICAL friction (16
+timeouts both runs — it was always an edge seed in the high-friction pass
+band); **seed 71** (already failing) re-rolled 24/27 -> 5/27 with its
+downstream build/b15 clauses cascading, timeouts identical. **Both are KNOWN
+modes redistributing under re-rolled scheduling — zero novel mechanisms.**
+The wave-1->3 terraform control established exactly this as legitimate
+(seed 113 went clean->failing there and it was perturbation, not regression).
+
+**RULED (DECISIONS #41): fix ACCEPTED; bar overridden ON THE RECORD, not
+quietly.** This was my SECOND mis-specified bar for one fix ("mine
+byte-stable", then "no new reds anywhere") — both wrong the same way.
+**STANDING LAW: for scheduling-perturbing changes, acceptance = aggregate
+direction + NO NOVEL MODES + target-family improvement. Per-seed membership is
+NEVER the bar.** A pre-stated bar that fires still governs the moment — the
+override happens in daylight with the mode analysis attached, or not at all.
+
+**NEW BASELINE: `a057ed66cf`, 12/48, membership + clauses persisted
+(wave18_FULL.json).** Seeds 90/71 join the friction-band ledger (friction
+unchanged, outcomes re-drawn — more evidence outcomes are scheduling-drawn
+within terrain-fixed friction). Chopfell big-tree FIXED; task #62 (small-tree
+fall/egress mystery) open; 80 and 26 tracked; the FIRST MECHANISM-DERIVED GAME
+FIX OF THE CAMPAIGN IS LANDED AND CORPUS-VERIFIED.
