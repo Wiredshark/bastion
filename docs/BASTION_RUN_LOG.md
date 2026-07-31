@@ -15312,3 +15312,24 @@ candidate sighting for work-initiation or the deep-access machinery, unclassifie
 **FAN LANE:** the pre-#57 auton interaction check is launched on pin
 `0feceef806` (does the frozen-count assert depend on phantom jobs #57 now
 retires?). 5b's stance-fix corpus fan queued behind its push.
+
+## PRE-#57 CHECK: MY INTERACTION HYPOTHESIS DEAD; auton's failure is REAL and PRE-EXISTING (07/31)
+
+`--auton-scenario` on pin `0feceef8` (pre-#57): **FAILS with the IDENTICAL
+signature** — `frozen:false`, telemetry byte-identical to the post-#57 run
+(`switches=16 frozen_at=20 grants=4960 peak_wait=0`). **#57 exonerated for
+auton; the phantom-sweep never touched these jobs.** My hypothesis — that the
+frozen-count assert depended on phantoms propping the count — dies by its own
+test, like the five before it.
+
+**What remains is a REAL pre-existing finding, reclassified:** the mine2 job
+count MOVED during the flee storm on both commits — **work progressed while
+the colony was supposed to be fleeing.** That is the INVERSE of the
+work-not-performed family: work happening when it shouldn't. Candidate homes:
+flee-preemption not suppressing job completion, or the assert's own premise.
+Unclassified, with #57 excluded; joins the rest-arbitration/drive-gate
+investigation as its opposite face.
+
+Determinism note in passing: identical telemetry across two different commits
+and two different VM CPU platforms (Broadwell vs AMD Rome) — the reproducibility
+substrate keeps proving itself wherever it's tested.
