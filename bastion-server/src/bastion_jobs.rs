@@ -3530,6 +3530,13 @@ fn clear_verified_emergency_exit_movement(
 pub struct BlockedRegionInfo {
     pub region: Region,
     pub blocking_cell: Vec3<i32>,
+    /// bastion (task #56, 2026-07-30): the chat notification is deferred
+    /// to the next arbitration cycle (which has `chat_emitter` in scope)
+    /// rather than required at insertion time -- lets ANY code path
+    /// record a block (e.g. `place_chop_fell`'s pre-designation
+    /// reachability gate, which has no emitter access) without needing
+    /// plumbing to reach one. `false` until the deferred drain fires it.
+    pub notified: bool,
 }
 
 /// The job board resource.
@@ -4477,6 +4484,37 @@ impl JobBoard {
             );
             return None;
         }
+        // TASK #56 (chop reachability, 2026-07-30): PROACTIVE rejection
+        // tried and reverted same-day (Fable's ruling) -- the only "from"
+        // reference point available here without new plumbing
+        // (`self.designated.first()`, typically the mine pit) is the
+        // WRONG reference class for testing whether a colonist can reach
+        // a distant discovered tree, so every rejection it issued was
+        // unproven by construction; it produced real false rejections
+        // (seed 74/76's trees, genuinely reachable, wrongly dropped).
+        // Deliberately NOT gating here. Tree-detection's known gap
+        // (validates worldgen suitability -- altitude, spawn rate, the
+        // physical Wood/Leaves blocks -- never colonist walkability)
+        // stays.
+        //
+        // NOTE: a genuinely-unreachable chop tree and routine chop travel
+        // congestion are currently INDISTINGUISHABLE TO THE SCHEDULER --
+        // #55's `blocked_regions` visibility is NOT yet caught reactively
+        // for chop (seeds 119/80/26 still stall silently). Two sites set
+        // `job.unreachable`, neither reports chop: the B5.8 self-rescue
+        // site (logs "auto-access refused (no in-claim route)") only
+        // pushes to `blocked_regions` when the target is in
+        // `board.designated` -- discovered trees never are, only Mine's
+        // planned cells. The routine claim-release site (logs "job
+        // unreachable -- claim released") fires for chop too, but is
+        // deliberately excluded from `blocked_regions` -- it's the
+        // 60-tick churn/amnesty path, and hooking it would false-alarm on
+        // ordinary congestion. That exclusion is correct for congestion
+        // and wrong for a truly-unreachable target; today the two are the
+        // same code path. Real outstanding work, tracked in the same
+        // follow-on row as the PROACTIVE gate (needs real colonist/spawn
+        // positions plumbed through, not designation corners) -- NOT
+        // solved by this commit.
         // Top-down total order NOW (z DESC, then y, x): the felling pass
         // drains bands in this exact order — deterministic, base LAST.
         kept.sort_unstable_by(|a, b| b.z.cmp(&a.z).then(a.y.cmp(&b.y)).then(a.x.cmp(&b.x)));
@@ -7825,6 +7863,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         continue;
                     }
                     unfilled += 1;
+                    // TASK #56 (chop/build reachability gate, 2026-07-30):
+                    // Build DELIBERATELY NOT gated here -- Fable's catch,
+                    // and the reasoning still holds even though Chop's own
+                    // proactive gate was later reverted (see
+                    // `place_chop_fell`, same task/date): Mine/Chop target
+                    // things that already EXIST (a filled cell, a standing
+                    // tree); Build targets a place where nothing is yet,
+                    // and construction is frequently how access gets
+                    // CREATED (a staircase's upper steps are legitimately
+                    // unreachable at designation time -- there's nothing
+                    // to stand on until the lower steps are physically
+                    // built). A per-cell reachability gate here would
+                    // reject the top of every staircase/tower a player
+                    // designates, which is a worse bug than the one being
+                    // fixed -- this reasoning is Build-specific and does
+                    // NOT apply to Chop, whose targets pre-exist.
                     if generator_enabled(GeneratorKind::Build)
                         && build_budget > 0
                         && !occupied.contains(pos)
@@ -12360,6 +12414,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             board.blocked_regions.push(BlockedRegionInfo {
                                 region,
                                 blocking_cell: to,
+                                // Emitted inline right below -- no need for
+                                // the deferred drain to fire it again.
+                                notified: true,
                             });
                             chat_emitter.emit(common::event::ChatEvent {
                                 msg: comp::UnresolvedChatMsg::meta(common::comp::Content::Plain(
@@ -14841,6 +14898,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // ── Arbitration (every ARBITRATION_INTERVAL ticks) ──────────────
         if tick.0 % ARBITRATION_INTERVAL != 0 {
             return;
+        }
+
+        // ── TASK #56: deferred blocked-region notifications -- fires the
+        // chat line for any `blocked_regions` entry recorded by a code
+        // path with no `chat_emitter` access of its own (e.g.
+        // `place_chop_fell`'s reachability gate). Same message shape as
+        // the carve-planner's inline notification (task #55). ──────────
+        for info in board.blocked_regions.iter_mut() {
+            if !info.notified {
+                info.notified = true;
+                let c = info.blocking_cell;
+                chat_emitter.emit(common::event::ChatEvent {
+                    msg: comp::UnresolvedChatMsg::meta(common::comp::Content::Plain(format!(
+                        "A designation is blocked — obstruction at ({}, {}, {}) can't be reached.",
+                        c.x, c.y, c.z
+                    ))),
+                    from_client: false,
+                });
+            }
         }
 
         // ── TASK #59: starvation measurement, taken BEFORE this cycle's

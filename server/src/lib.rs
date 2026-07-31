@@ -2167,6 +2167,32 @@ impl Server {
             .and_then(|(_, _, a)| a.activity)
     }
 
+    /// bastion (design-review diagnostic, 2026-07-30, Fable-directed): the
+    /// AUTON-0 drive gate discriminator -- ALL job claiming/execution is
+    /// gated on `arb.current == Drive::Work`, and the Idle->Work
+    /// transition requires `work_available` (an unclaimed, non-unreachable
+    /// job exists). A colony whose only jobs are marked `unreachable`
+    /// never enters Work at all -- not "won't claim," "won't wake."
+    /// Returns `(drive as debug string, work_score, flee_score,
+    /// idle_score)` so a scenario can sample whether the colonist ever
+    /// reaches Work, and if not, whether the work urgency itself is zero
+    /// (a signal problem) or nonzero-but-losing (a hysteresis/threshold
+    /// problem).
+    pub fn bastion_colonist_drive_scores(&self, name: &str) -> Option<(String, f32, f32, f32)> {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let arbiters = ecs.read_storage::<comp::bastion::Arbiter>();
+        (&entities, &colonists, &arbiters)
+            .join()
+            .find(|(_, c, _)| c.0.name == name)
+            .map(|(_, _, a)| {
+                let (w, f, i) = a.last_scores;
+                (format!("{:?}", a.current), w, f, i)
+            })
+    }
+
     /// bastion (UI-5, row 62.2): the CELL-inspect resolution as a probe — the
     /// harness's "data before display" read for the Universal Debug Inspector.
     /// Resolves a world cell to the Bastion object in its XY column (job →

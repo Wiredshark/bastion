@@ -17211,7 +17211,18 @@ fn chopfell_scenario(args: &Args) -> ExitCode {
         // architect's tooling standard asks for).
         let mut activity_max = 0.0f32;
         let mut last_max = present_max_z(server, all);
-        for _ in 0..3000 {
+        // TASK #56 / design-review diagnostic (Fable-directed,
+        // 2026-07-30): AUTON-0 gates ALL job claiming/execution on
+        // `arb.current == Drive::Work`, and Idle->Work requires an
+        // unclaimed non-unreachable job to exist at all -- a colony whose
+        // only jobs are `unreachable` never enters Work, not merely
+        // "won't claim." Sampled every 300 ticks (10 points across the
+        // 3000-poll window) to discriminate: drive never reaches Work +
+        // job.unreachable=true -> the drive gate is the mechanism; drive
+        // reaches Work and still nothing happens -> the gate is innocent,
+        // the defect is in the claim loop after it.
+        let mut drive_samples: Vec<(String, f32, f32, f32, bool)> = Vec::new();
+        for i in 0..3000 {
             tick(server, 1);
             let (_sets, felling, _rem) = server.bastion_chop_fell_stats();
             if felling > 0 {
@@ -17223,6 +17234,15 @@ fn chopfell_scenario(args: &Args) -> ExitCode {
                     server.bastion_colonist_activity(&names[0])
                 {
                     activity_max = activity_max.max(f);
+                }
+            }
+            if i % 300 == 0 {
+                if let Some((drive, w, f, idle)) = server.bastion_colonist_drive_scores(&names[0]) {
+                    let job_unreachable = matches!(
+                        server.bastion_inspect_cell(base),
+                        Some(common::comp::bastion::BastionInspectKind::Job(j)) if j.unreachable
+                    );
+                    drive_samples.push((drive, w, f, idle, job_unreachable));
                 }
             }
             let now_max = present_max_z(server, all);
@@ -17249,6 +17269,29 @@ fn chopfell_scenario(args: &Args) -> ExitCode {
         }
         tick(server, 60); // settle drops/merges
         let drops = server.bastion_sum_items_near(base.map(|e| e as f32), 8.0, CHOP_DROP_ITEM);
+        info!(?base, ?drive_samples, "CHOPFELL DRIVE-GATE DIAGNOSTIC (drive, work, flee, idle, job_unreachable)");
+        // TASK #56 / design-review diagnostic, round 2 (Fable-directed,
+        // 2026-07-30): discriminate "never arrives" from "arrives, never
+        // starts work" against ARRIVE_DIST=2.5. min_dist>2.5 -> the
+        // colonist never gets close to a tree TWO BLOCKS AWAY on flat
+        // ground -- then route_states says whether a plan was ever made
+        // (route_exists), completed-but-not-followed (route_complete),
+        // or drifting (route_next_idx never advancing). min_dist<=2.5
+        // with progress 0.0 the whole run -> it ARRIVES and work never
+        // starts -- a different, not-yet-isolated defect class in the
+        // work-start path itself (stance/target computation, work-tick
+        // precondition).
+        let min_dist = server.bastion_min_distance_to_target(base);
+        let last_timeout_pos = server.bastion_last_timeout_pos(base);
+        let route_states = server.bastion_timeout_route_states(base);
+        info!(
+            ?base,
+            ?min_dist,
+            ?last_timeout_pos,
+            ?route_states,
+            arrive_dist = 2.5,
+            "CHOPFELL ARRIVAL DIAGNOSTIC (min_dist_to_target vs ARRIVE_DIST, route sequence)"
+        );
         (
             cells,
             wood_n,
