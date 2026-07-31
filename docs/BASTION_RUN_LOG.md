@@ -15255,3 +15255,33 @@ without the blob they index.
 rest-arbitration), one downgraded to instrument (path-compute), the
 decoupled-keys root cause, four traced verdicts, one screening tool honestly
 disclaimed, and both orchestrator misreads (dug_before, selfgen-haul) corrected.
+
+## AUDIT TRULY CLOSED: DEFECT CONCENTRATED, SIXTH FLAVOUR, AND ANOTHER DEAD LEAD OF MINE (07/31)
+
+Opus fixed its scanner (match conjuncts against VALUE EXPRESSIONS, not key
+names — what renames defeated) and re-derived the whole table, verified:
+
+- **farm / run / b55: ENTIRELY CLEAN** — every emitted field is a conjunct;
+  they already emit exactly their verdict set. Opus's own provisional table had
+  over-reported diagnostics on all three, in the direction it warned about.
+- **The decoupling defect is CONCENTRATED, not harness-wide: bed, preempt,
+  b73, b58, auton, selfgen.** Fix row rescoped to those six (b58 first — 19
+  diagnostics + a disjunctive term = the most misleading surface). Cheaper than
+  the blanket 39-scenario port I filed.
+
+**★ SIXTH FLAVOUR (b58): DISJUNCTIVE VERDICT TERMS — a red that doesn't
+matter.** `(b_carve_fired && b_ladder_built) || b_exited`: three fields, one
+term, OR semantics. Where auton's polarity trap was a red that reads green,
+this is a green term wearing a red field. **Both defeat field-by-field reading
+from opposite directions.**
+
+**AND IT KILLED ANOTHER OF MY LEADS:** I had flagged b58's `b_exited:false` to
+5b as a possible movement-writer sighting. On the failing run the term
+evaluates (true && true) || false = **PASSED** — b_exited's red never mattered.
+b58's live failing-conjunct candidate is `c_no_carve:false`. That's the second
+b58 misread of mine (after dug_before), both from field-by-field reading of
+reports that don't support it.
+
+**OPUS LANE: CLOSED, nothing provisional.** Full detail in its task #36,
+including the corrections to its own two wrong tables — kept visible because
+the instrument-corrections ARE the findings.
