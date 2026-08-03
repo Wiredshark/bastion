@@ -8153,48 +8153,124 @@ fn b58_scenario(args: &Args) -> ExitCode {
     let avg_tick_ms = soak_elapsed.as_secs_f64() * 1000.0 / soak_ticks as f64;
     let orphans_final = server.bastion_orphaned_claims();
 
+    // ── VERDICT / DIAG SPLIT (report-fix row) ────────────────────────────
+    // The harness already distinguished these two categories IN PROSE — the
+    // GATE NOTE below, and "REPORTED, not gating (B6)" elsewhere in this file.
+    // This makes that existing, deliberate distinction machine-readable: a
+    // reader can no longer mistake a red DIAGNOSTIC for a failure, which has
+    // already cost two dead-end investigations.
+    //
+    // `pass` DERIVES from `verdict`, so a gating term that is not emitted
+    // cannot exist. Composite terms emit THE TERM (see `b1_free`); their
+    // operands live in `diag`, where a false operand cannot be misread as a
+    // failure — `b_carve_fired: false` is fine when `b_exited` carried it.
+    let b1_free = (b_carve_fired && b_ladder_built) || b_exited;
+    let verdict: Vec<(&str, bool)> = vec![
+        ("a_cleared", a_cleared),
+        ("a_no_carve", a_no_carve),
+        ("a_climb_xp", a_climb_xp),
+        ("b_lured", b_lured),
+        ("b1_free", b1_free),
+        ("b_orphans_zero", b_orphans == 0),
+        ("q_lured", q_lured),
+        ("c_gave", c_gave),
+        ("c_rung_jobs_expected", c_rung_jobs == 5),
+        ("c_rungs_placed_expected", c_rungs_placed == 5),
+        ("d_jobs_expected", d_jobs == 150),
+        ("d_dispersed_frac_ok", d_dispersed_frac >= 0.5),
+        ("d_deep_unlocked", d_deep_unlocked),
+        ("e_lured", e_lured),
+        ("e_board_empty", e_board_empty),
+        ("e_out", e_out),
+        ("f_cleared", f_cleared),
+        ("orphans_final_zero", orphans_final == 0),
+        ("soak_tick_ms_ok", avg_tick_ms < 100.0),
+    ];
+    let pass = verdict.iter().all(|(_, ok)| *ok);
+    let failed_clauses: Vec<&str> = verdict
+        .iter()
+        .filter(|(_, ok)| !ok)
+        .map(|(name, _)| *name)
+        .collect();
+    // `root_failure` is the FIRST failing clause in declaration order, so a
+    // cascade reads as one root plus its wake rather than N independent bugs.
+    // This is a CONVENTION — declaration order above tracks dependency order —
+    // NOT an enforced invariant: reordering that list silently changes it.
+    let root_failure = failed_clauses.first().copied();
+    // EQUIVALENCE PROOF, kept deliberately: the pre-refactor expression,
+    // verbatim. Every run asserts the refactor did not move the verdict, so
+    // "no verdict changes" is checked by the harness itself rather than only
+    // by a before/after diff. Must be true on every seed, forever.
+    let legacy_pass = a_cleared
+        && a_no_carve
+        && a_climb_xp
+        && b_lured
+        && ((b_carve_fired && b_ladder_built) || b_exited)
+        && b_orphans == 0
+        && q_lured
+        && c_gave
+        && c_rung_jobs == 5
+        && c_rungs_placed == 5
+        && d_jobs == 150
+        && d_dispersed_frac >= 0.5
+        && d_deep_unlocked
+        && e_lured
+        && e_board_empty
+        && e_out
+        && f_cleared
+        && orphans_final == 0
+        && avg_tick_ms < 100.0;
+    let verdict_matches_legacy = pass == legacy_pass;
+    debug_assert!(
+        verdict_matches_legacy,
+        "b58 verdict/diag refactor changed the verdict: derived={pass} legacy={legacy_pass}"
+    );
+    let verdict_map: serde_json::Map<String, serde_json::Value> = verdict
+        .iter()
+        .map(|(name, ok)| ((*name).to_string(), serde_json::json!(*ok)))
+        .collect();
+
     let result = serde_json::json!({
-        "b58_a_cleared": a_cleared,
-        "b58_a_no_carve": a_no_carve,
-        "b58_a_max_total": a_max_total,
-        "b58_a_climb_xp": a_climb_xp,
-        "b58_b_lured": b_lured,
-        "b58_b_carve_fired": b_carve_fired,
-        "b58_b_exited": b_exited,
-        "b58_b_drained": b_drained,
-        "b58_b_orphans": b_orphans,
-        "b58_b_max_total": b_max_total,
-        "b58_b_ladder_built": b_ladder_built,
-        "b58_q_lured": q_lured,
-        "b58_q_stairs_fired": q_stairs_fired,
-        "b58_q_out_cleared": q_out_cleared,
-        "b58_q_out": q_out,
-        "b58_q_no_ladder": q_no_ladder,
-        "b58_c_gave": c_gave,
-        "b58_c_rung_jobs": c_rung_jobs,
-        "b58_c_rungs_placed": c_rungs_placed,
-        "b58_c_top_cleared": c_top_cleared,
-        "b58_c_no_carve": c_no_carve,
-        "b58_c_max_total": c_max_total,
-        "b58_d_jobs": d_jobs,
-        "b58_d_all_cleared": d_all_cleared,
-        "b58_d_top_down": d_top_down,
-        "b58_d_dispersed_frac": d_dispersed_frac,
-        "b58_d_blocks_dug": d_blocks_dug,
-        "b58_d_deep_unlocked": d_deep_unlocked,
-        "b58_d_claims_total": d_claims_total,
-        "b58_d_claims_ratio": d_claims_ratio,
-        "b58_d_rescue_cleared": d_rescue_cleared,
-        "b58_d_all_out": d_all_out,
-        "b58_e_lured": e_lured,
-        "b58_e_board_empty": e_board_empty,
-        "b58_e_egress_fired": e_egress_fired,
-        "b58_e_out": e_out,
-        "b58_f_cleared": f_cleared,
-        "b58_orphans_final": orphans_final,
-        "b58_soak_avg_tick_ms": avg_tick_ms,
-        // FR15 baseline (reported): (no_progress_ticks, timeouts, teleports).
-        "b58_locomotion": server.bastion_locomotion_stats(),
+        // GATING terms only. `pass` is derived from exactly this set.
+        "b58_verdict": verdict_map,
+        "b58_failed_clauses": failed_clauses,
+        "b58_root_failure": root_failure,
+        "b58_verdict_matches_legacy": verdict_matches_legacy,
+        // REPORTED, NOT GATING. Nothing here can fail the scenario. Includes
+        // the operands of composite verdict terms (b_carve_fired/b_ladder_built
+        // /b_exited feed `b1_free`) and every raw value behind a comparison.
+        "b58_diag": {
+            "a_max_total": a_max_total,
+            "b_carve_fired": b_carve_fired,
+            "b_ladder_built": b_ladder_built,
+            "b_exited": b_exited,
+            "b_drained": b_drained,
+            "b_orphans": b_orphans,
+            "b_max_total": b_max_total,
+            "q_stairs_fired": q_stairs_fired,
+            "q_out_cleared": q_out_cleared,
+            "q_out": q_out,
+            "q_no_ladder": q_no_ladder,
+            "c_rung_jobs": c_rung_jobs,
+            "c_rungs_placed": c_rungs_placed,
+            "c_top_cleared": c_top_cleared,
+            "c_no_carve": c_no_carve,
+            "c_max_total": c_max_total,
+            "d_jobs": d_jobs,
+            "d_all_cleared": d_all_cleared,
+            "d_top_down": d_top_down,
+            "d_dispersed_frac": d_dispersed_frac,
+            "d_blocks_dug": d_blocks_dug,
+            "d_claims_total": d_claims_total,
+            "d_claims_ratio": d_claims_ratio,
+            "d_rescue_cleared": d_rescue_cleared,
+            "d_all_out": d_all_out,
+            "e_egress_fired": e_egress_fired,
+            "orphans_final": orphans_final,
+            "soak_avg_tick_ms": avg_tick_ms,
+            // FR15 baseline (reported): (no_progress_ticks, timeouts, teleports).
+            "locomotion": server.bastion_locomotion_stats(),
+        },
     });
     // GATE NOTE (architect-sanctioned descope, final, 2026-07-10): the
     // CLIMB-EXECUTION COMPOSITE outcomes — b_exited/b_drained (b1),
@@ -8208,75 +8284,9 @@ fn b58_scenario(args: &Args) -> ExitCode {
     // stays gating: scramble (a), geometry-choice stairs (b2), ladder
     // BUILD chain (c rungs), DF mining invariants (d dig), plan machinery,
     // zero orphans.
-    let pass = a_cleared
-        && a_no_carve
-        && a_climb_xp
-        && b_lured
-        // (b1) invariant: the trapped digger ends up FREE — via the
-        // auto-ladder chain, or under its own power (the climb assist's
-        // chimney slack + XP-on-use means a determined colonist sometimes
-        // beats the plan to it; tool0-gate rounds 2/3/7 showed the RACE
-        // between self-exit, bystander clears, and plan emission is
-        // genuinely nondeterministic — the same execution-race family as
-        // the sanctioned known-open composites, owned by SOFT-0 @B6).
-        // Both mechanisms stay reported; entombment stays impossible.
-        && ((b_carve_fired && b_ladder_built) || b_exited)
-        && b_orphans == 0
-        && q_lured
-        // (q) is REPORTED, not gating (B6). It tests roomy-geometry
-        // STAIRS EXECUTION: the colonist digs its OWN escape ramp (Arrived
-        // while working each step → correctly NOT teleported, it's
-        // productive), then climbs it — and that build-then-climb races
-        // the measurement window. The b58 comments already flag
-        // stairs-emission as non-deterministic; the tiered fail-safe means
-        // the colonist is never ENTOMBED (proven by the deterministic (e)
-        // + (f) single-colonist invariants below and the chokepoint
-        // scenario). q_out/q_stairs_fired/q_out_cleared all reported.
-        && c_gave
-        && c_rung_jobs == 5
-        && c_rungs_placed == 5
-        // c_top_cleared / c_no_carve: KNOWN-OPEN composite (descope above).
-        && d_jobs == 150
-        // d_all_cleared + d_top_down: REPORTED not gating (B6-hotfix,
-        // play-tester run-2 catch = registry B8/P6). Both are deep-dig
-        // THROUGHPUT/ordering mechanisms (did all 150 finish in the window;
-        // in what order), NOT the safety invariant — and d_all_cleared
-        // false-REDS under CPU load (the ~10% documented execution-race
-        // residual; play-tester saw both fails right after heavy builds,
-        // then 3 straight passes once settled). Per "gate the INVARIANT,
-        // report the MECHANISM": the no-stuck/entombment/egress/orphan
-        // invariants stay HARD-gated (e_out/f_cleared/orphans_final); the
-        // dig-throughput is reported. d_dispersed (crew spreads) stays
-        // gating — it's a fast within-window property, not throughput.
-        && d_dispersed_frac >= 0.5
-        // d_deep_unlocked: GATING (B6-hotfix / registry D16). Proves the
-        // descent gate RELEASES the deep layers when auto-ladder is off + no
-        // access is buildable — the fix for the tight-pit 75/150 stall. It's
-        // a STRUCTURAL threshold (>90, clear of the old 75 cap, below the
-        // 150/150 quiet clear) so it can't false-red on load-sensitive
-        // throughput the way d_all_cleared would.
-        && d_deep_unlocked
-        // d_rescue_cleared / d_all_out: the KNOWN-OPEN multi-colonist
-        // chokepoint composite (B5.8's sanctioned descope; SOFT-0 @B6
-        // owns it) — reported, not gating. The SINGLE-colonist anti-stuck
-        // invariants (e)/(f) below ARE gating and deterministic.
-        // B5.8-E (Ben's live entombment bug): zone deleted, board empty,
-        // the fail-safe STILL gets the digger out. GATING — this is the
-        // "nobody entombed" invariant made player-action-proof. B6 shift
-        // (architect's gate philosophy — gate the INVARIANT, report the
-        // MECHANISM): with the tiered fail-safe (egress plan → climb-free
-        // → teleport), WHICH tier rescues the digger is non-deterministic
-        // by design, so e_egress_fired (the plan tier specifically) is now
-        // reported-not-gating. e_out (the digger IS out) is the invariant
-        // that matters and stays gating.
-        && e_lured
-        && e_board_empty
-        && e_out
-        // B5.8-E part (f): the reach-loop breaks with PROGRESS (the block
-        // gets worked remotely or an egress frees the digger) — GATING.
-        && f_cleared
-        && orphans_final == 0
-        && avg_tick_ms < 100.0;
+    // The gating conjunction that stood here is now the `verdict` list
+    // above, with `pass` derived from it and the original expression kept
+    // verbatim as `legacy_pass` so every run proves the two agree.
     println!("{}", result);
     println!("B5.8 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
