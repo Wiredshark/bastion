@@ -96,10 +96,64 @@ already a conjunct. Do not touch them.
 - Every field a comment marks "REPORTED, not gating" lands in `diag`.
 - Corpus fan after: aggregate holds, no novel modes.
 
-## Cascade caveat (does not block this work)
+## Flavour 7: NON-INDEPENDENT AGGREGATES (`b55-deep`)
 
-`bed` shows **13 red conjuncts from ONE root failure**. The count of red
-fields carries no information about the number of defects. A `verdict`
-object makes this *more* visible, not less, so a later pass should
-consider ordering or dependency-annotating conjuncts so the FIRST
-failure is distinguishable from its cascade.
+```rust
+let pass = functional_pass && runtime_hygiene_clean;   // 18 terms && 3 terms
+```
+`failsafe_hygiene_clean` appears in **both**. Harmless in an AND — but
+the report presents the two as **orthogonal categories**, so one fault
+flips both and reads as *"failed functionally AND on runtime hygiene."*
+Sneakier than a cascade, because the categories claim independence:
+**"how many categories are red" becomes actively anti-informative.**
+
+**Fix:** promote the 21 conditions to real verdict terms, keep
+`functional_pass` / `runtime_hygiene_clean` as **derived summaries under
+`diag`**, and **de-duplicate `failsafe_hygiene_clean` to one term**, so
+one fault reads as one fault. `emergency_access_after_soak == (0,0,0)`
+is a tuple equality and gets the composite-term treatment — a red must
+say which component moved.
+
+## Cascade: distinguishing a root failure from its wake
+
+`bed` shows **13 red conjuncts from ONE root failure** (`beds_built`).
+The count of red fields carries no information about the number of
+defects.
+
+**Resolution, proportionate rather than universal:**
+
+1. **Emit `failed_clauses` in declaration order, plus `root_failure` =
+   the first entry.** For `bed` that names `beds_built` and the other 12
+   read as its wake.
+2. **This is a CONVENTION, not an invariant** — it holds only while
+   declaration order follows dependency order. **A later reorder breaks
+   `root_failure` silently.** Say so in the code, next to the field.
+3. **Where a real dependency chain exists, annotate it explicitly**: the
+   term declares its prerequisites, and `root_failure` = the failing
+   terms whose prerequisites all passed. Do this for `bed` (12 terms
+   require `beds_built`); **do not annotate all 39 scenarios** — most
+   have no chain and the annotation would be noise.
+
+The weakness is named on purpose: (1) is cheap and right most of the
+time, (3) is precise and costs annotation. Use (3) only where the
+cascade is real.
+
+## Acceptance — verify EMPIRICALLY, not by inspection
+
+- **Run all 6 scenarios on the SAME commit before and after the
+  refactor, and byte-compare the `PASS`/`FAIL` lines and the verdict
+  sets.** Diag-side diffs (renames, added `null`s, new fields) are
+  expected and do not count.
+- A verdict change means a mistake, not a finding. This is a reporting
+  refactor.
+- `pass` is derived, never hand-maintained; a conjunct absent from
+  `verdict` must fail the build or a test, not vanish quietly.
+- Every field a comment marks "REPORTED, not gating" lands in `diag`.
+
+## Future work (recorded so it isn't re-derived)
+
+**Split scenarios out of `bastion-harness/src/main.rs` into modules.**
+At ~22k lines with every scenario in one file, two lanes cannot touch
+different scenarios without a merge queue — which is the only reason
+this row needed a file-ownership negotiation at all. The natural
+follow-on once the report fix lands.
