@@ -15403,3 +15403,41 @@ fixture), both traced, zero guesses shipped.**
 
 5b -> #61 (vantage-point gate + chop visibility). Board: baseline `15850c61cc`,
 b5 corpus 12/48, scenario map 14/38 broken, all evidence persisted.
+
+## ★ FOREST REVIEW #1 (Ben-directed standing duty, 08/03) — BOTH LANES CHALLENGED
+
+New standing law ([[periodic-adversarial-forest-review]]): Fable periodically
+reviews both lanes adversarially at grand-picture + code level, against
+bug-testing loops where the source is elsewhere or the design is bad. First
+pass found one instance of EACH kind:
+
+**5b / #61 — HELD AT PREMISE-CHECK: likely stale evidence base + mechanism
+accretion.** #61's justification ("8/9 residual all blocked_by" + chop
+119/80/26) predates the stance fix, which FIXED 119/51/55/69 — if "no route"
+verdicts were routes-to-bad-stance-targets, the blocked population may have
+evaporated. Required: re-classify blocked_by on the CURRENT 12/48 at
+15850c61cc before building. AND the design challenge: **job feasibility is
+already touched by SIX overlapping mechanisms** (exposure gate · plan_access ·
+stuck-timeout release · amnesty · #57 sweep · #55 reporting) — the week's worst
+seams lived in their overlaps, and #61 adds a SEVENTH with staleness-in-both-
+directions and per-designation flood-fill cost. Alternative to cost first:
+**make the REACTIVE path kind-agnostic** (extend plan_access/blocked discovery
+to Chop/Build — the gap 5b itself traced) — one mechanism strengthened, #55
+stays the single reporting surface.
+
+**Opus / rest-arbitration — REFRAMED: three scenarios, ONE unfinished design.**
+Verified on the tip blob: `Drive { Work, Flee, Idle }` — **no Rest, no
+Survive drive**; rest/eat exist only as JOB KINDS in greedy competition, while
+the AUTON spec's own DF-REF fold specifies needs as DRIVES with urgency
+curves. preempt (never paused to rest), b73 (never ate) test a mechanism that
+was NEVER BUILT — an unimplemented-design finding, not bugs. And verified:
+**the Arrived WORK TICK has no drive gate** (claiming and travel are gated;
+10990-11075 clean of arbiter refs) — auton's "work progressed during the flee
+storm" as a one-line mechanism, pre-existing since AUTON-0. If Opus's read
+confirms, the deliverable becomes ONE design row ("finish AUTON-0: needs as
+drives; rule on gating the work tick") with the three red scenarios as its
+ready-made acceptance tests. DF prior art first, per Ben.
+
+Both delivered as falsifiable challenges, not orders; verdicts route up the
+ladder. Direction noted, not ordered: b5's 40-clause kitchen-sink is itself a
+forest-problem generator — long-term, split mega-scenarios into focused ones.
