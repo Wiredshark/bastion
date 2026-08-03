@@ -1,0 +1,7128 @@
+{
+"145": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": true,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": true,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": true,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": true,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:54:35Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 0,
+"frontier_completes_max": 0,
+"members_seen": 0,
+"present": true
+},
+"b5_cavein_drop_cells": 0,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 2048,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+17424,
+3417,
+303
+],
+"ring_index": 2,
+"wood_pos": [
+17424,
+3417,
+302
+]
+},
+"b5_ch_jobs": 1,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 2,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 1,
+"b5_chop_cleared": true,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": null,
+"b5_drift_events": 11,
+"b5_failed_clauses": [],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+2377,
+5,
+0
+],
+"b5_log_sum": 1,
+"b5_max_same_target_timeouts": 2,
+"b5_mine_blocks_mined": 27,
+"b5_mine_cell_diag": [],
+"b5_mine_cleared": true,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 0,
+"b5_mine_reachability_probe": [],
+"b5_mine_timeout_position_diag": [
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+17475,
+3345,
+291
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": false,
+"pos": [
+17476,
+3343,
+290
+],
+"timeout_count": 1
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+17476,
+3345,
+291
+],
+"timeout_count": 1
+}
+],
+"b5_rescue_fired": false,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 3.38237963,
+"b5_stone_entities": 2,
+"b5_stone_sum": 27,
+"b5_timeouts_on_never_completed_jobs": 0,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 5
+},
+"146": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": true,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": false,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": false,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": false,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:54:35Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 0,
+"frontier_completes_max": 0,
+"members_seen": 0,
+"present": true
+},
+"b5_cavein_drop_cells": 0,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 2038,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+3656,
+13890,
+636
+],
+"ring_index": 64,
+"wood_pos": [
+3656,
+13890,
+635
+]
+},
+"b5_ch_jobs": 1,
+"b5_ch_leaf_cleared": false,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 48,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 1,
+"b5_chop_cleared": false,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": {
+"from_last_timeout": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 53059,
+"from": [
+3422,
+13839,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+3365,
+13872,
+492
+]
+},
+"from_spawn": {
+"columns_visited_jump": 108,
+"columns_visited_scramble": 108,
+"columns_visited_step": 108,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": true,
+"path_exists_scramble": true,
+"path_exists_step": true,
+"probe_incomplete": false,
+"standable_target": [
+3365,
+13872,
+492
+]
+},
+"last_timeout_pos": [
+3422.3037109375,
+13839.9013671875,
+492.0
+],
+"min_distance_to_target": 26.534679412841797,
+"route_next_idx_pinned": false,
+"target": [
+3364,
+13872,
+492
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 2
+}
+]
+},
+"b5_drift_events": 8,
+"b5_failed_clauses": [
+"mine_cleared",
+"mine_blocks_mined",
+"chop_cleared",
+"build_placed",
+"log_sum",
+"b15_ontop_claimed",
+"b15_adjacent_claimed",
+"ch_leaf_cleared"
+],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+11434,
+21,
+4
+],
+"b5_log_sum": 0,
+"b5_max_same_target_timeouts": 2,
+"b5_mine_blocks_mined": 0,
+"b5_mine_cell_diag": [
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+3395,
+13871,
+578
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+3395,
+13871,
+579
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": null,
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+3395,
+13871,
+580
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 2,
+"unreachable": false
+},
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+3395,
+13872,
+578
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+3395,
+13872,
+579
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": null,
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+3395,
+13872,
+580
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 2,
+"unreachable": false
+},
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+3395,
+13873,
+578
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+3395,
+13873,
+579
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": false
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": null,
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+3395,
+13873,
+580
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 2,
+"unreachable": false
+},
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+3396,
+13871,
+578
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+3396,
+13871,
+579
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": null,
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+3396,
+13871,
+580
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 2,
+"unreachable": false
+},
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+3396,
+13872,
+578
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+3396,
+13872,
+579
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": null,
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+3396,
+13872,
+580
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 2,
+"unreachable": false
+},
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+3396,
+13873,
+578
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+3396,
+13873,
+579
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": false
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": null,
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+3396,
+13873,
+580
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 1,
+"unreachable": false
+},
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+3397,
+13871,
+578
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+3397,
+13871,
+579
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": "Doran Oakenshield",
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+3397,
+13871,
+580
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 2,
+"unreachable": false
+},
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+3397,
+13872,
+578
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+3397,
+13872,
+579
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": null,
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+3397,
+13872,
+580
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 1,
+"unreachable": false
+},
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": "Bram of the Ford",
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+3397,
+13873,
+578
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 2,
+"unreachable": false
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+3397,
+13873,
+579
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": false
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": null,
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+3397,
+13873,
+580
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 2,
+"unreachable": false
+}
+],
+"b5_mine_cleared": false,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 27,
+"b5_mine_reachability_probe": [
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+3395,
+13871,
+578
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+3395,
+13871,
+579
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 97995,
+"from": [
+3372,
+13875,
+523
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+3395,
+13871,
+581
+]
+},
+"from_spawn": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 97995,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+3395,
+13871,
+581
+]
+},
+"last_timeout_pos": [
+3372.550048828125,
+13875.6123046875,
+523.0
+],
+"min_distance_to_target": 62.504791259765625,
+"route_next_idx_pinned": false,
+"target": [
+3395,
+13871,
+580
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 8
+}
+]
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+3395,
+13872,
+578
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+3395,
+13872,
+579
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 935,
+"columns_visited_scramble": 635,
+"columns_visited_step": 98013,
+"from": [
+3377,
+13871,
+533
+],
+"path_exists_jump": true,
+"path_exists_scramble": true,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+3395,
+13872,
+581
+]
+},
+"from_spawn": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 97995,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+3395,
+13872,
+581
+]
+},
+"last_timeout_pos": [
+3377.5,
+13871.5498046875,
+533.0925903320312
+],
+"min_distance_to_target": 51.05242156982422,
+"route_next_idx_pinned": true,
+"target": [
+3395,
+13872,
+580
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+}
+]
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+3395,
+13873,
+578
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+3395,
+13873,
+579
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 1018,
+"columns_visited_scramble": 706,
+"columns_visited_step": 98013,
+"from": [
+3377,
+13871,
+532
+],
+"path_exists_jump": true,
+"path_exists_scramble": true,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+3395,
+13873,
+581
+]
+},
+"from_spawn": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 97995,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+3395,
+13873,
+581
+]
+},
+"last_timeout_pos": [
+3377.5,
+13871.5498046875,
+532.9812622070312
+],
+"min_distance_to_target": 51.13706970214844,
+"route_next_idx_pinned": true,
+"target": [
+3395,
+13873,
+580
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+}
+]
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+3396,
+13871,
+578
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+3396,
+13871,
+579
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 97995,
+"from": [
+3372,
+13875,
+523
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+3396,
+13871,
+581
+]
+},
+"from_spawn": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 97995,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+3396,
+13871,
+581
+]
+},
+"last_timeout_pos": [
+3372.543212890625,
+13875.5107421875,
+523.0
+],
+"min_distance_to_target": 62.87884521484375,
+"route_next_idx_pinned": true,
+"target": [
+3396,
+13871,
+580
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 8
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 8
+}
+]
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+3396,
+13872,
+578
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+3396,
+13872,
+579
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 1016,
+"columns_visited_scramble": 705,
+"columns_visited_step": 98013,
+"from": [
+3377,
+13871,
+533
+],
+"path_exists_jump": true,
+"path_exists_scramble": true,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+3396,
+13872,
+581
+]
+},
+"from_spawn": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 97995,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+3396,
+13872,
+581
+]
+},
+"last_timeout_pos": [
+3377.5,
+13871.5498046875,
+533.0540771484375
+],
+"min_distance_to_target": 51.42420959472656,
+"route_next_idx_pinned": false,
+"target": [
+3396,
+13872,
+580
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 8
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+}
+]
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+3396,
+13873,
+578
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+3396,
+13873,
+579
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 96143,
+"from": [
+3424,
+13839,
+493
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+3396,
+13873,
+581
+]
+},
+"from_spawn": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 97995,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+3396,
+13873,
+581
+]
+},
+"last_timeout_pos": [
+3424.5,
+13839.5,
+493.0
+],
+"min_distance_to_target": 97.95321655273438,
+"route_next_idx_pinned": null,
+"target": [
+3396,
+13873,
+580
+],
+"timeout_route_states": [
+{
+"route_complete": null,
+"route_exists": false,
+"route_next_idx": null
+}
+]
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+3397,
+13871,
+578
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+3397,
+13871,
+579
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 1015,
+"columns_visited_scramble": 705,
+"columns_visited_step": 98013,
+"from": [
+3377,
+13871,
+533
+],
+"path_exists_jump": true,
+"path_exists_scramble": true,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+3397,
+13871,
+581
+]
+},
+"from_spawn": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 97995,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+3397,
+13871,
+581
+]
+},
+"last_timeout_pos": [
+3377.50634765625,
+13871.5498046875,
+533.0433959960938
+],
+"min_distance_to_target": 51.777809143066406,
+"route_next_idx_pinned": false,
+"target": [
+3397,
+13871,
+580
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 8
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+}
+]
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+3397,
+13872,
+578
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+3397,
+13872,
+579
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 53059,
+"from": [
+3423,
+13839,
+493
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+3397,
+13872,
+581
+]
+},
+"from_spawn": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 97995,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+3397,
+13872,
+581
+]
+},
+"last_timeout_pos": [
+3423.6376953125,
+13839.5087890625,
+493.0
+],
+"min_distance_to_target": 97.54793548583984,
+"route_next_idx_pinned": null,
+"target": [
+3397,
+13872,
+580
+],
+"timeout_route_states": [
+{
+"route_complete": null,
+"route_exists": false,
+"route_next_idx": null
+}
+]
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 53059,
+"from": [
+3423,
+13839,
+493
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+3397,
+13874,
+578
+]
+},
+"from_spawn": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 97995,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+3397,
+13874,
+578
+]
+},
+"last_timeout_pos": [
+3423.95751953125,
+13839.509765625,
+493.0
+],
+"min_distance_to_target": 23.216373443603516,
+"route_next_idx_pinned": null,
+"target": [
+3397,
+13873,
+578
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+},
+{
+"route_complete": null,
+"route_exists": false,
+"route_next_idx": null
+}
+]
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+3397,
+13873,
+579
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 96143,
+"from": [
+3424,
+13839,
+493
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+3397,
+13873,
+581
+]
+},
+"from_spawn": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 97995,
+"from": [
+3376,
+13872,
+539
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+3397,
+13873,
+581
+]
+},
+"last_timeout_pos": [
+3424.107177734375,
+13839.5,
+493.0
+],
+"min_distance_to_target": 97.58987426757812,
+"route_next_idx_pinned": null,
+"target": [
+3397,
+13873,
+580
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 2
+},
+{
+"route_complete": null,
+"route_exists": false,
+"route_next_idx": null
+}
+]
+}
+],
+"b5_mine_timeout_position_diag": [
+{
+"cells_below_filled": 2,
+"is_top_layer": true,
+"pos": [
+3395,
+13871,
+580
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 2,
+"is_top_layer": true,
+"pos": [
+3395,
+13872,
+580
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 2,
+"is_top_layer": true,
+"pos": [
+3395,
+13873,
+580
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 2,
+"is_top_layer": true,
+"pos": [
+3396,
+13871,
+580
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 2,
+"is_top_layer": true,
+"pos": [
+3396,
+13872,
+580
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 2,
+"is_top_layer": true,
+"pos": [
+3397,
+13871,
+580
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": false,
+"pos": [
+3397,
+13873,
+578
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 2,
+"is_top_layer": true,
+"pos": [
+3397,
+13873,
+580
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 2,
+"is_top_layer": true,
+"pos": [
+3396,
+13873,
+580
+],
+"timeout_count": 1
+},
+{
+"cells_below_filled": 2,
+"is_top_layer": true,
+"pos": [
+3397,
+13872,
+580
+],
+"timeout_count": 1
+}
+],
+"b5_rescue_fired": true,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 2.915988808333333,
+"b5_stone_entities": 0,
+"b5_stone_sum": 0,
+"b5_timeouts_on_never_completed_jobs": 20,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 21
+},
+"147": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": true,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": true,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": true,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": true,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:54:35Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 2,
+"frontier_completes_max": 0,
+"members_seen": 1,
+"present": true
+},
+"b5_cavein_drop_cells": 0,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 2048,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+14839,
+10924,
+600
+],
+"ring_index": 2,
+"wood_pos": [
+14839,
+10924,
+581
+]
+},
+"b5_ch_jobs": 1,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 1,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 1,
+"b5_chop_cleared": true,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": null,
+"b5_drift_events": 4,
+"b5_failed_clauses": [],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+991,
+1,
+0
+],
+"b5_log_sum": 1,
+"b5_max_same_target_timeouts": 1,
+"b5_mine_blocks_mined": 27,
+"b5_mine_cell_diag": [],
+"b5_mine_cleared": true,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 0,
+"b5_mine_reachability_probe": [],
+"b5_mine_timeout_position_diag": [],
+"b5_rescue_fired": false,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 3.688149576666667,
+"b5_stone_entities": 2,
+"b5_stone_sum": 27,
+"b5_timeouts_on_never_completed_jobs": 0,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 1
+},
+"148": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": true,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": false,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": false,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": false,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:54:35Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 1,
+"frontier_completes_max": 0,
+"members_seen": 1,
+"present": true
+},
+"b5_cavein_drop_cells": 1,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 2048,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+27795,
+13939,
+1113
+],
+"ring_index": 55,
+"wood_pos": [
+27795,
+13939,
+1112
+]
+},
+"b5_ch_jobs": 1,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 56,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 1,
+"b5_chop_cleared": false,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": {
+"from_last_timeout": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 100000,
+"from": [
+27947,
+14228,
+895
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+27941,
+14224,
+991
+]
+},
+"from_spawn": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 100000,
+"from": [
+27952,
+14224,
+955
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+27941,
+14224,
+991
+]
+},
+"last_timeout_pos": [
+27947.5,
+14228.5,
+895.0
+],
+"min_distance_to_target": 39.69620895385742,
+"route_next_idx_pinned": false,
+"target": [
+27940,
+14224,
+991
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 4
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 5
+}
+]
+},
+"b5_drift_events": 6,
+"b5_failed_clauses": [
+"chop_cleared",
+"build_placed",
+"stone_sum_lower",
+"log_sum",
+"fl_total",
+"fl_bounds_ok",
+"b15_ontop_claimed",
+"b15_adjacent_claimed"
+],
+"b5_flat_bounds_ok": false,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 213,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+8103,
+16,
+3
+],
+"b5_log_sum": 0,
+"b5_max_same_target_timeouts": 3,
+"b5_mine_blocks_mined": 27,
+"b5_mine_cell_diag": [
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+27973,
+14225,
+908
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": false
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+27973,
+14225,
+909
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": false
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": null,
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+27973,
+14225,
+910
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 1,
+"unreachable": false
+}
+],
+"b5_mine_cleared": true,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 1,
+"b5_mine_reachability_probe": [
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+27952,
+14224,
+955
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+27973,
+14225,
+908
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+27952,
+14224,
+955
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+27973,
+14225,
+909
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 462,
+"columns_visited_scramble": 466,
+"columns_visited_step": 240,
+"from": [
+27962,
+14220,
+898
+],
+"path_exists_jump": true,
+"path_exists_scramble": true,
+"path_exists_step": true,
+"probe_incomplete": false,
+"standable_target": [
+27973,
+14225,
+911
+]
+},
+"from_spawn": {
+"columns_visited_jump": 597,
+"columns_visited_scramble": 597,
+"columns_visited_step": 743,
+"from": [
+27952,
+14224,
+955
+],
+"path_exists_jump": true,
+"path_exists_scramble": true,
+"path_exists_step": true,
+"probe_incomplete": false,
+"standable_target": [
+27973,
+14225,
+911
+]
+},
+"last_timeout_pos": [
+27962.57421875,
+14220.6298828125,
+898.0305786132812
+],
+"min_distance_to_target": 16.228849411010742,
+"route_next_idx_pinned": null,
+"target": [
+27973,
+14225,
+910
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+}
+]
+}
+],
+"b5_mine_timeout_position_diag": [
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+27971,
+14223,
+910
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+27971,
+14225,
+910
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+27972,
+14223,
+910
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+27972,
+14225,
+910
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+27971,
+14224,
+910
+],
+"timeout_count": 1
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+27972,
+14224,
+910
+],
+"timeout_count": 1
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+27973,
+14223,
+910
+],
+"timeout_count": 1
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+27973,
+14224,
+910
+],
+"timeout_count": 1
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+27973,
+14225,
+910
+],
+"timeout_count": 1
+}
+],
+"b5_rescue_fired": true,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 2.815951015,
+"b5_stone_entities": 2,
+"b5_stone_sum": 26,
+"b5_timeouts_on_never_completed_jobs": 4,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 16
+},
+"149": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": true,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": true,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": true,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": true,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:54:35Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 0,
+"frontier_completes_max": 0,
+"members_seen": 0,
+"present": true
+},
+"b5_cavein_drop_cells": 0,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 4962,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+4662,
+13461,
+836
+],
+"ring_index": 0,
+"wood_pos": [
+4662,
+13461,
+835
+]
+},
+"b5_ch_jobs": 3,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 1,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 3,
+"b5_chop_cleared": true,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": null,
+"b5_drift_events": 5,
+"b5_failed_clauses": [],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+745,
+1,
+0
+],
+"b5_log_sum": 1,
+"b5_max_same_target_timeouts": 1,
+"b5_mine_blocks_mined": 27,
+"b5_mine_cell_diag": [],
+"b5_mine_cleared": true,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 0,
+"b5_mine_reachability_probe": [],
+"b5_mine_timeout_position_diag": [],
+"b5_rescue_fired": false,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 2.8600102400000003,
+"b5_stone_entities": 3,
+"b5_stone_sum": 27,
+"b5_timeouts_on_never_completed_jobs": 0,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 1
+},
+"150": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": true,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": true,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": true,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": true,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:54:35Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 0,
+"frontier_completes_max": 0,
+"members_seen": 0,
+"present": true
+},
+"b5_cavein_drop_cells": 0,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 4096,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+12288,
+7260,
+1516
+],
+"ring_index": 0,
+"wood_pos": [
+12288,
+7260,
+1503
+]
+},
+"b5_ch_jobs": 2,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 1,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 2,
+"b5_chop_cleared": true,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": null,
+"b5_drift_events": 9,
+"b5_failed_clauses": [],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+755,
+0,
+0
+],
+"b5_log_sum": 1,
+"b5_max_same_target_timeouts": 0,
+"b5_mine_blocks_mined": 27,
+"b5_mine_cell_diag": [],
+"b5_mine_cleared": true,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 0,
+"b5_mine_reachability_probe": [],
+"b5_mine_timeout_position_diag": [],
+"b5_rescue_fired": false,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 3.4775048099999997,
+"b5_stone_entities": 4,
+"b5_stone_sum": 27,
+"b5_timeouts_on_never_completed_jobs": 0,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 0
+},
+"151": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": true,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": true,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": true,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": true,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:54:35Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 1,
+"frontier_completes_max": 0,
+"members_seen": 3,
+"present": true
+},
+"b5_cavein_drop_cells": 0,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 2048,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+19408,
+7075,
+309
+],
+"ring_index": 1,
+"wood_pos": [
+19408,
+7075,
+308
+]
+},
+"b5_ch_jobs": 1,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 1,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 1,
+"b5_chop_cleared": true,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": null,
+"b5_drift_events": 8,
+"b5_failed_clauses": [],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+2989,
+2,
+2
+],
+"b5_log_sum": 1,
+"b5_max_same_target_timeouts": 1,
+"b5_mine_blocks_mined": 27,
+"b5_mine_cell_diag": [],
+"b5_mine_cleared": true,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 0,
+"b5_mine_reachability_probe": [],
+"b5_mine_timeout_position_diag": [],
+"b5_rescue_fired": true,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 3.6036278383333333,
+"b5_stone_entities": 3,
+"b5_stone_sum": 27,
+"b5_timeouts_on_never_completed_jobs": 0,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 2
+},
+"152": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": true,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": true,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": true,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": true,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:54:35Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 0,
+"frontier_completes_max": 0,
+"members_seen": 0,
+"present": true
+},
+"b5_cavein_drop_cells": 0,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 10240,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+17040,
+22992,
+189
+],
+"ring_index": 1,
+"wood_pos": [
+17040,
+22992,
+179
+]
+},
+"b5_ch_jobs": 5,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 2,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 5,
+"b5_chop_cleared": true,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": null,
+"b5_drift_events": 7,
+"b5_failed_clauses": [],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+706,
+0,
+0
+],
+"b5_log_sum": 1,
+"b5_max_same_target_timeouts": 0,
+"b5_mine_blocks_mined": 27,
+"b5_mine_cell_diag": [],
+"b5_mine_cleared": true,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 0,
+"b5_mine_reachability_probe": [],
+"b5_mine_timeout_position_diag": [],
+"b5_rescue_fired": false,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 2.8467924116666667,
+"b5_stone_entities": 2,
+"b5_stone_sum": 27,
+"b5_timeouts_on_never_completed_jobs": 0,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 0
+},
+"153": {
+"b5_any_mining_xp": false,
+"b5_any_needs_materials": true,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": false,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": false,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": true,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:54:35Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 1,
+"frontier_completes_max": 0,
+"members_seen": 1,
+"present": true
+},
+"b5_cavein_drop_cells": 0,
+"b5_ch_cancel_clean": false,
+"b5_ch_cells": 0,
+"b5_ch_engaged": false,
+"b5_ch_ground_truth_tree_present": false,
+"b5_ch_ground_truth_witness": null,
+"b5_ch_jobs": 0,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": false,
+"b5_ch_oracle_class": "precondition_unmet",
+"b5_ch_rings_tried": 121,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 0,
+"b5_chop_cleared": true,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": null,
+"b5_drift_events": 9,
+"b5_failed_clauses": [
+"mine_cleared",
+"mine_blocks_mined",
+"any_mining_xp",
+"b15_ontop_claimed",
+"b15_adjacent_claimed"
+],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+8964,
+22,
+3
+],
+"b5_log_sum": 1,
+"b5_max_same_target_timeouts": 3,
+"b5_mine_blocks_mined": 0,
+"b5_mine_cell_diag": [
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+13731,
+24815,
+578
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+13731,
+24815,
+579
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": false
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": null,
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+13731,
+24815,
+580
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 2,
+"unreachable": false
+},
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+13731,
+24816,
+578
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+13731,
+24816,
+579
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": false
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": null,
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+13731,
+24816,
+580
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 2,
+"unreachable": false
+},
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+13731,
+24817,
+578
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+13731,
+24817,
+579
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": "Kell of the Vale",
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+13731,
+24817,
+580
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 2,
+"unreachable": false
+},
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+13732,
+24815,
+578
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+13732,
+24815,
+579
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": null,
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+13732,
+24815,
+580
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 2,
+"unreachable": false
+},
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+13732,
+24816,
+578
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+13732,
+24816,
+579
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": null,
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+13732,
+24816,
+580
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 2,
+"unreachable": false
+},
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+13732,
+24817,
+578
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+13732,
+24817,
+579
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": null,
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+13732,
+24817,
+580
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 2,
+"unreachable": false
+},
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+13733,
+24815,
+578
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": false
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+13733,
+24815,
+579
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": false
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": null,
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+13733,
+24815,
+580
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 2,
+"unreachable": false
+},
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+13733,
+24816,
+578
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": false
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+13733,
+24816,
+579
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": false
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": null,
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+13733,
+24816,
+580
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 2,
+"unreachable": false
+},
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": "Vada Brighteye",
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+13733,
+24817,
+578
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 2,
+"unreachable": false
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+13733,
+24817,
+579
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": false
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": null,
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+13733,
+24817,
+580
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 2,
+"unreachable": false
+}
+],
+"b5_mine_cleared": false,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 27,
+"b5_mine_reachability_probe": [
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+13731,
+24815,
+578
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+13731,
+24815,
+579
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 1,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 1,
+"from": [
+13719,
+24807,
+470
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+13731,
+24815,
+581
+]
+},
+"from_spawn": {
+"columns_visited_jump": 99195,
+"columns_visited_scramble": 99973,
+"columns_visited_step": 80599,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+13731,
+24815,
+581
+]
+},
+"last_timeout_pos": [
+13719.376953125,
+24807.5,
+470.0
+],
+"min_distance_to_target": 109.289306640625,
+"route_next_idx_pinned": false,
+"target": [
+13731,
+24815,
+580
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 2
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 1
+}
+]
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+13731,
+24816,
+578
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+13731,
+24816,
+579
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 98933,
+"columns_visited_scramble": 99279,
+"columns_visited_step": 80573,
+"from": [
+13683,
+24833,
+490
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+13731,
+24816,
+581
+]
+},
+"from_spawn": {
+"columns_visited_jump": 99195,
+"columns_visited_scramble": 99973,
+"columns_visited_step": 80599,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+13731,
+24816,
+581
+]
+},
+"last_timeout_pos": [
+13683.74609375,
+24833.06640625,
+490.0
+],
+"min_distance_to_target": 103.95536804199219,
+"route_next_idx_pinned": true,
+"target": [
+13731,
+24816,
+580
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+}
+]
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+13731,
+24817,
+578
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+13731,
+24817,
+579
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 98933,
+"columns_visited_scramble": 99279,
+"columns_visited_step": 80573,
+"from": [
+13683,
+24833,
+490
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+13731,
+24817,
+581
+]
+},
+"from_spawn": {
+"columns_visited_jump": 99195,
+"columns_visited_scramble": 99973,
+"columns_visited_step": 80599,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+13731,
+24817,
+581
+]
+},
+"last_timeout_pos": [
+13683.697265625,
+24833.107421875,
+490.0
+],
+"min_distance_to_target": 103.01109313964844,
+"route_next_idx_pinned": false,
+"target": [
+13731,
+24817,
+580
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 2
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+}
+]
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+13732,
+24815,
+578
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+13732,
+24815,
+579
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 82446,
+"from": [
+13719,
+24819,
+557
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+13732,
+24815,
+581
+]
+},
+"from_spawn": {
+"columns_visited_jump": 99195,
+"columns_visited_scramble": 99973,
+"columns_visited_step": 80599,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+13732,
+24815,
+581
+]
+},
+"last_timeout_pos": [
+13719.44140625,
+24819.48828125,
+557.0589599609375
+],
+"min_distance_to_target": 27.29798698425293,
+"route_next_idx_pinned": false,
+"target": [
+13732,
+24815,
+580
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 2
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+}
+]
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+13732,
+24816,
+578
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+13732,
+24816,
+579
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 82446,
+"from": [
+13719,
+24819,
+557
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+13732,
+24816,
+581
+]
+},
+"from_spawn": {
+"columns_visited_jump": 99195,
+"columns_visited_scramble": 99973,
+"columns_visited_step": 80599,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+13732,
+24816,
+581
+]
+},
+"last_timeout_pos": [
+13719.4296875,
+24819.4296875,
+557.0432739257812
+],
+"min_distance_to_target": 27.198030471801758,
+"route_next_idx_pinned": true,
+"target": [
+13732,
+24816,
+580
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+}
+]
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+13732,
+24817,
+578
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+13732,
+24817,
+579
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 98933,
+"columns_visited_scramble": 99279,
+"columns_visited_step": 80573,
+"from": [
+13683,
+24833,
+490
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+13732,
+24817,
+581
+]
+},
+"from_spawn": {
+"columns_visited_jump": 99195,
+"columns_visited_scramble": 99973,
+"columns_visited_step": 80599,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+13732,
+24817,
+581
+]
+},
+"last_timeout_pos": [
+13683.845703125,
+24833.06640625,
+490.0
+],
+"min_distance_to_target": 103.48486328125,
+"route_next_idx_pinned": false,
+"target": [
+13732,
+24817,
+580
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 1
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 2
+}
+]
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+13733,
+24815,
+578
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+13733,
+24815,
+579
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 82446,
+"from": [
+13719,
+24819,
+557
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+13733,
+24815,
+581
+]
+},
+"from_spawn": {
+"columns_visited_jump": 99195,
+"columns_visited_scramble": 99973,
+"columns_visited_step": 80599,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+13733,
+24815,
+581
+]
+},
+"last_timeout_pos": [
+13719.4560546875,
+24819.478515625,
+557.08154296875
+],
+"min_distance_to_target": 27.78018569946289,
+"route_next_idx_pinned": true,
+"target": [
+13733,
+24815,
+580
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+}
+]
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+13733,
+24816,
+578
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+13733,
+24816,
+579
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 98933,
+"columns_visited_scramble": 99279,
+"columns_visited_step": 80573,
+"from": [
+13683,
+24833,
+490
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+13733,
+24816,
+581
+]
+},
+"from_spawn": {
+"columns_visited_jump": 99195,
+"columns_visited_scramble": 99973,
+"columns_visited_step": 80599,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+13733,
+24816,
+581
+]
+},
+"last_timeout_pos": [
+13683.7412109375,
+24833.087890625,
+490.0
+],
+"min_distance_to_target": 101.45362854003906,
+"route_next_idx_pinned": false,
+"target": [
+13733,
+24816,
+580
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 2
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+}
+]
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 82446,
+"from": [
+13719,
+24819,
+556
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+13733,
+24818,
+578
+]
+},
+"from_spawn": {
+"columns_visited_jump": 99195,
+"columns_visited_scramble": 99973,
+"columns_visited_step": 80599,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+13733,
+24818,
+578
+]
+},
+"last_timeout_pos": [
+13719.318359375,
+24819.45703125,
+556.980712890625
+],
+"min_distance_to_target": 18.384777069091797,
+"route_next_idx_pinned": true,
+"target": [
+13733,
+24817,
+578
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+}
+]
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+13733,
+24817,
+579
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 82446,
+"from": [
+13719,
+24819,
+557
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+13733,
+24817,
+581
+]
+},
+"from_spawn": {
+"columns_visited_jump": 99195,
+"columns_visited_scramble": 99973,
+"columns_visited_step": 80599,
+"from": [
+13712,
+24816,
+492
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+13733,
+24817,
+581
+]
+},
+"last_timeout_pos": [
+13719.4541015625,
+24819.47265625,
+557.0485229492188
+],
+"min_distance_to_target": 27.566980361938477,
+"route_next_idx_pinned": true,
+"target": [
+13733,
+24817,
+580
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+}
+]
+}
+],
+"b5_mine_timeout_position_diag": [
+{
+"cells_below_filled": 2,
+"is_top_layer": true,
+"pos": [
+13731,
+24815,
+580
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 2,
+"is_top_layer": true,
+"pos": [
+13731,
+24816,
+580
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 2,
+"is_top_layer": true,
+"pos": [
+13731,
+24817,
+580
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 2,
+"is_top_layer": true,
+"pos": [
+13732,
+24815,
+580
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 2,
+"is_top_layer": true,
+"pos": [
+13732,
+24816,
+580
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 2,
+"is_top_layer": true,
+"pos": [
+13732,
+24817,
+580
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 2,
+"is_top_layer": true,
+"pos": [
+13733,
+24815,
+580
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 2,
+"is_top_layer": true,
+"pos": [
+13733,
+24816,
+580
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": false,
+"pos": [
+13733,
+24817,
+578
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 2,
+"is_top_layer": true,
+"pos": [
+13733,
+24817,
+580
+],
+"timeout_count": 2
+}
+],
+"b5_rescue_fired": true,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 3.319546701666667,
+"b5_stone_entities": 0,
+"b5_stone_sum": 0,
+"b5_timeouts_on_never_completed_jobs": 20,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 22
+},
+"154": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": true,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": true,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": true,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": true,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:54:35Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 0,
+"frontier_completes_max": 0,
+"members_seen": 0,
+"present": true
+},
+"b5_cavein_drop_cells": 0,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 8192,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+19757,
+12281,
+582
+],
+"ring_index": 0,
+"wood_pos": [
+19757,
+12281,
+581
+]
+},
+"b5_ch_jobs": 4,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 1,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 4,
+"b5_chop_cleared": true,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": null,
+"b5_drift_events": 8,
+"b5_failed_clauses": [],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+523,
+0,
+0
+],
+"b5_log_sum": 1,
+"b5_max_same_target_timeouts": 0,
+"b5_mine_blocks_mined": 27,
+"b5_mine_cell_diag": [],
+"b5_mine_cleared": true,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 0,
+"b5_mine_reachability_probe": [],
+"b5_mine_timeout_position_diag": [],
+"b5_rescue_fired": false,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 3.7117527450000005,
+"b5_stone_entities": 1,
+"b5_stone_sum": 27,
+"b5_timeouts_on_never_completed_jobs": 0,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 0
+},
+"155": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": true,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": true,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": true,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": true,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:54:35Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 0,
+"frontier_completes_max": 0,
+"members_seen": 0,
+"present": true
+},
+"b5_cavein_drop_cells": 0,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 2048,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+11120,
+16178,
+855
+],
+"ring_index": 3,
+"wood_pos": [
+11120,
+16178,
+854
+]
+},
+"b5_ch_jobs": 1,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 1,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 1,
+"b5_chop_cleared": true,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": null,
+"b5_drift_events": 3,
+"b5_failed_clauses": [],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+947,
+1,
+0
+],
+"b5_log_sum": 1,
+"b5_max_same_target_timeouts": 1,
+"b5_mine_blocks_mined": 27,
+"b5_mine_cell_diag": [],
+"b5_mine_cleared": true,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 0,
+"b5_mine_reachability_probe": [],
+"b5_mine_timeout_position_diag": [
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+11237,
+16207,
+831
+],
+"timeout_count": 1
+}
+],
+"b5_rescue_fired": false,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 3.5156828450000006,
+"b5_stone_entities": 2,
+"b5_stone_sum": 27,
+"b5_timeouts_on_never_completed_jobs": 0,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 1
+},
+"156": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": false,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": true,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": true,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": false,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:54:35Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 2,
+"frontier_completes_max": 0,
+"members_seen": 1,
+"present": true
+},
+"b5_cavein_drop_cells": 0,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 6144,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+6416,
+2908,
+272
+],
+"ring_index": 3,
+"wood_pos": [
+6416,
+2908,
+271
+]
+},
+"b5_ch_jobs": 3,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 3,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 3,
+"b5_chop_cleared": false,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": {
+"from_last_timeout": {
+"columns_visited_jump": 390,
+"columns_visited_scramble": 399,
+"columns_visited_step": 373,
+"from": [
+6492,
+2921,
+203
+],
+"path_exists_jump": true,
+"path_exists_scramble": true,
+"path_exists_step": true,
+"probe_incomplete": false,
+"standable_target": [
+6501,
+2928,
+204
+]
+},
+"from_spawn": {
+"columns_visited_jump": 14827,
+"columns_visited_scramble": 15019,
+"columns_visited_step": 17683,
+"from": [
+6512,
+2928,
+192
+],
+"path_exists_jump": true,
+"path_exists_scramble": true,
+"path_exists_step": true,
+"probe_incomplete": false,
+"standable_target": [
+6501,
+2928,
+204
+]
+},
+"last_timeout_pos": [
+6492.4970703125,
+2921.550048828125,
+203.1055908203125
+],
+"min_distance_to_target": 10.356176376342773,
+"route_next_idx_pinned": true,
+"target": [
+6500,
+2928,
+204
+],
+"timeout_route_states": [
+{
+"route_complete": true,
+"route_exists": true,
+"route_next_idx": 0
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+},
+{
+"route_complete": true,
+"route_exists": true,
+"route_next_idx": 0
+}
+]
+},
+"b5_drift_events": 7,
+"b5_failed_clauses": [
+"chop_cleared",
+"build_placed",
+"log_sum",
+"any_needs_materials"
+],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+2891,
+6,
+1
+],
+"b5_log_sum": 0,
+"b5_max_same_target_timeouts": 3,
+"b5_mine_blocks_mined": 27,
+"b5_mine_cell_diag": [],
+"b5_mine_cleared": true,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 0,
+"b5_mine_reachability_probe": [],
+"b5_mine_timeout_position_diag": [],
+"b5_rescue_fired": true,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 2.8651605766666672,
+"b5_stone_entities": 2,
+"b5_stone_sum": 27,
+"b5_timeouts_on_never_completed_jobs": 3,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 6
+},
+"157": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": false,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": true,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": true,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": false,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:55:19Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 0,
+"frontier_completes_max": 0,
+"members_seen": 0,
+"present": true
+},
+"b5_cavein_drop_cells": 1,
+"b5_ch_cancel_clean": false,
+"b5_ch_cells": 0,
+"b5_ch_engaged": false,
+"b5_ch_ground_truth_tree_present": false,
+"b5_ch_ground_truth_witness": null,
+"b5_ch_jobs": 0,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": false,
+"b5_ch_oracle_class": "precondition_unmet",
+"b5_ch_rings_tried": 121,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 0,
+"b5_chop_cleared": true,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": null,
+"b5_drift_events": 9,
+"b5_failed_clauses": [
+"mine_cleared",
+"mine_blocks_mined",
+"build_placed",
+"any_needs_materials"
+],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+3526,
+8,
+0
+],
+"b5_log_sum": 1,
+"b5_max_same_target_timeouts": 2,
+"b5_mine_blocks_mined": 26,
+"b5_mine_cell_diag": [
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+17733,
+23025,
+366
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 2,
+"unreachable": true
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+17733,
+23025,
+367
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": true
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": null,
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+17733,
+23025,
+368
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 1,
+"unreachable": true
+}
+],
+"b5_mine_cleared": false,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 1,
+"b5_mine_reachability_probe": [
+{
+"from_last_timeout": {
+"columns_visited_jump": 1154,
+"columns_visited_scramble": 1181,
+"columns_visited_step": 67157,
+"from": [
+17717,
+23023,
+363
+],
+"path_exists_jump": true,
+"path_exists_scramble": true,
+"path_exists_step": true,
+"probe_incomplete": false,
+"standable_target": [
+17733,
+23025,
+367
+]
+},
+"from_spawn": {
+"columns_visited_jump": 1851,
+"columns_visited_scramble": 1919,
+"columns_visited_step": 67598,
+"from": [
+17712,
+23024,
+357
+],
+"path_exists_jump": true,
+"path_exists_scramble": true,
+"path_exists_step": true,
+"probe_incomplete": false,
+"standable_target": [
+17733,
+23025,
+367
+]
+},
+"last_timeout_pos": [
+17717.55078125,
+23023.509765625,
+363.1250915527344
+],
+"min_distance_to_target": 16.43402099609375,
+"route_next_idx_pinned": true,
+"target": [
+17733,
+23025,
+366
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+}
+]
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 1851,
+"columns_visited_scramble": 1919,
+"columns_visited_step": 67598,
+"from": [
+17712,
+23024,
+357
+],
+"path_exists_jump": true,
+"path_exists_scramble": true,
+"path_exists_step": true,
+"probe_incomplete": false,
+"standable_target": [
+17733,
+23025,
+368
+]
+},
+"last_timeout_pos": null,
+"min_distance_to_target": 2.617952346801758,
+"route_next_idx_pinned": null,
+"target": [
+17733,
+23025,
+367
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 1154,
+"columns_visited_scramble": 1181,
+"columns_visited_step": 67157,
+"from": [
+17717,
+23023,
+363
+],
+"path_exists_jump": true,
+"path_exists_scramble": true,
+"path_exists_step": true,
+"probe_incomplete": false,
+"standable_target": [
+17733,
+23025,
+369
+]
+},
+"from_spawn": {
+"columns_visited_jump": 1851,
+"columns_visited_scramble": 1919,
+"columns_visited_step": 67598,
+"from": [
+17712,
+23024,
+357
+],
+"path_exists_jump": true,
+"path_exists_scramble": true,
+"path_exists_step": true,
+"probe_incomplete": false,
+"standable_target": [
+17733,
+23025,
+369
+]
+},
+"last_timeout_pos": [
+17717.55078125,
+23023.5,
+363.08258056640625
+],
+"min_distance_to_target": 16.934627532958984,
+"route_next_idx_pinned": null,
+"target": [
+17733,
+23025,
+368
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+}
+]
+}
+],
+"b5_mine_timeout_position_diag": [
+{
+"cells_below_filled": 0,
+"is_top_layer": false,
+"pos": [
+17731,
+23025,
+367
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": false,
+"pos": [
+17733,
+23025,
+366
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+17732,
+23024,
+368
+],
+"timeout_count": 1
+},
+{
+"cells_below_filled": 1,
+"is_top_layer": true,
+"pos": [
+17733,
+23025,
+368
+],
+"timeout_count": 1
+}
+],
+"b5_rescue_fired": false,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 3.758505416666667,
+"b5_stone_entities": 1,
+"b5_stone_sum": 26,
+"b5_timeouts_on_never_completed_jobs": 3,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 8
+},
+"158": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": false,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": true,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": true,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": false,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:55:19Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 3,
+"frontier_completes_max": 0,
+"members_seen": 3,
+"present": true
+},
+"b5_cavein_drop_cells": 0,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 8192,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+25568,
+17912,
+448
+],
+"ring_index": 1,
+"wood_pos": [
+25568,
+17912,
+447
+]
+},
+"b5_ch_jobs": 4,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 2,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 4,
+"b5_chop_cleared": true,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": null,
+"b5_drift_events": 9,
+"b5_failed_clauses": [
+"build_placed",
+"any_needs_materials"
+],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+2427,
+6,
+0
+],
+"b5_log_sum": 1,
+"b5_max_same_target_timeouts": 3,
+"b5_mine_blocks_mined": 27,
+"b5_mine_cell_diag": [],
+"b5_mine_cleared": true,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 0,
+"b5_mine_reachability_probe": [],
+"b5_mine_timeout_position_diag": [],
+"b5_rescue_fired": false,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 3.3648432266666664,
+"b5_stone_entities": 3,
+"b5_stone_sum": 27,
+"b5_timeouts_on_never_completed_jobs": 0,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 6
+},
+"159": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": true,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": true,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": true,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": true,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:55:19Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 1,
+"frontier_completes_max": 0,
+"members_seen": 3,
+"present": true
+},
+"b5_cavein_drop_cells": 0,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 4809,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+31696,
+25126,
+227
+],
+"ring_index": 2,
+"wood_pos": [
+31696,
+25126,
+226
+]
+},
+"b5_ch_jobs": 3,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 3,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 3,
+"b5_chop_cleared": true,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": null,
+"b5_drift_events": 7,
+"b5_failed_clauses": [],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+586,
+0,
+0
+],
+"b5_log_sum": 1,
+"b5_max_same_target_timeouts": 0,
+"b5_mine_blocks_mined": 27,
+"b5_mine_cell_diag": [],
+"b5_mine_cleared": true,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 0,
+"b5_mine_reachability_probe": [],
+"b5_mine_timeout_position_diag": [],
+"b5_rescue_fired": false,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 2.8703635566666668,
+"b5_stone_entities": 2,
+"b5_stone_sum": 27,
+"b5_timeouts_on_never_completed_jobs": 0,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 0
+},
+"160": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": true,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": true,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": true,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": true,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:55:19Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 0,
+"frontier_completes_max": 0,
+"members_seen": 0,
+"present": true
+},
+"b5_cavein_drop_cells": 5,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 2048,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+11216,
+10037,
+626
+],
+"ring_index": 3,
+"wood_pos": [
+11216,
+10037,
+610
+]
+},
+"b5_ch_jobs": 1,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 4,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 1,
+"b5_chop_cleared": true,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": null,
+"b5_drift_events": 9,
+"b5_failed_clauses": [],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+6048,
+15,
+0
+],
+"b5_log_sum": 1,
+"b5_max_same_target_timeouts": 3,
+"b5_mine_blocks_mined": 27,
+"b5_mine_cell_diag": [
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+11331,
+10064,
+614
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": false
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+11331,
+10064,
+615
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": false
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": null,
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+11331,
+10064,
+616
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 2,
+"unreachable": false
+},
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": "Lira the Quiet",
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+11332,
+10063,
+614
+],
+"progress": 0.2800000011920929,
+"timeouts_on_this_cell": 0,
+"unreachable": false
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": "Lira the Quiet",
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+11332,
+10063,
+615
+],
+"progress": 0.2800000011920929,
+"timeouts_on_this_cell": 0,
+"unreachable": false
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": "Lira the Quiet",
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+11332,
+10063,
+616
+],
+"progress": 0.2800000011920929,
+"timeouts_on_this_cell": 0,
+"unreachable": false
+},
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+11332,
+10064,
+614
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": false
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": "Eira Brighteye",
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+11332,
+10064,
+615
+],
+"progress": 0.6666663289070129,
+"timeouts_on_this_cell": 0,
+"unreachable": false
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": "Eira Brighteye",
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+11332,
+10064,
+616
+],
+"progress": 0.6666663289070129,
+"timeouts_on_this_cell": 1,
+"unreachable": false
+},
+{
+"cells_above_open": 2,
+"cells_below_open": 0,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+11332,
+10065,
+614
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": false
+},
+{
+"cells_above_open": 1,
+"cells_below_open": 1,
+"claimant": null,
+"is_column_frontier": false,
+"is_top_layer": false,
+"needs_materials": false,
+"pos": [
+11332,
+10065,
+615
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 1,
+"unreachable": false
+},
+{
+"cells_above_open": 0,
+"cells_below_open": 2,
+"claimant": null,
+"is_column_frontier": true,
+"is_top_layer": true,
+"needs_materials": false,
+"pos": [
+11332,
+10065,
+616
+],
+"progress": 0.0,
+"timeouts_on_this_cell": 0,
+"unreachable": false
+}
+],
+"b5_mine_cleared": true,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 5,
+"b5_mine_reachability_probe": [
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+11312,
+10064,
+611
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+11331,
+10064,
+614
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+11312,
+10064,
+611
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+11331,
+10064,
+615
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 665,
+"columns_visited_scramble": 665,
+"columns_visited_step": 662,
+"from": [
+11317,
+10059,
+613
+],
+"path_exists_jump": true,
+"path_exists_scramble": true,
+"path_exists_step": true,
+"probe_incomplete": false,
+"standable_target": [
+11331,
+10064,
+617
+]
+},
+"from_spawn": {
+"columns_visited_jump": 90056,
+"columns_visited_scramble": 30920,
+"columns_visited_step": 85792,
+"from": [
+11312,
+10064,
+611
+],
+"path_exists_jump": false,
+"path_exists_scramble": true,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+11331,
+10064,
+617
+]
+},
+"last_timeout_pos": [
+11317.5498046875,
+10059.87109375,
+613.227783203125
+],
+"min_distance_to_target": 5.053435802459717,
+"route_next_idx_pinned": false,
+"target": [
+11331,
+10064,
+616
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 6
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 8
+}
+]
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+11312,
+10064,
+611
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": 2.5594642162323,
+"route_next_idx_pinned": null,
+"target": [
+11332,
+10063,
+614
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+11312,
+10064,
+611
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+11332,
+10063,
+615
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 90056,
+"columns_visited_scramble": 30919,
+"columns_visited_step": 85792,
+"from": [
+11312,
+10064,
+611
+],
+"path_exists_jump": false,
+"path_exists_scramble": true,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+11332,
+10063,
+617
+]
+},
+"last_timeout_pos": null,
+"min_distance_to_target": 2.721860408782959,
+"route_next_idx_pinned": null,
+"target": [
+11332,
+10063,
+616
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 90056,
+"columns_visited_scramble": 31738,
+"columns_visited_step": 85792,
+"from": [
+11312,
+10064,
+611
+],
+"path_exists_jump": false,
+"path_exists_scramble": true,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+11333,
+10064,
+614
+]
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+11332,
+10064,
+614
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+11312,
+10064,
+611
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+11332,
+10064,
+615
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+11332,
+10066,
+612
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+11312,
+10064,
+611
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": [
+11332.5,
+10066.5,
+612.9251098632812
+],
+"min_distance_to_target": 3.5670342445373535,
+"route_next_idx_pinned": null,
+"target": [
+11332,
+10064,
+616
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 1
+}
+]
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+11312,
+10064,
+611
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": null,
+"min_distance_to_target": null,
+"route_next_idx_pinned": null,
+"target": [
+11332,
+10065,
+614
+],
+"timeout_route_states": []
+},
+{
+"from_last_timeout": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+11317,
+10061,
+612
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"from_spawn": {
+"columns_visited_jump": 0,
+"columns_visited_scramble": 0,
+"columns_visited_step": 0,
+"from": [
+11312,
+10064,
+611
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": null
+},
+"last_timeout_pos": [
+11317.0830078125,
+10061.90625,
+612.0
+],
+"min_distance_to_target": 2.534999370574951,
+"route_next_idx_pinned": null,
+"target": [
+11332,
+10065,
+615
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 8
+}
+]
+},
+{
+"from_last_timeout": null,
+"from_spawn": {
+"columns_visited_jump": 90056,
+"columns_visited_scramble": 31739,
+"columns_visited_step": 85792,
+"from": [
+11312,
+10064,
+611
+],
+"path_exists_jump": false,
+"path_exists_scramble": true,
+"path_exists_step": false,
+"probe_incomplete": false,
+"standable_target": [
+11332,
+10065,
+617
+]
+},
+"last_timeout_pos": null,
+"min_distance_to_target": 2.6588876247406006,
+"route_next_idx_pinned": null,
+"target": [
+11332,
+10065,
+616
+],
+"timeout_route_states": []
+}
+],
+"b5_mine_timeout_position_diag": [
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+11331,
+10063,
+616
+],
+"timeout_count": 3
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+11333,
+10063,
+616
+],
+"timeout_count": 3
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+11331,
+10064,
+616
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+11331,
+10065,
+616
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+11333,
+10064,
+616
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+11332,
+10064,
+616
+],
+"timeout_count": 1
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": false,
+"pos": [
+11332,
+10065,
+615
+],
+"timeout_count": 1
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+11333,
+10065,
+616
+],
+"timeout_count": 1
+}
+],
+"b5_rescue_fired": false,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 3.901720294999999,
+"b5_stone_entities": 4,
+"b5_stone_sum": 27,
+"b5_timeouts_on_never_completed_jobs": 4,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 15
+},
+"161": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": true,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": true,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": true,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": true,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:55:19Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 0,
+"frontier_completes_max": 0,
+"members_seen": 0,
+"present": true
+},
+"b5_cavein_drop_cells": 0,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 491,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+20076,
+4820,
+346
+],
+"ring_index": 0,
+"wood_pos": [
+20076,
+4820,
+345
+]
+},
+"b5_ch_jobs": 1,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 1,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 1,
+"b5_chop_cleared": true,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": null,
+"b5_drift_events": 9,
+"b5_failed_clauses": [],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+1553,
+3,
+0
+],
+"b5_log_sum": 1,
+"b5_max_same_target_timeouts": 2,
+"b5_mine_blocks_mined": 27,
+"b5_mine_cell_diag": [],
+"b5_mine_cleared": true,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 0,
+"b5_mine_reachability_probe": [],
+"b5_mine_timeout_position_diag": [
+{
+"cells_below_filled": 0,
+"is_top_layer": false,
+"pos": [
+20067,
+4816,
+320
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": false,
+"pos": [
+20067,
+4815,
+320
+],
+"timeout_count": 1
+}
+],
+"b5_rescue_fired": false,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 2.7750023133333332,
+"b5_stone_entities": 3,
+"b5_stone_sum": 27,
+"b5_timeouts_on_never_completed_jobs": 0,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 3
+},
+"162": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": true,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": true,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": true,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": true,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:55:19Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 0,
+"frontier_completes_max": 0,
+"members_seen": 0,
+"present": true
+},
+"b5_cavein_drop_cells": 0,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 18432,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+8848,
+26335,
+598
+],
+"ring_index": 0,
+"wood_pos": [
+8848,
+26335,
+597
+]
+},
+"b5_ch_jobs": 9,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 1,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 9,
+"b5_chop_cleared": true,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": null,
+"b5_drift_events": 7,
+"b5_failed_clauses": [],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+1230,
+2,
+0
+],
+"b5_log_sum": 1,
+"b5_max_same_target_timeouts": 2,
+"b5_mine_blocks_mined": 27,
+"b5_mine_cell_diag": [],
+"b5_mine_cleared": true,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 0,
+"b5_mine_reachability_probe": [],
+"b5_mine_timeout_position_diag": [],
+"b5_rescue_fired": false,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 3.564860833333334,
+"b5_stone_entities": 2,
+"b5_stone_sum": 27,
+"b5_timeouts_on_never_completed_jobs": 0,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 2
+},
+"163": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": true,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": true,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": true,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": true,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:55:19Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 1,
+"frontier_completes_max": 0,
+"members_seen": 1,
+"present": true
+},
+"b5_cavein_drop_cells": 0,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 1900,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+22301,
+10925,
+289
+],
+"ring_index": 16,
+"wood_pos": [
+22301,
+10925,
+266
+]
+},
+"b5_ch_jobs": 1,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 17,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 1,
+"b5_chop_cleared": true,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": null,
+"b5_drift_events": 5,
+"b5_failed_clauses": [],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+330,
+0,
+0
+],
+"b5_log_sum": 1,
+"b5_max_same_target_timeouts": 0,
+"b5_mine_blocks_mined": 27,
+"b5_mine_cell_diag": [],
+"b5_mine_cleared": true,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 0,
+"b5_mine_reachability_probe": [],
+"b5_mine_timeout_position_diag": [],
+"b5_rescue_fired": false,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 3.7273241916666673,
+"b5_stone_entities": 2,
+"b5_stone_sum": 27,
+"b5_timeouts_on_never_completed_jobs": 0,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 0
+},
+"164": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": true,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": true,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": true,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": true,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:55:19Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 1,
+"frontier_completes_max": 0,
+"members_seen": 1,
+"present": true
+},
+"b5_cavein_drop_cells": 0,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 4096,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+23707,
+24816,
+192
+],
+"ring_index": 19,
+"wood_pos": [
+23707,
+24816,
+191
+]
+},
+"b5_ch_jobs": 2,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 20,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 2,
+"b5_chop_cleared": true,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": null,
+"b5_drift_events": 6,
+"b5_failed_clauses": [],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+786,
+1,
+1
+],
+"b5_log_sum": 1,
+"b5_max_same_target_timeouts": 1,
+"b5_mine_blocks_mined": 27,
+"b5_mine_cell_diag": [],
+"b5_mine_cleared": true,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 0,
+"b5_mine_reachability_probe": [],
+"b5_mine_timeout_position_diag": [
+{
+"cells_below_filled": 0,
+"is_top_layer": false,
+"pos": [
+23589,
+24912,
+143
+],
+"timeout_count": 1
+}
+],
+"b5_rescue_fired": true,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 3.4391756483333333,
+"b5_stone_entities": 2,
+"b5_stone_sum": 27,
+"b5_timeouts_on_never_completed_jobs": 0,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 1
+},
+"165": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": true,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": true,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": true,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": true,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:55:19Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 0,
+"frontier_completes_max": 0,
+"members_seen": 0,
+"present": true
+},
+"b5_cavein_drop_cells": 0,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 8192,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+20528,
+5305,
+260
+],
+"ring_index": 0,
+"wood_pos": [
+20528,
+5305,
+259
+]
+},
+"b5_ch_jobs": 4,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 1,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 4,
+"b5_chop_cleared": true,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": null,
+"b5_drift_events": 6,
+"b5_failed_clauses": [],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+1148,
+2,
+1
+],
+"b5_log_sum": 1,
+"b5_max_same_target_timeouts": 2,
+"b5_mine_blocks_mined": 27,
+"b5_mine_cell_diag": [],
+"b5_mine_cleared": true,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 0,
+"b5_mine_reachability_probe": [],
+"b5_mine_timeout_position_diag": [
+{
+"cells_below_filled": 0,
+"is_top_layer": false,
+"pos": [
+20580,
+5295,
+243
+],
+"timeout_count": 2
+}
+],
+"b5_rescue_fired": true,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 2.7690494849999996,
+"b5_stone_entities": 3,
+"b5_stone_sum": 27,
+"b5_timeouts_on_never_completed_jobs": 0,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 2
+},
+"166": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": true,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": true,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": true,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": true,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:55:19Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 0,
+"frontier_completes_max": 0,
+"members_seen": 0,
+"present": true
+},
+"b5_cavein_drop_cells": 0,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 2048,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+19954,
+16080,
+308
+],
+"ring_index": 0,
+"wood_pos": [
+19954,
+16080,
+306
+]
+},
+"b5_ch_jobs": 1,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 1,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 1,
+"b5_chop_cleared": true,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": null,
+"b5_drift_events": 5,
+"b5_failed_clauses": [],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+531,
+0,
+0
+],
+"b5_log_sum": 1,
+"b5_max_same_target_timeouts": 0,
+"b5_mine_blocks_mined": 27,
+"b5_mine_cell_diag": [],
+"b5_mine_cleared": true,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 0,
+"b5_mine_reachability_probe": [],
+"b5_mine_timeout_position_diag": [],
+"b5_rescue_fired": false,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 3.554712133333333,
+"b5_stone_entities": 3,
+"b5_stone_sum": 27,
+"b5_timeouts_on_never_completed_jobs": 0,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 0
+},
+"167": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": true,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": true,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": true,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": false,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:55:19Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 0,
+"frontier_completes_max": 0,
+"members_seen": 0,
+"present": true
+},
+"b5_cavein_drop_cells": 1,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 1640,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+12635,
+3433,
+634
+],
+"ring_index": 14,
+"wood_pos": [
+12635,
+3433,
+633
+]
+},
+"b5_ch_jobs": 1,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 15,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 1,
+"b5_chop_cleared": false,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": {
+"from_last_timeout": {
+"columns_visited_jump": 100000,
+"columns_visited_scramble": 100000,
+"columns_visited_step": 100000,
+"from": [
+12551,
+3254,
+513
+],
+"path_exists_jump": false,
+"path_exists_scramble": false,
+"path_exists_step": false,
+"probe_incomplete": true,
+"standable_target": [
+12549,
+3280,
+551
+]
+},
+"from_spawn": {
+"columns_visited_jump": 239,
+"columns_visited_scramble": 245,
+"columns_visited_step": 239,
+"from": [
+12560,
+3280,
+617
+],
+"path_exists_jump": true,
+"path_exists_scramble": true,
+"path_exists_step": true,
+"probe_incomplete": false,
+"standable_target": [
+12549,
+3280,
+551
+]
+},
+"last_timeout_pos": [
+12551.5498046875,
+3254.550048828125,
+513.98681640625
+],
+"min_distance_to_target": 13.684830665588379,
+"route_next_idx_pinned": null,
+"target": [
+12548,
+3280,
+551
+],
+"timeout_route_states": [
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 0
+},
+{
+"route_complete": null,
+"route_exists": false,
+"route_next_idx": null
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 1
+},
+{
+"route_complete": false,
+"route_exists": true,
+"route_next_idx": 1
+}
+]
+},
+"b5_drift_events": 10,
+"b5_failed_clauses": [
+"chop_cleared",
+"build_placed",
+"log_sum"
+],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+6751,
+14,
+2
+],
+"b5_log_sum": 0,
+"b5_max_same_target_timeouts": 4,
+"b5_mine_blocks_mined": 27,
+"b5_mine_cell_diag": [],
+"b5_mine_cleared": true,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 0,
+"b5_mine_reachability_probe": [],
+"b5_mine_timeout_position_diag": [
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+12579,
+3281,
+508
+],
+"timeout_count": 2
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": false,
+"pos": [
+12579,
+3279,
+506
+],
+"timeout_count": 1
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+12579,
+3279,
+508
+],
+"timeout_count": 1
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+12579,
+3280,
+508
+],
+"timeout_count": 1
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+12580,
+3279,
+508
+],
+"timeout_count": 1
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+12580,
+3281,
+508
+],
+"timeout_count": 1
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+12581,
+3279,
+508
+],
+"timeout_count": 1
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+12581,
+3280,
+508
+],
+"timeout_count": 1
+},
+{
+"cells_below_filled": 0,
+"is_top_layer": true,
+"pos": [
+12581,
+3281,
+508
+],
+"timeout_count": 1
+}
+],
+"b5_rescue_fired": true,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 3.1101412583333334,
+"b5_stone_entities": 2,
+"b5_stone_sum": 27,
+"b5_timeouts_on_never_completed_jobs": 4,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 14
+},
+"168": {
+"b5_any_mining_xp": true,
+"b5_any_needs_materials": true,
+"b5_any_woodcutting_xp": true,
+"b5_b15_adjacent_claimed": true,
+"b5_b15_floater_skipped": true,
+"b5_b15_ontop_claimed": true,
+"b5_build_ok_jobs": 1,
+"b5_build_placed": true,
+"b5_build_stall_jobs": 1,
+"b5_build_stall_untouched": true,
+"b5_build_stamp": "0feceef806+dirty built 2026-07-30T14:55:19Z",
+"b5_cascade_probe": {
+"abort_ceiling_max": 0,
+"abort_resets_max": 0,
+"access_emissions_max": 0,
+"frontier_completes_max": 0,
+"members_seen": 0,
+"present": true
+},
+"b5_cavein_drop_cells": 0,
+"b5_ch_cancel_clean": true,
+"b5_ch_cells": 20480,
+"b5_ch_engaged": true,
+"b5_ch_ground_truth_tree_present": true,
+"b5_ch_ground_truth_witness": {
+"leaves_pos": [
+4210,
+23365,
+321
+],
+"ring_index": 0,
+"wood_pos": [
+4210,
+23365,
+320
+]
+},
+"b5_ch_jobs": 10,
+"b5_ch_leaf_cleared": true,
+"b5_ch_leaf_no_drop": true,
+"b5_ch_mixed": true,
+"b5_ch_oracle_class": "pass",
+"b5_ch_rings_tried": 1,
+"b5_ch_scan_incomplete": false,
+"b5_ch_scan_incomplete_rings": 0,
+"b5_ch_scan_incomplete_total_columns": 0,
+"b5_ch_scan_incomplete_unreachable_columns": 0,
+"b5_ch_trees": 10,
+"b5_chop_cleared": true,
+"b5_chop_jobs": 1,
+"b5_chop_reachability_probe": null,
+"b5_drift_events": 8,
+"b5_failed_clauses": [],
+"b5_flat_bounds_ok": true,
+"b5_flat_floor_flat": true,
+"b5_flat_hint_decoupled": true,
+"b5_flat_total": 108,
+"b5_gave_item": true,
+"b5_hill_past_old_cap": true,
+"b5_hill_reaches_crest": true,
+"b5_hill_total_ok": true,
+"b5_locomotion": [
+447,
+0,
+0
+],
+"b5_log_sum": 1,
+"b5_max_same_target_timeouts": 0,
+"b5_mine_blocks_mined": 27,
+"b5_mine_cell_diag": [],
+"b5_mine_cleared": true,
+"b5_mine_footprint_top_witness": null,
+"b5_mine_jobs": 27,
+"b5_mine_jobs_remaining": 0,
+"b5_mine_reachability_probe": [],
+"b5_mine_timeout_position_diag": [],
+"b5_rescue_fired": false,
+"b5_slope_bounds_ok": true,
+"b5_slope_cancel_clean": true,
+"b5_slope_columns_ok": true,
+"b5_slope_jobs_total": 72,
+"b5_slope_legacy_jobs": 45,
+"b5_soak_avg_tick_ms": 3.155969708333333,
+"b5_stone_entities": 2,
+"b5_stone_sum": 27,
+"b5_timeouts_on_never_completed_jobs": 0,
+"b5_tool_ok": true,
+"b5_tool_steel": 2.0,
+"b5_tool_stone": 1.5,
+"b5_travel_timeouts": 0
+}
+}
