@@ -87,11 +87,33 @@ and emit `failed_clauses` as the list of false keys. **A verdict term
 that is not emitted then cannot exist**, which is the invariant that
 makes the whole report auditable.
 
-**5. Unset ≠ measured.** A diagnostic only assigned inside a branch that
-may not run (`preempt`'s `jobs_at_rest_peak = 0usize`, set only inside
-`if rest >= 0.58`) must emit `null`, not its initializer. **An emitted
-`0` that means "never sampled" is indistinguishable from a measured
-zero.**
+**5. Unset ≠ measured — FLAVOUR 8, and it reaches the VERDICT.** A value
+only assigned inside a branch that may not run must emit `null`, not its
+initializer. `preempt`'s `jobs_at_rest_peak` was a bare `0usize` set only
+inside `if rest >= 0.58` — **and `paused` is derived from it**, so a run
+that never sampled scored `paused: false`. ***"We did not look" recorded
+as "the colonist failed to pause", inside the gating set.***
+
+> **An initializer a branch may never overwrite is not a default — it's
+> a lie with a plausible value.**
+
+Fix as `Option<T>`: `None` emits `null`, and the gating term's value is
+**provably unchanged** (`None` and `Some(0)` both yield false), so the
+verdict cannot move while the report stops lying.
+
+**6. ★ AN EQUIVALENCE PROOF MUST ITSELF BE DIFFED AGAINST THE ORIGINAL.**
+`verdict_matches_legacy` proves *derived == legacy_pass*. It does **not**
+prove *derived == original* — if `legacy_pass` was mis-transcribed while
+being copied, both sides agree and the flag reports `true` while the
+verdict has silently moved. **A check that validates itself.**
+
+So: extract the conjuncts from the pre-refactor `let pass` in the parent
+blob and compare them term-by-term to each new `legacy_pass`. Done for
+all six here (b58 20, bed 16, preempt 10, auton 12, selfgen 12, b73 12 —
+all identical). **A hand-copied "verbatim" is a transcription, and
+transcriptions are what this row got wrong three times.** This is the
+subject-cannot-be-its-own-oracle law applied recursively: it binds
+oracles too.
 
 ## Scope, in order
 
