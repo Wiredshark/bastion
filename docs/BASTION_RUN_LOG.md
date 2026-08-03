@@ -15441,3 +15441,34 @@ ready-made acceptance tests. DF prior art first, per Ben.
 Both delivered as falsifiable challenges, not orders; verdicts route up the
 ladder. Direction noted, not ordered: b5's 40-clause kitchen-sink is itself a
 forest-problem generator — long-term, split mega-scenarios into focused ones.
+
+## FOREST REVIEW #1 CLOSED: BOTH CHALLENGES RESOLVED, ONE DEFECT IS MINE (08/03)
+
+**Opus confirmed both code facts and corrected both conclusions — and the
+anti-merge argument is the review working in reverse:**
+
+**1. Needs-as-jobs is DELIBERATE, not unfinished:** the Drive enum's own doc
+comment defers unification to AUTON-2 by name ("the full unification is
+AUTON-2's job"). So preempt/b73 are **tests written against AUTON-2's model,
+legitimately red until it lands** — reclassified EXPECTED-RED (M3A tracked-red
+pattern: hold their fingerprint, re-flag only on SHIFT). **Broken map: 14 →
+12 genuine + 2 tracked-expected-red.** RULED: AUTON-2 stays in queue order
+(design row, DF-prior-art-first attached), NOT pulled forward.
+
+**2. ★ THE WORK-TICK GAP IS T3.52-INTRODUCED — AND T3.52 IS MY RULING
+(2026-07-27).** Its comment asserts "gating travel Goto issuance is sufficient
+for yield" — true for a colonist who must travel, FALSE for one already
+Arrived: pre-T3.52 flee released the claim and destroyed ActiveJob (work
+stopped); T3.52's suspend-not-release gated travel only. **I wrote the
+sufficiency argument that stopped anyone examining the work tick.** Opus's
+falsifier (pin before T3.52, auton's `frozen` should pass) runs FIRST to
+confirm the date on the record. Fix ruled: gate the Arrived work tick on
+Drive::Work (is_none_or pattern, unseen-arbiter permits), T3.52 semantics
+otherwise preserved; acceptance pre-stated (frozen flips, directional corpus
+bar, T3.52's own resume-after legs must hold). Assigned to 5b after #61.
+
+**3. NOT merged into one row** — different causes, owners, fixes; a merged row's
+acceptance would fail for two unrelated reasons — "one signal that can't
+distinguish the states it's asked about," per Opus's own audit. My unification
+instinct was the tidy-classification failure one level up. Both lanes' verdicts
+routed correctly through the ladder; Opus near capacity, hand-off docs in place.
