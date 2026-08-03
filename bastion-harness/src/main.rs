@@ -9025,7 +9025,11 @@ fn preempt_scenario(args: &Args) -> ExitCode {
     // claim and self-assigns RestAt; A sleeps to the satisfied band.
     server.bastion_set_needs(&a, 1.0, 0.15, 1.0);
     let mut preempted_rested = false;
-    let mut jobs_at_rest_peak = 0usize;
+    // UNSET vs MEASURED: this is only assigned inside the `rest >= 0.58`
+    // branch below. As a bare `0usize` it was indistinguishable from a real
+    // measurement of zero -- and worse, it FEEDS the gating term `paused`, so
+    // a run that never sampled scored as a run that failed to pause.
+    let mut jobs_at_rest_peak: Option<usize> = None;
     for _ in 0..360 {
         tick(&mut server, 10);
         let rest = server
@@ -9034,13 +9038,15 @@ fn preempt_scenario(args: &Args) -> ExitCode {
             .unwrap_or(0.0);
         if rest >= 0.58 {
             preempted_rested = true;
-            jobs_at_rest_peak = server.bastion_jobs_in_region(mine);
+            jobs_at_rest_peak = Some(server.bastion_jobs_in_region(mine));
             break;
         }
     }
     // The nap PAUSED the mine (jobs remained at the rest peak), and the
     // work then RESUMES to completion.
-    let paused = jobs_at_rest_peak > 0;
+    // Unchanged in value (None and Some(0) both yield false), but now the
+    // report can say WHICH of the two happened.
+    let paused = jobs_at_rest_peak.is_some_and(|n| n > 0);
     let mut resumed = false;
     for _ in 0..600 {
         tick(&mut server, 10);
@@ -9136,26 +9142,54 @@ fn preempt_scenario(args: &Args) -> ExitCode {
     let fires_final = server.bastion_center_net_fires();
     let wedge_survived = tp_ok && out_of_pit && fires_final == fires_before;
 
-    let result = serde_json::json!({
-        "preempt_mine_jobs": mine_jobs,
-        "preempt_dug_before": dug_before_preempt,
-        "preempt_rested": preempted_rested,
-        "preempt_jobs_at_rest_peak": jobs_at_rest_peak,
-        "preempt_paused": paused,
-        "preempt_resumed": resumed,
-        "preempt_mine2_jobs": mine2_jobs,
-        "preempt_endure_dug": endure_dug,
-        "preempt_rest_end": rest_end,
-        "preempt_endured": endured,
-        "preempt_no_embeds": no_embeds,
-        "preempt_attempts_endure": attempts_endure,
-        "preempt_thrash_bounded": thrash_bounded,
-        "preempt_hover_silent": hover_silent,
-        "preempt_wedge_survived": wedge_survived,
-        "preempt_out_of_pit": out_of_pit,
-        "preempt_colonists": names.len(),
-    });
-    let pass = mine_jobs == 10
+    // ── VERDICT / DIAG SPLIT (report-fix row, 3 of 6) ────────────────────
+    // preempt is the UNSET-vs-MEASURED case, and it was worse than a
+    // reporting defect: `jobs_at_rest_peak` is only assigned inside the
+    // `rest >= 0.58` branch, and `paused` is derived from it. So a run where
+    // rest never reached the band never sampled, and scored `paused: false` —
+    // "we did not look" recorded as "the colonist failed to pause".
+    //
+    // `paused` therefore REQUIRES `preempted_rested`: if rest never got
+    // there, `paused` carries no information and is wake, not a root.
+    //
+    // NOTE `preempt_dug_before` is a DIAGNOSTIC — it is not in the gating set
+    // and never was. It was previously read as this scenario's failure, which
+    // is the misreading that motivated this whole row.
+    let verdict: Vec<(&str, bool, Option<&str>)> = vec![
+        ("mine_jobs_expected", mine_jobs == 10, None),
+        ("preempted_rested", preempted_rested, None),
+        ("paused", paused, Some("preempted_rested")),
+        ("resumed", resumed, Some("preempted_rested")),
+        ("endured", endured, None),
+        ("no_embeds", no_embeds, None),
+        ("thrash_bounded", thrash_bounded, None),
+        ("hover_silent", hover_silent, None),
+        ("wedge_survived", wedge_survived, None),
+        ("colonists_expected", names.len() == 1, None),
+    ];
+    let pass = verdict.iter().all(|(_, ok, _)| *ok);
+    let ok_of = |name: &str| {
+        verdict
+            .iter()
+            .find(|(n, _, _)| *n == name)
+            .map(|(_, ok, _)| *ok)
+            .unwrap_or(true)
+    };
+    let failed_clauses: Vec<&str> = verdict
+        .iter()
+        .filter(|(_, ok, _)| !*ok)
+        .map(|(name, _, _)| *name)
+        .collect();
+    let root_failure = verdict
+        .iter()
+        .find(|(_, ok, req)| !*ok && (*req).map_or(true, ok_of))
+        .map(|(name, _, _)| *name);
+    let cascade_suppressed: Vec<&str> = verdict
+        .iter()
+        .filter(|(_, ok, req)| !*ok && (*req).is_some_and(|r| !ok_of(r)))
+        .map(|(name, _, _)| *name)
+        .collect();
+    let legacy_pass = mine_jobs == 10
         && preempted_rested
         && paused
         && resumed
@@ -9165,6 +9199,38 @@ fn preempt_scenario(args: &Args) -> ExitCode {
         && hover_silent
         && wedge_survived
         && names.len() == 1;
+    let verdict_matches_legacy = pass == legacy_pass;
+    debug_assert!(
+        verdict_matches_legacy,
+        "preempt verdict/diag refactor changed the verdict: derived={pass} legacy={legacy_pass}"
+    );
+    let verdict_map: serde_json::Map<String, serde_json::Value> = verdict
+        .iter()
+        .map(|(name, ok, _)| ((*name).to_string(), serde_json::json!(*ok)))
+        .collect();
+
+    let result = serde_json::json!({
+        // GATING terms only. `pass` is derived from exactly this set.
+        "preempt_verdict": verdict_map,
+        "preempt_failed_clauses": failed_clauses,
+        "preempt_root_failure": root_failure,
+        "preempt_cascade_suppressed": cascade_suppressed,
+        "preempt_verdict_matches_legacy": verdict_matches_legacy,
+        // REPORTED, NOT GATING. Nothing here can fail the scenario.
+        "preempt_diag": {
+            "mine_jobs": mine_jobs,
+            "dug_before": dug_before_preempt,
+            // null = never sampled (rest never reached the band), which is a
+            // different fact from a measured zero.
+            "jobs_at_rest_peak": jobs_at_rest_peak,
+            "mine2_jobs": mine2_jobs,
+            "endure_dug": endure_dug,
+            "rest_end": rest_end,
+            "attempts_endure": attempts_endure,
+            "out_of_pit": out_of_pit,
+            "colonists": names.len(),
+        },
+    });
     println!("{}", result);
     println!("PREEMPT SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
