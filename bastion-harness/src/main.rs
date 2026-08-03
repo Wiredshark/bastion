@@ -18702,7 +18702,10 @@ fn auton_scenario(args: &Args) -> ExitCode {
             server.bastion_set_health_fraction(n, 0.1);
         }
     }
-    let frozen = server.bastion_jobs_in_region(mine2) == frozen_at && frozen_at > 0;
+    // Captured here rather than re-read later: the count is time-dependent,
+    // so the verdict must be built from the value observed at THIS moment.
+    let mine2_count_after_storm = server.bastion_jobs_in_region(mine2);
+    let frozen = mine2_count_after_storm == frozen_at && frozen_at > 0;
 
     // GUARD 4(b): measured across the storm window exactly.
     let (_, _, storm_teleports_after) = server.bastion_locomotion_stats();
@@ -18732,19 +18735,112 @@ fn auton_scenario(args: &Args) -> ExitCode {
     let (grants, _, peak_wait) = server.bastion_path_stats();
     let path_alive = grants > 0 && peak_wait <= 7;
 
+    // ── VERDICT / DIAG SPLIT (report-fix row, 4 of 6) ────────────────────
+    // auton is the POLARITY TRAP: `pass` required `frozen == true`, while the
+    // report printed `auton_frozen: false` — which reads GREEN to a human
+    // ("it didn't freeze, good"). Two readers took it as healthy. The term is
+    // renamed to `mine2_count_held`, whose true-value reads as success, so
+    // the name can no longer invert the meaning.
+    //
+    // AND-COMPOSITES ARE SPLIT INTO SEPARATE GATING TERMS. `frozen` was
+    // `count == frozen_at && frozen_at > 0`, and `path_alive` was
+    // `grants > 0 && peak_wait <= 7` — in both cases a red could not say
+    // WHICH half failed. Splitting an AND preserves the verdict exactly
+    // (the conjunction is unchanged) and localises the failure. Note this is
+    // the opposite treatment from b58's OR-composite, which must emit the
+    // TERM: splitting an OR would change the verdict.
+    //
+    // `storm_baseline_captured` is the unmeasured case again: `frozen_at == 0`
+    // means the storm baseline was never taken, so `count == frozen_at`
+    // carries no information — hence the prerequisite.
+    let verdict: Vec<(&str, bool, Option<&str>)> = vec![
+        ("colonists_expected", names.len() == 3, None),
+        ("m1_strip_painted", m1 == 20, None),
+        ("m2_strip_painted", m2 == 20, None),
+        ("worked", worked, None),
+        ("lively", lively, None),
+        ("flee_fast", flee_fast, None),
+        ("storm_baseline_captured", frozen_at > 0, None),
+        (
+            "mine2_count_held",
+            mine2_count_after_storm == frozen_at,
+            Some("storm_baseline_captured"),
+        ),
+        ("recovered", recovered, None),
+        ("bounded", bounded, None),
+        ("no_false_teleports", no_false_teleports, None),
+        ("no_embeds", no_embeds, None),
+        ("path_grants_nonzero", grants > 0, None),
+        ("path_wait_bounded", peak_wait <= 7, None),
+    ];
+    let pass = verdict.iter().all(|(_, ok, _)| *ok);
+    let ok_of = |name: &str| {
+        verdict
+            .iter()
+            .find(|(n, _, _)| *n == name)
+            .map(|(_, ok, _)| *ok)
+            .unwrap_or(true)
+    };
+    let failed_clauses: Vec<&str> = verdict
+        .iter()
+        .filter(|(_, ok, _)| !*ok)
+        .map(|(name, _, _)| *name)
+        .collect();
+    let root_failure = verdict
+        .iter()
+        .find(|(_, ok, req)| !*ok && (*req).map_or(true, ok_of))
+        .map(|(name, _, _)| *name);
+    let cascade_suppressed: Vec<&str> = verdict
+        .iter()
+        .filter(|(_, ok, req)| !*ok && (*req).is_some_and(|r| !ok_of(r)))
+        .map(|(name, _, _)| *name)
+        .collect();
+    let legacy_pass = names.len() == 3
+        && m1 == 20
+        && m2 == 20
+        && worked
+        && lively
+        && flee_fast
+        && frozen
+        && recovered
+        && bounded
+        && no_false_teleports
+        && no_embeds
+        && path_alive;
+    let verdict_matches_legacy = pass == legacy_pass;
+    debug_assert!(
+        verdict_matches_legacy,
+        "auton verdict/diag refactor changed the verdict: derived={pass} legacy={legacy_pass}"
+    );
+    let verdict_map: serde_json::Map<String, serde_json::Value> = verdict
+        .iter()
+        .map(|(name, ok, _)| ((*name).to_string(), serde_json::json!(*ok)))
+        .collect();
+
     let result = serde_json::json!({
-        "auton_colonists": names.len(),
-        "auton_m1": m1,
-        "auton_m2": m2,
-        "auton_worked": worked,
-        "auton_lively": lively,
-        "auton_flee_fast": flee_fast,
-        "auton_frozen": frozen,
-        "auton_recovered": recovered,
-        "auton_bounded": bounded,
-        "auton_no_false_teleports": no_false_teleports,
-        "auton_no_embeds": no_embeds,
-        "auton_path_alive": path_alive,
+        // GATING terms only. `pass` is derived from exactly this set.
+        "auton_verdict": verdict_map,
+        "auton_failed_clauses": failed_clauses,
+        "auton_root_failure": root_failure,
+        "auton_cascade_suppressed": cascade_suppressed,
+        "auton_verdict_matches_legacy": verdict_matches_legacy,
+        // REPORTED, NOT GATING — including the raw operands behind every
+        // split AND-term, so a red says which half and by how much.
+        "auton_diag": {
+            "colonists": names.len(),
+            "m1": m1,
+            "m2": m2,
+            "storm_baseline": frozen_at,
+            "mine2_count_after_storm": mine2_count_after_storm,
+            "path_grants": grants,
+            // `peak_wait` is a LIFETIME max, never reset — it includes the
+            // deliberate flee storm, so it cannot answer "were waits pruned
+            // AFTER the storm", which is what the comment above it claims.
+            // Capturing a pre-storm baseline and asserting on the delta is
+            // filed separately as an instrument row.
+            "path_peak_wait": peak_wait,
+            "switches": switches,
+        },
     });
     println!(
         "AUTON TELEMETRY: switches={switches} frozen_at={frozen_at} grants={grants} \
