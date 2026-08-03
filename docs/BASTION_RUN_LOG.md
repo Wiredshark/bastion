@@ -15385,3 +15385,21 @@ unchanged, outcomes re-drawn — more evidence outcomes are scheduling-drawn
 within terrain-fixed friction). Chopfell big-tree FIXED; task #62 (small-tree
 fall/egress mystery) open; 80 and 26 tracked; the FIRST MECHANISM-DERIVED GAME
 FIX OF THE CAMPAIGN IS LANDED AND CORPUS-VERIFIED.
+
+## ★ CHOPFELL RETIRED — FIRST SCENARIO OFF THE BROKEN MAP (07/31)
+
+Both trees green on the deepened fill, stable across two runs (small activity
+0.99999, big 0.9995). `15850c61cc` pushed, harness-only (13 lines,
+bastion-server untouched — no corpus fan per ruling). **Broken map: 15 -> 14.**
+
+What it took, end to end: the sweep found it · three independent reads proved
+the instrument wasn't lying · the drive-gate dump cleared arbitration · the
+route diagnostic localized travel · the code read named the stance bug · a
+differential premise-check confirmed it prospectively · the fix landed on a
+directional corpus bar (12/48 new baseline) · and the residual half turned out
+to be the THIRD fixture under-determination (a worldgen void UNDER the
+platform), fixed harness-only. **One scenario, two defects (one game, one
+fixture), both traced, zero guesses shipped.**
+
+5b -> #61 (vantage-point gate + chop visibility). Board: baseline `15850c61cc`,
+b5 corpus 12/48, scenario map 14/38 broken, all evidence persisted.
