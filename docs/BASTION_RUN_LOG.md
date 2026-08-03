@@ -15472,3 +15472,38 @@ acceptance would fail for two unrelated reasons — "one signal that can't
 distinguish the states it's asked about," per Opus's own audit. My unification
 instinct was the tidy-classification failure one level up. Both lanes' verdicts
 routed correctly through the ladder; Opus near capacity, hand-off docs in place.
+
+## #61 PARKED BY FIRST-LINE RULING — n=0, WITH THE EVIDENCE-LINE SPLIT KEPT (08/03)
+
+Opus ruled as first-line (informing, not asking — upheld without overturn):
+5b's final diagnostic showed **the probe's gate never fires** — seed 80, the
+sole motivating case, resolves through `plan_access` BEFORE any churn-release
+cycle (`b5_ch_base_blocked_sources: ["plan_access"]`). **Evidence base n=0**,
+against a measured 85.79 ms per fire. PARKED: the probe, its field, its gate.
+"Land as unproven infrastructure" REJECTED — an unexercised path with measured
+cost and no demonstrated benefit is a net negative and a bisect hazard.
+
+**KEPT on independent evidence:** the `remove_job` blocked_regions prune (fixes
+a REAL pre-existing #55 gap — stale unreachable verdicts never retracted,
+affects Mine too) and the attribution Vec (the instrument that answered the
+question; zero runtime cost).
+
+**★ POSITIVE FINDING, stated as a finding: `plan_access` already covers
+elevated unreachable trees, EARLY** — the gap #61 targeted does not exist for
+the elevated class. A row that discovers its own premise is already handled is
+a successful row with an unwelcome answer — second instance in a day (cascade
+row precedent).
+
+**THE LEDGER, named honestly (Opus):** the demonstrated-benefit principle has
+now COST two built-and-correct rows and SAVED two false positives. Other side:
+the one time we shipped without the demonstration (aging), it cost a same-day
+fire-drill, revert, and re-baseline. Favorable trade at current prices; parks
+documented well enough to un-park cheaply if prices change.
+
+**5b's check worth the record:** "did my code FIRE at all," not merely "did it
+report" — a silent path and an absent one are identical from outside. Second
+phantom chase prevented by that one distinction. 5b brought the evidence that
+killed its own row and declined the outcome that would have let it land.
+
+**NEXT: fan on 5b's reduced push → #41 (Mine-assumptions stance row, 3-red
+acceptance) → #39 (work-tick flee gate).**
