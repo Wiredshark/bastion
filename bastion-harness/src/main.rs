@@ -19008,27 +19008,66 @@ fn bed_scenario(args: &Args) -> ExitCode {
         }
     }
 
-    let result = serde_json::json!({
-        "bed_built": beds_built,
-        "bed_own_ok": own_ok,
-        "bed_rest_assigned": rest_a && rest_b,
-        "bed_slept": slept,
-        "bed_occupancy_clear": occupancy_clear,
-        "bed_mood_a": mood_a,
-        "bed_mood_b": mood_b,
-        "bed_owned_beats_communal": owned_beats_communal,
-        "bed_collision_winner": winner_slept,
-        "bed_collision_exactly_one": exactly_one,
-        "bed_occupied_mid": occupied_mid,
-        "bed_killed": killed,
-        "bed_released_on_death": released_on_death,
-        "bed_b_alive_after_kill": b_after_kill,
-        "bed_owned_before": owned_before,
-        "bed_demoted": demoted,
-        "bed_owned_after_roundtrip": owned_after,
-        "bed_colonists": names.len(),
-    });
-    let pass = beds_built
+    // ── VERDICT / DIAG SPLIT (report-fix row, 2 of 6) ────────────────────
+    // bed is the CASCADE case: when the bed never gets built, 13 of the 16
+    // gating terms go red from that ONE root, and a reader counting red
+    // fields sees a catastrophe instead of a single defect. So each term
+    // carries its PREREQUISITE, and the report separates the root from its
+    // wake. Prerequisites are explicit here (rather than relying on
+    // declaration order, as b58 does) precisely because a real chain exists.
+    //
+    // Also note `rest_a && rest_b` used to be emitted as ONE field,
+    // `bed_rest_assigned` — two gating terms collapsed into one bit, so a red
+    // could not say which sleeper failed. They are separate terms now.
+    let verdict: Vec<(&str, bool, Option<&str>)> = vec![
+        ("beds_built", beds_built, None),
+        ("own_ok", own_ok, Some("beds_built")),
+        ("rest_a", rest_a, Some("beds_built")),
+        ("rest_b", rest_b, Some("beds_built")),
+        ("slept", slept, Some("beds_built")),
+        ("occupancy_clear", occupancy_clear, Some("beds_built")),
+        ("owned_beats_communal", owned_beats_communal, Some("beds_built")),
+        ("winner_slept", winner_slept, Some("beds_built")),
+        ("exactly_one", exactly_one, Some("beds_built")),
+        ("occupied_mid", occupied_mid, Some("beds_built")),
+        // `killed` and the colonist count need no bed — they stand alone.
+        ("killed", killed, None),
+        ("released_on_death", released_on_death, Some("beds_built")),
+        ("owned_before", owned_before, Some("beds_built")),
+        ("demoted", demoted, Some("beds_built")),
+        ("owned_after", owned_after, Some("beds_built")),
+        ("colonists_expected", names.len() == 3, None),
+    ];
+    let pass = verdict.iter().all(|(_, ok, _)| *ok);
+    let ok_of = |name: &str| {
+        verdict
+            .iter()
+            .find(|(n, _, _)| *n == name)
+            .map(|(_, ok, _)| *ok)
+            .unwrap_or(true)
+    };
+    let failed_clauses: Vec<&str> = verdict
+        .iter()
+        .filter(|(_, ok, _)| !*ok)
+        .map(|(name, _, _)| *name)
+        .collect();
+    // ROOT_FAILURE: the first failing term whose prerequisite HELD. A term
+    // that failed because its prerequisite failed is wake, not a root.
+    let root_failure = verdict
+        .iter()
+        .find(|(_, ok, req)| !*ok && (*req).map_or(true, ok_of))
+        .map(|(name, _, _)| *name);
+    // CASCADE_SUPPRESSED: failing terms explained by a failed prerequisite.
+    // These are NOT independent defects — counting them as such is what makes
+    // one broken bed look like thirteen bugs.
+    let cascade_suppressed: Vec<&str> = verdict
+        .iter()
+        .filter(|(_, ok, req)| !*ok && (*req).is_some_and(|r| !ok_of(r)))
+        .map(|(name, _, _)| *name)
+        .collect();
+    // EQUIVALENCE PROOF: the pre-refactor expression, verbatim. Every run
+    // asserts the refactor did not move the verdict.
+    let legacy_pass = beds_built
         && own_ok
         && rest_a
         && rest_b
@@ -19044,6 +19083,31 @@ fn bed_scenario(args: &Args) -> ExitCode {
         && demoted
         && owned_after
         && names.len() == 3;
+    let verdict_matches_legacy = pass == legacy_pass;
+    debug_assert!(
+        verdict_matches_legacy,
+        "bed verdict/diag refactor changed the verdict: derived={pass} legacy={legacy_pass}"
+    );
+    let verdict_map: serde_json::Map<String, serde_json::Value> = verdict
+        .iter()
+        .map(|(name, ok, _)| ((*name).to_string(), serde_json::json!(*ok)))
+        .collect();
+
+    let result = serde_json::json!({
+        // GATING terms only. `pass` is derived from exactly this set.
+        "bed_verdict": verdict_map,
+        "bed_failed_clauses": failed_clauses,
+        "bed_root_failure": root_failure,
+        "bed_cascade_suppressed": cascade_suppressed,
+        "bed_verdict_matches_legacy": verdict_matches_legacy,
+        // REPORTED, NOT GATING. Nothing here can fail the scenario.
+        "bed_diag": {
+            "mood_a": mood_a,
+            "mood_b": mood_b,
+            "b_alive_after_kill": b_after_kill,
+            "colonists": names.len(),
+        },
+    });
     println!("{}", result);
     println!("BED SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
