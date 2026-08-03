@@ -15507,3 +15507,25 @@ killed its own row and declined the outcome that would have let it land.
 
 **NEXT: fan on 5b's reduced push → #41 (Mine-assumptions stance row, 3-red
 acceptance) → #39 (work-tick flee gate).**
+
+## FALSIFIER 2: THE THIRD OUTCOME — REMOTE PLACEMENT IS AUTHORIZED (08/03)
+
+No proximity gate exists on placement execution (Build's Arrived arm gates only
+can_set_block + the CASE-004 occupancy check — neither is proximity). **The only
+proximity control in the chain is the arrival test, which widens to 6.1 — so the
+anti-loop heuristic GRANTS PERMISSION to place blocks ~6 away.** Both branches
+at once, split by height: low rungs placed remotely from the ground
+(silent success), high rungs never arrive (stall) — **the first mechanism all
+campaign that explains PARTIAL completion** (c_rungs_placed == 5). Falsifier 3's
+prediction sharpened: the failure boundary should sit near the arrival radius.
+Opus's verified/not-verified scoping stands (Ladder/Bed paths + alternate
+Arrived entries = 5b's first reads).
+
+**FOURTH EXPRESSION of the Mine-first root cause ⇒ DESIGN RULING (DECISIONS
+#42): #41 implements the minimal per-kind AFFORDANCE DECLARATION** — one
+concept, four consumers (stance derivation, gate membership, claim guard,
+execution proximity) — instead of four scattered kind-checks that would
+reproduce the accretion disease. Mine/Chop declarations must reproduce current
+behaviour bit-for-bit (equivalence-flag pattern); Mine's remote-work privilege
+becomes a DECLARED affordance instead of an ambient default. Challenge window
+open to Opus before 5b builds.
