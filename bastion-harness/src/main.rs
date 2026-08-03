@@ -11002,22 +11002,91 @@ fn selfgen_scenario(args: &Args) -> ExitCode {
     let (gm_final, gb_final, pc_final, open_final, _, _) = server.bastion_selfgen_stats();
     let net_fires_delta = server.bastion_center_net_fires() - fires_before;
 
+    // ── VERDICT / DIAG SPLIT (report-fix row, 5 of 6) ────────────────────
+    // selfgen's failure shape is "plans generated, nothing built", and the
+    // discriminator was already in the report but unreadable: BUILDING NEEDS
+    // MATERIALS, so `built` depends on `hauled`. Encoding that prerequisite
+    // turns a wall of red into "the haul stage failed, and everything
+    // downstream is its wake" — which is the actual finding.
+    //
+    // The generation terms (`generated`, the mine/build job totals) have no
+    // prerequisite: on the observed failure they PASS, which is what makes
+    // the execution stages the story.
+    let verdict: Vec<(&str, bool, Option<&str>)> = vec![
+        ("colonists_expected", names.len() == 3, None),
+        ("zero_paint", zero_paint, None),
+        ("plan_cells_expected", plan_cells == 4, None),
+        ("generated", generated, None),
+        ("mine_jobs_generated", gm_final >= 4, Some("generated")),
+        ("build_jobs_generated", gb_final >= 4, Some("generated")),
+        ("hauled", hauled, Some("build_jobs_generated")),
+        ("built", built, Some("hauled")),
+        ("plan_closed", plan_closed, Some("built")),
+        ("quiesced", quiesced, None),
+        ("drained", drained, None),
+        ("bounded", bounded, None),
+    ];
+    let pass = verdict.iter().all(|(_, ok, _)| *ok);
+    let ok_of = |name: &str| {
+        verdict
+            .iter()
+            .find(|(n, _, _)| *n == name)
+            .map(|(_, ok, _)| *ok)
+            .unwrap_or(true)
+    };
+    let failed_clauses: Vec<&str> = verdict
+        .iter()
+        .filter(|(_, ok, _)| !*ok)
+        .map(|(name, _, _)| *name)
+        .collect();
+    let root_failure = verdict
+        .iter()
+        .find(|(_, ok, req)| !*ok && (*req).map_or(true, ok_of))
+        .map(|(name, _, _)| *name);
+    let cascade_suppressed: Vec<&str> = verdict
+        .iter()
+        .filter(|(_, ok, req)| !*ok && (*req).is_some_and(|r| !ok_of(r)))
+        .map(|(name, _, _)| *name)
+        .collect();
+    let legacy_pass = names.len() == 3
+        && zero_paint
+        && plan_cells == 4
+        && generated
+        && gm_final >= 4
+        && gb_final >= 4
+        && hauled
+        && built
+        && plan_closed
+        && quiesced
+        && drained
+        && bounded;
+    let verdict_matches_legacy = pass == legacy_pass;
+    debug_assert!(
+        verdict_matches_legacy,
+        "selfgen verdict/diag refactor changed the verdict: derived={pass} legacy={legacy_pass}"
+    );
+    let verdict_map: serde_json::Map<String, serde_json::Value> = verdict
+        .iter()
+        .map(|(name, ok, _)| ((*name).to_string(), serde_json::json!(*ok)))
+        .collect();
+
     let result = serde_json::json!({
-        "selfgen_colonists": names.len(),
-        "selfgen_zero_paint": zero_paint,
-        "selfgen_plan_cells": plan_cells,
-        "selfgen_generated": generated,
-        "selfgen_mine_total": gm_final,
-        "selfgen_build_total": gb_final,
-        "selfgen_hauled": hauled,
-        "selfgen_built": built,
-        "selfgen_plan_closed": plan_closed,
-        "selfgen_plans_completed": pc_final,
-        "selfgen_open_plans": open_final,
-        "selfgen_quiesced": quiesced,
-        "selfgen_drained": drained,
-        "selfgen_bounded": bounded,
-        "selfgen_net_fires_delta": net_fires_delta,
+        // GATING terms only. `pass` is derived from exactly this set.
+        "selfgen_verdict": verdict_map,
+        "selfgen_failed_clauses": failed_clauses,
+        "selfgen_root_failure": root_failure,
+        "selfgen_cascade_suppressed": cascade_suppressed,
+        "selfgen_verdict_matches_legacy": verdict_matches_legacy,
+        // REPORTED, NOT GATING. Nothing here can fail the scenario.
+        "selfgen_diag": {
+            "colonists": names.len(),
+            "plan_cells": plan_cells,
+            "mine_total": gm_final,
+            "build_total": gb_final,
+            "plans_completed": pc_final,
+            "open_plans": open_final,
+            "net_fires_delta": net_fires_delta,
+        },
     });
     println!(
         "SELFGEN TELEMETRY: mine={gm_final} build={gb_final} plans_done={pc_final} \
