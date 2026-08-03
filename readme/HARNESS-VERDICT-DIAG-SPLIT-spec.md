@@ -52,18 +52,34 @@ mechanical audit, including the scanner I wrote for this review — which
 produced a false positive until I matched on **value expressions**
 instead of names.
 
-**3. ★ Composite terms emit the TERM, with operands under `diag`.**
-This is the fix for the "red that doesn't matter" class. `b58` has:
+**3. ★ Composite terms: AND-composites are SPLIT, OR-composites EMIT THE
+TERM.** These get **opposite** treatments, and the reason is exact.
+
+**OR — emit the term.** `b58` has:
 ```rust
 && ((b_carve_fired && b_ladder_built) || b_exited)
 ```
-Emit **`verdict.b_free`** = the whole term's value; put
-`b_carve_fired`, `b_ladder_built`, `b_exited` under `diag`. A reader
-then sees `verdict.b_free: true` and cannot mistake
-`diag.b_carve_fired: false` for a failure. Same treatment for any
-conjunct ANDing two conditions (e.g. `auton`'s
-`path_alive = grants > 0 && peak_wait <= 7`) — emit the term, and both
-operands as diag, so a red says *which half*.
+Emit **`verdict.b1_free`** = the whole term's value, with all three
+operands under `diag`. A reader then sees `verdict.b1_free: true` and
+cannot mistake `diag.b_carve_fired: false` for a failure — the
+"red that doesn't matter" class. **Splitting an OR into separate gating
+terms would CHANGE THE VERDICT** (each operand would have to hold
+independently), so it must stay whole.
+
+**AND — split into separate gating terms.** `auton` had:
+```rust
+let frozen     = count == frozen_at && frozen_at > 0;
+let path_alive = grants > 0 && peak_wait <= 7;
+```
+Split to `storm_baseline_captured` + `mine2_count_held`, and
+`path_grants_nonzero` + `path_wait_bounded`. **Splitting an AND leaves
+the conjunction identical, so the verdict provably cannot move** — and
+you gain which-half localisation for free. A collapsed AND can only say
+"something in here failed."
+
+*(Corrects this spec's first version, which said to emit every composite
+whole. That would have kept `path_alive`'s two halves fused for no
+benefit — the OR case needs it, the AND case is strictly worse for it.)*
 
 **4. Derive `pass` FROM the emitted verdict set — one source of truth.**
 `b5`'s `failed_clauses` already does this. `pass = verdict.values().all()`,
