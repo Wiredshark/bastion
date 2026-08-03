@@ -15529,3 +15529,28 @@ reproduce the accretion disease. Mine/Chop declarations must reproduce current
 behaviour bit-for-bit (equivalence-flag pattern); Mine's remote-work privilege
 becomes a DECLARED affordance instead of an ambient default. Challenge window
 open to Opus before 5b builds.
+
+## #41 DESIGN CLOSED: BOTH CHALLENGES SUSTAINED, BOTH RULED (08/03)
+
+Opus's challenge window produced two BLOCKING finds: (1) the table without a
+RECOVERY field converts the remote-placement hole into a LIVELOCK
+(arrived-cannot-act-no-escape) for exactly the kinds that can't use Mine's
+escape hatch; (2) keyed on raw kind, the table CANNOT reproduce Mine bit-for-bit
+— access jobs are Mine-kind and deliberately on-top, so the equivalence flags
+would fail as a fake table bug.
+
+**RULED:** `unreachable_recovery` field added — `Mine → WorkRemotely`
+(declared, today's behaviour), **`placement → MarkUnreachable`** (honest
+terminal; colony-sleep coupling is CORRECT for provably-impossible work, the
+amnesty re-arm already converts it to bounded periodic retry, #55 tells the
+player why; AbandonAndReplan rejected as mechanism-(2) churn reborn as policy).
+**Keying:** `affordance_of(job)` on `(kind, is_access)` with **AccessStep as its
+own declaration row** ("reachable-by-construction") — a class, not an override.
+Non-blocking note adopted: `max_work_distance`'s comment names what it
+approximates so the fix's own field obeys the lesson it implements.
+
+**Acceptance grew a planted-failure test from Challenge 1: an unreachable
+placement target must terminate in MarkUnreachable + report within N cycles —
+red-by-design without the recovery field, proving it load-bearing.** Packet
+complete: five consumers, one concept, 3 red scenarios + livelock test +
+boundary-radius prediction + equivalence flags. 5b builds after the fan.
