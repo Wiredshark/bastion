@@ -9500,23 +9500,93 @@ fn b73_scenario(args: &Args) -> ExitCode {
     // rtsim's OS-entropy wander shifts travel timing run-to-run (the B8
     // caveat), so timing-coupled telemetry (floats, mid-run job counts)
     // prints separately, outside the ×2 determinism diff.
+    // ── VERDICT / DIAG SPLIT (report-fix row, 6 of 6) ────────────────────
+    // b73 tests the survival loop's last verb. Its legs form two chains, and
+    // encoding them separates one broken stage from the wake it drags along:
+    //   EAT:   ate -> eat_conserved / paused / resumed
+    //   BREAK: broke -> held / resumed_after_break / single_break
+    // If the colonist never ate, "did it pause work to eat" and "did it
+    // conserve exactly one" carry no information — they are wake, not
+    // independent defects. Same for the break legs when the break never fired.
+    //
+    // NOTE b73 is currently EXPECTED-RED: it tests needs-as-DRIVES, which the
+    // Drive enum deliberately does not implement (self-jobs are "deliberately
+    // NOT a variant ... the full unification is AUTON-2's job"). Tracked-red
+    // on the M3A pattern: it holds its fingerprint, and only a SHIFT re-flags.
+    let verdict: Vec<(&str, bool, Option<&str>)> = vec![
+        ("mine_jobs_expected", mine_jobs == 10, None),
+        ("ate", ate, None),
+        ("eat_conserved", eat_conserved, Some("ate")),
+        ("paused", paused, Some("ate")),
+        ("resumed", resumed, Some("ate")),
+        ("urgency_ordered", urgency_ordered, None),
+        ("broke", broke, None),
+        ("held", held, Some("broke")),
+        ("resumed_after_break", resumed_after_break, Some("broke")),
+        ("single_break", single_break, Some("broke")),
+        ("no_embeds", no_embeds, None),
+        ("colonists_expected", names.len() == 1, None),
+    ];
+    let pass = verdict.iter().all(|(_, ok, _)| *ok);
+    let ok_of = |name: &str| {
+        verdict
+            .iter()
+            .find(|(n, _, _)| *n == name)
+            .map(|(_, ok, _)| *ok)
+            .unwrap_or(true)
+    };
+    let failed_clauses: Vec<&str> = verdict
+        .iter()
+        .filter(|(_, ok, _)| !*ok)
+        .map(|(name, _, _)| *name)
+        .collect();
+    let root_failure = verdict
+        .iter()
+        .find(|(_, ok, req)| !*ok && (*req).map_or(true, ok_of))
+        .map(|(name, _, _)| *name);
+    let cascade_suppressed: Vec<&str> = verdict
+        .iter()
+        .filter(|(_, ok, req)| !*ok && (*req).is_some_and(|r| !ok_of(r)))
+        .map(|(name, _, _)| *name)
+        .collect();
+    let legacy_pass = mine_jobs == 10
+        && ate
+        && eat_conserved
+        && paused
+        && resumed
+        && urgency_ordered
+        && broke
+        && held
+        && resumed_after_break
+        && single_break
+        && no_embeds
+        && names.len() == 1;
+    let verdict_matches_legacy = pass == legacy_pass;
+    debug_assert!(
+        verdict_matches_legacy,
+        "b73 verdict/diag refactor changed the verdict: derived={pass} legacy={legacy_pass}"
+    );
+    let verdict_map: serde_json::Map<String, serde_json::Value> = verdict
+        .iter()
+        .map(|(name, ok, _)| ((*name).to_string(), serde_json::json!(*ok)))
+        .collect();
+
     let result = serde_json::json!({
-        "b73_mine_jobs": mine_jobs,
-        "b73_ate": ate,
-        "b73_ground_before": ground_before,
-        "b73_ground_after": ground_after,
-        "b73_eat_conserved": eat_conserved,
-        "b73_paused": paused,
-        "b73_resumed": resumed,
-        "b73_hunger_first": hunger_first,
-        "b73_urgency_ordered": urgency_ordered,
-        "b73_mine2_jobs": mine2_jobs,
-        "b73_broke": broke,
-        "b73_held": held,
-        "b73_resumed_after_break": resumed_after_break,
-        "b73_single_break": single_break,
-        "b73_no_embeds": no_embeds,
-        "b73_colonists": names.len(),
+        // GATING terms only. `pass` is derived from exactly this set.
+        "b73_verdict": verdict_map,
+        "b73_failed_clauses": failed_clauses,
+        "b73_root_failure": root_failure,
+        "b73_cascade_suppressed": cascade_suppressed,
+        "b73_verdict_matches_legacy": verdict_matches_legacy,
+        // REPORTED, NOT GATING. Nothing here can fail the scenario.
+        "b73_diag": {
+            "mine_jobs": mine_jobs,
+            "ground_before": ground_before,
+            "ground_after": ground_after,
+            "hunger_first": hunger_first,
+            "mine2_jobs": mine2_jobs,
+            "colonists": names.len(),
+        },
     });
     println!(
         "B73 TELEMETRY: rest_at_jump={:.3} jobs_at_eat={} jobs_frozen_at={}",
