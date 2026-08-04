@@ -251,10 +251,12 @@ the split is general, not a bed fixture artifact.
 **Determinism verified, not assumed.** Raw-log signature across two independent
 fans at the same commit (`ed532c600e`): **wave19 → 26, wave21 → 26. Identical.**
 
-**Zero `probe_incomplete` in the entire corpus** — every probe that ran, ran to
-completion. No "couldn't measure" hiding in this data
-([[log-time-namespace-and-vm-attestation]]: that value must never be read as a
-negative).
+~~**Zero `probe_incomplete` in the entire corpus**~~ — **RETRACTED, see the chop
+section below.** This scan covered only `b5_mine_reachability_probe`; a type
+guard silently dropped every `b5_chop_reachability_probe` (the two fields have
+different container types). **Seed 92's chop probe IS incomplete on both
+vantages**, at the ~100k column cap. The MINE probes are all complete; that much
+holds.
 
 **MECHANISM NOT CLAIMED.** Point-model vs body-aware live router, router path
 budget, and chunk-load state at timeout are all live candidates. The value here
