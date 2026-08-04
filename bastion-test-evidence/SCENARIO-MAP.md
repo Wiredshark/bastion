@@ -108,10 +108,26 @@ archetype · chronicle · chronicle-capture · lod0 · lod1 · inspect
   `c_top_cleared` + `c_no_carve` against the revert control; merged
   `d3235e5329`. *Scenario-level verification; not in the b5 fan.*
 
-### Needs-reverify at current tip (1)
-- **auton** — sole failing conjunct was `mine2_count_held`; #63 (the flee/work
-  gate, merged `d3235e5329`) demonstrably flips that conjunct true. Full
-  conjunction not yet re-run at the merged tip. One run decides GREEN.
+### Needs-reverify at current tip (0) — ★ RESOLVED 2026-08-04
+
+- **auton — NOW GREEN**, verified at `460626a6e2`. **All 14 conjuncts true**,
+  including the sole previously-failing `mine2_count_held`, and
+  `verdict_matches_legacy: true` (the report-fix refactor still reproduces the
+  legacy verdict exactly). `failed_clauses: []`, `root_failure: null`.
+
+  **★ The prerequisite engaged**: `storm_baseline_captured: true`, so
+  `mine2_count_held` is a real reading rather than the unmeasured case its own
+  `Some("storm_baseline_captured")` guard exists to catch. **A green on a term
+  whose prerequisite was dark would have proved nothing.**
+
+  **Provenance** — built and run locally, not on the fan:
+  - binary `--print-git-hash` → `460626a6e2`, checkout `460626a6e2`,
+    **matched, and no `+dirty`** (clean worktree, unlike the VMs' LFS noise)
+  - built 2026-08-04 05:30 from a cold `no_overflow` profile in
+    `.wip64-guard-revert-wt` detached at the tip; `builder5` untouched
+  - `RUN_EXIT=0` with a **72,102-byte** log — not an exit-0-with-empty-log
+
+  **This clears the map's last NEEDS-REVERIFY row; the re-count is complete.**
 
 ### Expected-red (2) — tracked fingerprints, red until AUTON-2
 - **preempt** — root `preempted_rested` (rest never engages; needs-as-drives
