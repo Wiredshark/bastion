@@ -181,13 +181,41 @@ archetype · chronicle · chronicle-capture · lod0 · lod1 · inspect
 - **selfgen** — root `hauled` (haul stage; upstream of placement).
 - **farm** — till/sow late + `farm_tilled:false` unexplained under BOTH stances
   (counter-control); Farm's own control blocked on that mystery.
-- **zone** — `zone_freed:false`; genuine conjunct; unclassified.
+- **zone** — `zone_freed:false`. **RE-RUN at `460626a6e2` 2026-08-04: still
+  RED**, exit 1. Fresh telemetry: `zone_colonists:4, zone_in_control:5,
+  zone_in_zone:870, zone_jobs:1` — the only false term is `zone_freed`.
+  Still unclassified, but now with a tip.
 - **path** — `path_no_starvation` red BUT the metric is a lifetime-cumulative
   `peak_wait` that cannot localise in time — instrument fix (delta-capture)
   filed; seam-3 UNPROVEN pending it.
-- **run** — `run_ran_faster:false` (Running not faster than walking);
-  movement-layer; unclassified.
-- **auton3** — `scores_match:false` (modulation recording); small, scoped.
+- **run** — ★★ **THE MAP'S OWN DESCRIPTION WAS WRONG.** It read *"Running not
+  faster than walking."* **Running IS faster.** Re-run at `460626a6e2`:
+  `RUN TELEMETRY: walk=0.263 run=0.300` → **run is 14.07% faster**, and the
+  clause is
+  ```rust
+  let ran_faster = run_rate > walk_rate * 1.15 && walk_rate > 0.01;
+  ```
+  **It requires >15% and misses by under one percentage point.** Every other
+  term passes (`drained`, `regened`, `reverted`, `no_embeds`).
+  **Reclassified: a NEAR-MISS against a threshold, not a movement-layer
+  failure.** Three live readings, none yet excluded: the run multiplier is
+  genuinely slightly short; the 15% bar is uncalibrated; or the 45-tick
+  displacement sample is noisy (terrain/path effects). **Cheap next step: re-run
+  N times and see whether 14.07% is stable** — if it is, this is a threshold
+  conversation, not a bug.
+- **auton3** — `scores_match:false`. ★★ **SHARPENED to a ONE-COMPONENT
+  mismatch.** Re-run at `460626a6e2`:
+  ```
+  a=Some((0.0, 0.0, 0.080000006))   pred_a=(0.6, 0.0, 0.080000006)
+  b=Some((0.0, 0.0, 0.120000005))   pred_b=(0.4, 0.0, 0.120000005)
+  ```
+  `scores_match` is an exact tuple compare (`got_a == Some(pred_a) && got_b ==
+  Some(pred_b)`). **Components 2 and 3 match EXACTLY on both colonists —
+  including the discriminating third value (0.08 vs 0.12), so the modulation
+  demonstrably works.** Only the **first component reads 0.0 where the model
+  predicts 0.6 / 0.4.** `differ`, `guard_holds`, `no_invented_flee` all pass.
+  **This is one term being dropped or never recorded, not a broken score
+  model** — a much smaller row than "modulation recording".
 - **b55** — 15 conjuncts; `remainder_progressed:false` (post-partial-erase
   stall); unclassified.
 - **b55-deep** — 21 conditions behind 2 emitted bits (report-fix candidate 7);
