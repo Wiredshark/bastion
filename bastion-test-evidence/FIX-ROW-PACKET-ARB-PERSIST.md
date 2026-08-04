@@ -345,7 +345,59 @@ is still refused.
 |---|---|---|
 | **G1 — column scan** (seed 90 cell) | whether the holdout site is single-surface or multi-layer | The probe caveat's **soundness direction is a property of the error model**: body-width error ⇒ negatives sound; multi-layer collapse ⇒ **both directions unsound**. Until the column is scanned, "laterally unreachable" is an inference from an instrument that may be wrong in the direction that matters. **G1 gates the row's premise, not its implementation.** |
 | **G2 — FR15 paired A/B** | the stuck-economy's tuning under the new escalation | Mandatory **for ROW B only** — see R3. A new escalation path **invalidates the stuck-economy's tuning** by construction. Paired A/B, same seeds, both arms. **Row A does not trip this**: the census in R3 proves `blocked_regions` has zero behavior consumers. |
-| **G3 — corpus exact-match** | zero drift on all 48 seeds **with `source` counts read** | ★ **Not exact-match alone.** Exact-match on the current schema would return GREEN for a fix that never fires — the corpus has no field that reports `blocked_regions` contents. **The row must add the reporting field before it adds the behavior**, per the acceptance framework's own ordering. A GREEN with no named field that moves is a measurement of nothing. |
+| **G3 — corpus exact-match** | zero drift on all 48 seeds **with `source` counts read** | ★ **Not exact-match alone**, and **not for the reason I first gave.** See the G3 verdict below — the corpus *does* report `blocked_regions`, at the **wrong coordinates**. |
+
+### ★ G3 VERDICT — RUN against `wave19_FULL.json` (48 seeds, on disk, zero new runs)
+
+**I wrote:** *"the corpus has no field that reports `blocked_regions` contents."*
+**Checked. False — there are six, and one of them is live:**
+
+| field | distribution across 48 |
+|---|---|
+| `b5_55_blocked_by` | **`None` × 48** |
+| `b5_55_names_blocker` | `False` × 48 |
+| `b5_55_notified_once` | `False` × 48 |
+| `b5_55_clears_on_cancel` | `True` × 48 |
+| `b5_ch_base_blocked_by` | `None` × 45, **3 real cells** |
+| `b5_ch_base_blocked_sources` | `[]` × 45, **`['plan_access']` × 3** |
+
+**Two things follow, and they point opposite ways.**
+
+**(1) The attribution mechanism is PROVEN END-TO-END.** `source` reaches the
+corpus and discriminates: three seeds carry `['plan_access']`. **A second
+producer named `route_exhausted` will therefore be visible and separable in the
+fan on day one** — no new plumbing, no new accessor. This is the strongest
+single piece of evidence that Row A is small.
+
+**(2) The conclusion survives, with a sharper reason.** The reporting fields are
+**queried at fixed probe cells** — `bastion_blocked_by(buried_pos)` (`main.rs:4201`)
+and `bastion_blocked_by(trapped_cell)` (`main.rs:5090`), plus the chop base.
+**Row A's entries land on mine/farm designation regions, which no corpus field
+queries.**
+
+> **The store is not unreported. It is reported AT THE WRONG COORDINATES.**
+> `b5_55_blocked_by` would stay `None × 48` through a Row A that works perfectly —
+> the null it holds is a null about a *different cell*.
+
+**This is the constant-because-GATED class again, one level out:** four fields
+constant across 48 seeds, and the constancy is a property of *where the probe
+looks*, not of what the colony did.
+
+**What Row A must add — named concretely, one line:**
+
+- **`bastion_blocked_regions_count()` in the b5 corpus output.** ★ **The accessor
+  already exists** (`server/src/lib.rs:3367`) and the harness already calls it in
+  the b55 scenario (`main.rs:4190`, `4203`). It is simply **not emitted in the b5
+  fan's output.** Colony-wide, coordinate-free, and moves the moment any producer
+  fires.
+- **plus `blocked_sources` at the specimen cell** (seed 90's holdout, the farm
+  corner) — so the fan distinguishes *which* producer fired, not merely that one did.
+
+**Pre-registered, before any code:** `b5_55_blocked_by` stays `None × 48`
+(different cell — **if it moves, something is wrong**); the new count field goes
+non-zero on the affected seeds and stays `0` on the clean ones;
+`b5_ch_base_blocked_sources` keeps its `['plan_access'] × 3` exactly. **Any drift
+in that last one indicts the change, not the colony.**
 | **G4 — prune-side check** (§5) | `retain` correctness on a populated store | new; produced by the sibling-caller check. **★ RUN — read-only, source-decidable. Verdict below.** |
 
 ### ★ G4 VERDICT — the prune is CORRECT for entry point 1, *conditionally*
