@@ -1981,3 +1981,55 @@ has jobs left by definition. `travel_timeouts` (10.67 vs 2.78) and
 `max_same_target_timeouts` (2.50 vs 0.97) are real friction differences and
 expected. **None of these is a lead; recorded so the next screener doesn't
 re-derive them.**
+
+## ★★★★ EXERCISED DENOMINATORS — the architect's standing form, computed (n=48)
+
+**Ruling applied:** *every per-kind coverage claim carries its
+exercised-denominator alongside its pass count.* **"Passed" and "exercised" are
+not the same number**, and five of twelve measured families prove it.
+
+| family | exercised-criterion | **denominator** |
+|---|---|---|
+| mine | `mine_jobs > 0` | 48 / 48 |
+| build | `build_ok_jobs > 0` | 48 / 48 |
+| slope | `slope_jobs_total > 0` | 48 / 48 |
+| flat | `flat_total > 0` | 48 / 48 |
+| cascade | probe present | 48 / 48 |
+| **tool** | factors readable (`> 0`) | **47 / 48** |
+| **chop** | `ch_engaged == true` | **46 / 48** |
+| **access** | self-rescue emissions `> 0` | **34 / 48** |
+| **cavein** | `cavein_drop_cells > 0` | **8 / 48** |
+| **cascade abort** | abort path fired | **1 / 48** |
+| **Gather** | designations placed | **0 / 48** |
+
+### What each low denominator changes
+
+**`cavein` — 8 / 48.** Within the b5 corpus the cave-in path is exercised on
+**eight** seeds. *(Distinct from the standalone `cavein` scenario in the green
+list — different instrument; this is the corpus's sub-check.)* Any b5-derived
+cave-in claim rests on 8, not 48.
+
+**`access` — 34 / 48.** **Fourteen seeds never emit an access plan at all.** So
+every access-related corpus conclusion — including the seam row's — rests on 34
+seeds. **That is the denominator the seam row's evidence should have carried
+from the start**, and it makes the "zero starvation on 3 seeds" result a sample
+from 34, not 48.
+
+**`cascade abort` — 1 / 48.** The same number that permanently parked task #34,
+now expressed as what it is: **a denominator of one.** *A matched pair is
+impossible because the exercised set has one member.*
+
+**`tool` — 47 / 48.** ★ **The denominator computation independently
+re-discovers seed 66's sentinel.** The 48th seed is not a tool failure; its
+factor was **unreadable** (`.unwrap_or(0.0)`, below the metric's own 1.0 floor).
+**A denominator computed from "is this readable" surfaces instrument defects for
+free** — the method validating itself.
+
+**`chop` — 46 / 48** and **`Gather` — 0 / 48**: the two already-known cases, now
+in the same table at their true magnitudes. **Both were being quoted as if the
+denominator were 48.**
+
+> **★ Every one of these was previously reported as a fraction of 48.** The
+> ruling's value is not per-family bookkeeping — it is that **five separate
+> claims were quietly inflated by the same unstated assumption**, and one line
+> per family retires all of them.
