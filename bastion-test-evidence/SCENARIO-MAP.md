@@ -117,6 +117,10 @@ zero is ambiguous between "never starved" and "never open."
 | "seed 71 should improve if the bar is removed" | **REFUTED** — it emitted 3 plans, never starved |
 | "perfect clause pairing = one mechanism twice" | **true for 3 of 4 pairs**; mine hides a 19–96% spectrum |
 | "`unreachable` cells discriminate 71 from 66" | **WITHDRAWN** — `unreachable` = "all six faces currently solid", downstream of dig progress |
+| "jobs persist on already-mined cells" | **WITHDRAWN** — `open_cells` means *has a job*, not *is open*; my reading was inverted |
+| "the point-model STRENGTHENS seed 80" | **REVERSED** — true for body-width, false for column-collapse; soundness direction belongs to the ERROR MODEL |
+| "`auton3` is a model/computation gap" | **REVERSED** — **FIXTURE**: the harness hardcodes the work-urgency input; the engine gates it correctly |
+| "`run` is a threshold conversation" | **REVERSED** — the bar (1.15) sits *below* design intent (1.25); a real gap |
 
 **★ Three of these six are the same error: I substituted a NAME for its
 CONTENT** (`plan_access`, the top-level-only field scan, `unreachable`) — twice
