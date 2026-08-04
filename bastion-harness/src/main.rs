@@ -19206,7 +19206,10 @@ fn run_scenario(args: &Args) -> ExitCode {
     // bastion (batch prep, 2026-08-04): `--run-sample-ticks` overrides
     // this window for BOTH the tick count and the divisor (see the flag's
     // own doc -- a mismatched divisor silently deflates the rate).
-    let sample_ticks = args.run_sample_ticks.unwrap_or(45);
+    // Opus's catch: a 0 window would divide by zero -> inf, and
+    // `ran_faster` would silently read as a clean `false` rather than an
+    // error -- a wrong-but-plausible number, not a crash. Floor at 1.
+    let sample_ticks = args.run_sample_ticks.unwrap_or(45).max(1);
     tick(&mut server, sample_ticks);
     let p2 = pos_of(&server).unwrap_or(p1);
     let walk_rate = p1.xy().distance(p2.xy()) / sample_ticks as f32;
