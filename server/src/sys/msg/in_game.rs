@@ -695,6 +695,7 @@ fn resolve_cell_inspect(
             stuck_strikes: job.stuck_strikes,
             blocked_by: board.blocked_by(job.pos),
             benched_since_tick: board.benched_since.get(id).copied(),
+            amnesty_grants_owed: board.amnesty_grants_owed.get(id).copied(),
         }));
     }
 

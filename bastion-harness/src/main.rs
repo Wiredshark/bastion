@@ -382,6 +382,15 @@ struct Args {
     #[arg(long)]
     b58_paired: bool,
 
+    /// bastion (ROW B, FR15 paired-A/B, 2026-08-04): the same pattern as
+    /// --b58-paired, applied to the amnesty-bench escalation -- run the
+    /// FULL b5 scenario twice as subprocesses on the same seed (baseline,
+    /// then BASTION_ROWB_BENCH=1) and report the field-wise telemetry
+    /// DELTA. Gate = both legs' own composites PASS; the delta is
+    /// REPORTED, never gated.
+    #[arg(long)]
+    b5_rowb_paired: bool,
+
     /// bastion (B7-0, row 44): needs decay exactly (rate × time), mood
     /// recomputes per the design-§3 formula each cadence (topped-up ==
     /// base, hand-computed starved case exact), and both survive the
@@ -1659,6 +1668,8 @@ fn main() -> ExitCode {
         season1_scenario(&args)
     } else if args.b58_paired {
         b58_paired(&args)
+    } else if args.b5_rowb_paired {
+        b5_rowb_paired(&args)
     } else if args.needs_scenario {
         needs_scenario(&args)
     } else if args.bed_scenario {
@@ -3383,6 +3394,10 @@ fn b5_scenario(args: &Args) -> ExitCode {
                         // work: a cell with blocked_sources containing
                         // route_exhausted must show stuck_strikes >= 3.
                         "stuck_strikes": j.stuck_strikes,
+                        // ROW B (2026-08-04): amnesty grants this cell
+                        // still owes -- null unless BASTION_ROWB_BENCH=1
+                        // and this cell has crossed the threshold.
+                        "amnesty_grants_owed": j.amnesty_grants_owed,
                         "starvation_cycles": starv_cycles,
                         "starvation_crowded_cycles": starv_crowded,
                         "cycles_since_last_claim": cycles_since_claim,
@@ -11206,6 +11221,7 @@ fn farm_scenario(args: &Args) -> ExitCode {
                     "blocked_by": server.bastion_blocked_by(pos).map(|p| [p.x, p.y, p.z]),
                     "blocked_sources": server.bastion_blocked_sources(pos),
                     "stuck_strikes": j.stuck_strikes,
+                    "amnesty_grants_owed": j.amnesty_grants_owed,
                 }));
             }
         }
@@ -21024,6 +21040,98 @@ fn b58_paired(args: &Args) -> ExitCode {
     let pass = base_pass && variant_pass;
     println!("{}", result);
     println!("B58PAIRED: {}", if pass { "PASS" } else { "FAIL" });
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// bastion (ROW B, FR15 paired-A/B, 2026-08-04): mandatory per the
+/// packet -- a new escalation path invalidates the stuck-economy's
+/// tuning by construction (same FR15 law as `--b58-paired`). Runs the
+/// FULL b5 scenario twice as subprocesses on the same seed (leg A:
+/// baseline; leg B: `BASTION_ROWB_BENCH=1`), telemetry parsed from each
+/// leg's stdout JSON and the field-wise DELTA reported. GATE: both legs'
+/// own composites PASS; the delta is REPORTED, never gated -- identical
+/// structure to `b58_paired`, deliberately, so the two paired-A/B tools
+/// read the same way.
+fn b5_rowb_paired(args: &Args) -> ExitCode {
+    let exe = std::env::current_exe().expect("own exe path");
+    let stderr_dir = child_stderr_dir(args, "B5ROWBPAIRED");
+    let run_leg = |bench: bool| -> Option<(serde_json::Value, bool)> {
+        let (leg_stderr, _) = child_stderr_capture(
+            stderr_dir.as_deref(),
+            &format!(
+                "b5rowbpaired-seed{}-leg{}.stderr.log",
+                args.seed,
+                if bench { "B" } else { "A" }
+            ),
+        );
+        let mut cmd = std::process::Command::new(&exe);
+        cmd.arg("--b5-scenario")
+            .arg("--seed")
+            .arg(args.seed.to_string())
+            .arg("--tps")
+            .arg(args.tps.to_string())
+            .stdout(std::process::Stdio::piped())
+            .stderr(leg_stderr);
+        if bench {
+            cmd.env("BASTION_ROWB_BENCH", "1");
+        } else {
+            cmd.env_remove("BASTION_ROWB_BENCH");
+        }
+        let out = cmd.output().ok()?;
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        let json = stdout
+            .lines()
+            .find(|l| l.trim_start().starts_with('{') && l.contains("b5_"))
+            .and_then(|l| serde_json::from_str::<serde_json::Value>(l.trim()).ok())?;
+        let pass = stdout.contains("B5 SCENARIO: PASS");
+        Some((json, pass))
+    };
+
+    let Some((base, base_pass)) = run_leg(false) else {
+        println!("{{\"paired_error\":\"baseline leg failed to run/parse\"}}");
+        println!("B5ROWBPAIRED: FAIL");
+        return ExitCode::FAILURE;
+    };
+    let Some((variant, variant_pass)) = run_leg(true) else {
+        println!("{{\"paired_error\":\"variant leg failed to run/parse\"}}");
+        println!("B5ROWBPAIRED: FAIL");
+        return ExitCode::FAILURE;
+    };
+
+    // Field-wise numeric delta (variant − baseline); booleans reported as
+    // agree/disagree. Same shape as b58_paired's delta -- deliberately
+    // NOT a hold-check (that tool asserts an existing field is
+    // UNCHANGED; this one EXPECTS most fields to move, since Row B is a
+    // behavior change under test, not a report-only addition).
+    let mut delta = serde_json::Map::new();
+    if let (Some(b), Some(v)) = (base.as_object(), variant.as_object()) {
+        for (k, bv) in b {
+            match (bv.as_f64(), v.get(k).and_then(|x| x.as_f64())) {
+                (Some(a), Some(c)) => {
+                    delta.insert(format!("d_{k}"), serde_json::json!(c - a));
+                },
+                _ => {
+                    if let (Some(a), Some(c)) = (bv.as_bool(), v.get(k).and_then(|x| x.as_bool())) {
+                        delta.insert(format!("agree_{k}"), serde_json::json!(a == c));
+                    }
+                },
+            }
+        }
+    }
+    let result = serde_json::json!({
+        "paired_base_pass": base_pass,
+        "paired_variant_pass": variant_pass,
+        "paired_base": base,
+        "paired_variant": variant,
+        "paired_delta": serde_json::Value::Object(delta),
+    });
+    let pass = base_pass && variant_pass;
+    println!("{}", result);
+    println!("B5ROWBPAIRED: {}", if pass { "PASS" } else { "FAIL" });
     if pass {
         ExitCode::SUCCESS
     } else {

@@ -610,6 +610,14 @@ pub struct BastionJobInspect {
     /// if this job isn't currently benched.
     #[serde(default)]
     pub benched_since_tick: Option<u64>,
+    /// bastion (ROW B, 2026-08-04): amnesty grants this job still owes
+    /// before returning to normal claim eligibility -- see
+    /// `JobBoard::amnesty_grants_owed`'s own doc. `None` if this job
+    /// isn't currently sitting out any grants (the overwhelming
+    /// majority, including every job while `BASTION_ROWB_BENCH` is
+    /// unset).
+    #[serde(default)]
+    pub amnesty_grants_owed: Option<u32>,
 }
 
 /// bastion (UI-5): a stockpile's contents — the 51.64 legibility fix (a

@@ -1421,6 +1421,19 @@ pub fn tightdig_enabled() -> bool {
     *TIGHTDIG.get_or_init(|| std::env::var("BASTION_TIGHTDIG").is_ok_and(|v| v == "1"))
 }
 
+/// bastion (ROW B, 2026-08-04): the VARIANT toggle for the amnesty-bench
+/// escalation, same shape and same reason as `tightdig_enabled` above --
+/// a new escalation path invalidates the stuck-economy's tuning by
+/// construction (FR15), so it needs a paired-A/B leg, not a silent
+/// default-on. Off = today's behavior, bit-for-bit: `amnesty_grants_owed`
+/// is never populated, so the consumer side (in the amnesty-grant block)
+/// never has an entry to find and every job resets exactly as before
+/// this row existed. On = Row B live. Read once.
+pub fn rowb_bench_enabled() -> bool {
+    static ROWB_BENCH: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ROWB_BENCH.get_or_init(|| std::env::var("BASTION_ROWB_BENCH").is_ok_and(|v| v == "1"))
+}
+
 /// bastion (FR15-TIGHTDIG): the progress WINDOW length (seconds) — the
 /// displacement verdict is judged once per window; STUCK_TIMEOUT (10s)
 /// therefore allows ~5 consecutive no-progress verdicts before the
@@ -1580,6 +1593,21 @@ pub const HAUL_JOBS_PER_COLONIST: usize = 2;
 /// converge, so 3 is where BOTH downstream reactions to persistence
 /// become appropriate, not an arbitrary shared number.
 pub const PERSIST_ESCALATE_STRIKES: u8 = 3;
+/// bastion (ROW B, 2026-08-04): amnesty grants a `PERSIST_ESCALATE_
+/// STRIKES`-crossed job sits out before returning to normal claim
+/// eligibility -- see `JobBoard::amnesty_grants_owed`'s own doc for the
+/// full mechanism. Own constant, not a reuse of `PERSIST_ESCALATE_
+/// STRIKES` under a borrowed name -- a strike count (attempts before
+/// escalating) and a grant count (participation cycles skipped once
+/// escalated) are different units even where the starting value is the
+/// same number; a bare shared name would repeat the exact mistake this
+/// constant's own rename fixed. 3 = one full LEG-C amnesty cadence at
+/// minimum (`AMNESTY_STRIKE_CAP`, near the top of this file) -- long
+/// enough that sitting out
+/// is a real cost, short enough the job is never permanently forgotten;
+/// unvalidated against the corpus, expected to be tuned by the FR15
+/// paired A/B rather than reasoned to in advance.
+pub const BENCH_AMNESTY_GRANTS_OWED: u32 = 3;
 /// bastion (AUTON-1, row 49): the self-designation generator set — the
 /// colony-state→jobs emitters that feed the board without player paint.
 /// Server-side only (no wire surface). Haul is the grandfathered B6
@@ -4081,6 +4109,41 @@ pub struct JobBoard {
     /// via `BastionJobInspect::benched_since_tick`), never read for
     /// behavior — same discipline as `BlockedRegionInfo::source`.
     pub benched_since: HashMap<JobId, u64>,
+    /// bastion (ROW B, FIX-ROW-PACKET-ARB-PERSIST §2/(b), 2026-08-04,
+    /// Opus-ruled after two withdrawn proposals -- see the ruling's own
+    /// history before touching this): what ONE ENTRY MEANS, checked
+    /// before wiring per the same law that killed both prior proposals
+    /// (a haul-drop-style entry point whose unit didn't fit a loose
+    /// item, then a `benched_since` reuse whose unit didn't fit a
+    /// claimed-and-timed-out job): "this job crossed
+    /// `PERSIST_ESCALATE_STRIKES` and will NOT participate in the next
+    /// N amnesty grants" -- N is the value, decremented once per grant
+    /// this job sits out, entry removed at 0 (a graduated job carries no
+    /// history, same discipline as `benched_since`).
+    ///
+    /// NOT a parallel re-offer timer and NOT a second `blocked_regions`
+    /// producer. The existing LEG-C amnesty system (`amnesty_set_quiet`
+    /// / `AMNESTY_STRIKE_CAP` / `AMNESTY_DORMANT_CYCLES`, below) already
+    /// IS the "neighbouring work legitimately un-blocks terrain"
+    /// mechanism the Haul-drop arm's comment names but never identifies
+    /// -- it re-offers on the real `world_changed` signal. This field
+    /// only answers "is THIS job eligible for the CURRENT grant" -- it
+    /// changes participation, not cadence, and there is exactly one
+    /// re-offer path per job, never two racing.
+    ///
+    /// Populated only at the churn else-arm, gated on the SAME
+    /// `stuck_strikes >= PERSIST_ESCALATE_STRIKES` condition as Row A's
+    /// `route_exhausted` recording (both fire together; the job has
+    /// already proven itself via repeated real amnesty-granted attempts
+    /// by the time this triggers, not merely repeated timeouts -- a
+    /// benched job isn't offered, so stuck_strikes can only grow between
+    /// amnesty grants, never within a single benched window). Cleared on
+    /// job removal (`remove_job`) and on graduating to 0 during a grant.
+    /// Report-only in the sense that stopping-paying-for-it IS the
+    /// behavior, same contract as the haul-drop arm it sits beside --
+    /// no world write, the job/designation survive, `blocked_regions`'s
+    /// report survives unaffected.
+    pub amnesty_grants_owed: HashMap<JobId, u32>,
     /// bastion (observability row, DECISIONS #49, 2026-08-04): per-caller
     /// `plan_access` CALL counts, keyed by the three call sites' own
     /// labels (`"self_rescue"`, `"emergency"`, `"proactive_descent"`).
@@ -5205,6 +5268,11 @@ impl JobBoard {
                     || self.jobs.values().any(|other| b.region.contains_point(other.pos))
             });
         }
+        // ROW B (2026-08-04): a removed job carries no amnesty debt --
+        // keyed directly by JobId (unlike `blocked_regions`'s Region key,
+        // no shared-container over-pruning risk to guard against here;
+        // this id and only this id ever held this entry).
+        self.amnesty_grants_owed.remove(&id);
         job
     }
 
@@ -11455,8 +11523,36 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // forever). Designated kinds keep the
                                     // unreachable economy: their targets are
                                     // TERRAIN, which neighboring work
-                                    // legitimately un-blocks (the 60-tick
-                                    // amnesty exists for exactly them).
+                                    // legitimately un-blocks. The claim
+                                    // held while untested; it never named
+                                    // its own mechanism. It IS the LEG-C
+                                    // amnesty system below (`amnesty_set_
+                                    // quiet`/`AMNESTY_STRIKE_CAP`/
+                                    // `AMNESTY_DORMANT_CYCLES`), which
+                                    // re-offers on a REAL `world_changed`
+                                    // terrain-fingerprint signal or a
+                                    // dormant-cycle catch-all -- not a bare
+                                    // assertion. G1 (2026-08-04, both the
+                                    // corpus's cited "genuinely
+                                    // unreachable" specimens came back
+                                    // multi-layer, cause undeterminable
+                                    // even with full dumps and no time
+                                    // limit) doesn't refute this claim --
+                                    // it refutes diagnosing any ONE cell,
+                                    // and seeds 66/61 are live proof
+                                    // neighboring work often DOES resolve
+                                    // it. ROW B's exit ramp acts on
+                                    // PERSISTENCE, not a diagnosis: the
+                                    // amnesty rationale still governs the
+                                    // first `PERSIST_ESCALATE_STRIKES`
+                                    // attempts unconditionally; only a job
+                                    // that keeps failing past that owes
+                                    // grants (`JobBoard::amnesty_grants_
+                                    // owed`, near the amnesty block below)
+                                    // -- sits out future grants rather
+                                    // than being re-offered every single
+                                    // one for a specimen already proven to
+                                    // keep failing.
                                     info!(
                                         job = active.job,
                                         pos = ?job.pos,
@@ -11579,6 +11675,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             notified: false,
                                             source: "route_exhausted",
                                         });
+                                    }
+                                }
+                                // ROW B (packet §2/(b), 2026-08-04, Opus-
+                                // ruled): the SAME gate as route_exhausted
+                                // above, deliberately -- both fire off one
+                                // condition, not two thresholds to keep in
+                                // sync. `.entry().or_insert()`: a job
+                                // already owing grants (still above
+                                // threshold on a later hit, which per the
+                                // field's own doc can only happen after a
+                                // graduation and a fresh climb back past
+                                // the line) does NOT get its debt reset --
+                                // only a job with no current debt starts
+                                // owing. See `JobBoard::amnesty_grants_
+                                // owed`'s own doc for the full mechanism
+                                // and why this is not a second
+                                // `blocked_regions` producer.
+                                if rowb_bench_enabled()
+                                    && job.stuck_strikes >= PERSIST_ESCALATE_STRIKES
+                                {
+                                    let newly = !board.amnesty_grants_owed.contains_key(&active.job);
+                                    board
+                                        .amnesty_grants_owed
+                                        .entry(active.job)
+                                        .or_insert(BENCH_AMNESTY_GRANTS_OWED);
+                                    if newly && std::env::var_os("BASTION_ROWB_DIAG").is_some() {
+                                        info!(job = active.job, pos = ?job.pos, strikes = job.stuck_strikes, "ROWB-DIAG: bench inserted");
                                     }
                                 }
                                 to_release.push((entity, ReleaseReason::TimedOut)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), "to_release fired (site scan)"); }
@@ -15505,9 +15628,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 false // the whole set dormant — flags hold.
             };
             if grant_amnesty {
-                for job in board.jobs.values_mut() {
-                    job.unreachable = false;
+                // ROW B (2026-08-04): a job with an open debt in
+                // `amnesty_grants_owed` sits THIS grant out -- decrement
+                // instead of resetting `unreachable`, so it stays
+                // excluded from the offer loop for one more cycle. A job
+                // with no debt (the overwhelming majority) is unaffected
+                // -- this changes PARTICIPATION only, not the grant's own
+                // cadence or its `world_changed` signal.
+                let diag = std::env::var_os("BASTION_ROWB_DIAG").is_some();
+                for (id, job) in board.jobs.iter_mut() {
+                    if let Some(owed) = board.amnesty_grants_owed.get_mut(id) {
+                        *owed = owed.saturating_sub(1);
+                        if diag {
+                            info!(job = *id, pos = ?job.pos, owed = *owed, tick = tick.0, "ROWB-DIAG: grant decremented");
+                        }
+                    } else {
+                        job.unreachable = false;
+                    }
                 }
+                if diag {
+                    for (id, owed) in board.amnesty_grants_owed.iter() {
+                        if *owed == 0 {
+                            info!(job = *id, tick = tick.0, "ROWB-DIAG: graduating (will clear)");
+                        }
+                    }
+                }
+                board.amnesty_grants_owed.retain(|_, owed| *owed > 0);
             }
         }
 
