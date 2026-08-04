@@ -43,6 +43,13 @@ def leaves(obj, prefix="", descend=()):
         yield prefix, obj
 
 
+def as_pattern(pat):
+    """`*` is the only wildcard. NOT fnmatch: `[` and `]` are fnmatch
+    metacharacters, so "f[*].k" would silently match NOTHING - a pattern that
+    fails closed is the zero-match trap."""
+    return re.compile(".*".join(re.escape(q) for q in pat.split("*")) + r"\Z")
+
+
 def brief(v, n=110):
     """Values go in a REPORT a human reads. An untruncated 8KB list dump is
     technically complete and practically unreadable - and an unreadable report
@@ -62,12 +69,20 @@ def index(doc, descend=()):
 
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    expect_new, ignore, descend = set(), set(), set()
+    expect_new, ignore, descend, expect_move = set(), set(), set(), []
     for a in sys.argv[1:]:
         if a.startswith("--expect-new="):
             expect_new = {s.strip() for s in a.split("=", 1)[1].split(",") if s.strip()}
         if a.startswith("--ignore="):
             ignore = {s.strip() for s in a.split("=", 1)[1].split(",") if s.strip()}
+        if a.startswith("--expect-move="):
+            # FIELD_PATTERN:seed,seed,...  -- a MUTATING change may ride only if
+            # it declares an exact per-seed delta (DECISIONS #55's named
+            # exception). "Unchanged" becomes "matches the enumerated delta".
+            spec = a.split("=", 1)[1]
+            pat, _, seeds = spec.partition(":")
+            expect_move.append((pat.strip(),
+                                {x.strip() for x in seeds.split(",") if x.strip()}))
         if a.startswith("--descend="):
             descend = {s.strip() for s in a.split("=", 1)[1].split(",") if s.strip()}
 
@@ -132,15 +147,29 @@ def main():
         for p in sorted(ignore - set(skipped)):
             print(f"    {p}  -- NOT PRESENT in both runs; the --ignore had no effect")
 
-    violations = []
+    move_pats = [(p, as_pattern(p), sd) for p, sd in expect_move]
+    violations, declared_moves, move_mismatch = [], [], []
     for path in shared:
         if path in ignore:
             continue
         moved = [(s, base[path][s], new[path][s])
                  for s in sorted(base[path])
                  if base[path][s] != new[path].get(s)]
-        if moved:
+        if not moved:
+            continue
+        hit = next((m for m in move_pats if m[1].match(path)), None)
+        if hit is None:
             violations.append((path, moved))
+            continue
+        got = {s for s, _, _ in moved}
+        # Per PATH the moved-seed set need only be a SUBSET of what was
+        # declared - different array indices legitimately move on different
+        # seeds. Over-declaration is caught by the UNION check below, so a
+        # too-wide declaration cannot buy a pass.
+        if got <= hit[2]:
+            declared_moves.append((path, got))
+        else:
+            move_mismatch.append((path, hit[0], hit[2], got - hit[2]))
 
     print()
     if dropped:
@@ -150,14 +179,7 @@ def main():
     else:
         print("[OK] no dropped fields")
 
-    # expect-new entries may use `*`, so a descended list's per-index paths
-    # ("f[*].newkey") are declarable in one line instead of 54.
-    # NOT fnmatch: `[` and `]` are fnmatch metacharacters, so "f[*].k" silently
-    # matches NOTHING - a pattern that fails closed is the zero-match trap.
-    # Escape everything except `*`, which becomes `.*`.
-    def as_re(pat):
-        return re.compile(".*".join(re.escape(p) for p in pat.split("*")) + r"\Z")
-    pats = [(e, as_re(e)) for e in sorted(expect_new)]
+    pats = [(e, as_pattern(e)) for e in sorted(expect_new)]
 
     def declared(path):
         return any(rx.match(path) for _, rx in pats)
@@ -173,6 +195,31 @@ def main():
         for p in missing_expected:
             print(f"    {p}")
 
+    if declared_moves:
+        print()
+        print(f"[OK] DECLARED MOVES ({len(declared_moves)}) - each moved only on "
+              "seeds covered by its enumerated delta:")
+        for path, got in declared_moves[:6]:
+            print(f"    {path}: seeds {sorted(got, key=int)}")
+        if len(declared_moves) > 6:
+            print(f"    ... and {len(declared_moves)-6} more on the same pattern")
+    for pat, _, want in move_pats:
+        union = set().union(*[g for p, g in declared_moves
+                              if as_pattern(pat).match(p)] or [set()])
+        if union != want:
+            print()
+            print(f"[!!] OVER-DECLARED: '{pat}' declared seeds "
+                  f"{sorted(want, key=int)} but the union of actual moves is "
+                  f"{sorted(union, key=int) or 'EMPTY'} - a declaration wider "
+                  "than reality still hides whatever it over-covers.")
+            move_mismatch.append((pat, pat, want, union))
+    if move_mismatch:
+        print()
+        print(f"[!!] DECLARED-MOVE MISMATCH ({len(move_mismatch)}) - moved on "
+              "seeds the declaration does NOT cover:")
+        for path, pat, want, got in move_mismatch[:8]:
+            print(f"    {path} (via {pat}): declared {sorted(want, key=int)}, "
+                  f"actual {sorted(got, key=int)}")
     print()
     if violations:
         # Breadth is diagnostic: every-seed drift is systematic (a stamp, a
@@ -202,7 +249,7 @@ def main():
               f"across all {len(base_seeds)} seeds"
               f"{f' ({len(skipped)} ignored by request)' if skipped else ''}")
 
-    ok = not (violations or dropped or unexpected or missing_expected)
+    ok = not (violations or dropped or unexpected or missing_expected or move_mismatch)
     print()
     print("RESULT: HOLD" if ok else "RESULT: VIOLATION")
     return 0 if ok else 1
