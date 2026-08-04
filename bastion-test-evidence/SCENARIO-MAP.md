@@ -2344,3 +2344,67 @@ between seeds 66 and 71.
 > **★ The pipeline read's three legs are converging on one question with one
 > observable: a claimed attempt released as "unreachable," from multiple
 > vantages, on an unobstructed target.**
+
+## ★★★★★ FARM'S WRITER IDENTIFIED — 11280, and its own comment states a premise farm FALSIFIES
+
+**READ, no inference.** The log line farm emits is a verbatim match for one site:
+
+```
+bastion_jobs.rs:11286   "bastion: job unreachable — claim released"          <- FARM's line
+bastion_jobs.rs:12723   "auto-access refused (no in-claim route) — job unreachable"  (different string)
+```
+
+**11286 sits directly under writer 11280. So farm's leg is the CHURN/BOUNCE
+path — not the self-rescue arm.** *(Architect's UNREAD → READ, one grep.)*
+
+### ★★ And 11280's own comment names its premise
+
+```rust
+// B5.8-E3: no per-colonist re-claim bar here ... RETRIES ARE THE MECHANISM;
+// the CHURN DETECTOR below counts these releases so a colonist cycling in
+// place still gets the humanitarian bubble (~10s of bounces) ...
+job.unreachable = true;
+churn_events.push((entity, pos.0, feet, reach));
+info!(.. "bastion: job unreachable — claim released");
+// TASK #55: deliberately NOT hooked here. This is the routine churn path
+// (the "60-tick amnesty"/"humanitarian bubble" ...) -- TRANSIENT CONGESTION
+```
+
+> **The path is designed on the premise that these releases are TRANSIENT
+> CONGESTION resolved by retry — and task #55's blocked-region recording is
+> DELIBERATELY NOT HOOKED HERE because of that premise.**
+
+**Farm's job 6 falsifies it: four releases, four different colonists, four
+vantages, never recovered.** *A sufficiency claim — "transient, so we needn't
+record it" — with the excluded case now in hand.*
+
+### ★★★ The consequence: these failures are invisible BY DESIGN
+
+**Because #55 is not hooked at 11280, `blocked_by` is NEVER recorded for a
+churn-path rejection.**
+
+> **★ So `blocked_by: None` does not mean "nothing blocked it." It can equally
+> mean "blocked by the routine-churn path, which deliberately does not record."**
+
+**That is a caveat on my own clean-specimen criterion** — I used
+`blocked_by: None` as evidence of cleanliness for seeds 90 and 78. *(Seed 90's
+cells are currently CLAIMED rather than released, so it is not directly hit;
+but the criterion is weaker than I stated and every future use needs this
+carve-out.)*
+
+**And it explains the corpus pattern:** repeatedly-rejected cells showing
+`blocked_by: None` is exactly what this design produces. **A whole rejection
+class is unrecorded by construction — the same "unreported subsystem" shape as
+the access bar, which survived every fan because no fan could see it.**
+
+### ★ Which reframes the family's defining question
+
+The architect's suspicion is now **supported by the code's own comment**: the
+question is less *"what rejects an attempt"* than **"what makes the same
+rejection PERMANENT for some targets and TRANSIENT for others."** The design
+assumed transient; three subsystems now show persistent cases (66-vs-71,
+job-7-vs-job-6, and the 61/90 windows pending).
+
+**Task #55's deliberate exclusion is where a fix would go** — but *only* once
+persistence is measured, since the exclusion is a real design decision with a
+stated reason, not an oversight.
