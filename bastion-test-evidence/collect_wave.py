@@ -82,7 +82,11 @@ def main():
     # ("B5 SCENARIO: PASS"). Take the leading object with raw_decode, then
     # INSPECT the remainder rather than discarding it - trailing bytes we
     # cannot account for are a malformed seed, not something to skip past.
-    VERDICT_RE = re.compile(r"^[A-Z0-9][A-Z0-9 _-]* SCENARIO: (PASS|FAIL)(.*)$",
+    # Verdict lines are not uniform: "B5 SCENARIO: PASS" but also
+    # "B5ROWBPAIRED: PASS". Accept NAME: PASS/FAIL with or without SCENARIO,
+    # but keep the NAME shape tight -- a loose pattern here would swallow
+    # arbitrary trailing bytes, which is the thing this check exists to catch.
+    VERDICT_RE = re.compile(r"^[A-Z0-9][A-Z0-9 _-]*: (PASS|FAIL)(.*)$",
                             re.DOTALL)
     dec = json.JSONDecoder()
     parsed, bad, verdicts = {}, {}, {}
