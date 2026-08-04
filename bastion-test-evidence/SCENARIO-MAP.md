@@ -21,6 +21,23 @@ session of reading fan data already on disk (zero new runs). This block is the
 part you act on.** Everything here is measured, not argued; each claim's working
 is in the section named.
 
+## ★★★★ BIGGEST FINDING: task #59's starvation hypothesis is SUPPORTED 6/6
+
+`b5_mine_cell_diag[].starvation_cycles` / `.starvation_crowded_cycles` carry a
+**documented decision rule** (ratio ≈ 1.0 supports greedy-arbitration
+starvation; crowded ≪ starvation is the kill case). **Five of six seeds are
+exactly 1.000, the sixth 0.938, and the kill case occurs in ZERO seeds** — every
+starved cell had competing unclaimed work ~100% of the cycles it waited, and 360
+is the whole run.
+
+**Seed 71 is ARBITRATION-starved, not access-starved** (it emitted 3 access
+plans). **Caveat: seeds 52 and 66 hit ratio 1.000 and still mined 27/27, so a
+1.0 ratio is not sufficient for failure.** What's supported is the mechanism,
+not the outcome — a row owes *why did 71 never recover and 66 did*.
+
+**This was in every fan we have ever run.** Full working in the section of the
+same name below.
+
 ## Three CLEAN SPECIMENS — one per failure mode, no fixture needed
 
 Deterministic, in the standing 48-seed fan, **attested at the merged tip
