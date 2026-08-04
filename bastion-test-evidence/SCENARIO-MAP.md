@@ -83,6 +83,13 @@ Deterministic, in the standing 48-seed fan, **attested at the merged tip
 | "a seam-row green would be a FALSE GREEN" | **too broad** — the corpus demonstrably moves |
 | "seed 71 should improve if the bar is removed" | **REFUTED** — it emitted 3 plans, never starved |
 | "perfect clause pairing = one mechanism twice" | **true for 3 of 4 pairs**; mine hides a 19–96% spectrum |
+| "`unreachable` cells discriminate 71 from 66" | **WITHDRAWN** — `unreachable` = "all six faces currently solid", downstream of dig progress |
+
+**★ Three of these six are the same error: I substituted a NAME for its
+CONTENT** (`plan_access`, the top-level-only field scan, `unreachable`) — twice
+*after* writing the rule against it. **The tell is speed: it happens on the
+promising thread, never on the careful one.** The countermeasure that actually
+works is reading the definition **before** building on it, not after.
 
 ## Claims CHECKED that HELD
 
