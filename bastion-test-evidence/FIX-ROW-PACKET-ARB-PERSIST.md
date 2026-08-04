@@ -504,6 +504,41 @@ state **disagree**, and the message reports the terrain.
 
 **So the reword is not a new standard imposed by this row — it is the standard
 the sibling message in the same file already meets.**
+
+#### ★ ROUTING RULING (Fable) + the check that satisfies its condition — RUN
+
+The incumbent's reword **files into the report-fix backlog window**, not its own
+row, **with the standard attached to the window's header** so every message that
+window touches is audited against it:
+
+> **PLAYER-FACING TEXT MAKES BEHAVIORAL CLAIMS, NOT CAUSAL ONES — unless the
+> cause is measured.**
+
+**Escape hatch, in case Row A goes alone and the backlog window slips:** the
+one-line reword may ship standalone **only after a grep confirms no fixture
+asserts the message text** — a string change is behavior-inert only if nothing
+greps it.
+
+**★ THAT GREP IS RUN. Result: ZERO external references.**
+
+```
+git grep -i "designation is blocked|obstruction at" a85dec2912
+  -- '*.rs' '*.ron' '*.toml' '*.json' '*.md'
+```
+
+Every hit is inside `bastion_jobs.rs` itself — the two emission sites (**12897**,
+**15403**) and one comment (**11428**). **No test, fixture, harness assertion,
+corpus field, or doc references the string.**
+
+**And the zero is validated, not assumed:** the same patterns returned **three
+in-file hits**, which proves the search matches live text rather than failing
+silently. *A zero from an unproven pattern is the ANSI trap; this one has its
+positive control.* Both patterns were searched independently — the shorter one
+would catch a fixture quoting a fragment without the em-dash.
+
+**Conclusion: the reword is behavior-inert and standalone-eligible.** The
+condition on the escape hatch is satisfied in advance, so the decision can be
+made on scheduling alone rather than waiting on a check.
 | **G2 — FR15 paired A/B** | the stuck-economy's tuning under the new escalation | Mandatory **for ROW B only** — see R3. A new escalation path **invalidates the stuck-economy's tuning** by construction. Paired A/B, same seeds, both arms. **Row A does not trip this**: the census in R3 proves `blocked_regions` has zero behavior consumers. |
 | **G3 — corpus exact-match** | zero drift on all 48 seeds **with `source` counts read** | ★ **Not exact-match alone**, and **not for the reason I first gave.** See the G3 verdict below — the corpus *does* report `blocked_regions`, at the **wrong coordinates**. |
 
@@ -680,6 +715,12 @@ start firing — landing as `Other: N > 0` and reading exactly like a defect.
 > to hunt a regression. A rise in `Other` is the expected signature of a new path
 > being exercised for the first time.
 
+**★ ROW B CHECKLIST ITEM (Fable's rider):** `ReleaseReason::Other`'s **own doc
+comment** says a nonzero count *"would mean a site was missed."* **That sentence
+becomes false the day Row B lands.** Amending it is on Row B's checklist **now**,
+not discovered by whoever next reads it in good faith. *The dated-rationale law
+applied prospectively for once, instead of archaeologically.*
+
 **Corollary for Row A:** Row A is report-only and moves no release path, so
 `Other` must stay at its current value. **If Row A moves `Other` at all, Row A is
 not report-only and the split is wrong** — a free falsifier for the packet's
@@ -711,23 +752,41 @@ block-B6: `TimedOut` appears in none of them.** The step-2 variants exist only i
 resolves, the enum carries all five variants, and the four classified sites are
 where 5b said they are.
 
-**One granularity that matters and 5b flagged it unprompted:** `TimedOut` /
-`Completed` / `RemovedExternally` **were build-verified earlier this session** —
-that is the binary the seed 66/71 site-scans and the seed 78 restoration check
-ran against, so **the evidence table's 5b-TRACE rows rest on verified code.**
-`TargetChanged` was added *after* the last successful build and is **not
-build-verified** (see the build blocker below); it is self-consistent by
-inspection across enum, counts consumer, `lib.rs` hook and harness JSON, but its
-counts are **not to be treated as real** until a build confirms it.
+**✅ NOW FULLY BUILD-VERIFIED — all four variants.** 5b built on the `dev`
+profile and re-ran seed 66's release-site scan against the fresh binary
+(stamped `e86fe79893`):
 
-**Build blocker, escalating:** a `num-traits` build-script `.exe` is denied write
-under the `no_overflow` profile — the residual gap from the 2026-07-28 E: incident
-(build-script executables were never allow-listed). 5b **correctly refused** to
-route around it with a `CARGO_TARGET_DIR` redirect. I have pointed them at the
-**`dev` profile**, which BATCH-RUNBOOK Step 0 already records as the substitute
-and which their own working binary proves is permitted. **If `dev` is also
-denied, that is profile-independent denial — a materially stronger escalation to
-Ben than a single-profile failure**, and worth the two minutes either way.
+| variant | count |
+|---|---|
+| `Completed` | 34 |
+| `TimedOut` | 10 |
+| `RemovedExternally` | 3 |
+| `TargetChanged` | **1** |
+| `Other` | **0** |
+| **total** | **48** |
+
+**Reconciles exactly against an INDEPENDENT `to_release`-fired count of 48** —
+and the `1` is the same `Other: 1` the pre-classification build reported, now
+correctly attributed. **That is a two-sided check**: the classification sums to
+the same total a separate mechanism counted, so no event is double-counted or
+dropped. `TargetChanged` is no longer flagged unconfirmed; **every 5b-TRACE row
+in this packet now rests on build-verified code.**
+
+**✅ BUILD BLOCKER RESOLVED — and the diagnosis was the point.** The `num-traits`
+build-script write denial is **path-scoped to `target/no_overflow/build`, not
+profile-independent**: `RUSTC_WRAPPER="" cargo build -p bastion-harness -j 48`
+on `dev` completed clean in **5m22s** with no denial at all. **Nothing waits on
+Ben's allow-list fix.** 5b **correctly refused** to route around it with a
+`CARGO_TARGET_DIR` redirect — the substitute they used is the one BATCH-RUNBOOK
+Step 0 already records, not a workaround.
+
+> **The two-minute discriminator was worth running.** A green `dev` unblocked the
+> lane immediately; an identical failure would have upgraded the escalation to
+> profile-independent denial. **Either answer advanced something — which is what
+> made it worth doing before escalating.** The underlying gap (build-script
+> `.exe`s were the one category never allow-listed in the 2026-07-28 fix,
+> `num-traits`' autocfg probe the named repro) stays filed for Ben, now with a
+> precise scope rather than a blocking symptom.
 
 ### R2 — `to_release`'s 26 producers
 
