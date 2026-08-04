@@ -279,13 +279,24 @@ pub fn handle_client_disconnect(
         // closes the session outright (SES-087-090). Looked up by this
         // player's Uuid, not by SessionId directly -- disconnect handling
         // only ever knows the entity/principal, never the session locator.
-        if let Some(uuid) = server.state().ecs().read_storage::<comp::Player>().get(entity).map(|p| p.uuid())
-            && let Some(session_id) = server
-                .state()
-                .ecs()
-                .read_resource::<crate::session_registry::SessionRegistry>()
-                .session_for_principal(uuid)
-        {
+        let uuid_and_session_id = server
+            .state()
+            .ecs()
+            .read_storage::<comp::Player>()
+            .get(entity)
+            .map(|p| p.uuid())
+            .and_then(|uuid| {
+                server
+                    .state()
+                    .ecs()
+                    .read_resource::<crate::session_registry::SessionRegistry>()
+                    .session_for_principal(uuid)
+            });
+        // NOTE: the `read_resource` above must be dropped (it is, at the end
+        // of this statement) before `write_resource` below runs, or the two
+        // AtomicRefCell borrows overlap and panic -- an `if let ... && let`
+        // chain would keep the read guard alive through the whole block.
+        if let Some(session_id) = uuid_and_session_id {
             let mut session_registry = server.state().ecs().write_resource::<crate::session_registry::SessionRegistry>();
             match reason {
                 comp::DisconnectReason::NetworkError | comp::DisconnectReason::Timeout => {

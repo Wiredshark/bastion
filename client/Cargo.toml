@@ -81,6 +81,9 @@ name = "chat_cli"
 required-features = ["bin_bot"]
 
 [[bin]]
+name = "bastion_playtest"
+
+[[bin]]
 name = "bot"
 required-features = ["bin_bot"]
 
