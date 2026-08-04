@@ -2408,3 +2408,37 @@ job-7-vs-job-6, and the 61/90 windows pending).
 **Task #55's deliberate exclusion is where a fix would go** — but *only* once
 persistence is measured, since the exclusion is a real design decision with a
 stated reason, not an oversight.
+
+## ★★★★★ SWEEP-BACK on `blocked_by: None` — every dependent claim re-audited
+
+**The correction isn't done until the dependents are re-read** (the protocol's
+third step). **READ first:** `blocked_by` and `blocked_sources` both iterate the
+**same `blocked_regions` store** — so if the churn path doesn't populate it,
+**BOTH are silent**, not just one.
+
+| claim | status under corrected semantics |
+|---|---|
+| **seed 78 specimen — "nothing blocking, `log_sum: 0`"** | ★★ **DIRECT HIT — credential VOID as stated.** Rested on `ch_base_blocked_by: None` + `blocked_sources: []`, both of which are silent about churn-path rejections. **Seed 78's chop failure may be an unrecorded churn rejection.** |
+| **four-signature mine table — the "unblocked" half** | ★★ **AXIS UNSOUND.** Seeds 90 and 71 were split from 61/54 partly on `blocked_by` presence. They are not *"unblocked"* — they are **"not blocked by a RECORDED mechanism."** *The signature split survives on its other criteria (claim state, `cycles_since_last_claim`, cell counts); only the blocked/unblocked axis is void.* |
+| **seed 90 specimen — `blocked_by: None`** | **WEAKENED, not void.** Its cells are **claimed** at sample time, and a churn release clears the claim — so a churn rejection would have to have happened *earlier* and been re-claimed. Possible, so the field is ambiguous rather than clean. |
+| **seed 71 / 54 `blocked_by` readings** | Same caveat; **the seeds WITH a recorded `blocked_by` (61, 54) are unaffected** — a recorded block is positive evidence and stays sound. |
+| **`ch_base_blocked_sources: ['plan_access']` on seeds 80/85/92** | **UNAFFECTED** — positive recordings, and `plan_access` hooks #55 deliberately. |
+
+> **★ The asymmetry to keep: a RECORDED block is sound evidence; an ABSENT one
+> is not evidence of absence.** Every claim above that rested on presence
+> survives; every claim that rested on absence needed this audit.
+
+**That is the polarity trap in its purest form yet — and this field's `None`
+now joins the misleading-fields list beside `55_diag`'s constant
+`unreachable: true` and the `tool 0.0` sentinel.**
+
+### ★ Specimen status after the sweep
+
+**Seed 62 (build) — unaffected.** Never rested on `blocked_by`.
+**Seed 90 (mine) — holds, with the field downgraded** from evidence to ambiguity;
+its other criteria (claimed by named colonists, `cycles: 0`, `progress: 0.878`,
+two blocks unmined) are untouched.
+**Seed 78 (chop) — CREDENTIAL WITHDRAWN pending the trace.** *"Nothing blocking"*
+cannot be asserted. **It remains a clean specimen on its OTHER facts** — path
+exists from spawn (complete, 228 columns), `log_sum: 0`, no `plan_access` source
+— **but it can no longer be described as unobstructed.**
