@@ -1517,3 +1517,63 @@ more than 30 lines above the loop; loops over 150 lines; watches that set state
 other than a plain `flag = true`; and equality-held watches (`x == baseline`),
 which have a different unsatisfiability mode. **A second pass wanting those
 should widen deliberately rather than trust this count.**
+
+## ★★★★ THE CAPSULE ASYMMETRY DOES NOT TRANSFER — multi-layer collapse breaks BOTH directions
+
+Architect flagged this as UNREAD and it needed the read, because **it reverses
+what I asserted this morning about seed 80.**
+
+**`column_height_near` READ** (`bastion_jobs.rs:1901`):
+
+```rust
+fn column_height_near(terrain, x, y, z_hint) -> Option<i32> {
+    (z_hint - 60..=z_hint + 60)
+        .rev()                                     // scans DOWNWARD from z_hint+60
+        .find(|&z| terrain.get(..).is_filled())    // returns the FIRST filled block
+}
+```
+
+> **It returns the HIGHEST solid block within ±60 — the top of an overhang, not
+> the floor beneath it.** For 5b's seed-52 column (rock 151–155, air 146–150,
+> real ground 145) it returns **155**, and the traversable band at 146–150 is
+> invisible.
+
+### The two error models push in OPPOSITE directions
+
+| model | error | negatives | positives |
+|---|---|---|---|
+| **body width** (point vs capsule) | too PERMISSIVE | **SOUND** | unsound |
+| **column collapse** (multi-layer) | **BOTH** — reports connectivity across a surface that isn't continuous **AND** misses passages underneath | **UNSOUND** | unsound |
+
+**So in multi-layer terrain NEITHER direction of the probe is sound.** The
+capsule asymmetry I derived this morning — *"negatives sound, positives not"* —
+**holds only in single-layer terrain**, which is exactly the scope I failed to
+name when I stated it.
+
+### ★★ Consequence for seed 80 — I had this backwards for this model
+
+This morning I told two lanes that the point-model **strengthens** seed 80's
+no-route finding. **True for body width. FALSE for column collapse:** a
+subsurface route (tunnel, gallery, cave passage) is invisible to the probe, so
+*"no route from either vantage"* means **"no route over the top surfaces"** —
+and **mine sites are precisely where dug galleries exist.**
+
+**Seed 80's negative is therefore CONDITIONAL on its site being single-layer.**
+
+### The test — cheap, decisive, needs 5b's block-query
+
+**Column-scan seed 80's site** (`[24484, 26192, 153]`, standable target
+`[24485, 26192, 153]`) the same way 5b scanned 52 and 54. **Single-surface
+terrain ⇒ the negative stands** (only the capsule caveat applies, and negatives
+are sound there). **Cave/overhang terrain ⇒ the negative is unsound** and #61's
+parking rationale, which cites that soundness, needs the caveat even if the
+parking survives on other grounds.
+
+**Goes on the single-seed diagnostics batch** — it is the same instrument the
+batch already needs, one more site.
+
+> **★ The generalisable error: I derived an asymmetry under one error model and
+> stated it without naming the model.** When a second error model appeared, the
+> asymmetry was assumed to carry. **An instrument's soundness direction is a
+> property of the ERROR MODEL, not of the instrument** — and a caveat that
+> doesn't name its model is the sufficiency-claim family again, one level up.
