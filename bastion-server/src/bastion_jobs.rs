@@ -15725,20 +15725,37 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 ) {
                     continue;
                 }
-                // B15 / FR12, generalized by task #64: a job is claimable
-                // only with a STANDABLE stance (⊆ exposed for Mine — access
-                // always qualifies; an ordinary cell needs a real stance).
-                // Replaces the bare exposure gate so unstandable `+1`-gap /
-                // floating cells, and now every other affordance class's
-                // equivalent (a Build/Bed target with no adjacent ground, a
-                // Ladder rung whose support isn't built yet, a Farm
-                // sow/harvest cell with no floor), aren't claimed-then-stuck.
-                // `Untargeted` (self-jobs, Haul) never had this problem and
-                // is exempt — `job_stance` always answers `Some` for it, so
-                // this reduces to a no-op for those kinds, but the explicit
-                // check documents that the exemption is deliberate, not an
-                // oversight.
-                if job.affordance != AffordanceClass::Untargeted && !standable.contains_key(&id) {
+                // B15 / FR12: a Mine cell is claimable only with a STANDABLE
+                // stance (⊆ exposed — access always qualifies; an ordinary cell
+                // needs a real stance). Replaces the bare exposure gate so
+                // unstandable `+1`-gap / floating cells aren't claimed-then-
+                // stuck.
+                //
+                // TASK #64 REVERT (DECISIONS #46, pure-refactor scope): this
+                // was briefly generalized to every non-`Untargeted` kind
+                // (`job.affordance != AffordanceClass::Untargeted && ...`).
+                // Corpus fan caught it: seed 52 FLIPPED (ch_leaf_cleared
+                // FAIL->PASS) against a baseline the SAME fan proved
+                // deterministic across two independent runs (zero verdict/
+                // clause drift, 48/48 seeds) -- so the flip was attributable,
+                // not noise. Mechanism: Chop's `has_standable_stance` CAN
+                // return `None` (unlike this row's other declared kinds,
+                // which always answer `Some` for their current stance
+                // values) -- under the generalized guard, a chop job that
+                // missed its stance this cycle went from "claimed anyway on
+                // the on-top default" to "benched, retried next cycle,"
+                // and seed 52 improved as a result. A REAL, positive,
+                // n=1 behaviour change -- exactly what a pure-refactor row
+                // may not carry silently, however welcome. Reverted to the
+                // original Mine-only form; the generalization is filed as
+                // its own row (the "refusal-capable producer needs a
+                // refusal-aware consumer" law's other half), gated on two
+                // premise questions: how often does stance actually return
+                // `None` per kind (the blast radius), and does anything
+                // ever RE-OFFER a job benched by this guard, or does a
+                // stance-less job sit forever (the livelock question --
+                // same shape as `MarkUnreachable` without a recovery path).
+                if job.kind.is(DesignationKind::Mine) && !standable.contains_key(&id) {
                     continue;
                 }
                 // B5.8-E: held until return-access leads the descent.
