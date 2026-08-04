@@ -607,3 +607,56 @@ value domain.** For continuous fields it tests nothing. Reported here because
 the technique is otherwise worth reusing — with that guard stated. The
 substantive finding (build's fields are constants) is unaffected: constants are
 exactly the case where the domain is shared and the test is valid.
+
+## ★★★ ALL 12 FAILURES NOW CLASSIFIED — three clean specimens, one likely instrument defect
+
+### ★★ Seed 66 (`tl_ok`) is almost certainly an INSTRUMENT DEFECT, not a product one
+
+```rust
+let tool_name = names.first().cloned().unwrap_or_default();
+let tl_stone = server.bastion_colonist_tool_factor(&tool_name, WorkType::Mine).unwrap_or(0.0);
+let tl_steel = server.bastion_colonist_tool_factor(&tool_name, WorkType::Mine).unwrap_or(0.0);
+```
+
+Seed 66 reports **`tool_stone: 0.0` and `tool_steel: 0.0`** (passing seeds: 1.5
+and 2.0). **The documented bare-hands floor is 1.0** — the harness's own comment
+says so. **0.0 is not a low tool factor; it is BELOW THE FLOOR, i.e. an
+impossible reading.** It is the `.unwrap_or(0.0)` sentinel: the probe returned
+`None`, twice.
+
+**And `names.first()...unwrap_or_default()` yields an EMPTY STRING on an empty
+list**, after which every lookup by that name fails. Seed 66 still shows
+`any_mining_xp: true` and `any_woodcutting_xp: true` — **work happened; only the
+measurement failed.**
+
+> **"Couldn't measure" was collapsed into a value that reads as "measured, and
+> it's terrible" — and the value is outside the metric's own documented range,
+> which is what should have caught it.** The standing law with a new costume:
+> a sentinel inside the valid-looking numeric range is worse than a missing
+> field, because it survives every presence check.
+
+**1 of 12 corpus failures (8.3%) is therefore probably instrument** — consistent
+with the historical ~10.4% fixture-false-failure rate.
+
+### ★ Seeds 68 and 92 (`ch_mixed`) — my first hypothesis was WRONG
+
+I guessed `ch_mixed` needed ≥2 trees (both seeds have `ch_trees: 1` vs passing
+7). **Read the definition: it scans the FIRST tree's AABB for both `Wood` and
+`Leaves`** — trunk plus canopy in one box. Tree *count* is irrelevant.
+
+What is real: **seed 68's `ch_cells` is 30**, against 2048 for seed 92 and
+14336 for passing seeds — two to three orders of magnitude small. `ch_mixed`
+scans exactly that AABB, so **the box is the common factor and it looks
+degenerate.** Not asserted as the cause; the AABB derivation has not been read.
+
+### The three CLEAN SPECIMENS — one per mode, all deterministic, all already captured
+
+| mode | seed | why it is clean |
+|---|---|---|
+| **build** | **62** | mine cleared, chop cleared, `stone_sum: 27`, `gave_item: true`, **`rescue_fired: false`** — **only build failed**, and it is the sole Mode-A seed with no rescue to confound it |
+| **mine** | **90** | 3 cells, all claimed by named colonists at `cycles: 0`, `blocked_by: None`, no progress |
+| **chop** | **78** | path exists from spawn (complete, 228 cols), **nothing recorded a block**, `log_sum: 0` |
+
+**No fixture needs building for any of the three.** Each is a single
+deterministic seed in the standing fan, verified reproducible across two
+independent runs.
