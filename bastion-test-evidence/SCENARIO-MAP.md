@@ -179,8 +179,25 @@ archetype · chronicle · chronicle-capture · lod0 · lod1 · inspect
   may be a **NON-CALL**. Falsify with the existing read-only probes
   `access_job_dump` / `access_block_reason` BEFORE tracing any arm. 5b assigned.
 - **selfgen** — root `hauled` (haul stage; upstream of placement).
-- **farm** — till/sow late + `farm_tilled:false` unexplained under BOTH stances
-  (counter-control); Farm's own control blocked on that mystery.
+- **farm** — ★★★ **NO LONGER UNEXPLAINED. Three red clauses collapse to ONE
+  root: 8 of 9 cells tilled.** Re-run at `460626a6e2`:
+  `FARM TELEMETRY: tilled=8 wheat=2 seeds=15 g1=15`, and
+  ```rust
+  if tilled_count(&server) == 9 { tilled = true; }   // requires ALL NINE
+  if grown_cells(&server, 1) >= 9 { sown = true; }   // requires NINE grown
+  ```
+  **The farm WORKS end-to-end** — `matured`, `harvested`, `cycled`,
+  `seed_positive` all true, 2 wheat, 15 seeds. **One cell of nine never gets
+  tilled**, and:
+  - `farm_sown:false` is **DOWNSTREAM** — ≥9 grown is impossible from 8 tilled.
+    A dependent clause, exactly like `any_needs_materials` under
+    `build_placed`.
+  - `farm_growth_rose:false` is measured at a **SINGLE probe cell**
+    (`plot.min` corner). If the untilled cell is that corner, this is the same
+    fact a third time. **A single-point sample standing in for a plot-level
+    property** — aggregate-late inverted.
+
+  **The "mystery under both stances" was a count threshold all along.**
 - **zone** — `zone_freed:false`. **RE-RUN at `460626a6e2` 2026-08-04: still
   RED**, exit 1. Fresh telemetry: `zone_colonists:4, zone_in_control:5,
   zone_in_zone:870, zone_jobs:1` — the only false term is `zone_freed`.
