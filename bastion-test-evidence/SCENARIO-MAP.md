@@ -356,7 +356,8 @@ determinism-by-construction). Cheap confirmation filed: log `tick.0` at
 force_load return across runs. Until resolved, scenario-level comparisons on
 phase-sensitive scenarios need their own stability measurement first.
 
-## ★★ STANDING CAVEAT (filed 2026-08-04): the reachability probe is SOUND FOR NEGATIVES ONLY
+## ★★ STANDING CAVEAT (filed 2026-08-04): probe soundness is PER-ERROR-MODEL
+### ⚠️ HEADING SUPERSEDED — this section originally read "SOUND FOR NEGATIVES ONLY", which is the UNSCOPED form. See the error-model section below: negatives are sound under BODY-WIDTH in SINGLE-LAYER terrain only; under COLUMN-COLLAPSE both directions are unsound.
 
 `offline_reachability_probe`'s flood fill (`bastion_jobs.rs`, the
 `column_height_near` / `ascent <= ascent_bound` loop) is **purely
@@ -369,14 +370,19 @@ columns get zero clearance modeling.
 there".** That is narrower than "can a colonist get there", and the soundness
 of a point model is asymmetric:
 
-| probe result | status | valid claim |
+| probe result | status **under BODY-WIDTH only** | valid claim |
 |---|---|---|
-| **NO ROUTE** | **SOUND** | point-unreachable ⇒ capsule-unreachable |
+| **NO ROUTE** | **SOUND** *(single-layer terrain only)* | point-unreachable ⇒ capsule-unreachable |
 | **ROUTE EXISTS** | **UNSOUND** | says nothing about whether a body fits |
 
-**Cite this instrument for negatives only.** Consequences already applied:
+> **⚠️ THIS TABLE IS SCOPED TO ONE ERROR MODEL.** The column-collapse model
+> (`column_height_near` returns the HIGHEST solid per column) makes **BOTH**
+> directions unsound in multi-layer terrain — see the error-model section at the
+> end of this file. **Cite as: "under the body-width model in single-layer
+> terrain, negatives are sound."** Never bare. Consequences already applied:
 
-- **seed 80 / #61 — UNAFFECTED, arguably strengthened.** Its claim was a
+- **seed 80 / #61 — ⚠️ SUPERSEDED, see the error-model section. Originally read "UNAFFECTED, arguably strengthened"; that holds only under body-width. Now CONDITIONAL on seed 80's site being single-layer — batch item 6.**
+- *(original text, retained for the record)* **UNAFFECTED, arguably strengthened.** Its claim was a
   NEGATIVE (no route from either vantage). Even the most permissive traversal
   model available found no way in. The first reading of this finding was that
   seed 80 weakened alongside bed; **that is backwards** and the row's n=1
