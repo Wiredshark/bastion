@@ -347,6 +347,80 @@ pub enum DesignationKind {
     Farm,
 }
 
+/// bastion (task #64, KindAffordance): what `Job::pos` PHYSICALLY MEANS —
+/// the stance a colonist must commit to reach it. Stamped at CREATION, not
+/// derived from `kind` at lookup time: `DesignationKind::Farm` alone can't
+/// answer this (see `AtTarget` below) because the SAME kind spans two
+/// different physical shapes depending on which phase created the job
+/// instance — the creator knows which shape it built; a table keyed on
+/// kind alone cannot recover that after the fact. NO `Default`: every
+/// `Job` construction site must choose explicitly (this campaign's
+/// original bug was Mine's stance logic silently inherited by every other
+/// kind that never opted in — a missing arm here is now a compile error,
+/// not a corpus failure discovered later).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AffordanceClass {
+    /// `job.pos` IS solid pre-completion (removal-shaped): on-top is the
+    /// preferred stance (real support exists), falling back to an
+    /// adjacent-ground stance only when on-top is physically unusable.
+    /// Mine, Chop, Gather.
+    SolidTarget,
+    /// `job.pos` is EMPTY pre-completion and becomes solid ONLY on
+    /// completion (construction-shaped): on-top has no support by
+    /// definition — commit to a cardinal-adjacent stance at `job.pos`'s
+    /// own level, on real ground. Built, evidenced-plausible, and
+    /// CORRECTLY-TYPED for Build/Bed/a Ladder base — but NOT currently
+    /// stamped on any live `Job` (task #64, DECISIONS #45, pure-refactor
+    /// scope): Ladder's own control (see `OnTopAlways`'s doc) falsified
+    /// the physical-support argument as a PREDICTOR in a system with no
+    /// execution-proximity check, and Build/Bed never got their own
+    /// control before that finding landed — shipping this on the same
+    /// unproven argument for three more kinds would repeat exactly what
+    /// just got reverted for Ladder. Reserved for whichever of Build/Bed
+    /// earns its own evidence-gated row (change `designation_affordance`'s
+    /// match arm, nothing else needs new plumbing).
+    AdjacentToBase,
+    /// Unconditional on-top — no terrain read, no possibility of refusing
+    /// a stance. Mine/Chop's stance function (`SolidTarget`) can fall back
+    /// or return `None`; this can't, by construction. Covers Build, Bed,
+    /// Ladder, and all three Farm phases (till/sow/harvest) — every kind
+    /// whose pre-task-#64 behaviour was the blind
+    /// `standable.get(&job_id).unwrap_or(Vec3::unit_z())` default, now
+    /// DECLARED rather than silently inherited (task #64, DECISIONS #45:
+    /// pure refactor, zero behaviour change from pre-#64 for any of them).
+    /// The name records a real, evidenced finding for Ladder specifically:
+    /// a controlled A/B (DECISIONS #44) falsified an EARLIER,
+    /// terrain-conditional version of Ladder's rule (on-top only once the
+    /// rung below read solid, then named `LadderContinuation` for that
+    /// now-deleted mechanism) — the conditional version REGRESSED a
+    /// previously-working placement rate (5/5 -> 2/5) because nothing
+    /// downstream enforces the stance for a placement kind, so a stance
+    /// that can refuse is strictly worse than one that always answers —
+    /// see `ladder_stance`'s own doc for the full A/B. Build/Bed/Farm
+    /// share the VALUE (on-top always) but not yet the EVIDENCE; their own
+    /// controls are filed as separate future rows, not assumed by
+    /// association with Ladder's.
+    OnTopAlways,
+    /// `job.pos` is the STAND cell itself, not a thing to reach onto or
+    /// beside — the colonist's feet land AT `job.pos`, support comes from
+    /// the (already solid) cell below it. Neither on-top nor adjacent.
+    /// Built and correctly-typed for Farm's SOW/HARVEST sub-jobs
+    /// (job.pos = the crop cell one above tilled ground, which IS the
+    /// working position — a real semantic difference from TILL's job.pos,
+    /// preserved in the farm pass's own comments) but NOT currently
+    /// stamped on any live `Job`, same reasoning as `AdjacentToBase`: no
+    /// demonstrated failure this fixes (this session's counter-control
+    /// showed `farm_tilled:false` is unexplained under either stance), so
+    /// it ships as a behaviour change only once Farm's own control
+    /// demonstrates a sow/harvest failure the split actually fixes.
+    AtTarget,
+    /// No terrain-edit stance requirement — the target is wherever the
+    /// referenced entity/zone/self actually is (Haul, DepositRun, RestAt,
+    /// EatFrom, Despond). Resolves to the pre-existing on-top default,
+    /// preserving all currently-working self-job behavior unchanged.
+    Untargeted,
+}
+
 impl DesignationKind {
     pub fn label(&self) -> &'static str {
         match self {
@@ -1024,6 +1098,14 @@ pub struct Job {
     /// serde-default: pre-B6 saves have none.
     #[serde(default)]
     pub reservation: Option<ReservationId>,
+    /// bastion (task #64): what `pos` physically means — see
+    /// [`AffordanceClass`]. Deliberately NO `#[serde(default)]`: `Job`
+    /// never crosses the wire and `JobBoard` is never persisted (created
+    /// fresh via `JobBoard::default()` each server start, confirmed
+    /// premise-checked — see the task #64 packet), so there is no old-save
+    /// migration story to protect and no reason to let a construction site
+    /// skip choosing.
+    pub affordance: AffordanceClass,
 }
 
 /// bastion (TOOL-0, TOOLS-UPGRADE §3): the work-tick's TOOL factor — a
