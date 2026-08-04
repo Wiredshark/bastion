@@ -15654,3 +15654,25 @@ legible. **None of it was planned in that order.**
 fixture-first row (probe-at-cap discriminator) · the filed guard row (isolated
 causation, blast-radius premise-check) · chop stragglers (80, 26) · then the
 master-list pivot.
+
+## TWO LEDGER ASTERISKS RETIRED BY PLANTED INSTRUMENTS (08/04, late)
+
+**#61's prune: ships-on-reasoning → DEMONSTRATED.** blocked_retract_scenario
+PASSES at d3235e5329, with the proof-pair that it exercises the real mechanism:
+structural (grep: remove_job's retain() is the ONLY blocked_regions-clearing
+site) + empirical (a prune-disabled control build FAILS the fixture —
+red-by-design). Wave19's "corpus never exercises the case" caveat retired.
+
+**#58 CLOSES: conservation HOLDS on current code, permanent guard standing.**
+cavein_conservation_scenario: 7 stones for 7 cells through a real 6-cell
+collapse. The fixture's FIRST run failed on two fixture defects — a race
+against the ARBITRATION_INTERVAL-gated exposure sweep, and a wrong hardcoded
+1-cell expectation (geometrically the sealing shell cannot ground independently
+without grounding the blob ⇒ always a 6-cell component) — both fixed BEFORE
+trusting a green. **The instrument audited by first contact.** The original
+matter-vanishing defect either died with an intervening fix or cannot survive
+current code; either way the guard stands.
+
+**5b assigned bed's fixture-first row** (probe at 100k cap vs the two named
+blocking cells; no-route ⇒ fixture defect per the 2-of-3 base rate;
+route/incomplete ⇒ real plan_access false-reject, chop's-old-gate class).
