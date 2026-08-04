@@ -1228,3 +1228,36 @@ position was never open/unclaimed during arbitration (e.g. always claimed
 instantly)"* — so **`starvation_cycles: 0` is ambiguous between "never starved"
 and "never open"**, the same two-readings-one-value shape as everything else
 today. Any starvation statistic must exclude zeros deliberately, not silently.
+
+## ★★★★ CROSS-SCENARIO PATTERN: colony work stalls ONE UNIT SHORT — Ben's ">=3 places" directive fires
+
+Independent scenarios, independent subsystems, same shape:
+
+| scenario / seed | completed | target | short by |
+|---|---|---|---|
+| **farm** | **8** tilled | 9 | **1** |
+| **b5 seed 61** | **26** mined | 27 | **1** |
+| **b5 seed 90** | **25** mined | 27 | **2** |
+
+**Three places. Ben's standing directive applies: *symptom in ≥3 places ⇒ STOP
+BISECTING, read the whole pipeline.*** Filed here so the next lane meets it
+before opening three separate rows.
+
+**NOT CLAIMED: one mechanism.** Farm is a 3×3 till plot; the mine seeds are a
+27-cell volume with different claim states (61 blocked-region, 90
+claimed-and-stalled). **The SHAPE matches; the cause is unestablished** — and
+today's whole lesson is that a matching shape recruits any nearby mechanism
+([[matched-control-must-match-on-system-and-axis]]: *the more elegant the
+mechanism, the more readily it recruits any nearby red*).
+
+**What makes it worth flagging anyway:** each of these was separately described
+as its own mystery — farm's *"unexplained under both stances"*, the mine seeds'
+*"one block short"* which I nearly wrote off as scheduling tail and then proved
+deterministic. **They only look like a family once the descriptions are replaced
+by the numbers**, which is what this session's re-run pass did.
+
+**Cheapest discriminator before anyone opens a row:** is the missing unit
+always in a **structurally distinguished position** (a plot corner, a volume
+edge, a column frontier)? Farm's `growth_rose` probe reads `plot.min` — **if the
+untilled cell IS that corner, position is implicated immediately** and that is a
+one-line check on an existing log.
