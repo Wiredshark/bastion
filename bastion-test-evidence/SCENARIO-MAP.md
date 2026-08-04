@@ -917,10 +917,31 @@ I guessed `ch_mixed` needed ≥2 trees (both seeds have `ch_trees: 1` vs passing
 7). **Read the definition: it scans the FIRST tree's AABB for both `Wood` and
 `Leaves`** — trunk plus canopy in one box. Tree *count* is irrelevant.
 
-What is real: **seed 68's `ch_cells` is 30**, against 2048 for seed 92 and
-14336 for passing seeds — two to three orders of magnitude small. `ch_mixed`
-scans exactly that AABB, so **the box is the common factor and it looks
-degenerate.** Not asserted as the cause; the AABB derivation has not been read.
+**AABB DERIVATION NOW READ** (`bastion_place_chop_area` over a 64×64 window,
+first ring with ≥1 tree; `ch_mixed` then scans that AABB for Wood AND Leaves).
+Normalised **cells-per-tree across all 48 seeds**:
+
+| seed | trees | cells | **cells/tree** | `ch_mixed` |
+|---|---|---|---|---|
+| **68** | 1 | **30** | **30.0** | **false** |
+| 50 | 1 | 1895 | 1895.0 | true |
+| 78 | 2 | 4049 | 2024.5 | true |
+| 94 / 95 / 96 | 1 / 4 / 1 | 2048 / 8192 / 2048 | **2048.0** (the cap) | true |
+| **92** | 1 | **2048** | **2048.0** | **false** |
+
+**Every other seed in the corpus sits in a tight 1891–2048 band. Seed 68 is
+30.0 — a 63× outlier and the only seed below 1891.**
+
+> **★ This SPLITS the two `ch_mixed` failures instead of uniting them.** Seed 68
+> is a degenerate 30-cell placement (30 cells plausibly cannot contain both a
+> trunk and a canopy, which is exactly what the clause scans for). **Seed 92 is
+> at the cap, 2048, completely normal — so its `ch_mixed: false` has a DIFFERENT
+> cause.**
+
+**My earlier "the box is the common factor" hypothesis is REFUTED for seed 92**
+and survives only for 68. Seed 92 is separately anomalous — it is also the seed
+whose chop probe ran `probe_incomplete: true` at the ~100k cap on both vantages.
+**Two `ch_mixed` reds, two unrelated situations.**
 
 ### The three CLEAN SPECIMENS — one per mode, all deterministic, all already captured
 
