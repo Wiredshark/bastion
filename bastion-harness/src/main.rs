@@ -3394,15 +3394,17 @@ fn b5_scenario(args: &Args) -> ExitCode {
                         // work: a cell with blocked_sources containing
                         // route_exhausted must show stuck_strikes >= 3.
                         "stuck_strikes": j.stuck_strikes,
-                        // ROW B (2026-08-04): amnesty grants this cell
-                        // still owes -- null unless BASTION_ROWB_BENCH=1
-                        // and this cell has crossed the threshold. READ
-                        // BUDGET (Fable's law): 0 extra reads here -- a
-                        // plain field off `j`, already fetched by the
-                        // bastion_inspect_cell call above. See
-                        // BastionJobInspect::amnesty_grants_owed's own
-                        // doc for the full accounting.
-                        "amnesty_grants_owed": j.amnesty_grants_owed,
+                        // ROW B′ (2026-08-04, replaces the withdrawn
+                        // Row B's amnesty_grants_owed): the tick this
+                        // cell becomes re-offer-eligible -- null unless
+                        // BASTION_ROWB_BENCH=1 and this cell has crossed
+                        // the threshold. READ BUDGET (Fable's law): 0
+                        // extra reads -- a plain field off `j`, already
+                        // fetched by the bastion_inspect_cell call
+                        // above. See BastionJobInspect::
+                        // benched_until_tick's own doc for the full
+                        // accounting.
+                        "benched_until_tick": j.benched_until_tick,
                         "starvation_cycles": starv_cycles,
                         "starvation_crowded_cycles": starv_crowded,
                         "cycles_since_last_claim": cycles_since_claim,
@@ -11226,10 +11228,10 @@ fn farm_scenario(args: &Args) -> ExitCode {
                     "blocked_by": server.bastion_blocked_by(pos).map(|p| [p.x, p.y, p.z]),
                     "blocked_sources": server.bastion_blocked_sources(pos),
                     "stuck_strikes": j.stuck_strikes,
-                    // ROW B (2026-08-04): READ BUDGET (Fable's law): 0
+                    // ROW B′ (2026-08-04): READ BUDGET (Fable's law): 0
                     // extra reads -- see the mine_cell_diag site's own
                     // comment for the full accounting, identical here.
-                    "amnesty_grants_owed": j.amnesty_grants_owed,
+                    "benched_until_tick": j.benched_until_tick,
                 }));
             }
         }

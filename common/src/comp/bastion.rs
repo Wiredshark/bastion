@@ -610,30 +610,32 @@ pub struct BastionJobInspect {
     /// if this job isn't currently benched.
     #[serde(default)]
     pub benched_since_tick: Option<u64>,
-    /// bastion (ROW B, 2026-08-04): amnesty grants this job still owes
-    /// before returning to normal claim eligibility -- see
-    /// `JobBoard::amnesty_grants_owed`'s own doc. `None` if this job
-    /// isn't currently sitting out any grants (the overwhelming
-    /// majority, including every job while `BASTION_ROWB_BENCH` is
-    /// unset).
+    /// bastion (ROW B′, 2026-08-04, replaces the withdrawn Row B's
+    /// `amnesty_grants_owed: Option<u32>` -- renamed, not just
+    /// retyped: a field holding a raw tick must not keep a name that
+    /// says "grants," the exact name-vs-content mismatch this campaign
+    /// kept finding elsewhere tonight): the sim tick this job becomes
+    /// eligible for the amnesty grant again -- mirrors
+    /// `common::bastion::Job::benched_until_tick`'s own doc for the full
+    /// mechanism (a conjunction with the amnesty grant's `world_changed`
+    /// signal, not a plain timer). `None` if this job isn't currently
+    /// benched (the overwhelming majority, including every job while
+    /// `BASTION_ROWB_BENCH` is unset).
     ///
     /// READ BUDGET (Fable's law, ratified off the mine_cell_diag
-    /// bisection, 2026-08-04): a PLAIN FIELD READ, not a call. Every
-    /// `BastionInspectKind::Job` construction already does one O(1)
-    /// `board.amnesty_grants_owed.get(id)` lookup to fill this field
+    /// bisection, 2026-08-04, and the standard this row's OWN redesign
+    /// was built to satisfy after the 48-seed A/B caught Row B's
+    /// per-grant iteration manufacturing a threshold crossing on seed
+    /// 76): a PLAIN FIELD READ, not a call, and CHEAPER than Row B's
+    /// version -- no HashMap lookup at all now, since the field lives
+    /// directly on the `Job` already fetched by `bastion_inspect_cell`
     /// (both construction sites, `server/src/lib.rs` +
-    /// `server/src/sys/msg/in_game.rs`) -- a HashMap probe on a map that
-    /// is empty on every seed while `BASTION_ROWB_BENCH` is unset, added
-    /// to a `bastion_inspect_cell` call that was already firing to get
-    /// `progress`/`claimant`/`stuck_strikes`. `mine_cell_diag`/
-    /// `farm_cell_diag` then read `j.amnesty_grants_owed` off the
+    /// `server/src/sys/msg/in_game.rs`). `mine_cell_diag`/
+    /// `farm_cell_diag` then read `j.benched_until_tick` off the
     /// already-constructed struct -- zero further reads, zero further
-    /// calls, per cell. This is the case the law calls near-zero: unlike
-    /// `bastion_blocked_sources` (a `Vec` scan over `blocked_regions`,
-    /// the confirmed observer-effect source), nothing here scans a
-    /// collection proportional to anything other than O(1).
+    /// calls, per cell.
     #[serde(default)]
-    pub amnesty_grants_owed: Option<u32>,
+    pub benched_until_tick: Option<u64>,
 }
 
 /// bastion (UI-5): a stockpile's contents — the 51.64 legibility fix (a

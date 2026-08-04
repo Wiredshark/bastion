@@ -2242,7 +2242,9 @@ impl Server {
                 stuck_strikes: job.stuck_strikes,
                 blocked_by: board.blocked_by(job.pos),
                 benched_since_tick: board.benched_since.get(id).copied(),
-                amnesty_grants_owed: board.amnesty_grants_owed.get(id).copied(),
+                // ROW B′: a direct field read off `job`, no lookup --
+                // cheaper than Row B's HashMap probe it replaces.
+                benched_until_tick: job.benched_until_tick,
             }));
         }
 

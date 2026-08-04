@@ -1085,6 +1085,47 @@ pub struct Job {
     /// claim→stuck→unreachable→retry forever.
     #[serde(default)]
     pub stuck_strikes: u8,
+    /// bastion (ROW B′, 2026-08-04, replaces the withdrawn Row B): the sim
+    /// tick this job becomes eligible for the amnesty grant again, once
+    /// `stuck_strikes` crosses `PERSIST_ESCALATE_STRIKES`. `None` = not
+    /// currently benched (the overwhelming majority, including every job
+    /// while `BASTION_ROWB_BENCH` is unset).
+    ///
+    /// WHY A TICK, NOT A GRANT COUNT: `amnesty_set_quiet` (JobBoard) is a
+    /// quiet-STREAK, not a cumulative grants-issued count — it resets on
+    /// `world_changed` and on its own dormant-cycle catch-all, so nothing
+    /// in the amnesty system counts "which grant this is." `tick.0` does
+    /// (the sim tick, destructured once at the top of the enclosing
+    /// `System::run` and already in scope at both the site that sets this
+    /// field and the site that reads it) -- a genuinely free lever, not
+    /// an invented one.
+    ///
+    /// GRADUATION IS A CONJUNCTION, not a timer: the amnesty loop only
+    /// resets `unreachable` when a grant fires (`world_changed`, a real
+    /// terrain-change signal, or the dormant-cycle catch-all) AND this
+    /// tick has passed. A benched job cannot be re-offered on the clock
+    /// alone, and cannot be re-offered instantly just because a neighbour
+    /// dug once. Do not "simplify" this into a plain deadline check
+    /// outside the amnesty loop -- that would drop the terrain-change
+    /// half of the condition the Haul-drop arm's own comment protects.
+    ///
+    /// `ROWB_BENCH_TICKS` (the increment added to `tick.0` here) is an
+    /// UNVALIDATED DEFAULT -- same discipline as the withdrawn Row B's
+    /// `BENCH_AMNESTY_GRANTS_OWED`, which the corpus judged and rejected
+    /// on cost grounds, not on this number. No corpus evidence yet
+    /// justifies any particular graduation delay; the paired A/B is what
+    /// judges it.
+    ///
+    /// SAVE/LOAD: moot, verified not assumed. `JobBoard` is never
+    /// persisted -- created fresh via `JobBoard::default()` each server
+    /// start (see `JobBoard`'s own doc, `bastion_jobs.rs`, and this
+    /// struct's `affordance` field's doc, both independently stating the
+    /// same fact) -- so an absolute tick stored here never survives past
+    /// the run that wrote it. `#[serde(default)]` kept for
+    /// harness/test-fixture JSON round-tripping only, not save
+    /// migration.
+    #[serde(default)]
+    pub benched_until_tick: Option<u64>,
     /// bastion (B5.8-E, Ben's ACCESS-BEFORE-DESCENT): this dig cell's depth
     /// below its own column's surface AT PLACEMENT (0 = the surface layer).
     /// The descent gate holds Mine claims deeper than novice reach until
