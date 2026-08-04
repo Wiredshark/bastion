@@ -52,6 +52,51 @@ where a finished job is removed rather than released, and stamp it there.
 > **Cite these by SYMBOL after re-reading, not by these line numbers** — this
 > file is hot and the numbers rot. They are given as a starting index only.
 
+## ★★★ SPEC CORRECTION (5b, verified 2026-08-04) — the STRUCTURE above is wrong
+
+**The count was right; the shape was not.** Verified counts:
+
+```
+claimed_by = None sites   :  7    (as stated)
+to_release.push producers : 26    (NEVER MENTIONED ABOVE)
+to_release: Vec<specs::Entity>    — carries the entity, NOT a reason
+```
+
+**One of the seven is a shared `to_release` DRAIN fed by 26 producers.** So
+stamping at the seven assignment sites yields six real reasons plus **one bucket
+labelled "released via the sweep" covering 26 distinct causes.** The original
+text asserted "seven release sites, each stamping its own reason" — **written
+from a grep of the assignment sites without reading what fed them.** 5b caught
+it before it cost a build.
+
+### The corrected implementation — carry the reason AT THE PUSH
+
+```rust
+Vec<specs::Entity>  →  Vec<(specs::Entity, ReleaseReason)>
+```
+
+Each producer already knows its reason from its own surrounding lines. **This is
+26 one-word edits behind one enum, not a research pass.**
+
+**Two steps, so the build is never broken:**
+1. **Introduce `ReleaseReason` with an `Other` variant; change the type; push
+   `Other` everywhere.** Compiles immediately, zero behavior change, trace works
+   end to end with one coarse bucket.
+2. **Replace `Other` producer by producer** as each site is read. Incremental,
+   interruptible, each replacement independently correct.
+
+> **★ Step 1 ALONE satisfies this spec's acceptance clause** — it separates
+> *completed* from *released-via-sweep* from the two direct paths, which is
+> enough to answer **shape A vs shape B** (attempts exist and fail vs zero
+> attempts recorded). That is the trace's first deliverable, so **step 1
+> unblocks the batch and step 2 refines it.**
+
+**Lesson for this document's own class:** a spec may assert a COUNT it verified
+and a STRUCTURE it did not. **The count was checkable by grep; the structure
+required reading the consumer.** Same family as everything else in this
+campaign — and the builder refusing to implement against it is what made the
+error cheap.
+
 ## The record
 
 Per attempt, append one row:
