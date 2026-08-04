@@ -504,3 +504,54 @@ looks like a diagnosis and carries **zero information**. **A diag that reports
 the same value in passing and failing runs is not a diagnostic**, and this one
 sits under a scenario (b55) currently tracked RED. Check any `_diag` field's
 distribution across passing seeds before quoting it.
+
+## ★★★ THE FOUR CHOP FAILURES — four signatures, and a CORRECTION to my own claim
+
+### ★ CORRECTION FIRST: "zero `probe_incomplete` corpus-wide" was WRONG
+
+I stated twice — in the corpus-blindness entry and to the architect — that
+**every probe in the corpus ran to completion**. **False.** My scan guarded on
+`isinstance(entry, list)`, and **`b5_chop_reachability_probe` is a DICT while
+`b5_mine_reachability_probe` is a LIST.** The guard silently dropped every chop
+probe and I reported the remainder as the total.
+
+> **A filter that skips a whole class and reports the rest as the total is the
+> same failure as an empty log read as a pass.** "No hits" and "not examined"
+> arrived at the same value again — in my own analysis code, on the day's own
+> theme. **Schema inconsistency between two sibling fields is the trap; assert
+> the type, never guard it away.**
+
+**Seed 92's chop probe is `probe_incomplete: true` on BOTH vantages** at
+`columns_visited_step: 99890` — it hit the ~100k cap. **That is UNKNOWN, not
+unreachable** (the three-way reading).
+
+### The four signatures
+
+| seed | `blocked_sources` | probe from spawn | probe from last timeout | reading |
+|---|---|---|---|---|
+| **80** | `['plan_access']` | **False, complete, 81371 cols** | **False, complete** | **GENUINELY UNREACHABLE — sound negative both vantages** |
+| **85** | `['plan_access']` | False, complete, 62265 cols | **TRUE (23 cols)** | unreachable from spawn, **reachable from where the colonist stood** |
+| **92** | `['plan_access']` | **INCOMPLETE, 99890 cols (cap)** | **INCOMPLETE** | **UNKNOWN — the probe never finished** |
+| **78** | `[]` — **no block recorded** | **TRUE, complete, 228 cols** | False (scramble True) | **UNEXPLAINED** — reachable, nothing blocking, `log_sum: 0` |
+
+**Three seeds share `blocked_sources: ['plan_access']` and are three different
+situations.** The shared source was the reason to think they were one mode; the
+probe evidence separates them.
+
+### ★★ Task #61's "only genuinely-unreachable chop case" — CHECKED, and it HOLDS
+
+The `blocked_sources` doc says the parked probe *"never independently fired on
+the corpus's only genuinely-unreachable chop case (b5 seed 80, covered earlier
+by `plan_access` alone)."* **"Only" is a sufficiency-shaped claim and I expected
+it to have an unnamed scope — it does not.** Of the three `plan_access`-sourced
+chop blocks, **85 is reachable from the colonist's own position, 92 is unknown,
+78 isn't blocked at all. Seed 80 really is the only one.** The parking rationale
+stands on independent evidence, and per today's probe caveat seed 80's negative
+is the SOUND half of the instrument. **A claim that survives checking should be
+recorded as having survived.**
+
+### ★ Seed 78 is the corpus's cleanest unexplained chop failure
+
+Path exists from spawn (complete, 228 columns), **nothing recorded a block**,
+and still zero logs. No reachability story available. **It is to chop what seed
+90 is to mine** — the specimen with no confound to strip.
