@@ -614,7 +614,52 @@ that would try to dig at them.
 
 ## §9 — RISK REGISTER
 
-### R1 — ★ THE STEP-2 CLASSIFICATION IS UNCOMMITTED
+### R0 — ★★ `Other: 0` MEANS "NO UNCLASSIFIED SITE FIRED", NOT "CLASSIFICATION COMPLETE"
+
+**Found reviewing 5b's R1 commit `e86fe79893`** (parent `2832820784`, branch
+`bastion/wip-batch-verify`). The enum now carries five variants. **The call-site
+distribution does not match the impression the corpus accounting gives:**
+
+| | count | sites |
+|---|---|---|
+| `to_release` producers | **26** | — |
+| **classified** | **4** | `RemovedExternally` 9546 · `TargetChanged` 9635 · `TimedOut` 11497 · `Completed` 12525 |
+| **still `Other`** | **22** | 9280, 9412, 9474, 9510, 9610, 11325, 11598, 11644, 11655, 11660, 11716, 11728, 11765, 11842, 11852, 11906, 12050, 12109, 12155, 12210, 12290, 12324 |
+
+Seed 78's accounting is exact — `29 + 2 + 2 = 33`, `Other: 0` — and **that is a
+correct reading of that run.** But it is being read one step further than it
+supports:
+
+> **`Other: 0` means none of the 22 unclassified producers fired in this
+> scenario. It does not mean the taxonomy is complete.** The 22 are an
+> **unexercised denominator**, and their silence is a coverage fact about the b5
+> scenario, not a completeness fact about the classification.
+
+The same law as the empty log and the ignored file: **an exclusion and an absence
+rendering identically.** `Other: 0` is produced both by "every path is
+classified" and by "the unclassified paths were never walked," and those are
+indistinguishable from the number alone.
+
+#### ★★★ AND THIS IS A LIVE HAZARD FOR ROW B — pre-register it now
+
+`ReleaseReason::Other`'s own doc says a nonzero count *"would mean a site was
+missed."* **After Row B that inference becomes wrong.** An escalation path changes
+*which* release sites fire, so a previously-dormant producer among the 22 can
+start firing — landing as `Other: N > 0` and reading exactly like a defect.
+
+**Pre-registered, before Row B exists:**
+
+> **`Other > 0` after Row B does NOT indict the classification.** The first
+> response is to *identify which dormant producer woke up and classify it* — not
+> to hunt a regression. A rise in `Other` is the expected signature of a new path
+> being exercised for the first time.
+
+**Corollary for Row A:** Row A is report-only and moves no release path, so
+`Other` must stay at its current value. **If Row A moves `Other` at all, Row A is
+not report-only and the split is wrong** — a free falsifier for the packet's
+central structural claim, costing nothing to check.
+
+### R1 — ★ THE STEP-2 CLASSIFICATION IS UNCOMMITTED — ✅ RESOLVED
 
 The release-reason classification that separates **shape A** (lost the
 comparison) from **shape C** (selected, attempted, rejected downstream) is the
@@ -635,7 +680,28 @@ block-B6: `TimedOut` appears in none of them.** The step-2 variants exist only i
 > the highest-priority action item in the packet — **higher than the row itself.**
 > Flagged to 5b this session.
 
-Marked **5b-TRACE** throughout; those rows are *reported*, not *verified by me*.
+**✅ RESOLVED same session.** 5b committed it as **`e86fe79893`** (parent
+`2832820784`, `bastion/wip-batch-verify`). **Verified by me**: the commit
+resolves, the enum carries all five variants, and the four classified sites are
+where 5b said they are.
+
+**One granularity that matters and 5b flagged it unprompted:** `TimedOut` /
+`Completed` / `RemovedExternally` **were build-verified earlier this session** —
+that is the binary the seed 66/71 site-scans and the seed 78 restoration check
+ran against, so **the evidence table's 5b-TRACE rows rest on verified code.**
+`TargetChanged` was added *after* the last successful build and is **not
+build-verified** (see the build blocker below); it is self-consistent by
+inspection across enum, counts consumer, `lib.rs` hook and harness JSON, but its
+counts are **not to be treated as real** until a build confirms it.
+
+**Build blocker, escalating:** a `num-traits` build-script `.exe` is denied write
+under the `no_overflow` profile — the residual gap from the 2026-07-28 E: incident
+(build-script executables were never allow-listed). 5b **correctly refused** to
+route around it with a `CARGO_TARGET_DIR` redirect. I have pointed them at the
+**`dev` profile**, which BATCH-RUNBOOK Step 0 already records as the substitute
+and which their own working binary proves is permitted. **If `dev` is also
+denied, that is profile-independent denial — a materially stronger escalation to
+Ben than a single-profile failure**, and worth the two minutes either way.
 
 ### R2 — `to_release`'s 26 producers
 
