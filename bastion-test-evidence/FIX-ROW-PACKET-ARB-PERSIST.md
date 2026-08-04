@@ -191,17 +191,57 @@ would make "is this cell blocked?" a void test of which mechanism fired — the
 exact defect `BlockedRegionInfo.source` was added to prevent (**3736-3741**,
 READ).
 
-### Entry point 2 — the haul-drop arm (`a85dec2912:11401`)
+### ~~Entry point 2 — the haul-drop arm~~ — ★ WITHDRAWN, see below
 
-```
-gate    ALREADY EXISTS — stuck_strikes >= HAUL_DROP_STRIKES
-source  "haul_strikes_exhausted"
-meaning "an item-fetch was abandoned after 3 strikes"
-```
+**Proposed, then killed by G4's follow-through. The withdrawal is kept visible
+because the reason generalises.**
 
-**This entry point adds no gate, no counter, and no policy.** The escalation
-already fires; it is simply invisible to #55. A colony that drops hauls silently
-looks identical to a colony with no hauls to do.
+The proposal was to record `"haul_strikes_exhausted"` at **11401**, on the
+grounds that the escalation already fires there and is simply invisible to #55.
+**That reasoning was right about the gap and wrong about the instrument.**
+
+**READ, `a85dec2912:3717`** — the store's semantic unit:
+
+> *"one **designation** Region the auto-access planner gave up on"*
+
+**READ, `a85dec2912:8507-8512`** — a `Haul` job's `pos` is `cell`, **the loose
+item's location**. It has no designation. Meanwhile the recorder is keyed by
+`board.designated.iter().find(|r| r.contains_point(to))` (**12881**), so a haul
+entry would resolve one of two ways:
+
+| case | result |
+|---|---|
+| item on open ground (the normal case) | **no region found → records nothing.** A `source` count that is silently conditional on an unrelated fact, with a denominator nobody can see |
+| item happens to lie inside *any* painted box — including a Stockpile paint, which **does** join `designated` (**4516**, pushed before the Stockpile branch) | **records "this designation is blocked"** — and the chat drain (**15397**) tells the player *"A designation is blocked"* about a farm or mine that is **fine**. The haul failed; the designation didn't. |
+
+> **★ The second case is worse than the first. It is not a gap — it is an active
+> mis-attribution that reaches the player.** A fetch failure would be reported as
+> a blocked designation, chosen by whichever box the item happened to be
+> standing in.
+
+**Disposition:** the haul-drop site is **EXEMPT with a named reason** — *the
+store's unit is a designation and a haul drop is an item-level failure with no
+designation to blame.* It joins the enclosure sweep and anchor-staging in §5's
+exempt list.
+
+**But the gap it named is real and stays on the books.** A colony that silently
+drops hauls is indistinguishable from a colony with no hauls to do. That needs a
+**counter keyed on the item or the job**, not a `blocked_regions` entry — a
+different instrument, a different row. **Filed, not solved.**
+
+### ★ What survived — entry point 1 is structurally sound on the same test
+
+Applying the identical check to `route_exhausted`: `designate()` creates its jobs
+in a triple loop bounded by `region.min..=region.max` (**4552-4554**), so **a
+mine or farm job's `pos` lies inside its own designation by construction.** The
+region lookup at the churn site resolves, the entry means what the struct says it
+means, and the chat line names a designation that is genuinely not being
+completed.
+
+**The two entry points looked symmetric and were not.** The test that separated
+them — *does the store's semantic unit fit this producer?* — is one question,
+asked once, and it should be asked of every future producer before it is
+written.
 
 ### Threshold — the one open decision
 
@@ -238,7 +278,7 @@ right and being left out?**
 | sibling | verdict | reason |
 |---|---|---|
 | **11413** churn else-arm | **COVERED** — entry point 1 | the specimen path |
-| **11401** haul drop | **COVERED** — entry point 2 | escalates already, records nothing |
+| **11401** haul drop | ~~COVERED~~ → **EXEMPT — named reason** | ★ **Flipped by G4.** A haul's `pos` is a loose item's cell (**8510**), and the store's unit is *"one designation Region"* (**3717**). Recording here either finds no region (silent, unknown denominator) or blames whichever painted box the item was standing in — **a false "designation is blocked" chat line for a designation that is fine.** The invisibility it names is real and is re-filed as its own row needing an item-keyed counter. See §4. |
 | **12863** plan_access `None` | **already covered** | the existing producer (12886) |
 | **15564** enclosure sweep | **EXEMPT — named reason** | READ: *"the periodic retry sweep re-tests as the dig opens the shell"* — this flag is **expected** to flip back, and there is a live mechanism that flips it. Recording it would report the colony's own dig progress as a blockage. **This is the one case where "transient" is backed by a named re-tester.** |
 | **11284** staged-at-anchor churn | **EXEMPT — named reason** | READ (11279-11282): FR15 scopes this to anchor-staging specifically; a stalled *traveler* is a movement failure, not a blocked *designation*. Recording it would attribute a pathing stall to the target cell. |
@@ -306,7 +346,47 @@ is still refused.
 | **G1 — column scan** (seed 90 cell) | whether the holdout site is single-surface or multi-layer | The probe caveat's **soundness direction is a property of the error model**: body-width error ⇒ negatives sound; multi-layer collapse ⇒ **both directions unsound**. Until the column is scanned, "laterally unreachable" is an inference from an instrument that may be wrong in the direction that matters. **G1 gates the row's premise, not its implementation.** |
 | **G2 — FR15 paired A/B** | the stuck-economy's tuning under the new escalation | Mandatory **for ROW B only** — see R3. A new escalation path **invalidates the stuck-economy's tuning** by construction. Paired A/B, same seeds, both arms. **Row A does not trip this**: the census in R3 proves `blocked_regions` has zero behavior consumers. |
 | **G3 — corpus exact-match** | zero drift on all 48 seeds **with `source` counts read** | ★ **Not exact-match alone.** Exact-match on the current schema would return GREEN for a fix that never fires — the corpus has no field that reports `blocked_regions` contents. **The row must add the reporting field before it adds the behavior**, per the acceptance framework's own ordering. A GREEN with no named field that moves is a measurement of nothing. |
-| **G4 — prune-side check** (§5) | `retain` correctness on a populated store | new; produced by the sibling-caller check |
+| **G4 — prune-side check** (§5) | `retain` correctness on a populated store | new; produced by the sibling-caller check. **★ RUN — read-only, source-decidable. Verdict below.** |
+
+### ★ G4 VERDICT — the prune is CORRECT for entry point 1, *conditionally*
+
+**READ, `a85dec2912:5151-5157`:**
+
+```rust
+if let Some(j) = &job && !self.blocked_regions.is_empty() {
+    self.blocked_regions.retain(|b| {
+        !b.region.contains_point(j.pos)
+            || self.jobs.values().any(|other| b.region.contains_point(other.pos))
+    });
+}
+```
+
+Keep `b` unless *(b covers the removed job)* **and** *(no remaining job lies
+inside b)*. That is exactly the stated intent — prune only when the region is
+empty of jobs — and it holds on a populated store, because the predicate is
+per-entry and never depended on the store being small. **The `is_empty()`
+early-out is a performance guard, not a correctness one**; a populated store
+simply pays the scan it was always written to pay.
+
+**The condition:** this is only true if the new producer records **the same
+Region value** the existing one does — the designated AABB from
+`board.designated.iter().find(|r| r.contains_point(..))`. **A point-region would
+break three things at once:** the `already_recorded` exact-Region dedupe
+(**12884**) would stop collapsing duplicates, the prune's `contains_point(other.pos)`
+would almost never find a sibling job and would over-retract, and
+`blocked_sources` would return two entries for one target — the precise hazard
+its own doc warns about (**5276-5283**).
+
+> **So G4 converts from a gate into a one-line design constraint:
+> `route_exhausted` MUST reuse the designated-region lookup.** That is now the
+> single most important instruction in the builder prompt, and it is why §8
+> lists `3718-3746` in the START-HERE tier rather than as reference.
+
+**What G4 does *not* clear:** the over-prune/under-prune comment describes bugs
+found and fixed at n≈0 population. The predicate is *correct*; whether the
+resulting player-facing behavior is *sensible* at real population — several
+regions blocked, entries retracting as unrelated jobs complete — is a UX
+question Row A's corpus field will answer with data instead of argument.
 
 **G3 is the gate this campaign exists because of.** The colony-global access bar
 survived every fan for weeks because no field could see it. Do not repeat that
