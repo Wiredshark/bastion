@@ -38,9 +38,14 @@ archetype · chronicle · chronicle-capture · lod0 · lod1 · inspect
 - **b73** — root `ate` (same deferral). In-code EXPECTED-RED note present.
 
 ### Red (9) — causes known or queued
-- **bed** — root `beds_built`, fails at `plan_access` BEFORE stance/materials;
-  fixture-vs-false-reject discriminator queued (probe at 100k cap vs the two
-  named blocking cells). 5b assigned.
+- **bed** — root `beds_built`, fails at `plan_access` BEFORE stance/materials.
+  **UNRESOLVED, not "no bug"** (status revised 2026-08-04 at `460626a6e2`): the
+  discriminator ran (four probes, `probe_incomplete:false`, route found) and
+  its POSITIVE result turns out to be uninterpretable — see the instrument
+  caveat below. We established that the probe cannot adjudicate this question,
+  NOT that `plan_access` is correct. Needs a capsule-aware check to decide.
+  The emergency-egress agreement is suggestive but not independent if it
+  shares `plan_access`'s capsule logic.
 - **selfgen** — root `hauled` (haul stage; upstream of placement).
 - **farm** — till/sow late + `farm_tilled:false` unexplained under BOTH stances
   (counter-control); Farm's own control blocked on that mystery.
@@ -72,3 +77,40 @@ sim's STARTING PHASE (a real-world-timing input, against
 determinism-by-construction). Cheap confirmation filed: log `tick.0` at
 force_load return across runs. Until resolved, scenario-level comparisons on
 phase-sensitive scenarios need their own stability measurement first.
+
+## ★★ STANDING CAVEAT (filed 2026-08-04): the reachability probe is SOUND FOR NEGATIVES ONLY
+
+`offline_reachability_probe`'s flood fill (`bastion_jobs.rs`, the
+`column_height_near` / `ascent <= ascent_bound` loop) is **purely
+column-based**: it walks 2D `(x,y)` columns and references **no width, no
+headroom, no collider** at any step. `has_standable_stance` is the only
+body-aware check and it runs **only on the destination cell**. Intermediate
+columns get zero clearance modeling.
+
+**So the probe models a POINT; `plan_access` models a CAPSULE. They answer
+different questions.** A capsule can only go where a point can go, so the
+soundness is asymmetric:
+
+| probe result | status | valid claim |
+|---|---|---|
+| **NO ROUTE** | **SOUND** | point-unreachable ⇒ capsule-unreachable |
+| **ROUTE EXISTS** | **UNSOUND** | says nothing about whether a body fits |
+
+**Cite this instrument for negatives only.** Consequences already applied:
+
+- **seed 80 / #61 — UNAFFECTED, arguably strengthened.** Its claim was a
+  NEGATIVE (no route from either vantage). Even the most permissive traversal
+  model available found no way in. The first reading of this finding was that
+  seed 80 weakened alongside bed; **that is backwards** and the row's n=1
+  evidence stands.
+- **bed — POSITIVE, therefore void.** Row moved to UNRESOLVED above.
+
+**Filed, not started:** extending clearance/headroom into the per-step column
+test would make positives sound too. Real work in a hot path, behavior-
+re-rolling; priority sits with the architect.
+
+**Why it went unnoticed through four rows:** the instrument's NAME describes a
+broader question than its CONTENTS answer, and four rows read the name — the
+label rule in a new costume. It is also `aggregate-late` in a new costume: one
+boolean collapsing two different questions, invisible until someone read the
+loop.
