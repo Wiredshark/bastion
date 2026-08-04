@@ -1,5 +1,72 @@
 # ROW A — WINDOW COMPOSITION CALL
 
+> ## ⛔ BLOCKING PREREQUISITE — READ BEFORE RUNNING ANY FAN
+>
+> **The mandatory hold-check has NO VALID REFERENCE BASELINE today.** The window's
+> entire composition argument rests on a check that cannot currently be executed.
+> **A pre-Row-A baseline fan must be captured first.** Detail in §0.
+
+## §0 — ⛔ THE HOLD-CHECK HAS NO BASELINE (found 2026-08-04, before the build landed)
+
+**The check I made mandatory:** *every field present before this window holds its
+previous value.* **Executing it requires a structured per-seed capture at the tip
+Row A builds from.** There isn't one.
+
+| candidate baseline | commit | problem |
+|---|---|---|
+| **wave24** (most recent fan) | `d3235e5329` | ★ **LOGS ONLY.** The raw dir holds four `bastion-pool-*.log` files and **no `*_FULL.json`.** No per-seed structured data exists, so it cannot support a field-level comparison at all. |
+| **wave19** (newest `_FULL.json`) | pre-`d3235e5329` | **Predates the tip by more than ten commits** *and* by nine corpus fields (below). |
+| a fan at `a85dec2912` | — | **Does not exist.** No fan has been run at the tip Row A builds from. |
+
+**Ten commits sit between the last fan and the build tip** (`d3235e5329..a85dec2912`),
+and they are not inert — diffing `bastion-harness/src/main.rs` across them shows
+**nine added corpus fields**:
+
+```
+b5_access_plan_self_rescue_calls        b5_access_plan_self_rescue_emissions
+b5_access_plan_emergency_calls          b5_access_plan_emergency_emissions
+b5_access_plan_proactive_descent_calls  b5_access_plan_proactive_descent_emissions
+b5_access_plan_self_rescue_starved      b5_access_pending_true_ticks
+b5_live_is_access_count
+```
+
+> **★ Comparing Row A's output against `wave19` would show those nine
+> already-landed fields as "new", alongside Row A's own additions — and the
+> hold-check would be measuring two changes it cannot separate.** That is exactly
+> the unfalsifiable re-baseline the enumerable-delta criterion exists to prevent.
+> **The criterion would have been satisfied on paper and void in practice.**
+
+### The fix — cheap, and it pays for itself twice
+
+**Run a baseline fan at the pre-Row-A tip, capturing `_FULL.json`, before the
+Row-A fan.** Then the comparison is a true pair: same commit for everything
+except the window's own delta.
+
+**It is not extra cost — it is cost already owed.** Those ten commits landed
+**local-pins-verified but never fanned** (correct under *local=pins, VMs=fixtures*
+plus self-gate-on-green — not a process breach). The baseline fan therefore
+**also retroactively validates all ten**, including the nine new fields, which
+nothing has yet checked at corpus scale.
+
+### ★★★ AND THE GENERAL RULE THIS EXPOSES
+
+**wave24 ran, produced a verdict, and preserved only its logs.** It can never
+serve as a baseline for anything, because the body was discarded and only the
+conclusion kept.
+
+> **A FAN THAT PERSISTS ONLY ITS VERDICT IS NOT A BASELINE. Every fan must
+> persist per-seed `_FULL.json`, not just the fanlog** — otherwise it is a
+> conclusion with no evidence behind it, and no future field-level comparison can
+> reference it.
+
+Same family as `wave13_FULL.json` being `{}` — *an empty run shaped like a real
+baseline* — and the same law throughout: **an exclusion and an absence must not
+render identically.** Here, *"the fields held"* and *"the fields were never
+recorded"* both present as a clean fanlog.
+
+**Standing capture requirement, effective now:** `_FULL.json` per seed, plus the
+`COMMIT=` attestation line, or the wave is a verdict and not evidence.
+
 **Decision owner:** me (composition), on 5b's sizing (build-readiness).
 **Rule as issued (Fable):** *all backlog items build-ready ⇒ Row A rides with
 them, one re-baseline pays for everything; any item needs design work ⇒ Row A
