@@ -3368,6 +3368,21 @@ fn b5_scenario(args: &Args) -> ExitCode {
                         // evidence for the feature, alongside the
                         // synthetic fixture's negative-case coverage.
                         "blocked_by": server.bastion_blocked_by(pos).map(|p| [p.x, p.y, p.z]),
+                        // ROW A (2026-08-04): every producer attributed at
+                        // this cell (plan_access, or the new
+                        // route_exhausted, or both) -- generic over EVERY
+                        // still-open mine cell, so it covers whichever cell
+                        // turns out to be a given seed's holdout without
+                        // hardcoding one (finding-72's "wrong coordinates"
+                        // blindness doesn't apply here: this loop was
+                        // already per-open-cell, not a fixed probe point).
+                        "blocked_sources": server.bastion_blocked_sources(pos),
+                        // stuck_strikes -- already on BastionJobInspect
+                        // (`j`, above); the same counter route_exhausted's
+                        // gate reads, surfaced here so a run can show its
+                        // work: a cell with blocked_sources containing
+                        // route_exhausted must show stuck_strikes >= 3.
+                        "stuck_strikes": j.stuck_strikes,
                         "starvation_cycles": starv_cycles,
                         "starvation_crowded_cycles": starv_crowded,
                         "cycles_since_last_claim": cycles_since_claim,
@@ -3377,6 +3392,18 @@ fn b5_scenario(args: &Args) -> ExitCode {
             }
         }
     }
+    // ROW A (2026-08-04): captured HERE, immediately after mine_cell_diag's
+    // own loop, not in the final json! macro at the scenario's end -- a
+    // count read many ticks later (after build/chop/skill/soak phases run
+    // further arbitration cycles) can show 0 via the retain guard's
+    // correct pruning even while mine_cell_diag's snapshot, taken here,
+    // shows a live entry. That mismatch is a timing artifact of the
+    // READER, not evidence about the row (confirmed on seed 90: this
+    // count is nonzero here, 0 at scenario-end once the retain guard
+    // legitimately clears it). A second read at the end (below) shows
+    // the same guard's pruning explicitly rather than leaving it to be
+    // inferred from a single number.
+    let mine_blocked_regions_count_at_settle = server.bastion_blocked_regions_count();
     // ATTRIBUTION, not magnitude (Fable's fan finding, 2026-07-30):
     // max_same_target_timeouts and raw travel_timeouts both failed to
     // discriminate pass/fail across the corpus (seed 76 took 29 timeouts
@@ -4231,16 +4258,14 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // the full curve are unit-pinned in common::bastion::tests.
     let tool_name = names.first().cloned().unwrap_or_default();
     let tl_equip_stone = server.bastion_equip_tool(&tool_name, "common.items.tool.pickaxe_stone");
-    let tl_stone = server
-        .bastion_colonist_tool_factor(&tool_name, WorkType::Mine)
-        .unwrap_or(0.0);
+    let tl_stone_raw = server.bastion_colonist_tool_factor(&tool_name, WorkType::Mine);
+    let tl_stone = tl_stone_raw.unwrap_or(0.0);
     let tl_stone_chop = server
         .bastion_colonist_tool_factor(&tool_name, WorkType::Chop)
         .unwrap_or(0.0);
     let tl_equip_steel = server.bastion_equip_tool(&tool_name, "common.items.tool.pickaxe_steel");
-    let tl_steel = server
-        .bastion_colonist_tool_factor(&tool_name, WorkType::Mine)
-        .unwrap_or(0.0);
+    let tl_steel_raw = server.bastion_colonist_tool_factor(&tool_name, WorkType::Mine);
+    let tl_steel = tl_steel_raw.unwrap_or(0.0);
     let tl_ok = tl_equip_stone
         && tl_equip_steel
         && (tl_stone - 1.5).abs() < 0.001   // stone pick: the crude relief
@@ -4433,6 +4458,15 @@ fn b5_scenario(args: &Args) -> ExitCode {
         // problem instead.
         "b5_mine_jobs_remaining": mine_jobs_remaining,
         "b5_mine_cell_diag": mine_cell_diag,
+        // ROW A (2026-08-04): total `blocked_regions` entries board-wide,
+        // at TWO points -- see the capture comment above for why one
+        // number alone is a timing trap. Pre-registered falsifier (G3):
+        // both 0 on a clean seed; `_at_settle` nonzero wherever
+        // mine_cell_diag's own blocked_sources shows a producer fired;
+        // `_at_end` dropping back to 0 on a since-resolved seed is the
+        // retain guard (G4) pruning correctly, not a contradiction.
+        "b5_blocked_regions_count_at_settle": mine_blocked_regions_count_at_settle,
+        "b5_blocked_regions_count_at_end": server.bastion_blocked_regions_count(),
         // MECHANISM-2 TERRAIN-REACHABILITY PROBE: report-only, does not
         // gate `pass`. One entry per still-open mine cell -- see the probe
         // definition (bastion_jobs::offline_reachability_probe) for the
@@ -4619,6 +4653,20 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_55_diag": b55_diag,
         "b5_tool_stone": tl_stone,
         "b5_tool_steel": tl_steel,
+        // report-fix backlog item 4 (2026-08-04): `b5_tool_stone`/`_steel`
+        // above are `.unwrap_or(0.0)` sentinels -- 0.0 sits below the
+        // metric's own documented 1.0 floor, so it is reachable ONLY via
+        // `None` (the lookup failing), never a real measurement. Seed 66
+        // is instrument-suspect on exactly this collapse. Fixed as a NEW
+        // field carrying the raw `Option<f32>` (serde emits `null` for
+        // `None`) rather than mutating the existing sentinel fields --
+        // strictly additive: the two fields above are byte-identical to
+        // every prior run, on every seed, and this is the whole
+        // enumerable delta: `b5_tool_stone_measured`/`_steel_measured`
+        // appear as `null` on exactly the seeds whose lookup fails (seed
+        // 66 and any other), a real value everywhere else.
+        "b5_tool_stone_measured": tl_stone_raw,
+        "b5_tool_steel_measured": tl_steel_raw,
         "b5_tool_ok": tl_ok,
         "b5_soak_avg_tick_ms": avg_tick_ms,
     });
@@ -4891,6 +4939,14 @@ fn b55_scenario(args: &Args) -> ExitCode {
         "b55_jobs_in_half_before": jobs_in_half_before,
         "b55_jobs_in_half_after": jobs_in_half_after,
         "b55_orphans_after_partial": orphans_after_partial,
+        // report-fix backlog item 3 (2026-08-04): `remainder_before` was
+        // already the captured baseline `remainder_progressed` compares
+        // against (`total < remainder_before`) -- just never reached the
+        // JSON. Additive, same shape as item 1. Unblocks reading whether
+        // a `false` here means "stalled" or "nothing left to progress"
+        // (baseline already at/below floor) -- previously
+        // indistinguishable.
+        "b55_remainder_before": remainder_before,
         "b55_remainder_progressed": remainder_progressed,
         "b55_board_after_whole": board_after_whole,
         "b55_orphans_after_whole": orphans_after_whole,
@@ -10267,6 +10323,16 @@ fn b73_scenario(args: &Args) -> ExitCode {
             "hunger_first": hunger_first,
             "mine2_jobs": mine2_jobs,
             "colonists": names.len(),
+            // report-fix backlog item 2 (2026-08-04): both already-captured
+            // baselines the BREAK watches (`broke`, `resumed_after_break`)
+            // compare against, printed on the telemetry line but never in
+            // the JSON. Additive, same shape as items 1/3. `attempts0`:
+            // the pre-break preempt-attempt count `broke` needs to exceed.
+            // `jobs_frozen_at`: the in-region job count captured the
+            // instant `broke` fires, which `resumed_after_break` needs to
+            // drop below.
+            "attempts0": attempts0,
+            "jobs_frozen_at": jobs_frozen_at,
         },
     });
     println!(
@@ -11119,6 +11185,31 @@ fn farm_scenario(args: &Args) -> ExitCode {
             break;
         }
     }
+    // ROW A (2026-08-04): generic per-cell diagnostic for the till plot,
+    // same shape as b5's mine_cell_diag -- one entry per cell that still
+    // carries an open job after the TILL window, so whichever cell turns
+    // out to be a given run's holdout (the finding-72 "wrong
+    // coordinates" blindness: fixed probe cells elsewhere miss mine/farm
+    // designations entirely) is covered without hardcoding a coordinate.
+    let mut farm_cell_diag: Vec<serde_json::Value> = Vec::new();
+    for y in plot.min.y..=plot.max.y {
+        for x in plot.min.x..=plot.max.x {
+            let pos = Vec3::new(x, y, gz);
+            if let Some(common::comp::bastion::BastionInspectKind::Job(j)) =
+                server.bastion_inspect_cell(pos)
+            {
+                farm_cell_diag.push(serde_json::json!({
+                    "pos": [x, y, gz],
+                    "progress": j.progress,
+                    "claimant": j.claimant,
+                    "unreachable": j.unreachable,
+                    "blocked_by": server.bastion_blocked_by(pos).map(|p| [p.x, p.y, p.z]),
+                    "blocked_sources": server.bastion_blocked_sources(pos),
+                    "stuck_strikes": j.stuck_strikes,
+                }));
+            }
+        }
+    }
     // bastion (batch item, 2026-08-04, Opus/Fable-directed): stance-cell
     // diagnostic -- an OnTopAlways till job stands ON its target cell, so
     // for pathing purposes `target + unit_z` is the real destination.
@@ -11203,6 +11294,15 @@ fn farm_scenario(args: &Args) -> ExitCode {
         "farm_paint_jobs_zero": paint_jobs == 0,
         "farm_tilled": tilled,
         "farm_sown": sown,
+        // report-fix backlog item 1 (2026-08-04): `g1` was already the
+        // captured baseline `rose` compares against every tick (see the
+        // GROWTH loop above) -- just never reached the JSON. Additive:
+        // `rose`'s own value and computation are untouched. Unblocks the
+        // already-complete-at-open reading: if `g1` itself is >= the
+        // maturity threshold, `rose` requiring `g > g1` is unsatisfiable
+        // by construction, and that is now visible instead of silently
+        // indistinguishable from a real non-firing watch.
+        "farm_g1_baseline": g1,
         "farm_growth_rose": rose,
         "farm_matured": matured,
         "farm_harvested": harvested,
@@ -11210,6 +11310,8 @@ fn farm_scenario(args: &Args) -> ExitCode {
         "farm_cycled": cycled,
         "farm_jobs_bounded": jobs_bounded,
         "farm_no_embeds": no_embeds,
+        "farm_cell_diag": farm_cell_diag,
+        "farm_blocked_regions_count": server.bastion_blocked_regions_count(),
     });
     println!(
         "FARM TELEMETRY: tilled={} wheat={wheat_n} seeds={seeds_total} g1={g1}",
@@ -23752,6 +23854,11 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
         "ck_peaks": peaks,
         "ck_rim_feet": k_gz + 1,
         "ck_failsafe_out": fs_out,
+        // report-fix backlog item 2 (2026-08-04): the already-captured
+        // baseline `ml_done` compares against (`done_designations() >
+        // done_before`) -- same shape as the other 4 watches in the
+        // sweep. Additive.
+        "ck_done_before": done_before,
         "ck_mine_done": ml_done,
     });
     let pass = ck_jobs == 15

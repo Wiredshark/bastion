@@ -1564,11 +1564,22 @@ pub const EMBED_PERSIST_TICKS: u32 = crate::SIM_TPS as u32;
 /// bastion (B6 HAUL): pending-haul cap per loaded colonist (throttle — the
 /// generator never floods the board; more spawn as deliveries complete).
 pub const HAUL_JOBS_PER_COLONIST: usize = 2;
-/// bastion (49.2/B37): unreachable-strike cap for HAUL jobs — at this many
-/// stall timeouts the job DROPS and its reservation frees (the pinning
-/// fix). 3 = the arrival-tolerance growth cap (`stuck_strikes.min(3)`):
-/// once tolerance stops growing, further churn can't converge.
-pub const HAUL_DROP_STRIKES: u8 = 3;
+/// bastion (49.2/B37, renamed 2026-08-04 for ROW A, packet
+/// FIX-ROW-PACKET-ARB-PERSIST §4): the `stuck_strikes` threshold shared by
+/// TWO independent consumers, named here rather than left implicit at one
+/// call site (a bare reuse under the old `HAUL_DROP_STRIKES` name would
+/// have hidden the second one):
+///  1. HAUL jobs (49.2/B37, original): at this many stall timeouts the job
+///     DROPS and its reservation frees (the pinning fix).
+///  2. `route_exhausted` (ROW A, 2026-08-04): at this many stall timeouts
+///     on a Mine/Farm target that never reached the carve planner (the
+///     z-gate never fired), the churn else-arm records the designation
+///     into `blocked_regions` — report-only, no drop, no world write.
+/// 3 = the arrival-tolerance growth cap (`stuck_strikes.min(3)`, consumer
+/// at the arrive calc): once tolerance stops growing, further churn can't
+/// converge, so 3 is where BOTH downstream reactions to persistence
+/// become appropriate, not an arbitrary shared number.
+pub const PERSIST_ESCALATE_STRIKES: u8 = 3;
 /// bastion (AUTON-1, row 49): the self-designation generator set — the
 /// colony-state→jobs emitters that feed the board without player paint.
 /// Server-side only (no wire surface). Haul is the grandfathered B6
@@ -11387,8 +11398,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     );
                                 }
                                 job.claimed_by = None;
-                                // B5.8-E: strike — grows the remote-work
+                                // B5.8-E: strike -- grows the remote-work
                                 // arrival tolerance (see the arrive calc).
+                                // TWO consumers read this counter (named
+                                // here, 2026-08-04, ROW A -- see
+                                // PERSIST_ESCALATE_STRIKES's own doc for
+                                // the full rationale): (1) arrival
+                                // tolerance at the arrive calc
+                                // (`stuck_strikes.min(3)`), unconditional
+                                // on kind; (2) PERSIST_ESCALATE_STRIKES
+                                // gates below -- the haul-drop arm and the
+                                // route_exhausted recording, both firing
+                                // once this counter crosses 3. Kind-
+                                // agnostic and survives re-claim (packet
+                                // §5-item-69's killer check): the SAME
+                                // counter measures persistence for every
+                                // job kind, not a mine/farm-specific one
+                                // grafted on beside it.
                                 job.stuck_strikes = job.stuck_strikes.saturating_add(1);
                                 // B5.8: a stuck ASCENT beyond THIS
                                 // colonist's climbing reach gets one
@@ -11411,7 +11437,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 {
                                     carve_requests.push((feet, job.pos, active.job));
                                 } else if matches!(job.kind, common::bastion::JobKind::Haul { .. })
-                                    && job.stuck_strikes >= HAUL_DROP_STRIKES
+                                    && job.stuck_strikes >= PERSIST_ESCALATE_STRIKES
                                 {
                                     // 49.2/B37: a HAUL that keeps striking
                                     // out is DROPPED, not eternally churned —
@@ -11493,6 +11519,67 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // for the full history and the still-
                                     // open flat/sideways-blocked hypothesis
                                     // this might apply to, unproven.
+                                }
+                                // ROW A (FIX-ROW-PACKET-ARB-PERSIST §4, entry
+                                // point 1, 2026-08-04): the lateral entry
+                                // into `blocked_regions` this churn path was
+                                // built without -- `plan_access` (below) is
+                                // reached only past the z-gate, so a
+                                // laterally-unreachable Mine/Farm target is
+                                // structurally incapable of ever recording
+                                // here otherwise. Gated on `stuck_strikes`
+                                // (already incremented above, kind-agnostic,
+                                // survives re-claim -- see the packet's
+                                // (a-revised)/§5-item-69). Threshold is
+                                // `PERSIST_ESCALATE_STRIKES`, renamed from
+                                // `HAUL_DROP_STRIKES` at its declaration
+                                // (2026-08-04) to name BOTH consumers this
+                                // site and the haul-drop arm share, per the
+                                // packet's explicit "reuse the constant,
+                                // don't invent a second one" recommendation
+                                // -- the bare old name would have hidden
+                                // this second consumer at its declaration.
+                                // Report-only: no world write, no
+                                // change to `job`'s disposition -- the job
+                                // still returns to the pool exactly as
+                                // before this block existed. `notified:
+                                // false` (not `true`, unlike the inline
+                                // plan_access site below): no `chat_emitter`
+                                // in scope here, so the deferred drain
+                                // (TASK #56, below) fires it -- exactly the
+                                // "ANY code path can record without emitter
+                                // plumbing" design `BlockedRegionInfo`
+                                // already documents. `blocking_cell:
+                                // job.pos` -- there is no discovered
+                                // obstruction cell here (no carve plan was
+                                // ever attempted, that is the whole gap),
+                                // so this names the job's own target rather
+                                // than reusing the field's plan_access
+                                // meaning; the drain's `route_exhausted`
+                                // message is worded to match (a behavioral
+                                // claim, not a terrain one -- see finding
+                                // 74, filed against the existing
+                                // plan_access wording separately, not fixed
+                                // by this row).
+                                if job.stuck_strikes >= PERSIST_ESCALATE_STRIKES
+                                    && let Some(region) = board
+                                        .designated
+                                        .iter()
+                                        .find(|r| r.contains_point(job.pos))
+                                        .copied()
+                                {
+                                    let already_recorded = board
+                                        .blocked_regions
+                                        .iter()
+                                        .any(|b| b.region == region);
+                                    if !already_recorded {
+                                        board.blocked_regions.push(BlockedRegionInfo {
+                                            region,
+                                            blocking_cell: job.pos,
+                                            notified: false,
+                                            source: "route_exhausted",
+                                        });
+                                    }
                                 }
                                 to_release.push((entity, ReleaseReason::TimedOut)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), "to_release fired (site scan)"); }
                             }
@@ -15434,15 +15521,31 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // path with no `chat_emitter` access of its own (e.g.
         // `place_chop_fell`'s reachability gate). Same message shape as
         // the carve-planner's inline notification (task #55). ──────────
+        // ROW A (packet finding 74, 2026-08-04): the message text is keyed
+        // on `source` -- `plan_access`'s wording asserts a TERRAIN cause
+        // ("obstruction"), which its own guard (a carve-planner routing
+        // failure) does not establish alone; that mismatch is filed
+        // separately and NOT fixed by this row (Opus's explicit scoping).
+        // `route_exhausted`'s guard is `stuck_strikes` -- a count of
+        // repeated failed attempts -- so its message asserts only that:
+        // a behavioral claim its own measurement actually supports.
         for info in board.blocked_regions.iter_mut() {
             if !info.notified {
                 info.notified = true;
                 let c = info.blocking_cell;
-                chat_emitter.emit(common::event::ChatEvent {
-                    msg: comp::UnresolvedChatMsg::meta(common::comp::Content::Plain(format!(
+                let msg = if info.source == "route_exhausted" {
+                    format!(
+                        "Colonists have repeatedly failed to reach a designation at ({}, {}, {}).",
+                        c.x, c.y, c.z
+                    )
+                } else {
+                    format!(
                         "A designation is blocked — obstruction at ({}, {}, {}) can't be reached.",
                         c.x, c.y, c.z
-                    ))),
+                    )
+                };
+                chat_emitter.emit(common::event::ChatEvent {
+                    msg: comp::UnresolvedChatMsg::meta(common::comp::Content::Plain(msg)),
                     from_client: false,
                 });
             }
