@@ -78,8 +78,20 @@ neighbor's completion already cleared the same cell).
    (a colonist placed a block), 56 phantom-retired — 71/71 accounted for.
 4. **Farm full cycle** — NOT OBSERVED progressing. Plot registered (49
    cells), 0 jobs generated the entire ~4.5 minutes, `growth: None`
-   unchanged at every checkpoint. Matches the pre-existing known defect
-   (task #60, farm_tilled/farm_sown always false) — not a new finding.
+   unchanged at every checkpoint. Consistent with the pre-existing known
+   defect (task #60, farm_tilled/farm_sown always false) — but reading the
+   farm trigger pass afterward (`bastion_jobs.rs`, the `FARM/PROD-2` block)
+   surfaced a confound I can't rule out from this run alone: the pass
+   skips a column ENTIRELY ("no field under a hole") if `ground` at
+   `plot.min.z` isn't `is_filled()` — and I chose this plot's z (418) by
+   copying the player's own spawn z (419) minus one, not by checking that
+   ground there is actually solid. If it wasn't, 0 jobs is exactly what
+   you'd see regardless of whether task #60's underlying mystery is real.
+   The code comments there already document a prior, more careful
+   investigation ("farm_tilled:false unexplained under either stance") —
+   so #60 is very likely real independent of my site pick, but this run
+   doesn't add clean confirming evidence to it; treat it as consistent-with,
+   not a fresh repro.
 5. **Haul / stockpile** — OBSERVED. Stockpile zone registered; at least one
    `haul delivered` event seen directly in the client's chat/job trace, 87
    total haul-delivered events in the server log across the run.
