@@ -140,16 +140,51 @@ of accepting *"the ~10 items"* — there are seven, named.
 | 6 | constant build/`b15` fields | 5b: documentation/context, **not new logic** — no schema delta | **FREE** |
 | 7 | probe container normalization | **NO SPEC FOUND** ⇒ not enumerable | **OUT** |
 
-**6 of 7 ride, one is excluded, and item 5 turns out to be paid for by Row A
-itself** — the finding-72 field Row A must add anyway is the lateral visibility
-`b5_55_diag` was waiting on.
+## §3c — ★★ FINAL: **ROW A + ITEMS 1–3.** §3b over-admitted two items.
+
+**Corrected by 5b's SECOND pass, which checked source instead of re-reading the
+docs — and which revised their own first sizing.**
+
+### The criterion's final form (Fable, DECISIONS #55)
+
+> **The verifiability axis is the DEFAULT, with one named exception:** a mutating
+> item may join a window **if and only if it carries an exact pre-registered
+> per-seed delta for every field it touches.** That is the merge bar (composition
+> exact-match with intended deltas) generalized to schema windows.
+>
+> **The exception exists so the axis is never read as "mutating changes can't be
+> verified."** They can — it just costs per-field registration instead of coming
+> free.
+
+### Item-by-item, final
+
+| # | verdict | why |
+|---|---|---|
+| 1 `growth_rose` | **IN** | ★ **Source-verified.** `g1` is already a local (`main.rs:11151`), captured as the baseline and compared every tick (`g > g1`, 11157) — **never emitted**; only the derived `rose` flag (11206) is. **One line.** |
+| 2 watch sweep (5) | **IN** | Same shape, applied mechanically. *Two independent spot-checks landed on the identical code pattern, so the doc's "same fix ×5" is corroborated rather than trusted.* |
+| 3 `b55` baseline | **IN** | ★ **Source-verified.** `remainder_before` is already a local (`main.rs:4795`), computed and compared every run, **never reaching the JSON literal** — only `b55_remainder_progressed` (4894) does. **One line.** |
+| 4 seed 66 sentinel | **OUT of window one** | Eligible under the named exception, but **nobody has written the per-seed registration** and there is no urgency to. Rides a later window once it carries its delta. |
+| 5 `b5_55_diag` | **not a window member** | **Satisfied BY Row A's own build** — its doc says these fields need *the lateral entry, not a repair*, and Row A's finding-72 field is that entry. Not a parallel change; a consequence. |
+| 6 constant build/`b15` | ★ **OUT — 5b revised their own sizing** | First pass called it *"documentation/context, not new logic."* Second pass: **"I still don't have a fix spec for this one."** No spec ⇒ no enumerable delta ⇒ out. |
+| 7 probe container norm. | **OUT** | ★ 5b's identification: this is likely `SCENARIO-MAP:228`'s *"verdict/diag split"* — **the same restructuring already applied to six other scenarios** (the completed report-fix row 1–6 of 6). If so it is **schema surgery by construction**, and the suspicion of design work is confirmed rather than assumed. |
+
+> **★ ITEM 6 IS THE ONE TO NOTE.** It was admitted in §3b on 5b's first sizing and
+> is removed on their second. **The difference is that the second pass read the
+> source.** *A classification derived from a doc's summary is a claim about the
+> doc, not about the code* — the same distinction that has cost this campaign
+> seven label-vs-content findings, arriving one more time in the bookkeeping.
+
+**FINAL WINDOW: Row A + items 1, 2, 3.** Independently reached three ways —
+Fable's ruling, 5b's source check, and this criterion.
 
 ## §4 — THE CALL
 
-**★ SUPERSEDED BY §3b — the call is now ROW A + items 1–6; only item 7 is
-excluded.** The reasoning below stands as the argument for *why the window must
-be verifiable*; §3b corrects *which items meet that bar.* Left in place rather
-than rewritten, per house style.
+**★ SUPERSEDED — see §3c for the FINAL call: ROW A + items 1–3.** §3b widened
+this to items 1–6 on 5b's first sizing; §3c narrows it back after their
+source-level second pass. **The reasoning below stands as the argument for *why*
+the window must be verifiable** — that part was never in question and Fable
+upheld it as DECISIONS #55. Only *which items clear the bar* moved. Left in place
+rather than rewritten, per house style.
 
 ~~**ROW A + items 1–3 (the additive baseline-emission family). Items 4–7 take
 their own window.**~~
