@@ -347,6 +347,55 @@ pub enum DesignationKind {
     Farm,
 }
 
+/// bastion (task #64, KindAffordance): what `Job::pos` PHYSICALLY MEANS —
+/// the stance a colonist must commit to reach it. Stamped at CREATION, not
+/// derived from `kind` at lookup time: `DesignationKind::Farm` alone can't
+/// answer this (see `AtTarget` below) because the SAME kind spans two
+/// different physical shapes depending on which phase created the job
+/// instance — the creator knows which shape it built; a table keyed on
+/// kind alone cannot recover that after the fact. NO `Default`: every
+/// `Job` construction site must choose explicitly (this campaign's
+/// original bug was Mine's stance logic silently inherited by every other
+/// kind that never opted in — a missing arm here is now a compile error,
+/// not a corpus failure discovered later).
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AffordanceClass {
+    /// `job.pos` IS solid pre-completion (removal-shaped): on-top is the
+    /// preferred stance (real support exists), falling back to an
+    /// adjacent-ground stance only when on-top is physically unusable.
+    /// Mine, Chop, Gather, Farm's TILL sub-job (job.pos = the raw ground
+    /// cell, solid before tilling).
+    SolidTarget,
+    /// `job.pos` is EMPTY pre-completion and becomes solid ONLY on
+    /// completion (construction-shaped): on-top has no support by
+    /// definition (there is nothing at `job.pos` to stand on until the
+    /// job itself creates it) — commit to a cardinal-adjacent stance at
+    /// `job.pos`'s own level, on real ground. Build, Bed, Ladder's base
+    /// rung.
+    AdjacentToBase,
+    /// A Ladder rung ABOVE the column's base: also empty pre-completion,
+    /// but on-top becomes valid the moment the rung directly below is
+    /// itself built (a real climbable `Ladder` sprite is exactly as
+    /// solid as ground for this purpose) — the colonist climbs it to
+    /// reach this one. Self-resolving from live terrain each cycle (no
+    /// batch/creation-order bookkeeping needed): falls back to
+    /// adjacent-ground, then to "not yet claimable" when the rung below
+    /// doesn't exist yet, naturally sequencing column construction
+    /// bottom-up.
+    LadderContinuation,
+    /// `job.pos` is the STAND cell itself, not a thing to reach onto or
+    /// beside — the colonist's feet land AT `job.pos`, support comes from
+    /// the (already solid) cell below it. Neither on-top nor adjacent.
+    /// Farm's SOW/HARVEST sub-jobs (job.pos = the crop cell one above
+    /// tilled ground, which IS the working position).
+    AtTarget,
+    /// No terrain-edit stance requirement — the target is wherever the
+    /// referenced entity/zone/self actually is (Haul, DepositRun, RestAt,
+    /// EatFrom, Despond). Resolves to the pre-existing on-top default,
+    /// preserving all currently-working self-job behavior unchanged.
+    Untargeted,
+}
+
 impl DesignationKind {
     pub fn label(&self) -> &'static str {
         match self {
@@ -1024,6 +1073,14 @@ pub struct Job {
     /// serde-default: pre-B6 saves have none.
     #[serde(default)]
     pub reservation: Option<ReservationId>,
+    /// bastion (task #64): what `pos` physically means — see
+    /// [`AffordanceClass`]. Deliberately NO `#[serde(default)]`: `Job`
+    /// never crosses the wire and `JobBoard` is never persisted (created
+    /// fresh via `JobBoard::default()` each server start, confirmed
+    /// premise-checked — see the task #64 packet), so there is no old-save
+    /// migration story to protect and no reason to let a construction site
+    /// skip choosing.
+    pub affordance: AffordanceClass,
 }
 
 /// bastion (TOOL-0, TOOLS-UPGRADE §3): the work-tick's TOOL factor — a

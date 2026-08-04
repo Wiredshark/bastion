@@ -24,8 +24,8 @@ use crate::{
 };
 use common::{
     bastion::{
-        BUILD_MATERIAL_ITEM, CHOP_DROP_ITEM, DesignationKind, Job, JobAudit, JobId, MINE_DROP_ITEM,
-        Region, ZExtent,
+        AffordanceClass, BUILD_MATERIAL_ITEM, CHOP_DROP_ITEM, DesignationKind, Job, JobAudit,
+        JobId, MINE_DROP_ITEM, Region, ZExtent,
     },
     combat,
     comp,
@@ -1149,6 +1149,14 @@ fn plan_access(
             stuck_strikes: 0,
             depth: 0,
             reservation: None,
+            // TASK #64: this site's own `kind` is always Mine (carved
+            // stairs — walkable, solid-target-shaped) or Ladder (rungs —
+            // conditional on the cell below, see `LadderContinuation`'s
+            // own doc); no other kind reaches here.
+            affordance: match kind {
+                DesignationKind::Ladder => AffordanceClass::LadderContinuation,
+                _ => AffordanceClass::SolidTarget,
+            },
         });
         if emergency_owner.is_some() {
             emitted_order.push((id, pos));
@@ -1318,6 +1326,29 @@ fn job_wanted(kind: DesignationKind, block: &Block) -> bool {
                             | common::rtsim::TerrainResource::Plant
                     )
                 })
+        },
+    }
+}
+
+/// bastion (task #64, KindAffordance): the stamped-vocabulary helper for
+/// the two GENERIC multi-kind placement paths (`place_designation`,
+/// `place_designation_surface` — the only sites that construct a `Job`
+/// for an arbitrary caller-supplied `kind`). Every other construction
+/// site builds one specific kind and stamps its `AffordanceClass`
+/// directly, inline, where the physical shape is unambiguous. Kept
+/// EXHAUSTIVE (no wildcard) even though `job_wanted` is false for
+/// Stockpile/Zone/Farm at both call sites (so no `Job` is ever actually
+/// built with those arms' value) — a future `DesignationKind` variant
+/// must choose an arm here too, not fall through silently.
+fn designation_affordance(kind: DesignationKind) -> AffordanceClass {
+    match kind {
+        DesignationKind::Mine | DesignationKind::Chop | DesignationKind::Gather => {
+            AffordanceClass::SolidTarget
+        },
+        DesignationKind::Build | DesignationKind::Bed => AffordanceClass::AdjacentToBase,
+        DesignationKind::Ladder => AffordanceClass::LadderContinuation,
+        DesignationKind::Stockpile | DesignationKind::Zone(_) | DesignationKind::Farm => {
+            AffordanceClass::Untargeted
         },
     }
 }
@@ -1744,12 +1775,30 @@ fn has_standable_stance(terrain: &TerrainGrid, pos: Vec3<i32>) -> Option<Vec3<i3
     if on_top_clear && !isolated && slot_walls < 3 {
         return Some(Vec3::unit_z());
     }
-    // 2. ADJACENT-GROUND fallback: a cardinal neighbor cell at the block's own
-    //    level with a solid floor below + open feet + open head — stand there and
-    //    mine sideways. This is the reachable stance a wedged `+1`-gap block has
-    //    downhill, and the way a reachable floating LEDGE is worked; an ISOLATED
-    //    floater has none (its neighbors' floors are air) → None → clean-SKIP (no
-    //    claim→unreachable churn; deferred to cave-in).
+    // 2. ADJACENT-GROUND fallback — see `adjacent_ground_stance`.
+    adjacent_ground_stance(terrain, pos)
+}
+
+/// bastion (task #64, extracted from `has_standable_stance`'s step 2): a
+/// cardinal neighbor cell at `pos`'s own level with a solid floor below +
+/// open feet + open head — stand there and work sideways. This is the
+/// reachable stance a wedged `+1`-gap block has downhill, the way a
+/// reachable floating LEDGE is worked, AND — new for task #64 — the
+/// PRIMARY (not fallback) stance for `AdjacentToBase`: `pos` itself is
+/// empty for that affordance class (Build/Bed/a Ladder base), so on-top
+/// is never tried there at all; this tier is the whole answer. An
+/// ISOLATED floater has none (its neighbors' floors are air) → `None` →
+/// clean-SKIP (no claim→unreachable churn; deferred to cave-in for
+/// SolidTarget, left unclaimed-and-retried for AdjacentToBase).
+fn adjacent_ground_stance(terrain: &TerrainGrid, pos: Vec3<i32>) -> Option<Vec3<i32>> {
+    let solid = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
+    let open = |p: Vec3<i32>| terrain.get(p).map(|b| !b.is_filled()).unwrap_or(false);
+    let cardinals = [
+        Vec2::new(1, 0),
+        Vec2::new(-1, 0),
+        Vec2::new(0, 1),
+        Vec2::new(0, -1),
+    ];
     for d in cardinals {
         let feet = Vec3::new(pos.x + d.x, pos.y + d.y, pos.z);
         if open(feet) && open(feet + Vec3::unit_z()) && solid(feet - Vec3::unit_z()) {
@@ -1757,6 +1806,109 @@ fn has_standable_stance(terrain: &TerrainGrid, pos: Vec3<i32>) -> Option<Vec3<i3
         }
     }
     None
+}
+
+/// bastion (task #64): a Ladder rung's stance is CONDITIONAL on live
+/// terrain, not fixed at creation — `pos` is empty pre-completion (same
+/// shape as Build/Bed), but on-top becomes valid the instant the cell
+/// directly below is solid, whether that's the column's BASE sitting on
+/// real ground or an already-built RUNG one level down (a `Ladder`
+/// sprite is exactly as solid as ground for this purpose — both satisfy
+/// `is_filled()`). This single check therefore covers both the base rung
+/// and every continuation rung with no batch/creation-order bookkeeping:
+/// a rung whose support doesn't exist yet returns `None` here (after the
+/// adjacent-ground fallback also fails, which it normally will mid-shaft)
+/// and is left unclaimed — the SAME "leave for next cycle" discipline as
+/// every other affordance class, which naturally sequences a painted
+/// column bottom-up instead of the current 0/N-placed failure (part (c),
+/// b58: every rung claimed independently, cold, with nothing built below
+/// any of them yet).
+/// bastion (task #64 regression fix): what the CALLER already knows about
+/// a rung's support, for the one case terrain itself can't say yet.
+/// `BlockChange::set` (common/state/src/state.rs) only buffers a pending
+/// write — `terrain.get()` keeps returning the PRE-completion block until
+/// that buffer flushes later in the pipeline. Site #4 (the emergency
+/// rescue's rung-chaining) re-derives the NEXT rung's stance in the SAME
+/// TICK it just triggered the PREVIOUS rung's `block_change.set(...)` —
+/// asking terrain at that exact moment reads stale (still-air) state and
+/// wrongly concludes "no support yet," breaking a chain that was actually
+/// fine. Declaring the caller's own structural knowledge here (rather than
+/// hardcoding a stance at that call site) keeps the affordance the SINGLE
+/// source of truth — same function, same physical checks — instead of a
+/// second, silently-divergent copy of the rule (exactly the class of bug
+/// this whole table exists to delete).
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum SupportHint {
+    /// The normal case: ask terrain. Safe everywhere except the one
+    /// same-tick chaining call — by the general arbitration claim loop's
+    /// next cycle (a full `ARBITRATION_INTERVAL` later), any prior
+    /// completion's `block_change` has long since flushed.
+    AskTerrain,
+    /// The caller structurally guarantees support exists RIGHT NOW,
+    /// terrain's lag notwithstanding — site #4, immediately after
+    /// completing the rung directly below.
+    KnownPresent,
+}
+
+fn ladder_continuation_stance(
+    terrain: &TerrainGrid,
+    pos: Vec3<i32>,
+    support: SupportHint,
+) -> Option<Vec3<i32>> {
+    let solid = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
+    let open = |p: Vec3<i32>| terrain.get(p).map(|b| !b.is_filled()).unwrap_or(false);
+    let on_top_clear = open(pos + Vec3::unit_z()) && open(pos + Vec3::unit_z() * 2);
+    let supported = support == SupportHint::KnownPresent || solid(pos - Vec3::unit_z());
+    if supported && on_top_clear {
+        return Some(Vec3::unit_z());
+    }
+    adjacent_ground_stance(terrain, pos)
+}
+
+/// bastion (task #64): Farm's SOW/HARVEST sub-jobs — `pos` IS the working
+/// position (the crop cell itself, one level above tilled ground), not a
+/// thing to reach onto or beside. Feet land AT `pos` (offset zero);
+/// support is the solid cell directly below. Re-verified here defensively
+/// rather than trusted from the farm pass's own precondition — a stance
+/// function's whole job is answering "can a colonist really stand here",
+/// not assuming its caller already checked.
+fn at_target_stance(terrain: &TerrainGrid, pos: Vec3<i32>) -> Option<Vec3<i32>> {
+    let solid = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
+    let open = |p: Vec3<i32>| terrain.get(p).map(|b| !b.is_filled()).unwrap_or(false);
+    (open(pos) && open(pos + Vec3::unit_z()) && solid(pos - Vec3::unit_z())).then_some(Vec3::zero())
+}
+
+/// bastion (task #64, KindAffordance): the SINGLE dispatcher every stance
+/// site now calls — replaces the old Chop/Mine-only special-casing in the
+/// stance loop, the blind `unwrap_or(Vec3::unit_z())` default, and the
+/// Mine-only leave-unclaimed guard all at once (see the packet: sites #1
+/// stance loop, #2 on-top default, #3 leave-unclaimed guard, all
+/// generalized to reading `job.affordance` instead of `job.kind`).
+/// `Untargeted` resolves to the pre-existing on-top default unconditionally
+/// — self-jobs/Haul never had a reported stance problem, so their working
+/// behavior is preserved byte-for-byte.
+///
+/// Plain wrapper around [`job_stance_with_ladder_support`] for every caller
+/// except site #4 (see [`SupportHint`]) — terrain is authoritative here.
+fn job_stance(terrain: &TerrainGrid, job: &Job) -> Option<Vec3<i32>> {
+    job_stance_with_ladder_support(terrain, job, SupportHint::AskTerrain)
+}
+
+/// The real dispatcher; `job_stance` is the terrain-trusting default.
+fn job_stance_with_ladder_support(
+    terrain: &TerrainGrid,
+    job: &Job,
+    ladder_support: SupportHint,
+) -> Option<Vec3<i32>> {
+    match job.affordance {
+        AffordanceClass::SolidTarget => has_standable_stance(terrain, job.pos),
+        AffordanceClass::AdjacentToBase => adjacent_ground_stance(terrain, job.pos),
+        AffordanceClass::LadderContinuation => {
+            ladder_continuation_stance(terrain, job.pos, ladder_support)
+        },
+        AffordanceClass::AtTarget => at_target_stance(terrain, job.pos),
+        AffordanceClass::Untargeted => Some(Vec3::unit_z()),
+    }
 }
 
 /// Real terrain-kind-agnostic topmost SOLID z near a height hint, bounded to
@@ -4335,6 +4487,7 @@ impl JobBoard {
                             // "how far below the way out".
                             depth: (region.max.z - z).clamp(0, 255) as u8,
                             reservation: None,
+                            affordance: designation_affordance(kind),
                         });
                         created.push(id);
                     }
@@ -4420,6 +4573,7 @@ impl JobBoard {
                             // descent gate's "how far below the way out".
                             depth,
                             reservation: None,
+                            affordance: designation_affordance(kind),
                         });
                         created.push(id);
                     }
@@ -4559,6 +4713,7 @@ impl JobBoard {
             stuck_strikes: 0,
             depth: 0,
             reservation: None,
+            affordance: AffordanceClass::SolidTarget,
         });
         self.chop_fell_sets.insert(id, ChopFell {
             cells: kept,
@@ -4932,6 +5087,7 @@ impl JobBoard {
             stuck_strikes: 0,
             depth: 0,
             reservation: Some(reservation),
+            affordance: AffordanceClass::Untargeted,
         });
         self.total_claims += 1;
         id
@@ -4958,6 +5114,7 @@ impl JobBoard {
             stuck_strikes: 0,
             depth: 0,
             reservation: None,
+            affordance: AffordanceClass::Untargeted,
         });
         self.total_claims += 1;
         id
@@ -4984,6 +5141,7 @@ impl JobBoard {
             stuck_strikes: 0,
             depth: 0,
             reservation: None,
+            affordance: AffordanceClass::Untargeted,
         });
         // T1.19 (conservation cluster): reserve the bed at CREATION, not at
         // arrival. The assigner filters occupied beds, so claiming it now
@@ -7992,6 +8150,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     stuck_strikes: 0,
                     depth: 0,
                     reservation: None,
+                    affordance: AffordanceClass::AdjacentToBase,
                 });
                 board.gen_build_jobs += 1;
             }
@@ -8143,6 +8302,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 stuck_strikes: 0,
                                 depth,
                                 reservation: None,
+                                affordance: AffordanceClass::SolidTarget,
                             });
                             occupied.insert(pos);
                             board.gen_mine_jobs += 1;
@@ -8243,6 +8403,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         stuck_strikes: 0,
                         depth: 0,
                         reservation: Some(rid),
+                        affordance: AffordanceClass::Untargeted,
                     });
                     pending += 1;
                 }
@@ -8343,6 +8504,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         stuck_strikes: 0,
                         depth: 0,
                         reservation: None,
+                        affordance: AffordanceClass::Untargeted,
                     });
                     board.total_claims += 1;
                     info!(
@@ -8610,7 +8772,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         if tick.0 % ARBITRATION_INTERVAL as u64 == 3 && !board.farms.is_empty() {
             let occupied: std::collections::HashSet<Vec3<i32>> =
                 board.jobs.values().map(|j| j.pos).collect();
-            let mut new_jobs: Vec<(Vec3<i32>, Option<&'static str>)> = Vec::new();
+            // TASK #64: carries the affordance alongside (pos, req) because
+            // the SAME `DesignationKind::Farm` spans two physically
+            // different shapes -- TILL's job.pos = gpos (solid ground,
+            // SolidTarget, on-top correct, same shape as Mine) vs SOW/
+            // HARVEST's job.pos = cpos (the crop cell itself, already the
+            // stand position, AtTarget) -- and `req.is_some()` alone can't
+            // distinguish TILL from HARVEST (both carry `None`). The
+            // creator knows which phase it's building; record it here
+            // rather than trying to re-derive it from `pos` later.
+            let mut new_jobs: Vec<(Vec3<i32>, Option<&'static str>, AffordanceClass)> = Vec::new();
             let mut stage_ups: Vec<(Vec3<i32>, Block, u8)> = Vec::new();
             let mut evict: Vec<Vec3<i32>> = Vec::new();
             for (_, plot) in board.farms.iter() {
@@ -8636,7 +8807,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 let g = crop.get_attr::<Growth>().map(|g| g.0).unwrap_or(0);
                                 if g >= FARM_GROWTH_MAX {
                                     if !occupied.contains(&cpos) {
-                                        new_jobs.push((cpos, None));
+                                        // HARVEST: job.pos = cpos, the
+                                        // colonist stands AT the crop cell.
+                                        new_jobs.push((cpos, None, AffordanceClass::AtTarget));
                                     }
                                 } else if g >= FARM_GROWTH_SOWN {
                                     let ck = (cpos.x, cpos.y, cpos.z);
@@ -8657,13 +8830,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             },
                             None | Some(SpriteKind::Empty) => {
                                 if ground.kind() == BlockKind::Earth {
-                                    // TILLED + empty -> SOW (seeds).
+                                    // SOW: job.pos = cpos, the colonist
+                                    // stands AT the crop cell (same shape as
+                                    // HARVEST above).
                                     if !occupied.contains(&cpos) {
-                                        new_jobs.push((cpos, Some(FARM_SEED_ITEM)));
+                                        new_jobs.push((
+                                            cpos,
+                                            Some(FARM_SEED_ITEM),
+                                            AffordanceClass::AtTarget,
+                                        ));
                                     }
                                 } else if !occupied.contains(&gpos) {
-                                    // RAW -> TILL (the ground block).
-                                    new_jobs.push((gpos, None));
+                                    // TILL: job.pos = gpos, the raw ground
+                                    // cell -- SOLID pre-till, same shape as
+                                    // Mine (on-top correct: the counter-
+                                    // control this campaign's till-vs-sow
+                                    // split hinges on).
+                                    new_jobs.push((gpos, None, AffordanceClass::SolidTarget));
                                 }
                             },
                             Some(_) => {}, // genuinely foreign sprite
@@ -8687,13 +8870,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     info!(pos = ?cpos, "bastion: crop MATURE");
                 }
             }
-            for (pos, req) in new_jobs {
+            for (pos, req, affordance) in new_jobs {
                 let id = board.next_id;
                 board.next_id += 1;
                 info!(
                     job = id,
                     ?pos,
                     sow = req.is_some(),
+                    ?affordance,
                     "bastion: farm job created"
                 );
                 board.jobs.insert(id, Job {
@@ -8711,6 +8895,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     stuck_strikes: 0,
                     depth: 0,
                     reservation: None,
+                    affordance,
                 });
             }
         }
@@ -13418,6 +13603,38 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     if let Some(job) = board.jobs.get_mut(&next_job) {
                                         job.claimed_by = Some(member);
                                     }
+                                    // TASK #64: was a hardcoded on-top stance
+                                    // (a second, independent copy of the
+                                    // Build/Ladder/Bed on-top-default bug —
+                                    // this chain-to-the-next-rung site
+                                    // bypasses the general claim path's
+                                    // `standable` map entirely, so the #56/
+                                    // #62-era fix never reached it). Now
+                                    // reads the same `job_stance` dispatcher
+                                    // every other site uses, keyed off the
+                                    // job's own stamped affordance —
+                                    // `unwrap_or` stays defensive only:
+                                    // `next_job`'s claimability was already
+                                    // checked above. `SupportHint::KnownPresent`
+                                    // (regression fix, see its own doc): this
+                                    // call sits in the SAME tick as the
+                                    // completion that built the rung directly
+                                    // below `next_job` — `terrain.get()` would
+                                    // still read that write's PRE-completion
+                                    // state (`BlockChange` hasn't flushed yet),
+                                    // so asking terrain here would wrongly
+                                    // read "no support" on every chain link.
+                                    let stance = board
+                                        .jobs
+                                        .get(&next_job)
+                                        .and_then(|job| {
+                                            job_stance_with_ladder_support(
+                                                &terrain,
+                                                job,
+                                                SupportHint::KnownPresent,
+                                            )
+                                        })
+                                        .unwrap_or(Vec3::unit_z());
                                     let _ = active_jobs.insert(entity, ActiveJob {
                                         job: next_job,
                                         state: ActiveJobState::Traveling,
@@ -13425,7 +13642,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         stuck_time: 0.0,
                                         reset_dist: f32::INFINITY,
                                         soft_granted: false,
-                                        stance: Vec3::unit_z(),
+                                        stance,
                                     });
                                     let next_top_z = match transaction.traversal_kind {
                                         EmergencyTraversalKind::NaturalShaft => completed_top.z,
@@ -15142,51 +15359,74 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // means a wrongly-unreachable sole job zeroes `work_available`
         // and sleeps the whole colony; unclaimed just waits and retries
         // next cycle.
+        // TASK #64 (job-kind affordance table, 2026-08-03): generalized from
+        // the Chop/Mine-only loop above (which the #56/#62 comment
+        // documents) to EVERY kind, dispatching on `job.affordance` instead
+        // of hand-matching `job.kind`. Mine keeps its own exposure
+        // pre-check below (a MINE-SPECIFIC concept — digging into a solid
+        // mass that hasn't opened a face yet; every other affordance
+        // class's target is already open air by `job_wanted`'s own
+        // definition, or — Chop — open air by construction, so an
+        // "enclosed" state doesn't apply the same way and isn't gated
+        // separately: `job_stance`'s own physical requirements already
+        // return `None` for a genuinely buried/unreachable target).
         for (id, job) in board.jobs.iter_mut() {
-            if job.kind.is(DesignationKind::Chop) && job.claimed_by.is_none() {
-                if let Some(stance) = has_standable_stance(&terrain, job.pos) {
-                    standable.insert(*id, stance);
+            if job.claimed_by.is_some() {
+                continue;
+            }
+            if job.kind.is(DesignationKind::Mine) {
+                let is_exposed = [
+                    Vec3::new(1, 0, 0),
+                    Vec3::new(-1, 0, 0),
+                    Vec3::new(0, 1, 0),
+                    Vec3::new(0, -1, 0),
+                    Vec3::new(0, 0, 1),
+                    Vec3::new(0, 0, -1),
+                ]
+                .into_iter()
+                .any(|d| {
+                    terrain
+                        .get(job.pos + d)
+                        .map(|b| !b.is_filled())
+                        .unwrap_or(true)
+                });
+                if !is_exposed {
+                    // Fully enclosed: flag unreachable-for-now so the audit/UI
+                    // reflect it (the periodic retry sweep re-tests as the dig
+                    // opens the shell; B4's buried-job invariant rides this).
+                    job.unreachable = true;
+                    continue;
                 }
-                continue;
-            }
-            if !job.kind.is(DesignationKind::Mine) || job.claimed_by.is_some() {
-                continue;
-            }
-            let is_exposed = [
-                Vec3::new(1, 0, 0),
-                Vec3::new(-1, 0, 0),
-                Vec3::new(0, 1, 0),
-                Vec3::new(0, -1, 0),
-                Vec3::new(0, 0, 1),
-                Vec3::new(0, 0, -1),
-            ]
-            .into_iter()
-            .any(|d| {
-                terrain
-                    .get(job.pos + d)
-                    .map(|b| !b.is_filled())
-                    .unwrap_or(true)
-            });
-            if is_exposed {
                 exposed.insert(*id);
                 // ACCESS steps (rescue rungs/stairs) are colony infrastructure
                 // laid on reachable ground by construction — never standability-
-                // gated (they use the on-top stance, as before). Ordinary Mine
-                // cells must have a real stance; a cell with none (isolated
-                // floater / walled `+1` gap) is left UNCLAIMED this cycle — NOT
-                // flagged unreachable, so no claim→unreachable churn — and
-                // retried each cycle as the shell opens (or deferred to
-                // cave-in). `job` isn't touched here beyond the read.
+                // gated (they use the on-top stance, as before).
                 if job.is_access {
                     standable.insert(*id, Vec3::unit_z());
-                } else if let Some(stance) = has_standable_stance(&terrain, job.pos) {
-                    standable.insert(*id, stance);
+                    continue;
                 }
-            } else {
-                // Fully enclosed: flag unreachable-for-now so the audit/UI
-                // reflect it (the periodic retry sweep re-tests as the dig
-                // opens the shell; B4's buried-job invariant rides this).
-                job.unreachable = true;
+            }
+            // Ordinary Mine cells, and now every other kind, must have a
+            // real stance; a cell with none (isolated floater / walled `+1`
+            // gap / a Ladder rung whose support doesn't exist yet) is left
+            // UNCLAIMED this cycle — NOT flagged unreachable, so no
+            // claim→unreachable churn — and retried each cycle as the
+            // terrain/column changes (or deferred to cave-in).
+            if let Some(stance) = job_stance(&terrain, job) {
+                standable.insert(*id, stance);
+            } else if std::env::var_os("BASTION_LADDER_DIAG").is_some()
+                && job.affordance == AffordanceClass::LadderContinuation
+            {
+                let solid = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
+                let open = |p: Vec3<i32>| terrain.get(p).map(|b| !b.is_filled()).unwrap_or(false);
+                info!(
+                    job = id,
+                    pos = ?job.pos,
+                    support_below = solid(job.pos - Vec3::unit_z()),
+                    open_p1 = open(job.pos + Vec3::unit_z()),
+                    open_p2 = open(job.pos + Vec3::unit_z() * 2),
+                    "bastion: LADDER DIAG -- no stance this cycle"
+                );
             }
         }
         // B5.8-E ACCESS-BEFORE-DESCENT (Ben's proactive fix): a dig cell
@@ -15511,12 +15751,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 ) {
                     continue;
                 }
-                // B15 / FR12: a Mine cell is claimable only with a STANDABLE
-                // stance (⊆ exposed — access always qualifies; an ordinary cell
-                // needs a real stance). Replaces the bare exposure gate so
-                // unstandable `+1`-gap / floating cells aren't claimed-then-
-                // stuck.
-                if job.kind.is(DesignationKind::Mine) && !standable.contains_key(&id) {
+                // B15 / FR12, generalized by task #64: a job is claimable
+                // only with a STANDABLE stance (⊆ exposed for Mine — access
+                // always qualifies; an ordinary cell needs a real stance).
+                // Replaces the bare exposure gate so unstandable `+1`-gap /
+                // floating cells, and now every other affordance class's
+                // equivalent (a Build/Bed target with no adjacent ground, a
+                // Ladder rung whose support isn't built yet, a Farm
+                // sow/harvest cell with no floor), aren't claimed-then-stuck.
+                // `Untargeted` (self-jobs, Haul) never had this problem and
+                // is exempt — `job_stance` always answers `Some` for it, so
+                // this reduces to a no-op for those kinds, but the explicit
+                // check documents that the exemption is deliberate, not an
+                // oversight.
+                if job.affordance != AffordanceClass::Untargeted && !standable.contains_key(&id) {
                     continue;
                 }
                 // B5.8-E: held until return-access leads the descent.
@@ -15756,11 +16004,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     }
                 }
                 info!(job = job_id, colonist = %uid, "bastion: job claimed");
-                // The committed stance (B15/FR12, extended #56/#62): the
-                // standable set's pinned offset for a gated Mine cell or a
-                // Chop base; on-top (0,0,1) for everything else (Build,
-                // Haul, and the other job kinds where on-top is a
-                // reasonable default, plus the pre-B15 fallback).
+                // The committed stance (B15/FR12, generalized by task #64):
+                // the standable set's pinned offset, computed per-job by
+                // `job_stance` from `job.affordance` in the loop above — no
+                // longer a blind on-top default for anything outside
+                // Chop/Mine. The generalized leave-unclaimed guard above
+                // already guarantees a real entry exists here for every
+                // affordance except `Untargeted` (whose own `job_stance` arm
+                // always answers `Some(unit_z())`); `unwrap_or` stays as a
+                // defensive fallback only, never expected to fire.
                 let stance = standable.get(&job_id).copied().unwrap_or(Vec3::unit_z());
                 assignments.push((entity, job_id, stance));
             }
@@ -16274,6 +16526,7 @@ mod tests {
             stuck_strikes: 0,
             depth: 0,
             reservation,
+            affordance: AffordanceClass::SolidTarget,
         };
         let consistent = |board: &JobBoard| {
             assert!(

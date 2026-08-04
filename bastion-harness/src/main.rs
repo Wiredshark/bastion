@@ -408,6 +408,30 @@ struct Args {
     #[arg(long)]
     farm_scenario: bool,
 
+    /// bastion (task #64/#61 planted fixture, Opus-specified): proves the
+    /// `remove_job` `blocked_regions` prune (ed532c600e) actually retracts
+    /// a genuine block, not just no-ops on an empty common case (wave19's
+    /// fan showed zero `b5_55_*` movement across 48 seeds -- corpus-
+    /// unexercised). Reaches a real `plan_access` failure (not the
+    /// negative-case buried_pos fixture in `b5_scenario`), then clears it
+    /// via a NON-CANCEL path (natural completion), asserting the
+    /// blocked_regions entry existed, then is gone.
+    #[arg(long)]
+    blocked_retract_scenario: bool,
+
+    /// bastion (task #58 re-scope, Fable-ruled, 2026-08-03): a PLANTED
+    /// conservation test for the CAVE-IN v1 completion path -- seed 148's
+    /// organic repro (stone_sum 26 vs mined 27, plus an orphaned job)
+    /// stopped firing after #57/#61 re-rolled mining order/timing, proving
+    /// organic reproes are perishable even when deterministic. Hand-carves
+    /// a pillar + fully-sealed blob (zero exposed faces, so the blob's own
+    /// job sits inert/unreachable until severed) so the collapse fires on
+    /// every run regardless of code changes elsewhere. Asserts every
+    /// severed cell yields exactly one stone AND its orphaned job retires
+    /// -- both halves of the original defect, permanently.
+    #[arg(long)]
+    cavein_conservation_scenario: bool,
+
     /// ENDURANCE (Ben's long-live-sim determinism test): boot a full colony
     /// with standing farm work and let the ENTIRE integrated live sim run for
     /// `--endurance-ticks`, emitting an authoritative-state ENDURANCE-CHECKPOINT
@@ -1579,6 +1603,10 @@ fn main() -> ExitCode {
         path_scenario(&args)
     } else if args.farm_scenario {
         farm_scenario(&args)
+    } else if args.blocked_retract_scenario {
+        blocked_retract_scenario(&args)
+    } else if args.cavein_conservation_scenario {
+        cavein_conservation_scenario(&args)
     } else if args.endurance_scenario {
         endurance_scenario(&args)
     } else if args.run_scenario {
@@ -4793,6 +4821,473 @@ fn b55_scenario(args: &Args) -> ExitCode {
     }
 }
 
+/// bastion (task #64/#61 planted fixture, Opus-specified): proves the
+/// `remove_job` `blocked_regions` prune (ed532c600e) genuinely RETRACTS a
+/// real block rather than only ever seeing the empty common case (wave19's
+/// 48-seed fan showed zero `b5_55_*` movement). Unlike `b5_scenario`'s
+/// `buried_pos` fixture (a documented NEGATIVE case — it goes unreachable
+/// via routine churn, never through `plan_access`), this one reaches a
+/// genuine `plan_access` failure: a single colonist spawned at the bottom
+/// of an isolated, fully rock-walled 1-wide vertical shaft, with ONE solid
+/// cell far above it (beyond climbing reach) painted as the sole Mine job.
+/// Nothing else is designated, so the claim mask plan_access has to work
+/// within is exactly that one cell — carving/building access is
+/// impossible, so it fails DETERMINISTICALLY, not by chance.
+///
+/// Resolution is deliberately NOT a cancel: the shaft's walls are opened
+/// wide by hand (a world-state change), which flips the amnesty
+/// mechanism's neighbor fingerprint and grants an immediate unreachable
+/// reset — the SAME retry path a real terrain change would use — so the
+/// job gets reclaimed and completes NATURALLY. The assertion is a
+/// transition, not just an absence: `blocked_regions` must be non-empty
+/// BEFORE the open-up and empty AFTER, with the cell itself confirmed
+/// actually mined (proving completion, not some unrelated side effect).
+fn blocked_retract_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{DesignationKind, Region},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-blkretract-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-blkretract".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "blocked_retract: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    let loaded = server.bastion_force_load_area(site_wpos, 5);
+    info!(loaded, "blocked_retract: force-loaded area");
+
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::GlowingRock
+                        | BlockKind::GlowingWeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::ArtSnow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                        | BlockKind::Ice
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let cz = ground_z(&server, cx, cy).expect("no ground at site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+
+    // Isolated shaft, well clear of anything the site-center scan touches.
+    let px = cx + 60;
+    let py = cy - 60;
+    let shaft_bottom = cz - 60;
+    // Beyond even a leveled colonist's climb reach (`2 + climbing_level.min(1)`,
+    // max 3) by a wide margin -- this must fail structurally, not by luck.
+    let gap = 12;
+    let trapped_cell = Vec3::new(px, py, shaft_bottom + gap);
+    // Floor to stand on, walls the full height (3x3 minus the 1-wide
+    // interior), and the interior itself: open air below the trapped cell,
+    // solid AT the trapped cell (the Mine target, still unbuilt-removed).
+    server.state_mut().set_block(Vec3::new(px, py, shaft_bottom - 1), rock);
+    for z in shaft_bottom..=(shaft_bottom + gap) {
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                let p = Vec3::new(px + dx, py + dy, z);
+                let interior = dx == 0 && dy == 0;
+                let block = if interior && z < shaft_bottom + gap {
+                    Block::empty()
+                } else {
+                    rock
+                };
+                server.state_mut().set_block(p, block);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    let names = server.bastion_spawn_colony(
+        Vec3::new(px as f32 + 0.5, py as f32 + 0.5, shaft_bottom as f32 + 1.0),
+        1,
+    );
+    tick(&mut server, 30);
+
+    let designated = server.bastion_place_designation(
+        Region {
+            min: trapped_cell,
+            max: trapped_cell,
+        },
+        DesignationKind::Mine,
+    );
+    let paint_jobs = designated.len();
+
+    // Wait for: claim -> travel -> stuck-timeout -> carve request ->
+    // plan_access failure -> blocked_regions populated. Generous budget --
+    // this has to pass through the full stuck-timeout cycle first.
+    let mut blocked_before: Option<(i32, i32, i32)> = None;
+    for _ in 0..400 {
+        tick(&mut server, 20);
+        if let Some(p) = server.bastion_blocked_by(trapped_cell) {
+            blocked_before = Some((p.x, p.y, p.z));
+            break;
+        }
+    }
+    let sources_before = server.bastion_blocked_sources(trapped_cell);
+    let reached_blocked = blocked_before.is_some();
+
+    // Resolution (NON-CANCEL): open the shaft wide by hand -- the world-
+    // state change the amnesty mechanism's neighbor-fingerprint check
+    // reacts to -- so the job's `unreachable` flag resets and it can be
+    // reclaimed and completed like any ordinary reachable Mine cell.
+    for z in shaft_bottom..(shaft_bottom + gap) {
+        for dx in -2..=2 {
+            for dy in -2..=2 {
+                server.state_mut().set_block(Vec3::new(px + dx, py + dy, z), Block::empty());
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    let mut blocked_after: Option<(i32, i32, i32)> = None;
+    let mut cell_mined = false;
+    for _ in 0..400 {
+        tick(&mut server, 20);
+        cell_mined = server
+            .bastion_block_kind(trapped_cell)
+            .is_none_or(|k| k != BlockKind::Rock);
+        blocked_after = server.bastion_blocked_by(trapped_cell).map(|p| (p.x, p.y, p.z));
+        if cell_mined && blocked_after.is_none() {
+            break;
+        }
+    }
+    let retracted = reached_blocked && blocked_after.is_none();
+
+    let result = serde_json::json!({
+        "blkretract_colonists": names.len(),
+        "blkretract_paint_jobs": paint_jobs,
+        "blkretract_reached_blocked": reached_blocked,
+        "blkretract_blocked_before": blocked_before,
+        "blkretract_sources_before": sources_before,
+        "blkretract_cell_mined": cell_mined,
+        "blkretract_blocked_after": blocked_after,
+        "blkretract_retracted": retracted,
+    });
+    println!("{}", result);
+    // The full transition: genuinely blocked, genuinely resolved, entry
+    // gone -- not just "gone" (which an ungated/never-fired premise would
+    // also show).
+    let pass = reached_blocked && !sources_before.is_empty() && cell_mined && retracted;
+    println!(
+        "BLOCKED-RETRACT SCENARIO: {}",
+        if pass { "PASS" } else { "FAIL" }
+    );
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// bastion (task #58 re-scope, Fable-ruled, 2026-08-03): planted CAVE-IN v1
+/// conservation test. Geometry, all hand-carved and isolated:
+///   WALL   -- attached to real ground, trivially part of a >64-cell
+///             grounded mass (floating_chunk's own "big mass" rule).
+///   PILLAR -- one cell off the wall's face, exposed on 4 sides (N/S/up/
+///             down), gets a normal on-top stance -- the only cell a
+///             colonist can ever claim and mine here.
+///   BLOB   -- one cell east of the pillar, sealed on its OTHER 5 faces by
+///             unpainted "shell" rock (permanent scaffolding, never
+///             designated) -- zero exposed faces, so its own painted Mine
+///             job is flagged unreachable immediately and sits inert.
+/// Mining the pillar is the ONLY possible progress; when it completes,
+/// `floating_chunk` finds the blob severed (component size 1, cap 64) and
+/// collapses it: the blob cell clears to air and yields its own stone drop
+/// via the CAVE-IN path, distinct from the pillar's own ordinary
+/// Mine-completion drop. Two things must both hold, proving both halves of
+/// the original seed-148 signature:
+///   (a) conservation: total stone == 2 (one per removed cell, regardless
+///       of which code path removed it);
+///   (b) no orphan: `bastion_jobs_in_region` over the painted region == 0
+///       once the blob's pre-existing inert job has retired.
+/// Deterministic by construction (blob is never independently claimable —
+/// no arbitration-order dependence), so it can't go perishable the way
+/// seed 148 did.
+fn cavein_conservation_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{DesignationKind, MINE_DROP_ITEM, Region},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-caveincons-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-caveincons".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-harness-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "cavein_conservation: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    let loaded = server.bastion_force_load_area(site_wpos, 5);
+    info!(loaded, "cavein_conservation: force-loaded area");
+
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::GlowingRock
+                        | BlockKind::GlowingWeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::ArtSnow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                        | BlockKind::Ice
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let px = cx + 100;
+    let py = cy + 100;
+    let gz = ground_z(&server, px, py).expect("no ground at fixture site");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+
+    // Clear a generous isolated pocket above the ground first, so every
+    // solid cell placed afterward is deliberate -- nothing ambient nearby.
+    for x in (px - 4)..=(px + 8) {
+        for y in (py - 4)..=(py + 4) {
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), Block::empty());
+            }
+        }
+    }
+    // WALL: resting on real ground -- part of a mass floating_chunk will
+    // flood past its 64-cell cap instantly (real terrain below is huge).
+    for x in (px - 2)..=(px + 2) {
+        for z in (gz + 1)..=(gz + 5) {
+            server.state_mut().set_block(Vec3::new(x, py, z), rock);
+        }
+    }
+    let pillar = Vec3::new(px + 3, py, gz + 3);
+    let blob = Vec3::new(px + 4, py, gz + 3);
+    server.state_mut().set_block(pillar, rock);
+    server.state_mut().set_block(blob, rock);
+    // Shell: seals every OTHER face of the blob (unpainted -- permanent
+    // scaffolding, never a job, so it can't confound the drop/orphan
+    // counts). The blob's only non-shell, non-pillar neighbor would be
+    // open air were it not for these -- exposure must be exactly zero.
+    for shell in [
+        Vec3::new(px + 5, py, gz + 3),     // east
+        Vec3::new(px + 4, py + 1, gz + 3), // north
+        Vec3::new(px + 4, py - 1, gz + 3), // south
+        Vec3::new(px + 4, py, gz + 4),     // up
+        Vec3::new(px + 4, py, gz + 2),     // down
+    ] {
+        server.state_mut().set_block(shell, rock);
+    }
+    tick(&mut server, 2);
+
+    let names = server.bastion_spawn_colony(
+        Vec3::new(px as f32 + 0.5, py as f32 - 3.0, gz as f32 + 2.0),
+        1,
+    );
+    tick(&mut server, 30);
+
+    let designated = server.bastion_place_designation(
+        Region {
+            min: pillar,
+            max: blob,
+        },
+        DesignationKind::Mine,
+    );
+    let paint_jobs = designated.len();
+    let fixture_region = Region {
+        min: pillar,
+        max: blob,
+    };
+
+    // Premise check, before waiting on the collapse: the blob must start
+    // fully enclosed (never independently claimable) -- if this is false
+    // the geometry is wrong and the rest of the run proves nothing.
+    tick(&mut server, 2);
+    let blob_starts_unreachable = matches!(
+        server.bastion_inspect_cell(blob),
+        Some(common::comp::bastion::BastionInspectKind::Job(j)) if j.unreachable
+    );
+
+    let mut pillar_mined = false;
+    let mut blob_cleared = false;
+    let mut jobs_remaining = server.bastion_jobs_in_region(fixture_region);
+    for _ in 0..600 {
+        tick(&mut server, 10);
+        pillar_mined = server.bastion_block_kind(pillar).is_none_or(|k| k != BlockKind::Rock);
+        blob_cleared = server.bastion_block_kind(blob).is_none_or(|k| k != BlockKind::Rock);
+        jobs_remaining = server.bastion_jobs_in_region(fixture_region);
+        if pillar_mined && blob_cleared && jobs_remaining == 0 {
+            break;
+        }
+    }
+    // Settle: give the phantom-job sweep (#57) a few more cycles in case
+    // retirement lags the block edit by a tick or two.
+    tick(&mut server, 60);
+    jobs_remaining = server.bastion_jobs_in_region(fixture_region);
+
+    let stone_total = server.bastion_colony_item_total(MINE_DROP_ITEM);
+    let conserved = stone_total == 2;
+    let no_orphan = jobs_remaining == 0;
+
+    let result = serde_json::json!({
+        "caveincons_colonists": names.len(),
+        "caveincons_paint_jobs": paint_jobs,
+        "caveincons_blob_starts_unreachable": blob_starts_unreachable,
+        "caveincons_pillar_mined": pillar_mined,
+        "caveincons_blob_cleared": blob_cleared,
+        "caveincons_stone_total": stone_total,
+        "caveincons_jobs_remaining": jobs_remaining,
+    });
+    println!("{}", result);
+    let pass = blob_starts_unreachable && pillar_mined && blob_cleared && conserved && no_orphan;
+    println!(
+        "CAVEIN-CONSERVATION SCENARIO: {}",
+        if pass { "PASS" } else { "FAIL" }
+    );
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
 /// REQ-0064 negative fixture. The first record is deliberately provisional;
 /// the forbidden warning comes afterward and therefore must be reflected by
 /// the only final record and the process exit code.
@@ -7177,7 +7672,7 @@ fn b58_ladder_integration_fixture(args: &Args) -> ExitCode {
 
 fn b58_scenario(args: &Args) -> ExitCode {
     use common::{
-        bastion::{BUILD_MATERIAL_ITEM, DesignationKind, Region, WorkType, ZExtent},
+        bastion::{CHOP_DROP_ITEM, DesignationKind, Region, WorkType, ZExtent},
         terrain::{Block, BlockKind, SpriteKind},
         vol::ReadVol,
     };
@@ -7721,10 +8216,18 @@ fn b58_scenario(args: &Args) -> ExitCode {
     tick(&mut server, 5);
     // Material for 5 rungs (+1 spare) to one colonist → deterministic
     // builder (only carriers are arbitration-eligible for Ladder jobs).
+    // TASK #64 fix: this gave BUILD_MATERIAL_ITEM (stone) -- but
+    // DesignationKind::Ladder's required_item is CHOP_DROP_ITEM (wood)
+    // per the DPA-0 wood-correction rule (`place_designation`/
+    // `place_designation_surface`'s own `required_item` match). Every
+    // rung failed the material-availability gate before ever reaching
+    // claim/stance code -- likely the REAL reason `c_rungs_placed` has
+    // read 0/5 across every run this session, independent of the
+    // stance-affordance work. A stale fixture, not a live defect.
     let builder = names.first().cloned().unwrap_or_default();
     let mut c_gave = true;
     for _ in 0..6 {
-        c_gave &= server.bastion_give_colonist_item(&builder, BUILD_MATERIAL_ITEM);
+        c_gave &= server.bastion_give_colonist_item(&builder, CHOP_DROP_ITEM);
     }
     // The ladder: 1×1 footprint against the wall face, 5 rungs up (one
     // above the ledge) via the b-2 surface path.
