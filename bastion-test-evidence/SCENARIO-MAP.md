@@ -448,3 +448,59 @@ verification property.** "Does it reproduce exactly across independent runs?"
 separates instrument noise from real defect in one grep, with data already on
 disk and no new runs. **Reach for it whenever a failure is about to be
 dismissed as flake.**
+
+## ★★★ THE FOUR MINE FAILURES HAVE FOUR DIFFERENT SIGNATURES (2026-08-04, wave19)
+
+All four were already fully diagnosed **in fields the corpus has been carrying
+all along**. Nobody had read `b5_mine_cell_diag`. Field semantics READ before
+use (`blocked_by` = `JobBoard::blocked_by`, first-match over `blocked_regions`,
+returning that region's `blocking_cell`).
+
+| seed | mined | cells in diag | blocked region? | claim state | signature |
+|---|---|---|---|---|---|
+| **90** | 25/27 | 3 | **none** | **all 3 claimed by named colonists, `cycles=0`** | **claimed, unblocked, NOT PROGRESSING** |
+| **61** | 26/27 | 3 | yes — blocker `[24515,26191,164]`, an **adjacent column** | claimant `None`, cycles 0–6 | blocked by a neighbouring column |
+| **54** | 16/27 | 18 | yes — blocker `[26659,4849,176]`, **itself a cell in the set** | one cell claimed | one region swallowing 18 cells |
+| **71** | 5/27 | 27 | **none** | **mostly `cycles=360` (never claimed)**; only top-layer/frontier cells claimed recently | claim/arbitration never engaged the volume |
+
+> **"Mode B mine" is not one mode and not two. It is FOUR seeds with four
+> distinct signatures**, and the magnitude ordering (5 → 16 → 25 → 26) tracks
+> them. Merging them into one row would have been a four-way confound.
+
+**★ Seed 90 is the cleanest specimen in the corpus.** Three cells, all
+*actively claimed by named colonists* at `cycles_since_last_claim = 0`,
+`blocked_by = None`, and two blocks never mined. **Colonists hold the job,
+nothing blocks it, no progress happens.** No confound to strip. If a
+"claimed but not progressing" row is ever built, this is its subject.
+
+**★ Seed 71 is the opposite** — 27 of 27 cells in the diag, no blocked region,
+`cycles_since_last_claim = 360` (the whole run) on the interior cells.
+**Arbitration never engaged the volume at all.** Note the top-layer /
+`is_column_frontier` cells DO show recent claims (88–148) — so the frontier was
+worked and the interior never became claimable.
+
+### ★★ INSTRUMENT GAP — `blocked_sources` exists and the mine diag doesn't use it
+
+`JobBoard::blocked_by` is a **first-match scalar**. Task #61 built
+`blocked_sources` precisely because of that, and its doc says so outright:
+
+> *"A scalar first-match here would silently hide whichever mechanism pushed
+> second … this proved that a task #61 candidate lazy chop probe never
+> independently fired on the corpus's only genuinely-unreachable chop case."*
+
+**It is wired for chop (`b5_ch_base_blocked_sources`) and NOT for mine.** So for
+seeds 54 and 61 we know a block exists and which cell — but **not which
+mechanism recorded it**, which is the exact ambiguity that infrastructure was
+built to remove. **Adding `blocked_sources` to `mine_cell_diag` is a one-line
+read-only probe change, no behavior impact**, and it converts two of the four
+signatures from "blocked by something" into "blocked by a named mechanism."
+Highest instrument-value-per-line available right now.
+
+### ★ `b5_55_diag` IS A CONSTANT — do not read it as a finding
+
+`{"claimant": null, "progress": 0.0, "unreachable": true}` in **47 of 48
+seeds**, `null` in one — **including all 36 PASSING seeds**. `unreachable:true`
+looks like a diagnosis and carries **zero information**. **A diag that reports
+the same value in passing and failing runs is not a diagnostic**, and this one
+sits under a scenario (b55) currently tracked RED. Check any `_diag` field's
+distribution across passing seeds before quoting it.
