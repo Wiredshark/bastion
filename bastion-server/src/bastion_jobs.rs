@@ -1340,13 +1340,22 @@ fn job_wanted(kind: DesignationKind, block: &Block) -> bool {
 /// Stockpile/Zone/Farm at both call sites (so no `Job` is ever actually
 /// built with those arms' value) — a future `DesignationKind` variant
 /// must choose an arm here too, not fall through silently.
+///
+/// PURE-REFACTOR SCOPE (DECISIONS #45): Build and Bed declare
+/// `OnTopAlways`, matching pre-#64 behaviour exactly (Ladder's own
+/// control -- see `on_top_always`'s doc -- showed the physical-support
+/// argument that motivated `AdjacentToBase` doesn't predict outcomes in a
+/// system with no execution-proximity check, and Build/Bed never had
+/// their own control). `AdjacentToBase` stays built and reachable, not
+/// deleted, for whichever of Build/Bed earns its own evidence-gated row.
 fn designation_affordance(kind: DesignationKind) -> AffordanceClass {
     match kind {
         DesignationKind::Mine | DesignationKind::Chop | DesignationKind::Gather => {
             AffordanceClass::SolidTarget
         },
-        DesignationKind::Build | DesignationKind::Bed => AffordanceClass::AdjacentToBase,
-        DesignationKind::Ladder => AffordanceClass::OnTopAlways,
+        DesignationKind::Build | DesignationKind::Bed | DesignationKind::Ladder => {
+            AffordanceClass::OnTopAlways
+        },
         DesignationKind::Stockpile | DesignationKind::Zone(_) | DesignationKind::Farm => {
             AffordanceClass::Untargeted
         },
@@ -1808,17 +1817,17 @@ fn adjacent_ground_stance(terrain: &TerrainGrid, pos: Vec3<i32>) -> Option<Vec3<
     None
 }
 
-/// bastion (task #64, REVERTED 2026-08-03 on A/B evidence — DECISIONS #44):
-/// this was originally a CONDITIONAL stance (on-top only once the cell
-/// below reads solid, terrain-derived, with a `SupportHint` threaded
-/// through a same-tick staleness fix at the emergency rescue's
-/// rung-chaining site). A controlled A/B (b58 part (c): material-fix-alone
-/// on pre-#64 code vs. material-fix-plus-#64) falsified the premise the
+/// bastion (task #64, `AffordanceClass::OnTopAlways`'s resolution — see its
+/// doc for the full A/B). Originally built ONLY for Ladder, as a
+/// CONDITIONAL stance (on-top only once the cell below reads solid,
+/// terrain-derived, with a `SupportHint` threaded through a same-tick
+/// staleness fix). A controlled A/B (b58 part (c): material-fix-alone on
+/// pre-#64 code vs. material-fix-plus-#64) falsified the premise the
 /// conditional logic was built to fix: the OLD unconditional on-top
 /// default placed all 5 rungs cleanly (control: 5/5); the conditional
 /// version placed only 2/5, silently refusing a stance for every middle
 /// rung once its own terrain check missed (treatment: 2/5, a regression,
-/// not an improvement).
+/// not an improvement — DECISIONS #44).
 ///
 /// The mechanism, per Opus's read: NOTHING downstream enforces the stance
 /// for a placement kind — arrival tolerance widens with `stuck_strikes`
@@ -1826,19 +1835,16 @@ fn adjacent_ground_stance(terrain: &TerrainGrid, pos: Vec3<i32>) -> Option<Vec3<
 /// during this same investigation), so a colonist places the block from
 /// wherever it actually ends up, stance offset or not. A stance that can
 /// REFUSE (return `None`) is therefore strictly worse than one that
-/// always answers, even a physically-naive one — refusing trades a
-/// harmless approximation for an outright non-claim. Ladder never had a
-/// demonstrated failure this fixed (the `c_rungs_placed_expected` red
-/// that motivated the whole row turned out to be a fixture material
-/// mismatch — `BUILD_MATERIAL_ITEM` vs the required `CHOP_DROP_ITEM`, see
-/// the harness fix alongside this commit — unrelated to stance).
+/// always answers, even a physically-naive one.
 ///
-/// Declares the PROVEN rule rather than the hypothesis: unconditional
-/// on-top, same as the pre-#64 blind default, but now an intentional,
-/// evidenced entry in the table instead of an unexamined inheritance —
-/// the table still did its job by making the claim checkable, even
-/// though checking it here means keeping the old answer.
-fn ladder_stance() -> Option<Vec3<i32>> { Some(Vec3::unit_z()) }
+/// DECISIONS #45 (pure-refactor ruling) widened this from Ladder-only to
+/// every kind whose pre-#64 behaviour was the blind unconditional
+/// default: Build, Bed, Ladder, and all three Farm phases. Only Ladder
+/// carries a controlled A/B; Build/Bed/Farm share this VALUE (matching
+/// pre-#64 exactly, zero behaviour change) without yet sharing the
+/// EVIDENCE — see `AdjacentToBase`/`AtTarget`'s docs for what's built and
+/// reserved for their own future rows.
+fn on_top_always() -> Option<Vec3<i32>> { Some(Vec3::unit_z()) }
 
 /// bastion (task #64): Farm's SOW/HARVEST sub-jobs — `pos` IS the working
 /// position (the crop cell itself, one level above tilled ground), not a
@@ -1861,11 +1867,13 @@ fn at_target_stance(terrain: &TerrainGrid, pos: Vec3<i32>) -> Option<Vec3<i32>> 
 /// generalized to reading `job.affordance` instead of `job.kind`).
 /// `Untargeted` resolves to the pre-existing on-top default unconditionally
 /// — self-jobs/Haul never had a reported stance problem, so their working
-/// behavior is preserved byte-for-byte. `OnTopAlways` (Ladder) ALSO
-/// resolves unconditionally (see its own doc — reverted on A/B evidence,
-/// DECISIONS #44); kept as its own affordance-table entry rather than
-/// folded into `Untargeted` so the DECLARATION (this is Ladder's proven
-/// rule, not an unexamined default) stays legible in the table.
+/// behavior is preserved byte-for-byte. `OnTopAlways` (Build, Bed, Ladder,
+/// Farm) ALSO resolves unconditionally (see its own doc — DECISIONS #45,
+/// the pure-refactor scope every non-Mine/Chop/Gather kind landed in);
+/// kept as its own affordance-table entry rather than folded into
+/// `Untargeted` so the DECLARATION (this is today's behaviour, stated on
+/// purpose, not an unexamined default silently inherited) stays legible
+/// in the table.
 ///
 /// STANDING NOTE for whoever adds the next arm here: a stance rule must
 /// NOT read `terrain` at a call site that triggers a write (`block_change
@@ -1880,7 +1888,7 @@ fn job_stance(terrain: &TerrainGrid, job: &Job) -> Option<Vec3<i32>> {
     match job.affordance {
         AffordanceClass::SolidTarget => has_standable_stance(terrain, job.pos),
         AffordanceClass::AdjacentToBase => adjacent_ground_stance(terrain, job.pos),
-        AffordanceClass::OnTopAlways => ladder_stance(),
+        AffordanceClass::OnTopAlways => on_top_always(),
         AffordanceClass::AtTarget => at_target_stance(terrain, job.pos),
         AffordanceClass::Untargeted => Some(Vec3::unit_z()),
     }
@@ -8125,7 +8133,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     stuck_strikes: 0,
                     depth: 0,
                     reservation: None,
-                    affordance: AffordanceClass::AdjacentToBase,
+                    // Pure-refactor scope (DECISIONS #45): matches pre-#64
+                    // behaviour -- see `designation_affordance`'s doc.
+                    affordance: AffordanceClass::OnTopAlways,
                 });
                 board.gen_build_jobs += 1;
             }
@@ -8747,15 +8757,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         if tick.0 % ARBITRATION_INTERVAL as u64 == 3 && !board.farms.is_empty() {
             let occupied: std::collections::HashSet<Vec3<i32>> =
                 board.jobs.values().map(|j| j.pos).collect();
-            // TASK #64: carries the affordance alongside (pos, req) because
-            // the SAME `DesignationKind::Farm` spans two physically
-            // different shapes -- TILL's job.pos = gpos (solid ground,
-            // SolidTarget, on-top correct, same shape as Mine) vs SOW/
+            // TASK #64: carries the affordance alongside (pos, req).
+            // PURE-REFACTOR SCOPE (DECISIONS #45): every phase declares
+            // `OnTopAlways`, matching pre-#64 behaviour exactly. The SAME
+            // `DesignationKind::Farm` still spans two physically different
+            // shapes -- TILL's job.pos = gpos (solid ground) vs SOW/
             // HARVEST's job.pos = cpos (the crop cell itself, already the
-            // stand position, AtTarget) -- and `req.is_some()` alone can't
-            // distinguish TILL from HARVEST (both carry `None`). The
-            // creator knows which phase it's building; record it here
-            // rather than trying to re-derive it from `pos` later.
+            // stand position) -- a real semantic difference, preserved in
+            // these comments and in the (unwired) `AtTarget` affordance,
+            // but NOT shipped as a behaviour change: this session's own
+            // counter-control showed `farm_tilled:false` is unexplained
+            // under EITHER stance, so there's no demonstrated failure for
+            // a phase-aware stance to fix yet. Ships as a real change only
+            // once Farm's own control demonstrates a sow/harvest failure
+            // the split actually fixes.
             let mut new_jobs: Vec<(Vec3<i32>, Option<&'static str>, AffordanceClass)> = Vec::new();
             let mut stage_ups: Vec<(Vec3<i32>, Block, u8)> = Vec::new();
             let mut evict: Vec<Vec3<i32>> = Vec::new();
@@ -8782,9 +8797,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 let g = crop.get_attr::<Growth>().map(|g| g.0).unwrap_or(0);
                                 if g >= FARM_GROWTH_MAX {
                                     if !occupied.contains(&cpos) {
-                                        // HARVEST: job.pos = cpos, the
-                                        // colonist stands AT the crop cell.
-                                        new_jobs.push((cpos, None, AffordanceClass::AtTarget));
+                                        // HARVEST: job.pos = cpos. Declares
+                                        // OnTopAlways (pure-refactor scope,
+                                        // DECISIONS #45) -- the crop cell
+                                        // is genuinely the stand position
+                                        // (AtTarget would be the honest
+                                        // answer), but that's an unshipped
+                                        // change pending Farm's own control.
+                                        new_jobs.push((cpos, None, AffordanceClass::OnTopAlways));
                                     }
                                 } else if g >= FARM_GROWTH_SOWN {
                                     let ck = (cpos.x, cpos.y, cpos.z);
@@ -8805,23 +8825,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             },
                             None | Some(SpriteKind::Empty) => {
                                 if ground.kind() == BlockKind::Earth {
-                                    // SOW: job.pos = cpos, the colonist
-                                    // stands AT the crop cell (same shape as
-                                    // HARVEST above).
+                                    // SOW: job.pos = cpos. Declares
+                                    // OnTopAlways, same reasoning as
+                                    // HARVEST above.
                                     if !occupied.contains(&cpos) {
                                         new_jobs.push((
                                             cpos,
                                             Some(FARM_SEED_ITEM),
-                                            AffordanceClass::AtTarget,
+                                            AffordanceClass::OnTopAlways,
                                         ));
                                     }
                                 } else if !occupied.contains(&gpos) {
                                     // TILL: job.pos = gpos, the raw ground
                                     // cell -- SOLID pre-till, same shape as
-                                    // Mine (on-top correct: the counter-
+                                    // Mine. Declares OnTopAlways (pure-
+                                    // refactor scope, DECISIONS #45) to
+                                    // match pre-#64 behaviour exactly, not
+                                    // `SolidTarget` -- even though
+                                    // `has_standable_stance` would almost
+                                    // certainly agree here (this is the
+                                    // shape it was evidenced for), "almost
+                                    // certainly" isn't the bar this row
+                                    // just set for itself. The counter-
                                     // control this campaign's till-vs-sow
-                                    // split hinges on).
-                                    new_jobs.push((gpos, None, AffordanceClass::SolidTarget));
+                                    // split hinges on (farm_tilled:false
+                                    // unexplained under either stance)
+                                    // still stands, unchanged.
+                                    new_jobs.push((gpos, None, AffordanceClass::OnTopAlways));
                                 }
                             },
                             Some(_) => {}, // genuinely foreign sprite
@@ -13583,8 +13613,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // off the job's own stamped affordance.
                                     // For Ladder this now always resolves to
                                     // on-top unconditionally (see
-                                    // `ladder_stance`'s doc — reverted on A/B
-                                    // evidence, DECISIONS #44), so there's no
+                                    // `on_top_always`'s doc — DECISIONS #44/
+                                    // #45), so there's no
                                     // terrain-staleness concern here anymore;
                                     // `unwrap_or` stays defensive only.
                                     let stance = board

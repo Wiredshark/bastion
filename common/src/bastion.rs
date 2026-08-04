@@ -363,38 +363,56 @@ pub enum AffordanceClass {
     /// `job.pos` IS solid pre-completion (removal-shaped): on-top is the
     /// preferred stance (real support exists), falling back to an
     /// adjacent-ground stance only when on-top is physically unusable.
-    /// Mine, Chop, Gather, Farm's TILL sub-job (job.pos = the raw ground
-    /// cell, solid before tilling).
+    /// Mine, Chop, Gather.
     SolidTarget,
     /// `job.pos` is EMPTY pre-completion and becomes solid ONLY on
     /// completion (construction-shaped): on-top has no support by
-    /// definition (there is nothing at `job.pos` to stand on until the
-    /// job itself creates it) — commit to a cardinal-adjacent stance at
-    /// `job.pos`'s own level, on real ground. Build, Bed, Ladder's base
-    /// rung.
+    /// definition — commit to a cardinal-adjacent stance at `job.pos`'s
+    /// own level, on real ground. Built, evidenced-plausible, and
+    /// CORRECTLY-TYPED for Build/Bed/a Ladder base — but NOT currently
+    /// stamped on any live `Job` (task #64, DECISIONS #45, pure-refactor
+    /// scope): Ladder's own control (see `OnTopAlways`'s doc) falsified
+    /// the physical-support argument as a PREDICTOR in a system with no
+    /// execution-proximity check, and Build/Bed never got their own
+    /// control before that finding landed — shipping this on the same
+    /// unproven argument for three more kinds would repeat exactly what
+    /// just got reverted for Ladder. Reserved for whichever of Build/Bed
+    /// earns its own evidence-gated row (change `designation_affordance`'s
+    /// match arm, nothing else needs new plumbing).
     AdjacentToBase,
-    /// A Ladder rung. Also empty pre-completion, same physical shape as
-    /// `AdjacentToBase` — but declared as its OWN entry because the
-    /// declaration itself carries evidence, not just a name: a controlled
-    /// A/B (task #64, DECISIONS #44) falsified an EARLIER version of this
-    /// rule that was terrain-conditional (on-top only once the rung below
-    /// read solid, named `LadderContinuation` for that now-deleted
-    /// mechanism) — the conditional version REGRESSED a previously-working
-    /// placement rate (5/5 -> 2/5) because nothing downstream enforces the
-    /// stance for a placement kind, so a stance that can refuse is
-    /// strictly worse than one that always answers. Renamed to match what
-    /// it actually resolves to now (unconditional on-top, matching the
-    /// original blind default) rather than leaving a name that describes a
-    /// mechanism that no longer exists — see `ladder_stance`'s own doc for
-    /// the full A/B. Kept as its own variant (not folded into `Untargeted`,
-    /// which shares its resolved value) so the table still records that
-    /// this is Ladder's PROVEN rule, not an unexamined inheritance.
+    /// Unconditional on-top — no terrain read, no possibility of refusing
+    /// a stance. Mine/Chop's stance function (`SolidTarget`) can fall back
+    /// or return `None`; this can't, by construction. Covers Build, Bed,
+    /// Ladder, and all three Farm phases (till/sow/harvest) — every kind
+    /// whose pre-task-#64 behaviour was the blind
+    /// `standable.get(&job_id).unwrap_or(Vec3::unit_z())` default, now
+    /// DECLARED rather than silently inherited (task #64, DECISIONS #45:
+    /// pure refactor, zero behaviour change from pre-#64 for any of them).
+    /// The name records a real, evidenced finding for Ladder specifically:
+    /// a controlled A/B (DECISIONS #44) falsified an EARLIER,
+    /// terrain-conditional version of Ladder's rule (on-top only once the
+    /// rung below read solid, then named `LadderContinuation` for that
+    /// now-deleted mechanism) — the conditional version REGRESSED a
+    /// previously-working placement rate (5/5 -> 2/5) because nothing
+    /// downstream enforces the stance for a placement kind, so a stance
+    /// that can refuse is strictly worse than one that always answers —
+    /// see `ladder_stance`'s own doc for the full A/B. Build/Bed/Farm
+    /// share the VALUE (on-top always) but not yet the EVIDENCE; their own
+    /// controls are filed as separate future rows, not assumed by
+    /// association with Ladder's.
     OnTopAlways,
     /// `job.pos` is the STAND cell itself, not a thing to reach onto or
     /// beside — the colonist's feet land AT `job.pos`, support comes from
     /// the (already solid) cell below it. Neither on-top nor adjacent.
-    /// Farm's SOW/HARVEST sub-jobs (job.pos = the crop cell one above
-    /// tilled ground, which IS the working position).
+    /// Built and correctly-typed for Farm's SOW/HARVEST sub-jobs
+    /// (job.pos = the crop cell one above tilled ground, which IS the
+    /// working position — a real semantic difference from TILL's job.pos,
+    /// preserved in the farm pass's own comments) but NOT currently
+    /// stamped on any live `Job`, same reasoning as `AdjacentToBase`: no
+    /// demonstrated failure this fixes (this session's counter-control
+    /// showed `farm_tilled:false` is unexplained under either stance), so
+    /// it ships as a behaviour change only once Farm's own control
+    /// demonstrates a sow/harvest failure the split actually fixes.
     AtTarget,
     /// No terrain-edit stance requirement — the target is wherever the
     /// referenced entity/zone/self actually is (Haul, DepositRun, RestAt,
