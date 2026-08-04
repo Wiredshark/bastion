@@ -43,9 +43,12 @@ archetype · chronicle · chronicle-capture · lod0 · lod1 · inspect
   discriminator ran (four probes, `probe_incomplete:false`, route found) and
   its POSITIVE result turns out to be uninterpretable — see the instrument
   caveat below. We established that the probe cannot adjudicate this question,
-  NOT that `plan_access` is correct. Needs a capsule-aware check to decide.
-  The emergency-egress agreement is suggestive but not independent if it
-  shares `plan_access`'s capsule logic.
+  NOT that `plan_access` is correct.
+  **Next question is NOT capsule modeling** (see the correction below —
+  `plan_access` is a construction planner, not a reachability check): it is
+  **which of the three `plan_access` call sites bed reaches**, since the
+  self-rescue site runs with the ladder tier dark and returns `None` whenever
+  `carve_ramp` finds no stair. Cheap to answer from a trace.
 - **selfgen** — root `hauled` (haul stage; upstream of placement).
 - **farm** — till/sow late + `farm_tilled:false` unexplained under BOTH stances
   (counter-control); Farm's own control blocked on that mystery.
@@ -87,9 +90,9 @@ headroom, no collider** at any step. `has_standable_stance` is the only
 body-aware check and it runs **only on the destination cell**. Intermediate
 columns get zero clearance modeling.
 
-**So the probe models a POINT; `plan_access` models a CAPSULE. They answer
-different questions.** A capsule can only go where a point can go, so the
-soundness is asymmetric:
+**So the probe models a POINT — it answers "can a dimensionless walker get
+there".** That is narrower than "can a colonist get there", and the soundness
+of a point model is asymmetric:
 
 | probe result | status | valid claim |
 |---|---|---|
@@ -108,6 +111,47 @@ soundness is asymmetric:
 **Filed, not started:** extending clearance/headroom into the per-step column
 test would make positives sound too. Real work in a hot path, behavior-
 re-rolling; priority sits with the architect.
+
+### ★★ CORRECTION, same day, one hour later — `plan_access` IS NOT A REACHABILITY CHECK
+
+The paragraph above originally read *"the probe models a POINT, `plan_access`
+models a CAPSULE."* **The second half was my inference from the NAME and it is
+wrong** — written into the very commit whose closing line warns that four rows
+read this instrument's name instead of its contents.
+
+**`plan_access` is a CONSTRUCTION PLANNER, not a predicate.** It takes
+`&mut JobBoard`, returns `Option<(DesignationKind, usize)>`, and EMITS digging
+designations to *create* access — carve-ramp stairs first, then a ladder
+pillar, then an emergency escape shaft. `None` means **"I could not build a
+way there,"** never **"a colonist cannot fit."** Nothing in it models a body.
+
+**So bed's rejection has candidate causes with no relation to body width:**
+
+1. **The ladder tier is DARK at two of three call sites.**
+   `const AUTO_LADDER_ACCESS: bool = false` (B6 hotfix — the auto-pillar caused
+   a queue-fight). The tier lights only via `emergency_owner.is_some()` or
+   `dig_provisioned && DIG_PROVISIONED_LADDER_ACCESS`. The **self-rescue call
+   site passes `false, None, None`** — so if `carve_ramp` finds no stair, that
+   site returns `None` with no fallback. Call sites: self-rescue (stairs only),
+   emergency (ladder live), proactive descent (ladder live).
+2. **Cell contention.** `unavailable_cells` is seeded from *every* live job's
+   `pos` plus emergency route cells; any tier rejects a plan intersecting it.
+3. **Stair geometry.** `carve_ramp` plus the walkability rule (no two
+   consecutive digs rising in the same XY column).
+
+**Which call site bed reaches is not yet established** and is the next
+question, not an assumption.
+
+**And the B6 comment carries its own unnamed-case claim** — *"the universal
+teleport-to-ground fail-safe backstops any colonist a stair can't reach"* —
+true for a **trapped colonist**, false for a **job needing access to a work
+face**. The fail-safe rescues bodies; it does not grant a job access. Same
+species as the T3.52 `sufficient` comment.
+
+**What survives from the original finding:** everything about the probe. It is
+column-based, its negatives are sound, its positives are uninterpretable as
+claims about a colonist, seed 80 stands and bed's positive is void. **What does
+not survive is the account of what the probe was being compared AGAINST.**
 
 **Why it went unnoticed through four rows:** the instrument's NAME describes a
 broader question than its CONTENTS answer, and four rows read the name — the
