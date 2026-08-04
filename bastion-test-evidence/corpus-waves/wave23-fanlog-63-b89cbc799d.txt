@@ -1,0 +1,19 @@
+[pool] 4 x e2-standard-8 (32 vCPU), 12 seeds each = 48 total. Ceiling $25 / 90m. Launching...
+[guard] 1m | ~$0.028 (actual VM-time) | 4 VMs up | ceiling $25 / 90m
+[guard] 3m | ~$0.056 (actual VM-time) | 4 VMs up | ceiling $25 / 90m
+[guard] 4m | ~$0.084 (actual VM-time) | 4 VMs up | ceiling $25 / 90m
+[guard] 6m | ~$0.112 (actual VM-time) | 4 VMs up | ceiling $25 / 90m
+[guard] 7m | ~$0.140 (actual VM-time) | 4 VMs up | ceiling $25 / 90m
+[guard] 9m | ~$0.168 (actual VM-time) | 4 VMs up | ceiling $25 / 90m
+[guard] 10m | ~$0.196 (actual VM-time) | 4 VMs up | ceiling $25 / 90m
+[guard] 12m | ~$0.224 (actual VM-time) | 4 VMs up | ceiling $25 / 90m
+[guard] 13m | ~$0.231 (actual VM-time) | 1 VMs up | ceiling $25 / 90m
+=== POOL DONE in 907s | ~$0.231 burned (actual VM-time) | 48/48 seeds across 4 VMs (0 create-fails) ===
+/tmp/bastion-pool/bastion-pool-0.log:COMMIT=b89cbc79
+/tmp/bastion-pool/bastion-pool-0.log:DONE=12
+/tmp/bastion-pool/bastion-pool-1.log:COMMIT=b89cbc79
+/tmp/bastion-pool/bastion-pool-1.log:DONE=12
+/tmp/bastion-pool/bastion-pool-2.log:COMMIT=b89cbc79
+/tmp/bastion-pool/bastion-pool-2.log:DONE=12
+/tmp/bastion-pool/bastion-pool-3.log:COMMIT=b89cbc79
+/tmp/bastion-pool/bastion-pool-3.log:DONE=12
