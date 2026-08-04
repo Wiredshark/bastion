@@ -38,6 +38,30 @@ not the outcome — a row owes *why did 71 never recover and 66 did*.
 **This was in every fan we have ever run.** Full working in the section of the
 same name below.
 
+## ★★★ RED RE-RUN PASS (8 of 9, at `460626a6e2`) — every STATUS was right, a third of the DESCRIPTIONS were wrong
+
+| finding | count |
+|---|---|
+| descriptions materially wrong | **3** — `run`, `auton3`, `farm` |
+| clauses proven UNSATISFIABLE | **1** — `farm_growth_rose` |
+| reds proven UNINTERPRETABLE | **1** — `b55` (baseline not emitted) |
+| dependent clauses identified | **1** — `farm_sown` |
+| rows fully solved | **1** — `farm` = 8-of-9 tilled |
+| new cross-scenario patterns | **1** — one-unit-short in ≥3 places |
+| **statuses changed** | **0** |
+
+**Headlines:** `run` is a **14.07%-vs-15% near-miss**, not "running isn't
+faster". `auton3` is **one score component reading 0.0**, not a broken model.
+`farm` was **a count threshold**, not an unexplained mystery. `b55` **cannot be
+read at all** until it emits its baseline. `path` is **saturated at its
+iteration cap** (`peak_tick_iters == cap == 3000`).
+
+**Not re-run:** `b55-deep` — 21 conditions behind 2 emitted bits; it needs the
+verdict/diag split before a run tells anyone anything.
+
+> **The red list should carry NUMBERS, not prose summaries.** Three rows had
+> drifted into descriptions that one sub-minute run contradicted.
+
 ## Three CLEAN SPECIMENS — one per failure mode, no fixture needed
 
 Deterministic, in the standing 48-seed fan, **attested at the merged tip
