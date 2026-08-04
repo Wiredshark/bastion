@@ -4390,6 +4390,40 @@ impl Server {
             .count()
     }
 
+    /// bastion (batch prep, 2026-08-04, Fable-directed): the SOLID-CELL
+    /// QUERY -- every cell within `region` that's currently FILLED terrain,
+    /// independent of whether a job exists there at all. `mine_cell_diag`
+    /// (bastion-harness) iterates `board.jobs.values()`, i.e. JOB-BEARING
+    /// cells only -- its membership rule silently drops any solid cell
+    /// that never got a job (a designation gap) AND any solid cell whose
+    /// job was already removed while the block itself never actually
+    /// cleared (a phantom-completion mismatch) -- burned batch items 61
+    /// and 90 twice today by conflating "no job here" with "nothing solid
+    /// here". This fn asks the terrain directly, not the job board, so it
+    /// can't inherit that membership bug. READ-ONLY (`terrain.get` only),
+    /// no world writes, no job-board access at all -- can't move any
+    /// existing baseline. Bounded to `region`'s own volume; a caller
+    /// passing an unbounded region is responsible for the cost.
+    pub fn bastion_solid_cells_in_region(
+        &self,
+        region: common::bastion::Region,
+    ) -> Vec<vek::Vec3<i32>> {
+        use common::vol::ReadVol;
+        let terrain = self.state.terrain();
+        let mut out = Vec::new();
+        for x in region.min.x..=region.max.x {
+            for y in region.min.y..=region.max.y {
+                for z in region.min.z..=region.max.z {
+                    let p = vek::Vec3::new(x, y, z);
+                    if terrain.get(p).is_ok_and(|b| b.is_filled()) {
+                        out.push(p);
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// bastion (B5.5, harness hook): colonists holding an `ActiveJob` whose
     /// job id is no longer on the board. Transiently non-zero for at most
     /// one upkeep tick after a cancel; anything persisting is a leaked
