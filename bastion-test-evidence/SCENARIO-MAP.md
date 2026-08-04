@@ -1823,3 +1823,50 @@ carried an outstanding job at sample time. Their reds are chop-side.)*
 
 > **★ Every branch is informative.** No item can come back "inconclusive" — the
 > null outcomes are named and each one redirects a row rather than failing it.
+
+## ★ ENGINE TIP ADVANCED: `460626a6e2` → `cf5757e31b` (5b's branch, fast-forward)
+
+**Verified a TRUE fast-forward before pushing** — `merge-base(branch, remote engine)
+== remote engine`, so no divergence and no merge commit. Remote confirmed at
+`cf5757e31b` after the push (checked, not assumed).
+
+**Contents:** bed reachability probe + the re-scoped two-error-model caveat · bed
+walk-test (root-caused bed's fixture defect) · guard-row limbs 1+2 ·
+terrain-ground-dump · ARB-ATTEMPT-01 step 1 (`ReleaseReason`) · the observability
+row's access-plan counters (cross-validated on seeds 52/54/71) · solid-cell query
+· settle-window flags.
+
+### Lean pass — four checks
+
+1. **`in_game.rs` was the only file outside the stated scope, and it is
+   legitimate:** `benched_since_tick` needs the job id, so `.values()` →
+   `.iter()` with `(_, j)` in the closures. **Filter and `min_by_key` semantics
+   unchanged.**
+2. **Field completeness structurally guaranteed** — no `Default::default()`
+   spread at any `BastionJobInspect` literal, so the compiler rejects any missed
+   site. *The usual struct-field-addition risk is absent by construction, not by
+   diligence.*
+3. **`ReleaseReason`: 26 push sites, zero passing a bare entity.** The enum's own
+   comment is the positive-exemplar pattern — *"A nonzero count of these after
+   step 2 would mean a site was missed, not that it's genuinely
+   unclassifiable"* — **so a residual `Other` cannot be misread as benign.**
+4. **Settle flags reproduce their literals** (`unwrap_or(180)` / `unwrap_or(45)`)
+   with intent commented at both sites. Byte-identical when absent.
+
+### ★★ GAP: batch item 7 has no instrument yet
+
+`--b5-settle-iters` (61/90) and `--ck-settle-iters` (chokepoint) landed.
+**Neither is the `run` displacement sample**, so the `run` window test cannot
+run. **One flag must drive FOUR places** — both `tick()` calls **and both
+`/ 45.0` divisors**, walk side and run side. **Miss a divisor and a longer
+window silently deflates the rate: a wrong number that looks fine.** Two flags
+instead of one would measure the ratio across mismatched windows and mean
+nothing.
+
+### ★ Correction to my own catch
+
+I claimed both 45-loops lived in `run_scenario`. **The CarvedStair loop is in
+`chokepoint_scenario`** — 5b's fresh enclosing-function read found it before
+editing. **The substance of the catch held (`ck_settle_iters` is not the run
+window); the location claim did not.** Eleventh correction, caught by the
+builder, pre-build.
