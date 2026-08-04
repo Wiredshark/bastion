@@ -51,14 +51,23 @@ Deterministic, in the standing 48-seed fan, **attested at the merged tip
 
 ## Instrument work, in priority order — all read-only, no behavior change
 
-1. **`build_cell_diag`** on the `mine_cell_diag` pattern. **Build is the largest
+1. **PER-ATTEMPT outcome record** (claim granted → completed / timed out /
+   preempted / released / material-blocked, with cycle). **Gates DECISIONS
+   #53's ARB-STARVATION row**, whose discriminator is provably NOT derivable
+   from the current corpus: every per-cell field is coupled to the outcome, and
+   `mine_cell_diag` aggregates per CELL while the question is per ATTEMPT.
+2. **`build_cell_diag`** on the `mine_cell_diag` pattern. **Build is the largest
    failure mode (6 of 12) and has NO diagnostics** — every build field is a
    constant across all 48 seeds. Seed 62 can be isolated but not investigated.
-2. **Add `blocked_sources` to `mine_cell_diag`** (already wired for chop). One
+3. **Add `blocked_sources` to `mine_cell_diag`** (already wired for chop). One
    line; converts seeds 54 and 61 from "blocked by something" to "blocked by a
    named mechanism."
-3. **Per-call-site access-emission counters** — the un-park condition for the
+4. **Per-call-site access-emission counters** — the un-park condition for the
    seam row (DECISIONS #52).
+
+**★ When building #1, exclude `starvation_cycles: 0` DELIBERATELY** — the hook's
+own doc says all-zero also means *"never open/unclaimed during arbitration"*, so
+zero is ambiguous between "never starved" and "never open."
 
 ## Do NOT trust these fields
 
