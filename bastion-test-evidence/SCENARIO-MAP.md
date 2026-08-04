@@ -143,6 +143,20 @@ archetype · chronicle · chronicle-capture · lod0 · lod1 · inspect
     `.wip64-guard-revert-wt` detached at the tip; `builder5` untouched
   - `RUN_EXIT=0` with a **72,102-byte** log — not an exit-0-with-empty-log
 
+  **★ STABILITY MEASURED — 3/3, not a single-run lottery.** The map's own
+  standing hazard says phase-sensitive scenarios need their own stability
+  measurement, and auton is a drive-storm scenario. Re-ran it twice more on the
+  same binary: **all 14 conjuncts identical in all three runs**, `failed_clauses`
+  empty each time, `verdict_matches_legacy: true` each time.
+
+  Log sizes differ (72102 / 72091 / 72435), so the runs are **not byte-identical**
+  — but with timestamps stripped only **8 lines** differ, and all of them are
+  per-run identity noise: a random **boot UUID** and the **per-run temp datadir
+  path** (the harness selects its own datadir; `VELOREN_USERDATA` did not apply).
+  **No simulation variance reaches any conjunct.** Stated precisely: *auton's
+  verdict is stable; auton's log is not byte-reproducible, for reasons unrelated
+  to the sim.*
+
   **This clears the map's last NEEDS-REVERIFY row; the re-count is complete.**
 
 ### Expected-red (2) — tracked fingerprints, red until AUTON-2
