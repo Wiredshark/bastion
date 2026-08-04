@@ -1534,7 +1534,7 @@ batch already needs, one more site.
 | 3 | **61** | extended settle window | deterministically SLOW or deterministically STALLED |
 | 4 | **90** | extended settle window | same question, claimed-and-stuck variant |
 | 5 | **92** | raised-cap probe | UNKNOWN → known; also carries `ch_mixed:false` at a normal 2048-cell box |
-| 6 | **80** | **column scan at `[24484, 26192, 153]`** | **single-layer ⇒ its no-route negative stands; multi-layer ⇒ the "genuinely unreachable" citation needs a caveat everywhere** — ⚠️ **STILL OPEN. The 2026-08-04 scan was run at SEED 90, not 80** (90 came back multi-layer). Seed 80's site is **unscanned**; its negative stays CONDITIONAL. Do not read the 90 result as closing this item. |
+| 6 | **80** | **column scan at `[24484, 26192, 153]`** | ✅ **CLOSED 2026-08-04 — MULTI-LAYER.** Target column: solid 90–139, 12-cell open gap 140–151, one solid block at 152 (a floating shelf; the cited cell 153 sits on it). **Negative UNSOUND.** Seed 90 likewise. **Both cited specimens retired — see the error-model section.** |
 
 **Outcome branches are pre-stated for every item.** #61's parking survives item 6
 either way — it rests on `n=1, wrong polarity`, which is structural impossibility
@@ -1871,8 +1871,47 @@ carried an outstanding job at sample time. Their reds are chop-side.)*
 | **71 / 66 traces** | attempts EXIST and fail ⇒ **shape A** (aging/cooldown family) | **ZERO attempts** recorded ⇒ **shape B** (cap/round-robin family) |
 | **61 / 90 window** | completes late ⇒ **window-sizing artifact**, corpus-defect ledger | never completes ⇒ **real stall**, frozen-block identity is the lead |
 | **92 raised cap** | probe completes ⇒ **UNKNOWN → known**, and its `ch_mixed` anomaly gets a second look | still incomplete ⇒ the cap is not the binding constraint |
-| **80 column scan** ⚠️ **NOT YET RUN** — the 08-04 scan was at seed **90** | single-surface ⇒ **its no-route negative STANDS** under the body-width caveat | multi-layer ⇒ **negative unsound**, caveat everywhere it is cited |
+| **80 column scan** ✅ **RUN 2026-08-04** (batch item 6 **CLOSED**) | single-surface ⇒ its negative would have STOOD | **MULTI-LAYER ⇒ negative UNSOUND.** Target column `(24484,26192)`: solid 90–139, a **12-cell open gap at 140–151**, one solid block at 152. `real_ground_top_z=152` is the top of a **floating shelf**; the cited cell 153 sits on it |
 | **90 column scan** ✅ **RUN 2026-08-04** | — | **MULTI-LAYER ⇒ negative UNSOUND.** Gallery with an open band at z=334–337, twenty blocks under the probe's z=353 "ground" |
+
+### ★★★★★ BOTH CITED SPECIMENS ARE NOW RETIRED — THE DEFAULT INVERTS
+
+**80 and 90 were the corpus's only two cited "genuinely unreachable" specimens.
+Both were scanned. Both came back multi-layer. Neither negative survives.**
+
+> **The corpus currently holds ZERO confirmed-sound lateral-unreachability
+> specimens.** (5b's flag, and it is the right one to raise.)
+
+**Two for two is a pattern, not a coincidence** — and it inverts the default:
+
+> **★ EVERY "genuinely unreachable" claim resting on `column_height_near` is
+> PRESUMED UNSOUND until its site has been column-scanned and returned
+> single-layer.** The burden now sits on the claim, not on the doubt. Two
+> independent sites, two independent scans, same direction.
+
+**Seed 80's geometry is a natural ARCH, and the grid shows why that matters.**
+A 9×9 dump (`x=[24480,24488] y=[26188,26196]`, `z=[90,250]`):
+
+- `x=24486–24488` (all `y`): **no solid above 139** — open sky, the true plateau
+  surface.
+- `x=24480/24481/24483–24485`: a **disconnected cap** at z≈152–155, separated
+  from the 90–139 base by the same ~12-cell gap.
+- **`x=24482`: solid CONTINUOUSLY from 90 to 154** — a **pillar** bridging
+  plateau to shelf.
+
+A column-height flood fill sees a 13–15 block discontinuity between plateau
+columns (top 139) and shelf columns (top ≈152), and will either treat it as an
+impassable cliff or as continuous **depending only on how the fill steps** —
+neither answer reflecting whether the pillar is actually climbable.
+
+**★ 5b explicitly declined to claim the pillar is a route** — they have
+block-presence, not slope or climbability — and that restraint is what makes the
+finding usable. **The claim is not "there is a path"; it is "here is one more
+thing `column_height_near` cannot represent."** *A weaker claim that is fully
+supported beats a strong one that needs data nobody collected.*
+
+**Raw data:** `seed80_terrain_dump.log` (single column), `seed80_grid_dump.log`
+(9×9 grid) — kept so the derivation can be redone independently.
 | **`run` window** | ratio climbs toward **1.25** ⇒ window overhead after all | stays **~1.14** ⇒ **real speed shortfall**, constants are the spec |
 
 > **★ Every branch is informative.** No item can come back "inconclusive" — the

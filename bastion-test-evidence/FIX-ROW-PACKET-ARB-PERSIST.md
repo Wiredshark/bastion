@@ -421,6 +421,34 @@ as seeds 71 / 54 / 61, now extended to 90.
 **Pre-stated branch, honoured:** *multi-layer ⇒ negative UNSOUND, caveat
 everywhere.* Taken.
 
+#### ★★★★★ AND SEED 80 CAME BACK THE SAME WAY — BOTH SPECIMENS ARE NOW RETIRED
+
+Batch item 6 (the seed-**80** scan, distinct from the seed-90 one) has since been
+run. Target column `(24484,26192)`: solid 90–139, a **12-cell open gap at
+140–151**, one solid block at 152. `real_ground_top_z=152` is the top of a
+**floating shelf** — a natural arch — and the cited cell 153 sits on it. A 9×9
+grid shows the plateau's true surface at 139, a disconnected cap at ≈152–155,
+and one column (`x=24482`) solid continuously from 90 to 154: a **pillar**.
+
+> **80 and 90 were the corpus's only two cited "genuinely unreachable"
+> specimens. Both scanned, both multi-layer, neither negative survives. The
+> corpus currently holds ZERO confirmed-sound lateral-unreachability specimens.**
+
+**Two for two is a pattern, and it inverts the default:** every
+`column_height_near` unreachability claim is now **presumed unsound until its
+site is scanned single-layer.** The burden sits on the claim.
+
+**This does not weaken the row — it removes the last reason to state it in causal
+terms.** With zero sound unreachability specimens, *any* framing of this row as
+"handle unreachable targets" would be unsupported. **The persistence framing is
+now the only one the evidence permits**, which is what §G1 argued from one
+specimen and what two now establish.
+
+*5b explicitly declined to claim the pillar is a walkable route — they have
+block-presence, not slope or climbability. **The claim is "here is one more thing
+the probe cannot represent," not "there is a path,"** and that restraint is what
+makes it citable.*
+
 #### What this KILLS
 
 **The specimen-level diagnosis.** "Seed 90's holdout is genuinely laterally
