@@ -321,3 +321,49 @@ and seed 80 (#61's evidence) carries A+C — both multi-mode, consistent with th
 32-clause sweep that killed the cascade pair. **And both SPLIT seeds (52, 54)
 are FAIL seeds**, so the offline/live reachability split co-occurs with real
 failures rather than sitting in healthy runs.
+
+### ★★★ MODE A CORRECTED — it is NOT material starvation (2026-08-04)
+
+I first described Mode A as *"materials-shaped, adjacent to the DPA-0 material
+work and the b58 stone-to-a-wood-job mismatch."* **Wrong, and the data refutes
+it with a zero count rather than an argument.**
+
+Harness definitions at `460626a6e2` (`bastion-harness/src/main.rs`):
+
+```rust
+build_placed = server.bastion_block_kind(build_ok_pos).is_some_and(|k| k.is_filled());
+let any_needs_materials = server.bastion_any_job_needs_materials();
+```
+
+`build_placed` is a **terrain read** — did the block actually get built.
+`any_needs_materials` is a **live board query sampled once, after the settle
+loop** — is any job currently waiting on materials.
+
+**Joint distribution across all 48 seeds:**
+
+| `build_placed` | `any_needs_materials` | seeds |
+|---|---|---|
+| false | false | **6** (all of Mode A) |
+| true | true | 42 |
+| **true** | **false** | **0** |
+| **false** | **true** | **0** |
+
+> **If builds were failing for want of materials, Mode A would read
+> `build_placed:false` + `any_needs_materials:TRUE`. That combination occurs
+> ZERO times in 48 seeds. Mode A is not material starvation.**
+
+**What it IS consistent with:** `build_ok_jobs = 1` and `build_stall_jobs = 1`
+in Mode A — **identical to passing seeds** — so the build job *exists*. It
+simply never progresses far enough to request materials, and never produces a
+block. **The failure is upstream of materials entirely.**
+
+**Direction still not established.** Perfect co-variation plus these
+definitions cannot separate "no placement ⇒ nothing ever requests materials"
+from a shared upstream cause. **What it does establish is the exclusion above**,
+which is the part that changes the row's target.
+
+**Consequence for the pair rule:** `any_needs_materials` carries **no
+independent information** in this corpus — it is a dependent of `build_placed`.
+Counting it as a second failed clause inflates the apparent failure count
+without adding a symptom. Same for the other perfect pairs until each is
+checked the same way.
