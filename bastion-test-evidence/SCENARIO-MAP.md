@@ -2552,3 +2552,41 @@ verify.* **Re-queued with the right invocation.**
 > **★ The READ-vs-ASSUME rule applies to PROVENANCE, not just to code.** A
 > plausible site-proximity story is exactly the kind of inference that needs
 > content confirmation — and the content said no.
+
+### ★★★★ QUANTIFIED: attempts SCALE with the window; completions do NOT
+
+Seed 90's holdout `[17989, 9263, 338]`, baseline (180) vs 5b's 450-run:
+
+| quantity | 180 | 450 | ratio |
+|---|---|---|---|
+| **window** | 180 | 450 | **2.50×** |
+| **`times_offered`** | **5** | **9** | **1.80×** |
+| **completions** | **0** | **0** | **—** |
+
+> **★ The cell is not waiting for a turn. It GETS turns — roughly in proportion
+> to the window — and fails every one.** That is the sharpest available
+> statement of persistence, and it distinguishes this from seed 61's slowness
+> with a number rather than an adjective.
+
+### ★★ AND THE FLAG CHANGED BETWEEN RUNS — a caveat on my own specimen
+
+| field | baseline (180) | 450-window |
+|---|---|---|
+| `unreachable` | **False** | **true** |
+| `claimant` | **Maddoc the Stout** | *(released)* |
+
+**At 180 the holdout was CLAIMED and UNFLAGGED. At 450 it is flagged and
+released.** Consistent with the mechanism — more window ⇒ more churn cycles ⇒
+the accumulated rejections eventually produce a flagged release. **The flag is a
+LAGGING INDICATOR of accumulated rejections, not a static property.**
+
+> **★ Which means my specimen description — "3 cells, ALL claimed by named
+> colonists, `cycles: 0`, nothing blocking" — was a 180-WINDOW SNAPSHOT that I
+> presented as a property of the seed.** It is a property of **(seed, window)**.
+> **Not wrong; scope-less** — the same defect as every other unscoped claim
+> today, in my own specimen credential.
+
+**Corrected form: "at the default 180-iteration window, seed 90 presents 3
+claimed cells with zero progress; at 450, two complete and one exhausts into a
+flagged release after 9 attempts."** *The longer description is the more useful
+one — it contains the mechanism.*
