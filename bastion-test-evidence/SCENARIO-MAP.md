@@ -225,9 +225,6 @@ archetype · chronicle · chronicle-capture · lod0 · lod1 · inspect
   RED**, exit 1. Fresh telemetry: `zone_colonists:4, zone_in_control:5,
   zone_in_zone:870, zone_jobs:1` — the only false term is `zone_freed`.
   Still unclassified, but now with a tip.
-- **path** — `path_no_starvation` red BUT the metric is a lifetime-cumulative
-  `peak_wait` that cannot localise in time — instrument fix (delta-capture)
-  filed; seam-3 UNPROVEN pending it.
 - **run** — ★★ **THE MAP'S OWN DESCRIPTION WAS WRONG.** It read *"Running not
   faster than walking."* **Running IS faster.** Re-run at `460626a6e2`:
   `RUN TELEMETRY: walk=0.263 run=0.300` → **run is 14.07% faster**, and the
@@ -256,8 +253,38 @@ archetype · chronicle · chronicle-capture · lod0 · lod1 · inspect
   predicts 0.6 / 0.4.** `differ`, `guard_holds`, `no_invented_flee` all pass.
   **This is one term being dropped or never recorded, not a broken score
   model** — a much smaller row than "modulation recording".
-- **b55** — 15 conjuncts; `remainder_progressed:false` (post-partial-erase
-  stall); unclassified.
+- **b55** — `remainder_progressed:false`. **RE-RUN at `460626a6e2`: still RED.**
+  The clause is
+  ```rust
+  let remainder_before = server.bastion_job_audit().total;
+  // ... watch window ...
+  if server.bastion_job_audit().total < remainder_before { remainder_progressed = true; }
+  ```
+  i.e. **the audit total must STRICTLY DECREASE** inside the window.
+
+  ★★ **`remainder_before` IS NOT EMITTED.** So a reader cannot distinguish
+  *"the remainder stalled"* from *"there was nothing left to progress"* —
+  `total < remainder_before` is **unsatisfiable when `remainder_before` is
+  already at its floor.** Fresh run reports `jobs_in_half_before: 18`,
+  `jobs_in_half_after: 0`, `board_after_whole: 0`, `orphans: 0`, `p2_cleared:
+  true`, `p1_jobs: 36`, `p2_jobs: 200`, stone conserved 200 → 200.
+
+  > **This is exactly the case `auton`'s `storm_baseline_captured` prerequisite
+  > exists to catch** (`frozen_at == 0` makes `count == frozen_at` vacuous).
+  > **`remainder_progressed` needs the same treatment: emit its baseline and
+  > gate on it.** Precedent is in our own tree, from the report-fix row.
+
+  **Until then this red is UNINTERPRETABLE, not merely unclassified.**
+- **path** — `path_no_starvation:false`. **RE-RUN at `460626a6e2`: still RED**,
+  every other term passing (`cap_held`, `resolved`, `scheduler_active`,
+  `no_embeds`). Fresh telemetry:
+  `grants=10452  peak_tick_iters=3000  peak_wait=75  cap=3000`.
+  ★ **`peak_tick_iters` EQUALS `cap` exactly** — the scheduler is running at its
+  iteration ceiling, with 18 colonists and 46 mine jobs. `cap_held: true` means
+  the cap was respected, **not** that there was headroom. The known instrument
+  limit stands (`peak_wait` is lifetime-cumulative and cannot localise in time;
+  delta-capture filed), **but saturation-at-cap is a new, separate reading that
+  the cumulative metric was hiding.**
 - **b55-deep** — 21 conditions behind 2 emitted bits (report-fix candidate 7);
   `active_route_owners_at_deadline:0`; unclassified.
 
