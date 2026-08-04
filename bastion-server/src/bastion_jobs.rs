@@ -3741,6 +3741,25 @@ pub struct BlockedRegionInfo {
     pub source: &'static str,
 }
 
+/// bastion (ARB-ATTEMPT-01, per-attempt record, 2026-08-04, spec at
+/// `readme/INSTRUMENT-PER-ATTEMPT-RECORD-spec.md`, corrected after a
+/// real structural finding -- the spec's "seven release sites" counted
+/// `job.claimed_by = None` assignments and missed that one of those
+/// seven is a SHARED CONSUMER (`to_release`) fed by 26 separate
+/// producers, each with its own reason invisible at the consumer).
+/// `Other` is the step-1 placeholder every producer starts with --
+/// replaced one call site at a time as each is read, never inferred.
+/// Report-only; never gates `pass`, no world writes, same contract as
+/// task #59's counters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReleaseReason {
+    /// Step-1 placeholder -- the true reason at this call site hasn't
+    /// been classified yet. A nonzero count of these after step 2 is
+    /// complete would mean a site was missed, not that it's genuinely
+    /// unclassifiable.
+    Other,
+}
+
 /// The job board resource.
 #[derive(Default)]
 pub struct JobBoard {
@@ -8028,7 +8047,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         }
 
         // ── Travel + work upkeep (every tick) ───────────────────────────
-        let mut to_release: Vec<specs::Entity> = Vec::new();
+        // bastion (ARB-ATTEMPT-01, per-attempt record, 2026-08-04):
+        // `to_release` is the shared consumer for 26 separate producer
+        // sites (grepped fresh, not inferred from the original spec's
+        // "seven release sites" claim, which counted `job.claimed_by =
+        // None` assignments and never read what fed them). The consumer
+        // alone can't distinguish WHY an entity is here -- completion,
+        // moot-target, cancellation, bed-occupancy-loss, etc. all looked
+        // identical to it. Step 1 (this commit): carry the reason AT THE
+        // PUSH, `Other` everywhere as a placeholder -- compiles
+        // immediately, zero behavior change, and already distinguishes
+        // sweep-released from the two direct `claimed_by = None` paths
+        // (shape A vs shape B per the spec's acceptance clause). Step 2
+        // (trailing, one producer at a time): replace `Other` with the
+        // real reason at each site as it's read.
+        let mut to_release: Vec<(specs::Entity, ReleaseReason)> = Vec::new();
         // B5.8: carve-steps self-rescue requests gathered during upkeep
         // (from-feet, to-job, parent job id) — processed after the loop
         // (the board can't be restructured mid-borrow).
@@ -9170,7 +9203,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
                             board.preempt_attempts += 1;
                             if active_jobs.contains(entity) {
-                                to_release.push(entity);
+                                to_release.push((entity, ReleaseReason::Other));
                             }
                             info!(
                                 colonist = %uid,
@@ -9302,7 +9335,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
                         board.preempt_attempts += 1;
                         if active_jobs.contains(entity) {
-                            to_release.push(entity);
+                            to_release.push((entity, ReleaseReason::Other));
                         }
                         info!(
                             colonist = %uid,
@@ -9364,7 +9397,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // for others, activity cleared, bed occupancy
                     // released — conservation by reuse, no second path
                     // to get wrong).
-                    to_release.push(entity);
+                    to_release.push((entity, ReleaseReason::Other));
                 }
                 info!(
                     colonist = %uid,
@@ -9400,7 +9433,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 .get(entity)
                 .is_some_and(|h| h.is_dead || h.should_die())
             {
-                to_release.push(entity);
+                to_release.push((entity, ReleaseReason::Other));
                 continue;
             }
             let is_emergency_access = board.emergency_access_jobs.contains_key(&active.job);
@@ -9436,7 +9469,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 .flatten();
             let Some(job) = board.jobs.get_mut(&active.job) else {
                 // Cancelled out from under the colonist → re-idle.
-                to_release.push(entity);
+                to_release.push((entity, ReleaseReason::Other));
                 continue;
             };
             // B15/FR12: arrive at the COMMITTED work-stance (feet offset), not
@@ -9500,7 +9533,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     board.reservations.remove(&rid);
                                     job.reservation = None;
                                     job.needs_materials = true;
-                                    to_release.push(entity);
+                                    to_release.push((entity, ReleaseReason::Other));
                                     continue;
                                 },
                             }
@@ -9525,7 +9558,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             "bastion: job moot mid-travel — target block changed; dropped"
                         );
                         board.remove_job(active.job);
-                        to_release.push(entity);
+                        to_release.push((entity, ReleaseReason::Other));
                         continue;
                     }
                     if uids.get(entity).is_some_and(|uid| {
@@ -11215,7 +11248,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     let reach = 2 + colonist.0.skills.climbing.level.min(1) as i32;
                                     churn_events.push((entity, pos.0, feet, reach));
                                     job.claimed_by = None;
-                                    to_release.push(entity);
+                                    to_release.push((entity, ReleaseReason::Other));
                                     continue;
                                 }
                                 if is_emergency_access
@@ -11387,7 +11420,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // open flat/sideways-blocked hypothesis
                                     // this might apply to, unproven.
                                 }
-                                to_release.push(entity);
+                                to_release.push((entity, ReleaseReason::Other));
                             }
                         }
                         } // T3.52b: end auton_travel_ok freeze guard
@@ -11488,7 +11521,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     if let common::bastion::JobKind::RestAt { bed_pos } = job.kind {
                         let Some(u) = uids.get(entity).copied() else {
                             board.remove_job(active.job);
-                            to_release.push(entity);
+                            to_release.push((entity, ReleaseReason::Other));
                             continue;
                         };
                         let slot_state = board
@@ -11534,7 +11567,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         "bastion: slept — rest restored"
                                     );
                                     board.remove_job(active.job);
-                                    to_release.push(entity);
+                                    to_release.push((entity, ReleaseReason::Other));
                                 }
                             },
                             Some(_) => {
@@ -11545,12 +11578,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     "bastion: bed occupied — rest released"
                                 );
                                 board.remove_job(active.job);
-                                to_release.push(entity);
+                                to_release.push((entity, ReleaseReason::Other));
                             },
                             None => {
                                 // Bed gone (mined out / cancelled) — moot.
                                 board.remove_job(active.job);
-                                to_release.push(entity);
+                                to_release.push((entity, ReleaseReason::Other));
                             },
                         }
                         continue;
@@ -11606,7 +11639,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // remove_job releases the food reservation (B6
                         // machinery — THE removal path).
                         board.remove_job(active.job);
-                        to_release.push(entity);
+                        to_release.push((entity, ReleaseReason::Other));
                         continue;
                     }
                     // ── B7-3: DESPOND — the breakdown state as a self-job
@@ -11618,7 +11651,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         if time.0 >= until {
                             info!(job = active.job, "bastion: despond lifted — resuming");
                             board.remove_job(active.job);
-                            to_release.push(entity);
+                            to_release.push((entity, ReleaseReason::Other));
                         }
                         continue;
                     }
@@ -11655,7 +11688,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             }
                         }
                         board.remove_job(active.job);
-                        to_release.push(entity);
+                        to_release.push((entity, ReleaseReason::Other));
                         continue;
                     }
                     // ── B6 HAUL: pickup + drop-off — BEFORE the block-work
@@ -11732,7 +11765,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         board.reservations.remove(&rid);
                                     }
                                     board.jobs.remove(&active.job);
-                                    to_release.push(entity);
+                                    to_release.push((entity, ReleaseReason::Other));
                                 }
                             } else {
                                 // Item vanished and we don't hold it (a
@@ -11742,7 +11775,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // future side-table cleanup — no manual
                                 // reservations.remove that can drift).
                                 board.remove_job(active.job);
-                                to_release.push(entity);
+                                to_release.push((entity, ReleaseReason::Other));
                             }
                             continue;
                         }
@@ -11796,7 +11829,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // T1.15: the one removal path (releases the
                         // reservation; no manual reservations.remove).
                         board.remove_job(active.job);
-                        to_release.push(entity);
+                        to_release.push((entity, ReleaseReason::Other));
                         debug_assert!(status.may_transition_to(&CommandStatus::Committed));
                         status = CommandStatus::Committed;
                         debug_assert!(status.is_terminal());
@@ -11940,7 +11973,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 if taken.is_none() {
                                     job.progress = 0.0;
                                     job.needs_materials = true;
-                                    to_release.push(entity);
+                                    to_release.push((entity, ReleaseReason::Other));
                                     continue;
                                 }
                                 if let Ok(nb) = Block::air(SpriteKind::WheatYellow)
@@ -11999,7 +12032,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             watch_wipe(&mut board.stuck_watch, u, "job-completed");
                         }
                         board.remove_job(active.job);
-                        to_release.push(entity);
+                        to_release.push((entity, ReleaseReason::Other));
                         continue;
                     }
                     if job.kind.is(DesignationKind::Gather) {
@@ -12045,7 +12078,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 "bastion: gathered"
                             );
                             board.remove_job(active.job);
-                            to_release.push(entity);
+                            to_release.push((entity, ReleaseReason::Other));
                         }
                         continue;
                     }
@@ -12100,7 +12133,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             "bastion: job moot — target block changed under it; dropped"
                         );
                         board.remove_job(active.job);
-                        to_release.push(entity);
+                        to_release.push((entity, ReleaseReason::Other));
                         continue;
                     }
 
@@ -12180,7 +12213,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 done_regions.push(*region);
                             }
                         }
-                        to_release.push(entity);
+                        to_release.push((entity, ReleaseReason::Other));
                         continue;
                     }
 
@@ -12214,7 +12247,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         if taken.is_none() {
                             job.progress = 0.0;
                             job.needs_materials = true;
-                            to_release.push(entity);
+                            to_release.push((entity, ReleaseReason::Other));
                             continue;
                         }
                     }
@@ -12415,11 +12448,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             done_regions.push(*region);
                         }
                     }
-                    to_release.push(entity);
+                    to_release.push((entity, ReleaseReason::Other));
                 },
             }
         }
-        for entity in &to_release {
+        for (entity, _release_reason) in &to_release {
             if let Some(active) = active_jobs.get(*entity) {
                 // If the job still exists and is still claimed by us, free it.
                 if let Some(job) = board.jobs.get_mut(&active.job)
