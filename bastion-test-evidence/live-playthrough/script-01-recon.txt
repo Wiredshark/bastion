@@ -1,0 +1,5 @@
+# Run 1a: pure recon -- just join and report position, no actions.
+note recon pass -- reading own position before deciding designation coordinates
+wait 30
+list_designations
+note recon complete

@@ -1,0 +1,40 @@
+# Run 1b: the real playthrough. Player spawned at approx (15216.5, 16016.5, 419.0)
+# per script-01-recon's log. All coordinates below are offsets around that point.
+note playthrough start -- anchoring and founding a colony
+anchor
+spawn 8
+wait 300
+note colony founded, colonists should be arriving -- painting designations
+designate mine 15208 16008 410 15214 16014 418
+designate chop 15220 16008 414 15232 16026 428
+designate stockpile 15213 16018 418 15217 16021 419
+designate farm 15198 15998 418 15204 16004 419
+designate build 15216 16030 419 15220 16034 423
+designate bed 15213 16013 419 15214 16014 420
+designate ladder 15221 16021 408 15221 16021 419
+note designations painted -- entering observation loop
+wait 900
+list_designations
+inspect_cell 15210 16010 415
+inspect_cell 15201 16001 418
+note observation checkpoint 1 (~30s post-paint)
+wait 1800
+list_designations
+inspect_cell 15210 16010 415
+inspect_cell 15201 16001 418
+note observation checkpoint 2 (~90s post-paint)
+wait 1800
+list_designations
+inspect_cell 15210 16010 415
+inspect_cell 15201 16001 418
+note observation checkpoint 3 (~150s post-paint)
+wait 1800
+list_designations
+inspect_cell 15210 16010 415
+inspect_cell 15201 16001 418
+note observation checkpoint 4 (~210s post-paint)
+wait 1800
+list_designations
+inspect_cell 15210 16010 415
+inspect_cell 15201 16001 418
+note observation checkpoint 5 (~270s post-paint) -- run complete
