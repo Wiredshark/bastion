@@ -45,10 +45,12 @@ archetype · chronicle · chronicle-capture · lod0 · lod1 · inspect
   caveat below. We established that the probe cannot adjudicate this question,
   NOT that `plan_access` is correct.
   **Next question is NOT capsule modeling** (see the correction below —
-  `plan_access` is a construction planner, not a reachability check): it is
-  **which of the three `plan_access` call sites bed reaches**, since the
-  self-rescue site runs with the ladder tier dark and returns `None` whenever
-  `carve_ramp` finds no stair. Cheap to answer from a trace.
+  `plan_access` is a construction planner, not a reachability check), and it is
+  **not which call site bed reaches either**. It is: **was `plan_access` called
+  at all?** The self-rescue site is gated `take(0)` while ANY `is_access` job
+  lives colony-wide (see the seam finding below), so *"fails at `plan_access`"*
+  may be a **NON-CALL**. Falsify with the existing read-only probes
+  `access_job_dump` / `access_block_reason` BEFORE tracing any arm. 5b assigned.
 - **selfgen** — root `hauled` (haul stage; upstream of placement).
 - **farm** — till/sow late + `farm_tilled:false` unexplained under BOTH stances
   (counter-control); Farm's own control blocked on that mystery.
@@ -158,3 +160,52 @@ broader question than its CONTENTS answer, and four rows read the name — the
 label rule in a new costume. It is also `aggregate-late` in a new costume: one
 boolean collapsing two different questions, invisible until someone read the
 loop.
+
+## ★★★ SEAM FINDING (2026-08-04, `460626a6e2`): the global one-plan bar is fixed at ONE of two callers
+
+`plan_access` has three call sites. Two of them gate *whether it is called at
+all*, and they disagree.
+
+**Self-rescue (B5.8 autonomous access) — colony-global bar, STILL LIVE:**
+```rust
+let access_pending = board.jobs.values().any(|j| j.is_access);
+for (from, to, parent) in carve_requests.into_iter()
+        .take(if access_pending { 0 } else { 1 })
+```
+While ANY access job exists anywhere in the colony, the loop body never runs —
+`plan_access` is **never called**, for any stuck colonist, regardless of
+geometry or distance.
+
+**Proactive descent (DPA-1) — pocket-scoped at Chebyshev 8**, with this comment
+in the tree today:
+
+> *"selection above already skips pockets with live access jobs — the
+> M2-precedent pocket scoping; **the old colony-global `!any(is_access)` bar
+> starved every second dig**."*
+
+**The codebase declares the bar a starvation bug at one caller while the other
+caller still runs it.** `7c37ddbad5` (DPA-0/1/2) scoped the fix explicitly to
+*"descent_plan selection"*; self-rescue was not in the change.
+
+**And the shared callee's comment describes the fixed state as global.**
+`plan_access`'s M2 PLANNER-FIX comment ends *"…and disjoint pockets plan in
+parallel"* — true for the descent caller, false for the self-rescue caller. A
+**sufficiency claim at a callee about its callers**, which the comment grep
+cannot catch because the false part is again the unstated scope.
+
+**★ It was observed once and ABSORBED, not fixed.** Run-17 (`2af7ee3ade`)
+logged *"12 permanent unreachable leftovers freezing one-plan-at-a-time"*; the
+response was the **F3 stale-access pruner** (access job unclaimed 20s → plan
+abandoned). That bounds the damage only when access jobs go UNCLAIMED — a
+claimed, actively-worked stair dig holds the bar for its whole duration. The
+absorption is why the gate survived: **find the absorber before correcting the
+value** ([[refusal-needs-refusal-aware-consumers]]).
+
+**NOT established: that this is bed's root.** Falsifiable, instrument already
+exists (`access_job_dump`, `access_block_reason`, both read-only, both shipped
+in `7c37ddbad5`). Prediction: *if any `is_access` job is live during bed's
+window, the self-rescue path emitted zero plans and `plan_access` was never
+called.* Check the precondition engaged before reading the verdict.
+
+**Removal is architect-gated** — one line, well-documented replacement pattern
+at the sibling caller, but squarely behavior-re-rolling and needs a fan.
