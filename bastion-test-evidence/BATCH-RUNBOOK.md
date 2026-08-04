@@ -11,10 +11,18 @@ Interpretation rules are **frozen** in `SCENARIO-MAP.md`'s reconciliation table
 ## STEP 0 — attest the binary BEFORE anything else
 
 ```bash
-RUSTC_WRAPPER="" cargo build -p bastion-harness --profile no_overflow -j 48
-./target/no_overflow/bastion-harness.exe --print-git-hash     # must match HEAD
+RUSTC_WRAPPER="" cargo build -p bastion-harness -j 48          # dev profile
+./target/debug/bastion-harness.exe --print-git-hash            # must match HEAD
 git rev-parse --short=10 HEAD
 ```
+
+**★ PROFILE CORRECTED 2026-08-04 (5b's flag).** This step originally specced
+`--profile no_overflow`. **That profile has a persistent, unresolved
+`num-traits` build-script failure** — recurred 3+ times in one session, survived
+a target-dir wipe. **`dev` is the substitute and is equally valid here: the
+profile does not affect the git-hash attestation**, which checks committed
+source. *5b flagged the discrepancy rather than silently substituting — a silent
+profile swap would have been invisible in the record.*
 
 **`RUSTC_WRAPPER=""` is mandatory** — sccache is user-global and has served
 stale objects across sessions on this machine. **A cross-crate field addition
@@ -34,7 +42,7 @@ Run seed 71 and check:
 |---|---|
 | the 9 new `b5_access_plan_*` fields appear | non-null in real output |
 | `emergency_emissions` vs corpus `access_emissions_max: 3` | **equal — but only because `members_seen == 1`** |
-| `starvation_cycles` re-read | **exactly 360** (deterministic) |
+| `starvation_cycles` re-read | **exactly 360** — and note this is the **WORST-STARVED CELL**, not a per-cell constant (seed 66 spreads 130–222) |
 
 > **★ THE TRAP: the emissions check is an EQUALITY only where
 > `members_seen == 1`.** Seeds 66 / 92 / 80 have `members_seen` 2 / 3 / 3, so
