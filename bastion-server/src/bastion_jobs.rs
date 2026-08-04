@@ -11548,6 +11548,40 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         board.command_admission.forget(idempotency_key);
                         continue;
                     }
+                    // TASK #63 / T3.52 (work-tick flee gate, dated T3.52-
+                    // introduced by this session's falsifier at the
+                    // pre-T3.52 pin 8293d2d2f0: AUTON SCENARIO PASSes there
+                    // with auton_frozen:true, so the gap is T3.52's own
+                    // regression, not pre-existing): unlike Traveling's own
+                    // `auton_travel_ok` gate above, this Arrived-state work
+                    // tick had NO drive check at all — a colonist mid-Work
+                    // kept accumulating `job.progress` even while a
+                    // Survive/Flee spike should have preempted it,
+                    // defeating T3.52's own "suspend, don't cancel" intent
+                    // for the one leg that actually does the work. Mirrors
+                    // `auton_travel_ok` exactly: self-jobs (RestAt/EatFrom/
+                    // Despond) bypass unconditionally — whether a fleeing
+                    // colonist should stop eating is AUTON-2's question,
+                    // not this row's, and bypassing is the conservative
+                    // choice that doesn't pre-empt a design decision nobody
+                    // has made yet. `is_none_or`, not a bare equality: an
+                    // entity with no arbiter must PERMIT, not block (the
+                    // same shape as the claim gate — one line, wide blast
+                    // radius if inverted). `continue` here is a SUSPEND —
+                    // the claim stays held, `job.progress` simply doesn't
+                    // advance this tick, and normal work resumes the tick
+                    // Drive::Work is regained; nothing releases the job.
+                    let auton_work_ok = matches!(
+                        job.kind,
+                        common::bastion::JobKind::RestAt { .. }
+                            | common::bastion::JobKind::EatFrom { .. }
+                            | common::bastion::JobKind::Despond { .. }
+                    ) || arbiters
+                        .get(entity)
+                        .is_none_or(|a| a.current == comp::bastion::Drive::Work);
+                    if !auton_work_ok {
+                        continue;
+                    }
                     // B5: accumulate work, rate scaled by the relevant skill.
                     // TOOL-0 (TOOLS-UPGRADE §3): × the EQUIPPED-tool factor —
                     // bare hands/wrong tool = the slow base, a matching
