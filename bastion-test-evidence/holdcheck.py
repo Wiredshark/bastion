@@ -16,35 +16,60 @@ WHY EXIT 2 EXISTS: a checker that cannot distinguish "nothing moved" from
 missing seeds, or a baseline with no leaf paths are REFUSALS, not passes.
 """
 import json
+import re
 import sys
 
 
-def leaves(obj, prefix=""):
-    """Every leaf path in a nested dict. Lists are leaves (compared whole)."""
+def leaves(obj, prefix="", descend=()):
+    """Every leaf path in a nested dict.
+
+    Lists are LEAVES by default — compared whole, because a reordered list is a
+    change and index-keying would hide that behind a wall of noise.
+
+    A field named in `descend` has its list elements indexed instead
+    (`field[3].subkey`). Use it when a list's ELEMENTS gained a sub-key: the
+    whole-list comparison would report one uninformative MOVE per seed, and the
+    only alternatives are ignoring the field — which is how you end up not
+    checking the very place a change lives.
+    """
     if isinstance(obj, dict):
         for k, v in obj.items():
-            yield from leaves(v, f"{prefix}.{k}" if prefix else k)
+            p = f"{prefix}.{k}" if prefix else k
+            yield from leaves(v, p, descend)
+    elif isinstance(obj, list) and prefix in descend:
+        for i, v in enumerate(obj):
+            yield from leaves(v, f"{prefix}[{i}]", descend)
     else:
         yield prefix, obj
 
 
-def index(doc):
+def brief(v, n=110):
+    """Values go in a REPORT a human reads. An untruncated 8KB list dump is
+    technically complete and practically unreadable - and an unreadable report
+    is one people stop reading."""
+    t = repr(v)
+    return t if len(t) <= n else t[:n] + f"... <{len(t)} chars, truncated>"
+
+
+def index(doc, descend=()):
     """{field_path: {seed: value}} across all seeds."""
     out = {}
     for seed, payload in doc.items():
-        for path, value in leaves(payload):
+        for path, value in leaves(payload, "", descend):
             out.setdefault(path, {})[seed] = value
     return out
 
 
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    expect_new, ignore = set(), set()
+    expect_new, ignore, descend = set(), set(), set()
     for a in sys.argv[1:]:
         if a.startswith("--expect-new="):
             expect_new = {s.strip() for s in a.split("=", 1)[1].split(",") if s.strip()}
         if a.startswith("--ignore="):
             ignore = {s.strip() for s in a.split("=", 1)[1].split(",") if s.strip()}
+        if a.startswith("--descend="):
+            descend = {s.strip() for s in a.split("=", 1)[1].split(",") if s.strip()}
 
     if len(args) != 2:
         print(__doc__)
@@ -61,11 +86,13 @@ def main():
         print(f"REFUSED: new run {args[1]} has ZERO seeds.")
         return 2
 
-    base, new = index(base_doc), index(new_doc)
+    base, new = index(base_doc, descend), index(new_doc, descend)
     if not base:
         print("REFUSED: baseline has no leaf paths — nothing to hold.")
         return 2
 
+    if descend:
+        print(f"descending into list elements of: {', '.join(sorted(descend))}")
     base_seeds, new_seeds = set(base_doc), set(new_doc)
     print(f"baseline: {len(base_seeds)} seeds, {len(base)} field paths  [{args[0]}]")
     print(f"new     : {len(new_seeds)} seeds, {len(new)} field paths  [{args[1]}]")
@@ -111,8 +138,20 @@ def main():
     else:
         print("[OK] no dropped fields")
 
-    unexpected = [a for a in added if a not in expect_new]
-    missing_expected = sorted(expect_new - set(added))
+    # expect-new entries may use `*`, so a descended list's per-index paths
+    # ("f[*].newkey") are declarable in one line instead of 54.
+    # NOT fnmatch: `[` and `]` are fnmatch metacharacters, so "f[*].k" silently
+    # matches NOTHING - a pattern that fails closed is the zero-match trap.
+    # Escape everything except `*`, which becomes `.*`.
+    def as_re(pat):
+        return re.compile(".*".join(re.escape(p) for p in pat.split("*")) + r"\Z")
+    pats = [(e, as_re(e)) for e in sorted(expect_new)]
+
+    def declared(path):
+        return any(rx.match(path) for _, rx in pats)
+    unexpected = [a for a in added if not declared(a)]
+    missing_expected = sorted(
+        e for e, rx in pats if not any(rx.match(a) for a in added))
     print(f"{'[OK]' if not unexpected else '[!!]'} added fields: {len(added)}"
           f"{f' ({len(unexpected)} NOT in the manifest)' if unexpected else ' (all enumerated)'}")
     for p in (unexpected or added)[:25]:
@@ -137,14 +176,14 @@ def main():
                   "genuinely global change. NOT necessarily a behavior bug.")
             for path, moved in systemic[:10]:
                 s, b, n = moved[0]
-                print(f"       {path}: e.g. seed {s}: {b!r} -> {n!r}")
+                print(f"       {path}: e.g. seed {s}: {brief(b)} -> {brief(n)}")
         if partial:
             print(f"  -- LOCALIZED ({len(partial)}): moved on SOME seeds. "
                   "This is the shape of a real behavior change.")
             for path, moved in partial[:10]:
                 s, b, n = moved[0]
                 print(f"       {path}: {len(moved)}/{total} seeds, "
-                      f"e.g. seed {s}: {b!r} -> {n!r}")
+                      f"e.g. seed {s}: {brief(b)} -> {brief(n)}")
     else:
         checked = len([p for p in shared if p not in ignore])
         print(f"[OK] HOLD: all {checked} checked pre-existing fields identical "
