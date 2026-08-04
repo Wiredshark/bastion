@@ -1151,10 +1151,10 @@ fn plan_access(
             reservation: None,
             // TASK #64: this site's own `kind` is always Mine (carved
             // stairs — walkable, solid-target-shaped) or Ladder (rungs —
-            // conditional on the cell below, see `LadderContinuation`'s
+            // unconditional on-top, see `AffordanceClass::OnTopAlways`'s
             // own doc); no other kind reaches here.
             affordance: match kind {
-                DesignationKind::Ladder => AffordanceClass::LadderContinuation,
+                DesignationKind::Ladder => AffordanceClass::OnTopAlways,
                 _ => AffordanceClass::SolidTarget,
             },
         });
@@ -1346,7 +1346,7 @@ fn designation_affordance(kind: DesignationKind) -> AffordanceClass {
             AffordanceClass::SolidTarget
         },
         DesignationKind::Build | DesignationKind::Bed => AffordanceClass::AdjacentToBase,
-        DesignationKind::Ladder => AffordanceClass::LadderContinuation,
+        DesignationKind::Ladder => AffordanceClass::OnTopAlways,
         DesignationKind::Stockpile | DesignationKind::Zone(_) | DesignationKind::Farm => {
             AffordanceClass::Untargeted
         },
@@ -1808,62 +1808,37 @@ fn adjacent_ground_stance(terrain: &TerrainGrid, pos: Vec3<i32>) -> Option<Vec3<
     None
 }
 
-/// bastion (task #64): a Ladder rung's stance is CONDITIONAL on live
-/// terrain, not fixed at creation — `pos` is empty pre-completion (same
-/// shape as Build/Bed), but on-top becomes valid the instant the cell
-/// directly below is solid, whether that's the column's BASE sitting on
-/// real ground or an already-built RUNG one level down (a `Ladder`
-/// sprite is exactly as solid as ground for this purpose — both satisfy
-/// `is_filled()`). This single check therefore covers both the base rung
-/// and every continuation rung with no batch/creation-order bookkeeping:
-/// a rung whose support doesn't exist yet returns `None` here (after the
-/// adjacent-ground fallback also fails, which it normally will mid-shaft)
-/// and is left unclaimed — the SAME "leave for next cycle" discipline as
-/// every other affordance class, which naturally sequences a painted
-/// column bottom-up instead of the current 0/N-placed failure (part (c),
-/// b58: every rung claimed independently, cold, with nothing built below
-/// any of them yet).
-/// bastion (task #64 regression fix): what the CALLER already knows about
-/// a rung's support, for the one case terrain itself can't say yet.
-/// `BlockChange::set` (common/state/src/state.rs) only buffers a pending
-/// write — `terrain.get()` keeps returning the PRE-completion block until
-/// that buffer flushes later in the pipeline. Site #4 (the emergency
-/// rescue's rung-chaining) re-derives the NEXT rung's stance in the SAME
-/// TICK it just triggered the PREVIOUS rung's `block_change.set(...)` —
-/// asking terrain at that exact moment reads stale (still-air) state and
-/// wrongly concludes "no support yet," breaking a chain that was actually
-/// fine. Declaring the caller's own structural knowledge here (rather than
-/// hardcoding a stance at that call site) keeps the affordance the SINGLE
-/// source of truth — same function, same physical checks — instead of a
-/// second, silently-divergent copy of the rule (exactly the class of bug
-/// this whole table exists to delete).
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
-enum SupportHint {
-    /// The normal case: ask terrain. Safe everywhere except the one
-    /// same-tick chaining call — by the general arbitration claim loop's
-    /// next cycle (a full `ARBITRATION_INTERVAL` later), any prior
-    /// completion's `block_change` has long since flushed.
-    AskTerrain,
-    /// The caller structurally guarantees support exists RIGHT NOW,
-    /// terrain's lag notwithstanding — site #4, immediately after
-    /// completing the rung directly below.
-    KnownPresent,
-}
-
-fn ladder_continuation_stance(
-    terrain: &TerrainGrid,
-    pos: Vec3<i32>,
-    support: SupportHint,
-) -> Option<Vec3<i32>> {
-    let solid = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
-    let open = |p: Vec3<i32>| terrain.get(p).map(|b| !b.is_filled()).unwrap_or(false);
-    let on_top_clear = open(pos + Vec3::unit_z()) && open(pos + Vec3::unit_z() * 2);
-    let supported = support == SupportHint::KnownPresent || solid(pos - Vec3::unit_z());
-    if supported && on_top_clear {
-        return Some(Vec3::unit_z());
-    }
-    adjacent_ground_stance(terrain, pos)
-}
+/// bastion (task #64, REVERTED 2026-08-03 on A/B evidence — DECISIONS #44):
+/// this was originally a CONDITIONAL stance (on-top only once the cell
+/// below reads solid, terrain-derived, with a `SupportHint` threaded
+/// through a same-tick staleness fix at the emergency rescue's
+/// rung-chaining site). A controlled A/B (b58 part (c): material-fix-alone
+/// on pre-#64 code vs. material-fix-plus-#64) falsified the premise the
+/// conditional logic was built to fix: the OLD unconditional on-top
+/// default placed all 5 rungs cleanly (control: 5/5); the conditional
+/// version placed only 2/5, silently refusing a stance for every middle
+/// rung once its own terrain check missed (treatment: 2/5, a regression,
+/// not an improvement).
+///
+/// The mechanism, per Opus's read: NOTHING downstream enforces the stance
+/// for a placement kind — arrival tolerance widens with `stuck_strikes`
+/// and there is no execution-proximity check at completion (confirmed
+/// during this same investigation), so a colonist places the block from
+/// wherever it actually ends up, stance offset or not. A stance that can
+/// REFUSE (return `None`) is therefore strictly worse than one that
+/// always answers, even a physically-naive one — refusing trades a
+/// harmless approximation for an outright non-claim. Ladder never had a
+/// demonstrated failure this fixed (the `c_rungs_placed_expected` red
+/// that motivated the whole row turned out to be a fixture material
+/// mismatch — `BUILD_MATERIAL_ITEM` vs the required `CHOP_DROP_ITEM`, see
+/// the harness fix alongside this commit — unrelated to stance).
+///
+/// Declares the PROVEN rule rather than the hypothesis: unconditional
+/// on-top, same as the pre-#64 blind default, but now an intentional,
+/// evidenced entry in the table instead of an unexamined inheritance —
+/// the table still did its job by making the claim checkable, even
+/// though checking it here means keeping the old answer.
+fn ladder_stance() -> Option<Vec3<i32>> { Some(Vec3::unit_z()) }
 
 /// bastion (task #64): Farm's SOW/HARVEST sub-jobs — `pos` IS the working
 /// position (the crop cell itself, one level above tilled ground), not a
@@ -1886,26 +1861,26 @@ fn at_target_stance(terrain: &TerrainGrid, pos: Vec3<i32>) -> Option<Vec3<i32>> 
 /// generalized to reading `job.affordance` instead of `job.kind`).
 /// `Untargeted` resolves to the pre-existing on-top default unconditionally
 /// — self-jobs/Haul never had a reported stance problem, so their working
-/// behavior is preserved byte-for-byte.
+/// behavior is preserved byte-for-byte. `OnTopAlways` (Ladder) ALSO
+/// resolves unconditionally (see its own doc — reverted on A/B evidence,
+/// DECISIONS #44); kept as its own affordance-table entry rather than
+/// folded into `Untargeted` so the DECLARATION (this is Ladder's proven
+/// rule, not an unexamined default) stays legible in the table.
 ///
-/// Plain wrapper around [`job_stance_with_ladder_support`] for every caller
-/// except site #4 (see [`SupportHint`]) — terrain is authoritative here.
+/// STANDING NOTE for whoever adds the next arm here: a stance rule must
+/// NOT read `terrain` at a call site that triggers a write (`block_change
+/// .set(...)`) in that SAME tick — `BlockChange` only buffers a pending
+/// edit, `terrain.get()` keeps returning the pre-write block until the
+/// buffer flushes later in the pipeline, so a same-tick terrain read at
+/// such a site sees stale state and answers wrong. This is exactly what
+/// broke the (now-deleted) conditional Ladder rule at the emergency
+/// rescue's rung-chaining call site — a two-hour diagnosis the first time;
+/// don't re-earn it.
 fn job_stance(terrain: &TerrainGrid, job: &Job) -> Option<Vec3<i32>> {
-    job_stance_with_ladder_support(terrain, job, SupportHint::AskTerrain)
-}
-
-/// The real dispatcher; `job_stance` is the terrain-trusting default.
-fn job_stance_with_ladder_support(
-    terrain: &TerrainGrid,
-    job: &Job,
-    ladder_support: SupportHint,
-) -> Option<Vec3<i32>> {
     match job.affordance {
         AffordanceClass::SolidTarget => has_standable_stance(terrain, job.pos),
         AffordanceClass::AdjacentToBase => adjacent_ground_stance(terrain, job.pos),
-        AffordanceClass::LadderContinuation => {
-            ladder_continuation_stance(terrain, job.pos, ladder_support)
-        },
+        AffordanceClass::OnTopAlways => ladder_stance(),
         AffordanceClass::AtTarget => at_target_stance(terrain, job.pos),
         AffordanceClass::Untargeted => Some(Vec3::unit_z()),
     }
@@ -13603,37 +13578,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     if let Some(job) = board.jobs.get_mut(&next_job) {
                                         job.claimed_by = Some(member);
                                     }
-                                    // TASK #64: was a hardcoded on-top stance
-                                    // (a second, independent copy of the
-                                    // Build/Ladder/Bed on-top-default bug —
-                                    // this chain-to-the-next-rung site
-                                    // bypasses the general claim path's
-                                    // `standable` map entirely, so the #56/
-                                    // #62-era fix never reached it). Now
-                                    // reads the same `job_stance` dispatcher
-                                    // every other site uses, keyed off the
-                                    // job's own stamped affordance —
-                                    // `unwrap_or` stays defensive only:
-                                    // `next_job`'s claimability was already
-                                    // checked above. `SupportHint::KnownPresent`
-                                    // (regression fix, see its own doc): this
-                                    // call sits in the SAME tick as the
-                                    // completion that built the rung directly
-                                    // below `next_job` — `terrain.get()` would
-                                    // still read that write's PRE-completion
-                                    // state (`BlockChange` hasn't flushed yet),
-                                    // so asking terrain here would wrongly
-                                    // read "no support" on every chain link.
+                                    // TASK #64: reads the same `job_stance`
+                                    // dispatcher every other site uses, keyed
+                                    // off the job's own stamped affordance.
+                                    // For Ladder this now always resolves to
+                                    // on-top unconditionally (see
+                                    // `ladder_stance`'s doc — reverted on A/B
+                                    // evidence, DECISIONS #44), so there's no
+                                    // terrain-staleness concern here anymore;
+                                    // `unwrap_or` stays defensive only.
                                     let stance = board
                                         .jobs
                                         .get(&next_job)
-                                        .and_then(|job| {
-                                            job_stance_with_ladder_support(
-                                                &terrain,
-                                                job,
-                                                SupportHint::KnownPresent,
-                                            )
-                                        })
+                                        .and_then(|job| job_stance(&terrain, job))
                                         .unwrap_or(Vec3::unit_z());
                                     let _ = active_jobs.insert(entity, ActiveJob {
                                         job: next_job,
@@ -15414,19 +15371,6 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // terrain/column changes (or deferred to cave-in).
             if let Some(stance) = job_stance(&terrain, job) {
                 standable.insert(*id, stance);
-            } else if std::env::var_os("BASTION_LADDER_DIAG").is_some()
-                && job.affordance == AffordanceClass::LadderContinuation
-            {
-                let solid = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
-                let open = |p: Vec3<i32>| terrain.get(p).map(|b| !b.is_filled()).unwrap_or(false);
-                info!(
-                    job = id,
-                    pos = ?job.pos,
-                    support_below = solid(job.pos - Vec3::unit_z()),
-                    open_p1 = open(job.pos + Vec3::unit_z()),
-                    open_p2 = open(job.pos + Vec3::unit_z() * 2),
-                    "bastion: LADDER DIAG -- no stance this cycle"
-                );
             }
         }
         // B5.8-E ACCESS-BEFORE-DESCENT (Ben's proactive fix): a dig cell

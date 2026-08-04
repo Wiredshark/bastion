@@ -373,16 +373,23 @@ pub enum AffordanceClass {
     /// `job.pos`'s own level, on real ground. Build, Bed, Ladder's base
     /// rung.
     AdjacentToBase,
-    /// A Ladder rung ABOVE the column's base: also empty pre-completion,
-    /// but on-top becomes valid the moment the rung directly below is
-    /// itself built (a real climbable `Ladder` sprite is exactly as
-    /// solid as ground for this purpose) — the colonist climbs it to
-    /// reach this one. Self-resolving from live terrain each cycle (no
-    /// batch/creation-order bookkeeping needed): falls back to
-    /// adjacent-ground, then to "not yet claimable" when the rung below
-    /// doesn't exist yet, naturally sequencing column construction
-    /// bottom-up.
-    LadderContinuation,
+    /// A Ladder rung. Also empty pre-completion, same physical shape as
+    /// `AdjacentToBase` — but declared as its OWN entry because the
+    /// declaration itself carries evidence, not just a name: a controlled
+    /// A/B (task #64, DECISIONS #44) falsified an EARLIER version of this
+    /// rule that was terrain-conditional (on-top only once the rung below
+    /// read solid, named `LadderContinuation` for that now-deleted
+    /// mechanism) — the conditional version REGRESSED a previously-working
+    /// placement rate (5/5 -> 2/5) because nothing downstream enforces the
+    /// stance for a placement kind, so a stance that can refuse is
+    /// strictly worse than one that always answers. Renamed to match what
+    /// it actually resolves to now (unconditional on-top, matching the
+    /// original blind default) rather than leaving a name that describes a
+    /// mechanism that no longer exists — see `ladder_stance`'s own doc for
+    /// the full A/B. Kept as its own variant (not folded into `Untargeted`,
+    /// which shares its resolved value) so the table still records that
+    /// this is Ladder's PROVEN rule, not an unexamined inheritance.
+    OnTopAlways,
     /// `job.pos` is the STAND cell itself, not a thing to reach onto or
     /// beside — the colonist's feet land AT `job.pos`, support comes from
     /// the (already solid) cell below it. Neither on-top nor adjacent.
