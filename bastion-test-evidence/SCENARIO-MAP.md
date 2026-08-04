@@ -2590,3 +2590,57 @@ LAGGING INDICATOR of accumulated rejections, not a static property.**
 claimed cells with zero progress; at 450, two complete and one exhausts into a
 flagged release after 9 attempts."** *The longer description is the more useful
 one — it contains the mechanism.*
+
+## ★★★★★ SEED 90's HOLDOUT — THE MECHANISM, corroborated by the corpus's own probe
+
+5b's trace: **9/9 releases at `[17989,9263,338]` are the churn writer**, and the
+colonist sits at **the same dead-end every time** — `(17973, 9260–9262, 336)`.
+
+**The corpus independently recorded that position in the BASELINE run**
+(`b5_mine_reachability_probe`, window 180 — a different run, a different window):
+
+```
+target             = [17989, 9263, 338]
+last_timeout_pos   = [17973.55, 9261.28, 336.05]     <- 5b's position, to the decimal
+min_distance_to_target = 16.24                        <- CLOSEST APPROACH EVER
+from_last_timeout  : path_exists_step = FALSE
+                     probe_incomplete = FALSE          <- a COMPLETE negative
+```
+
+### ★★★★ What this composes into
+
+1. **The colonist NEVER APPROACHED the holdout.** `min_distance_to_target` is
+   the *closest approach over the whole run* — **16.24 blocks.** *(The z=336 cell
+   in the same column shows 3.78, so the colonist did approach that one — the
+   distance is target-specific and the top cell was never neared.)*
+2. **From the dead-end, the offline probe finds NO step-path and RAN TO
+   COMPLETION.** A complete negative, not a budget failure.
+3. **The z-gap is 2 against `reach = 2 + climbing.min(1)`, and the self-rescue
+   gate is `pos.z - feet.z > reach`** — so **2 > 2 is false and this never
+   qualifies for self-rescue.** *(5b's read; the corpus z-values agree.)* **A
+   live pathfinding failure at a modest gap, not a deep-pit case.**
+
+> **★★★ THE MECHANISM: a colonist claims a job it cannot path to, walks to a
+> deterministic dead-end ~16 blocks short, times out, and releases — and because
+> the churn path DELIBERATELY DOES NOT RECORD, the next claim carries no
+> knowledge of the previous failure. Nine times.**
+
+**That is exactly the invariant the verdict named** — *no per-job persistence
+detection* — **and the evidence now shows WHY it bites: without memory of the
+failure, an unreachable target is re-claimed indefinitely.** The escalation
+threshold would break precisely this loop.
+
+### ★ The one caveat that must ride with it
+
+**The probe's negative is sound under the BODY-WIDTH model and UNSOUND under
+COLUMN-COLLAPSE in multi-layer terrain** (today's error-model finding).
+**So "genuinely unreachable" is conditional on seed 90's site being
+single-layer — the same column-scan already in 5b's toolkit, one more site.**
+*Not asserted; the mechanism above holds either way, since a colonist that never
+gets within 16 blocks is failing to route regardless of why.*
+
+### ★★ Method note — three instruments, one answer, zero new runs
+5b's release trace (450 window), the corpus probe (180 window), and the
+`timeout_position_diag` **all name the same dead-end.** *Two windows, two
+instruments, one position to the decimal place.* **The two-snapshot differential
+and the under-read law converging on the campaign's sharpest cell.**
