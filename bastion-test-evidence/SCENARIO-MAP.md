@@ -1106,3 +1106,57 @@ deliverable (DECISIONS #53).
 **And seed 90 is unaffected as the specimen** — its 3 cells are *claimed*, so
 the enclosure branch (`if job.claimed_by.is_some() { continue; }`) never even
 runs for them. **Zero `unreachable` there is a real zero, not an artifact.**
+
+### ★★★ #53's GATING DELIVERABLE CANNOT BE ANSWERED FROM DISK — and here is what would answer it
+
+Second attempt at *"why did 71 never recover while 66 did"*, this time reading
+every field's definition before using it. **`times_offered` is not offers** —
+the harness emits `"times_offered": claims_here` and the hook returns
+`board.claims_by_pos`, i.e. **claims GRANTED**. (Caught before building on it,
+unlike `unreachable`.)
+
+**Timeouts per claim** — normalised, because raw counts are coupled to the
+shortfall the way `unreachable` was:
+
+| seed | mined | claims | timeouts | **per claim** |
+|---|---|---|---|---|
+| **66** | **27/27** | 27 | 9 | **0.33** |
+| 52 | **27/27** | 25 | 16 | 0.64 |
+| 61 | 26/27 | 5 | 3 | 0.60 |
+| 90 | 25/27 | 8 | 6 | 0.75 |
+| 54 | 16/27 | 19 | 14 | 0.74 |
+| 71 | **5/27** | 22 | 17 | **0.77** |
+
+**Suggestive and insufficient.** Seed 66 sits at half everyone else's rate — but
+**seed 52 fully mined at 0.64, overlapping seed 61's 0.60 at one block short.**
+The statistic does not separate success from failure, and n=6.
+
+### ★★ The structural reason — and it names the instrument
+
+**Every per-cell field available is COUPLED TO THE OUTCOME.** A cell that never
+completes gets re-claimed and re-timed-out repeatedly, inflating claims and
+timeouts together; `unreachable` tracks enclosure, which tracks dig progress;
+`starvation_cycles` counts cycles spent unclaimed, which grows when work isn't
+finishing. **There is no field that records what happened to an individual
+ATTEMPT.**
+
+> **`mine_cell_diag` aggregates per CELL. The question is per ATTEMPT.** Cell
+> totals collapse exactly the structure that would answer it —
+> [[aggregate-late-keep-the-structure]], now naming a specific missing
+> instrument rather than a general principle.
+
+**What would answer it:** a per-attempt record — *claim granted → outcome*
+(completed / timed out / preempted / released / material-blocked), with the
+cycle it happened on. Then *"71's attempts fail for reason X while 66's succeed"*
+becomes a direct read instead of an inference from coupled aggregates.
+
+**That is a third instrument row**, alongside `build_cell_diag` and
+`blocked_sources`-for-mine — and it is the one #53's gating deliverable actually
+depends on. **The honest status is: the discriminator is not derivable from the
+current corpus, and more reading will not produce it.**
+
+**Also worth noting for the row:** the hook's own doc warns *"All zero if the
+position was never open/unclaimed during arbitration (e.g. always claimed
+instantly)"* — so **`starvation_cycles: 0` is ambiguous between "never starved"
+and "never open"**, the same two-readings-one-value shape as everything else
+today. Any starvation statistic must exclude zeros deliberately, not silently.
