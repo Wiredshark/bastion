@@ -735,3 +735,79 @@ the merged tip**, so every defining property was re-checked in wave24's raw logs
 **9 of 9 identical.** All three specimens are valid at `d3235e5329`, not only at
 the wave they were discovered in. **A specimen inherits the provenance rule like
 any other status: it is attested at a tip, or it is a claim.**
+
+## ★★★ SEAM HYPOTHESIS — QUANTIFIED AND NOT SUPPORTED. My prediction is refuted.
+
+### First, a correction: the corpus DOES have access-plan visibility
+
+I wrote that the corpus has **zero** access-plan visibility. **Wrong.** I searched
+**top-level field names** for "access" and missed
+`b5_cascade_probe.access_emissions_max` and `.members_seen` — **nested inside a
+field whose name is about cascades.** *Read the schema at every level; a
+top-level name scan is not a schema scan.* Same error class as the rest of the
+day, one level down.
+
+`access_emissions_max` varies **0–3** across the 48 seeds. It is exactly the
+access-plan emission counter I said did not exist.
+
+### The starvation hypothesis, measured
+
+If the colony-global `take(0)` bar starves self-rescue, failing seeds should
+cluster on **rescue fired + zero access plans emitted**. They do not:
+
+| group | seeds | fail | pass | failure rate |
+|---|---|---|---|---|
+| zero-emission | 14 | 4 | 10 | **29%** |
+| whole corpus | 48 | 12 | 36 | **25%** |
+| rescue fired **and** zero emissions | 11 | 3 | 8 | **27%** |
+
+**Zero-emission seeds fail at the same rate as everything else.** Eight seeds
+fire a rescue, emit no access plan, and **pass** — so emitting no plan is
+normal, not pathological.
+
+### ★★ And my named subject is excluded outright
+
+> **PRE-STATED (registered an hour earlier): removing the bar should raise seed
+> 71's `mine_blocks_mined` above 5/27.**
+>
+> **REFUTED. Seed 71 has `access_emissions_max: 3` — it emitted THREE access
+> plans. It was never starved.** Whatever stalls seed 71 (15 of 27 cells never
+> claimed), plan starvation is not it.
+
+Per-failure emissions: 52→2, **54→0**, **61→0**, **62→0**, 66→2, 68→1,
+**71→3**, **78→0**, 80→3, 85→1, 90→2, 92→1.
+
+**The bar remains a real code defect** — fixed at the descent caller, live at
+self-rescue, with the codebase calling it a starvation bug at the sibling site.
+**But the corpus provides no evidence it is currently causing harm**, so the
+row's justification is *"remove an inconsistency"*, not *"fix a starvation"* —
+a materially weaker case for spending a fan.
+
+**Value of having pre-registered:** the prediction was falsified **by data
+already on disk, before any change was built or any VM time spent.** That is
+the protocol working exactly as intended.
+
+### ★ Two more instrument facts from the same read
+
+**The b55 family in the b5 corpus is INERT** — `55_blocked_by` (null),
+`55_names_blocker` (false), `55_clears_on_cancel` (true), `55_notified_once`
+(false) are **constant across all 48 seeds**, and `55_diag` is constant across
+47. **Do not read them as evidence about b55.**
+
+**Distinguish GUARDS from DIAGNOSTICS, though.** `flat_hint_decoupled` and
+`slope_cancel_clean` are also constant-true across 48 — but those are
+*assertions that always hold*, i.e. regression guards doing their job. **A
+constant guard is healthy; a constant diagnostic is inert.** My earlier line
+("a field that reports the same value in passing and failing runs is not a
+diagnostic") needs that carve-out.
+
+### ★★ The parked cascade row (#34) — now confirmed with a number
+
+`abort_ceiling_max` and `abort_resets_max` are non-zero on **exactly one seed of
+48 (seed 59), and seed 59 PASSES.** So the cascade abort mechanism has **one**
+corpus instance and it is the wrong polarity to be a failing pair member.
+
+> **A matched pair is impossible in principle here — n=1, and that 1 passes.**
+
+That is a far stronger basis for the parking than *"no sound pair exists in this
+corpus"*. **The row stays parked, and now the record says why in one line.**
