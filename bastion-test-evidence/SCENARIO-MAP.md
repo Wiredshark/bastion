@@ -1466,3 +1466,54 @@ the hypothesis died in a five-minute read instead of in someone's fix design.**
 on `blocked_by`, claim state and `cycles_since_last_claim` — per-cell facts that
 do not depend on the diag being an unmined-cell list. **Only the position
 question is blocked.**
+
+## ★★★ UNSATISFIABLE-WATCH SWEEP (2026-08-04) — 5 baseline-relative watches; only ONE emits its baseline
+
+Architect-assigned after `farm_growth_rose` proved unfireable. **Scan coverage
+stated explicitly, because a clean negative from a narrow scan is not absence:**
+
+```
+loops scanned (<=150 lines)             667
+  ... that set a bool AND break          55
+  ... comparing against a pre-loop base   5   <-- the watch class
+```
+
+### The five, and the finding
+
+| line | scenario | baseline | sets | **baseline EMITTED?** | unsatisfiable when |
+|---|---|---|---|---|---|
+| 4689 | `b55_scenario` | `remainder_before` | `remainder_progressed` | **NO** | baseline already 0 (`total < base`, count floors at 0) |
+| 10043 | `b73_scenario` | `attempts0` | `broke` | **NO** | no further attempt occurs |
+| 10059 | `b73_scenario` | `jobs_frozen_at` | `resumed_after_break` | **NO** | baseline already 0 (`jobs < base`, floors at 0) |
+| **11027** | `farm_scenario` | `g1` | `rose` | **YES** (telemetry `println`) | **baseline at/past target — CONFIRMED unfireable this run** |
+| 23037 | `chokepoint_scenario` | `done_before` | `ml_done` | **NO** | everything already done at capture |
+
+> **★★★ FOUR OF FIVE BASELINES ARE NEVER EMITTED — and the ONE that is emitted
+> is the only watch we were able to diagnose.** The correlation is causal: farm
+> was solved *because* `g1=15` was printed; b55 is uninterpretable *because*
+> `remainder_before` is not. **Observability of the baseline is the difference
+> between a diagnosed red and an uninterpretable one.**
+
+**Two share b55's exact count-floors-at-zero shape** (4689, 10059): `X < baseline`
+is impossible when the baseline is already 0, and neither emits the baseline that
+would reveal it.
+
+### Filed to the report-fix backlog — one line each
+
+**Emit the baseline beside every watch flag**, and apply the three-way treatment:
+assert the watched quantity is BELOW target at window-open; when it isn't, emit
+**`already-complete-at-open`** as its own state rather than `false`. Same
+discipline as `probe_incomplete` and the `starvation_cycles` zeros; the
+precedent is `auton`'s `storm_baseline_captured`, which cost one line.
+
+**NOT CLAIMED: that the other four are firing unsatisfiably today.** Only farm is
+confirmed (its baseline is visible). **The other four are UNVERIFIABLE either
+way, which is the finding** — and `b73` is a tracked EXPECTED-RED whose
+fingerprint rests on two of them.
+
+### Scan limits — what this sweep would MISS
+Comparisons against expressions rather than bare identifiers; baselines captured
+more than 30 lines above the loop; loops over 150 lines; watches that set state
+other than a plain `flag = true`; and equality-held watches (`x == baseline`),
+which have a different unsatisfiability mode. **A second pass wanting those
+should widen deliberately rather than trust this count.**
