@@ -1962,57 +1962,60 @@ fn column_height_near(terrain: &TerrainGrid, x: i32, y: i32, z_hint: i32) -> Opt
 /// live game can't route there, given the approximation's own known gaps.
 /// State that limitation with the result, never overclaim it.
 ///
-/// ★ ASYMMETRIC SOUNDNESS (bed fixture-first row, 2026-08-04, Opus's
-/// finding): this probe's flood-fill walks a POINT through columns --
-/// `ascent = next_column_height - current_column_height <= tier_bound`,
-/// nothing else. No width, no headroom, no collider/capsule reference
-/// anywhere in the loop (`has_standable_stance` is applied ONLY to the
-/// final destination cell, never to intermediate columns). The live
-/// `plan_access`, by contrast, builds an `approach_context` from the
-/// colonist's actual collider (a capsule) -- see the emergency-egress
-/// call site's `capsule_terrain_cylinder(collider, scale, 0.22)`. A
-/// capsule can only go where a point can go, never more, so the two
-/// verdicts carry OPPOSITE epistemic weight depending on direction:
-/// - `path_exists_*: false` (a NEGATIVE) is SOUND -- point-unreachable
-///   implies capsule-unreachable. This is the strong, trustworthy half.
-/// - `path_exists_*: true` (a POSITIVE) is NOT evidence a colonist can
-///   actually traverse it -- point-reachable does NOT imply
-///   capsule-reachable. A live `plan_access` rejection on a cell this
-///   probe reports reachable is NOT thereby proven to be a bug; the
-///   probe simply cannot adjudicate that direction.
-/// Cite this asymmetry at every use of a positive `path_exists` result
-/// as evidence -- a capsule-aware extension (clearance/headroom checked
-/// per intermediate column, not just at the destination) is real,
-/// unbuilt future work if that direction is ever needed.
+/// ★ TWO INDEPENDENT ERROR MODELS, re-scoped 2026-08-04 (Opus's finding +
+/// direct read of `column_height_near`, Fable-approved wording; supersedes
+/// an earlier, unscoped version of this caveat cited twice before the
+/// scope was caught -- corrected here rather than silently rewritten so
+/// the record shows what was superseded):
 ///
-/// ★ MULTI-LAYER BLINDNESS (52/54 offline-yes/live-no study, 2026-08-04,
-/// Opus's find in the existing corpus + confirmed by direct terrain
-/// column scans at both seeds): a SECOND, independent limitation,
-/// structural rather than about body width. `column_height_near` returns
-/// ONE height per `(x,y)` column -- whatever solid surface sits nearest
-/// the z_hint -- with no way to represent multiple stacked solid bands
-/// separated by air in the same column (an overhang, a cave ceiling, a
-/// floating ledge). The flood-fill's connectivity is entirely a function
-/// of these single-height columns, so a column that's ACTUALLY a
-/// multi-story cave collapses to whichever one surface the sampler
-/// happened to find, and "connected at that height" gets reported as a
-/// route regardless of whether the real 3D geometry has one. Measured
-/// directly: seed 52's live `last_timeout_pos` (z146-149) sits inside a
-/// confirmed 146-150 air pocket under a 151-155 rock overhang, with real
+/// **BODY-WIDTH model, single-layer terrain**: this probe's flood-fill
+/// walks a POINT through columns -- `ascent = next_column_height -
+/// current_column_height <= tier_bound`, nothing else. No width, no
+/// headroom, no collider/capsule reference anywhere in the loop
+/// (`has_standable_stance` is applied ONLY to the final destination cell,
+/// never to intermediate columns). The live `plan_access`, by contrast,
+/// builds an `approach_context` from the colonist's actual collider (a
+/// capsule) -- see the emergency-egress call site's
+/// `capsule_terrain_cylinder(collider, scale, 0.22)`. A capsule can only
+/// go where a point can go, never more, so IN SINGLE-LAYER TERRAIN the
+/// two verdicts carry opposite epistemic weight: `path_exists_*: false`
+/// is SOUND (point-unreachable implies capsule-unreachable);
+/// `path_exists_*: true` is NOT (point-reachable does not imply
+/// capsule-reachable).
+///
+/// **COLUMN-COLLAPSE model, multi-layer terrain**: `column_height_near`
+/// (below) scans DOWNWARD from `z_hint+60` and returns the FIRST (i.e.
+/// HIGHEST) filled block -- the top of an overhang, never the floor
+/// beneath it. A column with multiple stacked solid bands separated by
+/// air (an overhang, a cave ceiling, a dug gallery, a floating ledge)
+/// collapses to whichever ONE surface is highest, and the flood-fill's
+/// connectivity is entirely a function of these single-height columns.
+/// This makes BOTH directions unsound, not just positives: it can report
+/// connectivity across a surface that isn't actually continuous (the
+/// same false-positive shape as the body-width model), AND it is BLIND
+/// to a passable band underneath the surface it found -- a tunnel or dug
+/// gallery can sit entirely below the sampled height and never enter the
+/// flood-fill at all, a FALSE-NEGATIVE the body-width model cannot
+/// produce. Measured directly: seed 52's live `last_timeout_pos`
+/// (z146-149) sits inside a confirmed 146-150 air pocket under a
+/// 151-155 rock overhang (`column_height_near` returns 155), with real
 /// ground far below at 100-145; seed 54's (z166-167) sits inside a
 /// confirmed 166-169 gap between two separate rock ledges (162-165 and
 /// 170-172). In both, the corpus's own `b5_mine_reachability_probe`
 /// entries show this fn confidently reporting `path_exists_step: true`
 /// (`probe_incomplete: false`) for a route the live router never finds.
-/// Independent of the point-vs-capsule asymmetry above, and stacks with
-/// it -- both make a `path_exists: true` untrustworthy, for different
-/// reasons, at the same call. The asymmetry's own direction is
-/// UNCHANGED by this: collapsing a column to one surface only makes the
-/// model MORE permissive, never less, so a NEGATIVE result under this
-/// limitation is still sound (seed 80's own no-route finding survives
-/// both limitations). A real fix (tracking multiple bands per column) is
-/// a genuine design change, not attempted here -- this is the caveat, not
-/// the repair.
+///
+/// **The two models do not compose into one soundness rule.** Whether a
+/// negative is trustworthy depends on whether the terrain under test is
+/// single-layer (body-width model, negatives sound) or may be
+/// multi-layer (column-collapse model, NEITHER direction sound) -- and
+/// mine sites are exactly where dug galleries live, so this is not a
+/// rare case for this codebase's own primary user of the probe. Cite
+/// BOTH models, scoped, at every use of a `path_exists` result as
+/// evidence -- never restate "negatives are sound" as an unscoped fact.
+/// Fixes for either model (capsule-aware clearance per column; tracking
+/// multiple bands per column) are genuine design changes, not attempted
+/// here -- this is the caveat, not the repair.
 #[derive(Debug, Clone)]
 pub struct ReachabilityProbeResult {
     pub standable_target: Option<Vec3<i32>>,
@@ -4038,6 +4041,38 @@ pub struct JobBoard {
     /// via `BastionJobInspect::benched_since_tick`), never read for
     /// behavior — same discipline as `BlockedRegionInfo::source`.
     pub benched_since: HashMap<JobId, u64>,
+    /// bastion (observability row, DECISIONS #49, 2026-08-04): per-caller
+    /// `plan_access` CALL counts, keyed by the three call sites' own
+    /// labels (`"self_rescue"`, `"emergency"`, `"proactive_descent"`).
+    /// Counts every invocation regardless of outcome -- paired with
+    /// `access_plan_emissions` below to answer "how often does this
+    /// caller even reach `plan_access`", the question #61's
+    /// non-call-vs-rejection falsification needed and the corpus
+    /// couldn't answer (zero access-plan state visible anywhere).
+    /// Report-only, never read for behavior.
+    pub access_plan_calls: HashMap<&'static str, u32>,
+    /// bastion (observability row, DECISIONS #49): per-caller SUCCESSFUL
+    /// `plan_access` emissions (the `Some((kind, steps))` arm), same
+    /// keys as `access_plan_calls`. `emissions <= calls` always; the gap
+    /// is refusals, not non-calls.
+    pub access_plan_emissions: HashMap<&'static str, u32>,
+    /// bastion (observability row, DECISIONS #49): times the self-rescue
+    /// site's colony-global `access_pending` bar (`.take(if access_pending
+    /// {0} else {1})`) starved a GENUINELY PENDING carve request -- i.e.
+    /// `carve_requests` was non-empty AND `access_pending` was true, so
+    /// the loop body never ran for that tick's requests at all. This is
+    /// the NON-CALL half #61's falsification needed: a rejected `plan_
+    /// access` result and a starved-before-ever-called request look
+    /// identical downstream (both leave the job's stance/claim state
+    /// untouched) without this counter naming which happened.
+    pub self_rescue_starved_by_access_pending: u32,
+    /// bastion (observability row, DECISIONS #49): cumulative ticks (at
+    /// the self-rescue site's own cadence, i.e. once per `run()` call
+    /// past the `ARBITRATION_INTERVAL` gate) `access_pending` was
+    /// observed `true`. Paired with the tick count itself (read via the
+    /// harness hook) to derive a duty-cycle fraction rather than a raw
+    /// count that means nothing without a denominator.
+    pub access_pending_true_ticks: u64,
     /// bastion (DPA-2, the prune-gap flicker guard): anchor COLUMNS whose
     /// rung plans went material-starved — DURABLE across the F3 prune →
     /// re-emit gap (deriving the hold from live rung jobs alone left a ~2s
@@ -12794,6 +12829,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // id) so the winning request is a pure function of the pending set.
         carve_requests.sort_by_key(|(_from, to, parent)| (to.x, to.y, to.z, *parent));
         let access_pending = board.jobs.values().any(|j| j.is_access);
+        if access_pending {
+            board.access_pending_true_ticks += 1;
+            if !carve_requests.is_empty() {
+                board.self_rescue_starved_by_access_pending += 1;
+            }
+        }
         for (from, to, parent) in
             carve_requests
                 .into_iter()
@@ -12803,8 +12844,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 job.carve_attempted = true;
             }
             let mask = board.designated.clone();
+            *board.access_plan_calls.entry("self_rescue").or_insert(0) += 1;
             match plan_access(board, &terrain, &mask, from, to, false, None, None) {
                 Some((kind, steps)) => {
+                    *board
+                        .access_plan_emissions
+                        .entry("self_rescue")
+                        .or_insert(0) += 1;
                     info!(
                         parent,
                         steps,
@@ -13511,6 +13557,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         common_systems::phys::capsule_terrain_cylinder(collider, scale, 0.22)
                     }))
                 });
+                *board.access_plan_calls.entry("emergency").or_insert(0) += 1;
                 match plan_access(
                     board,
                     &terrain,
@@ -13522,6 +13569,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     approach_context,
                 ) {
                     Some((kind, steps)) => {
+                        *board.access_plan_emissions.entry("emergency").or_insert(0) += 1;
                         // CARVE-CASCADE PROBE: one emission for this member.
                         *board.cascade_access_emissions.entry(uid).or_insert(0) += 1;
                         if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
@@ -15706,9 +15754,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // DPA-1: dig_provisioned=true — THE Part-A wiring. Stairs still
             // plan first; tight shafts now fall to wood-costed rungs
             // instead of the D16 release.
+            *board
+                .access_plan_calls
+                .entry("proactive_descent")
+                .or_insert(0) += 1;
             if let Some((kind, steps)) =
                 plan_access(board, &terrain, &mask, from, to, true, None, None)
             {
+                *board
+                    .access_plan_emissions
+                    .entry("proactive_descent")
+                    .or_insert(0) += 1;
                 info!(
                     job = jid,
                     ?kind,

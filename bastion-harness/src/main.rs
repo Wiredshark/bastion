@@ -4223,6 +4223,10 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // CARVE-CASCADE PROBE: captured once, beside locomotion, same reason.
     let cascade_probe = server.bastion_cascade_probe();
     let cavein_drop_cells = server.bastion_cavein_drop_cells();
+    // OBSERVABILITY ROW (DECISIONS #49, 2026-08-04): captured once, same
+    // reason -- the access-plan state the corpus previously had zero
+    // visibility into.
+    let access_plan = server.bastion_access_plan_stats();
 
     // B5-EXIT-CODE-DISAMBIGUATION (Ben-directed, 2026-07-30): the pass gate
     // is a ~40-clause conjunction; at corpus scale a bare exit code only
@@ -4474,6 +4478,19 @@ fn b5_scenario(args: &Args) -> ExitCode {
         // telemetry, never gated") until a fan-measured base rate can
         // set a real threshold -- deferred, not dropped.
         "b5_rescue_fired": locomotion.2 > 0,
+        // OBSERVABILITY ROW (DECISIONS #49, 2026-08-04): the access-plan
+        // state the corpus never reported despite `b5_rescue_fired`
+        // firing in most seeds -- see `bastion_access_plan_stats`'s own
+        // doc for what each field means and the zero-vs-absent caveat.
+        "b5_access_plan_self_rescue_calls": access_plan.0,
+        "b5_access_plan_self_rescue_emissions": access_plan.1,
+        "b5_access_plan_emergency_calls": access_plan.2,
+        "b5_access_plan_emergency_emissions": access_plan.3,
+        "b5_access_plan_proactive_descent_calls": access_plan.4,
+        "b5_access_plan_proactive_descent_emissions": access_plan.5,
+        "b5_access_plan_self_rescue_starved": access_plan.6,
+        "b5_access_pending_true_ticks": access_plan.7,
+        "b5_live_is_access_count": access_plan.8,
         // B5-EXIT-CODE-DISAMBIGUATION: WHICH clause(s) failed, not just a
         // bool. Derived from the same `clauses` list `pass` is derived
         // from -- one source of truth, report can't drift from gate.

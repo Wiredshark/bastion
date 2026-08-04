@@ -3419,6 +3419,52 @@ impl Server {
         )
     }
 
+    /// bastion (observability row, DECISIONS #49, harness hook,
+    /// 2026-08-04): the access-plan state the corpus had zero visibility
+    /// into (75 fields, none of them this) despite the self-rescue path
+    /// firing in most seeds -- see `JobBoard::access_plan_calls`'s own
+    /// doc for what each number means. Flattened tuple: `(self_rescue_
+    /// calls, self_rescue_emissions, emergency_calls, emergency_
+    /// emissions, proactive_descent_calls, proactive_descent_emissions,
+    /// self_rescue_starved_by_access_pending, access_pending_true_ticks,
+    /// live_is_access_count)`. All zero-defaulted, never `None` -- a
+    /// scenario that never exercises access-planning at all reads as
+    /// all-zero, not absent, so a corpus-wide zero must be checked
+    /// against whether `is_access` jobs existed at all (the last field)
+    /// before reading it as "the mechanism never fires."
+    ///
+    /// NOT a duplicate of `bastion_cascade_probe`'s `access_emissions_max`
+    /// (Opus's catch, 2026-08-04): that field is a PER-MEMBER MAXIMUM
+    /// over `cascade_access_emissions` (the emergency call site only) --
+    /// answers "what's the worst single member's count". This field's
+    /// `emergency_emissions` is a TOTAL across all members and calls --
+    /// answers "how many times overall", and additionally covers the
+    /// self_rescue and proactive_descent sites `cascade_probe` doesn't
+    /// touch at all. Different questions, kept separate on purpose --
+    /// see `bastion_cascade_probe`'s own doc for the per-member reading.
+    pub fn bastion_access_plan_stats(
+        &self,
+    ) -> (u32, u32, u32, u32, u32, u32, u32, u64, u32) {
+        let board = self
+            .state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>();
+        let get = |m: &hashbrown::HashMap<&'static str, u32>, k: &str| {
+            m.get(k).copied().unwrap_or(0)
+        };
+        (
+            get(&board.access_plan_calls, "self_rescue"),
+            get(&board.access_plan_emissions, "self_rescue"),
+            get(&board.access_plan_calls, "emergency"),
+            get(&board.access_plan_emissions, "emergency"),
+            get(&board.access_plan_calls, "proactive_descent"),
+            get(&board.access_plan_emissions, "proactive_descent"),
+            board.self_rescue_starved_by_access_pending,
+            board.access_pending_true_ticks,
+            board.jobs.values().filter(|j| j.is_access).count() as u32,
+        )
+    }
+
     /// bastion (mechanism-2 friction instrument, harness hook, 2026-07-30):
     /// EVERY job position that ever timed out this run, with its count --
     /// unlike `bastion_timeout_count_for_pos` (single position) or the
