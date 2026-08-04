@@ -660,3 +660,56 @@ degenerate.** Not asserted as the cause; the AABB derivation has not been read.
 **No fixture needs building for any of the three.** Each is a single
 deterministic seed in the standing fan, verified reproducible across two
 independent runs.
+
+## ★★★ INSTRUMENT SENSITIVITY — the corpus HAS moved; my "false green" warning was too broad
+
+I warned that the seam row would produce a false green because nothing reports
+access-plan state. **The blindness is real but I over-generalised from it.**
+Measured across every wave on disk:
+
+| wave | failures | note |
+|---|---|---|
+| wave7 | 7/36 | |
+| wave8 | 11/36 | |
+| wave14 / 16 / 17 | **14/48** | seeds 51, 55, 69 failing |
+| wave15 | **16/48** | 74, 76 added |
+| wave18 / 19 | **12/48** | 51, 55, 69 gone; **90 appeared** |
+| **wave20** | **11/48** | **`ch_leaf_cleared` ABSENT — seed 52 flipped to PASS** (the #64 guard debut, the recorded +1/0) |
+| wave22 / 23 / 24 | 12/48 | byte-identical to wave19 |
+
+**The corpus moves, seeds enter and leave, and the exact-match bar has fired on
+a one-line change.** It is a demonstrably sensitive instrument for the outcomes
+it reports. **Waves 19/22/23/24 being byte-identical across four commits
+(`ed532c600e` → `34db70bac2` → `b89cbc799d` → `d3235e5329`) is therefore real
+evidence of neutrality, not merely absence of resolution** — and that is a
+stronger verification of today's merges than was recorded, since the whole
+clause *composition* per seed is identical, not just pass/fail.
+
+### ★★ So the seam row is PREDICTABLE, not unverifiable — name the seed
+
+The corpus cannot see access-plan internals, but it **can** see whether mining
+outcomes change. If the colony-global `take(0)` bar starves self-rescue, the
+signature is: **rescue fires, access plans never get emitted, interior cells
+never become claimable.** Exactly one seed has that shape strongly:
+
+| seed | mined | `rescue_fired` | interior cells never claimed |
+|---|---|---|---|
+| **71** | **5/27** | **true** | **15 of 27** |
+| 54 | 16/27 | true | 7 of 18 |
+| 61 | 26/27 | true | 0 of 3 |
+| 90 | 25/27 | true | 0 of 3 |
+
+> **PRE-STATED PREDICTION for the seam row: removing the self-rescue bar should
+> raise seed 71's `b5_mine_blocks_mined` above 5/27, and to a lesser extent
+> seed 54's above 16/27. Seeds 61 and 90 should NOT move — their cells are
+> claimed, so plan starvation is not their mechanism.**
+
+**That is a directional bar with a named subject and a named null**, registered
+before the change exists. If 71 doesn't move, plan starvation is not its cause
+and the bar's removal is a correctness fix with no measured benefit — which is
+still worth knowing, and is exactly the kind of result the pre-registration
+protects.
+
+**Superseded:** my earlier "a green fan on that row would be a FALSE GREEN."
+Correct version — **a green would be uninformative only about the mechanism's
+internals; seed 71's magnitude is a genuine outcome-level test.**
