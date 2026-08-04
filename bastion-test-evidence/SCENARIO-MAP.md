@@ -2442,3 +2442,59 @@ two blocks unmined) are untouched.
 cannot be asserted. **It remains a clean specimen on its OTHER facts** — path
 exists from spawn (complete, 228 columns), `log_sum: 0`, no `plan_access` source
 — **but it can no longer be described as unobstructed.**
+
+## ★★★★★ THE TRACE — ONE DEFECT IN THREE COSTUMES, CONFIRMED
+
+```
+seed 71: TimedOut=20  Completed=11  RemovedExternally=3  Other=0
+seed 66: TimedOut=10  Completed=34  RemovedExternally=3  Other=1
+```
+
+**`TimedOut` dominates both seeds — and its emitter is PROVABLY the same site as
+farm's job 6** (one grep match codebase-wide, cross-checked against the
+classification). **Farm, mine-71 and mine-66 are the SAME CODE PATH wearing three
+job kinds.**
+
+> **The comparison the whole pipeline read was waiting on comes back SAME.**
+> Not "structurally similar" — the identical release site, `11280`/`TimedOut`,
+> whose own comment declares the path *transient congestion* and deliberately
+> withholds #55 recording.
+
+**Honest gap (5b's own catch, not caught by review):** site-discovery ran on
+seed 71 only; seed 66's set was **assumed** and fires one undiscovered 4th site
+(`Other=1`). **1 event, TimedOut-dominance unaffected, flagged rather than
+papered over.** Closes after the windows.
+
+**`RemovedExternally` 3 vs the 10 orphans — a plausible read, not a
+reconciliation.** A never-claimed job cannot produce a dangling-`ActiveJob`
+event, so the 10 are plausibly ~3 caught mid-claim + ~7 pure board staleness.
+**5b flagged the time-alignment problem themselves** (snapshot vs cumulative
+count) — **which is what keeps it honest.**
+
+## ★★★★ SEED 61 → BRANCH A: WINDOW-SIZING ARTIFACT. The family drops to two.
+
+**`--b5-settle-iters 450` (2.5× default) → `mine_blocks_mined: 27`,
+`mine_cleared: true`, EXIT 0.** Full completion.
+
+**Seed 61's "one block short" is an instrument artifact, not a stall** — the
+cell was real (confirmed not buried), it just needed more than the default
+budget. **Item 3 closes on the pre-stated Branch A: corpus-defect ledger.**
+
+| consequence | status |
+|---|---|
+| seed 61 exits the one-unit-short family | **CONFIRMED** |
+| family size | **2** (farm 8/9, seed 90 25/27) |
+| Ben's ≥3-places directive | **PENDING seed 90** — if 90 also completes late, family = 1 and the directive stands down |
+| architect pre-acceptance | **already given** — no re-litigation |
+
+> **★ "Window artifact" is not "nothing to see."** 44 of 48 seeds complete at
+> 180; **seed 61 needs 450 — it is 2.5× slower than its peers and the slowness
+> has a cause.** Per Ben's law (*a mined space reaches 100% in ALL cases*),
+> **eventual completion satisfies the design bar**, so this is ledger rather
+> than row — **but the slowness observation ships with it.**
+
+### ★ And the trace may RESTORE seed 78's withdrawn credential
+
+If seed 78's chop shows `TimedOut` releases, it stops being *"mysteriously
+unobstructed and idle"* and becomes **a fourth same-site data point** — **a
+better specimen than the one the sweep-back cost it.** Queued.
