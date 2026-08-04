@@ -266,3 +266,58 @@ The newest local `bastion-harness.exe` is **2026-08-03 19:01**, predating all
 three of today's merges (`#64` 02:29, `d3235e5329` 03:09, `460626a6e2` 04:17).
 **Nothing local can measure today's tip until a rebuild.** Caught by attesting
 provenance rather than checking that a binary existed.
+
+## ★★★ CORPUS MODE ANALYSIS (2026-08-04, wave19) — "12/48 failures" is really ~5 MODES
+
+Derived from `b5_failed_clauses`, cross-validated against `wave19_VERDICTS.json`:
+**the 12 seeds with non-empty clause lists are EXACTLY the 12 FAIL verdicts.**
+The field is present on all 48 seeds (36 empty, 12 non-empty) — no missing-key
+ambiguity. Analysis is sound to read.
+
+### The clause pairs are PERFECT — two fields, one mechanism
+
+| pair | seeds | co-occurrence |
+|---|---|---|
+| `any_needs_materials` == `build_placed` | 61, 62, 71, 80, 85, 92 | **6/6, never apart** |
+| `chop_cleared` == `log_sum` | 78, 80, 85, 92 | **4/4, never apart** |
+| `mine_blocks_mined` == `mine_cleared` | 54, 61, 71, 90 | **4/4, never apart** |
+| `b15_adjacent_claimed` == `b15_ontop_claimed` | 71 | 1/1 |
+
+**11 distinct clause names collapse to ~5 independent axes.** Each perfect pair
+is one mechanism reported twice — [[aggregate-late-keep-the-structure]]
+inverted: not one aggregate hiding structure, but two fields duplicating one
+fact, which inflates an apparent failure count.
+
+### Mode membership
+
+| seed | modes | extra |
+|---|---|---|
+| 52 | — | `ch_leaf_cleared` |
+| 54 | **B mine** | |
+| 61 | **A materials/build + B mine** | |
+| 62 | **A materials/build** | |
+| 66 | — | `tl_ok` |
+| 68 | — | `ch_mixed` |
+| 71 | **A + B** | `b15_*` pair |
+| 78 | **C chop** | |
+| 80 | **A + C** | |
+| 85 | **A + C** | |
+| 90 | **B mine** | |
+| 92 | **A + C** | `ch_mixed` |
+
+**★ Mode A (materials/build) is in 6 of 12 failures — half the corpus's failing
+seeds — and never appears without `build_placed` also failing.** It is the
+single largest mode and it is materials-shaped, which puts it adjacent to the
+DPA-0 material work and the b58 fixture material mismatch (stone handed to a
+wood job). **Highest-leverage target by seed count.**
+
+**NOT CLAIMED: that a mode is one ROOT.** Perfect clause pairing establishes
+that the two *fields* move together, not that the six *seeds* share a cause.
+Per [[matched-control-must-match-on-system-and-axis]], each seed needs its own
+minimal control before any multi-seed fix is built.
+
+**Confirms two earlier readings.** Seed 61 (parked carve-cascade) carries A+B
+and seed 80 (#61's evidence) carries A+C — both multi-mode, consistent with the
+32-clause sweep that killed the cascade pair. **And both SPLIT seeds (52, 54)
+are FAIL seeds**, so the offline/live reachability split co-occurs with real
+failures rather than sitting in healthy runs.
