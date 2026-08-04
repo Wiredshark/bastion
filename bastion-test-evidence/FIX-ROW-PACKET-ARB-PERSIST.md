@@ -767,12 +767,47 @@ paired A/B has nothing to measure without Row A. The corpus cannot currently see
 gated by a fan that is blind to the thing it changes — the exact failure that
 let the colony-global access bar survive for weeks.
 
-**Residual risk on Row A, stated rather than dismissed:** the chat drain
-(**15397**) fires a player-visible message per newly-recorded region. Moving
-`blocked_regions` from near-always-empty to routinely-populated therefore
-changes message volume. That is a **UX** exposure, not a sim-determinism one —
-but it is the false-alarm spam the #55 comment explicitly refuses (§7), so the
-threshold decision in §4 is load-bearing for Row A, not just Row B.
+**Residual risk on Row A — stated, then READ, and it comes out SMALLER than I
+flagged it.**
+
+I wrote that the drain "fires a player-visible message per newly-recorded
+region," making volume a UX exposure. **Read at `a85dec2912:15397-15408`:**
+
+```rust
+for info in board.blocked_regions.iter_mut() {
+    if !info.notified {
+        info.notified = true;
+        chat_emitter.emit(… "A designation is blocked — obstruction at (x, y, z) can't be reached.");
+    }
+}
+```
+
+**Three reads bound the volume, and together they make it a non-issue:**
+
+1. **Edge-triggered per ENTRY** — `notified` flips on first emission, so an entry
+   messages **once** no matter how long it lives.
+2. **Deduped by exact `Region` before insert** (`already_recorded`, **12884**) —
+   a blocked region holds **one** entry, so repeated `route_exhausted` firings on
+   the same designation produce **no additional messages**.
+3. **Gated at threshold 3** — nothing records until a job has failed three times.
+
+> **Volume is bounded by the number of distinct blocked REGIONS, not by the
+> number of attempts.** A holdout cell that fails nine times yields **one**
+> message, not nine. The seed-90 specimen would produce exactly one line.
+
+**The one path that can re-notify, named for completeness:** `remove_job`'s prune
+(**5153**) drops an entry once **no** job remains inside its region; if the region
+later re-blocks, that is a **new** entry with `notified: false` and therefore a
+second message. So the true bound is *regions × record→prune→record cycles*. For
+a mine designation this cannot cycle while any block remains undug — the prune
+requires the region to be empty of jobs — so the cycling case needs jobs to
+vanish and then be regenerated inside the same region. **Not demonstrated in this
+corpus; flagged as the thing to watch in the `source` counts rather than
+predicted.**
+
+**Net:** the §4 threshold decision remains load-bearing for Row B, and is
+**comfortable** for Row A. The #55 comment's spam objection is answered by the
+dedupe, which was already there.
 
 ---
 
