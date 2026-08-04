@@ -2137,3 +2137,66 @@ which now says something it didn't before:
 `progress: 0.878`, two blocks unmined). **Only my justification for one of them
 was overclaimed, and it is now downgraded to the empirical observation it always
 was.**
+
+## ★★★★ BURIAL SCREEN — the signature generalises to THREE seeds; seed 61 could dissolve a row
+
+**5b's terrain query on seed 71 came back MIXED and precisely re-scoping:**
+
+```
+y=21071  z=604 OPEN    z=603 flags [T,T,T]  -> NOT buried -> writer 11280 (churn)
+y=21072  z=604 SOLID   z=603 flags [T,T,T]  -> BURIED     -> writer 15418 (enclosure)
+y=21073  z=604 OPEN    z=603 flags [F,F,T]  -> NOT buried -> writer 11280
+```
+
+**Of seed 71's 7 flagged top cells: 3 buried under a tree trunk, 4 genuinely
+attempted-and-rejected.** **#59's frontier-stall evidence SURVIVES on the 4 and
+loses the 3** — re-scoped, not voided.
+
+### The corpus-wide screen (free, from disk)
+
+**Signature = `is_top_layer AND unreachable`.**
+
+| seed | mined | top cells | **top + unreachable** |
+|---|---|---|---|
+| 52 / 66 / 90 | — | 7 / 9 / 1 | **0** |
+| **54** | 16/27 | 6 | **3** |
+| **61** | 26/27 | 1 | **1** |
+| **71** | 5/27 | 9 | **7** — *confirmed 3 buried, 4 churn* |
+
+> **A CANDIDATE marker, not a verdict.** Seed 71 is the proof: same flag, two
+> writers, and only terrain separates them.
+
+### ★★★ Seed 61 — one cell, one query, and it may remove a row
+
+```
+[24516, 26191, 164]  ->  QUERY [24516, 26191, 165]   claimant None, times_offered 1
+```
+
+**If buried, seed 61's "one block short" is a WORLDGEN OBSTRUCTION, not a
+stall.** Pre-stated consequences:
+
+- **61 drops out of the cross-scenario "one unit short" family** → falls to two
+  members (farm 8/9, seed 90 25/27) → **Ben's ≥3-places directive may no longer
+  fire**, and the whole-pipeline read loses a leg
+- **Batch item 3 (61's extended window) becomes pointless** — no window mines a
+  buried cell. **Run the query FIRST or spend a measurement on a foregone
+  conclusion**
+- If **open**, 61's stall is real and the window run is exactly right
+
+**Seed 54: three cells, same x-column (26660), three consecutive y** — *the same
+shape as seed 71's buried row.* Queries at `[26660, 4847–4849, 177]`.
+
+### ★ A fixture class, flagged not asserted
+
+**A tree grew over three adjacent mine cells.** That is the **second fixture in
+two days placing geometry without checking the terrain it places into** — bed's
+plateau didn't check for a cavity BELOW; b5's mine volume doesn't check for
+obstruction ABOVE. **One confirmed instance each; the screen yields candidates,
+not confirmations.**
+
+### ★ UNREAD, registered for the window run (architect)
+**Seed 90's `progress: 0.878`** — claimed cells, `cycles: 0`, nothing blocking,
+progress at 88% and holding. **Completes late ⇒ mid-flight and unremarkable.
+Stalls forever at 0.878 ⇒ "what advances progress and what threshold completes a
+mine cell" becomes the specimen's central question** — and that answer gets the
+all-writers treatment before anyone characterises it.
