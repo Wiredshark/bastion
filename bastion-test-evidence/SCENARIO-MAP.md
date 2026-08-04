@@ -2246,3 +2246,50 @@ cleared** — including the two that were never flagged `unreachable` at all.
 **Still pending and unaffected:** the 61/54 queries, which test a different
 question (is the ONE / THREE flagged top cells' obstruction the whole story for
 *those* seeds, where the mined counts are 26/27 and 16/27).
+
+## ★★★★ BURIAL QUERIES COMPLETE — seed 61 is a REAL STALL; the family holds at three
+
+**Seed 61 — NOT buried, decisively.** `grounddump_grid_solid_cells: []` at
+z=165, and `real_ground_top_z: 164` — **the mine cell IS the exposed topmost
+natural block.**
+
+> **Seed 61's "one block short" is a GENUINE STALL, not a worldgen obstruction.**
+> **It stays in the cross-scenario one-unit-short family (still three members),
+> Ben's ≥3-places directive HOLDS, and batch item 3's window run is a real
+> measurement rather than a foregone conclusion.**
+
+**Seed 54 — mixed, like 71.** All three flagged cells are the `x=26660` column:
+
+| cell | flagged | `times_offered` | terrain above |
+|---|---|---|---|
+| `[26660, 4847, 176]` | **True** | 2 | z=177 **OPEN** — not buried |
+| `[26660, 4848, 176]` | **True** | 2 | z=177 **OPEN** — not buried |
+| `[26660, 4849, 176]` | **True** | 2 | solid 176/177/178 — **BURIED** |
+| `[26659, 4847–4849, 176]` | **False** ×3 | 2, 3, 2 | *(not queried — unflagged)* |
+
+**5b's open question closed from disk: the three flagged cells are exactly the
+three queried, so 2 real / 1 buried.** *Unlike seed 71's tree over three
+adjacent cells, this is asymmetric — one column carries two extra rock layers.*
+
+### ★ Candidate arithmetic corrected: 11, not 14
+
+| seed | candidates | real | buried |
+|---|---|---|---|
+| 71 | 7 | 4 | 3 |
+| 54 | 3 | 2 | 1 |
+| 61 | 1 | 1 | 0 |
+| **TOTAL** | **11** | **7** | **4** |
+
+**Signature reliability: 7/11 = 64%.** *5b reported 9/14 = 64% — the RATIO is
+right and the COUNTS are not, which by today's own denominator lesson is the
+part that matters: 11 vs 14 is a 27% error in the base.* **The conclusion —
+"informative, not a standalone filter" — survives unchanged.**
+
+### ★★ And seed 54 reinforces the shape-A reading
+
+**Six top cells, all attempted (`times_offered` 2/3/2/2/2/2), only three
+flagged, and the layer never cleared** (16/27 mined). **Same structure as seed
+71: attempts are universal across the frontier, flags are not, and the stall
+tracks the attempts.** *Two seeds now show that flags and stalls are
+independent — which is exactly why re-scoping #59 on flag count was the wrong
+axis.*
