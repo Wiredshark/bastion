@@ -2293,3 +2293,54 @@ flagged, and the layer never cleared** (16/27 mined). **Same structure as seed
 tracks the attempts.** *Two seeds now show that flags and stalls are
 independent — which is exactly why re-scoping #59 on flag count was the wrong
 axis.*
+
+## ★★★★ FARM'S CORNER TILL — the convergent question ANSWERED for farm's leg, from the log
+
+The architect's composed question is *"what rejects a winning, claimed,
+unobstructed attempt?"* **Farm already logs its answer.** Tracing job 6 — the
+one till of nine that never completed:
+
+```
+farm job created  job=6  pos=(24072, 20239, 455)  sow=false  affordance=OnTopAlways
+job unreachable — claim released  job=6  colonist=(24071, 20233, ..)
+job unreachable — claim released  job=6  colonist=(24081, 20239, ..)
+job unreachable — claim released  job=6  colonist=(24081, 20253, ..)
+job unreachable — claim released  job=6  colonist=(24068, 20241, ..)
+```
+
+> **Created, CLAIMED FOUR TIMES by colonists at FOUR DIFFERENT POSITIONS, and
+> released "unreachable" every time.**
+
+**That is class (a) with a NAMED REJECTION REASON** — exactly the datum step 2
+is being built to capture for the mine seeds, **and farm has been emitting it
+all along.**
+
+### ★★ Three things this establishes
+
+1. **Farm's leg has the SAME SHAPE as the mine frontiers:** repeatedly claimed,
+   repeatedly rejected, never completed. **Three legs of the one-unit-short
+   family now share a signature, not just a symptom.**
+2. **The rejection is about the TARGET, not the approach.** Four colonists
+   approached from four spread-out positions — `(24071,20233)`, `(24081,20239)`,
+   `(24081,20253)`, `(24068,20241)` — **and all four failed.** *A bad approach
+   angle would not survive four vantages.*
+3. **`tilled pos` appears exactly 8 times in the log**, independently confirming
+   `tilled=8` from a second source.
+
+### ★ And it points back at the three-writer field
+
+The reason is literally **"unreachable"** — the field whose writers we
+enumerated today. **Farm jobs are `OnTopAlways`, and the enclosure test is
+Mine-gated (`if job.kind.is(DesignationKind::Mine)`), so for a farm job the
+writer must be 11280 or 12719 — NOT the enclosure test.** *(READ: the Mine gate.
+UNREAD: which of the two, and why a flat till plot's corner is unreachable from
+four vantages.)*
+
+**Job 7 `(24073, 20239)` took one such release and later SUCCEEDED** — so the
+rejection is not permanent by construction. **Job 6 is the one that never
+recovered**, which is the same *transient-vs-persistent* distinction 5b drew
+between seeds 66 and 71.
+
+> **★ The pipeline read's three legs are converging on one question with one
+> observable: a claimed attempt released as "unreachable," from multiple
+> vantages, on an unobstructed target.**
