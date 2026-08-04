@@ -197,156 +197,31 @@ archetype · chronicle · chronicle-capture · lod0 · lod1 · inspect
   optional hardening. *The AUTON-2 deferral is unaffected — that is design
   intent, not fingerprint-dependent.*
 
-### Red (9) — causes known or queued
-- **bed** — root `beds_built`, fails at `plan_access` BEFORE stance/materials.
-  **UNRESOLVED, not "no bug"** (status revised 2026-08-04 at `460626a6e2`): the
-  discriminator ran (four probes, `probe_incomplete:false`, route found) and
-  its POSITIVE result turns out to be uninterpretable — see the instrument
-  caveat below. We established that the probe cannot adjudicate this question,
-  NOT that `plan_access` is correct.
-  **Next question is NOT capsule modeling** (see the correction below —
-  `plan_access` is a construction planner, not a reachability check), and it is
-  **not which call site bed reaches either**. It is: **was `plan_access` called
-  at all?** The self-rescue site is gated `take(0)` while ANY `is_access` job
-  lives colony-wide (see the seam finding below), so *"fails at `plan_access`"*
-  may be a **NON-CALL**. Falsify with the existing read-only probes
-  `access_job_dump` / `access_block_reason` BEFORE tracing any arm. 5b assigned.
-- **selfgen** — root `hauled` (haul stage; upstream of placement).
-- **farm** — ★★★ **NO LONGER UNEXPLAINED. Three red clauses collapse to ONE
-  root: 8 of 9 cells tilled.** Re-run at `460626a6e2`:
-  `FARM TELEMETRY: tilled=8 wheat=2 seeds=15 g1=15`, and
-  ```rust
-  if tilled_count(&server) == 9 { tilled = true; }   // requires ALL NINE
-  if grown_cells(&server, 1) >= 9 { sown = true; }   // requires NINE grown
-  ```
-  **The farm WORKS end-to-end** — `matured`, `harvested`, `cycled`,
-  `seed_positive` all true, 2 wheat, 15 seeds. **One cell of nine never gets
-  tilled**, and:
-  - `farm_sown:false` is **DOWNSTREAM** — ≥9 grown is impossible from 8 tilled.
-    A dependent clause, exactly like `any_needs_materials` under
-    `build_placed`.
-  - ★★★ **`farm_growth_rose:false` is an INSTRUMENT DEFECT — the clause is
-    UNSATISFIABLE in this run.** Chased it rather than handing it off:
-    ```rust
-    let g1 = server.bastion_sprite_growth(probe_cell).unwrap_or(0);  // = 15
-    for _ in 0..900 {
-        let g = ...;
-        if g > g1 { rose = true; }                     // needs g > 15
-        if g >= 15 || grown_cells(&server,15) > 0 {    // breaks AT 15
-            matured = true; break;
-        }
-    }
-    ```
-    **`g1 = 15` at window open** (it is right there in the telemetry). `rose`
-    requires `g > 15`; the same loop **breaks the moment `g >= 15`**. **The crop
-    was already mature before the watch began, so "did it rise" can never become
-    true and the loop exits on iteration one.**
+### Red (9) — NUMBERS FORMAT (ratified 2026-08-04): failing clause · measured · threshold · tip
 
-    **`farm_growth_rose: false` reports "growth didn't rise" when the truth is
-    "growth had already finished before we started watching."** Same family as
-    the `tool 0.0` sentinel and the `starvation_cycles: 0` ambiguity — **a
-    clause that CANNOT FIRE, reporting as a failure.** It is also measured at a
-    single `plot.min` cell standing in for a plot-level property.
+**Prose demoted to one clause of context.** The re-run pass found three rows
+whose *descriptions* were wrong while their statuses were right — **a
+description that IS the number cannot drift.** All measurements at
+`460626a6e2` unless noted.
 
-  > **★ So farm's three red clauses are: ONE instrument defect
-  > (`growth_rose`, unsatisfiable), ONE dependent (`sown`, downstream of
-  > tilled), and ONE possibly-real shortfall (`tilled`, 8 of 9). Only one of
-  > three carries a product signal.**
+| scenario | failing clause | measured | threshold / expected | verdict |
+|---|---|---|---|---|
+| **run** | `run_ran_faster` | **1.1407** (walk 0.263 → run 0.300), **deterministic ×4** | bar **1.15**; **design intent 1.25** (`TRAVEL_SPEED 0.8` / `RUN_SPEED 1.0`) | **NOT threshold** (bar < design) · **NOT noise** (4-run identity) · **NOT yet attributed** — real gap vs deterministic window overhead, **batch item 7** |
+| **farm** | `farm_tilled` | **8** tilled, **9** till jobs created | `tilled_count == 9` | **CLASS (a)** job created / work never performed. Missing cell `(24072,20239)` — a **corner**, not the `plot.min` probe corner. `farm_sown` is **downstream**; `farm_growth_rose` is **UNSATISFIABLE** (`g1=15`, needs `>15`, loop breaks at `>=15`) |
+| **auton3** | `auton3_scores_match` | got `(0.0, 0.0, 0.0800)` / `(0.0, 0.0, 0.1200)` | pred `(0.6, 0.0, 0.0800)` / `(0.4, 0.0, 0.1200)` | **FIXTURE DEFECT.** Harness `predict` hardcodes work-urgency `0.5`; engine gates it on `work_sig` (`URGENCY_WORK = 0.5`). Engine's `0.0` is **correct**; the harness omits the gate. Only component 3 discriminates — component 2 is a constant |
+| **b55** | `remainder_progressed` | `jobs_in_half` 18 → 0, `board_after_whole` 0, orphans 0, stone 200 → 200 | needs `total < remainder_before` | **UNINTERPRETABLE** — `remainder_before` is **never emitted**, so "stalled" and "nothing left to progress" are indistinguishable |
+| **path** | `path_no_starvation` | `grants` 10452 · **`peak_tick_iters` 3000** · `peak_wait` 75 | **`cap` 3000** | **SATURATED AT CAP.** `cap_held: true` reads as reassurance and means *pinned at ceiling*. `peak_wait` is lifetime-cumulative (cannot localise; delta-capture filed) |
+| **bed** | `beds_built` | colonist stands at **z=445**, plateau floor **449**, spawn **457**; min-dist to bed never < **7.7** over 6000 ticks | reach a bed | **FIXTURE GEOMETRY DEFECT** (5b's walk-test + block query): natural cavity under the plateau; the fill seals `gz-6..gz` from above without reaching real ground. **Not `plan_access`, not the probe** |
+| **selfgen** | `hauled` | `mine=4 build=4 plans_done=0 fires=0` | — | root is the **haul stage**, upstream of placement; unclassified |
+| **zone** | `zone_freed` | `colonists 4 · in_control 5 · in_zone 870 · jobs 1` | — | sole false term; unclassified, **now with a tip** |
+| **b55-deep** | `active_route_owners_at_deadline` | **2 emitted bits behind 21 conditions** | — | **NOT RE-RUN** — a run cannot say anything new until the verdict/diag split lands (report-fix candidate 7) |
 
-  **The "mystery under both stances" was a count threshold all along.**
-
-  ★★★ **TILL COUNT = NINE. Class (a): job created, work never performed.**
-  From the same log (ANSI stripped — see the trap note below):
-  ```
-  TILL jobs at z=455 : 9 distinct XY   (full 3x3 grid = 9)   missing: NONE
-  SOW  jobs at z=456 : 8 distinct XY                          MISSING: (24072, 20239)
-  ```
-  **All nine till jobs EXIST; `tilled_count` reached 8.** One till job was
-  created and never completed — so the silent-skip classes (foreign sprite,
-  `occupied` suppression, terrain-read bail) are all EXCLUDED. **Farm is a true
-  member of the last-unit family, which stands at three.**
-
-  ★ **POSITION: the missing cell `(24072, 20239)` is a CORNER of the 3×3**
-  (min-x, max-y) — structurally distinguished, YES. **But it is NOT `plot.min`
-  `(24072, 20237)`, the `growth_rose` probe corner**, which tilled, sowed and
-  grew to 15 normally. **So the one-worldgen-accident-explains-everything story
-  is dead: three red clauses, two independent causes** — an unsatisfiable watch,
-  and one uncompleted corner till. The missing SOW at the same XY is downstream
-  (you cannot sow an untilled cell) and corroborates rather than adds.
-
-  ### ★ TRAP: the first grep returned ZERO — an ANSI artifact
-  `sow=false` **never matches literally**: tracing's colour codes sit INSIDE the
-  field value (`sow`·ESC·`=`·ESC·`false`). **This is the documented run-11 trap**
-  (*"ANSI codes sit INSIDE field values, so EVERY zero-count log grep was an
-  artifact"*) and I walked into it — caught only by printing raw lines instead
-  of trusting the count. **Strip ANSI before any log grep whose answer is a
-  count.** Zero-as-artifact, one more costume.
-- **zone** — `zone_freed:false`. **RE-RUN at `460626a6e2` 2026-08-04: still
-  RED**, exit 1. Fresh telemetry: `zone_colonists:4, zone_in_control:5,
-  zone_in_zone:870, zone_jobs:1` — the only false term is `zone_freed`.
-  Still unclassified, but now with a tip.
-- **run** — ★★ **THE MAP'S OWN DESCRIPTION WAS WRONG.** It read *"Running not
-  faster than walking."* **Running IS faster.** Re-run at `460626a6e2`:
-  `RUN TELEMETRY: walk=0.263 run=0.300` → **run is 14.07% faster**, and the
-  clause is
-  ```rust
-  let ran_faster = run_rate > walk_rate * 1.15 && walk_rate > 0.01;
-  ```
-  **It requires >15% and misses by under one percentage point.** Every other
-  term passes (`drained`, `regened`, `reverted`, `no_embeds`).
-  **Reclassified: a NEAR-MISS against a threshold, not a movement-layer
-  failure.** Three live readings, none yet excluded: the run multiplier is
-  genuinely slightly short; the 15% bar is uncalibrated; or the 45-tick
-  displacement sample is noisy (terrain/path effects). **Cheap next step: re-run
-  N times and see whether 14.07% is stable** — if it is, this is a threshold
-  conversation, not a bug.
-- **auton3** — `scores_match:false`. ★★ **SHARPENED to a ONE-COMPONENT
-  mismatch.** Re-run at `460626a6e2`:
-  ```
-  a=Some((0.0, 0.0, 0.080000006))   pred_a=(0.6, 0.0, 0.080000006)
-  b=Some((0.0, 0.0, 0.120000005))   pred_b=(0.4, 0.0, 0.120000005)
-  ```
-  `scores_match` is an exact tuple compare (`got_a == Some(pred_a) && got_b ==
-  Some(pred_b)`). **Components 2 and 3 match EXACTLY on both colonists —
-  including the discriminating third value (0.08 vs 0.12), so the modulation
-  demonstrably works.** Only the **first component reads 0.0 where the model
-  predicts 0.6 / 0.4.** `differ`, `guard_holds`, `no_invented_flee` all pass.
-  **This is one term being dropped or never recorded, not a broken score
-  model** — a much smaller row than "modulation recording".
-- **b55** — `remainder_progressed:false`. **RE-RUN at `460626a6e2`: still RED.**
-  The clause is
-  ```rust
-  let remainder_before = server.bastion_job_audit().total;
-  // ... watch window ...
-  if server.bastion_job_audit().total < remainder_before { remainder_progressed = true; }
-  ```
-  i.e. **the audit total must STRICTLY DECREASE** inside the window.
-
-  ★★ **`remainder_before` IS NOT EMITTED.** So a reader cannot distinguish
-  *"the remainder stalled"* from *"there was nothing left to progress"* —
-  `total < remainder_before` is **unsatisfiable when `remainder_before` is
-  already at its floor.** Fresh run reports `jobs_in_half_before: 18`,
-  `jobs_in_half_after: 0`, `board_after_whole: 0`, `orphans: 0`, `p2_cleared:
-  true`, `p1_jobs: 36`, `p2_jobs: 200`, stone conserved 200 → 200.
-
-  > **This is exactly the case `auton`'s `storm_baseline_captured` prerequisite
-  > exists to catch** (`frozen_at == 0` makes `count == frozen_at` vacuous).
-  > **`remainder_progressed` needs the same treatment: emit its baseline and
-  > gate on it.** Precedent is in our own tree, from the report-fix row.
-
-  **Until then this red is UNINTERPRETABLE, not merely unclassified.**
-- **path** — `path_no_starvation:false`. **RE-RUN at `460626a6e2`: still RED**,
-  every other term passing (`cap_held`, `resolved`, `scheduler_active`,
-  `no_embeds`). Fresh telemetry:
-  `grants=10452  peak_tick_iters=3000  peak_wait=75  cap=3000`.
-  ★ **`peak_tick_iters` EQUALS `cap` exactly** — the scheduler is running at its
-  iteration ceiling, with 18 colonists and 46 mine jobs. `cap_held: true` means
-  the cap was respected, **not** that there was headroom. The known instrument
-  limit stands (`peak_wait` is lifetime-cumulative and cannot localise in time;
-  delta-capture filed), **but saturation-at-cap is a new, separate reading that
-  the cumulative metric was hiding.**
-- **b55-deep** — 21 conditions behind 2 emitted bits (report-fix candidate 7);
-  `active_route_owners_at_deadline:0`; unclassified.
+**Two of the nine are INSTRUMENT-SUSPECT, not game bugs** (`auton3`'s ungated
+prediction, and `b55` which cannot be read at all) — plus **seed 66's sentinel**
+inside the corpus. **2 of 12 corpus failures instrument-suspect tracks the
+historical ~10.4% fixture-false-failure prior almost exactly**, which is why
+that prior is the FIRST question of every triage: **asked first twice today,
+paid both times.**
 
 ### New instruments (2) — green at birth, red-by-design verified
 - **blocked_retract** — exercises #61's remove_job prune (prune-disabled build
