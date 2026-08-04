@@ -304,7 +304,7 @@ is still refused.
 | gate | what it must show | why this gate |
 |---|---|---|
 | **G1 — column scan** (seed 90 cell) | whether the holdout site is single-surface or multi-layer | The probe caveat's **soundness direction is a property of the error model**: body-width error ⇒ negatives sound; multi-layer collapse ⇒ **both directions unsound**. Until the column is scanned, "laterally unreachable" is an inference from an instrument that may be wrong in the direction that matters. **G1 gates the row's premise, not its implementation.** |
-| **G2 — FR15 paired A/B** | the stuck-economy's tuning under the new escalation | Mandatory: a new escalation path **invalidates the stuck-economy's tuning** by construction. Paired A/B, same seeds, both arms. |
+| **G2 — FR15 paired A/B** | the stuck-economy's tuning under the new escalation | Mandatory **for ROW B only** — see R3. A new escalation path **invalidates the stuck-economy's tuning** by construction. Paired A/B, same seeds, both arms. **Row A does not trip this**: the census in R3 proves `blocked_regions` has zero behavior consumers. |
 | **G3 — corpus exact-match** | zero drift on all 48 seeds **with `source` counts read** | ★ **Not exact-match alone.** Exact-match on the current schema would return GREEN for a fix that never fires — the corpus has no field that reports `blocked_regions` contents. **The row must add the reporting field before it adds the behavior**, per the acceptance framework's own ordering. A GREEN with no named field that moves is a measurement of nothing. |
 | **G4 — prune-side check** (§5) | `retain` correctness on a populated store | new; produced by the sibling-caller check |
 
@@ -317,6 +317,10 @@ here: **name the field that moves before writing the code that moves it.**
 ## §8 — BUILDER PROMPT: START-HERE TIER
 
 Per the prompt-craft ordering (START HERE / THEN / REFERENCE-ONLY).
+
+> **★ Scope: this tier serves ROW A (report-only) — see R3.** Row B (the
+> escalation) is a separate row and does not start until Row A's corpus field
+> can see the phenomenon Row B changes.
 
 **START HERE** — read these four, at `a85dec2912`, before writing anything:
 
@@ -374,12 +378,69 @@ own reason invisible at the consumer. Any per-site reasoning about *which*
 release fired must be done at the producer. This already caused one correction to
 the instrument spec.
 
-### R3 — threshold tuning is a behavior change under FR15
+### R3 — ★ CORRECTED: the recording half IS report-only. Census run, claim refuted.
 
-Even though the new entries only *record*, `blocked_regions` is read by the
-job-selection path via the `blocked_by` machinery. **A recorder that populates a
-store somebody reads is not report-only.** G2 is not optional and the builder
-must confirm the read path's behavior on a populated store.
+**R3 originally read:** *"even though the new entries only record,
+`blocked_regions` is read by the job-selection path via the `blocked_by`
+machinery — a recorder that populates a store somebody reads is not
+report-only."*
+
+**That was inferred from an accessor's NAME, not from its callers.** I ran the
+census. **Every consumer of `blocked_regions` at `a85dec2912`, whole tree:**
+
+| consumer | site | class |
+|---|---|---|
+| `blocked_by()` | `server/src/lib.rs:2243`, `sys/msg/in_game.rs:696` | **report** — both build `BastionInspectKind::Job(BastionJobInspect{..})`, the inspector struct |
+| `blocked_by()` / `blocked_sources()` | `server/src/lib.rs:3384`, `3395` | **report** — the `bastion_*` harness accessors |
+| `bastion_blocked_regions_count()` | `server/src/lib.rs:3367` | **report** |
+| all harness call sites | `bastion-harness/src/main.rs` ×8 | **report** — corpus fields |
+| chat drain | `bastion_jobs.rs:15397` | **report** — player-visible message |
+| `retain` ×2 | `bastion_jobs.rs:4926`, `5153` | **prune** — write-side, not a behavior read |
+| `already_recorded` dedupe | `bastion_jobs.rs:12884` | **internal to the recorder** |
+
+> **There is no behavior consumer. `blocked_regions` is a pure report store.**
+> Not "mostly", not "as far as the row is concerned" — the grep across the tree
+> returns inspector, harness, and chat, and nothing else.
+
+**This is the same defect the campaign has now hit six times: I characterised
+`blocked_by` from its name.** A function called `blocked_by` sounds like a
+predicate the scheduler consults. It is a field on an inspect struct.
+
+### ★★ THE CORRECTION SPLITS THE ROW — and the packet's own G3 already ordered it
+
+The invariant's three clauses do **not** carry the same risk, and I had them
+bundled:
+
+| clause | mechanism | behavior risk |
+|---|---|---|
+| (i) **notice** | read `stuck_strikes` (already incremented) | **none** — a read |
+| (iii) **say so** | the two new `blocked_regions` entries | **none** — proven above |
+| (ii) **stop paying for it** | actually drop/bench the job as the `Haul` arm does | **full** — changes what work the colony attempts |
+
+**ROW A (report-only): (i) + (iii).** Reads a counter that already exists,
+records into a store nothing consults for behavior, adds the corpus field. **No
+FR15 exposure. G2 does not apply.** It can land on its own.
+
+**ROW B (behavior): (ii).** The escalation. **Full FR15 paired A/B**, because a
+new escalation path invalidates the stuck-economy's tuning by construction.
+
+> **★ The packet's own G3 already demanded this ordering — "ship the reporting
+> field before the behavior" — and I wrote it without noticing it implied a row
+> split.** The census makes the split free: Row A is exactly the instrument Row B
+> needs, and it costs no behavior risk to build.
+
+**And it fixes a real problem with the row as originally scoped:** Row B's
+paired A/B has nothing to measure without Row A. The corpus cannot currently see
+`blocked_regions` contents at all, so an escalation row landing first would be
+gated by a fan that is blind to the thing it changes — the exact failure that
+let the colony-global access bar survive for weeks.
+
+**Residual risk on Row A, stated rather than dismissed:** the chat drain
+(**15397**) fires a player-visible message per newly-recorded region. Moving
+`blocked_regions` from near-always-empty to routinely-populated therefore
+changes message volume. That is a **UX** exposure, not a sim-determinism one —
+but it is the false-alarm spam the #55 comment explicitly refuses (§7), so the
+threshold decision in §4 is load-bearing for Row A, not just Row B.
 
 ---
 
@@ -392,3 +453,25 @@ must confirm the read path's behavior on a populated store.
   They were **not reviewed** — stated as a gap, not resolved by silence.
 - It does not claim exact-match will detect this fix. **§7/G3 says the opposite**
   and requires a new field first.
+- It does not claim the packet was right on first draft. **R3 was written from an
+  accessor's name and refuted by the census I ran an hour later** — the
+  correction is left in place with the original wording quoted, because a
+  packet that hides its own reversals teaches nobody what to re-check.
+
+## §11 — SURVIVALS (claims that were checked and HELD)
+
+*Recorded because a ledger that carries only bad news stops being run.*
+
+- **`blocked_regions` has exactly one producer.** Checked against the whole tree,
+  not just the jobs file. Held.
+- **`BlockedRegionInfo.notified` genuinely supports emitter-less producers**
+  (**3724-3729**) — the new entry points need no chat plumbing. Held; this is
+  why Row A is small.
+- **The `already_recorded` dedupe keys on exact `Region`** (**12884**), and
+  `blocked_sources`' doc already warns that two producers pushing *different*
+  Region values for the same target will not collapse (**5276-5283**). **Checked
+  as a hazard for the new producers and it is REAL but ALREADY DOCUMENTED** — the
+  builder inherits a written warning rather than a surprise.
+- **The enclosure sweep's exemption is backed by a live re-tester**, not by
+  assertion (**15562-15564**). Held — this is the one "transient" claim in the
+  file with a named mechanism behind it.
