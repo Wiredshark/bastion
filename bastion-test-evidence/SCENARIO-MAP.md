@@ -96,8 +96,15 @@ zero is ambiguous between "never starved" and "never open."
 ## Do NOT trust these fields
 
 - **`b5_55_*` family** (`blocked_by`, `names_blocker`, `clears_on_cancel`,
-  `notified_once`, `diag`) — **constant across all 48 seeds, inert.**
-  `55_diag`'s `unreachable: true` looks like a diagnosis and is not.
+  `notified_once`, `diag`) — **constant across all 48 seeds.**
+  ★★ **CORRECTED: not "inert" — CONSTANT-BECAUSE-GATED.** The machinery works
+  perfectly; its only entry point is inside `plan_access`'s `None` arm, **behind
+  the z-gated carve-request predicate**, so the dominant failure mode (lateral
+  unreachability) **can never reach it.** *A field whose feeding path excludes
+  the dominant case reads inert while working exactly as built.*
+  **Consequence for the report-fix window: these fields need the LATERAL ENTRY,
+  not a repair.** `55_diag`'s `unreachable: true` still must not be read as a
+  diagnosis.
 - **`b5_drift_events`** — documented non-discriminating, and verified so.
 - **`tool_stone`/`tool_steel` at `0.0`** — that is the `.unwrap_or(0.0)`
   sentinel, **below the metric's own 1.0 floor**. Seed 66's failure is very
@@ -985,7 +992,16 @@ the protocol working exactly as intended.
 **Distinguish GUARDS from DIAGNOSTICS, though.** `flat_hint_decoupled` and
 `slope_cancel_clean` are also constant-true across 48 — but those are
 *assertions that always hold*, i.e. regression guards doing their job. **A
-constant guard is healthy; a constant diagnostic is inert.** My earlier line
+constant guard is healthy; a constant diagnostic is inert.**
+
+★★ **THIRD SPECIES ADDED (2026-08-04): CONSTANT-BECAUSE-GATED** — a field whose
+feeding path structurally excludes the dominant case. **Neither healthy nor
+broken: it works, and never sees the thing you are looking for.**
+*Distinguish it by reading the ENTRY PATH, not the value distribution — the
+distribution is IDENTICAL to inert.* **Disposition differs completely: an inert
+diagnostic needs repair; a gated one needs a missing CALLER.**
+
+My earlier line
 ("a field that reports the same value in passing and failing runs is not a
 diagnostic") needs that carve-out.
 
