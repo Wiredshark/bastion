@@ -15569,3 +15569,25 @@ into #41's planted suite — "designation goes blocked, completes naturally,
 verdict must retract" — one fixture proving both the prune and #41's recovery
 path. Standing: NOTHING pushes during a fan (docs included); and from wave19
 forward per-seed verdicts are a dict lookup (report-fix dividend).
+
+## #41 FORK: MY ADDRESSING RULED WRONG BY FARM — STAMP ON THE JOB (08/03)
+
+5b's Farm survey refuted the `(kind, is_access)` key within hours of my ruling
+it: Farm reuses ONE `job.pos` whose meaning FLIPS BY PHASE (till = solid ground,
+on-top correct; sow/harvest = the crop cell itself, on-top = the placement bug).
+No kind-keyed lookup recovers per-instance meaning. **RULED (DECISIONS #43,
+reversing my #42 addressing): the affordance is STAMPED ON THE JOB at creation,
+REQUIRED, no `Default`** — the creator declares what job.pos means; the fifth
+Mine assumption becomes a COMPILE ERROR, not a scenario failure. Table survives
+as vocabulary; stamp is the addressing; AccessStep stamps its row (subsumes
+is_access). One premise-check before the field lands: Job must not be
+serde-persisted anywhere (required-no-Default breaks old deserialization).
+
+**FARM HELD OUT of #41's acceptance (Opus catch, endorsed):** `farm_tilled:
+false` fails while HOLDING the stance this row calls correct — a counter-control
+5b walked past; Farm may carry a second cause. Free discriminator = re-entry
+condition: fix sow/harvest, and if sown flips while tilled stays false, Farm
+has two causes and the second gets its own row.
+
+My second addressing-too-coarse error in one design (kind, then kind+is_access)
+— both caught by evidence before code. The concept held; the addressing didn't.
