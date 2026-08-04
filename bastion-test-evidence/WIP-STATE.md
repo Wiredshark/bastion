@@ -1,42 +1,63 @@
-# WIP-STATE — 2026-08-04, Opus lane (first-line reviewer / fan owner)
+# WIP-STATE — Row B′ paired A/B (Opus lane, fan owner)
 
-**IN FLIGHT:** 48-seed paired A/B fan for Row B.
+**Row B′ committed `7590dfa962`** (parent `f7072cd346`), on
+`bastion/wip-batch-verify`. Falsifier survived; **crossing counts base=2 /
+variant=2, identical job IDs, positions and strikes — nothing manufactured.**
+Both the outcome claim and the mechanism claim are proven at n=1.
 
-    ZONE=us-east1-b STAGGER=25 BRANCH=bastion/wip-batch-verify \
-      bash vm-pool.sh 4 e2-standard-8 12 49 "--b5-rowb-paired" 25 90 \
-      > bastion-test-evidence/corpus-waves/wave27-ROWB-PAIRED-fanlog-f7072cd346.txt
+## THE REGISTERED DISCIPLINE NEEDS **TWO** FANS, NOT ONE
 
-Remote tip verified `f7072cd346` before launch. **Diag deliberately OFF** — the
-fan is the measurement, the diag is the investigation, and the measurement must
-not pay the investigation's cost.
+The gate requires a **repeat-run control per arm**, and a single
+`--b5-rowb-paired` fan cannot supply it: it gives base-vs-variant per seed, but
+nothing to measure *either arm's own* run-to-run spread against. **We know that
+spread is nonzero** — that is what the whole observer-effect bisection
+established, and what made the last A/B's ±1 unreadable.
 
-## When it lands
+**So: run `--b5-rowb-paired` TWICE at the same commit.** Then:
 
-1. **Attest first**: `grep COMMIT= /tmp/bastion-pool/bastion-pool-*.log` — expect
-   `f7072cd34` on all four, `DONE=12` each.
-2. **Collect**: `python collect_wave.py corpus-waves/wave27_ROWBPAIRED_f7072cd346_FULL.json /tmp/bastion-pool/bastion-pool-*.log`
-   (refuses on missing/mixed attestation or zero usable seeds — exit 2 means do
-   not use the result).
-3. **Read the DELTA DISTRIBUTION**, not any single seed. The question is whether
-   the n=1 `mine_blocks_mined 25→26` is a distribution shift or a favourable
-   draw. **Seed 90 alone proves nothing** — that was the whole reason for this fan.
-4. **Report raw**, then hand 5b the EDGE seeds for targeted diag-ON re-runs:
-   any seed where the variant did **worse**, and any where a job crossed the
-   threshold but the outcome **didn't move**. Decided before the data so it
-   cannot be fitted to it.
-
-## Standing state
-
-| item | state |
+| comparison | what it measures |
 |---|---|
-| **Row A** | SHIPPED, green (#58). Seeds 71 & 90 reported for the first time. |
-| **Row B** | LANDED `f7072cd346`. Benches the named holdout (17989,9263,338): fire→3/2/1/0→graduate→clear. Ship gate = this fan. |
-| **Observer effect** | MEASURED + bisected. Per-cell diag reads perturb scheduling; read budget (cells × reads × cadence) now in the acceptance framework. |
-| **Playthrough** | HELD until the fan lands. Scorecard drafted (13 features, player language); read-budget check applied to its metrics plan. |
-| **3 bisection worktrees** | HOLD — the observer effect's demonstrator rig. Do not clean. |
+| `base(fan1)` vs `base(fan2)` | **the base arm's noise floor** |
+| `variant(fan1)` vs `variant(fan2)` | **the variant arm's noise floor** |
+| `base` vs `variant`, within each fan | **the effect** |
 
-**Canonical noise-floor method:** parallel legs, separate `--data-dir`s. A zero
-here is what licenses attributing any later drift to a change.
+> **★ THE EFFECT COUNTS ONLY IF IT EXCEEDS BOTH ARMS' NOISE.** Last time we read a
+> ±1 against an unmeasured floor and it turned out to be a favourable draw. This
+> design measures the floor *in the same run shape* as the effect, which is the
+> only way the comparison is legible.
 
-**Open, filed not fixed:** `mine_timeout_position_diag` is cumulative-ever-timed-out,
-not currently-open — a name suggesting current state over historical content.
+## Invocation (both legs identical)
+
+```bash
+ZONE=us-east1-b STAGGER=25 BRANCH=bastion/wip-batch-verify \
+  bash vm-pool.sh 4 e2-standard-8 12 49 "--b5-rowb-paired" 25 90 \
+  > corpus-waves/wave2N-ROWBPRIME-fanlog-7590dfa962.txt 2>&1
+```
+
+~10 min cooldown between fans (machine-image create-rate). **Nothing gets pushed
+while either fan is in flight — the post-commit hook auto-pushes, so hold all
+commits.**
+
+## When both land
+
+1. **Attest**: `COMMIT=7590dfa9` ×4 per fan, `DONE=12` each.
+2. **Collect** each: `python collect_wave.py corpus-waves/wave2N_ROWBPRIME_..._FULL.json /tmp/bastion-pool/bastion-pool-*.log`
+   (exit 2 ⇒ do not use).
+3. **Noise floors first, effect second.** Read the two same-arm comparisons
+   *before* looking at base-vs-variant, so the effect is judged against a floor
+   that was measured rather than assumed.
+4. **CONDITION ON THE EXPOSURE POPULATION** — 52 54 61 62 66 71 76 80 85 90 92.
+   The 48-seed aggregate diluted the last result ~4:1 and hid it.
+5. Pre-registered: **seed 76 must not regress**; release counters move only where
+   benching fires; the 11 exposed seeds behave as before or better.
+
+## Ship gate
+
+Net benefit, or **provable harmlessness** at corpus scale. If the conditioned
+read shows indifference again, the claim ships as **correctness + player
+visibility** with a null aggregate — and Fable takes that re-scope to Ben with
+the numbers.
+
+**Then, and only then: the live playthrough.** Scorecard is drafted at
+`LIVE-PLAYTHROUGH-PREP.md` (13 features, player language, read-budget check
+applied).
