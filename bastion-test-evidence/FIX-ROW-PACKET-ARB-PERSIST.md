@@ -478,6 +478,32 @@ two producers, two messages, and `source` tells the drain which to emit.
 **Filed against the incumbent, not fixed here:** `plan_access`'s wording
 overclaims by the same argument. Out of this row's scope, stated rather than
 silently inherited.
+
+#### ★★ The standard is not mine — the file's OTHER player message already meets it
+
+Swept every player-facing string in `bastion_jobs.rs` at `a85dec2912`. **There
+are three emissions and two distinct messages**, and they sit on opposite sides
+of exactly this line:
+
+| message | what it CLAIMS | what its GUARD measures | |
+|---|---|---|---|
+| *"Crowded here — I'll work where they're short-handed."* (**16212**) | a **saturation comparison** | `here >= there + COORD_BARK_MIN_DIFF` — **a saturation comparison** | ✅ |
+| *"A designation is blocked — **obstruction** at (x,y,z) can't be reached."* (**12889**, **15400**) | a **terrain cause** | `plan_access` returned `None` — **the planner found no route** | ❌ |
+
+The bark's own comment states the discipline outright: *narrate a **REAL** flow*.
+Its guard fires only when the colonist genuinely leaves a more-saturated cell for
+a less-saturated one, and **the sentence says precisely that and nothing more.**
+
+> **THE RULE, and the codebase already follows it once:
+> a player-facing message may assert only what its own guard measures.**
+
+That is `sufficiency-claims-must-name-their-case` applied to user-facing text,
+and G1 supplied the counterexample that proves the blocked-message guard cannot
+support its sentence: at seed 90 the planner's failure and the terrain's actual
+state **disagree**, and the message reports the terrain.
+
+**So the reword is not a new standard imposed by this row — it is the standard
+the sibling message in the same file already meets.**
 | **G2 — FR15 paired A/B** | the stuck-economy's tuning under the new escalation | Mandatory **for ROW B only** — see R3. A new escalation path **invalidates the stuck-economy's tuning** by construction. Paired A/B, same seeds, both arms. **Row A does not trip this**: the census in R3 proves `blocked_regions` has zero behavior consumers. |
 | **G3 — corpus exact-match** | zero drift on all 48 seeds **with `source` counts read** | ★ **Not exact-match alone**, and **not for the reason I first gave.** See the G3 verdict below — the corpus *does* report `blocked_regions`, at the **wrong coordinates**. |
 
