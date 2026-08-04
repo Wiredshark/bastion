@@ -1776,3 +1776,50 @@ displacement sample. **The batch item needs the displacement sample**, and the
 flag must reach **both the `tick()` AND the `/ 45.0` divisor, on both the walk
 and run sides** — otherwise a longer window silently deflates the rate and
 produces a wrong number that looks fine.
+
+## ★★★ BATCH RECONCILIATION TABLE — pre-registered BEFORE the runs
+
+**Built prospectively so results cannot be fitted to an interpretation after the
+fact**, and so the FIELD-AGREEMENT guard has a baseline ready rather than one
+constructed from the answer. Every value below is corpus-known at `wave19`
+(deterministic, reproduced across independent fans).
+
+| seed | mined | `access_emis_max` | `members_seen` | starv / crowd | claims | timeouts |
+|---|---|---|---|---|---|---|
+| **71** | 5/27 | **3** | 1 | 360 / 360 | 22 | 17 |
+| **66** | 27/27 | **2** | 2 | 222 / 222 | 27 | 9 |
+| **61** | 26/27 | **0** | 0 | 306 / 287 | 5 | 3 |
+| **90** | 25/27 | **2** | 2 | 332 / 332 | 8 | 6 |
+| **92** | 27/27 | **1** | 1 | — | — | — |
+| **80** | 27/27 | **3** | 3 | — | — | — |
+
+*(92 and 80 have no `mine_cell_diag` entries — they mined 27/27, so no cell
+carried an outstanding job at sample time. Their reds are chop-side.)*
+
+### Agreement checks the batch MUST pass before its results are read
+
+1. **`emergency_emissions + self_rescue_emissions + proactive_emissions` must
+   reconcile with `access_emis_max`** where `members_seen == 1` (max == total).
+   **Confirmed already for 71: 3 == 3.** **66, 92 and 80 have
+   `members_seen` 2, 3 and 3, so max ≠ total there — the check is an INEQUALITY
+   (`total ≥ max`), not an equality.** *Stating that now, before someone reads a
+   legitimate `total > max` as a defect.*
+2. **`starvation_cycles` re-read must match the corpus exactly** (360/222/306/332)
+   — these are deterministic; **any drift means the binary or the seed changed,
+   not the colony.**
+3. **Seed 61's `access_emis_max: 0` predicts `self_rescue_calls` may be 0 too** —
+   if the counters show calls with zero emissions instead, that is new
+   information, not a contradiction.
+
+### Pre-stated branches, per item
+
+| item | outcome A | outcome B |
+|---|---|---|
+| **71 / 66 traces** | attempts EXIST and fail ⇒ **shape A** (aging/cooldown family) | **ZERO attempts** recorded ⇒ **shape B** (cap/round-robin family) |
+| **61 / 90 window** | completes late ⇒ **window-sizing artifact**, corpus-defect ledger | never completes ⇒ **real stall**, frozen-block identity is the lead |
+| **92 raised cap** | probe completes ⇒ **UNKNOWN → known**, and its `ch_mixed` anomaly gets a second look | still incomplete ⇒ the cap is not the binding constraint |
+| **80 column scan** | single-surface ⇒ **its no-route negative STANDS** under the body-width caveat | multi-layer ⇒ **negative unsound**, caveat everywhere it is cited |
+| **`run` window** | ratio climbs toward **1.25** ⇒ window overhead after all | stays **~1.14** ⇒ **real speed shortfall**, constants are the spec |
+
+> **★ Every branch is informative.** No item can come back "inconclusive" — the
+> null outcomes are named and each one redirects a row rather than failing it.
