@@ -188,6 +188,30 @@ cascade is real.
   `verdict` must fail the build or a test, not vanish quietly.
 - Every field a comment marks "REPORTED, not gating" lands in `diag`.
 
+## `b55-deep` — a SEVENTH candidate, classified but NOT built
+
+Out of the six-scenario scope, classified read-only and recorded here so the
+finding isn't lost.
+
+```rust
+let pass = functional_pass && runtime_hygiene_clean;   // 18 terms && 3 terms
+```
+**21 conditions collapsed into 2 emitted bits** — the most extreme instance
+in the harness. Most of the 21 *are* emitted (`b55_deep_overlap_volume_exact`,
+`_cycle_exact`, `_merge_exact`, …), so failure is attributable **only if you
+already know the composition**, which lives nowhere but the source.
+
+**And it carries flavour 7 in its purest form:** `failsafe_hygiene_clean`
+appears in **both** aggregates. One fault therefore reports as *"failed
+functionally AND on runtime hygiene"* — two categorically different failures
+from a single cause, in a report that presents the two as orthogonal.
+
+**Fix when someone takes it:** promote the 21 to real verdict terms, keep
+`functional_pass` / `runtime_hygiene_clean` as **derived summaries under
+`diag`**, and **de-duplicate the shared term** so one fault reads as one
+fault. `emergency_access_after_soak == (0,0,0)` is a tuple equality and gets
+the composite treatment — a red must say which component moved.
+
 ## Future work (recorded so it isn't re-derived)
 
 **Split scenarios out of `bastion-harness/src/main.rs` into modules.**
