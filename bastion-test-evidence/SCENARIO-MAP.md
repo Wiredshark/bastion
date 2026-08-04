@@ -12,6 +12,70 @@ provenance together. Statuses: GREEN · RED · EXPECTED-RED (tracked-red with
 fingerprint; red until a named future stage) · RETIRED-GREEN (was red, fixed,
 now a regression guard) · NEEDS-REVERIFY (a merged row likely changed it).
 
+---
+
+# ★ READ THIS FIRST — actionable state as of 2026-08-04 (`ebdc3480f3`)
+
+**The sections below this summary are a chronological research log from one
+session of reading fan data already on disk (zero new runs). This block is the
+part you act on.** Everything here is measured, not argued; each claim's working
+is in the section named.
+
+## Three CLEAN SPECIMENS — one per failure mode, no fixture needed
+
+Deterministic, in the standing 48-seed fan, **attested at the merged tip
+`d3235e5329`** (9/9 properties identical to wave19).
+
+| mode | seed | what makes it clean | investigable? |
+|---|---|---|---|
+| **build** | **62** | mine + chop both cleared, `rescue_fired: false` — only build failed | **no — build has zero diagnostic fields** |
+| **mine** | **90** | 3 cells, all claimed by named colonists, `cycles: 0`, nothing blocking, no progress | yes (`mine_cell_diag`) |
+| **chop** | **78** | path exists from spawn (complete, 228 cols), nothing blocking, `log_sum: 0` | yes (probe + `blocked_sources`) |
+
+## Instrument work, in priority order — all read-only, no behavior change
+
+1. **`build_cell_diag`** on the `mine_cell_diag` pattern. **Build is the largest
+   failure mode (6 of 12) and has NO diagnostics** — every build field is a
+   constant across all 48 seeds. Seed 62 can be isolated but not investigated.
+2. **Add `blocked_sources` to `mine_cell_diag`** (already wired for chop). One
+   line; converts seeds 54 and 61 from "blocked by something" to "blocked by a
+   named mechanism."
+3. **Per-call-site access-emission counters** — the un-park condition for the
+   seam row (DECISIONS #52).
+
+## Do NOT trust these fields
+
+- **`b5_55_*` family** (`blocked_by`, `names_blocker`, `clears_on_cancel`,
+  `notified_once`, `diag`) — **constant across all 48 seeds, inert.**
+  `55_diag`'s `unreachable: true` looks like a diagnosis and is not.
+- **`b5_drift_events`** — documented non-discriminating, and verified so.
+- **`tool_stone`/`tool_steel` at `0.0`** — that is the `.unwrap_or(0.0)`
+  sentinel, **below the metric's own 1.0 floor**. Seed 66's failure is very
+  likely instrument, not product.
+- **Constant ≠ broken:** `flat_hint_decoupled` and `slope_cancel_clean` are
+  constant-true **regression guards doing their job**. Ask what a field is FOR
+  before judging its constancy.
+
+## Corrections issued this session (do not cite the superseded versions)
+
+| claim | status |
+|---|---|
+| "`plan_access` models a capsule" | **WRONG** — it is a construction planner |
+| "zero `probe_incomplete` corpus-wide" | **WRONG** — a type guard dropped every chop probe; seed 92 is incomplete |
+| "the corpus has zero access-plan visibility" | **WRONG** — `b5_cascade_probe.access_emissions_max` exists (nested) |
+| "a seam-row green would be a FALSE GREEN" | **too broad** — the corpus demonstrably moves |
+| "seed 71 should improve if the bar is removed" | **REFUTED** — it emitted 3 plans, never starved |
+| "perfect clause pairing = one mechanism twice" | **true for 3 of 4 pairs**; mine hides a 19–96% spectrum |
+
+## Claims CHECKED that HELD
+
+Task #61's *"the corpus's only genuinely-unreachable chop case (seed 80)"*;
+`vm-pool.sh`'s *"+dirty = LFS noise, code clean via reset --hard"*;
+`drift_events`' documented non-discrimination. **The comments in this tree are
+mostly right — record survivals so the checking habit stays credible.**
+
+---
+
 ## Last full accounting (sweeps at `2b1b3ef0` era + subsequent verified changes)
 
 ### Green (23) — sweep-verified at 2b1b3ef0
