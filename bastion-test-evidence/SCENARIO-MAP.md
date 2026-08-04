@@ -1870,3 +1870,46 @@ I claimed both 45-loops lived in `run_scenario`. **The CarvedStair loop is in
 editing. **The substance of the catch held (`ck_settle_iters` is not the run
 window); the location claim did not.** Eleventh correction, caught by the
 builder, pre-build.
+
+## ★ ENGINE TIP: `cf5757e31b` → `a85dec2912` — batch item 7's instrument lands
+
+Single-commit fast-forward, verified (`FETCH_HEAD^ == cf5757e31b`, and
+`merge-base(branch, remote engine) == remote engine` before the push).
+
+**`--run-sample-ticks` — all four sites verified by reading, not by description:**
+
+```
+let sample_ticks = args.run_sample_ticks.unwrap_or(45);   // ONE source of truth
+tick(&mut server, sample_ticks);                          // walk tick
+walk_rate = .. / sample_ticks as f32;                     // walk divisor
+tick(&mut server, sample_ticks);                          // run tick
+run_rate  = .. / sample_ticks as f32;                     // run divisor
+```
+
+**Zero literal `/ 45.0` divisors remain in `run_scenario`.**
+
+> **★ The spec asked for "one flag, not two"; the implementation is ONE SHARED
+> LOCAL — so the walk and run windows cannot drift apart BY CONSTRUCTION.** Same
+> shape as the absent `Default` spread in the previous branch: **a guard the
+> compiler enforces beats a guard someone has to remember.**
+
+**The flag's doc comment names its failure mode** — *"a flag that only changed
+the tick calls would silently deflate the rate … producing a
+wrong-but-plausible-looking number"* — so the coupling's *reason* survives, not
+just the coupling. **Named-case rule in the first draft, second branch running.**
+
+**A third `tick(&mut server, 45)` at `auton3_scenario` was excluded by reading
+its enclosing function** — the same method that caught my `run_scenario`
+location error.
+
+**Filed, not blocking:** `--run-sample-ticks 0` divides by zero → `inf`, and
+`ran_faster` evaluates `inf > inf * 1.15` = false. **Not a crash — a garbage
+result shaped like a clean fail**, which is the taxonomy's worst object. One-line
+guard whenever someone is next in the file.
+
+### Batch is at SEVEN items with instruments; sequencing set
+
+**Post-merge field-presence AND agreement re-verify first** (`RUSTC_WRAPPER=""`,
+at `a85dec2912`), **then** all seven items against an attested tip. **No
+measurement is spent on an unverified build** — and the reconciliation table is
+already frozen, `total ≥ max` inequality included.
