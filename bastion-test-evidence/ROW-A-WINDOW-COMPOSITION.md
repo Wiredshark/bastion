@@ -297,3 +297,46 @@ rather than by an estimate of someone's remaining work.
    alone is the correct call and is why it is excluded**; a one-line mention in
    two docs and no elaboration in the source is exactly the "confident label, no
    content" object this campaign keeps finding.
+
+## §7 — WINDOW RESULT (closed; DECISIONS #57 derivation + #58 ruling)
+
+**Fans:** `wave25_BASELINE_e86fe79893` / `wave26_ROWA_d5b56d1c79`, 48/48 seeds
+each, `COMMIT=` attested on all 4 VMs per side, ~$0.29 each.
+
+### The #57 derivation — expected movers DERIVED, never transcribed
+
+| input (all fields OTHER than the one under test) | seeds |
+|---|---|
+| `b5_blocked_regions_count_at_settle > 0` | 52 54 61 62 66 71 80 85 90 92 |
+| `blocked_sources` contains `route_exhausted` on a mine cell | **71 90** |
+| already covered at baseline (baseline's own `blocked_by`) | 52 54 61 66 |
+| **DERIVED** | **71 90** |
+| **OBSERVED** | **71 90** |
+
+**Set-equal both directions, zero extras** — and the derivation **explains the
+eight non-movers**, which a transcription never could: the counter fired on 10
+seeds, but on 8 the region is a chop region (`['plan_access']`) or an
+already-covered mine region. *The mechanism accounts for the whole set, not just
+the positives.*
+
+### Final state
+
+- **Report-only falsifier:** all 5 release counters moved **0/48**.
+- **Outcome-neutrality:** **zero** top-level fields differ on any of the 48 seeds.
+- **Cycle-neutrality:** **3 in-flight snapshot values** differ (2 `claimant`, 1
+  `progress`) on seeds 54/90 — mechanism predicted by §G4: the `retain`'s
+  `is_empty()` early-out is a *performance* guard, so a populated store pays the
+  scan and shifts a snapshot by a fraction of a tick.
+- **Ruling (#58):** outcome-neutral is the bar; **Row A ships**, with the
+  packet's "report-only" claim amended to the measured scope.
+
+> **★ THE CLAIM THAT SURVIVED IS NARROWER THAN THE ONE I WROTE.** "Report-only"
+> asserted more than the evidence supports. **Outcome-neutral but not
+> cycle-neutral** is what was measured, and it is what the packet now says.
+
+### What the row actually bought
+
+`blocked_by` resolves on `52 54 61 66` at baseline and `52 54 61 66 71 90` after.
+**Seeds 71 (the frontier) and 90 (the holdout) — the two cells this whole
+campaign was built around — are reported for the first time.** Seed 90's blocker
+is `[17989, 9263, 338]`: the exact dead-end column the G1 scan investigated.
