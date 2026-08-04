@@ -15591,3 +15591,33 @@ has two causes and the second gets its own row.
 
 My second addressing-too-coarse error in one design (kind, then kind+is_access)
 — both caught by evidence before code. The concept held; the addressing didn't.
+
+## #41 CLOSES AT ZERO-OF-THREE — AND THE KEPT INSTRUMENT EARNS ITS PLACE (08/04)
+
+Bed's control: **fails at `plan_access`, upstream of BOTH hypotheses** — two bed
+jobs claim normally, then "auto-access refused — job unreachable" -> "designation
+marked BLOCKED (#55) — notified" within 2.3s. Stance never mattered;
+`needs_materials` never set. **One control killed two hypotheses** (stance AND
+Opus's labeled material-delivery story — declared dead in the reporting message,
+not left as "unconfirmed").
+
+**Final tally: Ladder refuted (fixture material gate) · selfgen excluded by its
+own root (`hauled` upstream of placement) · bed upstream of both (access/carve).
+ZERO established stance failures.** #41 ships as: one confirmed mechanism
+standing on code (missing execution-proximity check, limb held), zero scenarios
+establishing it, and the compile-error property (required no-Default stamping,
+13 sites) that justifies the row alone.
+
+**Bed's new row queued, fixture-first — the base rate is now citable: 2 of 3
+chased reds were fixture defects.** Discriminator: reachability probe at the
+100k cap against the two named blocking cells (definitive no-route = fixture;
+route-found/incomplete = a real false-reject, same class as chop's old gate).
+
+**★ AND THE #55 MACHINERY FIRED ON A NON-CHOP KIND FOR THE FIRST TIME, naming
+its blocking cell** — the instrument kept on argument when the #61 probe was
+parked just demonstrated on a kind it was never tuned for. Park decisions that
+cut along the evidence line age well; now shown, not asserted.
+
+Outstanding: 5b owes the three revert readings its commit CITES as evidence
+(c_rungs_placed/c_top_cleared/c_no_carve) — escalated; an evidence-citing
+commit without the evidence in the record is a claim wearing a citation.
