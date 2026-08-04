@@ -70,6 +70,7 @@ def index(doc, descend=()):
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     expect_new, ignore, descend, expect_move = set(), set(), set(), []
+    snapshot = set()
     for a in sys.argv[1:]:
         if a.startswith("--expect-new="):
             expect_new = {s.strip() for s in a.split("=", 1)[1].split(",") if s.strip()}
@@ -83,6 +84,15 @@ def main():
             pat, _, seeds = spec.partition(":")
             expect_move.append((pat.strip(),
                                 {x.strip() for x in seeds.split(",") if x.strip()}))
+        if a.startswith("--snapshot="):
+            # A THIRD field class (DECISIONS #58), beside deterministic and
+            # wall-clock: IN-FLIGHT SNAPSHOT. Claimant identity and mid-swing
+            # progress are cycle-sensitive BY NATURE - a sub-tick shift changes
+            # which colonist holds a cell without changing any outcome.
+            # CLASSIFIED, NOT IGNORED: every move is still printed in full. The
+            # sin is an exclusion that renders like an absence; a move that is
+            # named, counted and shown is neither.
+            snapshot = {s.strip() for s in a.split("=", 1)[1].split(",") if s.strip()}
         if a.startswith("--descend="):
             descend = {s.strip() for s in a.split("=", 1)[1].split(",") if s.strip()}
 
@@ -148,7 +158,8 @@ def main():
             print(f"    {p}  -- NOT PRESENT in both runs; the --ignore had no effect")
 
     move_pats = [(p, as_pattern(p), sd) for p, sd in expect_move]
-    violations, declared_moves, move_mismatch = [], [], []
+    snap_pats = [as_pattern(p) for p in snapshot]
+    violations, declared_moves, move_mismatch, snap_moves = [], [], [], []
     for path in shared:
         if path in ignore:
             continue
@@ -156,6 +167,9 @@ def main():
                  for s in sorted(base[path])
                  if base[path][s] != new[path].get(s)]
         if not moved:
+            continue
+        if any(rx.match(path) for rx in snap_pats):
+            snap_moves.append((path, moved))
             continue
         hit = next((m for m in move_pats if m[1].match(path)), None)
         if hit is None:
@@ -195,6 +209,19 @@ def main():
         for p in missing_expected:
             print(f"    {p}")
 
+    if snap_moves:
+        total = len(base_seeds)
+        print()
+        print(f"[--] IN-FLIGHT SNAPSHOT CLASS ({len(snap_moves)}) - cycle-sensitive "
+              "BY NATURE, shown in full, NOT counted as violations:")
+        for path, moved in snap_moves[:12]:
+            s, bv, nv = moved[0]
+            print(f"    {path}: {len(moved)}/{total} seeds, "
+                  f"e.g. seed {s}: {brief(bv, 40)} -> {brief(nv, 40)}")
+        if len(snap_moves) > 12:
+            print(f"    ... and {len(snap_moves)-12} more")
+        print("    (a snapshot-classed field is CLASSIFIED, not ignored - if an "
+              "outcome changed with it, an aggregate field would also have moved)")
     if declared_moves:
         print()
         print(f"[OK] DECLARED MOVES ({len(declared_moves)}) - each moved only on "

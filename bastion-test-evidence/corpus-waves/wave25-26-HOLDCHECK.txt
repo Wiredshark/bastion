@@ -1,0 +1,54 @@
+descending into list elements of: b5_mine_cell_diag
+baseline: 48 seeds, 527 field paths  [corpus-waves/wave25_BASELINE_e86fe79893_FULL.json]
+new     : 48 seeds, 585 field paths  [corpus-waves/wave26_ROWA_d5b56d1c79_FULL.json]
+
+!! IGNORED BY REQUEST (2 of 2 named) - NOT checked for holding:
+    b5_build_stamp  (would have moved on 48/48 seeds)
+    b5_soak_avg_tick_ms  (would have moved on 48/48 seeds)
+
+[OK] no dropped fields
+[OK] added fields: 58 (all enumerated)
+    b5_blocked_regions_count_at_end
+    b5_blocked_regions_count_at_settle
+    b5_mine_cell_diag[0].blocked_sources
+    b5_mine_cell_diag[0].stuck_strikes
+    b5_mine_cell_diag[10].blocked_sources
+    b5_mine_cell_diag[10].stuck_strikes
+    b5_mine_cell_diag[11].blocked_sources
+    b5_mine_cell_diag[11].stuck_strikes
+    b5_mine_cell_diag[12].blocked_sources
+    b5_mine_cell_diag[12].stuck_strikes
+    b5_mine_cell_diag[13].blocked_sources
+    b5_mine_cell_diag[13].stuck_strikes
+    b5_mine_cell_diag[14].blocked_sources
+    b5_mine_cell_diag[14].stuck_strikes
+    b5_mine_cell_diag[15].blocked_sources
+    b5_mine_cell_diag[15].stuck_strikes
+    b5_mine_cell_diag[16].blocked_sources
+    b5_mine_cell_diag[16].stuck_strikes
+    b5_mine_cell_diag[17].blocked_sources
+    b5_mine_cell_diag[17].stuck_strikes
+    b5_mine_cell_diag[18].blocked_sources
+    b5_mine_cell_diag[18].stuck_strikes
+    b5_mine_cell_diag[19].blocked_sources
+    b5_mine_cell_diag[19].stuck_strikes
+    b5_mine_cell_diag[1].blocked_sources
+
+[--] IN-FLIGHT SNAPSHOT CLASS (3) - cycle-sensitive BY NATURE, shown in full, NOT counted as violations:
+    b5_mine_cell_diag[1].claimant: 1/48 seeds, e.g. seed 90: 'Maddoc the Stout' -> 'Osric Oakenshield'
+    b5_mine_cell_diag[1].progress: 1/48 seeds, e.g. seed 90: 0.0 -> 0.8777786493301392
+    b5_mine_cell_diag[4].claimant: 1/48 seeds, e.g. seed 54: 'Lira Longstride' -> None
+    (a snapshot-classed field is CLASSIFIED, not ignored - if an outcome changed with it, an aggregate field would also have moved)
+
+[OK] DECLARED MOVES (27) - each moved only on seeds covered by its enumerated delta:
+    b5_mine_cell_diag[0].blocked_by: seeds ['71', '90']
+    b5_mine_cell_diag[10].blocked_by: seeds ['71']
+    b5_mine_cell_diag[11].blocked_by: seeds ['71']
+    b5_mine_cell_diag[12].blocked_by: seeds ['71']
+    b5_mine_cell_diag[13].blocked_by: seeds ['71']
+    b5_mine_cell_diag[14].blocked_by: seeds ['71']
+    ... and 21 more on the same pattern
+
+[OK] HOLD: all 525 checked pre-existing fields identical across all 48 seeds (2 ignored by request)
+
+RESULT: HOLD
