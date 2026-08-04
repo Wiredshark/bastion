@@ -19,6 +19,14 @@ Makefile
 ## Allow asset hud settings
 !assets/voxygen/i18n/*/hud/settings.ron
 
+## Allow corpus-fan evidence logs — these are ATTESTATION, not build noise.
+## Every wave's `COMMIT=` line (the thing that makes a fan result citable) lives
+## in a raw pool *.log, so the blanket `*.log` above silently excluded the
+## provenance for every determinism claim we make. Ignored files do not appear
+## in `git status`, so "nothing untracked" and "everything ignored" printed the
+## same thing for weeks. Scoped to the evidence tree only.
+!bastion-test-evidence/**/*.log
+
 ## Export data
 *.csv
 img-export/**/*.png

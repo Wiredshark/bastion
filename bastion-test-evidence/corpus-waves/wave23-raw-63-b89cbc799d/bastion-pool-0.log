@@ -1,0 +1,1218 @@
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
+Someone could be eavesdropping on you right now (man-in-the-middle attack)!
+It is also possible that a host key has just been changed.
+The fingerprint for the ED25519 key sent by the remote host is
+SHA256:ov2sOGq4LZyty05Je5DvEsvM+K8DoEgCteBOBc7b8P8.
+Please contact your system administrator.
+Add correct host key in /c/Users/q/.ssh/known_hosts to get rid of this message.
+Offending ECDSA key in /c/Users/q/.ssh/known_hosts:322
+Password authentication is disabled to avoid man-in-the-middle attacks.
+Keyboard-interactive authentication is disabled to avoid man-in-the-middle attacks.
+UpdateHostkeys is disabled because the host key is not trusted.
+Encountered 597 files that should have been pointers, but weren't:
+	assets/voxygen/voxel/weapon/component/sword/sawblade/bloodsteel.vox
+	assets/voxygen/voxel/weapon/component/sword/sawblade/bronze.vox
+	assets/voxygen/voxel/weapon/component/sword/sawblade/cobalt.vox
+	assets/voxygen/voxel/weapon/component/sword/sawblade/iron.vox
+	assets/voxygen/voxel/weapon/component/sword/sawblade/orichalcum.vox
+	assets/voxygen/voxel/weapon/component/sword/sawblade/steel.vox
+	assets/voxygen/voxel/weapon/component/sword/zweihander/bloodsteel.vox
+	assets/voxygen/voxel/weapon/component/sword/zweihander/bronze.vox
+	assets/voxygen/voxel/weapon/component/sword/zweihander/cobalt.vox
+	assets/voxygen/voxel/weapon/component/sword/zweihander/iron.vox
+	assets/voxygen/voxel/weapon/component/sword/zweihander/orichalcum.vox
+	assets/voxygen/voxel/weapon/component/sword/zweihander/steel.vox
+	assets/voxygen/voxel/weapon/dagger/dagger_basic-0.vox
+	assets/voxygen/voxel/weapon/dagger/dagger_cult-0.vox
+	assets/voxygen/voxel/weapon/dagger/dagger_rusty.vox
+	assets/voxygen/voxel/weapon/debug_wand-0.vox
+	assets/voxygen/voxel/weapon/debug_wand-1.vox
+	assets/voxygen/voxel/weapon/debug_wand.vox
+	assets/voxygen/voxel/weapon/hammer/2hhammer_cyclops-0.vox
+	assets/voxygen/voxel/weapon/hammer/2hhammer_flimsy.vox
+	assets/voxygen/voxel/weapon/hammer/2hhammer_harvester.vox
+	assets/voxygen/voxel/weapon/hammer/2hhammer_mjolnir.vox
+	assets/voxygen/voxel/weapon/hammer/2hhammer_ogre.vox
+	assets/voxygen/voxel/weapon/hammer/2hhammer_oni_red.vox
+	assets/voxygen/voxel/weapon/hammer/2hhammer_rusty.vox
+	assets/voxygen/voxel/weapon/hammer/2hhammer_troll.vox
+	assets/voxygen/voxel/weapon/hammer/2hhammer_wendigo.vox
+	assets/voxygen/voxel/weapon/hammer/2hhammer_yeti.vox
+	assets/voxygen/voxel/weapon/hammer/burnt_drumstick.vox
+	assets/voxygen/voxel/weapon/hammer/craftsman.vox
+	assets/voxygen/voxel/weapon/hammer/cult_purp-0.vox
+	assets/voxygen/voxel/weapon/hammer/forgemaster_hammer.vox
+	assets/voxygen/voxel/weapon/hammer/greathammer/bloodsteel-2h.vox
+	assets/voxygen/voxel/weapon/hammer/greathammer/bronze-2h.vox
+	assets/voxygen/voxel/weapon/hammer/greathammer/cobalt-2h.vox
+	assets/voxygen/voxel/weapon/hammer/greathammer/iron-2h.vox
+	assets/voxygen/voxel/weapon/hammer/greathammer/orichalcum-2h.vox
+	assets/voxygen/voxel/weapon/hammer/greathammer/steel-2h.vox
+	assets/voxygen/voxel/weapon/hammer/greatmace/bloodsteel-2h.vox
+	assets/voxygen/voxel/weapon/hammer/greatmace/bronze-2h.vox
+	assets/voxygen/voxel/weapon/hammer/greatmace/cobalt-2h.vox
+	assets/voxygen/voxel/weapon/hammer/greatmace/iron-2h.vox
+	assets/voxygen/voxel/weapon/hammer/greatmace/orichalcum-2h.vox
+	assets/voxygen/voxel/weapon/hammer/greatmace/steel-2h.vox
+	assets/voxygen/voxel/weapon/hammer/hammer/bloodsteel-1h.vox
+	assets/voxygen/voxel/weapon/hammer/hammer/bloodsteel-2h.vox
+	assets/voxygen/voxel/weapon/hammer/hammer/bronze-1h.vox
+	assets/voxygen/voxel/weapon/hammer/hammer/bronze-2h.vox
+	assets/voxygen/voxel/weapon/hammer/hammer/cobalt-1h.vox
+	assets/voxygen/voxel/weapon/hammer/hammer/cobalt-2h.vox
+	assets/voxygen/voxel/weapon/hammer/hammer/iron-1h.vox
+	assets/voxygen/voxel/weapon/hammer/hammer/iron-2h.vox
+	assets/voxygen/voxel/weapon/hammer/hammer/orichalcum-1h.vox
+	assets/voxygen/voxel/weapon/hammer/hammer/orichalcum-2h.vox
+	assets/voxygen/voxel/weapon/hammer/hammer/steel-1h.vox
+	assets/voxygen/voxel/weapon/hammer/hammer/steel-2h.vox
+	assets/voxygen/voxel/weapon/hammer/maul/bloodsteel-2h.vox
+	assets/voxygen/voxel/weapon/hammer/maul/bronze-2h.vox
+	assets/voxygen/voxel/weapon/hammer/maul/cobalt-2h.vox
+	assets/voxygen/voxel/weapon/hammer/maul/iron-2h.vox
+	assets/voxygen/voxel/weapon/hammer/maul/orichalcum-2h.vox
+	assets/voxygen/voxel/weapon/hammer/maul/steel-2h.vox
+	assets/voxygen/voxel/weapon/hammer/ornate/bloodsteel-1h.vox
+	assets/voxygen/voxel/weapon/hammer/ornate/bloodsteel-2h.vox
+	assets/voxygen/voxel/weapon/hammer/ornate/bronze-1h.vox
+	assets/voxygen/voxel/weapon/hammer/ornate/bronze-2h.vox
+	assets/voxygen/voxel/weapon/hammer/ornate/cobalt-1h.vox
+	assets/voxygen/voxel/weapon/hammer/ornate/cobalt-2h.vox
+	assets/voxygen/voxel/weapon/hammer/ornate/iron-1h.vox
+	assets/voxygen/voxel/weapon/hammer/ornate/iron-2h.vox
+	assets/voxygen/voxel/weapon/hammer/ornate/orichalcum-1h.vox
+	assets/voxygen/voxel/weapon/hammer/ornate/orichalcum-2h.vox
+	assets/voxygen/voxel/weapon/hammer/ornate/steel-1h.vox
+	assets/voxygen/voxel/weapon/hammer/ornate/steel-2h.vox
+	assets/voxygen/voxel/weapon/hammer/spikedmace/bloodsteel-1h.vox
+	assets/voxygen/voxel/weapon/hammer/spikedmace/bloodsteel-2h.vox
+	assets/voxygen/voxel/weapon/hammer/spikedmace/bronze-1h.vox
+	assets/voxygen/voxel/weapon/hammer/spikedmace/bronze-2h.vox
+	assets/voxygen/voxel/weapon/hammer/spikedmace/cobalt-1h.vox
+	assets/voxygen/voxel/weapon/hammer/spikedmace/cobalt-2h.vox
+	assets/voxygen/voxel/weapon/hammer/spikedmace/iron-1h.vox
+	assets/voxygen/voxel/weapon/hammer/spikedmace/iron-2h.vox
+	assets/voxygen/voxel/weapon/hammer/spikedmace/orichalcum-1h.vox
+	assets/voxygen/voxel/weapon/hammer/spikedmace/orichalcum-2h.vox
+	assets/voxygen/voxel/weapon/hammer/spikedmace/steel-1h.vox
+	assets/voxygen/voxel/weapon/hammer/spikedmace/steel-2h.vox
+	assets/voxygen/voxel/weapon/hammer/terracotta_punisher_club.vox
+	assets/voxygen/voxel/weapon/hammer/warhammer/bloodsteel-1h.vox
+	assets/voxygen/voxel/weapon/hammer/warhammer/bloodsteel-2h.vox
+	assets/voxygen/voxel/weapon/hammer/warhammer/bronze-1h.vox
+	assets/voxygen/voxel/weapon/hammer/warhammer/bronze-2h.vox
+	assets/voxygen/voxel/weapon/hammer/warhammer/cobalt-1h.vox
+	assets/voxygen/voxel/weapon/hammer/warhammer/cobalt-2h.vox
+	assets/voxygen/voxel/weapon/hammer/warhammer/iron-1h.vox
+	assets/voxygen/voxel/weapon/hammer/warhammer/iron-2h.vox
+	assets/voxygen/voxel/weapon/hammer/warhammer/orichalcum-1h.vox
+	assets/voxygen/voxel/weapon/hammer/warhammer/orichalcum-2h.vox
+	assets/voxygen/voxel/weapon/hammer/warhammer/steel-1h.vox
+	assets/voxygen/voxel/weapon/hammer/warhammer/steel-2h.vox
+	assets/voxygen/voxel/weapon/projectile/adlet-spear.vox
+	assets/voxygen/voxel/weapon/projectile/adlet-trap.vox
+	assets/voxygen/voxel/weapon/projectile/besieger_bolt.vox
+	assets/voxygen/voxel/weapon/projectile/boreal-trap.vox
+	assets/voxygen/voxel/weapon/projectile/bubble_bomb.vox
+	assets/voxygen/voxel/weapon/projectile/clay-arrow.vox
+	assets/voxygen/voxel/weapon/projectile/clay-missile.vox
+	assets/voxygen/voxel/weapon/projectile/dart.vox
+	assets/voxygen/voxel/weapon/projectile/fire-bolt-0.vox
+	assets/voxygen/voxel/weapon/projectile/fire-bolt-1.vox
+	assets/voxygen/voxel/weapon/projectile/firerain_droplet1.vox
+	assets/voxygen/voxel/weapon/projectile/fireworks-0.vox
+	assets/voxygen/voxel/weapon/projectile/fireworks_blue-0.vox
+	assets/voxygen/voxel/weapon/projectile/fireworks_green-0.vox
+	assets/voxygen/voxel/weapon/projectile/fireworks_purple-0.vox
+	assets/voxygen/voxel/weapon/projectile/fireworks_red-0.vox
+	assets/voxygen/voxel/weapon/projectile/fireworks_white-0.vox
+	assets/voxygen/voxel/weapon/projectile/fireworks_yellow-0.vox
+	assets/voxygen/voxel/weapon/projectile/harlequin-dagger.vox
+	assets/voxygen/voxel/weapon/projectile/heavy-arrow.vox
+	assets/voxygen/voxel/weapon/projectile/ice_bomb.vox
+	assets/voxygen/voxel/weapon/projectile/icicle-bolt.vox
+	assets/voxygen/voxel/weapon/projectile/icicle-spear.vox
+	assets/voxygen/voxel/weapon/projectile/iron_pike_bomb.vox
+	assets/voxygen/voxel/weapon/projectile/laser_beam.vox
+	assets/voxygen/voxel/weapon/projectile/laser_beam_small.vox
+	assets/voxygen/voxel/weapon/projectile/leaf.vox
+	assets/voxygen/voxel/weapon/projectile/lightning_bolt.vox
+	assets/voxygen/voxel/weapon/projectile/multi-arrow.vox
+	assets/voxygen/voxel/weapon/projectile/napalm_pool.vox
+	assets/voxygen/voxel/weapon/projectile/napalm_shot.vox
+	assets/voxygen/voxel/weapon/projectile/nature-bolt.vox
+	assets/voxygen/voxel/weapon/projectile/pebble.vox
+	assets/voxygen/voxel/weapon/projectile/poison-spit.vox
+	assets/voxygen/voxel/weapon/projectile/poison_ball.vox
+	assets/voxygen/voxel/weapon/projectile/simple-arrow.vox
+	assets/voxygen/voxel/weapon/projectile/snake-arrow.vox
+	assets/voxygen/voxel/weapon/projectile/snowball.vox
+	assets/voxygen/voxel/weapon/projectile/spectral_sword_large.vox
+	assets/voxygen/voxel/weapon/projectile/spectral_sword_small.vox
+	assets/voxygen/voxel/weapon/projectile/strigoi_head.vox
+	assets/voxygen/voxel/weapon/projectile/turret-arrow.vox
+	assets/voxygen/voxel/weapon/sceptre/amethyst.vox
+	assets/voxygen/voxel/weapon/sceptre/arbor/bamboo.vox
+	assets/voxygen/voxel/weapon/sceptre/arbor/eldwood.vox
+	assets/voxygen/voxel/weapon/sceptre/arbor/frostwood.vox
+	assets/voxygen/voxel/weapon/sceptre/arbor/hardwood.vox
+	assets/voxygen/voxel/weapon/sceptre/arbor/ironwood.vox
+	assets/voxygen/voxel/weapon/sceptre/arbor/wood.vox
+	assets/voxygen/voxel/weapon/sceptre/caduceus.vox
+	assets/voxygen/voxel/weapon/sceptre/cane/bamboo.vox
+	assets/voxygen/voxel/weapon/sceptre/cane/eldwood.vox
+	assets/voxygen/voxel/weapon/sceptre/cane/frostwood.vox
+	assets/voxygen/voxel/weapon/sceptre/cane/hardwood.vox
+	assets/voxygen/voxel/weapon/sceptre/cane/ironwood.vox
+	assets/voxygen/voxel/weapon/sceptre/cane/wood.vox
+	assets/voxygen/voxel/weapon/sceptre/crook/bamboo.vox
+	assets/voxygen/voxel/weapon/sceptre/crook/eldwood.vox
+	assets/voxygen/voxel/weapon/sceptre/crook/frostwood.vox
+	assets/voxygen/voxel/weapon/sceptre/crook/hardwood.vox
+	assets/voxygen/voxel/weapon/sceptre/crook/ironwood.vox
+	assets/voxygen/voxel/weapon/sceptre/crook/wood.vox
+	assets/voxygen/voxel/weapon/sceptre/crozier/bamboo.vox
+	assets/voxygen/voxel/weapon/sceptre/crozier/eldwood.vox
+	assets/voxygen/voxel/weapon/sceptre/crozier/frostwood.vox
+	assets/voxygen/voxel/weapon/sceptre/crozier/hardwood.vox
+	assets/voxygen/voxel/weapon/sceptre/crozier/ironwood.vox
+	assets/voxygen/voxel/weapon/sceptre/crozier/wood.vox
+	assets/voxygen/voxel/weapon/sceptre/grandsceptre/bamboo.vox
+	assets/voxygen/voxel/weapon/sceptre/grandsceptre/eldwood.vox
+	assets/voxygen/voxel/weapon/sceptre/grandsceptre/frostwood.vox
+	assets/voxygen/voxel/weapon/sceptre/grandsceptre/hardwood.vox
+	assets/voxygen/voxel/weapon/sceptre/grandsceptre/ironwood.vox
+	assets/voxygen/voxel/weapon/sceptre/grandsceptre/wood.vox
+	assets/voxygen/voxel/weapon/sceptre/ore-nature.vox
+	assets/voxygen/voxel/weapon/sceptre/ornate/bamboo.vox
+	assets/voxygen/voxel/weapon/sceptre/ornate/eldwood.vox
+	assets/voxygen/voxel/weapon/sceptre/ornate/frostwood.vox
+	assets/voxygen/voxel/weapon/sceptre/ornate/hardwood.vox
+	assets/voxygen/voxel/weapon/sceptre/ornate/ironwood.vox
+	assets/voxygen/voxel/weapon/sceptre/ornate/wood.vox
+	assets/voxygen/voxel/weapon/sceptre/root_evil.vox
+	assets/voxygen/voxel/weapon/sceptre/sceptre/bamboo.vox
+	assets/voxygen/voxel/weapon/sceptre/sceptre/eldwood.vox
+	assets/voxygen/voxel/weapon/sceptre/sceptre/frostwood.vox
+	assets/voxygen/voxel/weapon/sceptre/sceptre/hardwood.vox
+	assets/voxygen/voxel/weapon/sceptre/sceptre/ironwood.vox
+	assets/voxygen/voxel/weapon/sceptre/sceptre/wood.vox
+	assets/voxygen/voxel/weapon/sceptre/sceptre_cursekeeper.vox
+	assets/voxygen/voxel/weapon/sceptre/sceptre_sea_bishop.vox
+	assets/voxygen/voxel/weapon/sceptre/wood-nature.vox
+	assets/voxygen/voxel/weapon/sceptre/wood-simple.vox
+	assets/voxygen/voxel/weapon/shield/wood-0.vox
+	assets/voxygen/voxel/weapon/shield/wood-1.vox
+	assets/voxygen/voxel/weapon/spear/tidal_spear.vox
+	assets/voxygen/voxel/weapon/staff/brand/bamboo.vox
+	assets/voxygen/voxel/weapon/staff/brand/eldwood.vox
+	assets/voxygen/voxel/weapon/staff/brand/frostwood.vox
+	assets/voxygen/voxel/weapon/staff/brand/hardwood.vox
+	assets/voxygen/voxel/weapon/staff/brand/ironwood.vox
+	assets/voxygen/voxel/weapon/staff/brand/wood.vox
+	assets/voxygen/voxel/weapon/staff/firestaff_cultist.vox
+	assets/voxygen/voxel/weapon/staff/firestaff_mindflayer.vox
+	assets/voxygen/voxel/weapon/staff/firestaff_ogre.vox
+	assets/voxygen/voxel/weapon/staff/firestaff_saurok.vox
+	assets/voxygen/voxel/weapon/staff/firestaff_starter.vox
+	assets/voxygen/voxel/weapon/staff/grandstaff/bamboo.vox
+	assets/voxygen/voxel/weapon/staff/grandstaff/eldwood.vox
+	assets/voxygen/voxel/weapon/staff/grandstaff/frostwood.vox
+	assets/voxygen/voxel/weapon/staff/grandstaff/hardwood.vox
+	assets/voxygen/voxel/weapon/staff/grandstaff/ironwood.vox
+	assets/voxygen/voxel/weapon/staff/grandstaff/wood.vox
+	assets/voxygen/voxel/weapon/staff/laevateinn.vox
+	assets/voxygen/voxel/weapon/staff/longpole/bamboo.vox
+	assets/voxygen/voxel/weapon/staff/longpole/eldwood.vox
+	assets/voxygen/voxel/weapon/staff/longpole/frostwood.vox
+	assets/voxygen/voxel/weapon/staff/longpole/hardwood.vox
+	assets/voxygen/voxel/weapon/staff/longpole/ironwood.vox
+	assets/voxygen/voxel/weapon/staff/longpole/wood.vox
+	assets/voxygen/voxel/weapon/staff/ornate/bamboo.vox
+	assets/voxygen/voxel/weapon/staff/ornate/eldwood.vox
+	assets/voxygen/voxel/weapon/staff/ornate/frostwood.vox
+	assets/voxygen/voxel/weapon/staff/ornate/hardwood.vox
+	assets/voxygen/voxel/weapon/staff/ornate/ironwood.vox
+	assets/voxygen/voxel/weapon/staff/ornate/wood.vox
+	assets/voxygen/voxel/weapon/staff/pole/bamboo.vox
+	assets/voxygen/voxel/weapon/staff/pole/eldwood.vox
+	assets/voxygen/voxel/weapon/staff/pole/frostwood.vox
+	assets/voxygen/voxel/weapon/staff/pole/hardwood.vox
+	assets/voxygen/voxel/weapon/staff/pole/ironwood.vox
+	assets/voxygen/voxel/weapon/staff/pole/wood.vox
+	assets/voxygen/voxel/weapon/staff/rod/bamboo.vox
+	assets/voxygen/voxel/weapon/staff/rod/eldwood.vox
+	assets/voxygen/voxel/weapon/staff/rod/frostwood.vox
+	assets/voxygen/voxel/weapon/staff/rod/hardwood.vox
+	assets/voxygen/voxel/weapon/staff/rod/ironwood.vox
+	assets/voxygen/voxel/weapon/staff/rod/wood.vox
+	assets/voxygen/voxel/weapon/staff/staff/bamboo.vox
+	assets/voxygen/voxel/weapon/staff/staff/eldwood.vox
+	assets/voxygen/voxel/weapon/staff/staff/frostwood.vox
+	assets/voxygen/voxel/weapon/staff/staff/hardwood.vox
+	assets/voxygen/voxel/weapon/staff/staff/ironwood.vox
+	assets/voxygen/voxel/weapon/staff/staff/wood.vox
+	assets/voxygen/voxel/weapon/sword/adlet_elder_sword.vox
+	assets/voxygen/voxel/weapon/sword/bloodmoon_heiress_sword.vox
+	assets/voxygen/voxel/weapon/sword/caladbolg.vox
+	assets/voxygen/voxel/weapon/sword/cultist.vox
+	assets/voxygen/voxel/weapon/sword/frost-0.vox
+	assets/voxygen/voxel/weapon/sword/frost-1.vox
+	assets/voxygen/voxel/weapon/sword/greatsword/bloodsteel-2h.vox
+	assets/voxygen/voxel/weapon/sword/greatsword/bronze-2h.vox
+	assets/voxygen/voxel/weapon/sword/greatsword/cobalt-2h.vox
+	assets/voxygen/voxel/weapon/sword/greatsword/iron-2h.vox
+	assets/voxygen/voxel/weapon/sword/greatsword/orichalcum-2h.vox
+	assets/voxygen/voxel/weapon/sword/greatsword/steel-2h.vox
+	assets/voxygen/voxel/weapon/sword/greatsword_2h_dullahan.vox
+	assets/voxygen/voxel/weapon/sword/haniwa_general_sword.vox
+	assets/voxygen/voxel/weapon/sword/katana/bloodsteel-1h.vox
+	assets/voxygen/voxel/weapon/sword/katana/bloodsteel-2h.vox
+	assets/voxygen/voxel/weapon/sword/katana/bronze-1h.vox
+	assets/voxygen/voxel/weapon/sword/katana/bronze-2h.vox
+	assets/voxygen/voxel/weapon/sword/katana/cobalt-1h.vox
+	assets/voxygen/voxel/weapon/sword/katana/cobalt-2h.vox
+	assets/voxygen/voxel/weapon/sword/katana/iron-1h.vox
+	assets/voxygen/voxel/weapon/sword/katana/iron-2h.vox
+	assets/voxygen/voxel/weapon/sword/katana/orichalcum-1h.vox
+	assets/voxygen/voxel/weapon/sword/katana/orichalcum-2h.vox
+	assets/voxygen/voxel/weapon/sword/katana/steel-1h.vox
+	assets/voxygen/voxel/weapon/sword/katana/steel-2h.vox
+	assets/voxygen/voxel/weapon/sword/long_2h_saurok.vox
+	assets/voxygen/voxel/weapon/sword/longsword/bloodsteel-1h.vox
+	assets/voxygen/voxel/weapon/sword/longsword/bloodsteel-2h.vox
+	assets/voxygen/voxel/weapon/sword/longsword/bronze-1h.vox
+	assets/voxygen/voxel/weapon/sword/longsword/bronze-2h.vox
+	assets/voxygen/voxel/weapon/sword/longsword/cobalt-1h.vox
+	assets/voxygen/voxel/weapon/sword/longsword/cobalt-2h.vox
+	assets/voxygen/voxel/weapon/sword/longsword/iron-1h.vox
+	assets/voxygen/voxel/weapon/sword/longsword/iron-2h.vox
+	assets/voxygen/voxel/weapon/sword/longsword/orichalcum-1h.vox
+	assets/voxygen/voxel/weapon/sword/longsword/orichalcum-2h.vox
+	assets/voxygen/voxel/weapon/sword/longsword/steel-1h.vox
+	assets/voxygen/voxel/weapon/sword/longsword/steel-2h.vox
+	assets/voxygen/voxel/weapon/sword/ornate/bloodsteel-1h.vox
+	assets/voxygen/voxel/weapon/sword/ornate/bloodsteel-2h.vox
+	assets/voxygen/voxel/weapon/sword/ornate/bronze-1h.vox
+	assets/voxygen/voxel/weapon/sword/ornate/bronze-2h.vox
+	assets/voxygen/voxel/weapon/sword/ornate/cobalt-1h.vox
+	assets/voxygen/voxel/weapon/sword/ornate/cobalt-2h.vox
+	assets/voxygen/voxel/weapon/sword/ornate/iron-1h.vox
+	assets/voxygen/voxel/weapon/sword/ornate/iron-2h.vox
+	assets/voxygen/voxel/weapon/sword/ornate/orichalcum-1h.vox
+	assets/voxygen/voxel/weapon/sword/ornate/orichalcum-2h.vox
+	assets/voxygen/voxel/weapon/sword/ornate/steel-1h.vox
+	assets/voxygen/voxel/weapon/sword/ornate/steel-2h.vox
+	assets/voxygen/voxel/weapon/sword/sabre/bloodsteel-1h.vox
+	assets/voxygen/voxel/weapon/sword/sabre/bloodsteel-2h.vox
+	assets/voxygen/voxel/weapon/sword/sabre/bronze-1h.vox
+	assets/voxygen/voxel/weapon/sword/sabre/bronze-2h.vox
+	assets/voxygen/voxel/weapon/sword/sabre/cobalt-1h.vox
+	assets/voxygen/voxel/weapon/sword/sabre/cobalt-2h.vox
+	assets/voxygen/voxel/weapon/sword/sabre/iron-1h.vox
+	assets/voxygen/voxel/weapon/sword/sabre/iron-2h.vox
+	assets/voxygen/voxel/weapon/sword/sabre/orichalcum-1h.vox
+	assets/voxygen/voxel/weapon/sword/sabre/orichalcum-2h.vox
+	assets/voxygen/voxel/weapon/sword/sabre/steel-1h.vox
+	assets/voxygen/voxel/weapon/sword/sabre/steel-2h.vox
+	assets/voxygen/voxel/weapon/sword/sawblade/bloodsteel-1h.vox
+	assets/voxygen/voxel/weapon/sword/sawblade/bloodsteel-2h.vox
+	assets/voxygen/voxel/weapon/sword/sawblade/bronze-1h.vox
+	assets/voxygen/voxel/weapon/sword/sawblade/bronze-2h.vox
+	assets/voxygen/voxel/weapon/sword/sawblade/cobalt-1h.vox
+	assets/voxygen/voxel/weapon/sword/sawblade/cobalt-2h.vox
+	assets/voxygen/voxel/weapon/sword/sawblade/iron-1h.vox
+	assets/voxygen/voxel/weapon/sword/sawblade/iron-2h.vox
+	assets/voxygen/voxel/weapon/sword/sawblade/orichalcum-1h.vox
+	assets/voxygen/voxel/weapon/sword/sawblade/orichalcum-2h.vox
+	assets/voxygen/voxel/weapon/sword/sawblade/steel-1h.vox
+	assets/voxygen/voxel/weapon/sword/sawblade/steel-2h.vox
+	assets/voxygen/voxel/weapon/sword/starter.vox
+	assets/voxygen/voxel/weapon/sword/starter_1h.vox
+	assets/voxygen/voxel/weapon/sword/sword_gigas_fire.vox
+	assets/voxygen/voxel/weapon/sword/terracotta_pursuer_sword.vox
+	assets/voxygen/voxel/weapon/sword/zweihander/bloodsteel-2h.vox
+	assets/voxygen/voxel/weapon/sword/zweihander/bronze-2h.vox
+	assets/voxygen/voxel/weapon/sword/zweihander/cobalt-2h.vox
+	assets/voxygen/voxel/weapon/sword/zweihander/iron-2h.vox
+	assets/voxygen/voxel/weapon/sword/zweihander/orichalcum-2h.vox
+	assets/voxygen/voxel/weapon/sword/zweihander/steel-2h.vox
+	assets/voxygen/voxel/weapon/tool/banjo.vox
+	assets/voxygen/voxel/weapon/tool/black_velvet_guitar.vox
+	assets/voxygen/voxel/weapon/tool/broom-0.vox
+	assets/voxygen/voxel/weapon/tool/broom-belzeshrub.vox
+	assets/voxygen/voxel/weapon/tool/broom_belzeshrub_green.vox
+	assets/voxygen/voxel/weapon/tool/broom_belzeshrub_purple.vox
+	assets/voxygen/voxel/weapon/tool/fishing_rod_blue-0.vox
+	assets/voxygen/voxel/weapon/tool/fishing_rod_orange-0.vox
+	assets/voxygen/voxel/weapon/tool/glass_flute.vox
+	assets/voxygen/voxel/weapon/tool/golf_club.vox
+	assets/voxygen/voxel/weapon/tool/guitar_dark.vox
+	assets/voxygen/voxel/weapon/tool/hoe_blue.vox
+	assets/voxygen/voxel/weapon/tool/hoe_green.vox
+	assets/voxygen/voxel/weapon/tool/icy_talharpa.vox
+	assets/voxygen/voxel/weapon/tool/kora.vox
+	assets/voxygen/voxel/weapon/tool/melodica.vox
+	assets/voxygen/voxel/weapon/tool/pickaxe_green-0.vox
+	assets/voxygen/voxel/weapon/tool/pickaxe_green-1.vox
+	assets/voxygen/voxel/weapon/tool/pickaxe_stone.vox
+	assets/voxygen/voxel/weapon/tool/pickaxe_velorite.vox
+	assets/voxygen/voxel/weapon/tool/pitchfork-0.vox
+	assets/voxygen/voxel/weapon/tool/rake-0.vox
+	assets/voxygen/voxel/weapon/tool/rhythmo.vox
+	assets/voxygen/voxel/weapon/tool/shamisen.vox
+	assets/voxygen/voxel/weapon/tool/shovel_blue.vox
+	assets/voxygen/voxel/weapon/tool/shovel_gold.vox
+	assets/voxygen/voxel/weapon/tool/shovel_green.vox
+	assets/voxygen/voxel/weapon/tool/shovel_red.vox
+	assets/voxygen/voxel/weapon/tool/starlight_conch.vox
+	assets/voxygen/voxel/weapon/tool/steeltonguedrum.vox
+	assets/voxygen/voxel/weapon/tool/timbrel_of_chaos.vox
+	assets/voxygen/voxel/weapon/tool/viola_pizzicato.vox
+	assets/voxygen/voxel/weapon/tool/washboard.vox
+	assets/voxygen/voxel/weapon/tool/wildskin_drum.vox
+	assets/voxygen/voxel/weapon/tool/wooden_bass.vox
+	assets/voxygen/voxel/weapon/tool/wooden_flute.vox
+	assets/voxygen/voxel/weapon/tool/wooden_guitar.vox
+	assets/voxygen/voxel/weapon/tool/wooden_kalimba.vox
+	assets/voxygen/voxel/weapon/tool/wooden_lute.vox
+	assets/voxygen/voxel/weapon/tool/wooden_lyre.vox
+	assets/voxygen/voxel/weapon/tool/wooden_oud.vox
+	assets/voxygen/voxel/weapon/tool/wooden_sitar.vox
+	assets/world/map/veloren_0_16_0_0.bin
+	assets/world/map/veloren_0_18_0_0.bin
+	assets/world/map/veloren_0_9_0_0.bin
+	assets/world/module/airship/airship_route_map_digits.png
+	assets/world/module/misc/well.vox
+	assets/world/shrub/jungle/bush-0.vox
+	assets/world/shrub/jungle/bush-1.vox
+	assets/world/shrub/jungle/bush-2.vox
+	assets/world/shrub/jungle/bush-3.vox
+	assets/world/shrub/jungle/bush-4.vox
+	assets/world/shrub/jungle/bush-5.vox
+	assets/world/shrub/jungle/bush-6.vox
+	assets/world/shrub/jungle/bush-7.vox
+	assets/world/shrub/jungle/bush-8.vox
+	assets/world/shrub/savannah/bush-0.vox
+	assets/world/shrub/savannah/bush-1.vox
+	assets/world/shrub/savannah/bush-2.vox
+	assets/world/shrub/savannah/bush-3.vox
+	assets/world/shrub/savannah/bush-4.vox
+	assets/world/shrub/savannah/bush-5.vox
+	assets/world/shrub/savannah/bush-6.vox
+	assets/world/shrub/savannah/bush-7.vox
+	assets/world/shrub/savannah/bush-8.vox
+	assets/world/shrub/savannah/bush-9.vox
+	assets/world/shrub/taiga/bush-0.vox
+	assets/world/shrub/taiga/bush-1.vox
+	assets/world/shrub/taiga/bush-2.vox
+	assets/world/shrub/taiga/bush-3.vox
+	assets/world/shrub/taiga/bush-4.vox
+	assets/world/shrub/taiga/bush-5.vox
+	assets/world/shrub/temperate/bush-0.vox
+	assets/world/shrub/temperate/bush-1.vox
+	assets/world/shrub/temperate/bush-2.vox
+	assets/world/shrub/temperate/bush-3.vox
+	assets/world/shrub/temperate/bush-4.vox
+	assets/world/structure/dwarven_quarry/prefab/dwarven_quarry-0-hallway2.vox
+	assets/world/structure/dwarven_quarry/prefab/dwarven_quarry-1-after_forgemaster.vox
+	assets/world/structure/dwarven_quarry/prefab/dwarven_quarry-2-hallway0.vox
+	assets/world/structure/dwarven_quarry/prefab/dwarven_quarry-3-smelting_room.vox
+	assets/world/structure/dwarven_quarry/prefab/dwarven_quarry-4-cleansing_room.vox
+	assets/world/structure/dwarven_quarry/prefab/dwarven_quarry-5-excavation_site.vox
+	assets/world/structure/dwarven_quarry/prefab/dwarven_quarry-6-forgemaster_room.vox
+	assets/world/structure/dwarven_quarry/prefab/dwarven_quarry-7-entrance.vox
+	assets/world/structure/dwarven_quarry/prefab/dwarven_quarry-7-mining_site.vox
+	assets/world/structure/dwarven_quarry/prefab/dwarven_quarry-8-hallway1.vox
+	assets/world/structure/dwarven_quarry/prefab/forgemaster_boss.vox
+	assets/world/structure/jungle_ruin/0.vox
+	assets/world/structure/jungle_ruin/1.vox
+	assets/world/structure/jungle_ruin/10.vox
+	assets/world/structure/jungle_ruin/11.vox
+	assets/world/structure/jungle_ruin/12.vox
+	assets/world/structure/jungle_ruin/13.vox
+	assets/world/structure/jungle_ruin/14.vox
+	assets/world/structure/jungle_ruin/15.vox
+	assets/world/structure/jungle_ruin/16.vox
+	assets/world/structure/jungle_ruin/17.vox
+	assets/world/structure/jungle_ruin/18.vox
+	assets/world/structure/jungle_ruin/19.vox
+	assets/world/structure/jungle_ruin/2.vox
+	assets/world/structure/jungle_ruin/20.vox
+	assets/world/structure/jungle_ruin/21.vox
+	assets/world/structure/jungle_ruin/22.vox
+	assets/world/structure/jungle_ruin/23.vox
+	assets/world/structure/jungle_ruin/24.vox
+	assets/world/structure/jungle_ruin/25.vox
+	assets/world/structure/jungle_ruin/26.vox
+	assets/world/structure/jungle_ruin/27.vox
+	assets/world/structure/jungle_ruin/28.vox
+	assets/world/structure/jungle_ruin/29.vox
+	assets/world/structure/jungle_ruin/3.vox
+	assets/world/structure/jungle_ruin/30.vox
+	assets/world/structure/jungle_ruin/31.vox
+	assets/world/structure/jungle_ruin/32.vox
+	assets/world/structure/jungle_ruin/33.vox
+	assets/world/structure/jungle_ruin/34.vox
+	assets/world/structure/jungle_ruin/35.vox
+	assets/world/structure/jungle_ruin/36.vox
+	assets/world/structure/jungle_ruin/37.vox
+	assets/world/structure/jungle_ruin/38.vox
+	assets/world/structure/jungle_ruin/39.vox
+	assets/world/structure/jungle_ruin/4.vox
+	assets/world/structure/jungle_ruin/40.vox
+	assets/world/structure/jungle_ruin/41.vox
+	assets/world/structure/jungle_ruin/42.vox
+	assets/world/structure/jungle_ruin/43.vox
+	assets/world/structure/jungle_ruin/44.vox
+	assets/world/structure/jungle_ruin/45.vox
+	assets/world/structure/jungle_ruin/46.vox
+	assets/world/structure/jungle_ruin/47.vox
+	assets/world/structure/jungle_ruin/48.vox
+	assets/world/structure/jungle_ruin/49.vox
+	assets/world/structure/jungle_ruin/5.vox
+	assets/world/structure/jungle_ruin/50.vox
+	assets/world/structure/jungle_ruin/51.vox
+	assets/world/structure/jungle_ruin/52.vox
+	assets/world/structure/jungle_ruin/53.vox
+	assets/world/structure/jungle_ruin/54.vox
+	assets/world/structure/jungle_ruin/55.vox
+	assets/world/structure/jungle_ruin/56.vox
+	assets/world/structure/jungle_ruin/57.vox
+	assets/world/structure/jungle_ruin/58.vox
+	assets/world/structure/jungle_ruin/59.vox
+	assets/world/structure/jungle_ruin/6.vox
+	assets/world/structure/jungle_ruin/60.vox
+	assets/world/structure/jungle_ruin/61.vox
+	assets/world/structure/jungle_ruin/62.vox
+	assets/world/structure/jungle_ruin/63.vox
+	assets/world/structure/jungle_ruin/64.vox
+	assets/world/structure/jungle_ruin/65.vox
+	assets/world/structure/jungle_ruin/66.vox
+	assets/world/structure/jungle_ruin/7.vox
+	assets/world/structure/jungle_ruin/8.vox
+	assets/world/structure/jungle_ruin/9.vox
+	assets/world/structure/natural/arch-1.vox
+	assets/world/structure/natural/arch.vox
+	assets/world/structure/natural/big_mushroom.vox
+	assets/world/structure/natural/bonfire.vox
+	assets/world/structure/natural/bonsai.vox
+	assets/world/structure/natural/dock.vox
+	assets/world/structure/natural/fallen_tree.vox
+	assets/world/structure/natural/lionrock_0.vox
+	assets/world/structure/natural/ribcage-large.vox
+	assets/world/structure/natural/ribcage-small.vox
+	assets/world/structure/natural/rock-circle.vox
+	assets/world/structure/natural/skull-large.vox
+	assets/world/structure/natural/troll_cave.vox
+	assets/world/structure/natural/untitled.vox
+	assets/world/structure/natural/wolf_burrow.vox
+	assets/world/structure/plots/barn.vox
+	assets/world/structure/spots/airship-crashsite_0.vox
+	assets/world/structure/spots/camp.vox
+	assets/world/structure/spots/dwarven_grave.vox
+	assets/world/structure/spots/gnarling_totem.vox
+	assets/world/structure/spots/gnome_spring.vox
+	assets/world/structure/spots/grave_small.vox
+	assets/world/structure/spots/igloo.vox
+	assets/world/structure/spots/jungle_outpost.vox
+	assets/world/structure/spots/mage_tower.vox
+	assets/world/structure/spots/myrmidon-temple.vox
+	assets/world/structure/spots/pirate_hideout.vox
+	assets/world/structure/spots/saurok-altar.vox
+	assets/world/structure/spots/saurok_totem_0.vox
+	assets/world/structure/spots/saurok_totem_1.vox
+	assets/world/structure/spots/shipwreck.vox
+	assets/world/structure/spots/shipwreck2.vox
+	assets/world/structure/spots/temple_small_0.vox
+	assets/world/structure/spots/temple_small_1.vox
+	assets/world/structure/spots/witch-hut-black_0.vox
+COMMIT=b89cbc79
+	assets/world/structure/spots/witch-hut.vox
+	assets/world/structure/terracotta/decor/terracotta_decor-0.vox
+	assets/world/structure/terracotta/decor/terracotta_decor-1.vox
+	assets/world/structure/terracotta/decor/terracotta_decor-2.vox
+	assets/world/structure/terracotta/decor/terracotta_decor-3.vox
+	assets/world/structure/terracotta/decor/terracotta_decor-4.vox
+	assets/world/structure/terracotta/decor/terracotta_decor-5.vox
+	assets/world/tree/desert_palm/1.vox
+	assets/world/tree/desert_palm/10.vox
+	assets/world/tree/desert_palm/2.vox
+	assets/world/tree/desert_palm/3.vox
+	assets/world/tree/desert_palm/4.vox
+	assets/world/tree/desert_palm/5.vox
+	assets/world/tree/desert_palm/6.vox
+	assets/world/tree/desert_palm/7.vox
+	assets/world/tree/desert_palm/8.vox
+	assets/world/tree/desert_palm/9.vox
+	assets/world/tree/fruit/1.vox
+	assets/world/tree/fruit/2.vox
+	assets/world/tree/fruit/3.vox
+	assets/world/tree/fruit/4.vox
+	assets/world/tree/fruit/5.vox
+	assets/world/tree/fruit/6.vox
+	assets/world/tree/oak_stump/1.vox
+	assets/world/tree/oak_stump/2.vox
+	assets/world/tree/oak_stump/3.vox
+	assets/world/tree/oak_stump/4.vox
+	assets/world/tree/oak_stump/5.vox
+	assets/world/tree/oak_stump/6.vox
+	assets/world/tree/oak_stump/7.vox
+	assets/world/tree/oak_stump/8.vox
+	assets/world/tree/oak_stump/9.vox
+	assets/world/tree/pine_green/1.vox
+	assets/world/tree/pine_green/2.vox
+	assets/world/tree/pine_green/3.vox
+	assets/world/tree/pine_green/4.vox
+	assets/world/tree/pine_green/5.vox
+	assets/world/tree/pine_green/6.vox
+	assets/world/tree/pine_green/7.vox
+	assets/world/tree/pine_green/8.vox
+	assets/world/tree/poplar/1.vox
+	assets/world/tree/poplar/10.vox
+	assets/world/tree/poplar/2.vox
+	assets/world/tree/poplar/3.vox
+	assets/world/tree/poplar/4.vox
+	assets/world/tree/poplar/5.vox
+	assets/world/tree/poplar/6.vox
+	assets/world/tree/poplar/7.vox
+	assets/world/tree/poplar/8.vox
+	assets/world/tree/poplar/9.vox
+	assets/world/tree/temperate_small/1.vox
+	assets/world/tree/temperate_small/2.vox
+	assets/world/tree/temperate_small/3.vox
+	assets/world/tree/temperate_small/4.vox
+	assets/world/tree/temperate_small/5.vox
+	assets/world/tree/temperate_small/6.vox
+	assets/world/tree/willow/1.vox
+	assets/world/tree/willow/2.vox
+	assets/world/tree/willow/3.vox
+	assets/world/tree/willow/4.vox
+	docs/evidence-b1-overseer-fps-pan.jpg
+	docs/evidence-b1-overseer-topdown.jpg
+	docs/evidence-b1-rotate.jpg
+	docs/evidence-b1-slice-cut.jpg
+	docs/evidence-b1-slice-restored.jpg
+	docs/evidence-b1-vanilla-perspective.jpg
+	docs/evidence-b1-zoom-out.jpg
+	docs/evidence-b15-avatar-context.jpg
+	docs/evidence-b15-back-to-overseer.jpg
+	docs/evidence-b15-grabdrag-end.jpg
+	docs/evidence-b15-grabdrag-inertia.jpg
+	docs/evidence-b15-grabdrag-mid.jpg
+	docs/evidence-b15-orbit-swoop.jpg
+	docs/evidence-b15-overseer-topdown.jpg
+	docs/evidence-b15-slice-oblique-crosssection.jpg
+	docs/evidence-b15-snap-topdown.jpg
+	docs/evidence-b15-zoom-before.jpg
+	docs/evidence-b15-zoom-to-cursor.jpg
+	plugin/examples/anim/build_plugin/voxygen/voxel/npc/lizardman/male.vox
+	readme/evidence-b56-floating-selection-bleabrolm.png
+warning: method `plugin_source_count` is never used
+   --> common/assets/src/plugin_cache.rs:340:12
+    |
+169 | impl CombinedCache {
+    | ------------------ method in this implementation
+...
+340 |     pub fn plugin_source_count(&self) -> usize {
+    |            ^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `HashMap`
+ --> network/protocol/src/prio.rs:9:19
+  |
+9 |     collections::{HashMap, VecDeque},
+  |                   ^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `AUTHORITATIVE_SCAN_ROOTS`
+  --> common/src/determinism_scan.rs:25:38
+   |
+25 | use crate::scanner_framework::{self, AUTHORITATIVE_SCAN_ROOTS};
+   |                                      ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `rand::rng`
+  --> common/src/states/basic_ranged.rs:19:5
+   |
+19 | use rand::rng;
+   |     ^^^^^^^^^
+
+warning: unused import: `rand::rng`
+  --> common/src/states/charged_ranged.rs:14:5
+   |
+14 | use rand::rng;
+   |     ^^^^^^^^^
+
+warning: unused import: `rng`
+  --> common/src/states/rapid_ranged.rs:17:20
+   |
+17 | use rand::{RngExt, rng};
+   |                    ^^^
+
+warning: unused import: `rng`
+  --> common/src/states/sprite_summon.rs:14:20
+   |
+14 | use rand::{RngExt, rng};
+   |                    ^^^
+
+warning: unused import: `rand::rng`
+ --> common/src/states/transform.rs:4:5
+  |
+4 | use rand::rng;
+  |     ^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> common/src/feature_protocol.rs:131:9
+    |
+131 |     let mut require = |ok: bool, field: &'static str, out: &mut Vec<ProtocolViolation>| {
+    |         ----^^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: enum `DomainIdLaneV1` is never used
+   --> common/src/apex/digest/domain.rs:197:10
+    |
+197 | pub enum DomainIdLaneV1 {
+    |          ^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `domain_id_lane_v1` is never used
+   --> common/src/apex/digest/domain.rs:204:14
+    |
+204 | pub const fn domain_id_lane_v1(id: u16) -> DomainIdLaneV1 {
+    |              ^^^^^^^^^^^^^^^^^
+
+warning: function `push_option_u32` is never used
+   --> common/src/apex/world_baseline.rs:155:4
+    |
+155 | fn push_option_u32(buf: &mut Vec<u8>, v: Option<u32>) {
+    |    ^^^^^^^^^^^^^^^
+
+warning: function `scan_family` is never used
+   --> common/src/determinism_scan.rs:368:4
+    |
+368 | fn scan_family(workspace_root: &Path, roots: &[&Path], family: &FamilyV1) -> Vec<(String, String, u32)> {
+    |    ^^^^^^^^^^^
+
+warning: fields `file` and `note` are never read
+  --> common/src/host_input_manifest.rs:65:5
+   |
+64 | struct EnvVarSiteV1 {
+   |        ------------ fields in this struct
+65 |     file: &'static str,
+   |     ^^^^
+...
+68 |     note: &'static str,
+   |     ^^^^
+
+warning: constant `MANUALLY_VERIFIED_INDIRECTED` is never used
+   --> common/src/host_input_manifest.rs:369:7
+    |
+369 | const MANUALLY_VERIFIED_INDIRECTED: &[(&str, &str)] = &[
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `SelectionSiteV1` is never constructed
+  --> common/src/selection_registry.rs:71:8
+   |
+71 | struct SelectionSiteV1 {
+   |        ^^^^^^^^^^^^^^^
+
+warning: function `site` is never used
+  --> common/src/selection_registry.rs:79:10
+   |
+79 | const fn site(
+   |          ^^^^
+
+warning: constant `CATALOG` is never used
+  --> common/src/selection_registry.rs:94:7
+   |
+94 | const CATALOG: &[SelectionSiteV1] = &[
+   |       ^^^^^^^
+
+warning: fields `archive_ordinal`, `raw_path_bytes`, and `entry_type_byte` are never read
+   --> common/state/src/plugin/mod.rs:205:9
+    |
+204 | pub(crate) struct LegacyArchiveEntryRecordV1 {
+    |                   -------------------------- fields in this struct
+205 |     pub archive_ordinal: u32,
+    |         ^^^^^^^^^^^^^^^
+206 |     pub raw_path_bytes: Vec<u8>,
+    |         ^^^^^^^^^^^^^^
+207 |     pub decoded_path: Option<PathBuf>,
+208 |     pub entry_type_byte: u8,
+    |         ^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `archive_ordinal` and `entry_type_byte` are never read
+   --> common/state/src/plugin/mod.rs:221:9
+    |
+220 |     UnsupportedEntryTypeDeferred {
+    |     ---------------------------- fields in this variant
+221 |         archive_ordinal: u32,
+    |         ^^^^^^^^^^^^^^^
+222 |         entry_type_byte: u8,
+    |         ^^^^^^^^^^^^^^^
+    |
+    = note: `PluginInspectionWarningV1` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+warning: unused import: `CalendarEvent`
+  --> world/src/apex_worldgen_vocabulary.rs:53:26
+   |
+53 |     calendar::{Calendar, CalendarEvent},
+   |                          ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> world/src/sim/mod.rs:779:13
+    |
+779 |         let mut rng = ChaChaRng::from_seed(seed_expan::rng_state(seed));
+    |             ----^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: struct `PhaseEconomyEvidenceV1` is never constructed
+   --> world/src/site/economy/context.rs:205:12
+    |
+205 | pub struct PhaseEconomyEvidenceV1 {
+    |            ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `total_phase_count_v1` is never used
+   --> world/src/site/economy/context.rs:215:8
+    |
+215 | pub fn total_phase_count_v1() -> u32 { (HISTORY_DAYS / TICK_PERIOD) as u32 }
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: static `ECONOMY_PHASE_EVIDENCE_MODE` is never used
+   --> world/src/site/economy/context.rs:235:8
+    |
+235 | static ECONOMY_PHASE_EVIDENCE_MODE: std::sync::atomic::AtomicBool =
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `enable_economy_phase_evidence_mode_v1` is never used
+   --> world/src/site/economy/context.rs:241:8
+    |
+241 | pub fn enable_economy_phase_evidence_mode_v1() {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `economy_phase_evidence_mode_enabled_v1` is never used
+   --> world/src/site/economy/context.rs:245:8
+    |
+245 | pub fn economy_phase_evidence_mode_enabled_v1() -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `assert_evidence_mode_gate_v1` is never used
+   --> world/src/site/economy/context.rs:262:4
+    |
+262 | fn assert_evidence_mode_gate_v1(enabled: bool, caller: &str) {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `tick_with_phase_evidence_v1` is never used
+   --> world/src/site/economy/context.rs:276:8
+    |
+276 | pub fn tick_with_phase_evidence_v1(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `simulate_with_phase_evidence_v1` is never used
+   --> world/src/site/economy/context.rs:302:8
+    |
+302 | pub fn simulate_with_phase_evidence_v1(index: &mut Index) -> Vec<PhaseEconomyEvidenceV1> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Time`
+  --> rtsim/src/data/npc.rs:12:17
+   |
+12 |     resources::{Time, TimeOfDay},
+   |                 ^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Time`
+ --> rtsim/src/data/quest.rs:2:17
+  |
+2 |     resources::{Time, TimeOfDay},
+  |                 ^^^^
+
+warning: unused import: `self`
+  --> rtsim/src/rule/npc_ai/archetype.rs:21:22
+   |
+21 | use common::assets::{self, AssetExt, BoxedError, FileAsset, load_ron};
+   |                      ^^^^
+
+warning: variable does not need to be mutable
+  --> rtsim/src/rule/cleanup.rs:21:17
+   |
+21 |             let mut rng = crate::tick_rng(ctx.index.seed, ctx.event.tick, 0xC1EA);
+   |                 ----^^^
+   |                 |
+   |                 help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `rng`
+  --> rtsim/src/rule/cleanup.rs:21:17
+   |
+21 |             let mut rng = crate::tick_rng(ctx.index.seed, ctx.event.tick, 0xC1EA);
+   |                 ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_rng`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `serialize_rider_map_sorted` is never used
+   --> rtsim/src/data/npc.rs:564:4
+    |
+564 | fn serialize_rider_map_sorted<S: serde::Serializer>(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: associated function `decay_chance_pre_t0_79_fix` is never used
+   --> rtsim/src/data/sentiment.rs:193:8
+    |
+123 | impl Sentiment {
+    | -------------- associated function in this implementation
+...
+193 |     fn decay_chance_pre_t0_79_fix(value: f32, dt: f32) -> f64 {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `self`
+  --> bastion-server/src/bastion_mood.rs:14:22
+   |
+14 | use common::assets::{self, AssetExt, BoxedError, FileAsset, load_ron};
+   |                      ^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+     --> bastion-server/src/bastion_jobs.rs:12378:32
+      |
+12378 |             while let Some((_, mut pos, mut vel, uid)) = embed_iter.next() {
+      |                                ----^^^
+      |                                |
+      |                                help: remove this `mut`
+      |
+      = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+     --> bastion-server/src/bastion_jobs.rs:12378:41
+      |
+12378 |             while let Some((_, mut pos, mut vel, uid)) = embed_iter.next() {
+      |                                         ----^^^
+      |                                         |
+      |                                         help: remove this `mut`
+
+warning: function `reservation_indices_are_consistent_v1` is never used
+     --> bastion-server/src/bastion_jobs.rs:15861:4
+      |
+15861 | fn reservation_indices_are_consistent_v1(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      |
+      = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `capacity` is never read
+   --> bastion-server/src/bastion_traversal.rs:369:9
+    |
+367 | pub(crate) struct TraversalLink {
+    |                   ------------- field in this struct
+368 |     /// Simultaneous same-direction traversers allowed. M3: always 1.
+369 |     pub capacity: u8,
+    |         ^^^^^^^^
+    |
+    = note: `TraversalLink` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: unused import: `JournalStateV1`
+  --> server/src/net_command.rs:15:90
+   |
+15 |     CommandKindV1, CommandOutcomeV1, CommandReceiptV1, CommandRefusalV1, JournalErrorV1, JournalStateV1,
+   |                                                                                          ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `PathBuf`
+  --> server/src/save_inventory.rs:30:18
+   |
+30 |     path::{Path, PathBuf},
+   |                  ^^^^^^^
+
+warning: unused import: `RngExt`
+  --> server/src/sys/agent/mod.rs:21:12
+   |
+21 | use rand::{RngExt, SeedableRng, rng};
+   |            ^^^^^^
+
+warning: unused import: `BlockKind`
+  --> server/src/sys/msg/in_game.rs:15:22
+   |
+15 |     terrain::{Block, BlockKind, SpriteKind, TerrainGrid},
+   |                      ^^^^^^^^^
+
+warning: unused import: `common::grid::Grid`
+  --> server/src/lib.rs:97:5
+   |
+97 | use common::grid::Grid;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `util::Sampler`
+  --> server/src/sys/msg/in_game.rs:35:32
+   |
+35 | use world::{IndexOwned, World, util::Sampler};
+   |                                ^^^^^^^^^^^^^
+
+warning: variable does not need to be mutable
+   --> server/src/events/inventory_manip.rs:187:17
+    |
+187 |             let mut rng = {
+    |                 ----^^^
+    |                 |
+    |                 help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `rng`
+   --> server/src/events/inventory_manip.rs:187:17
+    |
+187 |             let mut rng = {
+    |                 ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_rng`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> server/src/rtsim/tick.rs:660:13
+    |
+660 |             mut inventories,
+    |             ----^^^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: enum `BypassRoleV1` is never used
+  --> server/src/net_command_bypass.rs:21:17
+   |
+21 | pub(crate) enum BypassRoleV1 {
+   |                 ^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `BYPASS_SURFACE_ROLES` is never used
+  --> server/src/net_command_bypass.rs:37:18
+   |
+37 | pub(crate) const BYPASS_SURFACE_ROLES: &[(&str, BypassRoleV1)] = &[
+   |                  ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `BYPASS_SURFACE_PATTERNS` is never used
+  --> server/src/net_command_bypass.rs:78:18
+   |
+78 | pub(crate) const BYPASS_SURFACE_PATTERNS: [&str; 3] =
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `scan_bypass_surfaces_v1` is never used
+  --> server/src/net_command_bypass.rs:83:15
+   |
+83 | pub(crate) fn scan_bypass_surfaces_v1(root: &Path) -> Vec<String> {
+   |               ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `LegacyDisconnectSiteV1` is never constructed
+  --> server/src/net_checkpoint_disconnect.rs:26:19
+   |
+26 | pub(crate) struct LegacyDisconnectSiteV1 {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `LEGACY_DISCONNECT_SITES` is never used
+  --> server/src/net_checkpoint_disconnect.rs:39:18
+   |
+39 | pub(crate) const LEGACY_DISCONNECT_SITES: &[LegacyDisconnectSiteV1] = &[
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `CASE_COVERAGE` is never used
+  --> server/src/semantic_net/canary_coverage.rs:31:18
+   |
+31 | pub(crate) const CASE_COVERAGE: &[(&str, &str)] = &[
+   |                  ^^^^^^^^^^^^^
+
+warning: enum `ReceiveSiteClassV1` is never used
+  --> server/src/semantic_net/receive_inventory.rs:30:17
+   |
+30 | pub(crate) enum ReceiveSiteClassV1 {
+   |                 ^^^^^^^^^^^^^^^^^^
+
+warning: function `scan_server_src` is never used
+  --> server/src/semantic_net/receive_inventory.rs:66:15
+   |
+66 | pub(crate) fn scan_server_src(root: &Path) -> Vec<(String, String, u32)> {
+   |               ^^^^^^^^^^^^^^^
+
+warning: constant `SELF_EXCLUDED_FILES` is never used
+  --> server/src/semantic_net/receive_inventory.rs:73:7
+   |
+73 | const SELF_EXCLUDED_FILES: [&str; 2] =
+   |       ^^^^^^^^^^^^^^^^^^^
+
+warning: function `scan_dir` is never used
+  --> server/src/semantic_net/receive_inventory.rs:76:4
+   |
+76 | fn scan_dir(base: &Path, dir: &Path, out: &mut Vec<(String, String, u32)>) {
+   |    ^^^^^^^^
+
+warning: function `scan_file` is never used
+  --> server/src/semantic_net/receive_inventory.rs:89:4
+   |
+89 | fn scan_file(base: &Path, path: &Path, out: &mut Vec<(String, String, u32)>) {
+   |    ^^^^^^^^^
+
+warning: constant `RECEIVE_SITE_CATALOG` is never used
+  --> server/src/semantic_net/receive_inventory_catalog.rs:14:18
+   |
+14 | pub(super) const RECEIVE_SITE_CATALOG: [(&str, &str, u32, ReceiveSiteClassV1); 24] = [
+   |                  ^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `SendSiteClassV1` is never used
+  --> server/src/semantic_net/send_inventory.rs:28:17
+   |
+28 | pub(crate) enum SendSiteClassV1 {
+   |                 ^^^^^^^^^^^^^^^
+
+warning: function `scan_server_src` is never used
+  --> server/src/semantic_net/send_inventory.rs:85:15
+   |
+85 | pub(crate) fn scan_server_src(root: &Path) -> Vec<(String, String, u32)> {
+   |               ^^^^^^^^^^^^^^^
+
+warning: constant `SELF_EXCLUDED_FILES` is never used
+  --> server/src/semantic_net/send_inventory.rs:92:7
+   |
+92 | const SELF_EXCLUDED_FILES: [&str; 2] = ["semantic_net/send_inventory.rs", "semantic_net/send_inventory_catalog.rs"];
+   |       ^^^^^^^^^^^^^^^^^^^
+
+warning: function `scan_dir` is never used
+  --> server/src/semantic_net/send_inventory.rs:94:4
+   |
+94 | fn scan_dir(base: &Path, dir: &Path, out: &mut Vec<(String, String, u32)>) {
+   |    ^^^^^^^^
+
+warning: function `scan_file` is never used
+   --> server/src/semantic_net/send_inventory.rs:107:4
+    |
+107 | fn scan_file(base: &Path, path: &Path, out: &mut Vec<(String, String, u32)>) {
+    |    ^^^^^^^^^
+
+warning: constant `SEND_SITE_CATALOG` is never used
+  --> server/src/semantic_net/send_inventory_catalog.rs:20:18
+   |
+20 | pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 201] = [
+   |                  ^^^^^^^^^^^^^^^^^
+
+warning: method `adopted_at_tick` is never used
+  --> server/src/weather/tick.rs:61:12
+   |
+51 | impl WeatherJob {
+   | --------------- method in this implementation
+...
+61 |     pub fn adopted_at_tick(&self) -> u64 { self.adopted_at_tick }
+   |            ^^^^^^^^^^^^^^^
+
+warning: unused import: `WorkType`
+     --> bastion-harness/src/main.rs:21565:44
+      |
+21565 |         bastion::{DesignationKind, Region, WorkType},
+      |                                            ^^^^^^^^
+      |
+      = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Join`
+     --> bastion-harness/src/main.rs:15716:26
+      |
+15716 |     use specs::{Builder, Join};
+      |                          ^^^^
+
+warning: unused variable: `names`
+     --> bastion-harness/src/main.rs:11963:9
+      |
+11963 |     let names = server.bastion_spawn_colony(
+      |         ^^^^^ help: if this is intentional, prefix it with an underscore: `_names`
+      |
+      = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+     --> bastion-harness/src/main.rs:15803:9
+      |
+15803 |     let mut spawn = |server: &mut Server, x: f32, y: f32, alignment: Alignment, agent: bool| {
+      |         ----^^^^^
+      |         |
+      |         help: remove this `mut`
+      |
+      = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+     --> bastion-harness/src/main.rs:16853:9
+      |
+16853 |     let mut check = |fails: &mut Vec<String>, name: &str, pass: bool, detail: String| {
+      |         ----^^^^^
+      |         |
+      |         help: remove this `mut`
+
+warning: unused variable: `fires0`
+     --> bastion-harness/src/main.rs:16895:9
+      |
+16895 |     let fires0 = server.bastion_center_net_fires();
+      |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_fires0`
+
+warning: variable does not need to be mutable
+     --> bastion-harness/src/main.rs:17434:9
+      |
+17434 |     let mut fell_tree = |server: &mut Server,
+      |         ----^^^^^^^^^
+      |         |
+      |         help: remove this `mut`
+
+DONE=12
+@@@SEED 49@@@
+{"b5_55_blocked_by":null,"b5_55_clears_on_cancel":true,"b5_55_diag":{"claimant":null,"progress":0.0,"unreachable":true},"b5_55_names_blocker":false,"b5_55_notified_once":false,"b5_any_mining_xp":true,"b5_any_needs_materials":true,"b5_any_woodcutting_xp":true,"b5_b15_adjacent_claimed":true,"b5_b15_floater_skipped":true,"b5_b15_ontop_claimed":true,"b5_build_ok_jobs":1,"b5_build_placed":true,"b5_build_stall_jobs":1,"b5_build_stall_untouched":true,"b5_build_stamp":"b89cbc799d+dirty built 2026-08-04T06:56:10Z","b5_cascade_probe":{"abort_ceiling_max":0,"abort_resets_max":0,"access_emissions_max":1,"frontier_completes_max":0,"members_seen":1,"present":true},"b5_cavein_drop_cells":0,"b5_ch_base_blocked_by":null,"b5_ch_base_blocked_sources":[],"b5_ch_cancel_clean":true,"b5_ch_cells":14336,"b5_ch_engaged":true,"b5_ch_ground_truth_tree_present":true,"b5_ch_ground_truth_witness":{"leaves_pos":[28496,11803,384],"ring_index":0,"wood_pos":[28496,11803,383]},"b5_ch_jobs":7,"b5_ch_leaf_cleared":true,"b5_ch_leaf_diag":null,"b5_ch_leaf_no_drop":true,"b5_ch_mixed":true,"b5_ch_oracle_class":"pass","b5_ch_rings_tried":1,"b5_ch_scan_incomplete":false,"b5_ch_scan_incomplete_rings":0,"b5_ch_scan_incomplete_total_columns":0,"b5_ch_scan_incomplete_unreachable_columns":0,"b5_ch_trees":7,"b5_chop_cleared":true,"b5_chop_jobs":1,"b5_chop_reachability_probe":null,"b5_drift_events":9,"b5_failed_clauses":[],"b5_flat_bounds_ok":true,"b5_flat_floor_flat":true,"b5_flat_hint_decoupled":true,"b5_flat_total":108,"b5_gave_item":true,"b5_hill_past_old_cap":true,"b5_hill_reaches_crest":true,"b5_hill_total_ok":true,"b5_locomotion":[1998,5,4],"b5_log_sum":1,"b5_max_same_target_timeouts":2,"b5_mine_blocks_mined":27,"b5_mine_cell_diag":[],"b5_mine_cleared":true,"b5_mine_footprint_top_witness":null,"b5_mine_jobs":27,"b5_mine_jobs_remaining":0,"b5_mine_reachability_probe":[],"b5_mine_timeout_position_diag":[{"cells_below_filled":0,"is_top_layer":true,"pos":[28547,11823,340],"timeout_count":2},{"cells_below_filled":0,"is_top_layer":true,"pos":[28548,11823,340],"timeout_count":1}],"b5_rescue_fired":true,"b5_slope_bounds_ok":true,"b5_slope_cancel_clean":true,"b5_slope_columns_ok":true,"b5_slope_jobs_total":72,"b5_slope_legacy_jobs":45,"b5_soak_avg_tick_ms":6.347341916666667,"b5_stone_entities":4,"b5_stone_sum":27,"b5_timeouts_on_never_completed_jobs":0,"b5_tool_ok":true,"b5_tool_steel":2.0,"b5_tool_stone":1.5,"b5_travel_timeouts":5}
+B5 SCENARIO: PASS
+@@@SEED 50@@@
+{"b5_55_blocked_by":null,"b5_55_clears_on_cancel":true,"b5_55_diag":{"claimant":null,"progress":0.0,"unreachable":true},"b5_55_names_blocker":false,"b5_55_notified_once":false,"b5_any_mining_xp":true,"b5_any_needs_materials":true,"b5_any_woodcutting_xp":true,"b5_b15_adjacent_claimed":true,"b5_b15_floater_skipped":true,"b5_b15_ontop_claimed":true,"b5_build_ok_jobs":1,"b5_build_placed":true,"b5_build_stall_jobs":1,"b5_build_stall_untouched":true,"b5_build_stamp":"b89cbc799d+dirty built 2026-08-04T06:56:10Z","b5_cascade_probe":{"abort_ceiling_max":0,"abort_resets_max":0,"access_emissions_max":2,"frontier_completes_max":0,"members_seen":2,"present":true},"b5_cavein_drop_cells":0,"b5_ch_base_blocked_by":null,"b5_ch_base_blocked_sources":[],"b5_ch_cancel_clean":true,"b5_ch_cells":1895,"b5_ch_engaged":true,"b5_ch_ground_truth_tree_present":true,"b5_ch_ground_truth_witness":{"leaves_pos":[24602,26352,279],"ring_index":24,"wood_pos":[24602,26352,278]},"b5_ch_jobs":1,"b5_ch_leaf_cleared":true,"b5_ch_leaf_diag":null,"b5_ch_leaf_no_drop":true,"b5_ch_mixed":true,"b5_ch_oracle_class":"pass","b5_ch_rings_tried":15,"b5_ch_scan_incomplete":false,"b5_ch_scan_incomplete_rings":0,"b5_ch_scan_incomplete_total_columns":0,"b5_ch_scan_incomplete_unreachable_columns":0,"b5_ch_trees":1,"b5_chop_cleared":true,"b5_chop_jobs":1,"b5_chop_reachability_probe":null,"b5_drift_events":10,"b5_failed_clauses":[],"b5_flat_bounds_ok":true,"b5_flat_floor_flat":true,"b5_flat_hint_decoupled":true,"b5_flat_total":108,"b5_gave_item":true,"b5_hill_past_old_cap":true,"b5_hill_reaches_crest":true,"b5_hill_total_ok":true,"b5_locomotion":[1937,4,6],"b5_log_sum":1,"b5_max_same_target_timeouts":2,"b5_mine_blocks_mined":27,"b5_mine_cell_diag":[],"b5_mine_cleared":true,"b5_mine_footprint_top_witness":null,"b5_mine_jobs":27,"b5_mine_jobs_remaining":0,"b5_mine_reachability_probe":[],"b5_mine_timeout_position_diag":[{"cells_below_filled":0,"is_top_layer":true,"pos":[24515,26191,169],"timeout_count":2},{"cells_below_filled":0,"is_top_layer":false,"pos":[24515,26192,168],"timeout_count":1},{"cells_below_filled":0,"is_top_layer":false,"pos":[24516,26191,167],"timeout_count":1}],"b5_rescue_fired":true,"b5_slope_bounds_ok":true,"b5_slope_cancel_clean":true,"b5_slope_columns_ok":true,"b5_slope_jobs_total":72,"b5_slope_legacy_jobs":45,"b5_soak_avg_tick_ms":5.674319371666666,"b5_stone_entities":3,"b5_stone_sum":27,"b5_timeouts_on_never_completed_jobs":0,"b5_tool_ok":true,"b5_tool_steel":2.0,"b5_tool_stone":1.5,"b5_travel_timeouts":4}
+B5 SCENARIO: PASS
+@@@SEED 51@@@
+{"b5_55_blocked_by":null,"b5_55_clears_on_cancel":true,"b5_55_diag":{"claimant":null,"progress":0.0,"unreachable":true},"b5_55_names_blocker":false,"b5_55_notified_once":false,"b5_any_mining_xp":true,"b5_any_needs_materials":true,"b5_any_woodcutting_xp":true,"b5_b15_adjacent_claimed":true,"b5_b15_floater_skipped":true,"b5_b15_ontop_claimed":true,"b5_build_ok_jobs":1,"b5_build_placed":true,"b5_build_stall_jobs":1,"b5_build_stall_untouched":true,"b5_build_stamp":"b89cbc799d+dirty built 2026-08-04T06:56:10Z","b5_cascade_probe":{"abort_ceiling_max":0,"abort_resets_max":0,"access_emissions_max":2,"frontier_completes_max":0,"members_seen":2,"present":true},"b5_cavein_drop_cells":3,"b5_ch_base_blocked_by":null,"b5_ch_base_blocked_sources":[],"b5_ch_cancel_clean":true,"b5_ch_cells":2048,"b5_ch_engaged":true,"b5_ch_ground_truth_tree_present":true,"b5_ch_ground_truth_witness":{"leaves_pos":[25136,15682,325],"ring_index":0,"wood_pos":[25136,15682,315]},"b5_ch_jobs":1,"b5_ch_leaf_cleared":true,"b5_ch_leaf_diag":null,"b5_ch_leaf_no_drop":true,"b5_ch_mixed":true,"b5_ch_oracle_class":"pass","b5_ch_rings_tried":1,"b5_ch_scan_incomplete":false,"b5_ch_scan_incomplete_rings":0,"b5_ch_scan_incomplete_total_columns":0,"b5_ch_scan_incomplete_unreachable_columns":0,"b5_ch_trees":1,"b5_chop_cleared":true,"b5_chop_jobs":1,"b5_chop_reachability_probe":null,"b5_drift_events":8,"b5_failed_clauses":[],"b5_flat_bounds_ok":true,"b5_flat_floor_flat":true,"b5_flat_hint_decoupled":true,"b5_flat_total":108,"b5_gave_item":true,"b5_hill_past_old_cap":true,"b5_hill_reaches_crest":true,"b5_hill_total_ok":true,"b5_locomotion":[5901,13,3],"b5_log_sum":1,"b5_max_same_target_timeouts":2,"b5_mine_blocks_mined":27,"b5_mine_cell_diag":[],"b5_mine_cleared":true,"b5_mine_footprint_top_witness":null,"b5_mine_jobs":27,"b5_mine_jobs_remaining":0,"b5_mine_reachability_probe":[],"b5_mine_timeout_position_diag":[{"cells_below_filled":0,"is_top_layer":true,"pos":[25189,15663,308],"timeout_count":2},{"cells_below_filled":0,"is_top_layer":true,"pos":[25189,15664,308],"timeout_count":2},{"cells_below_filled":0,"is_top_layer":true,"pos":[25189,15665,308],"timeout_count":2},{"cells_below_filled":0,"is_top_layer":true,"pos":[25187,15663,308],"timeout_count":1},{"cells_below_filled":0,"is_top_layer":true,"pos":[25187,15664,308],"timeout_count":1},{"cells_below_filled":0,"is_top_layer":false,"pos":[25187,15665,306],"timeout_count":1},{"cells_below_filled":0,"is_top_layer":true,"pos":[25187,15665,308],"timeout_count":1},{"cells_below_filled":0,"is_top_layer":true,"pos":[25188,15663,308],"timeout_count":1},{"cells_below_filled":0,"is_top_layer":true,"pos":[25188,15664,308],"timeout_count":1},{"cells_below_filled":0,"is_top_layer":true,"pos":[25188,15665,308],"timeout_count":1}],"b5_rescue_fired":true,"b5_slope_bounds_ok":true,"b5_slope_cancel_clean":true,"b5_slope_columns_ok":true,"b5_slope_jobs_total":72,"b5_slope_legacy_jobs":45,"b5_soak_avg_tick_ms":4.754370491666666,"b5_stone_entities":2,"b5_stone_sum":27,"b5_timeouts_on_never_completed_jobs":0,"b5_tool_ok":true,"b5_tool_steel":2.0,"b5_tool_stone":1.5,"b5_travel_timeouts":13}
+B5 SCENARIO: PASS
+@@@SEED 52@@@
+{"b5_55_blocked_by":null,"b5_55_clears_on_cancel":true,"b5_55_diag":{"claimant":null,"progress":0.0,"unreachable":true},"b5_55_names_blocker":false,"b5_55_notified_once":false,"b5_any_mining_xp":true,"b5_any_needs_materials":true,"b5_any_woodcutting_xp":true,"b5_b15_adjacent_claimed":true,"b5_b15_floater_skipped":true,"b5_b15_ontop_claimed":true,"b5_build_ok_jobs":1,"b5_build_placed":true,"b5_build_stall_jobs":1,"b5_build_stall_untouched":true,"b5_build_stamp":"b89cbc799d+dirty built 2026-08-04T06:56:10Z","b5_cascade_probe":{"abort_ceiling_max":0,"abort_resets_max":0,"access_emissions_max":2,"frontier_completes_max":0,"members_seen":3,"present":true},"b5_cavein_drop_cells":8,"b5_ch_base_blocked_by":null,"b5_ch_base_blocked_sources":[],"b5_ch_cancel_clean":true,"b5_ch_cells":6144,"b5_ch_engaged":true,"b5_ch_ground_truth_tree_present":true,"b5_ch_ground_truth_witness":{"leaves_pos":[25085,28622,181],"ring_index":8,"wood_pos":[25085,28622,177]},"b5_ch_jobs":3,"b5_ch_leaf_cleared":false,"b5_ch_leaf_diag":{"claimant":null,"progress":0.0,"timeouts_on_this_cell":1,"unreachable":true},"b5_ch_leaf_no_drop":true,"b5_ch_mixed":true,"b5_ch_oracle_class":"pass","b5_ch_rings_tried":10,"b5_ch_scan_incomplete":false,"b5_ch_scan_incomplete_rings":0,"b5_ch_scan_incomplete_total_columns":0,"b5_ch_scan_incomplete_unreachable_columns":0,"b5_ch_trees":3,"b5_chop_cleared":true,"b5_chop_jobs":1,"b5_chop_reachability_probe":null,"b5_drift_events":17,"b5_failed_clauses":["ch_leaf_cleared"],"b5_flat_bounds_ok":true,"b5_flat_floor_flat":true,"b5_flat_hint_decoupled":true,"b5_flat_total":108,"b5_gave_item":true,"b5_hill_past_old_cap":true,"b5_hill_reaches_crest":true,"b5_hill_total_ok":true,"b5_locomotion":[10170,23,8],"b5_log_sum":1,"b5_max_same_target_timeouts":2,"b5_mine_blocks_mined":27,"b5_mine_cell_diag":[{"blocked_by":[25027,28529,152],"cells_above_open":2,"cells_below_open":0,"claimant":null,"cycles_since_last_claim":294,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[25027,28527,150],"progress":0.0,"starvation_crowded_cycles":294,"starvation_cycles":294,"timeouts_on_this_cell":0,"times_offered":0,"unreachable":false},{"blocked_by":[25027,28529,152],"cells_above_open":1,"cells_below_open":1,"claimant":null,"cycles_since_last_claim":0,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[25027,28527,151],"progress":0.0,"starvation_crowded_cycles":227,"starvation_cycles":227,"timeouts_on_this_cell":2,"times_offered":3,"unreachable":false},{"blocked_by":[25027,28529,152],"cells_above_open":0,"cells_below_open":2,"claimant":null,"cycles_since_last_claim":0,"is_column_frontier":true,"is_top_layer":true,"needs_materials":false,"pos":[25027,28527,152],"progress":0.0,"starvation_crowded_cycles":86,"starvation_cycles":86,"timeouts_on_this_cell":2,"times_offered":2,"unreachable":false},{"blocked_by":[25027,28529,152],"cells_above_open":2,"cells_below_open":0,"claimant":null,"cycles_since_last_claim":294,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[25027,28528,150],"progress":0.0,"starvation_crowded_cycles":294,"starvation_cycles":294,"timeouts_on_this_cell":0,"times_offered":0,"unreachable":false},{"blocked_by":[25027,28529,152],"cells_above_open":1,"cells_below_open":1,"claimant":null,"cycles_since_last_claim":0,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[25027,28528,151],"progress":0.0,"starvation_crowded_cycles":175,"starvation_cycles":175,"timeouts_on_this_cell":0,"times_offered":1,"unreachable":false},{"blocked_by":[25027,28529,152],"cells_above_open":0,"cells_below_open":2,"claimant":null,"cycles_since_last_claim":0,"is_column_frontier":true,"is_top_layer":true,"needs_materials":false,"pos":[25027,28528,152],"progress":0.0,"starvation_crowded_cycles":99,"starvation_cycles":99,"timeouts_on_this_cell":0,"times_offered":1,"unreachable":false},{"blocked_by":[25027,28529,152],"cells_above_open":2,"cells_below_open":0,"claimant":null,"cycles_since_last_claim":294,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[25028,28527,150],"progress":0.0,"starvation_crowded_cycles":294,"starvation_cycles":294,"timeouts_on_this_cell":0,"times_offered":0,"unreachable":false},{"blocked_by":[25027,28529,152],"cells_above_open":1,"cells_below_open":1,"claimant":null,"cycles_since_last_claim":0,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[25028,28527,151],"progress":0.0,"starvation_crowded_cycles":147,"starvation_cycles":147,"timeouts_on_this_cell":0,"times_offered":1,"unreachable":false},{"blocked_by":[25027,28529,152],"cells_above_open":0,"cells_below_open":2,"claimant":null,"cycles_since_last_claim":0,"is_column_frontier":true,"is_top_layer":true,"needs_materials":false,"pos":[25028,28527,152],"progress":0.0,"starvation_crowded_cycles":84,"starvation_cycles":84,"timeouts_on_this_cell":2,"times_offered":2,"unreachable":false},{"blocked_by":[25027,28529,152],"cells_above_open":2,"cells_below_open":0,"claimant":null,"cycles_since_last_claim":294,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[25028,28528,150],"progress":0.0,"starvation_crowded_cycles":294,"starvation_cycles":294,"timeouts_on_this_cell":0,"times_offered":0,"unreachable":false},{"blocked_by":[25027,28529,152],"cells_above_open":1,"cells_below_open":1,"claimant":null,"cycles_since_last_claim":0,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[25028,28528,151],"progress":0.0,"starvation_crowded_cycles":264,"starvation_cycles":264,"timeouts_on_this_cell":1,"times_offered":2,"unreachable":false},{"blocked_by":[25027,28529,152],"cells_above_open":0,"cells_below_open":2,"claimant":null,"cycles_since_last_claim":0,"is_column_frontier":true,"is_top_layer":true,"needs_materials":false,"pos":[25028,28528,152],"progress":0.0,"starvation_crowded_cycles":90,"starvation_cycles":90,"timeouts_on_this_cell":0,"times_offered":1,"unreachable":false},{"blocked_by":[25027,28529,152],"cells_above_open":2,"cells_below_open":0,"claimant":null,"cycles_since_last_claim":48,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[25028,28529,150],"progress":0.0,"starvation_crowded_cycles":231,"starvation_cycles":231,"timeouts_on_this_cell":2,"times_offered":2,"unreachable":false},{"blocked_by":[25027,28529,152],"cells_above_open":1,"cells_below_open":1,"claimant":null,"cycles_since_last_claim":0,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[25028,28529,151],"progress":0.0,"starvation_crowded_cycles":150,"starvation_cycles":150,"timeouts_on_this_cell":0,"times_offered":1,"unreachable":false},{"blocked_by":[25027,28529,152],"cells_above_open":0,"cells_below_open":2,"claimant":null,"cycles_since_last_claim":0,"is_column_frontier":true,"is_top_layer":true,"needs_materials":false,"pos":[25028,28529,152],"progress":0.0,"starvation_crowded_cycles":91,"starvation_cycles":91,"timeouts_on_this_cell":1,"times_offered":1,"unreachable":false},{"blocked_by":[25027,28529,152],"cells_above_open":2,"cells_below_open":0,"claimant":null,"cycles_since_last_claim":72,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[25029,28528,150],"progress":0.0,"starvation_crowded_cycles":269,"starvation_cycles":269,"timeouts_on_this_cell":1,"times_offered":1,"unreachable":false},{"blocked_by":[25027,28529,152],"cells_above_open":1,"cells_below_open":1,"claimant":null,"cycles_since_last_claim":0,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[25029,28528,151],"progress":0.0,"starvation_crowded_cycles":162,"starvation_cycles":162,"timeouts_on_this_cell":0,"times_offered":1,"unreachable":false},{"blocked_by":[25027,28529,152],"cells_above_open":0,"cells_below_open":2,"claimant":null,"cycles_since_last_claim":0,"is_column_frontier":true,"is_top_layer":true,"needs_materials":false,"pos":[25029,28528,152],"progress":0.0,"starvation_crowded_cycles":104,"starvation_cycles":104,"timeouts_on_this_cell":2,"times_offered":2,"unreachable":false},{"blocked_by":[25027,28529,152],"cells_above_open":2,"cells_below_open":0,"claimant":null,"cycles_since_last_claim":54,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[25029,28529,150],"progress":0.0,"starvation_crowded_cycles":274,"starvation_cycles":274,"timeouts_on_this_cell":1,"times_offered":1,"unreachable":false},{"blocked_by":[25027,28529,152],"cells_above_open":1,"cells_below_open":1,"claimant":null,"cycles_since_last_claim":0,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[25029,28529,151],"progress":0.0,"starvation_crowded_cycles":156,"starvation_cycles":156,"timeouts_on_this_cell":0,"times_offered":1,"unreachable":false},{"blocked_by":[25027,28529,152],"cells_above_open":0,"cells_below_open":2,"claimant":null,"cycles_since_last_claim":0,"is_column_frontier":true,"is_top_layer":true,"needs_materials":false,"pos":[25029,28529,152],"progress":0.0,"starvation_crowded_cycles":91,"starvation_cycles":91,"timeouts_on_this_cell":2,"times_offered":2,"unreachable":false}],"b5_mine_cleared":true,"b5_mine_footprint_top_witness":null,"b5_mine_jobs":27,"b5_mine_jobs_remaining":7,"b5_mine_reachability_probe":[{"from_last_timeout":null,"from_spawn":{"columns_visited_jump":0,"columns_visited_scramble":0,"columns_visited_step":0,"from":[25008,28528,154],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":null},"last_timeout_pos":null,"min_distance_to_target":null,"route_next_idx_pinned":null,"target":[25027,28527,150],"timeout_route_states":[]},{"from_last_timeout":{"columns_visited_jump":134,"columns_visited_scramble":134,"columns_visited_step":130,"from":[25032,28524,149],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[25027,28527,152]},"from_spawn":{"columns_visited_jump":749,"columns_visited_scramble":749,"columns_visited_step":749,"from":[25008,28528,154],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[25027,28527,152]},"last_timeout_pos":[25032.185546875,28524.5,149.0],"min_distance_to_target":6.105877876281738,"route_next_idx_pinned":null,"target":[25027,28527,151],"timeout_route_states":[{"route_complete":null,"route_exists":false,"route_next_idx":null},{"route_complete":null,"route_exists":false,"route_next_idx":null}]},{"from_last_timeout":{"columns_visited_jump":130,"columns_visited_scramble":134,"columns_visited_step":125,"from":[25031,28523,149],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[25027,28527,153]},"from_spawn":{"columns_visited_jump":749,"columns_visited_scramble":749,"columns_visited_step":749,"from":[25008,28528,154],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[25027,28527,153]},"last_timeout_pos":[25031.1875,28523.478515625,149.0],"min_distance_to_target":6.494760990142822,"route_next_idx_pinned":null,"target":[25027,28527,152],"timeout_route_states":[{"route_complete":null,"route_exists":false,"route_next_idx":null},{"route_complete":null,"route_exists":false,"route_next_idx":null}]},{"from_last_timeout":null,"from_spawn":{"columns_visited_jump":0,"columns_visited_scramble":0,"columns_visited_step":0,"from":[25008,28528,154],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":null},"last_timeout_pos":null,"min_distance_to_target":null,"route_next_idx_pinned":null,"target":[25027,28528,150],"timeout_route_states":[]},{"from_last_timeout":null,"from_spawn":{"columns_visited_jump":678,"columns_visited_scramble":678,"columns_visited_step":678,"from":[25008,28528,154],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[25027,28528,152]},"last_timeout_pos":null,"min_distance_to_target":null,"route_next_idx_pinned":null,"target":[25027,28528,151],"timeout_route_states":[]},{"from_last_timeout":null,"from_spawn":{"columns_visited_jump":678,"columns_visited_scramble":678,"columns_visited_step":678,"from":[25008,28528,154],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[25027,28528,153]},"last_timeout_pos":null,"min_distance_to_target":3.963083028793335,"route_next_idx_pinned":null,"target":[25027,28528,152],"timeout_route_states":[]},{"from_last_timeout":null,"from_spawn":{"columns_visited_jump":0,"columns_visited_scramble":0,"columns_visited_step":0,"from":[25008,28528,154],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":null},"last_timeout_pos":null,"min_distance_to_target":null,"route_next_idx_pinned":null,"target":[25028,28527,150],"timeout_route_states":[]},{"from_last_timeout":null,"from_spawn":{"columns_visited_jump":823,"columns_visited_scramble":823,"columns_visited_step":823,"from":[25008,28528,154],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[25028,28527,152]},"last_timeout_pos":null,"min_distance_to_target":null,"route_next_idx_pinned":null,"target":[25028,28527,151],"timeout_route_states":[]},{"from_last_timeout":{"columns_visited_jump":104,"columns_visited_scramble":104,"columns_visited_step":101,"from":[25032,28524,149],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[25028,28527,153]},"from_spawn":{"columns_visited_jump":823,"columns_visited_scramble":823,"columns_visited_step":823,"from":[25008,28528,154],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[25028,28527,153]},"last_timeout_pos":[25032.162109375,28524.474609375,149.0],"min_distance_to_target":6.143542289733887,"route_next_idx_pinned":null,"target":[25028,28527,152],"timeout_route_states":[{"route_complete":null,"route_exists":false,"route_next_idx":null},{"route_complete":null,"route_exists":false,"route_next_idx":null}]},{"from_last_timeout":null,"from_spawn":{"columns_visited_jump":0,"columns_visited_scramble":0,"columns_visited_step":0,"from":[25008,28528,154],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":null},"last_timeout_pos":null,"min_distance_to_target":null,"route_next_idx_pinned":null,"target":[25028,28528,150],"timeout_route_states":[]},{"from_last_timeout":{"columns_visited_jump":0,"columns_visited_scramble":0,"columns_visited_step":0,"from":[25030,28524,147],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":null},"from_spawn":{"columns_visited_jump":0,"columns_visited_scramble":0,"columns_visited_step":0,"from":[25008,28528,154],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":null},"last_timeout_pos":[25030.4140625,28524.85546875,147.0],"min_distance_to_target":3.820845365524292,"route_next_idx_pinned":null,"target":[25028,28528,151],"timeout_route_states":[{"route_complete":null,"route_exists":false,"route_next_idx":null}]},{"from_last_timeout":null,"from_spawn":{"columns_visited_jump":0,"columns_visited_scramble":0,"columns_visited_step":0,"from":[25008,28528,154],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":null},"last_timeout_pos":null,"min_distance_to_target":3.48150372505188,"route_next_idx_pinned":null,"target":[25028,28528,152],"timeout_route_states":[]},{"from_last_timeout":{"columns_visited_jump":0,"columns_visited_scramble":0,"columns_visited_step":0,"from":[25031,28525,147],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":null},"from_spawn":{"columns_visited_jump":0,"columns_visited_scramble":0,"columns_visited_step":0,"from":[25008,28528,154],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":null},"last_timeout_pos":[25031.49609375,28525.607421875,147.0],"min_distance_to_target":3.46665358543396,"route_next_idx_pinned":null,"target":[25028,28529,150],"timeout_route_states":[{"route_complete":null,"route_exists":false,"route_next_idx":null},{"route_complete":null,"route_exists":false,"route_next_idx":null}]},{"from_last_timeout":null,"from_spawn":{"columns_visited_jump":0,"columns_visited_scramble":0,"columns_visited_step":0,"from":[25008,28528,154],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":null},"last_timeout_pos":null,"min_distance_to_target":null,"route_next_idx_pinned":null,"target":[25028,28529,151],"timeout_route_states":[]},{"from_last_timeout":{"columns_visited_jump":169,"columns_visited_scramble":170,"columns_visited_step":164,"from":[25032,28524,149],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[25028,28529,153]},"from_spawn":{"columns_visited_jump":823,"columns_visited_scramble":823,"columns_visited_step":823,"from":[25008,28528,154],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[25028,28529,153]},"last_timeout_pos":[25032.5,28524.5,149.0],"min_distance_to_target":3.9207139015197754,"route_next_idx_pinned":null,"target":[25028,28529,152],"timeout_route_states":[{"route_complete":null,"route_exists":false,"route_next_idx":null}]},{"from_last_timeout":{"columns_visited_jump":0,"columns_visited_scramble":0,"columns_visited_step":0,"from":[25030,28526,146],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":null},"from_spawn":{"columns_visited_jump":0,"columns_visited_scramble":0,"columns_visited_step":0,"from":[25008,28528,154],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":null},"last_timeout_pos":[25030.40234375,28526.08203125,146.0],"min_distance_to_target":4.266201496124268,"route_next_idx_pinned":null,"target":[25029,28528,150],"timeout_route_states":[{"route_complete":null,"route_exists":false,"route_next_idx":null}]},{"from_last_timeout":null,"from_spawn":{"columns_visited_jump":823,"columns_visited_scramble":823,"columns_visited_step":823,"from":[25008,28528,154],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[25029,28528,152]},"last_timeout_pos":null,"min_distance_to_target":null,"route_next_idx_pinned":null,"target":[25029,28528,151],"timeout_route_states":[]},{"from_last_timeout":{"columns_visited_jump":55,"columns_visited_scramble":56,"columns_visited_step":55,"from":[25031,28525,148],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[25029,28528,153]},"from_spawn":{"columns_visited_jump":823,"columns_visited_scramble":823,"columns_visited_step":823,"from":[25008,28528,154],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[25029,28528,153]},"last_timeout_pos":[25031.3359375,28525.197265625,148.0],"min_distance_to_target":5.599789619445801,"route_next_idx_pinned":null,"target":[25029,28528,152],"timeout_route_states":[{"route_complete":null,"route_exists":false,"route_next_idx":null},{"route_complete":null,"route_exists":false,"route_next_idx":null}]},{"from_last_timeout":{"columns_visited_jump":0,"columns_visited_scramble":0,"columns_visited_step":0,"from":[25031,28524,148],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":null},"from_spawn":{"columns_visited_jump":0,"columns_visited_scramble":0,"columns_visited_step":0,"from":[25008,28528,154],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":null},"last_timeout_pos":[25031.384765625,28524.478515625,148.0],"min_distance_to_target":5.799856662750244,"route_next_idx_pinned":null,"target":[25029,28529,150],"timeout_route_states":[{"route_complete":null,"route_exists":false,"route_next_idx":null}]},{"from_last_timeout":null,"from_spawn":{"columns_visited_jump":899,"columns_visited_scramble":899,"columns_visited_step":899,"from":[25008,28528,154],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[25029,28529,152]},"last_timeout_pos":null,"min_distance_to_target":null,"route_next_idx_pinned":null,"target":[25029,28529,151],"timeout_route_states":[]},{"from_last_timeout":{"columns_visited_jump":132,"columns_visited_scramble":137,"columns_visited_step":127,"from":[25031,28523,149],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[25029,28529,153]},"from_spawn":{"columns_visited_jump":899,"columns_visited_scramble":899,"columns_visited_step":899,"from":[25008,28528,154],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[25029,28529,153]},"last_timeout_pos":[25031.37109375,28523.837890625,149.0],"min_distance_to_target":7.177011966705322,"route_next_idx_pinned":null,"target":[25029,28529,152],"timeout_route_states":[{"route_complete":null,"route_exists":false,"route_next_idx":null},{"route_complete":null,"route_exists":false,"route_next_idx":null}]}],"b5_mine_timeout_position_diag":[{"cells_below_filled":0,"is_top_layer":false,"pos":[25027,28527,151],"timeout_count":2},{"cells_below_filled":0,"is_top_layer":true,"pos":[25027,28527,152],"timeout_count":2},{"cells_below_filled":0,"is_top_layer":true,"pos":[25027,28529,152],"timeout_count":2},{"cells_below_filled":0,"is_top_layer":true,"pos":[25028,28527,152],"timeout_count":2},{"cells_below_filled":0,"is_top_layer":false,"pos":[25028,28529,150],"timeout_count":2},{"cells_below_filled":0,"is_top_layer":true,"pos":[25029,28527,152],"timeout_count":2},{"cells_below_filled":0,"is_top_layer":true,"pos":[25029,28528,152],"timeout_count":2},{"cells_below_filled":0,"is_top_layer":true,"pos":[25029,28529,152],"timeout_count":2},{"cells_below_filled":0,"is_top_layer":false,"pos":[25028,28528,151],"timeout_count":1},{"cells_below_filled":0,"is_top_layer":true,"pos":[25028,28529,152],"timeout_count":1},{"cells_below_filled":0,"is_top_layer":false,"pos":[25029,28528,150],"timeout_count":1},{"cells_below_filled":0,"is_top_layer":false,"pos":[25029,28529,150],"timeout_count":1}],"b5_rescue_fired":true,"b5_slope_bounds_ok":true,"b5_slope_cancel_clean":true,"b5_slope_columns_ok":true,"b5_slope_jobs_total":72,"b5_slope_legacy_jobs":45,"b5_soak_avg_tick_ms":6.146301861666666,"b5_stone_entities":4,"b5_stone_sum":28,"b5_timeouts_on_never_completed_jobs":16,"b5_tool_ok":true,"b5_tool_steel":2.0,"b5_tool_stone":1.5,"b5_travel_timeouts":23}
+B5 SCENARIO: FAIL
+B5 FAILED CLAUSES: ["ch_leaf_cleared"]
+@@@SEED 53@@@
+{"b5_55_blocked_by":null,"b5_55_clears_on_cancel":true,"b5_55_diag":{"claimant":null,"progress":0.0,"unreachable":true},"b5_55_names_blocker":false,"b5_55_notified_once":false,"b5_any_mining_xp":true,"b5_any_needs_materials":true,"b5_any_woodcutting_xp":true,"b5_b15_adjacent_claimed":true,"b5_b15_floater_skipped":true,"b5_b15_ontop_claimed":true,"b5_build_ok_jobs":1,"b5_build_placed":true,"b5_build_stall_jobs":1,"b5_build_stall_untouched":true,"b5_build_stamp":"b89cbc799d+dirty built 2026-08-04T06:56:10Z","b5_cascade_probe":{"abort_ceiling_max":0,"abort_resets_max":0,"access_emissions_max":2,"frontier_completes_max":0,"members_seen":1,"present":true},"b5_cavein_drop_cells":0,"b5_ch_base_blocked_by":null,"b5_ch_base_blocked_sources":[],"b5_ch_cancel_clean":true,"b5_ch_cells":2048,"b5_ch_engaged":true,"b5_ch_ground_truth_tree_present":true,"b5_ch_ground_truth_witness":{"leaves_pos":[21905,10284,305],"ring_index":21,"wood_pos":[21905,10284,304]},"b5_ch_jobs":1,"b5_ch_leaf_cleared":true,"b5_ch_leaf_diag":null,"b5_ch_leaf_no_drop":true,"b5_ch_mixed":true,"b5_ch_oracle_class":"pass","b5_ch_rings_tried":22,"b5_ch_scan_incomplete":false,"b5_ch_scan_incomplete_rings":0,"b5_ch_scan_incomplete_total_columns":0,"b5_ch_scan_incomplete_unreachable_columns":0,"b5_ch_trees":1,"b5_chop_cleared":true,"b5_chop_jobs":1,"b5_chop_reachability_probe":null,"b5_drift_events":6,"b5_failed_clauses":[],"b5_flat_bounds_ok":true,"b5_flat_floor_flat":true,"b5_flat_hint_decoupled":true,"b5_flat_total":108,"b5_gave_item":true,"b5_hill_past_old_cap":true,"b5_hill_reaches_crest":true,"b5_hill_total_ok":true,"b5_locomotion":[706,1,5],"b5_log_sum":1,"b5_max_same_target_timeouts":1,"b5_mine_blocks_mined":27,"b5_mine_cell_diag":[],"b5_mine_cleared":true,"b5_mine_footprint_top_witness":null,"b5_mine_jobs":27,"b5_mine_jobs_remaining":0,"b5_mine_reachability_probe":[],"b5_mine_timeout_position_diag":[],"b5_rescue_fired":true,"b5_slope_bounds_ok":true,"b5_slope_cancel_clean":true,"b5_slope_columns_ok":true,"b5_slope_jobs_total":72,"b5_slope_legacy_jobs":45,"b5_soak_avg_tick_ms":6.30524635,"b5_stone_entities":2,"b5_stone_sum":27,"b5_timeouts_on_never_completed_jobs":0,"b5_tool_ok":true,"b5_tool_steel":2.0,"b5_tool_stone":1.5,"b5_travel_timeouts":1}
+B5 SCENARIO: PASS
+@@@SEED 54@@@
+{"b5_55_blocked_by":null,"b5_55_clears_on_cancel":true,"b5_55_diag":{"claimant":null,"progress":0.0,"unreachable":true},"b5_55_names_blocker":false,"b5_55_notified_once":false,"b5_any_mining_xp":true,"b5_any_needs_materials":true,"b5_any_woodcutting_xp":true,"b5_b15_adjacent_claimed":true,"b5_b15_floater_skipped":true,"b5_b15_ontop_claimed":true,"b5_build_ok_jobs":1,"b5_build_placed":true,"b5_build_stall_jobs":1,"b5_build_stall_untouched":true,"b5_build_stamp":"b89cbc799d+dirty built 2026-08-04T06:56:10Z","b5_cascade_probe":{"abort_ceiling_max":0,"abort_resets_max":0,"access_emissions_max":0,"frontier_completes_max":0,"members_seen":0,"present":true},"b5_cavein_drop_cells":0,"b5_ch_base_blocked_by":null,"b5_ch_base_blocked_sources":[],"b5_ch_cancel_clean":true,"b5_ch_cells":16384,"b5_ch_engaged":true,"b5_ch_ground_truth_tree_present":true,"b5_ch_ground_truth_witness":{"leaves_pos":[26608,4927,167],"ring_index":2,"wood_pos":[26608,4927,157]},"b5_ch_jobs":8,"b5_ch_leaf_cleared":true,"b5_ch_leaf_diag":null,"b5_ch_leaf_no_drop":true,"b5_ch_mixed":true,"b5_ch_oracle_class":"pass","b5_ch_rings_tried":3,"b5_ch_scan_incomplete":false,"b5_ch_scan_incomplete_rings":0,"b5_ch_scan_incomplete_total_columns":0,"b5_ch_scan_incomplete_unreachable_columns":0,"b5_ch_trees":8,"b5_chop_cleared":true,"b5_chop_jobs":1,"b5_chop_reachability_probe":null,"b5_drift_events":11,"b5_failed_clauses":["mine_cleared","mine_blocks_mined"],"b5_flat_bounds_ok":true,"b5_flat_floor_flat":true,"b5_flat_hint_decoupled":true,"b5_flat_total":108,"b5_gave_item":true,"b5_hill_past_old_cap":true,"b5_hill_reaches_crest":true,"b5_hill_total_ok":true,"b5_locomotion":[12718,22,3],"b5_log_sum":1,"b5_max_same_target_timeouts":3,"b5_mine_blocks_mined":16,"b5_mine_cell_diag":[{"blocked_by":[26659,4849,176],"cells_above_open":2,"cells_below_open":0,"claimant":null,"cycles_since_last_claim":360,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[26659,4847,174],"progress":0.0,"starvation_crowded_cycles":360,"starvation_cycles":360,"timeouts_on_this_cell":0,"times_offered":0,"unreachable":false},{"blocked_by":[26659,4849,176],"cells_above_open":1,"cells_below_open":1,"claimant":null,"cycles_since_last_claim":360,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[26659,4847,175],"progress":0.0,"starvation_crowded_cycles":360,"starvation_cycles":360,"timeouts_on_this_cell":0,"times_offered":0,"unreachable":false},{"blocked_by":[26659,4849,176],"cells_above_open":0,"cells_below_open":2,"claimant":null,"cycles_since_last_claim":0,"is_column_frontier":true,"is_top_layer":true,"needs_materials":false,"pos":[26659,4847,176],"progress":0.0,"starvation_crowded_cycles":139,"starvation_cycles":139,"timeouts_on_this_cell":2,"times_offered":2,"unreachable":false},{"blocked_by":[26659,4849,176],"cells_above_open":2,"cells_below_open":0,"claimant":null,"cycles_since_last_claim":360,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[26659,4848,174],"progress":0.0,"starvation_crowded_cycles":360,"starvation_cycles":360,"timeouts_on_this_cell":0,"times_offered":0,"unreachable":false},{"blocked_by":[26659,4849,176],"cells_above_open":1,"cells_below_open":1,"claimant":null,"cycles_since_last_claim":0,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[26659,4848,175],"progress":0.0,"starvation_crowded_cycles":239,"starvation_cycles":239,"timeouts_on_this_cell":0,"times_offered":1,"unreachable":false},{"blocked_by":[26659,4849,176],"cells_above_open":0,"cells_below_open":2,"claimant":"Lira Longstride","cycles_since_last_claim":0,"is_column_frontier":true,"is_top_layer":true,"needs_materials":false,"pos":[26659,4848,176],"progress":0.0,"starvation_crowded_cycles":143,"starvation_cycles":143,"timeouts_on_this_cell":3,"times_offered":3,"unreachable":false},{"blocked_by":[26659,4849,176],"cells_above_open":2,"cells_below_open":0,"claimant":null,"cycles_since_last_claim":360,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[26659,4849,174],"progress":0.0,"starvation_crowded_cycles":360,"starvation_cycles":360,"timeouts_on_this_cell":0,"times_offered":0,"unreachable":false},{"blocked_by":[26659,4849,176],"cells_above_open":1,"cells_below_open":1,"claimant":null,"cycles_since_last_claim":360,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[26659,4849,175],"progress":0.0,"starvation_crowded_cycles":360,"starvation_cycles":360,"timeouts_on_this_cell":0,"times_offered":0,"unreachable":false},{"blocked_by":[26659,4849,176],"cells_above_open":0,"cells_below_open":2,"claimant":null,"cycles_since_last_claim":0,"is_column_frontier":true,"is_top_layer":true,"needs_materials":false,"pos":[26659,4849,176],"progress":0.0,"starvation_crowded_cycles":154,"starvation_cycles":154,"timeouts_on_this_cell":1,"times_offered":2,"unreachable":false},{"blocked_by":[26659,4849,176],"cells_above_open":2,"cells_below_open":0,"claimant":null,"cycles_since_last_claim":360,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[26660,4847,174],"progress":0.0,"starvation_crowded_cycles":360,"starvation_cycles":360,"timeouts_on_this_cell":0,"times_offered":0,"unreachable":false},{"blocked_by":[26659,4849,176],"cells_above_open":1,"cells_below_open":1,"claimant":null,"cycles_since_last_claim":0,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[26660,4847,175],"progress":0.0,"starvation_crowded_cycles":244,"starvation_cycles":244,"timeouts_on_this_cell":0,"times_offered":1,"unreachable":false},{"blocked_by":[26659,4849,176],"cells_above_open":0,"cells_below_open":2,"claimant":null,"cycles_since_last_claim":84,"is_column_frontier":true,"is_top_layer":true,"needs_materials":false,"pos":[26660,4847,176],"progress":0.0,"starvation_crowded_cycles":237,"starvation_cycles":237,"timeouts_on_this_cell":2,"times_offered":2,"unreachable":true},{"blocked_by":[26659,4849,176],"cells_above_open":2,"cells_below_open":0,"claimant":null,"cycles_since_last_claim":63,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[26660,4848,174],"progress":0.0,"starvation_crowded_cycles":340,"starvation_cycles":340,"timeouts_on_this_cell":1,"times_offered":1,"unreachable":true},{"blocked_by":[26659,4849,176],"cells_above_open":1,"cells_below_open":1,"claimant":null,"cycles_since_last_claim":0,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[26660,4848,175],"progress":0.0,"starvation_crowded_cycles":234,"starvation_cycles":234,"timeouts_on_this_cell":0,"times_offered":1,"unreachable":true},{"blocked_by":[26659,4849,176],"cells_above_open":0,"cells_below_open":2,"claimant":null,"cycles_since_last_claim":0,"is_column_frontier":true,"is_top_layer":true,"needs_materials":false,"pos":[26660,4848,176],"progress":0.0,"starvation_crowded_cycles":161,"starvation_cycles":161,"timeouts_on_this_cell":2,"times_offered":2,"unreachable":true},{"blocked_by":[26659,4849,176],"cells_above_open":2,"cells_below_open":0,"claimant":null,"cycles_since_last_claim":360,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[26660,4849,174],"progress":0.0,"starvation_crowded_cycles":360,"starvation_cycles":360,"timeouts_on_this_cell":0,"times_offered":0,"unreachable":false},{"blocked_by":[26659,4849,176],"cells_above_open":1,"cells_below_open":1,"claimant":null,"cycles_since_last_claim":42,"is_column_frontier":false,"is_top_layer":false,"needs_materials":false,"pos":[26660,4849,175],"progress":0.0,"starvation_crowded_cycles":320,"starvation_cycles":320,"timeouts_on_this_cell":2,"times_offered":2,"unreachable":true},{"blocked_by":[26659,4849,176],"cells_above_open":0,"cells_below_open":2,"claimant":null,"cycles_since_last_claim":0,"is_column_frontier":true,"is_top_layer":true,"needs_materials":false,"pos":[26660,4849,176],"progress":0.0,"starvation_crowded_cycles":135,"starvation_cycles":135,"timeouts_on_this_cell":1,"times_offered":2,"unreachable":true}],"b5_mine_cleared":false,"b5_mine_footprint_top_witness":null,"b5_mine_jobs":27,"b5_mine_jobs_remaining":11,"b5_mine_reachability_probe":[{"from_last_timeout":null,"from_spawn":{"columns_visited_jump":0,"columns_visited_scramble":0,"columns_visited_step":0,"from":[26640,4848,182],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":null},"last_timeout_pos":null,"min_distance_to_target":null,"route_next_idx_pinned":null,"target":[26659,4847,174],"timeout_route_states":[]},{"from_last_timeout":null,"from_spawn":{"columns_visited_jump":0,"columns_visited_scramble":0,"columns_visited_step":0,"from":[26640,4848,182],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":null},"last_timeout_pos":null,"min_distance_to_target":null,"route_next_idx_pinned":null,"target":[26659,4847,175],"timeout_route_states":[]},{"from_last_timeout":{"columns_visited_jump":83,"columns_visited_scramble":83,"columns_visited_step":82,"from":[26660,4852,153],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[26659,4847,177]},"from_spawn":{"columns_visited_jump":759,"columns_visited_scramble":764,"columns_visited_step":759,"from":[26640,4848,182],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[26659,4847,177]},"last_timeout_pos":[26660.55078125,4852.5,153.09039306640625],"min_distance_to_target":24.341238021850586,"route_next_idx_pinned":true,"target":[26659,4847,176],"timeout_route_states":[{"route_complete":false,"route_exists":true,"route_next_idx":0},{"route_complete":false,"route_exists":true,"route_next_idx":0}]},{"from_last_timeout":null,"from_spawn":{"columns_visited_jump":0,"columns_visited_scramble":0,"columns_visited_step":0,"from":[26640,4848,182],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":null},"last_timeout_pos":null,"min_distance_to_target":null,"route_next_idx_pinned":null,"target":[26659,4848,174],"timeout_route_states":[]},{"from_last_timeout":null,"from_spawn":{"columns_visited_jump":759,"columns_visited_scramble":764,"columns_visited_step":759,"from":[26640,4848,182],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[26660,4848,175]},"last_timeout_pos":null,"min_distance_to_target":null,"route_next_idx_pinned":null,"target":[26659,4848,175],"timeout_route_states":[]},{"from_last_timeout":{"columns_visited_jump":59,"columns_visited_scramble":59,"columns_visited_step":59,"from":[26660,4852,166],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[26659,4848,177]},"from_spawn":{"columns_visited_jump":684,"columns_visited_scramble":688,"columns_visited_step":684,"from":[26640,4848,182],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[26659,4848,177]},"last_timeout_pos":[26660.5,4852.19970703125,166.0],"min_distance_to_target":4.324179172515869,"route_next_idx_pinned":null,"target":[26659,4848,176],"timeout_route_states":[{"route_complete":false,"route_exists":true,"route_next_idx":0},{"route_complete":false,"route_exists":true,"route_next_idx":0},{"route_complete":null,"route_exists":false,"route_next_idx":null}]},{"from_last_timeout":null,"from_spawn":{"columns_visited_jump":0,"columns_visited_scramble":0,"columns_visited_step":0,"from":[26640,4848,182],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":null},"last_timeout_pos":null,"min_distance_to_target":null,"route_next_idx_pinned":null,"target":[26659,4849,174],"timeout_route_states":[]},{"from_last_timeout":null,"from_spawn":{"columns_visited_jump":0,"columns_visited_scramble":0,"columns_visited_step":0,"from":[26640,4848,182],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":null},"last_timeout_pos":null,"min_distance_to_target":null,"route_next_idx_pinned":null,"target":[26659,4849,175],"timeout_route_states":[]},{"from_last_timeout":{"columns_visited_jump":549,"columns_visited_scramble":550,"columns_visited_step":549,"from":[26644,4851,149],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[26659,4849,177]},"from_spawn":{"columns_visited_jump":759,"columns_visited_scramble":764,"columns_visited_step":759,"from":[26640,4848,182],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[26659,4849,177]},"last_timeout_pos":[26644.89453125,4851.7314453125,149.0],"min_distance_to_target":31.207029342651367,"route_next_idx_pinned":null,"target":[26659,4849,176],"timeout_route_states":[{"route_complete":false,"route_exists":true,"route_next_idx":2}]},{"from_last_timeout":null,"from_spawn":{"columns_visited_jump":0,"columns_visited_scramble":0,"columns_visited_step":0,"from":[26640,4848,182],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":null},"last_timeout_pos":null,"min_distance_to_target":null,"route_next_idx_pinned":null,"target":[26660,4847,174],"timeout_route_states":[]},{"from_last_timeout":null,"from_spawn":{"columns_visited_jump":759,"columns_visited_scramble":764,"columns_visited_step":759,"from":[26640,4848,182],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[26660,4848,175]},"last_timeout_pos":null,"min_distance_to_target":null,"route_next_idx_pinned":null,"target":[26660,4847,175],"timeout_route_states":[]},{"from_last_timeout":{"columns_visited_jump":85,"columns_visited_scramble":85,"columns_visited_step":141,"from":[26660,4853,167],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[26660,4847,177]},"from_spawn":{"columns_visited_jump":839,"columns_visited_scramble":844,"columns_visited_step":841,"from":[26640,4848,182],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[26660,4847,177]},"last_timeout_pos":[26660.46484375,4853.3876953125,167.0],"min_distance_to_target":5.087224006652832,"route_next_idx_pinned":null,"target":[26660,4847,176],"timeout_route_states":[{"route_complete":null,"route_exists":false,"route_next_idx":null},{"route_complete":null,"route_exists":false,"route_next_idx":null}]},{"from_last_timeout":{"columns_visited_jump":61,"columns_visited_scramble":61,"columns_visited_step":61,"from":[26660,4853,167],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[26660,4848,175]},"from_spawn":{"columns_visited_jump":759,"columns_visited_scramble":764,"columns_visited_step":759,"from":[26640,4848,182],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[26660,4848,175]},"last_timeout_pos":[26660.46484375,4853.45654296875,167.0],"min_distance_to_target":9.375009536743164,"route_next_idx_pinned":null,"target":[26660,4848,174],"timeout_route_states":[{"route_complete":null,"route_exists":false,"route_next_idx":null}]},{"from_last_timeout":null,"from_spawn":{"columns_visited_jump":759,"columns_visited_scramble":764,"columns_visited_step":759,"from":[26640,4848,182],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[26660,4848,176]},"last_timeout_pos":null,"min_distance_to_target":null,"route_next_idx_pinned":null,"target":[26660,4848,175],"timeout_route_states":[]},{"from_last_timeout":{"columns_visited_jump":61,"columns_visited_scramble":61,"columns_visited_step":61,"from":[26660,4853,153],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[26660,4848,177]},"from_spawn":{"columns_visited_jump":759,"columns_visited_scramble":764,"columns_visited_step":759,"from":[26640,4848,182],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[26660,4848,177]},"last_timeout_pos":[26660.55078125,4853.5,153.07211303710938],"min_distance_to_target":24.2737979888916,"route_next_idx_pinned":true,"target":[26660,4848,176],"timeout_route_states":[{"route_complete":false,"route_exists":true,"route_next_idx":0},{"route_complete":false,"route_exists":true,"route_next_idx":0}]},{"from_last_timeout":null,"from_spawn":{"columns_visited_jump":0,"columns_visited_scramble":0,"columns_visited_step":0,"from":[26640,4848,182],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":null},"last_timeout_pos":null,"min_distance_to_target":null,"route_next_idx_pinned":null,"target":[26660,4849,174],"timeout_route_states":[]},{"from_last_timeout":{"columns_visited_jump":25,"columns_visited_scramble":25,"columns_visited_step":25,"from":[26660,4852,167],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[26660,4849,176]},"from_spawn":{"columns_visited_jump":839,"columns_visited_scramble":844,"columns_visited_step":838,"from":[26640,4848,182],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[26660,4849,176]},"last_timeout_pos":[26660.478515625,4852.7529296875,167.0],"min_distance_to_target":9.462418556213379,"route_next_idx_pinned":null,"target":[26660,4849,175],"timeout_route_states":[{"route_complete":null,"route_exists":false,"route_next_idx":null},{"route_complete":null,"route_exists":false,"route_next_idx":null}]},{"from_last_timeout":{"columns_visited_jump":81374,"columns_visited_scramble":81571,"columns_visited_step":81030,"from":[26665,4850,149],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":false,"standable_target":[26660,4849,177]},"from_spawn":{"columns_visited_jump":839,"columns_visited_scramble":844,"columns_visited_step":838,"from":[26640,4848,182],"path_exists_jump":true,"path_exists_scramble":true,"path_exists_step":true,"probe_incomplete":false,"standable_target":[26660,4849,177]},"last_timeout_pos":[26665.72265625,4850.03173828125,149.0],"min_distance_to_target":17.579692840576172,"route_next_idx_pinned":null,"target":[26660,4849,176],"timeout_route_states":[{"route_complete":false,"route_exists":true,"route_next_idx":2}]}],"b5_mine_timeout_position_diag":[{"cells_below_filled":1,"is_top_layer":true,"pos":[26659,4848,176],"timeout_count":3},{"cells_below_filled":2,"is_top_layer":true,"pos":[26659,4847,176],"timeout_count":2},{"cells_below_filled":1,"is_top_layer":true,"pos":[26660,4847,176],"timeout_count":2},{"cells_below_filled":1,"is_top_layer":true,"pos":[26660,4848,176],"timeout_count":2},{"cells_below_filled":1,"is_top_layer":false,"pos":[26660,4849,175],"timeout_count":2},{"cells_below_filled":0,"is_top_layer":true,"pos":[26661,4847,176],"timeout_count":2},{"cells_below_filled":0,"is_top_layer":true,"pos":[26661,4848,176],"timeout_count":2},{"cells_below_filled":2,"is_top_layer":true,"pos":[26659,4849,176],"timeout_count":1},{"cells_below_filled":0,"is_top_layer":false,"pos":[26660,4848,174],"timeout_count":1},{"cells_below_filled":2,"is_top_layer":true,"pos":[26660,4849,176],"timeout_count":1},{"cells_below_filled":0,"is_top_layer":false,"pos":[26661,4849,174],"timeout_count":1},{"cells_below_filled":0,"is_top_layer":true,"pos":[26661,4849,176],"timeout_count":1}],"b5_rescue_fired":true,"b5_slope_bounds_ok":true,"b5_slope_cancel_clean":true,"b5_slope_columns_ok":true,"b5_slope_jobs_total":72,"b5_slope_legacy_jobs":45,"b5_soak_avg_tick_ms":4.295427598333333,"b5_stone_entities":2,"b5_stone_sum":16,"b5_timeouts_on_never_completed_jobs":14,"b5_tool_ok":true,"b5_tool_steel":2.0,"b5_tool_stone":1.5,"b5_travel_timeouts":22}
+B5 SCENARIO: FAIL
+B5 FAILED CLAUSES: ["mine_cleared", "mine_blocks_mined"]
+@@@SEED 55@@@
+{"b5_55_blocked_by":null,"b5_55_clears_on_cancel":true,"b5_55_diag":{"claimant":null,"progress":0.0,"unreachable":true},"b5_55_names_blocker":false,"b5_55_notified_once":false,"b5_any_mining_xp":true,"b5_any_needs_materials":true,"b5_any_woodcutting_xp":true,"b5_b15_adjacent_claimed":true,"b5_b15_floater_skipped":true,"b5_b15_ontop_claimed":true,"b5_build_ok_jobs":1,"b5_build_placed":true,"b5_build_stall_jobs":1,"b5_build_stall_untouched":true,"b5_build_stamp":"b89cbc799d+dirty built 2026-08-04T06:56:10Z","b5_cascade_probe":{"abort_ceiling_max":0,"abort_resets_max":0,"access_emissions_max":2,"frontier_completes_max":0,"members_seen":3,"present":true},"b5_cavein_drop_cells":0,"b5_ch_base_blocked_by":null,"b5_ch_base_blocked_sources":[],"b5_ch_cancel_clean":false,"b5_ch_cells":0,"b5_ch_engaged":false,"b5_ch_ground_truth_tree_present":false,"b5_ch_ground_truth_witness":null,"b5_ch_jobs":0,"b5_ch_leaf_cleared":true,"b5_ch_leaf_diag":null,"b5_ch_leaf_no_drop":true,"b5_ch_mixed":false,"b5_ch_oracle_class":"precondition_unmet","b5_ch_rings_tried":121,"b5_ch_scan_incomplete":false,"b5_ch_scan_incomplete_rings":0,"b5_ch_scan_incomplete_total_columns":0,"b5_ch_scan_incomplete_unreachable_columns":0,"b5_ch_trees":0,"b5_chop_cleared":true,"b5_chop_jobs":1,"b5_chop_reachability_probe":null,"b5_drift_events":10,"b5_failed_clauses":[],"b5_flat_bounds_ok":true,"b5_flat_floor_flat":true,"b5_flat_hint_decoupled":true,"b5_flat_total":108,"b5_gave_item":true,"b5_hill_past_old_cap":true,"b5_hill_reaches_crest":true,"b5_hill_total_ok":true,"b5_locomotion":[6361,12,3],"b5_log_sum":1,"b5_max_same_target_timeouts":2,"b5_mine_blocks_mined":27,"b5_mine_cell_diag":[],"b5_mine_cleared":true,"b5_mine_footprint_top_witness":null,"b5_mine_jobs":27,"b5_mine_jobs_remaining":0,"b5_mine_reachability_probe":[],"b5_mine_timeout_position_diag":[{"cells_below_filled":0,"is_top_layer":true,"pos":[17924,27727,273],"timeout_count":2},{"cells_below_filled":0,"is_top_layer":false,"pos":[17924,27729,271],"timeout_count":2},{"cells_below_filled":0,"is_top_layer":true,"pos":[17925,27729,273],"timeout_count":2},{"cells_below_filled":0,"is_top_layer":false,"pos":[17923,27727,271],"timeout_count":1},{"cells_below_filled":0,"is_top_layer":false,"pos":[17923,27727,272],"timeout_count":1},{"cells_below_filled":0,"is_top_layer":true,"pos":[17923,27727,273],"timeout_count":1},{"cells_below_filled":0,"is_top_layer":false,"pos":[17923,27728,271],"timeout_count":1},{"cells_below_filled":0,"is_top_layer":false,"pos":[17925,27728,272],"timeout_count":1},{"cells_below_filled":0,"is_top_layer":false,"pos":[17925,27729,271],"timeout_count":1}],"b5_rescue_fired":true,"b5_slope_bounds_ok":true,"b5_slope_cancel_clean":true,"b5_slope_columns_ok":true,"b5_slope_jobs_total":72,"b5_slope_legacy_jobs":45,"b5_soak_avg_tick_ms":4.36494497,"b5_stone_entities":2,"b5_stone_sum":27,"b5_timeouts_on_never_completed_jobs":0,"b5_tool_ok":true,"b5_tool_steel":2.0,"b5_tool_stone":1.5,"b5_travel_timeouts":12}
+B5 SCENARIO: PASS
+@@@SEED 56@@@
+{"b5_55_blocked_by":null,"b5_55_clears_on_cancel":true,"b5_55_diag":{"claimant":null,"progress":0.0,"unreachable":true},"b5_55_names_blocker":false,"b5_55_notified_once":false,"b5_any_mining_xp":true,"b5_any_needs_materials":true,"b5_any_woodcutting_xp":true,"b5_b15_adjacent_claimed":true,"b5_b15_floater_skipped":true,"b5_b15_ontop_claimed":true,"b5_build_ok_jobs":1,"b5_build_placed":true,"b5_build_stall_jobs":1,"b5_build_stall_untouched":true,"b5_build_stamp":"b89cbc799d+dirty built 2026-08-04T06:56:10Z","b5_cascade_probe":{"abort_ceiling_max":0,"abort_resets_max":0,"access_emissions_max":1,"frontier_completes_max":0,"members_seen":1,"present":true},"b5_cavein_drop_cells":0,"b5_ch_base_blocked_by":null,"b5_ch_base_blocked_sources":[],"b5_ch_cancel_clean":true,"b5_ch_cells":12288,"b5_ch_engaged":true,"b5_ch_ground_truth_tree_present":true,"b5_ch_ground_truth_witness":{"leaves_pos":[8976,4652,213],"ring_index":2,"wood_pos":[8976,4652,212]},"b5_ch_jobs":6,"b5_ch_leaf_cleared":true,"b5_ch_leaf_diag":null,"b5_ch_leaf_no_drop":true,"b5_ch_mixed":true,"b5_ch_oracle_class":"pass","b5_ch_rings_tried":3,"b5_ch_scan_incomplete":false,"b5_ch_scan_incomplete_rings":0,"b5_ch_scan_incomplete_total_columns":0,"b5_ch_scan_incomplete_unreachable_columns":0,"b5_ch_trees":6,"b5_chop_cleared":true,"b5_chop_jobs":1,"b5_chop_reachability_probe":null,"b5_drift_events":4,"b5_failed_clauses":[],"b5_flat_bounds_ok":true,"b5_flat_floor_flat":true,"b5_flat_hint_decoupled":true,"b5_flat_total":108,"b5_gave_item":true,"b5_hill_past_old_cap":true,"b5_hill_reaches_crest":true,"b5_hill_total_ok":true,"b5_locomotion":[752,1,3],"b5_log_sum":1,"b5_max_same_target_timeouts":1,"b5_mine_blocks_mined":27,"b5_mine_cell_diag":[],"b5_mine_cleared":true,"b5_mine_footprint_top_witness":null,"b5_mine_jobs":27,"b5_mine_jobs_remaining":0,"b5_mine_reachability_probe":[],"b5_mine_timeout_position_diag":[],"b5_rescue_fired":true,"b5_slope_bounds_ok":true,"b5_slope_cancel_clean":true,"b5_slope_columns_ok":true,"b5_slope_jobs_total":72,"b5_slope_legacy_jobs":45,"b5_soak_avg_tick_ms":4.87147786,"b5_stone_entities":3,"b5_stone_sum":27,"b5_timeouts_on_never_completed_jobs":0,"b5_tool_ok":true,"b5_tool_steel":2.0,"b5_tool_stone":1.5,"b5_travel_timeouts":1}
+B5 SCENARIO: PASS
+@@@SEED 57@@@
+{"b5_55_blocked_by":null,"b5_55_clears_on_cancel":true,"b5_55_diag":{"claimant":null,"progress":0.0,"unreachable":true},"b5_55_names_blocker":false,"b5_55_notified_once":false,"b5_any_mining_xp":true,"b5_any_needs_materials":true,"b5_any_woodcutting_xp":true,"b5_b15_adjacent_claimed":true,"b5_b15_floater_skipped":true,"b5_b15_ontop_claimed":true,"b5_build_ok_jobs":1,"b5_build_placed":true,"b5_build_stall_jobs":1,"b5_build_stall_untouched":true,"b5_build_stamp":"b89cbc799d+dirty built 2026-08-04T06:56:10Z","b5_cascade_probe":{"abort_ceiling_max":0,"abort_resets_max":0,"access_emissions_max":1,"frontier_completes_max":0,"members_seen":1,"present":true},"b5_cavein_drop_cells":0,"b5_ch_base_blocked_by":null,"b5_ch_base_blocked_sources":[],"b5_ch_cancel_clean":true,"b5_ch_cells":2048,"b5_ch_engaged":true,"b5_ch_ground_truth_tree_present":true,"b5_ch_ground_truth_witness":{"leaves_pos":[19856,16523,325],"ring_index":0,"wood_pos":[19856,16523,314]},"b5_ch_jobs":1,"b5_ch_leaf_cleared":true,"b5_ch_leaf_diag":null,"b5_ch_leaf_no_drop":true,"b5_ch_mixed":true,"b5_ch_oracle_class":"pass","b5_ch_rings_tried":1,"b5_ch_scan_incomplete":false,"b5_ch_scan_incomplete_rings":0,"b5_ch_scan_incomplete_total_columns":0,"b5_ch_scan_incomplete_unreachable_columns":0,"b5_ch_trees":1,"b5_chop_cleared":true,"b5_chop_jobs":1,"b5_chop_reachability_probe":null,"b5_drift_events":8,"b5_failed_clauses":[],"b5_flat_bounds_ok":true,"b5_flat_floor_flat":true,"b5_flat_hint_decoupled":true,"b5_flat_total":108,"b5_gave_item":true,"b5_hill_past_old_cap":true,"b5_hill_reaches_crest":true,"b5_hill_total_ok":true,"b5_locomotion":[472,0,1],"b5_log_sum":1,"b5_max_same_target_timeouts":0,"b5_mine_blocks_mined":27,"b5_mine_cell_diag":[],"b5_mine_cleared":true,"b5_mine_footprint_top_witness":null,"b5_mine_jobs":27,"b5_mine_jobs_remaining":0,"b5_mine_reachability_probe":[],"b5_mine_timeout_position_diag":[],"b5_rescue_fired":true,"b5_slope_bounds_ok":true,"b5_slope_cancel_clean":true,"b5_slope_columns_ok":true,"b5_slope_jobs_total":72,"b5_slope_legacy_jobs":45,"b5_soak_avg_tick_ms":5.1685363183333335,"b5_stone_entities":3,"b5_stone_sum":27,"b5_timeouts_on_never_completed_jobs":0,"b5_tool_ok":true,"b5_tool_steel":2.0,"b5_tool_stone":1.5,"b5_travel_timeouts":0}
+B5 SCENARIO: PASS
+@@@SEED 58@@@
+{"b5_55_blocked_by":null,"b5_55_clears_on_cancel":true,"b5_55_diag":{"claimant":null,"progress":0.0,"unreachable":true},"b5_55_names_blocker":false,"b5_55_notified_once":false,"b5_any_mining_xp":true,"b5_any_needs_materials":true,"b5_any_woodcutting_xp":true,"b5_b15_adjacent_claimed":true,"b5_b15_floater_skipped":true,"b5_b15_ontop_claimed":true,"b5_build_ok_jobs":1,"b5_build_placed":true,"b5_build_stall_jobs":1,"b5_build_stall_untouched":true,"b5_build_stamp":"b89cbc799d+dirty built 2026-08-04T06:56:10Z","b5_cascade_probe":{"abort_ceiling_max":0,"abort_resets_max":0,"access_emissions_max":2,"frontier_completes_max":0,"members_seen":2,"present":true},"b5_cavein_drop_cells":0,"b5_ch_base_blocked_by":null,"b5_ch_base_blocked_sources":[],"b5_ch_cancel_clean":true,"b5_ch_cells":6144,"b5_ch_engaged":true,"b5_ch_ground_truth_tree_present":true,"b5_ch_ground_truth_witness":{"leaves_pos":[31632,25030,213],"ring_index":3,"wood_pos":[31632,25030,212]},"b5_ch_jobs":3,"b5_ch_leaf_cleared":true,"b5_ch_leaf_diag":null,"b5_ch_leaf_no_drop":true,"b5_ch_mixed":true,"b5_ch_oracle_class":"pass","b5_ch_rings_tried":4,"b5_ch_scan_incomplete":false,"b5_ch_scan_incomplete_rings":0,"b5_ch_scan_incomplete_total_columns":0,"b5_ch_scan_incomplete_unreachable_columns":0,"b5_ch_trees":3,"b5_chop_cleared":true,"b5_chop_jobs":1,"b5_chop_reachability_probe":null,"b5_drift_events":6,"b5_failed_clauses":[],"b5_flat_bounds_ok":true,"b5_flat_floor_flat":true,"b5_flat_hint_decoupled":true,"b5_flat_total":108,"b5_gave_item":true,"b5_hill_past_old_cap":true,"b5_hill_reaches_crest":true,"b5_hill_total_ok":true,"b5_locomotion":[1055,2,4],"b5_log_sum":1,"b5_max_same_target_timeouts":2,"b5_mine_blocks_mined":27,"b5_mine_cell_diag":[],"b5_mine_cleared":true,"b5_mine_footprint_top_witness":null,"b5_mine_jobs":27,"b5_mine_jobs_remaining":0,"b5_mine_reachability_probe":[],"b5_mine_timeout_position_diag":[{"cells_below_filled":0,"is_top_layer":false,"pos":[31749,25039,152],"timeout_count":2}],"b5_rescue_fired":true,"b5_slope_bounds_ok":true,"b5_slope_cancel_clean":true,"b5_slope_columns_ok":true,"b5_slope_jobs_total":72,"b5_slope_legacy_jobs":45,"b5_soak_avg_tick_ms":4.311644906666666,"b5_stone_entities":3,"b5_stone_sum":27,"b5_timeouts_on_never_completed_jobs":0,"b5_tool_ok":true,"b5_tool_steel":2.0,"b5_tool_stone":1.5,"b5_travel_timeouts":2}
+B5 SCENARIO: PASS
+@@@SEED 59@@@
+{"b5_55_blocked_by":null,"b5_55_clears_on_cancel":true,"b5_55_diag":{"claimant":null,"progress":0.0,"unreachable":true},"b5_55_names_blocker":false,"b5_55_notified_once":false,"b5_any_mining_xp":true,"b5_any_needs_materials":true,"b5_any_woodcutting_xp":true,"b5_b15_adjacent_claimed":true,"b5_b15_floater_skipped":true,"b5_b15_ontop_claimed":true,"b5_build_ok_jobs":1,"b5_build_placed":true,"b5_build_stall_jobs":1,"b5_build_stall_untouched":true,"b5_build_stamp":"b89cbc799d+dirty built 2026-08-04T06:56:10Z","b5_cascade_probe":{"abort_ceiling_max":1,"abort_resets_max":1,"access_emissions_max":1,"frontier_completes_max":1,"members_seen":2,"present":true},"b5_cavein_drop_cells":0,"b5_ch_base_blocked_by":null,"b5_ch_base_blocked_sources":[],"b5_ch_cancel_clean":true,"b5_ch_cells":14336,"b5_ch_engaged":true,"b5_ch_ground_truth_tree_present":true,"b5_ch_ground_truth_witness":{"leaves_pos":[18324,9131,475],"ring_index":0,"wood_pos":[18324,9131,460]},"b5_ch_jobs":7,"b5_ch_leaf_cleared":true,"b5_ch_leaf_diag":null,"b5_ch_leaf_no_drop":true,"b5_ch_mixed":true,"b5_ch_oracle_class":"pass","b5_ch_rings_tried":1,"b5_ch_scan_incomplete":false,"b5_ch_scan_incomplete_rings":0,"b5_ch_scan_incomplete_total_columns":0,"b5_ch_scan_incomplete_unreachable_columns":0,"b5_ch_trees":7,"b5_chop_cleared":true,"b5_chop_jobs":1,"b5_chop_reachability_probe":null,"b5_drift_events":7,"b5_failed_clauses":[],"b5_flat_bounds_ok":true,"b5_flat_floor_flat":true,"b5_flat_hint_decoupled":true,"b5_flat_total":108,"b5_gave_item":true,"b5_hill_past_old_cap":true,"b5_hill_reaches_crest":true,"b5_hill_total_ok":true,"b5_locomotion":[705,1,1],"b5_log_sum":1,"b5_max_same_target_timeouts":1,"b5_mine_blocks_mined":27,"b5_mine_cell_diag":[],"b5_mine_cleared":true,"b5_mine_footprint_top_witness":null,"b5_mine_jobs":27,"b5_mine_jobs_remaining":0,"b5_mine_reachability_probe":[],"b5_mine_timeout_position_diag":[{"cells_below_filled":0,"is_top_layer":false,"pos":[18371,9104,486],"timeout_count":1}],"b5_rescue_fired":true,"b5_slope_bounds_ok":true,"b5_slope_cancel_clean":true,"b5_slope_columns_ok":true,"b5_slope_jobs_total":72,"b5_slope_legacy_jobs":45,"b5_soak_avg_tick_ms":4.49007052,"b5_stone_entities":2,"b5_stone_sum":27,"b5_timeouts_on_never_completed_jobs":0,"b5_tool_ok":true,"b5_tool_steel":2.0,"b5_tool_stone":1.5,"b5_travel_timeouts":1}
+B5 SCENARIO: PASS
+@@@SEED 60@@@
+{"b5_55_blocked_by":null,"b5_55_clears_on_cancel":true,"b5_55_diag":{"claimant":null,"progress":0.0,"unreachable":true},"b5_55_names_blocker":false,"b5_55_notified_once":false,"b5_any_mining_xp":true,"b5_any_needs_materials":true,"b5_any_woodcutting_xp":true,"b5_b15_adjacent_claimed":true,"b5_b15_floater_skipped":true,"b5_b15_ontop_claimed":true,"b5_build_ok_jobs":1,"b5_build_placed":true,"b5_build_stall_jobs":1,"b5_build_stall_untouched":true,"b5_build_stamp":"b89cbc799d+dirty built 2026-08-04T06:56:10Z","b5_cascade_probe":{"abort_ceiling_max":0,"abort_resets_max":0,"access_emissions_max":3,"frontier_completes_max":0,"members_seen":3,"present":true},"b5_cavein_drop_cells":0,"b5_ch_base_blocked_by":null,"b5_ch_base_blocked_sources":[],"b5_ch_cancel_clean":true,"b5_ch_cells":14319,"b5_ch_engaged":true,"b5_ch_ground_truth_tree_present":true,"b5_ch_ground_truth_witness":{"leaves_pos":[15277,2185,279],"ring_index":8,"wood_pos":[15277,2185,278]},"b5_ch_jobs":7,"b5_ch_leaf_cleared":true,"b5_ch_leaf_diag":null,"b5_ch_leaf_no_drop":true,"b5_ch_mixed":true,"b5_ch_oracle_class":"pass","b5_ch_rings_tried":21,"b5_ch_scan_incomplete":false,"b5_ch_scan_incomplete_rings":0,"b5_ch_scan_incomplete_total_columns":0,"b5_ch_scan_incomplete_unreachable_columns":0,"b5_ch_trees":7,"b5_chop_cleared":true,"b5_chop_jobs":1,"b5_chop_reachability_probe":null,"b5_drift_events":13,"b5_failed_clauses":[],"b5_flat_bounds_ok":true,"b5_flat_floor_flat":true,"b5_flat_hint_decoupled":true,"b5_flat_total":108,"b5_gave_item":true,"b5_hill_past_old_cap":true,"b5_hill_reaches_crest":true,"b5_hill_total_ok":true,"b5_locomotion":[4426,3,6],"b5_log_sum":1,"b5_max_same_target_timeouts":3,"b5_mine_blocks_mined":27,"b5_mine_cell_diag":[],"b5_mine_cleared":true,"b5_mine_footprint_top_witness":null,"b5_mine_jobs":27,"b5_mine_jobs_remaining":0,"b5_mine_reachability_probe":[],"b5_mine_timeout_position_diag":[],"b5_rescue_fired":true,"b5_slope_bounds_ok":true,"b5_slope_cancel_clean":true,"b5_slope_columns_ok":true,"b5_slope_jobs_total":72,"b5_slope_legacy_jobs":45,"b5_soak_avg_tick_ms":4.970398633333334,"b5_stone_entities":3,"b5_stone_sum":27,"b5_timeouts_on_never_completed_jobs":0,"b5_tool_ok":true,"b5_tool_steel":2.0,"b5_tool_stone":1.5,"b5_travel_timeouts":3}
+B5 SCENARIO: PASS
