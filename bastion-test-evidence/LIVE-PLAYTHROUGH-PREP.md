@@ -168,3 +168,38 @@ cost** — 12 in particular has never been settled by any fan.
 - **Whether the session is deterministic enough to re-run.** The `tick_rng` fix
   says probably; an actual paired live run says definitely. **Do that check
   before trusting any score.**
+
+## §6 — ★ READ-BUDGET CHECK ON THE METRICS PLAN (added after the observer-effect bisection)
+
+**New standing requirement (acceptance framework, ruled in 2026-08-04): every
+observability addition states its READ BUDGET — cells × reads × cadence.**
+
+It exists because a measured bisection showed two per-cell diagnostic reads
+turned a bit-reproducible run into a varying one, while the same build with those
+reads removed was 0-diff. **Reading is not passive**; see
+`the-instrument-changes-what-it-sees`.
+
+**So this plan's own metrics need the check before the run, not after.**
+
+| §3 metric source | shape | budget | verdict |
+|---|---|---|---|
+| completion %, time-to-complete, timeout/release counts | **server-side aggregates**, already maintained | ~0 extra reads | **expected clean** |
+| `blocked_regions` count | one accessor, colony-wide | ~0 | **expected clean** |
+| wall-time | ambient | 0 | clean |
+| player-visible message log | already emitted | 0 | clean |
+| ★ **per-cell diag** (`mine_cell_diag` / `farm_cell_diag`) | **cells × reads × every capture** | **NOT free — this is the exact shape the bisection indicted** | **verify before relying on it** |
+
+> **★ THE PLAYTHROUGH IS THE ONE PLACE THIS MATTERS MOST AND IS EASIEST TO MISS.**
+> A live scored session is *precisely* where someone reaches for more per-cell
+> detail to explain what they just watched — and that reach is now known to
+> perturb the thing being watched. **Pull aggregates; add per-cell reads only
+> deliberately, with the budget stated.**
+
+**"Should be clean" is not the standard we now hold.** The metrics plan pulls
+aggregates, so it *should* be unaffected — but that sentence is exactly the
+untested-premise shape this campaign keeps finding. **One verification run before
+the playthrough: same seed, two parallel legs, metrics collection on, confirm
+0-diff.** If the collection itself perturbs, the scorecard measures a game
+slightly different from the one a player would get.
+
+*Method is canonical: parallel legs, separate `--data-dir`s.*
