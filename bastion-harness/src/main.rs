@@ -452,6 +452,20 @@ struct Args {
     #[arg(long)]
     bed_reachability_probe: bool,
 
+    /// bastion (bed fixture-first, 2026-08-04, Fable-ruled discriminator):
+    /// ONE colonist, real physics, real live pathfinder -- see
+    /// `bed_walk_test_scenario`'s own doc comment for the full rationale.
+    /// Report-only, gates nothing.
+    #[arg(long)]
+    bed_walk_test: bool,
+
+    /// bastion (52/54 offline-yes/live-no study, 2026-08-04): READ-ONLY
+    /// terrain column dump at `BASTION_PROBE_X`/`_Y`/`_Z_LOW`/`_Z_HIGH`
+    /// against `--seed`'s world. See `terrain_ground_dump`'s own doc
+    /// comment. Report-only, gates nothing.
+    #[arg(long)]
+    terrain_ground_dump: bool,
+
     /// ENDURANCE (Ben's long-live-sim determinism test): boot a full colony
     /// with standing farm work and let the ENTIRE integrated live sim run for
     /// `--endurance-ticks`, emitting an authoritative-state ENDURANCE-CHECKPOINT
@@ -1629,6 +1643,10 @@ fn main() -> ExitCode {
         cavein_conservation_scenario(&args)
     } else if args.bed_reachability_probe {
         bed_reachability_probe(&args)
+    } else if args.bed_walk_test {
+        bed_walk_test_scenario(&args)
+    } else if args.terrain_ground_dump {
+        terrain_ground_dump(&args)
     } else if args.endurance_scenario {
         endurance_scenario(&args)
     } else if args.run_scenario {
@@ -20210,6 +20228,328 @@ fn bed_reachability_probe(args: &Args) -> ExitCode {
     // `probe_incomplete` from the JSON above to answer the actual
     // question (fixture defect vs. real plan_access false-reject).
     println!("BED REACHABILITY PROBE: DONE");
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
+}
+
+/// bastion (bed fixture-first, 2026-08-04, Fable-ruled: "ground truth beats
+/// a second proxy" -- the capsule-aware probe extension is BANKED, this is
+/// bed's actual discriminator). ONE colonist only (bed_scenario's three
+/// create an emergency-egress race between colonists that muddies which
+/// one's position means what -- eliminated here, not present to confound).
+/// Reuses bed_scenario's exact flush-plateau geometry and bed1/bed2
+/// coordinates verbatim. No stockpile/materials -- the failure this row
+/// chases (auto-access refused, blocked_regions populated) happens at the
+/// claim->travel->stuck-timeout stage, before material fetch is ever
+/// reached, so omitting it doesn't change what's being tested.
+///
+/// Samples the colonist's own position every 20 ticks and tracks two
+/// numbers no other bed instrument has reported: the LOWEST z actually
+/// reached (tests the hypothesis that the colonist ends up below the
+/// plateau's own constructed floor, `gz-6`, which would explain a stuck
+/// colonist far from any painted designation independent of the
+/// probe-vs-plan_access question entirely) and the closest approach to
+/// each bed's standable target (ground truth for "did a real colonist,
+/// under real physics, under the real live pathfinder, ever get near the
+/// bed" -- the thing an offline probe can only approximate).
+fn bed_walk_test_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{DesignationKind, Region},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-bedwalk-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-bedwalk".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-bedwalk-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "bed_walk_test: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+    let floor_z = gz - 6;
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 16)..=(cx + 16) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+    if std::env::var_os("BASTION_BEDWALK_DIAG").is_some() {
+        // Fall position observed in a prior run: (24081, 20236, 445), 4
+        // below floor_z=449. Query that column's fill footprint directly
+        // -- did the loop above actually commit solid rock there, or is
+        // there a genuine hole this run reproduces too?
+        for z in (gz - 8)..=(gz + 1) {
+            let p = Vec3::new(24081, 20236, z);
+            eprintln!("DIAG fill-column pos={p:?} kind={:?}", server.bastion_block_kind(p));
+        }
+        eprintln!(
+            "DIAG spawn column pos={:?} kind={:?}",
+            Vec3::new(cx, cy, gz),
+            server.bastion_block_kind(Vec3::new(cx, cy, gz))
+        );
+    }
+
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 1);
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let colonist_name = names.first().cloned().unwrap_or_default();
+
+    let bed1 = Vec3::new(cx + 4, cy - 3, gz + 1);
+    let bed2 = Vec3::new(cx + 4, cy + 3, gz + 1);
+    for bed in [bed1, bed2] {
+        server.bastion_place_designation(Region { min: bed, max: bed }, DesignationKind::Bed);
+    }
+
+    // Bed's own stance is `OnTopAlways` -- the standable target is one cell
+    // above the painted cell, same as the reachability probe's own
+    // `standing_pos` computation for a target with no obstruction.
+    let target1 = bed1.map(|e| e as f32) + Vec3::new(0.5, 0.5, 1.0);
+    let target2 = bed2.map(|e| e as f32) + Vec3::new(0.5, 0.5, 1.0);
+
+    let mut min_z_reached = f32::INFINITY;
+    let mut min_dist_bed1 = f32::INFINITY;
+    let mut min_dist_bed2 = f32::INFINITY;
+    let mut beds_built = false;
+    let mut fell_below_floor = false;
+    let mut first_below_floor_at: Option<(u32, [f32; 3])> = None;
+    let mut sample_count: u32 = 0;
+    for step in 0..300 {
+        tick(&mut server, 20);
+        sample_count += 1;
+        for (name, pos, _job) in server.bastion_colonist_states() {
+            if name != colonist_name {
+                continue;
+            }
+            min_z_reached = min_z_reached.min(pos.z);
+            min_dist_bed1 = min_dist_bed1.min(pos.distance(target1));
+            min_dist_bed2 = min_dist_bed2.min(pos.distance(target2));
+            if pos.z < floor_z as f32 && !fell_below_floor {
+                fell_below_floor = true;
+                first_below_floor_at = Some((step * 20, [pos.x, pos.y, pos.z]));
+            }
+        }
+        if server.bastion_bed_slot(bed1).is_some() && server.bastion_bed_slot(bed2).is_some() {
+            beds_built = true;
+            break;
+        }
+    }
+
+    let result = serde_json::json!({
+        "bedwalk_colonist": colonist_name,
+        "bedwalk_gz": gz,
+        "bedwalk_floor_z": floor_z,
+        "bedwalk_spawn_z": gz + 2,
+        "bedwalk_ticks_sampled": sample_count * 20,
+        "bedwalk_beds_built": beds_built,
+        "bedwalk_min_z_reached": min_z_reached,
+        "bedwalk_fell_below_constructed_floor": fell_below_floor,
+        "bedwalk_first_below_floor_at": first_below_floor_at,
+        "bedwalk_min_dist_to_bed1_target": min_dist_bed1,
+        "bedwalk_min_dist_to_bed2_target": min_dist_bed2,
+    });
+    println!("{}", result);
+    // Report-only -- ground-truth data for the row, not a pass/fail gate.
+    // Read `bedwalk_beds_built` for the outcome, `bedwalk_fell_below_
+    // constructed_floor` for the terrain-gap hypothesis, and
+    // `bedwalk_min_dist_to_bed*_target` for how close a real colonist,
+    // under real physics, actually got.
+    println!("BED WALK TEST: DONE");
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
+}
+
+/// bastion (52/54 offline-yes/live-no study, 2026-08-04): READ-ONLY.
+/// Boots the world at `--seed`, force-loads the given XY, and scans a
+/// vertical column at real (x,y) reading `BASTION_PROBE_X`/`BASTION_
+/// PROBE_Y`/`BASTION_PROBE_Z_LOW`/`BASTION_PROBE_Z_HIGH` env vars --
+/// answers whether a corpus `last_timeout_pos` sits on genuine ground or
+/// in an underground pocket, without needing a new fixture. No world
+/// writes -- pure query, same discipline as `offline_reachability_probe`.
+fn terrain_ground_dump(args: &Args) -> ExitCode {
+    use common::{terrain::BlockKind, vol::ReadVol};
+    use vek::{Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-grounddump-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-grounddump".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-grounddump-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "terrain_ground_dump: server booted");
+
+    let px: i32 = std::env::var("BASTION_PROBE_X")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .expect("BASTION_PROBE_X required");
+    let py: i32 = std::env::var("BASTION_PROBE_Y")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .expect("BASTION_PROBE_Y required");
+    let z_low: i32 = std::env::var("BASTION_PROBE_Z_LOW")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let z_high: i32 = std::env::var("BASTION_PROBE_Z_HIGH")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(300);
+
+    server.bastion_force_load_area(Vec2::new(px as f32, py as f32), 3);
+
+    let terrain_top = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain
+                .get(Vec3::new(x, y, *z))
+                .is_ok_and(|b| b.kind() != BlockKind::Air && b.kind() != BlockKind::Water)
+        })
+    };
+    let real_ground = terrain_top(&server, px, py);
+
+    let mut column = Vec::new();
+    for z in z_low..=z_high {
+        if let Some(k) = server.bastion_block_kind(Vec3::new(px, py, z)) {
+            if k != BlockKind::Air {
+                column.push((z, format!("{k:?}")));
+            }
+        }
+    }
+
+    let result = serde_json::json!({
+        "grounddump_xy": [px, py],
+        "grounddump_real_ground_top_z": real_ground,
+        "grounddump_scanned_range": [z_low, z_high],
+        "grounddump_solid_cells": column,
+    });
+    println!("{}", result);
+    println!("TERRAIN GROUND DUMP: DONE");
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);

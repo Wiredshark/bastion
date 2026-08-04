@@ -670,11 +670,13 @@ fn resolve_cell_inspect(
     // 1. An active job in the clicked XY column — the most actionable target.
     // Matched by XY (a top-down overseer click) with the nearest z inside a
     // generous window, so click-projection z-imprecision still lands the job.
-    if let Some(job) = board
+    if let Some((id, job)) = board
         .jobs
-        .values()
-        .filter(|j| j.pos.x == cell.x && j.pos.y == cell.y && (j.pos.z - cell.z).abs() <= 6)
-        .min_by_key(|j| (j.pos.z - cell.z).abs())
+        .iter()
+        .filter(|(_, j)| {
+            j.pos.x == cell.x && j.pos.y == cell.y && (j.pos.z - cell.z).abs() <= 6
+        })
+        .min_by_key(|(_, j)| (j.pos.z - cell.z).abs())
     {
         let claimant = job.claimed_by.and_then(|uid| {
             id_maps
@@ -692,6 +694,7 @@ fn resolve_cell_inspect(
             is_access: job.is_access,
             stuck_strikes: job.stuck_strikes,
             blocked_by: board.blocked_by(job.pos),
+            benched_since_tick: board.benched_since.get(id).copied(),
         }));
     }
 

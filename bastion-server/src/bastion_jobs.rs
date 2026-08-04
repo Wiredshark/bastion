@@ -1984,6 +1984,35 @@ fn column_height_near(terrain: &TerrainGrid, x: i32, y: i32, z_hint: i32) -> Opt
 /// as evidence -- a capsule-aware extension (clearance/headroom checked
 /// per intermediate column, not just at the destination) is real,
 /// unbuilt future work if that direction is ever needed.
+///
+/// ★ MULTI-LAYER BLINDNESS (52/54 offline-yes/live-no study, 2026-08-04,
+/// Opus's find in the existing corpus + confirmed by direct terrain
+/// column scans at both seeds): a SECOND, independent limitation,
+/// structural rather than about body width. `column_height_near` returns
+/// ONE height per `(x,y)` column -- whatever solid surface sits nearest
+/// the z_hint -- with no way to represent multiple stacked solid bands
+/// separated by air in the same column (an overhang, a cave ceiling, a
+/// floating ledge). The flood-fill's connectivity is entirely a function
+/// of these single-height columns, so a column that's ACTUALLY a
+/// multi-story cave collapses to whichever one surface the sampler
+/// happened to find, and "connected at that height" gets reported as a
+/// route regardless of whether the real 3D geometry has one. Measured
+/// directly: seed 52's live `last_timeout_pos` (z146-149) sits inside a
+/// confirmed 146-150 air pocket under a 151-155 rock overhang, with real
+/// ground far below at 100-145; seed 54's (z166-167) sits inside a
+/// confirmed 166-169 gap between two separate rock ledges (162-165 and
+/// 170-172). In both, the corpus's own `b5_mine_reachability_probe`
+/// entries show this fn confidently reporting `path_exists_step: true`
+/// (`probe_incomplete: false`) for a route the live router never finds.
+/// Independent of the point-vs-capsule asymmetry above, and stacks with
+/// it -- both make a `path_exists: true` untrustworthy, for different
+/// reasons, at the same call. The asymmetry's own direction is
+/// UNCHANGED by this: collapsing a column to one surface only makes the
+/// model MORE permissive, never less, so a NEGATIVE result under this
+/// limitation is still sound (seed 80's own no-route finding survives
+/// both limitations). A real fix (tracking multiple bands per column) is
+/// a genuine design change, not attempted here -- this is the caveat, not
+/// the repair.
 #[derive(Debug, Clone)]
 pub struct ReachabilityProbeResult {
     pub standable_target: Option<Vec3<i32>>,
@@ -3977,6 +4006,19 @@ pub struct JobBoard {
     /// the tracked unreachable set saw ZERO fingerprint change — the
     /// set-level quiet counter that grants/withholds the amnesty.
     pub amnesty_set_quiet: u8,
+    /// bastion (guard-generalization row, 2026-08-04, Fable-ruled second
+    /// limb): the tick a job FIRST missed the leave-unclaimed guard
+    /// (`job.affordance != Untargeted && !standable.contains_key(&id)`),
+    /// still unclaimed. This is the visibility this guard was missing —
+    /// the amnesty sweep can't see these jobs (its own first line filters
+    /// to `job.unreachable == true`, and a benched-not-claimed job is
+    /// never flagged unreachable by design, see the guard's own comment)
+    /// and nothing else tracked WHEN a stance-less job started waiting.
+    /// Cleared the instant the job is claimed, gets a stance, or is
+    /// removed — a resolved job carries no history. Report-only (surfaced
+    /// via `BastionJobInspect::benched_since_tick`), never read for
+    /// behavior — same discipline as `BlockedRegionInfo::source`.
+    pub benched_since: HashMap<JobId, u64>,
     /// bastion (DPA-2, the prune-gap flicker guard): anchor COLUMNS whose
     /// rung plans went material-starved — DURABLE across the F3 prune →
     /// re-emit gap (deriving the hold from live rung jobs alone left a ~2s
@@ -15460,6 +15502,31 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 standable.insert(*id, stance);
             }
         }
+        // bastion (guard-generalization row, 2026-08-04, Fable-ruled second
+        // limb): the visibility the leave-unclaimed guard was missing —
+        // see `benched_since`'s own doc comment on `JobBoard`. A single
+        // sweep here (not scattered across every call site that skips a
+        // stance-less job) using the SAME predicate the guard itself will
+        // use below: unclaimed, not `Untargeted` (an affordance whose
+        // stance is unconditionally `Some`, so it can never be benched by
+        // this guard), and missing from `standable`. `retain` first so a
+        // job that regained a stance (or got claimed, or was removed)
+        // drops its history — a resolved job carries none.
+        board.benched_since.retain(|id, _| {
+            board.jobs.get(id).is_some_and(|j| {
+                j.claimed_by.is_none()
+                    && j.affordance != AffordanceClass::Untargeted
+                    && !standable.contains_key(id)
+            })
+        });
+        for (id, job) in board.jobs.iter() {
+            if job.claimed_by.is_none()
+                && job.affordance != AffordanceClass::Untargeted
+                && !standable.contains_key(id)
+            {
+                board.benched_since.entry(*id).or_insert(tick.0);
+            }
+        }
         // B5.8-E ACCESS-BEFORE-DESCENT (Ben's proactive fix): a dig cell
         // deeper than novice reach below its own surface is CLAIMABLE ONLY
         // once return-access exists nearby (an anchor whose base joins the
@@ -15788,31 +15855,40 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // unstandable `+1`-gap / floating cells aren't claimed-then-
                 // stuck.
                 //
-                // TASK #64 REVERT (DECISIONS #46, pure-refactor scope): this
-                // was briefly generalized to every non-`Untargeted` kind
-                // (`job.affordance != AffordanceClass::Untargeted && ...`).
-                // Corpus fan caught it: seed 52 FLIPPED (ch_leaf_cleared
-                // FAIL->PASS) against a baseline the SAME fan proved
-                // deterministic across two independent runs (zero verdict/
-                // clause drift, 48/48 seeds) -- so the flip was attributable,
-                // not noise. Mechanism: Chop's `has_standable_stance` CAN
-                // return `None` (unlike this row's other declared kinds,
-                // which always answer `Some` for their current stance
-                // values) -- under the generalized guard, a chop job that
-                // missed its stance this cycle went from "claimed anyway on
-                // the on-top default" to "benched, retried next cycle,"
-                // and seed 52 improved as a result. A REAL, positive,
-                // n=1 behaviour change -- exactly what a pure-refactor row
-                // may not carry silently, however welcome. Reverted to the
-                // original Mine-only form; the generalization is filed as
-                // its own row (the "refusal-capable producer needs a
-                // refusal-aware consumer" law's other half), gated on two
-                // premise questions: how often does stance actually return
-                // `None` per kind (the blast radius), and does anything
-                // ever RE-OFFER a job benched by this guard, or does a
-                // stance-less job sit forever (the livelock question --
-                // same shape as `MarkUnreachable` without a recovery path).
-                if job.kind.is(DesignationKind::Mine) && !standable.contains_key(&id) {
+                // TASK #64 REVERT then RE-GENERALIZED (guard row, DECISIONS
+                // #47, 2026-08-04, Fable-ruled): #64 briefly generalized this
+                // to every non-`Untargeted` kind, a corpus fan (wave20)
+                // caught seed 52 flipping (ch_leaf_cleared FAIL->PASS) as an
+                // undeclared behaviour change for a row that claimed
+                // pure-refactor scope, and it was reverted to Mine-only
+                // pending its own row. That row is THIS one, evidence-gated
+                // on the two premises named there:
+                // - RE-OFFER: unconditional. `standable` is a fresh local
+                //   recomputed every ARBITRATION_INTERVAL cycle (no
+                //   persistent benched flag anywhere in `Job`/`JobBoard`) --
+                //   a job that misses it this cycle is retried next cycle,
+                //   structurally identical to Mine's own already-shipped
+                //   behaviour. NOT the `MarkUnreachable`-without-recovery
+                //   livelock shape.
+                // - BLAST RADIUS: narrow. Only `Mine | Chop | Gather =>
+                //   SolidTarget` route through `has_standable_stance`, the
+                //   sole stance fn that can return `None`
+                //   (`designation_affordance`); every other kind's stance
+                //   is unconditionally `Some`, so this line is a no-op for
+                //   them. In effect: Chop + Gather, Mine already covered.
+                // Corpus (wave20 vs wave19/21 baseline vs wave22-reverted):
+                // +1 (seed 52) / 0 regressions across 48 seeds -- but b5
+                // NEVER places a `DesignationKind::Gather` designation
+                // (checked directly, only site is the separate
+                // `gather_scenario` fixture), so that 48-seed result is
+                // CHOP-ONLY evidence in practice; Gather rides this same
+                // line unverified until its own planted case exists (the
+                // row's third limb). See `benched_since`'s doc comment on
+                // `JobBoard` for the row's second limb (the visibility this
+                // guard was missing, closed alongside the generalization).
+                if job.affordance != AffordanceClass::Untargeted
+                    && !standable.contains_key(&id)
+                {
                     continue;
                 }
                 // B5.8-E: held until return-access leads the descent.

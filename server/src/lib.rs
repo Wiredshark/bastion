@@ -2217,11 +2217,13 @@ impl Server {
         let colonists = ecs.read_storage::<comp::Colonist>();
 
         // 1. An active job in the clicked XY column (nearest z in a window).
-        if let Some(job) = board
+        if let Some((id, job)) = board
             .jobs
-            .values()
-            .filter(|j| j.pos.x == cell.x && j.pos.y == cell.y && (j.pos.z - cell.z).abs() <= 6)
-            .min_by_key(|j| (j.pos.z - cell.z).abs())
+            .iter()
+            .filter(|(_, j)| {
+                j.pos.x == cell.x && j.pos.y == cell.y && (j.pos.z - cell.z).abs() <= 6
+            })
+            .min_by_key(|(_, j)| (j.pos.z - cell.z).abs())
         {
             let claimant = job.claimed_by.and_then(|uid| {
                 id_maps
@@ -2239,6 +2241,7 @@ impl Server {
                 is_access: job.is_access,
                 stuck_strikes: job.stuck_strikes,
                 blocked_by: board.blocked_by(job.pos),
+                benched_since_tick: board.benched_since.get(id).copied(),
             }));
         }
 

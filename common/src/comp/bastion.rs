@@ -599,6 +599,17 @@ pub struct BastionJobInspect {
     /// reason, e.g. a stuck-strike release rather than a planner refusal).
     #[serde(default)]
     pub blocked_by: Option<vek::Vec3<i32>>,
+    /// bastion (guard-generalization row, DECISIONS #47, 2026-08-04): the
+    /// tick this job first missed the leave-unclaimed guard (stance-less,
+    /// still unclaimed) and has continuously since -- see
+    /// `JobBoard::benched_since`'s own doc comment for why this is a
+    /// SEPARATE state from `unreachable`/`blocked_by` (a benched job is
+    /// deliberately NOT flagged unreachable, so those two fields stay
+    /// `false`/`None` for it, and without this field a benched job was
+    /// indistinguishable from a healthy one about to be claimed). `None`
+    /// if this job isn't currently benched.
+    #[serde(default)]
+    pub benched_since_tick: Option<u64>,
 }
 
 /// bastion (UI-5): a stockpile's contents — the 51.64 legibility fix (a
