@@ -1913,3 +1913,71 @@ guard whenever someone is next in the file.
 at `a85dec2912`), **then** all seven items against an attested tip. **No
 measurement is spent on an unverified build** — and the reconciliation table is
 already frozen, `total ≥ max` inequality included.
+
+## ★★★ SECOND-PASS CORPUS SCREEN — 114 scalar paths, and the honest result is three-part
+
+I read ~25 of the corpus's varying paths today; **the "under-read" claim applies
+to my own coverage**, so I screened all 114 scalar paths for pass/fail
+discrimination.
+
+### 1. The screen's top signal was an ARTIFACT — and I nearly reported it
+
+`ch_rings_tried` showed **FAIL mean 3.33 vs PASS mean 15.72** — a large,
+*reversed* correlation (failing seeds search fewer rings). **The distributions
+refute the means:**
+
+```
+FAIL: [1,1,1,2,3,3,3,3,4,4,5,10]                                  median ~3
+PASS: [1×14, 2,2,2, 3,3, 4,4,4,4, 5,10,12,13,15,18,19,21,22,  70,77,121,121]
+                                                                  median ~2
+```
+
+**Medians are near-identical. The PASS mean is driven entirely by four
+outliers.** *Screening by mean ratio produced a false signal on a skewed
+distribution* — the same aggregate-late lesson, now about my own screening
+method: **a mean is an aggregate; check the distribution before believing a
+delta.**
+
+### 2. But the outliers ARE the finding — and it is a CLAIM THAT HELD
+
+**Seeds 55 and 63 tried all 121 rings and found ZERO trees, and both PASS.**
+The instrument's own doc names exactly this risk: *"if this ever creeps up
+corpus-wide, the gate is quietly decaying toward vacuous-green even while
+individual seeds still pass."*
+
+**And the harness CATCHES it:**
+
+| seed | rings | trees | `ch_oracle_class` | `ch_engaged` | `gt_tree_present` |
+|---|---|---|---|---|---|
+| 55 | 121 | 0 | **`precondition_unmet`** | **false** | false |
+| 63 | 121 | 0 | **`precondition_unmet`** | **false** | false |
+
+**`ch_engaged: False` on exactly 2 of 48.** The falsifier asserts its own
+precondition, an **independent** ground-truth scan confirms no tree exists, and
+the vacuity is correctly classified. **Another claim checked that HELD — this
+machinery works as designed.**
+
+### 3. The refinement: vacuity is DETECTED but not PROPAGATED
+
+**Those seeds still count as full passes in the 36/48.** Nothing in the verdict
+says the chop portion was vacuous.
+
+> **The corpus's effective CHOP denominator is 46, not 48.** A reader computing
+> "chop passes on 44 of 48" over-counts by two.
+
+**This refines a claim I made today:** I told the architect wave20's guard-row
+evidence was *"Chop-only in practice"* (b5 places zero `Gather` designations).
+**Sharper: chop on 46 of 48 seeds, with 2 structurally unable to contribute.**
+Same over-count class, one level down.
+
+**Not a defect — a coverage-accounting gap.** Fix shape for the report-fix
+backlog: **propagate `ch_engaged` into any per-clause coverage denominator**, so
+"passes" and "exercised" stop being the same number.
+
+### Also surfaced, less interesting
+`timeouts_on_never_completed_jobs` (6.25 vs 0.00) and `mine_jobs_remaining`
+(4.42 vs 0.00) separate perfectly but are **near-tautological** — a failing seed
+has jobs left by definition. `travel_timeouts` (10.67 vs 2.78) and
+`max_same_target_timeouts` (2.50 vs 0.97) are real friction differences and
+expected. **None of these is a lead; recorded so the next screener doesn't
+re-derive them.**
