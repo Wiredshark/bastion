@@ -62,7 +62,34 @@ fn get_git_tag() -> Option<String> {
     }
 }
 
+// Resolve a path inside the real git-dir (handles worktrees correctly:
+// `--git-path` returns the worktree-specific file, e.g.
+// `.git/worktrees/<name>/HEAD`, not the main checkout's `.git/HEAD`).
+fn git_path(subpath: &str) -> Option<String> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--git-path", subpath])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(String::from_utf8(output.stdout).ok()?.trim().to_string())
+}
+
 fn main() {
+    // Without an explicit rerun-if-changed, cargo falls back to watching
+    // every file under this crate's own directory -- a commit that only
+    // touches OTHER crates (the common case: this baked-in version is read
+    // by server/client binaries elsewhere in the workspace) never triggers
+    // a rerun, so VELOREN_GIT_VERSION silently goes stale. Watch the actual
+    // git-dir files that change on every commit/checkout instead.
+    if let Some(head) = git_path("HEAD") {
+        println!("cargo::rerun-if-changed={head}");
+    }
+    if let Some(logs_head) = git_path("logs/HEAD") {
+        println!("cargo::rerun-if-changed={logs_head}");
+    }
+
     // If this env var exists, it'll be used instead
     if option_env!("VELOREN_GIT_VERSION").is_none() {
         let hash_timestamp = match get_git_hash_timestamp() {
