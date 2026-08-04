@@ -2644,3 +2644,51 @@ gets within 16 blocks is failing to route regardless of why.*
 `timeout_position_diag` **all name the same dead-end.** *Two windows, two
 instruments, one position to the decimal place.* **The two-snapshot differential
 and the under-read law converging on the campaign's sharpest cell.**
+
+## ★★★★★ THE OWNERSHIP GAP HAS A MECHANISM — #55's recording is BEHIND the z-gate
+
+**Both premises READ, not inferred.**
+
+**1. The self-rescue eligibility predicate has NO lateral term:**
+```rust
+if !job.carve_attempted && !job.is_access && job.pos.z - feet.z > reach {
+    carve_requests.push((feet, job.pos, active.job));
+}
+```
+
+**2. #55's blocked-region recording lives INSIDE the `None` arm of
+`plan_access`** — which is inside the `for … in carve_requests` loop that the
+predicate above feeds.
+
+> **★★★ THEREFORE: a laterally-unreachable target can NEVER be recorded by #55,
+> no matter how many times it fails, because it never generates a
+> carve_request.** The visibility machinery exists, is hooked to the self-rescue
+> path, and self-rescue is **z-gated** — so **lateral failures are structurally
+> excluded from the naming/notification machinery by construction.**
+
+### ★★ This CORRECTS the fix sketch, pre-build
+
+The sketch was *"escalate the Nth same-job release INTO #55's machinery."*
+**It cannot work as stated** — **#55's entry point sits inside the z-gated arm**,
+so an escalation from the churn path has nowhere to hand off to. **The fix needs
+either its own recording call or a lateral-eligible entry into the machinery.**
+*Small change to the design; large change to what "connecting existing parts"
+means.*
+
+### ★ And #55's own comment shows the intent it failed to reach
+
+> *"Fable's ruling: **never a silent no-op**, delivered over the already-proven
+> chat pipeline…"*
+
+**The ruling was implemented for the z-gated path and the churn path stayed
+silent.** ***A fix applied at one caller and absent at its sibling* — third
+instance of that exact shape today**, after the access bar (fixed at the descent
+caller, live at self-rescue) and `blocked_sources` (wired for chop, not mine).
+
+### ★★ It also explains a corpus reading I filed hours ago
+
+I found `55_names_blocker: false` and `55_notified_once: false` **across all 48
+seeds** and recorded the family as *inert*. **If the machinery is reachable only
+behind a z-gate while the dominant failure mode is lateral, near-zero firing is
+exactly what you would expect.** *The inertness was a symptom of the gating, not
+of a broken instrument — and I had both halves on disk without connecting them.*
