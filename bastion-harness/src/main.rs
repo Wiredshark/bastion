@@ -5088,13 +5088,23 @@ fn blocked_retract_scenario(args: &Args) -> ExitCode {
 ///             designated) -- zero exposed faces, so its own painted Mine
 ///             job is flagged unreachable immediately and sits inert.
 /// Mining the pillar is the ONLY possible progress; when it completes,
-/// `floating_chunk` finds the blob severed (component size 1, cap 64) and
-/// collapses it: the blob cell clears to air and yields its own stone drop
-/// via the CAVE-IN path, distinct from the pillar's own ordinary
-/// Mine-completion drop. Two things must both hold, proving both halves of
-/// the original seed-148 signature:
-///   (a) conservation: total stone == 2 (one per removed cell, regardless
-///       of which code path removed it);
+/// `floating_chunk` finds the blob+shell mass severed and collapses it.
+/// CORRECTED (2026-08-04, first live run against this fixture): the
+/// component size is 6, not 1 -- an earlier draft of this comment assumed
+/// only the blob itself would sever, but that's geometrically impossible.
+/// For the blob to read zero-exposed (all 6 neighbors solid), the 5 shell
+/// cells sealing it must ALSO have no grounding of their own -- any
+/// independent ground path for a shell cell would keep the blob
+/// permanently grounded through it too, since they're face-adjacent.
+/// So shell and blob sever together as one 6-cell island (still far under
+/// the 64-cell cap) the instant the pillar (their only shared route to the
+/// wall) is mined. Confirmed empirically: `cells=6` in the CAVE-IN log
+/// line, `stone_total=7` (1 ordinary pillar drop + 6 cave-in drops).
+/// Two things must both hold, proving both halves of the original
+/// seed-148 signature:
+///   (a) conservation: total stone == 7 (one per removed cell -- pillar
+///       via ordinary Mine-completion, blob+5-shell via CAVE-IN --
+///       regardless of which code path removed it);
 ///   (b) no orphan: `bastion_jobs_in_region` over the painted region == 0
 ///       once the blob's pre-existing inert job has retired.
 /// Deterministic by construction (blob is never independently claimable —
@@ -5258,11 +5268,50 @@ fn cavein_conservation_scenario(args: &Args) -> ExitCode {
     // Premise check, before waiting on the collapse: the blob must start
     // fully enclosed (never independently claimable) -- if this is false
     // the geometry is wrong and the rest of the run proves nothing.
-    tick(&mut server, 2);
-    let blob_starts_unreachable = matches!(
-        server.bastion_inspect_cell(blob),
-        Some(common::comp::bastion::BastionInspectKind::Job(j)) if j.unreachable
-    );
+    // FIXED (2026-08-04, first live run against this fixture): the
+    // exposure/unreachable sweep that sets this flag only runs every
+    // `ARBITRATION_INTERVAL` ticks (bastion_jobs.rs's `tick.0 %
+    // ARBITRATION_INTERVAL != 0` gate) -- a single `tick(&mut server, 2)`
+    // read the job's still-default `unreachable: false` before that sweep
+    // had run even once, a false negative from checking too early rather
+    // than a real geometry defect (confirmed via a per-neighbor
+    // `bastion_block_kind` diagnostic: all 6 neighbors were correctly
+    // `Rock` at that point). Poll instead of a fixed short wait.
+    let mut blob_starts_unreachable = false;
+    for _ in 0..30 {
+        tick(&mut server, 5);
+        blob_starts_unreachable = matches!(
+            server.bastion_inspect_cell(blob),
+            Some(common::comp::bastion::BastionInspectKind::Job(j)) if j.unreachable
+        );
+        if blob_starts_unreachable {
+            break;
+        }
+    }
+    if std::env::var_os("BASTION_CAVEIN_DIAG").is_some() {
+        for (label, d) in [
+            ("east", Vec3::new(1, 0, 0)),
+            ("west(pillar)", Vec3::new(-1, 0, 0)),
+            ("north", Vec3::new(0, 1, 0)),
+            ("south", Vec3::new(0, -1, 0)),
+            ("up", Vec3::new(0, 0, 1)),
+            ("down", Vec3::new(0, 0, -1)),
+        ] {
+            let p = blob + d;
+            eprintln!(
+                "DIAG blob-neighbor {label} pos={p:?} kind={:?}",
+                server.bastion_block_kind(p)
+            );
+        }
+        eprintln!(
+            "DIAG blob inspect={:?}",
+            server.bastion_inspect_cell(blob)
+        );
+        eprintln!(
+            "DIAG pillar inspect={:?}",
+            server.bastion_inspect_cell(pillar)
+        );
+    }
 
     let mut pillar_mined = false;
     let mut blob_cleared = false;
@@ -5282,7 +5331,11 @@ fn cavein_conservation_scenario(args: &Args) -> ExitCode {
     jobs_remaining = server.bastion_jobs_in_region(fixture_region);
 
     let stone_total = server.bastion_colony_item_total(MINE_DROP_ITEM);
-    let conserved = stone_total == 2;
+    // 7 = 1 (pillar, ordinary Mine-completion) + 6 (blob + its 5 sealing
+    // shell cells, swept together by the SAME cave-in event) -- see the
+    // fixture's own doc comment above for why the component can't be
+    // smaller than 6 given an airtight blob.
+    let conserved = stone_total == 7;
     let no_orphan = jobs_remaining == 0;
 
     let result = serde_json::json!({
