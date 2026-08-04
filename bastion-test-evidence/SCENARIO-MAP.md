@@ -2097,3 +2097,43 @@ documents the exact pattern** (41 orphans across 6 seeds, up to 17 on one).
 
 Two live hypotheses (5b's, unchased): **sweep timing** vs **a residual gap in
 #57's coverage.**
+
+## ★★ SPECIMEN INTEGRITY CHECK — seed 90's zero is EMPIRICAL, not structural
+
+**Self-audit after the three-writer correction:** seed 71 was never one of my
+specimens, but **seed 90 is** — and I justified its zero `unreachable` with the
+same single-writer reading. **Checked it before anyone builds a row on it.**
+
+**My claim was:** *"its zero `unreachable` is structurally real — claimed cells
+never enter the enclosure branch (`if job.claimed_by.is_some() { continue; }`)."*
+
+**READ (`bastion_jobs.rs` ~11230–11240):** the `carve_requests` producer loops
+over **ACTIVE** jobs — `carve_requests.push((feet, job.pos, active.job))`, with a
+colonist's `pos` and `skills.climbing` in scope. Those requests feed the
+self-rescue call whose `None` arm is **writer 12719**.
+
+> **So writer 12719 fires precisely ON CLAIMED JOBS.** The enclosure branch does
+> skip claimed jobs — but that is one writer of three, and my "therefore
+> structural" was the single-writer assumption again, one level down.
+
+**Corrected: seed 90's zero is an EMPIRICAL zero, not a structural guarantee.**
+The observation stands; *"provably uncoupled from the shortfall restatement
+trap"* does not. **Fourth `unreachable`-adjacent correction today — and the
+first one caught before anyone acted on it.**
+
+### ★ And the corrected reading SHARPENS the specimen
+
+Writer 12719 requires a **stuck colonist** (`job.pos.z - feet.z > reach`) to
+generate a carve request at all. **Seed 90's cells are claimed AND unflagged**,
+which now says something it didn't before:
+
+> **Seed 90's colonists are claimed, NOT ascent-stuck, and still not
+> progressing.** No carve request ⇒ no `plan_access` call ⇒ no flag. **The
+> access story is excluded for seed 90 by the same reasoning that excludes it
+> for 71 — but via a different writer, and derived rather than measured.**
+
+**Seed 90 remains the cleanest mine specimen.** Its defining facts are unchanged
+(3 cells, all claimed by named colonists, `cycles: 0`, `blocked_by: None`,
+`progress: 0.878`, two blocks unmined). **Only my justification for one of them
+was overclaimed, and it is now downgraded to the empirical observation it always
+was.**
