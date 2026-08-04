@@ -367,3 +367,48 @@ independent information** in this corpus — it is a dependent of `build_placed`
 Counting it as a second failed clause inflates the apparent failure count
 without adding a symptom. Same for the other perfect pairs until each is
 checked the same way.
+
+### ★★★ THE PAIR RULE WAS TOO COARSE — "perfect pairing" is not "redundant"
+
+I derived the pair rule from **clause co-occurrence** (pass/fail booleans) and
+called each pair "one mechanism reported twice." Checking the underlying
+**values** splits the four pairs into two opposite kinds:
+
+**REDUNDANT — the second field restates the first:**
+
+| pair | joint values | verdict |
+|---|---|---|
+| `chop_cleared` / `log_sum` | `true↔1` (44), `false↔0` (4) | `log_sum` is a direct restatement; **zero independent information** |
+| `build_placed` / `any_needs_materials` | `true↔true` (42), `false↔false` (6) | dependent; **zero independent information** |
+| `b15_ontop` / `b15_adjacent` | `true↔true` (47), `false↔false` (1) | **n=1 — cannot distinguish either way** |
+
+**NOT REDUNDANT — the count preserves what the boolean destroys:**
+
+| seed | `mine_blocks_mined` | share | other clauses |
+|---|---|---|---|
+| 71 | **5/27** | 19% | + Mode A + both `b15_*` |
+| 54 | **16/27** | 59% | none |
+| 90 | **25/27** | 93% | none |
+| 61 | **26/27** | 96% | + Mode A |
+
+> **"Mode B mine" is not one mode. It is a SPECTRUM from 19% to 96%, and
+> 5/27 versus 26/27 are almost certainly different problems.** The boolean
+> `mine_cleared` collapses all four into one symptom; `mine_blocks_mined`
+> preserves the structure. Textbook [[aggregate-late-keep-the-structure]] — and
+> here the un-collapsed field was sitting in the report the whole time.
+
+**★ Seeds 61 and 90 are one block short (26/27, 25/27)** — that is a different
+claim from seed 71's 5/27, and it sits right next to the harness's own note
+about the settle window (*"the remaining run-to-run variance is ASYNC
+SCHEDULING … occasionally left the last mine block one window short"*). **A
+near-miss and a near-total failure must not share a row.**
+
+**★ Seed 71 fails in three systems at once** (mine 5/27, Mode A, both `b15_*`)
+and **seed 80 fails chop + Mode A**. Both are multi-system seeds, not clean
+single-mode specimens — the same shape that voided the carve-cascade pair.
+**Do not use 71 or 80 as a control for anything.**
+
+**The lesson on my own method:** I read the pass/fail *labels* to build the
+mode map instead of the field *values* — the day's own error class, applied to
+my own analysis. **A pair that always fails together may still carry different
+magnitudes, and the magnitudes are where the modes actually separate.**
