@@ -245,6 +245,33 @@ archetype · chronicle · chronicle-capture · lod0 · lod1 · inspect
   > three carries a product signal.**
 
   **The "mystery under both stances" was a count threshold all along.**
+
+  ★★★ **TILL COUNT = NINE. Class (a): job created, work never performed.**
+  From the same log (ANSI stripped — see the trap note below):
+  ```
+  TILL jobs at z=455 : 9 distinct XY   (full 3x3 grid = 9)   missing: NONE
+  SOW  jobs at z=456 : 8 distinct XY                          MISSING: (24072, 20239)
+  ```
+  **All nine till jobs EXIST; `tilled_count` reached 8.** One till job was
+  created and never completed — so the silent-skip classes (foreign sprite,
+  `occupied` suppression, terrain-read bail) are all EXCLUDED. **Farm is a true
+  member of the last-unit family, which stands at three.**
+
+  ★ **POSITION: the missing cell `(24072, 20239)` is a CORNER of the 3×3**
+  (min-x, max-y) — structurally distinguished, YES. **But it is NOT `plot.min`
+  `(24072, 20237)`, the `growth_rose` probe corner**, which tilled, sowed and
+  grew to 15 normally. **So the one-worldgen-accident-explains-everything story
+  is dead: three red clauses, two independent causes** — an unsatisfiable watch,
+  and one uncompleted corner till. The missing SOW at the same XY is downstream
+  (you cannot sow an untilled cell) and corroborates rather than adds.
+
+  ### ★ TRAP: the first grep returned ZERO — an ANSI artifact
+  `sow=false` **never matches literally**: tracing's colour codes sit INSIDE the
+  field value (`sow`·ESC·`=`·ESC·`false`). **This is the documented run-11 trap**
+  (*"ANSI codes sit INSIDE field values, so EVERY zero-count log grep was an
+  artifact"*) and I walked into it — caught only by printing raw lines instead
+  of trusting the count. **Strip ANSI before any log grep whose answer is a
+  count.** Zero-as-artifact, one more costume.
 - **zone** — `zone_freed:false`. **RE-RUN at `460626a6e2` 2026-08-04: still
   RED**, exit 1. Fresh telemetry: `zone_colonists:4, zone_in_control:5,
   zone_in_zone:870, zone_jobs:1` — the only false term is `zone_freed`.
