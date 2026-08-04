@@ -1,0 +1,28 @@
+# Congestion trap: NOT a terrain trap. plan_access returns Some for this
+# footprint (it's the same known-open rock as the earlier legit mine
+# footprint, just a smaller slice of it) -- the bet is on raw density:
+# max colony size (16, the server's own cap) all converging on a tight
+# handful of cells, so colonists lose races for the same approach stance
+# and fail the WALK repeatedly (the churn path), not the route.
+note congestion trap -- max colony (16), tight footprint, same open rock
+anchor
+spawn 16
+wait 450
+note painting a tight 3x3x3 slice of the known-open footprint -- 16 colonists onto ~9-27 cells
+designate mine 15208 16008 416 15210 16010 418
+note painted -- entering extended observation loop
+wait 1800
+list_designations
+note checkpoint 1 (~60s post-paint)
+wait 1800
+list_designations
+note checkpoint 2 (~120s post-paint)
+wait 1800
+list_designations
+note checkpoint 3 (~180s post-paint)
+wait 1800
+list_designations
+note checkpoint 4 (~240s post-paint)
+wait 1800
+list_designations
+note checkpoint 5 (~300s post-paint) -- run complete

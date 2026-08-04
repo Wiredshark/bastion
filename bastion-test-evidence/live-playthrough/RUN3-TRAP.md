@@ -85,11 +85,44 @@ looks like it may require terrain that's specifically ambiguous to
 `plan_access`, not just "an overhang," which is a narrower target than
 either of us assumed going in.
 
-## Not yet tried
+## Attempt 3 — congestion, not terrain (`script-06-congestion.txt`)
 
-A trap built from congestion/contention rather than terrain shape (e.g.
-many colonists competing for one legitimately-reachable-but-narrow
-approach, so `plan_access` never returns `None` but colonists repeatedly
-lose the race and get bumped) might reach the churn path where terrain-only
-traps didn't. Not attempted this run — flagging for Opus's call rather than
-guessing at a third geometry blind.
+Opus's call: try it. Max colony (16, the server's own cap) all spawned at
+once, aimed at a small 3x3x3 slice (18 mineable cells) of the same open
+rock the earlier legit footprints used — betting that raw density on a
+small target would cause colonists to lose races for the same approach
+stance and fail the *walk* (the churn path), without `plan_access` ever
+returning `None` (there genuinely is a route).
+
+Result: **no congestion happened at all.** All 18 jobs completed in ~14
+seconds flat, zero `job unreachable` events, zero strikes, `ROWB-DIAG`
+still 0. The footprint's perimeter had enough distinct approach faces
+(3x3x3 exposed on multiple sides, near-surface, fully open — the same
+property that made every prior run's larger footprint resolve cleanly)
+that 16 colonists simply fanned out around it instead of queuing for a
+shared bottleneck. Packing more colonists onto an *open* target doesn't
+create contention; it just parallelizes faster. A genuine congestion trap
+would need a target with a real single-file physical bottleneck (e.g. a
+1-wide corridor), which this driver has no way to detect or construct from
+survey data alone.
+
+## Verdict: three honest attempts, three nulls — stopping here per Opus's own instruction
+
+Terrain-extreme (attempt 1), terrain-moderate (attempt 2), and density
+(attempt 3) all failed to reach 3 churn-path strikes, each for a distinct
+and now-understood reason: attempt 1 was caught by `plan_access`'s
+definitive rejection before the churn counter could move; attempt 2 got
+partway there but lost the race to `plan_access` and a phantom-retire;
+attempt 3 never even created contention because the target had too many
+open faces for 16 colonists to collide over.
+
+Per Opus's own stop condition ("three honest attempts at the precondition
+is enough to report 'the band is real but very narrow'... rather than
+escalating trap ingenuity until something fires"): **stopping here.**
+Rows 14-17 remain not exercised live tonight. This is not the same claim
+as "the mechanism doesn't work" — the harness already proved bench → 
+graduate → re-bench → graduate fires correctly on seed 90's holdout,
+strikes reaching 3/2/1/0 there. It's the narrower, now well-evidenced claim
+that the band of terrain/situations able to produce that precondition is
+real but genuinely rare — rare enough that three different honest,
+player-natural attempts at engineering it tonight all missed.
