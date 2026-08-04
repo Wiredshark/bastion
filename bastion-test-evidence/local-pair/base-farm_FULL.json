@@ -1,0 +1,15 @@
+{
+ "49": {
+  "farm_colonists": 3,
+  "farm_cycled": true,
+  "farm_growth_rose": true,
+  "farm_harvested": true,
+  "farm_jobs_bounded": true,
+  "farm_matured": true,
+  "farm_no_embeds": true,
+  "farm_paint_jobs_zero": true,
+  "farm_seed_positive": true,
+  "farm_sown": true,
+  "farm_tilled": true
+ }
+}

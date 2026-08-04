@@ -1,0 +1,58 @@
+{
+ "49": {
+  "farm_blocked_regions_count": 0,
+  "farm_cell_diag": [
+   {
+    "blocked_by": null,
+    "blocked_sources": [],
+    "claimant": null,
+    "pos": [
+     28521,
+     11821,
+     351
+    ],
+    "progress": 0.0,
+    "stuck_strikes": 0,
+    "unreachable": false
+   },
+   {
+    "blocked_by": null,
+    "blocked_sources": [],
+    "claimant": null,
+    "pos": [
+     28521,
+     11822,
+     351
+    ],
+    "progress": 0.0,
+    "stuck_strikes": 0,
+    "unreachable": false
+   },
+   {
+    "blocked_by": null,
+    "blocked_sources": [],
+    "claimant": "Colonist-1",
+    "pos": [
+     28520,
+     11823,
+     351
+    ],
+    "progress": 0.4033333659172058,
+    "stuck_strikes": 0,
+    "unreachable": false
+   }
+  ],
+  "farm_colonists": 3,
+  "farm_cycled": true,
+  "farm_g1_baseline": 3,
+  "farm_growth_rose": true,
+  "farm_harvested": true,
+  "farm_jobs_bounded": true,
+  "farm_matured": true,
+  "farm_no_embeds": true,
+  "farm_paint_jobs_zero": true,
+  "farm_seed_positive": true,
+  "farm_sown": true,
+  "farm_tilled": true
+ }
+}

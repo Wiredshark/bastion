@@ -93,6 +93,18 @@ def main():
 
     if descend:
         print(f"descending into list elements of: {', '.join(sorted(descend))}")
+        # A --descend name that matches no list is a SILENT no-op: the caller
+        # believes they bought per-element granularity and did not. Same class
+        # as the --ignore that names an absent field.
+        seen = set()
+        for doc in (base_doc, new_doc):
+            for payload in doc.values():
+                for k, v in payload.items():
+                    if isinstance(v, list):
+                        seen.add(k)
+        for d in sorted(descend - seen):
+            print(f"    !! '{d}' is not a list field in either run - "
+                  "the --descend had NO EFFECT")
     base_seeds, new_seeds = set(base_doc), set(new_doc)
     print(f"baseline: {len(base_seeds)} seeds, {len(base)} field paths  [{args[0]}]")
     print(f"new     : {len(new_seeds)} seeds, {len(new)} field paths  [{args[1]}]")

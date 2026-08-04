@@ -1,0 +1,2 @@
+{"b55_all_idle_after_whole":true,"b55_board_after_whole":0,"b55_claims_before_erase":4,"b55_jobs_in_half_after":0,"b55_jobs_in_half_before":18,"b55_orphans_after_partial":0,"b55_orphans_after_whole":0,"b55_p1_jobs":36,"b55_p2_cleared":true,"b55_p2_jobs":200,"b55_remainder_before":18,"b55_remainder_progressed":true,"b55_soak_avg_tick_ms":7.047794833333334,"b55_stone_entities":32,"b55_stone_sum":200,"b55_stone_sum_after_soak":200}
+B5.5 SCENARIO: PASS

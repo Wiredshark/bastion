@@ -1,0 +1,32 @@
+{
+ "49": {
+  "b73_cascade_suppressed": [],
+  "b73_diag": {
+   "colonists": 1,
+   "ground_after": 0,
+   "ground_before": 1,
+   "hunger_first": true,
+   "mine2_jobs": 33,
+   "mine_jobs": 10
+  },
+  "b73_failed_clauses": [
+   "held"
+  ],
+  "b73_root_failure": "held",
+  "b73_verdict": {
+   "ate": true,
+   "broke": true,
+   "colonists_expected": true,
+   "eat_conserved": true,
+   "held": false,
+   "mine_jobs_expected": true,
+   "no_embeds": true,
+   "paused": true,
+   "resumed": true,
+   "resumed_after_break": true,
+   "single_break": true,
+   "urgency_ordered": true
+  },
+  "b73_verdict_matches_legacy": true
+ }
+}
