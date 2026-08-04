@@ -905,3 +905,62 @@ genuinely-unreachable chop case"* and `vm-pool.sh`'s *"+dirty = LFS noise, code
 clean via reset --hard"*). **Recording survivals matters: a checking habit that
 only ever reports bad news stops being believed, and the comments in this tree
 are mostly right.**
+
+## ★★★★ TASK #59's STARVATION HYPOTHESIS IS SUPPORTED — 6/6, by its own purpose-built instrument, unread until now
+
+**Found by applying my own new rule properly.** A recursive schema dump of
+`wave19_FULL.json` gives **161 leaf paths, only 68 of them top-level — 93 were
+invisible to a top-level name scan, and 69 of those VARY across seeds.** Among
+them: `b5_mine_cell_diag[].starvation_cycles` and `.starvation_crowded_cycles`.
+
+### The counters carry their own decision rule, written by whoever built them
+
+> `starvation_cycles` = cycles this cell was open+unclaimed;
+> `starvation_crowded_cycles` = of those, how many had at least one OTHER
+> unclaimed job competing. **A ratio near 1.0 supports the hypothesis; a cell
+> unattempted for many cycles with an EMPTY field (crowded far below
+> starvation) is Fable's kill case.** *Report-only, never gates `pass`.*
+
+Task #59's hypothesis: **greedy arbitration with no cooldown/penalty after a
+failed attempt — a hard cell just loses the score comparison every cycle while
+easier unclaimed work exists.**
+
+### The result, worst-starved cell per seed
+
+| seed | mined | starv | crowded | **ratio** | verdict |
+|---|---|---|---|---|---|
+| 52 | 27/27 | 294 | 294 | **1.000** | FAIL (chop) |
+| 54 | 16/27 | 360 | 360 | **1.000** | FAIL |
+| 61 | 26/27 | 306 | 287 | **0.938** | FAIL |
+| 66 | 27/27 | 222 | 222 | **1.000** | FAIL (tool) |
+| 71 | **5/27** | **360** | **360** | **1.000** | FAIL |
+| 90 | 25/27 | 332 | 332 | **1.000** | FAIL |
+
+> **Five of six ratios are EXACTLY 1.000; the sixth is 0.938. The documented
+> KILL CASE occurs in ZERO seeds.** Every starved cell had competing unclaimed
+> work essentially 100% of the cycles it sat unclaimed. **360 is the whole run.**
+
+### ★★ What this explains
+
+**Seed 71 is ARBITRATION-starved, not ACCESS-starved.** It emitted three access
+plans (so the seam bar never touched it — my refuted prediction was right for
+this reason), yet 15 of 27 cells sat open and unclaimed for the entire run with
+competitors present every cycle. **The mine failures have a mechanism, and it is
+not the one we spent the day on.**
+
+**And it is a different question from `cycles_since_last_claim`**, which I used
+for the four-signature split. That field says *how long since a claim*; these
+say *whether anything else was competing while it waited*. **The signatures
+stand; this adds the WHY for the never-claimed ones.**
+
+### ★ Caveat that must travel with it
+
+**Seeds 52 and 66 show ratio 1.000 with 294 and 222 starved cycles and still
+mined 27/27.** So a 1.0 ratio is **not sufficient for failure** — contention is
+normal and cells usually get claimed eventually. **The claim supported is the
+MECHANISM (starvation is by contention, not by an empty field), not that
+starvation alone determines the outcome.** A row here needs to explain why 71
+never recovered and 66 did.
+
+**NOT read: the arbitration scoring code itself.** This is the instrument's own
+verdict on its own hypothesis, applied per its own documented rule.
