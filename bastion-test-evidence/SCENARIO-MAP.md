@@ -557,3 +557,53 @@ recorded as having survived.**
 Path exists from spawn (complete, 228 columns), **nothing recorded a block**,
 and still zero logs. No reachability story available. **It is to chop what seed
 90 is to mine** — the specimen with no confound to strip.
+
+## ★★★ INSTRUMENT DEPTH BY MODE — build is the LARGEST mode and has ZERO diagnostics
+
+The three big modes are not equally investigable. This is the actionable output
+of the whole corpus read.
+
+| mode | seeds | diagnostic fields available | signatures separable? |
+|---|---|---|---|
+| **build (Mode A)** | **6 — largest** | **NONE** | **no** |
+| mine | 4 | `mine_cell_diag` (per-cell claimant, `cycles_since_last_claim`, `blocked_by`, frontier/top flags) | **yes — 4 distinct** |
+| chop | 4 | `ch_base_blocked_sources` + full reachability probe (both vantages, `probe_incomplete`, columns visited) | **yes — 4 distinct** |
+
+**Every build-related field is a CONSTANT across all 48 seeds:**
+
+```
+build_ok_jobs         = 1     in all 48
+build_stall_jobs      = 1     in all 48
+build_stall_untouched = true  in all 48
+b15_floater_skipped   = true  in all 48
+b15_ontop/adjacent    = true  in all 48 except seed 71
+```
+
+**`build_stall_jobs: 1` and `build_stall_untouched: true` hold in PASSING seeds
+too** — they describe an intentional stall fixture, not a failure. Another
+alarming-looking constant, same trap as `b5_55_diag`.
+
+> **Half the corpus's failures live in the one subsystem the corpus cannot say
+> anything about.** Mine and chop each yielded four separable signatures from
+> fields already recorded; build yields the bare fact that it didn't happen.
+
+**Instrument priority is therefore unambiguous: a `build_cell_diag` on the
+pattern of `mine_cell_diag`** (claimant, `cycles_since_last_claim`, `blocked_by`
++ `blocked_sources`, material state at the target cell). **Highest
+coverage-per-line available, and it is read-only probe work** — no behavior
+change, no fan required to land it.
+
+### ★ METHOD CORRECTION — my disjointness test produces false positives
+
+The scan that produced this compared **value sets** for Mode-A vs passing seeds
+and flagged any field with no overlap. That is **wrong for fields whose values
+are unique per seed**: `ch_ground_truth_witness` (a position), `locomotion`
+(counters) and `soak_avg_tick_ms` (a float) were flagged as "discriminating"
+purely because **any** six seeds differ from **any** other seeds on a
+continuous or per-seed-unique field.
+
+**Set-disjointness only tests discrimination for fields with a small shared
+value domain.** For continuous fields it tests nothing. Reported here because
+the technique is otherwise worth reusing — with that guard stated. The
+substantive finding (build's fields are constants) is unaffected: constants are
+exactly the case where the domain is shared and the test is valid.
