@@ -1383,3 +1383,62 @@ always in a **structurally distinguished position** (a plot corner, a volume
 edge, a column frontier)? Farm's `growth_rose` probe reads `plot.min` — **if the
 untilled cell IS that corner, position is implicated immediately** and that is a
 one-line check on an existing log.
+
+## ★★ MINE-SIDE POSITION CHECK — CANNOT BE ANSWERED AS ASKED, and my first attempt was artifactual
+
+The architect's broad read asked whether the mine seeds' missing cells are
+structurally distinguished (edge / corner / frontier), as farm's turned out to
+be. **Two problems, both mine, caught before the answer was reported.**
+
+### Problem 1 — my edge/corner computation was an ARTIFACT
+
+I derived the volume extent from **the diag's own cells**. For seeds 61 and 90
+the diag holds **3 cells in a single (x,y) column**, so `xs` and `ys` are
+single-valued and `p.x in (xs[0], xs[-1])` is **trivially true for every cell**.
+**Every cell scored CORNER=True by construction.** Meaningless. (Seed 71's diag
+does span the full 3×3×3, so only its geometry was real.)
+
+### Problem 2 — `mine_cell_diag` is NOT a list of unmined cells
+
+**Criterion READ** (harness, the `mine_cell_diag` build loop): a cell is
+included **iff a live JOB still exists at that position** —
+
+```rust
+for x .. for y .. for z {
+    if let Some(BastionInspectKind::Job(j)) = /* inspect at pos */ {
+        ... mine_cell_diag.push(...)
+```
+
+**So the diag lists cells that still carry an outstanding job — not cells that
+are still solid.** Every position inference I attempted rests on a set I had not
+read the membership rule for. **Fourth name/criterion assumption of the session;
+first one caught before it left the session.**
+
+### ★ The residue this exposes — FLAGGED, NOT CLAIMED
+
+Live jobs exceed unmined cells in every failing seed:
+
+| seed | mined | unmined | cells with live jobs | surplus |
+|---|---|---|---|---|
+| 61 | 26/27 | 1 | 3 | **+2** |
+| 90 | 25/27 | 2 | 3 | **+1** |
+| 54 | 16/27 | 11 | 18 | **+7** |
+| 71 | 5/27 | 22 | 27 | **+5** |
+
+And `cells_above_open` (counted over `open_cells`) implies some job-bearing cells
+are **already open** — e.g. seed 61's z=162 reports 2 open above it, and both of
+those cells appear in the diag with live jobs of their own.
+
+> **Reading: jobs may be persisting on already-mined cells.** That would be a
+> real defect and it would also explain seed 61's earlier "3 flagged vs 1
+> unmined" residue.
+
+**NOT ESTABLISHED** — `open_cells`' capture time relative to the job inspection
+has not been read, and a snapshot skew would produce the same numbers. **That
+read is the next step, and it is cheap.** Recording the observation without the
+claim, because three of today's six corrections came from exactly this gap.
+
+**Consequence for the four-signature table: it stands.** Those signatures rest
+on `blocked_by`, claim state and `cycles_since_last_claim` — per-cell facts that
+do not depend on the diag being an unmined-cell list. **Only the position
+question is blocked.**
