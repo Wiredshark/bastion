@@ -1,0 +1,9 @@
+# Survey pass: find a real overhang/floating-shelf near spawn using the
+# client's own cached terrain (the same data a real renderer would use).
+# No designations painted here -- pure reconnaissance.
+note survey pass -- anchoring and waiting for terrain to stream in
+anchor
+wait 300
+note surveying a 140x140 box around spawn, z 380-460, gap>=4
+survey 15146 15946 15286 16086 460 380 4
+note survey complete

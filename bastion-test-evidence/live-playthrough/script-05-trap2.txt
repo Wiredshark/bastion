@@ -1,0 +1,25 @@
+# Trap attempt 2, same live server/colony as script-04. Attempt 1's target
+# (gap=42, a near-certainly-disconnected floating cell 42 blocks up) got
+# caught by the server's OWN static access planner immediately
+# ("auto-access refused (no in-claim route)") -- exactly the up-front-reject
+# failure mode Opus warned about; strikes never got the chance to
+# accumulate. Trying a much more moderate shelf this time: gap=8 (an 8-cell
+# drop beneath the surface, not 42), close to the player's own elevation
+# (z=424 vs player z=419) -- plausible enough to read as "maybe reachable"
+# to a coarse height-only heuristic, per Opus's column_height_near note,
+# while still being a real drop a colonist's walk should fail on.
+note trap attempt 2 -- moderate shelf (gap=8), same live colony
+designate mine 15177 16008 421 15179 16010 424
+note trap 2 painted -- entering observation loop
+wait 1800
+list_designations
+note checkpoint 1 (~60s post-paint)
+wait 1800
+list_designations
+note checkpoint 2 (~120s post-paint)
+wait 1800
+list_designations
+note checkpoint 3 (~180s post-paint)
+wait 1800
+list_designations
+note checkpoint 4 (~240s post-paint) -- run complete

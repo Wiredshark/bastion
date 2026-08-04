@@ -14,6 +14,14 @@
 //!   cancel <x0> <y0> <z0> <x1> <y1> <z1>
 //!   inspect_cell <x> <y> <z>
 //!   list_designations
+//!   survey <x0> <y0> <x1> <y1> <ztop> <zbot> <gap>
+//!       for each (x,y) in the 2D box: walk down from ztop, find the
+//!       topmost filled cell (the "surface"); a column is flagged an
+//!       OVERHANG CANDIDATE if there are >= <gap> consecutive unfilled
+//!       cells immediately beneath that surface before hitting solid
+//!       ground again (or the scan reaches zbot without finding any) --
+//!       the same terrain data a real client's renderer reads, not a
+//!       harness-only view.
 //!   note <free text>                    -- marker only, logged verbatim
 
 use common::{
@@ -21,6 +29,8 @@ use common::{
     bastion::{DesignationKind, Region},
     clock::Clock,
     comp::{self, bastion::BastionInspectTarget, body::humanoid::Body},
+    terrain::TerrainGrid,
+    vol::ReadVol,
 };
 use common_net::msg::ServerInfo;
 use std::{
@@ -71,6 +81,15 @@ enum ScriptCmd {
     Cancel(Region),
     InspectCell(Vec3<i32>),
     ListDesignations,
+    Survey {
+        x0: i32,
+        y0: i32,
+        x1: i32,
+        y1: i32,
+        ztop: i32,
+        zbot: i32,
+        gap: i32,
+    },
     Note(String),
 }
 
@@ -131,6 +150,18 @@ fn parse_script(path: &str) -> Vec<ScriptCmd> {
                 ScriptCmd::InspectCell(Vec3::new(n[0], n[1], n[2]))
             },
             "list_designations" => ScriptCmd::ListDesignations,
+            "survey" => {
+                let n: Vec<i32> = rest.iter().map(|p| p.parse().unwrap()).collect();
+                ScriptCmd::Survey {
+                    x0: n[0],
+                    y0: n[1],
+                    x1: n[2],
+                    y1: n[3],
+                    ztop: n[4],
+                    zbot: n[5],
+                    gap: n[6],
+                }
+            },
             "note" => ScriptCmd::Note(rest.join(" ")),
             other => panic!("unknown script verb at line {lineno}: {other}"),
         };
@@ -327,6 +358,65 @@ fn main() {
                     "designations (rev={}): {:?}",
                     client.bastion_designations_rev(),
                     client.bastion_designations()
+                ));
+            },
+            ScriptCmd::Survey {
+                x0,
+                y0,
+                x1,
+                y1,
+                ztop,
+                zbot,
+                gap,
+            } => {
+                let terrain = client.state().ecs().read_resource::<TerrainGrid>();
+                let mut candidates = Vec::new();
+                let mut columns_scanned = 0;
+                let mut columns_no_surface = 0;
+                for y in y0..=y1 {
+                    for x in x0..=x1 {
+                        columns_scanned += 1;
+                        let mut surface = None;
+                        let mut z = ztop;
+                        while z >= zbot {
+                            if terrain
+                                .get(Vec3::new(x, y, z))
+                                .map(|b| b.is_filled())
+                                .unwrap_or(false)
+                            {
+                                surface = Some(z);
+                                break;
+                            }
+                            z -= 1;
+                        }
+                        let Some(sz) = surface else {
+                            columns_no_surface += 1;
+                            continue;
+                        };
+                        let mut empty_run = 0;
+                        let mut zz = sz - 1;
+                        while zz >= zbot {
+                            let filled = terrain
+                                .get(Vec3::new(x, y, zz))
+                                .map(|b| b.is_filled())
+                                .unwrap_or(false);
+                            if filled {
+                                break;
+                            }
+                            empty_run += 1;
+                            zz -= 1;
+                        }
+                        if empty_run >= gap {
+                            candidates.push((x, y, sz, empty_run));
+                        }
+                    }
+                }
+                drop(terrain);
+                log.log(&format!(
+                    "survey [{x0},{y0}]-[{x1},{y1}] z[{zbot},{ztop}] gap>={gap}: \
+                     {columns_scanned} columns, {columns_no_surface} with no surface \
+                     in range, {} overhang candidates: {candidates:?}",
+                    candidates.len()
                 ));
             },
             ScriptCmd::Note(text) => {

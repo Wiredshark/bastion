@@ -1,0 +1,42 @@
+# Trap run: real terrain, real player-available actions (paint placement is
+# the only lever used). Trap coordinates come from script-03-survey.txt's
+# actual terrain scan, not a guess: (15183, 16048) had a filled surface at
+# z=460 with 42 consecutive unfilled cells straight down beneath it before
+# any solid ground -- almost certainly a tall tree crown or a genuine
+# floating spire, and by the server's OWN definition of minable
+# (`block.is_filled()`, bastion_jobs.rs:1294) it's a completely legitimate
+# Mine target. A player painting a tall box that catches a treetop 40+
+# blocks up is exactly the kind of accident this trap needs.
+#
+# Two designations: a LEGITIMATE nearby mine footprint (decoy -- gives the
+# colony something productive to do, so row 15 "stops paying attention to
+# the stuck job" is actually observable against real alternative work) and
+# the TRAP footprint (small, tight around the isolated high cell only, so
+# it can't be reached by walking up from the accessible base).
+note trap run start -- anchoring and founding a colony
+anchor
+spawn 8
+wait 300
+note legit footprint (decoy/control, same coords as prior runs)
+designate mine 15208 16008 410 15214 16014 418
+note trap footprint -- isolated high shelf found by survey, NOT reachable by walking
+designate mine 15182 16047 458 15184 16049 460
+note designations painted -- entering extended observation loop
+wait 1800
+list_designations
+note checkpoint 1 (~60s post-paint)
+wait 1800
+list_designations
+note checkpoint 2 (~120s post-paint)
+wait 1800
+list_designations
+note checkpoint 3 (~180s post-paint)
+wait 1800
+list_designations
+note checkpoint 4 (~240s post-paint)
+wait 1800
+list_designations
+note checkpoint 5 (~300s post-paint)
+wait 1800
+list_designations
+note checkpoint 6 (~360s post-paint) -- run complete
