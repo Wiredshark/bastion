@@ -138,9 +138,32 @@ neighbor's completion already cleared the same cell).
 ## Deviation from the launch checklist, and why
 
 The checklist says "shipped tip, flag at its shipping default" (OFF for
-`BASTION_ROWB_BENCH`). I ran with it ON instead, specifically to give rows
-14-17 a chance to fire. It didn't change anything else observable — rows
-1-13 are unaffected by the flag either way. A second run at the true
-shipping default (OFF) would still be worth doing to directly confirm
-bit-identical rows 1-13 behavior live (the corpus already proved this at
-the harness level; a live confirmation was not this run's focus).
+`BASTION_ROWB_BENCH`). I ran Run 1 with it ON instead, specifically to give
+rows 14-17 a chance to fire. It didn't change anything else observable —
+rows 1-13 are unaffected by the flag either way.
+
+## Run 2 — same script, true shipping default (`BASTION_ROWB_BENCH` unset)
+
+Confirming run: identical `script-02-playthrough.txt`, fresh `VELOREN_USERDATA`,
+default flags. Raw logs: `driver-default.log`, `server-stdout-4.log(.clean)`,
+`server-stderr-4.log`.
+
+- `ROWB-DIAG` count: 0 (expected — flag unset, matches Run 1's own 0).
+- Designation placement identical to Run 1 (same deterministic world/seed,
+  same footprints): Mine 423, Build 71, Bed 8, Stockpile/Farm/Ladder 0 jobs
+  at placement.
+- Full accounting held again: Mine 129 completed + 294 phantom-retired =
+  423/423; Build 16 + 55 = 71/71; Bed 6 + 2(phantom) = 8/8. Per-run
+  completed-vs-phantom-retired split shifts slightly run to run (real-time
+  colonist scheduling isn't lockstep-deterministic across two live wall-clock
+  runs), but the qualitative outcome — everything in every footprint gets
+  resolved, nothing left permanently stuck — matches Run 1 exactly.
+- `job claimed`: 252 (Run 1: 234). `job unreachable`: 5 (Run 1: 5, same).
+- No WARN/ERROR lines beyond the same boot-time noise as Run 1. `stderr`
+  empty — clean disconnect, no crash (confirms the P0 fix holds under the
+  shipping-default flag combination too, not just the BENCH=1 combination
+  it was originally caught under).
+
+Live confirmation: rows 1-13 behave the same live under both flag settings,
+matching what the harness-level 48-seed corpus already established. This
+closes the checklist deviation from Run 1.
