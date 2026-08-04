@@ -2498,3 +2498,57 @@ budget. **Item 3 closes on the pre-stated Branch A: corpus-defect ledger.**
 If seed 78's chop shows `TimedOut` releases, it stops being *"mysteriously
 unobstructed and idle"* and becomes **a fourth same-site data point** — **a
 better specimen than the one the sweep-back cost it.** Queued.
+
+## ★★★★★ SEED 90's WINDOW — the SPECTRUM demonstrated inside a single run
+
+```
+--b5-settle-iters 450  ->  mine_blocks_mined: 26 (was 25), mine_cleared: false, EXIT 1
+holdout cell [17989, 9263, 338]:  times_offered: 9,  unreachable: true
+```
+
+**One cell completed with the extra time. The holdout was attempted NINE times
+and more window bought it nothing.**
+
+> **★ Not a failed branch match — the SPECTRUM, transient and persistent, same
+> seed, same path, different cells.**
+
+| case | position |
+|---|---|
+| **seed 61** | **transient end** — 2.5× slow, completes at 450 |
+| seed 90's completed cell | transient — finished with more time |
+| farm job 6 | persistent — 4 attempts, never |
+| **seed 90's holdout** | ★ **persistent at NINE attempts — sharpest case on the board** |
+
+### ★★ The SYMPTOM FAMILY and the DEFECT have DECOUPLED — record it explicitly
+
+**Symptom family: TWO members** (farm 8/9, seed 90 26/27) — **below the ≥3
+threshold, so Ben's directive stands down ON COUNT.**
+
+**Mechanism membership: GREW** — farm + 71 + 66 + seed 90's holdout, 78 pending.
+
+> **The two groupings moved in OPPOSITE directions, which is what decoupled
+> groupings do.** The directive fired on a symptom cluster, forced the
+> whole-pipeline read, and **the read found a MECHANISM whose membership was
+> never the same set.** *Do not later read "family dropped to two" as "the
+> finding shrank" — the directive did exactly its job and the mechanism's
+> evidence stands on its own.*
+
+**And seed 61's slowness observation now has a named likely mechanism:** the same
+`TimedOut` churn cycles burning wall-time before eventual recovery — **which
+makes 61 the transient end of the very path farm's job 6 sits at the far end
+of.** *One path, one untested premise, outcomes from 2.5×-slow to never.*
+
+### ★ PROVENANCE FAILURE — mine, caught by the builder
+
+5b ran the farm stance-cell query at **seed 1337 against b5's farm sub-block**,
+got `real_ground_top_z: 443` against my expected ~455, **and refused to
+interpret a 12-block mismatch.**
+
+**Correct — my farm data came from a STANDALONE `--farm-scenario` run (no seed
+flag), and I never stated that provenance.** *My omission; their catch. Fourth
+time today they declined to interpret a number whose origin they could not
+verify.* **Re-queued with the right invocation.**
+
+> **★ The READ-vs-ASSUME rule applies to PROVENANCE, not just to code.** A
+> plausible site-proximity story is exactly the kind of inference that needs
+> content confirmation — and the content said no.
