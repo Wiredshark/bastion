@@ -1698,3 +1698,61 @@ a colonist takes the flee-preempt path, `last_scores.0` is 0.0 regardless of
 actual work urgency.** Any consumer reading `last_scores` as "the work urgency"
 is wrong for those ticks. **The comment names its case correctly at the write
 site; nothing names it at the READ site** — and UI-4 is a named future consumer.
+
+## ★★★★ `auton3` TRIAGE CLOSED — FIXTURE DEFECT, and it reverses my own "model gap" call
+
+The last unclassified red's last question, answered by two reads.
+
+### The harness hardcodes the work-urgency input
+
+```rust
+// harness `predict`
+modulated_urgencies((0.5, 0.0, 0.1), &vals, adv, wor, soc, intr)
+//                    ^^^ work urgency HARDCODED — never read from the engine
+```
+
+### The engine GATES it on a signal
+
+```rust
+// bastion_jobs.rs ~8672, ordinary arbitration
+let work_sig = active_jobs.contains(entity) || work_available;
+let (w, f, i) = modulated_urgencies(
+    ( if work_sig { URGENCY_WORK } else { 0.0 },   // <-- the gate
+      if flee_sig { URGENCY_FLEE } else { 0.0 },
+      URGENCY_IDLE ), ..);
+```
+
+`URGENCY_WORK = 0.5` — **so the harness's constant is correct.** What the harness
+omits is **the gate**. The engine's own comment states the intent: *"Zero-
+preservation in the pure fn keeps signal-gated zeros at zero (no invented
+flee/work)."*
+
+> **Observed first component `0.0` ⇒ `work_sig` was FALSE at the tick the scores
+> were last written** — the colonist had no active job and no work available.
+> **The engine recorded 0.0 CORRECTLY. The harness asserts 0.5 unconditionally.**
+
+**VERDICT: FIXTURE DEFECT** (the 10.4% family), **not a model gap.** Fix shape:
+`predict` must read `work_sig` — or the scenario must guarantee it true at the
+sample tick — rather than assuming it.
+
+### ★★ This REVERSES my own conclusion, and the reason is worth keeping
+
+An hour ago I applied the architect's rule — *same write site ⇒ model/computation
+gap; different site ⇒ recording plumbing* — concluded **model gap**, and reported
+it. **The rule's dichotomy is incomplete: there is a third option neither of us
+listed.**
+
+| | |
+|---|---|
+| different site | recording **plumbing** |
+| same site, computation wrong | **model gap** |
+| **same site, computation RIGHT, PREDICTION wrong** | **FIXTURE — the missing case** |
+
+> **The site-location test distinguishes plumbing from computation. It cannot
+> distinguish "the computation is wrong" from "the expectation is wrong" —
+> for that you must read the INPUT GATE on both sides.**
+
+**Third reversal of a conclusion I had already reported, and the same cause each
+time: a rule applied without checking whether its cases are exhaustive.** The
+countermeasure that worked here is the one that keeps working — **read both
+sides of the comparison, not just the surprising one.**
