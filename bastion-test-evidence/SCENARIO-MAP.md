@@ -811,3 +811,33 @@ corpus instance and it is the wrong polarity to be a failing pair member.
 
 That is a far stronger basis for the parking than *"no sound pair exists in this
 corpus"*. **The row stays parked, and now the record says why in one line.**
+
+### ★★ DETERMINISM, STRENGTHENED: a 12-valued counter reproduces exactly
+
+Our determinism evidence has been pass/fail identity and clause composition —
+both **low-entropy**, so identity across runs is weak evidence. The strongest
+test available is the corpus's **highest-variance field**, `b5_drift_events`
+(range 4–17, **12 distinct values**, zero seeds at 0):
+
+```
+wave19  (ed532c600e)          4:2  5:4  6:7  7:7  8:9  9:2  10:7  11:5  12:1  13:2  15:1  17:1
+wave21  (1bf3ab2e, docs-only) 4:2  5:4  6:7  7:7  8:9  9:2  10:7  11:5  12:1  13:2  15:1  17:1
+wave24  (d3235e5329, MERGED)  4:2  5:4  6:7  7:7  8:9  9:2  10:7  11:5  12:1  13:2  15:1  17:1
+```
+
+**Identical, to the count, in all three.** Two independent fans on the same code
+**and** a fan on the merged tip. **A 12-valued distribution matching exactly is
+far stronger than 48 booleans matching**, and it extends merge-neutrality to a
+counter nobody was watching.
+
+**★ And `drift_events` documents its own limitation, accurately.** The harness
+comment says *"see the field doc comments below for what each one means and
+(for drift) its known non-discriminating limitation."* **Checked: failing seeds
+span 5–17 against a corpus range of 4–17 — no discriminating power, exactly as
+documented.**
+
+**That is the third claim checked today that HELD** (with task #61's *"only
+genuinely-unreachable chop case"* and `vm-pool.sh`'s *"+dirty = LFS noise, code
+clean via reset --hard"*). **Recording survivals matters: a checking habit that
+only ever reports bad news stops being believed, and the comments in this tree
+are mostly right.**
