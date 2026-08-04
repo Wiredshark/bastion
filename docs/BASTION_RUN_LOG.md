@@ -15554,3 +15554,18 @@ placement target must terminate in MarkUnreachable + report within N cycles —
 red-by-design without the recovery field, proving it load-bearing.** Packet
 complete: five consumers, one concept, 3 red scenarios + livelock test +
 boundary-radius prediction + equivalence flags. 5b builds after the fan.
+
+## WAVE 19 (Opus-run): ed532c600e PASSES — 12/48 HOLDS EXACTLY (08/03)
+
+48/48 seeds, uniform attestation, $0.245. No novel modes, no regression;
+evidence byte-verified onto E: (wave19-raw + FULL + VERDICTS), checked non-empty
+(the wave13 lesson applied by its finder to his own output).
+
+**HONEST FINDING: the prune is UNEXERCISED** — zero `b5_55_*` movement across
+all 48 seeds/4 fields; the corpus never produces the stale-verdict case. Fan
+confirms NO REGRESSION, does NOT confirm the prune works. RULED: stays shipped
+(cost ≈ an is_empty early-out; real logic gap) with its DEMONSTRATION folded
+into #41's planted suite — "designation goes blocked, completes naturally,
+verdict must retract" — one fixture proving both the prune and #41's recovery
+path. Standing: NOTHING pushes during a fan (docs included); and from wave19
+forward per-seed verdicts are a dict lookup (report-fix dividend).
