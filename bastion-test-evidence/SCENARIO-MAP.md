@@ -1460,6 +1460,43 @@ capsule asymmetry I derived this morning — *"negatives sound, positives not"* 
 **holds only in single-layer terrain**, which is exactly the scope I failed to
 name when I stated it.
 
+### ★★★★ MEASURED 2026-08-04 (5b, batch item 6 run at seed 90): THE COLLAPSE MODEL IS THE REAL ONE AT A LIVE SITE
+
+**No longer a hypothesis.** Multi-column terrain dump, seed 90,
+`x=[17973,17989] y=[9261,9263] z=[330,345]`:
+
+| column | terrain | `column_height_near` |
+|---|---|---|
+| anchor `(17973,9261)` | solid 330–333, **OPEN 334–337**, solid 338+ | **353** |
+| dead-end target `(17989,9263)` | solid 330–333, **OPEN 334–335**, solid 336–345 | — |
+
+**The probe's "ground" at z=353 is real and irrelevant** — a subterranean gallery
+sits ~20 blocks below it with an open walkable band, and `column_height_near`
+returns only the **topmost** solid layer, so none of it is visible. **Confirmed
+multi-layer sites now: 54, 61, 71, and 90.**
+
+> **CITATION RULE, now mandatory: every "genuinely unreachable" claim resting on
+> this probe is UNSOUND unless its site has been column-scanned and come back
+> single-layer.** Seed 90's dead-end has been scanned and it is **multi-layer** —
+> that negative is retired. Seed 80's remains **unscanned and therefore
+> CONDITIONAL** (batch item 6 was run at 90, not 80).
+
+**★ The design consequence, recorded here because it outlives the caveat:** a
+reviewer with full terrain dumps, a working binary and no time limit **could not
+determine why the seed-90 job fails.** If the cause is undeterminable by us, it
+is undeterminable by the colony — so **a fix that requires knowing the cause is
+unbuildable, and a cause-agnostic persistence signal is the right instrument.**
+This is what redirected the ARB-PERSIST row from diagnosis to persistence
+counting; see `FIX-ROW-PACKET-ARB-PERSIST.md` §G1.
+
+**★ And it condemned a live player-facing string.** The chat line
+*"A designation is blocked — **obstruction** at (x,y,z) can't be reached"*
+asserts a terrain cause; its guard only establishes that `plan_access` found no
+route. At seed 90 those two **disagree**. The same file's other player message
+(*"Crowded here…"*, guarded on a real saturation comparison) already meets the
+standard the blocked one fails: **a player-facing message may assert only what
+its own guard measures.**
+
 ### ★★ Consequence for seed 80 — I had this backwards for this model
 
 This morning I told two lanes that the point-model **strengthens** seed 80's
@@ -1497,7 +1534,7 @@ batch already needs, one more site.
 | 3 | **61** | extended settle window | deterministically SLOW or deterministically STALLED |
 | 4 | **90** | extended settle window | same question, claimed-and-stuck variant |
 | 5 | **92** | raised-cap probe | UNKNOWN → known; also carries `ch_mixed:false` at a normal 2048-cell box |
-| 6 | **80** | **column scan at `[24484, 26192, 153]`** | **single-layer ⇒ its no-route negative stands; multi-layer ⇒ the "genuinely unreachable" citation needs a caveat everywhere** |
+| 6 | **80** | **column scan at `[24484, 26192, 153]`** | **single-layer ⇒ its no-route negative stands; multi-layer ⇒ the "genuinely unreachable" citation needs a caveat everywhere** — ⚠️ **STILL OPEN. The 2026-08-04 scan was run at SEED 90, not 80** (90 came back multi-layer). Seed 80's site is **unscanned**; its negative stays CONDITIONAL. Do not read the 90 result as closing this item. |
 
 **Outcome branches are pre-stated for every item.** #61's parking survives item 6
 either way — it rests on `n=1, wrong polarity`, which is structural impossibility
@@ -1834,7 +1871,8 @@ carried an outstanding job at sample time. Their reds are chop-side.)*
 | **71 / 66 traces** | attempts EXIST and fail ⇒ **shape A** (aging/cooldown family) | **ZERO attempts** recorded ⇒ **shape B** (cap/round-robin family) |
 | **61 / 90 window** | completes late ⇒ **window-sizing artifact**, corpus-defect ledger | never completes ⇒ **real stall**, frozen-block identity is the lead |
 | **92 raised cap** | probe completes ⇒ **UNKNOWN → known**, and its `ch_mixed` anomaly gets a second look | still incomplete ⇒ the cap is not the binding constraint |
-| **80 column scan** | single-surface ⇒ **its no-route negative STANDS** under the body-width caveat | multi-layer ⇒ **negative unsound**, caveat everywhere it is cited |
+| **80 column scan** ⚠️ **NOT YET RUN** — the 08-04 scan was at seed **90** | single-surface ⇒ **its no-route negative STANDS** under the body-width caveat | multi-layer ⇒ **negative unsound**, caveat everywhere it is cited |
+| **90 column scan** ✅ **RUN 2026-08-04** | — | **MULTI-LAYER ⇒ negative UNSOUND.** Gallery with an open band at z=334–337, twenty blocks under the probe's z=353 "ground" |
 | **`run` window** | ratio climbs toward **1.25** ⇒ window overhead after all | stays **~1.14** ⇒ **real speed shortfall**, constants are the spec |
 
 > **★ Every branch is informative.** No item can come back "inconclusive" — the
