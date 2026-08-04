@@ -83,6 +83,41 @@ diverge the first time somebody resets one.
 whether the mine/farm threshold is `HAUL_DROP_STRIKES` (3, **1571**) or its own
 constant. See §5.
 
+#### ★★ THE CHECK THAT COULD HAVE KILLED PART (a) — RUN, and it HELD
+
+`stuck_strikes` is only a *persistence* measure if it survives re-claim. **If it
+reset whenever a new colonist picked the job up, it would count one colonist's
+run of bad luck — and the farm specimen was FOUR DIFFERENT COLONISTS**, so it
+would never have reached any threshold. Part (a) rests entirely on this.
+
+**Census at `a85dec2912`:**
+
+| population | count | verdict |
+|---|---|---|
+| mutations (`.stuck_strikes =`) | **1** — line **11353**, the increment | monotonic |
+| struct initialisers (`stuck_strikes: 0,`) | **13** | all at **job creation** |
+| resets on an existing job | **0** | none exist |
+| re-claim sites (`claimed_by = Some`) | 2 — **13789**, **16152** | **neither touches `stuck_strikes`** |
+
+> **`stuck_strikes` is monotonic for the life of the job and accumulates ACROSS
+> colonists.** It already measures persistence of the **JOB**, which is exactly
+> the quantity the invariant names — not persistence of an attempt.
+
+**And it retro-validates both the specimen and the threshold.** The farm cell was
+claimed and released four times through this path (the releases carry the
+**11413** log line, which sits downstream of the **11353** increment in the same
+block), so **its `stuck_strikes` reached ≈4 — above `HAUL_DROP_STRIKES` (3).**
+The recommended reuse-3 threshold would have fired on the one specimen we have
+the most detail about. *Marked as an inference from the release path, not a
+direct reading: the corpus does not report the field (see below).*
+
+**★ One more instrument gap, found by the same check:** scanning
+`wave19_FULL.json` for `strike` / `starv` / `churn` returns **nothing**. The
+number part (a) reads is **not in the corpus.** It is already on
+`BastionJobInspect` (**lib.rs:2242**), so exposing it is plumbing that exists —
+but until it is emitted, the farm specimen's strike count stays an inference.
+**Add `stuck_strikes` at the specimen cells to Row A's instrument list.**
+
 ### (b) — READ, `a85dec2912:11374-11401`
 
 The escalation exists **as the sibling branch of the code that lacks it.** Not
