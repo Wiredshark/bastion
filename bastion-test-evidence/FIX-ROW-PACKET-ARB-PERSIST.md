@@ -955,3 +955,74 @@ dedupe, which was already there.
 - **The enclosure sweep's exemption is backed by a live re-tester**, not by
   assertion (**15562-15564**). Held — this is the one "transient" claim in the
   file with a named mechanism behind it.
+
+---
+
+# ROW B — RETURNED TO DESIGN (DECISIONS #60). Opening exhibit: seed 76.
+
+**Row B as built is NET HARMFUL. Not a ship, not a tuning problem, not a
+re-scope.** The env-gate means nothing ships by default; the code stays in-tree
+behind a flag that is off.
+
+## The exhibit
+
+48-seed paired A/B, `wave27_ROWBPAIRED_f7072cd346`, diag off, `COMMIT=` attested ×4.
+
+| | base | variant |
+|---|---|---|
+| `blocked_regions_count_at_settle` | **0** | 1 |
+| `mine_blocks_mined` | **27** | 26 |
+| `mine_jobs_remaining` | 0 | 1 |
+| `travel_timeouts` | 31 | 31 |
+| **PASS** | **True** | **FALSE** |
+
+**Base count is `0` — in the base leg NO job crossed the threshold at all.**
+Benching only acts *after* a crossing, so Row B cannot have caused one by
+benching. **The crossing came from Row B's own per-tick work perturbing timing**:
+the perturbation pushed a job over the strike threshold, the bench fired on it,
+and the cell never completed. A clean 27/27 pass became a failure.
+
+> **★ THE ACTUATOR COROLLARY to `the-instrument-changes-what-it-sees`:
+> ACTING ISN'T PASSIVE EITHER.** Reading perturbs; a mechanism that also
+> maintains a map and checks it per grant perturbs more — and here the
+> perturbation **manufactured the very condition the mechanism then punished.**
+
+**Both escape routes closed by evidence, not judgment:**
+
+- **Tuning cannot fix it.** Raising the threshold reduces firings but not the
+  perturbation; lowering it fires more often on a population the perturbation
+  partly manufactures.
+- **Re-scope cannot either.** "Correctness + visibility with a null aggregate"
+  needed the aggregate to be null. It is **negative**.
+
+**And exposure-conditioning made it worse, not better:** 11/48 seeds exposed (not
+the ~2 assumed), of which **9 showed zero change**, 1 improved but still failed,
+1 flipped PASS→FAIL. The dilution hypothesis was refuted rather than confirmed.
+
+## The redesign budget (#60) — a budget, not a suggestion
+
+> **Any Row B successor states its MEASURED per-tick cost UP FRONT and
+> demonstrates that cost is below its benefit at corpus scale, under the
+> noise-floor discipline (parallel legs, separate data dirs, a zero before any
+> attribution).**
+
+Candidate shapes, **cheapest structural change first**:
+
+1. **EVENT-DRIVEN** — hook the release path itself. The churn detector already
+   runs per release; deciding the bench *at release time* adds **zero steady-state
+   cadence work**. This is the shape the evidence most favours.
+2. **RARER** — escalate at a multiple of the amnesty window, so steady-state cost
+   is near-zero and firings are unambiguous.
+3. **CHEAPER** — if per-tick work survives at all, it carries its own measured
+   budget.
+
+## Survival entry
+
+**5b flagged `BENCH_AMNESTY_GRANTS_OWED = 3` as an UNVALIDATED DEFAULT at build
+time**, explicitly for the A/B to judge — and the A/B judged it. *A knob marked
+untested by its author, then tested, is the acceptance framework working exactly
+as designed.* The result was negative; the process was not.
+
+**Row A stands untouched and is now the whole ballgame:** seeds 71 and 90 — the
+frontier and the holdout — visible for the first time, shipped and verified. The
+harm lives entirely behind a flag that is off.
