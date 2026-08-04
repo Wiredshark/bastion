@@ -1433,10 +1433,34 @@ those cells appear in the diag with live jobs of their own.
 > real defect and it would also explain seed 61's earlier "3 flagged vs 1
 > unmined" residue.
 
-**NOT ESTABLISHED** — `open_cells`' capture time relative to the job inspection
-has not been read, and a snapshot skew would produce the same numbers. **That
-read is the next step, and it is cheap.** Recording the observation without the
-claim, because three of today's six corrections came from exactly this gap.
+### ★★★ READ — and it KILLS the hypothesis. `open_cells` does not mean "open".
+
+```rust
+// First pass: which (x,y,z) cells are still open JOBS at all ...
+if let Some(BastionInspectKind::Job(_)) = server.bastion_inspect_cell(pos) {
+    open_cells.insert((x, y, z));
+}
+```
+
+**`open_cells` is populated by the SAME predicate as `mine_cell_diag` — "a job
+exists here."** The comment says it outright: *"which cells are still open JOBS
+at all."*
+
+> **So `cells_above_open` counts cells above that STILL HAVE A JOB — not cells
+> that are mined. My reading was exactly inverted:** seed 61's z=162 reporting
+> "2 open above" means 163 and 164 **still have jobs**, i.e. are still
+> outstanding — **not** that they were mined.
+
+**The "jobs persisting on already-mined cells" hypothesis is NOT SUPPORTED and
+is withdrawn.** The surplus between live-job count and `mine_blocks_mined`
+remains unexplained, but it needs `mine_blocks_mined`'s own definition — a
+block-state count vs a job-existence count are simply different measures, and I
+have not read the first.
+
+**Fifth name-vs-content instance of the session, and it was in a field I had
+built a reading on twenty minutes earlier.** `cells_above_open` says *open* and
+means *has an outstanding job*. **Flagged-not-claimed is what made this cheap:
+the hypothesis died in a five-minute read instead of in someone's fix design.**
 
 **Consequence for the four-signature table: it stands.** Those signatures rest
 on `blocked_by`, claim state and `cycles_since_last_claim` — per-cell facts that
