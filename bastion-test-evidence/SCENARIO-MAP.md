@@ -412,3 +412,39 @@ single-mode specimens — the same shape that voided the carve-cascade pair.
 mode map instead of the field *values* — the day's own error class, applied to
 my own analysis. **A pair that always fails together may still carry different
 magnitudes, and the magnitudes are where the modes actually separate.**
+
+### ★★★ "ONE BLOCK SHORT" IS NOT THE ASYNC TAIL — REFUTED, so seeds 61/90 are REAL
+
+I proposed that seeds 61 (26/27) and 90 (25/27) might be the settle-window
+scheduling tail the harness comment describes, i.e. instrument noise rather
+than defects. **Tested immediately against the two independent fans. It fails.**
+
+`b5_mine_blocks_mined` multiset, wave19 vs wave21 — **8 different VMs, two
+separate fan runs:**
+
+```
+wave19:  44 x 27,  and 5, 16, 25, 26  (once each)
+wave21:  44 x 27,  and 5, 16, 25, 26  (once each)      IDENTICAL
+```
+
+> **Scheduling noise varies run to run. These do not — they are bit-identical
+> across independent fans on separate machines. The partial mines are
+> DETERMINISTIC, therefore real.**
+
+**Seeds 61 and 90 are genuine one-block-short defects, not tail.** They do not
+get shrugged off, and they still must not share a row with seed 71's 5/27.
+
+**This also re-reads the harness comment.** The settle loop was widened
+120 → 180 with the note *"the remaining run-to-run variance is ASYNC SCHEDULING
+… occasionally left the last mine block one window short."* Our residual is
+**not** run-to-run variance — so either the widening fixed the async case and
+this is a different mechanism wearing the same symptom, or the original
+diagnosis was wrong. **Either way the comment no longer covers what we observe**
+([[sufficiency-claims-must-name-their-case]]: a dated rationale stays true only
+against the code it was written for).
+
+**★ Method note worth keeping: determinism is a DIAGNOSTIC, not just a
+verification property.** "Does it reproduce exactly across independent runs?"
+separates instrument noise from real defect in one grep, with data already on
+disk and no new runs. **Reach for it whenever a failure is about to be
+dismissed as flake.**
