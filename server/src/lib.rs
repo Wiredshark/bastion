@@ -3381,6 +3381,17 @@ impl Server {
             .blocked_by(pos)
     }
 
+    /// bastion (task #61, attribution, 2026-08-03): EVERY mechanism that
+    /// has recorded a block covering `pos` -- see
+    /// `JobBoard::blocked_sources`'s doc (a scalar first-match would
+    /// silently hide a second producer on the same region).
+    pub fn bastion_blocked_sources(&self, pos: vek::Vec3<i32>) -> Vec<&'static str> {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .blocked_sources(pos)
+    }
+
     /// bastion (task #59, starvation measurement, harness hook,
     /// 2026-07-30): `(starvation_cycles, starvation_crowded_cycles,
     /// cycles_since_last_claim)` for one job position -- see

@@ -3479,6 +3479,16 @@ fn b5_scenario(args: &Args) -> ExitCode {
     } else {
         Some(probe_target(chop_base))
     };
+    // TASK #61 DIAG (2026-08-03): does `chop_base` itself show up as
+    // blocked -- checking THE RIGHT position this time, not the
+    // unrelated b55 buried_pos fixture. `_sources` is what proved a
+    // candidate #61 lazy-probe mechanism never independently fired here
+    // (only "plan_access" ever appears) -- kept as general attribution
+    // infrastructure even though it currently has one producer.
+    let ch_base_blocked_by = server
+        .bastion_blocked_by(chop_base)
+        .map(|p| [p.x, p.y, p.z]);
+    let ch_base_blocked_sources = server.bastion_blocked_sources(chop_base);
     // Same attribution figure as the mine cells above, for chop_base.
     let timeouts_on_never_completed_chop: u64 = if chop_cleared {
         0
@@ -4318,6 +4328,11 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_mine_reachability_probe": mine_reachability_probe,
         // Same probe against chop_base, only when chop never completed.
         "b5_chop_reachability_probe": chop_reachability_probe,
+        // TASK #61 DIAG: was chop_base's OWN blocked_regions entry ever
+        // recorded -- checking the right position (b5_55_blocked_by
+        // checks an unrelated buried-mine fixture, not chop_base).
+        "b5_ch_base_blocked_by": ch_base_blocked_by,
+        "b5_ch_base_blocked_sources": ch_base_blocked_sources,
         // STRUCTURAL-POSITION TEST (Fable-directed, 2026-07-30, corrected
         // to use timeout positions, defined for every seed pass or fail --
         // see the comment at mine_timeout_position_diag's construction).
