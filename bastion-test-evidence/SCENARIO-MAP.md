@@ -1608,3 +1608,75 @@ batch already needs, one more site.
 either way — it rests on `n=1, wrong polarity`, which is structural impossibility
 rather than an instrument reading. **That is the argument for preferring
 structural grounds when both are available.**
+
+## ★★★ TWO SPECIES-DECIDING READS (architect-assigned) — `run` and `auton3`
+
+### `run` — the bar is NOT structurally unclearable. This is a REAL movement gap.
+
+**Constants READ** (`bastion_jobs.rs:1604`, `:1609`):
+
+```rust
+const TRAVEL_SPEED: f32 = 0.8;   // walk
+pub const RUN_SPEED: f32 = 1.0;  // "the full vanilla speed_factor"
+```
+
+| quantity | value |
+|---|---|
+| **design intent** | 1.0 / 0.8 = **1.25 → 25% faster** |
+| **clause bar** | `> walk * 1.15` → **15%** |
+| **measured** | 0.300 / 0.263 = **1.1407 → 14.07%** |
+
+> **The bar sits 10 points BELOW design intent, so it is not testing instrument
+> overhead — the architect's structural-unclearability hypothesis is REFUTED.**
+> **We are delivering ~14% where the design says 25% — roughly half the intended
+> advantage.**
+
+**This REVERSES my own afternoon reclassification.** I called it "a near-miss
+against a possibly-uncalibrated threshold." **The threshold is generous; the
+measured delta is genuinely short.** Per the architect's own decision rule
+(*"design 1.5 measured 1.14 ⇒ a real movement question"*), design 1.25 vs
+measured 1.14 lands on the same side.
+
+**Residual, honest:** the measurement is displacement-rate over 45 ticks and
+includes acceleration, turning and terrain, so some shortfall is instrument
+overhead. **The open question is whether ~11 points of overhead is plausible** —
+that is what the N-run stability check plus a longer window would answer. **It
+is no longer a threshold-calibration conversation.**
+
+### `auton3` — SAME SITE, therefore a model/computation gap, not plumbing
+
+**Both write sites READ** (`bastion_jobs.rs:8641`, `:8695`):
+
+```rust
+// 8641 — flee-preempt path
+arb.last_scores = modulated_urgencies((0.0, URGENCY_FLEE, URGENCY_IDLE), ..);
+//                                     ^^^ FIRST COMPONENT HARDCODED
+
+// 8695 — ordinary arbitration
+... modulated_urgencies((<work>, if flee_sig { URGENCY_FLEE } else { 0.0 }, URGENCY_IDLE), ..);
+arb.last_scores = (w, f, i);
+```
+
+**The observed second component is `0.0`, which matches the no-flee branch of
+8695** — so the colonist took the **ordinary** path, where **all three components
+are written at the same site.** Per the architect's rule: **model/computation
+gap, not recording plumbing.** Row shrinks accordingly.
+
+**Correcting my own earlier phrasing:** I said components 2 and 3 matching
+"proves the modulation works." **Component 2 is `0.0` in both — a constant here,
+carrying no information.** Only **component 3 discriminates** (0.08 vs 0.12,
+matching prediction), and that alone is what shows modulation working.
+
+**NOT ESTABLISHED:** whether the engine's `0.0` work-urgency is *correct for the
+situation* (no work available ⇒ legitimately zero, and the harness's `predict`
+assumes work exists) or a genuine computation gap. **Fixture-vs-game triage
+applies before this ranks.**
+
+### ★ A latent misread found en route — file it
+
+**Site 8641 hardcodes the first component to `0.0`** with a comment explaining
+why (*"Flee fired on the signal, not on the score"* — deliberate). **So whenever
+a colonist takes the flee-preempt path, `last_scores.0` is 0.0 regardless of
+actual work urgency.** Any consumer reading `last_scores` as "the work urgency"
+is wrong for those ticks. **The comment names its case correctly at the write
+site; nothing names it at the READ site** — and UI-4 is a named future consumer.
