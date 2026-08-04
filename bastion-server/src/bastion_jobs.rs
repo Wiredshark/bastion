@@ -1961,6 +1961,29 @@ fn column_height_near(terrain: &TerrainGrid, x: i32, y: i32, z_hint: i32) -> Opt
 /// evidence TOWARD "(a) no path by this approximation" -- not proof the
 /// live game can't route there, given the approximation's own known gaps.
 /// State that limitation with the result, never overclaim it.
+///
+/// ★ ASYMMETRIC SOUNDNESS (bed fixture-first row, 2026-08-04, Opus's
+/// finding): this probe's flood-fill walks a POINT through columns --
+/// `ascent = next_column_height - current_column_height <= tier_bound`,
+/// nothing else. No width, no headroom, no collider/capsule reference
+/// anywhere in the loop (`has_standable_stance` is applied ONLY to the
+/// final destination cell, never to intermediate columns). The live
+/// `plan_access`, by contrast, builds an `approach_context` from the
+/// colonist's actual collider (a capsule) -- see the emergency-egress
+/// call site's `capsule_terrain_cylinder(collider, scale, 0.22)`. A
+/// capsule can only go where a point can go, never more, so the two
+/// verdicts carry OPPOSITE epistemic weight depending on direction:
+/// - `path_exists_*: false` (a NEGATIVE) is SOUND -- point-unreachable
+///   implies capsule-unreachable. This is the strong, trustworthy half.
+/// - `path_exists_*: true` (a POSITIVE) is NOT evidence a colonist can
+///   actually traverse it -- point-reachable does NOT imply
+///   capsule-reachable. A live `plan_access` rejection on a cell this
+///   probe reports reachable is NOT thereby proven to be a bug; the
+///   probe simply cannot adjudicate that direction.
+/// Cite this asymmetry at every use of a positive `path_exists` result
+/// as evidence -- a capsule-aware extension (clearance/headroom checked
+/// per intermediate column, not just at the destination) is real,
+/// unbuilt future work if that direction is ever needed.
 #[derive(Debug, Clone)]
 pub struct ReachabilityProbeResult {
     pub standable_target: Option<Vec3<i32>>,

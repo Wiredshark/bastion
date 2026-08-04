@@ -432,6 +432,26 @@ struct Args {
     #[arg(long)]
     cavein_conservation_scenario: bool,
 
+    /// bastion (bed fixture-first, 2026-08-04, Fable-directed): READ-ONLY
+    /// offline reachability probe against `bed_scenario`'s own two bed
+    /// cells -- no fixture edits, just an answer. Reuses the exact same
+    /// setup geometry (flush plateau, colony spawn, stockpile+stones,
+    /// bed1/bed2 designations) but instead of asserting `beds_built`,
+    /// runs `bastion_offline_reachability_probe` (100k node cap, all
+    /// three step/jump/scramble tiers, matching the mine mechanism-2
+    /// probe's own corrected tier model) against each bed from two
+    /// vantage points: the colony's own spawn position, and (if a
+    /// colonist ever actually got stuck reaching it) that colonist's
+    /// last-timeout position. Report-only, gates nothing -- the
+    /// discriminator is read from the printed JSON: a definitive
+    /// no-route on every tier from every vantage point means the
+    /// fixture placed a bed somewhere genuinely unbuildable (a fixture
+    /// defect, matching 2 of the last 3 chased reds); a found route or
+    /// an incomplete probe means `plan_access` is genuinely
+    /// false-rejecting a real bed placement (a game-bug row).
+    #[arg(long)]
+    bed_reachability_probe: bool,
+
     /// ENDURANCE (Ben's long-live-sim determinism test): boot a full colony
     /// with standing farm work and let the ENTIRE integrated live sim run for
     /// `--endurance-ticks`, emitting an authoritative-state ENDURANCE-CHECKPOINT
@@ -1607,6 +1627,8 @@ fn main() -> ExitCode {
         blocked_retract_scenario(&args)
     } else if args.cavein_conservation_scenario {
         cavein_conservation_scenario(&args)
+    } else if args.bed_reachability_probe {
+        bed_reachability_probe(&args)
     } else if args.endurance_scenario {
         endurance_scenario(&args)
     } else if args.run_scenario {
@@ -19937,6 +19959,208 @@ fn bed_scenario(args: &Args) -> ExitCode {
     } else {
         ExitCode::FAILURE
     }
+}
+
+/// bastion (bed fixture-first, 2026-08-04, Fable-directed): READ-ONLY --
+/// see the CLI flag's own doc comment for the full rationale. Reuses
+/// `bed_scenario`'s exact setup geometry verbatim (flush plateau, colony
+/// spawn, stockpile+stones, bed1/bed2 designations at the same offsets)
+/// so the probed cells are the SAME cells `bed_scenario` itself paints --
+/// not a hypothesis about where they might be, the actual coordinates.
+fn bed_reachability_probe(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{DesignationKind, Region},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-bedprobe-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-bedprobe".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-bedprobe-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    info!(elapsed = ?started.elapsed(), "bed_reachability_probe: server booted");
+
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 16)..=(cx + 16) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    let spawn_pos = Vec3::new(site_wpos.x as i32, site_wpos.y as i32, gz + 2);
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 3);
+    tick(&mut server, 30);
+
+    let store = Region {
+        min: Vec3::new(cx - 6, cy - 2, gz + 1),
+        max: Vec3::new(cx - 4, cy + 2, gz + 1),
+    };
+    server.bastion_place_designation(store, DesignationKind::Stockpile);
+    for i in 0..3 {
+        server.bastion_spawn_item(
+            Vec3::new((cx - 5) as f32, (cy - 1 + i) as f32, gz as f32 + 1.5),
+            "common.items.crafting_ing.stones",
+            1,
+        );
+    }
+    tick(&mut server, 10);
+
+    let bed1 = Vec3::new(cx + 4, cy - 3, gz + 1);
+    let bed2 = Vec3::new(cx + 4, cy + 3, gz + 1);
+    for bed in [bed1, bed2] {
+        server.bastion_place_designation(Region { min: bed, max: bed }, DesignationKind::Bed);
+    }
+    // Same wait window as bed_scenario, but read-only here: never asserts
+    // beds_built, just gives plan_access the same chance to either
+    // succeed live or leave a last-timeout position behind for the
+    // second vantage point below.
+    let mut beds_built = false;
+    for _ in 0..600 {
+        tick(&mut server, 10);
+        if server.bastion_bed_slot(bed1).is_some() && server.bastion_bed_slot(bed2).is_some() {
+            beds_built = true;
+            break;
+        }
+    }
+
+    let probe_bed = |target: Vec3<i32>| -> serde_json::Value {
+        let min_distance = server.bastion_min_distance_to_target(target);
+        let last_timeout = server.bastion_last_timeout_pos(target);
+        let probe_from = |from: Vec3<i32>| -> serde_json::Value {
+            let (standable, step, jump, scramble, incomplete, cols_step, cols_jump, cols_scramble) =
+                server.bastion_offline_reachability_probe(from, target, 100_000);
+            serde_json::json!({
+                "from": [from.x, from.y, from.z],
+                "standable_target": standable.map(|s| [s.x, s.y, s.z]),
+                "path_exists_step": step,
+                "path_exists_jump": jump,
+                "path_exists_scramble": scramble,
+                "probe_incomplete": incomplete,
+                "columns_visited_step": cols_step,
+                "columns_visited_jump": cols_jump,
+                "columns_visited_scramble": cols_scramble,
+            })
+        };
+        let mut origins = vec![probe_from(spawn_pos)];
+        if let Some(lt) = last_timeout {
+            origins.push(probe_from(lt.map(|e| e as i32)));
+        }
+        serde_json::json!({
+            "target": [target.x, target.y, target.z],
+            "min_distance_ever_reached": min_distance,
+            "last_timeout_pos": last_timeout.map(|p| [p.x, p.y, p.z]),
+            "probes": origins,
+        })
+    };
+
+    let bed1_probe = probe_bed(bed1);
+    let bed2_probe = probe_bed(bed2);
+
+    let result = serde_json::json!({
+        "bedprobe_colonists": server.bastion_rename_colonists_unique().len(),
+        "bedprobe_beds_built_live": beds_built,
+        "bedprobe_bed1": bed1_probe,
+        "bedprobe_bed2": bed2_probe,
+    });
+    println!("{}", result);
+    // Report-only, gates nothing -- read `probes[].path_exists_*` and
+    // `probe_incomplete` from the JSON above to answer the actual
+    // question (fixture defect vs. real plan_access false-reject).
+    println!("BED REACHABILITY PROBE: DONE");
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    ExitCode::SUCCESS
 }
 
 /// bastion (B7-0, row 44): needs/mood in vivo — decay is EXACT arithmetic
