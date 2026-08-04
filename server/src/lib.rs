@@ -3465,6 +3465,32 @@ impl Server {
         )
     }
 
+    /// bastion (ARB-ATTEMPT-01 step 2, batch item 1, harness hook,
+    /// 2026-08-04): `to_release` outcome counts by classified reason --
+    /// see `JobBoard::release_reason_counts`'s own doc for the zero-vs-
+    /// absent caveat. Flattened: `(other, timed_out, completed,
+    /// removed_externally, target_changed)`. `target_changed` (step 2b,
+    /// found closing seed 66's `Other:1` site-scan gap) is the 4th
+    /// discovered producer -- a job's target block changing mid-travel.
+    /// Four of 26 producers are named yet (still scoped, not exhaustive)
+    /// -- a nonzero `other` on a DIFFERENT seed means that seed exercises
+    /// a still-undiscovered producer, not a bug.
+    pub fn bastion_release_reason_counts(&self) -> (u32, u32, u32, u32, u32) {
+        use bastion_jobs::ReleaseReason;
+        let board = self
+            .state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>();
+        let get = |r: ReleaseReason| board.release_reason_counts.get(&r).copied().unwrap_or(0);
+        (
+            get(ReleaseReason::Other),
+            get(ReleaseReason::TimedOut),
+            get(ReleaseReason::Completed),
+            get(ReleaseReason::RemovedExternally),
+            get(ReleaseReason::TargetChanged),
+        )
+    }
+
     /// bastion (mechanism-2 friction instrument, harness hook, 2026-07-30):
     /// EVERY job position that ever timed out this run, with its count --
     /// unlike `bastion_timeout_count_for_pos` (single position) or the

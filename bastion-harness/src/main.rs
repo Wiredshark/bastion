@@ -12,8 +12,9 @@
 //! hang their Tier-1 assertions off the `Summary` it produces.
 
 // The b5 scenario's `json!` result literal outgrew the default 128 as blocks
-// added telemetry fields (DETRNG was the straw).
-#![recursion_limit = "256"]
+// added telemetry fields (DETRNG was the straw), then 256 as the batch's
+// observability-row/release-reason fields (2026-08-04) pushed it further.
+#![recursion_limit = "384"]
 
 mod asset_test;
 mod determinism_regression;
@@ -4267,6 +4268,9 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // reason -- the access-plan state the corpus previously had zero
     // visibility into.
     let access_plan = server.bastion_access_plan_stats();
+    // ARB-ATTEMPT-01 STEP 2 (batch item 1, 2026-08-04): captured once,
+    // same reason -- (other, timed_out, completed, removed_externally).
+    let release_reasons = server.bastion_release_reason_counts();
 
     // B5-EXIT-CODE-DISAMBIGUATION (Ben-directed, 2026-07-30): the pass gate
     // is a ~40-clause conjunction; at corpus scale a bare exit code only
@@ -4531,6 +4535,15 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_access_plan_self_rescue_starved": access_plan.6,
         "b5_access_pending_true_ticks": access_plan.7,
         "b5_live_is_access_count": access_plan.8,
+        // ARB-ATTEMPT-01 STEP 2 (batch item 1, 2026-08-04): scoped to the
+        // three producers discovered firing on seeds 71/66 -- see
+        // `bastion_release_reason_counts`'s own doc for the caveat on
+        // other seeds.
+        "b5_release_other": release_reasons.0,
+        "b5_release_timed_out": release_reasons.1,
+        "b5_release_completed": release_reasons.2,
+        "b5_release_removed_externally": release_reasons.3,
+        "b5_release_target_changed": release_reasons.4,
         // B5-EXIT-CODE-DISAMBIGUATION: WHICH clause(s) failed, not just a
         // bool. Derived from the same `clauses` list `pass` is derived
         // from -- one source of truth, report can't drift from gate.
@@ -11104,6 +11117,23 @@ fn farm_scenario(args: &Args) -> ExitCode {
         if tilled_count(&server) == 9 {
             tilled = true;
             break;
+        }
+    }
+    // bastion (batch item, 2026-08-04, Opus/Fable-directed): stance-cell
+    // diagnostic -- an OnTopAlways till job stands ON its target cell, so
+    // for pathing purposes `target + unit_z` is the real destination.
+    // Env-gated, zero cost when unset.
+    if std::env::var_os("BASTION_FARM_STANCE_DIAG").is_some() {
+        for x in plot.min.x..=plot.max.x {
+            for y in plot.min.y..=plot.max.y {
+                let target = Vec3::new(x, y, gz + 1);
+                let stance = Vec3::new(x, y, gz + 2);
+                eprintln!(
+                    "DIAG till target={target:?} kind={:?} stance={stance:?} kind={:?}",
+                    server.bastion_block_kind(target),
+                    server.bastion_block_kind(stance)
+                );
+            }
         }
     }
     // (2) SOW: seeds fetched from the stockpile, sprites at Growth >= 1.
@@ -20586,6 +20616,17 @@ fn terrain_ground_dump(args: &Args) -> ExitCode {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(300);
+    // bastion (batch item, 2026-08-04): optional multi-column extension --
+    // absent, x_high/y_high default to px/py, reproducing the exact
+    // original single-column behavior byte-identically.
+    let px_high: i32 = std::env::var("BASTION_PROBE_X_HIGH")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(px);
+    let py_high: i32 = std::env::var("BASTION_PROBE_Y_HIGH")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(py);
 
     server.bastion_force_load_area(Vec2::new(px as f32, py as f32), 3);
 
@@ -20608,11 +20649,28 @@ fn terrain_ground_dump(args: &Args) -> ExitCode {
         }
     }
 
+    let mut grid = Vec::new();
+    if px_high != px || py_high != py {
+        for x in px..=px_high {
+            for y in py..=py_high {
+                for z in z_low..=z_high {
+                    if let Some(k) = server.bastion_block_kind(Vec3::new(x, y, z)) {
+                        if k != BlockKind::Air {
+                            grid.push(serde_json::json!({"pos": [x, y, z], "kind": format!("{k:?}")}));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let result = serde_json::json!({
         "grounddump_xy": [px, py],
         "grounddump_real_ground_top_z": real_ground,
         "grounddump_scanned_range": [z_low, z_high],
         "grounddump_solid_cells": column,
+        "grounddump_grid_xy_range": [[px, px_high], [py, py_high]],
+        "grounddump_grid_solid_cells": grid,
     });
     println!("{}", result);
     println!("TERRAIN GROUND DUMP: DONE");
