@@ -1637,11 +1637,29 @@ measured delta is genuinely short.** Per the architect's own decision rule
 (*"design 1.5 measured 1.14 ⇒ a real movement question"*), design 1.25 vs
 measured 1.14 lands on the same side.
 
-**Residual, honest:** the measurement is displacement-rate over 45 ticks and
-includes acceleration, turning and terrain, so some shortfall is instrument
-overhead. **The open question is whether ~11 points of overhead is plausible** —
-that is what the N-run stability check plus a longer window would answer. **It
-is no longer a threshold-calibration conversation.**
+**★★ N-RUN STABILITY CHECK DONE — 4 runs, PERFECTLY IDENTICAL:**
+
+```
+run1  walk=0.263 run=0.300 e_full=107.0 e_mid=81.8 e_floor=11.3 e_after=107.0
+run2  walk=0.263 run=0.300 e_full=107.0 e_mid=81.8 e_floor=11.3 e_after=107.0
+run3  walk=0.263 run=0.300 e_full=107.0 e_mid=81.8 e_floor=11.3 e_after=107.0
+run4  walk=0.263 run=0.300 e_full=107.0 e_mid=81.8 e_floor=11.3 e_after=107.0
+```
+
+**14.07% is DETERMINISTIC, not measurement noise.** So the shortfall is a
+reproducible property, and "it's just a noisy sample" is excluded.
+
+**But determinism does NOT separate the two remaining candidates**, because both
+are deterministic:
+- **(a)** a real speed-factor shortfall in the movement layer, or
+- **(b)** a deterministic measurement overhead — acceleration ramp and path
+  curvature inside a 45-tick displacement window, identical every run.
+
+> **★ The decisive test is cheap and already needed elsewhere: LENGTHEN THE
+> WINDOW.** If it is (b), a longer window dilutes the ramp and the ratio climbs
+> toward 1.25. If it is (a), the ratio stays at ~1.14 regardless. **Same
+> extended-window instrument the batch already needs for seeds 61/90 — add
+> `run` as a seventh item, parameterised, never by editing the default.**
 
 ### `auton3` — SAME SITE, therefore a model/computation gap, not plumbing
 
