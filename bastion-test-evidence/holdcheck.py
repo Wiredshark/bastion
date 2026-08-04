@@ -39,10 +39,12 @@ def index(doc):
 
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    expect_new = set()
+    expect_new, ignore = set(), set()
     for a in sys.argv[1:]:
         if a.startswith("--expect-new="):
             expect_new = {s.strip() for s in a.split("=", 1)[1].split(",") if s.strip()}
+        if a.startswith("--ignore="):
+            ignore = {s.strip() for s in a.split("=", 1)[1].split(",") if s.strip()}
 
     if len(args) != 2:
         print(__doc__)
@@ -77,8 +79,24 @@ def main():
 
     dropped = sorted(set(base) - set(new))
     added = sorted(set(new) - set(base))
+    shared = sorted(set(base) & set(new))
+
+    # ---- An EXCLUSION must never render like an ABSENCE: say what was skipped.
+    skipped = sorted(p for p in shared if p in ignore)
+    if ignore:
+        print()
+        print(f"!! IGNORED BY REQUEST ({len(skipped)} of {len(ignore)} named) - "
+              "NOT checked for holding:")
+        for p in skipped:
+            n = sum(1 for s in base[p] if base[p][s] != new[p].get(s))
+            print(f"    {p}  (would have moved on {n}/{len(base[p])} seeds)")
+        for p in sorted(ignore - set(skipped)):
+            print(f"    {p}  -- NOT PRESENT in both runs; the --ignore had no effect")
+
     violations = []
-    for path in sorted(set(base) & set(new)):
+    for path in shared:
+        if path in ignore:
+            continue
         moved = [(s, base[path][s], new[path][s])
                  for s in sorted(base[path])
                  if base[path][s] != new[path].get(s)]
@@ -106,13 +124,32 @@ def main():
 
     print()
     if violations:
+        # Breadth is diagnostic: every-seed drift is systematic (a stamp, a
+        # timing, a global change); few-seed drift is a localized behavior
+        # change. Same verdict, different first suspect - so split them.
+        total = len(base_seeds)
+        systemic = [(p, m) for p, m in violations if len(m) == total]
+        partial = [(p, m) for p, m in violations if len(m) != total]
         print(f"[!!] HOLD VIOLATIONS: {len(violations)} pre-existing field(s) MOVED")
-        for path, moved in violations[:15]:
-            s, b, n = moved[0]
-            print(f"    {path}: {len(moved)} seed(s), e.g. seed {s}: {b!r} -> {n!r}")
+        if systemic:
+            print(f"  -- SYSTEMIC ({len(systemic)}): moved on ALL {total} seeds. "
+                  "First suspects: a build stamp, a wall-clock timing, or a "
+                  "genuinely global change. NOT necessarily a behavior bug.")
+            for path, moved in systemic[:10]:
+                s, b, n = moved[0]
+                print(f"       {path}: e.g. seed {s}: {b!r} -> {n!r}")
+        if partial:
+            print(f"  -- LOCALIZED ({len(partial)}): moved on SOME seeds. "
+                  "This is the shape of a real behavior change.")
+            for path, moved in partial[:10]:
+                s, b, n = moved[0]
+                print(f"       {path}: {len(moved)}/{total} seeds, "
+                      f"e.g. seed {s}: {b!r} -> {n!r}")
     else:
-        print(f"[OK] HOLD: all {len(set(base) & set(new))} pre-existing fields "
-              f"identical across all {len(base_seeds)} seeds")
+        checked = len([p for p in shared if p not in ignore])
+        print(f"[OK] HOLD: all {checked} checked pre-existing fields identical "
+              f"across all {len(base_seeds)} seeds"
+              f"{f' ({len(skipped)} ignored by request)' if skipped else ''}")
 
     ok = not (violations or dropped or unexpected or missing_expected)
     print()
