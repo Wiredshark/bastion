@@ -2033,3 +2033,67 @@ denominator were 48.**
 > ruling's value is not per-family bookkeeping — it is that **five separate
 > claims were quietly inflated by the same unstated assumption**, and one line
 > per family retires all of them.
+
+## ★★★★ `unreachable` HAS THREE WRITERS — I characterised it from ONE, twice
+
+**Correction to two earlier entries in this file.** I reported `unreachable` as
+*"all six face-neighbours currently solid — a geometric enclosure test,
+downstream of dig progress."* **That is true of ONE writer out of three:**
+
+```
+11280   job.unreachable = true    // churn / bounce release path
+12719   job.unreachable = true    // self-rescue: plan_access returned None
+15418   job.unreachable = true    // the enclosure test I read
+```
+
+> **Third instance of reading *a* definition instead of *all* the definitions.**
+> The countermeasure I adopted this morning — *read the definition before
+> building on it* — **does not say READ THEM ALL, and that is the gap.**
+> **Corrected form: enumerate every writer of a field before characterising it.**
+
+### ★★ The anomaly this exposes — seed 71's TOP layer
+
+**7 of 9 cells at z=603, the TOP layer, are flagged `unreachable`** — which
+should be impossible under the enclosure reading (open sky above).
+
+| writer | excluded? | if it IS the writer |
+|---|---|---|
+| **12719** self-rescue | **YES — 5b measured `self_rescue_calls: 0`** | — |
+| **15418** enclosure | open | **the volume is BURIED**; the dig never had an exposed face ⇒ **seed 71 is a FIXTURE defect, not arbitration starvation** |
+| **11280** churn release | open | 5b's shape-A reading stands — genuinely attempted and rejected |
+
+> **★ ONE TERRAIN QUERY at `[25187–25189, 21071–21073, z=604]` decides it.**
+> Solid ⇒ buried. Air ⇒ shape A holds. **#59's strongest evidence is
+> conditional on that query**, and item 1's conclusion is HELD pending it.
+
+### ★★ And a THIRD shape my prior-art survey missed
+
+5b's trace shows the frontier cells were **attempted 2–3 times each** — they
+**won selection repeatedly and failed anyway.**
+
+| shape | meaning | fix family |
+|---|---|---|
+| A | lost the comparison | aging / escalation / cooldown |
+| B | never evaluated | round-robin / deficit / cap |
+| **C** | **selected, attempted, REJECTED DOWNSTREAM** | **neither — both make a cell WIN selection, and these already win** |
+
+**Second time today a two-branch rule of mine had a third branch.** The
+sufficiency-claim lesson I banked this morning applied to my own survey and I
+did not apply it.
+
+### ★★★ UN-WITHDRAWN: phantom jobs on already-mined cells are REAL
+
+I found the surplus, flagged it, then **withdrew it** when I discovered
+`open_cells` means *"has a job"* rather than *"is open."* **5b re-derived it
+correctly: seed 66 has `mine_blocks_mined: 27` (terrain scan, ground truth) with
+`mine_jobs_remaining: 10` (board count) — captured at the same moment, no ticks
+between.** Ten live jobs on physically-mined cells. **And task #57's own doc
+documents the exact pattern** (41 orphans across 6 seeds, up to 17 on one).
+
+> **My reasoning was wrong; my conclusion was right; I retracted both.**
+> **A flawed argument for a true claim needs RE-DERIVATION, not retraction** —
+> a distinct error from everything else catalogued today, and the more expensive
+> kind, because a withdrawn true finding leaves no trace to come back to.
+
+Two live hypotheses (5b's, unchased): **sweep timing** vs **a residual gap in
+#57's coverage.**
