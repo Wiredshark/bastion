@@ -187,6 +187,15 @@ archetype · chronicle · chronicle-capture · lod0 · lod1 · inspect
 - **preempt** — root `preempted_rested` (rest never engages; needs-as-drives
   deferred by design, Drive enum's own doc comment).
 - **b73** — root `ate` (same deferral). In-code EXPECTED-RED note present.
+  ★★ **STATUS AMENDED 2026-08-04: EXPECTED-RED (FINGERPRINT UNVERIFIABLE).**
+  The unsatisfiable-watch sweep found **two of b73's watches emit no baseline** —
+  `attempts0 → broke` and `jobs_frozen_at → resumed_after_break`. The M3A
+  precedent requires a tracked red to **HOLD its fingerprint**, but a fingerprint
+  resting on flags whose baselines nobody can see **cannot be observed to hold or
+  shift.** **No stability claims about b73 until its baselines are emitted** —
+  those two emissions are **REQUIRED** items in the report-fix window, not
+  optional hardening. *The AUTON-2 deferral is unaffected — that is design
+  intent, not fingerprint-dependent.*
 
 ### Red (9) — causes known or queued
 - **bed** — root `beds_built`, fails at `plan_access` BEFORE stance/materials.
@@ -1583,3 +1592,19 @@ batch already needs, one more site.
 > asymmetry was assumed to carry. **An instrument's soundness direction is a
 > property of the ERROR MODEL, not of the instrument** — and a caveat that
 > doesn't name its model is the sufficiency-claim family again, one level up.
+
+## ★ SINGLE-SEED DIAGNOSTICS BATCH — 6 items, no fan, behind 5b's binary
+
+| # | seed | run | question |
+|---|---|---|---|
+| 1 | **71** | per-attempt claim trace | **shape A vs shape B** — attempts exist and fail, or zero attempts recorded |
+| 2 | **66** | per-attempt claim trace | the contrast case: why does contention resolve here |
+| 3 | **61** | extended settle window | deterministically SLOW or deterministically STALLED |
+| 4 | **90** | extended settle window | same question, claimed-and-stuck variant |
+| 5 | **92** | raised-cap probe | UNKNOWN → known; also carries `ch_mixed:false` at a normal 2048-cell box |
+| 6 | **80** | **column scan at `[24484, 26192, 153]`** | **single-layer ⇒ its no-route negative stands; multi-layer ⇒ the "genuinely unreachable" citation needs a caveat everywhere** |
+
+**Outcome branches are pre-stated for every item.** #61's parking survives item 6
+either way — it rests on `n=1, wrong polarity`, which is structural impossibility
+rather than an instrument reading. **That is the argument for preferring
+structural grounds when both are available.**
