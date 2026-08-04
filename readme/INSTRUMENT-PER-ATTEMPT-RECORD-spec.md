@@ -85,6 +85,38 @@ Each producer already knows its reason from its own surrounding lines. **This is
 2. **Replace `Other` producer by producer** as each site is read. Incremental,
    interruptible, each replacement independently correct.
 
+## ★★★★ STEP 2 IS NOW LOAD-BEARING (2026-08-04, after item 1's first data)
+
+**The question moved underneath this spec.** A third shape appeared that the
+original A/B split did not contemplate:
+
+| shape | meaning | **release reasons it carries** | fix lives at |
+|---|---|---|---|
+| **A** | lost the comparison | **timeout / preemption** (competition) | the scheduler |
+| **B** | never evaluated | *(no attempts at all)* | the scheduler |
+| **C** | **selected, attempted, REJECTED DOWNSTREAM** | **stance / material / work-start** (gates) | **the REJECTION SITE — a different owner entirely** |
+
+**A and C both show attempts that fail. ONLY THE REASON SEPARATES THEM.**
+
+> **So a trace carrying only `ReleaseReason::Other` cannot answer the question
+> this instrument now exists to answer.** Step 1 separates *completed* from
+> *released-via-sweep* — sufficient for "attempts exist vs zero attempts,"
+> insufficient for A vs C.
+
+**And the stakes are OWNERSHIP:** if the shape is C, the row moves off
+arbitration entirely.
+
+**Scoping that keeps step 2 an afternoon, not a research pass: classify ONLY the
+producers that actually FIRE on seeds 71 and 66.** Run with `Other`, observe
+which sites appear, label those. **The other producers can stay `Other`
+indefinitely** — the enum's own comment already makes a residual `Other`
+non-benign, so nothing is silently lost.
+
+> **★ Note what happened to this spec: it was correct when written and became
+> insufficient without changing.** The acceptance clause below still holds for
+> the question it was written against — **a spec's sufficiency is dated, like
+> any other sufficiency claim.**
+
 > **★ Step 1 ALONE satisfies this spec's acceptance clause** — it separates
 > *completed* from *released-via-sweep* from the two direct paths, which is
 > enough to answer **shape A vs shape B** (attempts exist and fail vs zero
