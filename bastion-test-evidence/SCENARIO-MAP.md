@@ -1043,3 +1043,59 @@ unreachability confound, no blocked region, no starvation-by-absence.** Every
 other failing seed carries an `unreachable` term that has to be stripped first.
 
 **If one mine row gets built, seed 90 is its subject.**
+
+### ★★★ WITHDRAWN: `unreachable` is NOT the discriminator — it is downstream of dig progress
+
+I read the flag's provenance, as the previous section said must happen before
+trusting it. **It does not mean what its name says, and my discriminator claim
+is withdrawn.**
+
+```rust
+// per pass, for each UNCLAIMED Mine job:
+let is_exposed = [ +x, -x, +y, -y, +z, -z ]
+    .into_iter()
+    .any(|d| terrain.get(job.pos + d).map(|b| !b.is_filled()).unwrap_or(true));
+if !is_exposed {
+    // "Fully enclosed: flag unreachable-for-now ... the periodic retry sweep
+    //  re-tests as the dig opens the shell"
+    job.unreachable = true;
+    continue;
+}
+```
+
+> **`unreachable` = "all six face-neighbours are currently solid."** It is a
+> **geometric enclosure test on present terrain**, recomputed each pass (plus a
+> blanket amnesty clear). It is NOT a pathfinding verdict, and the comment says
+> so outright: *unreachable-for-now*, re-tested *as the dig opens the shell*.
+
+**In a 27-cell mine volume the interior cells are enclosed BY CONSTRUCTION until
+a face opens.** So:
+
+- seed 71 mined 5/27 → most of the volume still solid → **10 cells still
+  enclosed** → flagged.
+- seed 66 mined 27/27 → nothing left solid → **0 flagged**.
+
+**The "discriminator" is close to a restatement of the shortfall.** That is the
+`build_placed` / `any_needs_materials` trap — *two fields, one fact* — which I
+named this morning and then walked into this afternoon, on a field whose name
+had already been flagged as needing its content read.
+
+**Not perfectly tautological, and the residue is interesting:** seed 61 shows
+**3 flagged cells against 1 unmined**, which enclosure alone does not explain
+(amnesty timing and the per-pass recompute are the candidates). **Not chased.**
+
+### What survives
+
+**The #59 starvation result is untouched.** It rests on
+`starvation_cycles`/`starvation_crowded_cycles`, measured over cycles a cell sat
+*open and unclaimed* — a different quantity, independently recorded, with its
+own documented decision rule. **Ratio 1.000 on five of six and zero kill cases
+still stands.**
+
+**What is withdrawn is only my claim to have answered "why 71 and not 66."
+That question is OPEN**, and it remains the ARB-STARVATION row's gating
+deliverable (DECISIONS #53).
+
+**And seed 90 is unaffected as the specimen** — its 3 cells are *claimed*, so
+the enclosure branch (`if job.claimed_by.is_some() { continue; }`) never even
+runs for them. **Zero `unreachable` there is a real zero, not an artifact.**
