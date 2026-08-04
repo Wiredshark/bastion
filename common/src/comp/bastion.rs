@@ -616,6 +616,22 @@ pub struct BastionJobInspect {
     /// isn't currently sitting out any grants (the overwhelming
     /// majority, including every job while `BASTION_ROWB_BENCH` is
     /// unset).
+    ///
+    /// READ BUDGET (Fable's law, ratified off the mine_cell_diag
+    /// bisection, 2026-08-04): a PLAIN FIELD READ, not a call. Every
+    /// `BastionInspectKind::Job` construction already does one O(1)
+    /// `board.amnesty_grants_owed.get(id)` lookup to fill this field
+    /// (both construction sites, `server/src/lib.rs` +
+    /// `server/src/sys/msg/in_game.rs`) -- a HashMap probe on a map that
+    /// is empty on every seed while `BASTION_ROWB_BENCH` is unset, added
+    /// to a `bastion_inspect_cell` call that was already firing to get
+    /// `progress`/`claimant`/`stuck_strikes`. `mine_cell_diag`/
+    /// `farm_cell_diag` then read `j.amnesty_grants_owed` off the
+    /// already-constructed struct -- zero further reads, zero further
+    /// calls, per cell. This is the case the law calls near-zero: unlike
+    /// `bastion_blocked_sources` (a `Vec` scan over `blocked_regions`,
+    /// the confirmed observer-effect source), nothing here scans a
+    /// collection proportional to anything other than O(1).
     #[serde(default)]
     pub amnesty_grants_owed: Option<u32>,
 }

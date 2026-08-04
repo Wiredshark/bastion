@@ -3396,7 +3396,12 @@ fn b5_scenario(args: &Args) -> ExitCode {
                         "stuck_strikes": j.stuck_strikes,
                         // ROW B (2026-08-04): amnesty grants this cell
                         // still owes -- null unless BASTION_ROWB_BENCH=1
-                        // and this cell has crossed the threshold.
+                        // and this cell has crossed the threshold. READ
+                        // BUDGET (Fable's law): 0 extra reads here -- a
+                        // plain field off `j`, already fetched by the
+                        // bastion_inspect_cell call above. See
+                        // BastionJobInspect::amnesty_grants_owed's own
+                        // doc for the full accounting.
                         "amnesty_grants_owed": j.amnesty_grants_owed,
                         "starvation_cycles": starv_cycles,
                         "starvation_crowded_cycles": starv_crowded,
@@ -11221,6 +11226,9 @@ fn farm_scenario(args: &Args) -> ExitCode {
                     "blocked_by": server.bastion_blocked_by(pos).map(|p| [p.x, p.y, p.z]),
                     "blocked_sources": server.bastion_blocked_sources(pos),
                     "stuck_strikes": j.stuck_strikes,
+                    // ROW B (2026-08-04): READ BUDGET (Fable's law): 0
+                    // extra reads -- see the mine_cell_diag site's own
+                    // comment for the full accounting, identical here.
                     "amnesty_grants_owed": j.amnesty_grants_owed,
                 }));
             }
