@@ -997,3 +997,49 @@ never recovered and 66 did.
 
 **NOT read: the arbitration scoring code itself.** This is the instrument's own
 verdict on its own hypothesis, applied per its own documented rule.
+
+### ★★★ WHY 71 NEVER RECOVERED AND 66 DID — and a refinement of the #59 claim
+
+Same `mine_cell_diag`, per-cell aggregates:
+
+| seed | mined | shortfall | cells in diag | **`unreachable` cells** | offered | timeouts | claimed now |
+|---|---|---|---|---|---|---|---|
+| 66 | **27/27** | 0 | 27 | **0** | 27 | 9 | 2 |
+| 52 | **27/27** | 0 | 21 | **0** | 25 | 16 | 0 |
+| **90** | 25/27 | 2 | 3 | **0** | 8 | 6 | **3** |
+| 61 | 26/27 | 1 | 3 | 3 | 5 | 3 | 0 |
+| 54 | 16/27 | 11 | 18 | 7 | 19 | 14 | 1 |
+| **71** | **5/27** | **22** | 27 | **10** | 22 | 17 | 0 |
+
+> **Every seed that fully mined has ZERO unreachable cells. The shortfall tracks
+> the unreachable count: 10 → 22 unmined, 7 → 11, 3 → 1.** Seed 66 sat at
+> starvation ratio 1.000 with 222 starved cycles and still finished — **because
+> nothing was flagged unreachable.**
+
+### ★★ This REFINES the #59 result — read both together
+
+**Starvation-by-contention (ratio ≈ 1.0) is present in successes too** — seeds 52
+and 66 have it and mine 27/27. **So contention is the normal state, and it is
+`unreachable` that separates the failures.** My #59 write-up said the mechanism
+was supported but that the caveat needed explaining; **this is the explanation,
+and it demotes starvation from cause to background condition** for these seeds.
+
+**#59's finding still stands as stated** — when a cell was starved, it was
+starved *by competition*, never by an empty field (the kill case is absent
+6/6). **What changes is its weight**: starvation alone predicts nothing, and any
+row built on it must carry `unreachable` as the primary term.
+
+**NOT ESTABLISHED — direction.** `unreachable` may cause the shortfall, or may
+be a flag set *because* the cell was never successfully worked. Given today's
+probe caveat (the reachability instrument is sound only for negatives), **this
+flag's own provenance is the next thing to read, not to assume.**
+
+### ★ And it promotes seed 90 to the unambiguous specimen
+
+**Seed 90 is the ONLY shortfall seed with zero unreachable cells** — 3 cells,
+all actively claimed by named colonists at `cycles: 0`, `blocked_by: None`,
+`progress: 0.878` on the best cell, and still 2 blocks unmined. **No
+unreachability confound, no blocked region, no starvation-by-absence.** Every
+other failing seed carries an `unreachable` term that has to be stripped first.
+
+**If one mine row gets built, seed 90 is its subject.**
