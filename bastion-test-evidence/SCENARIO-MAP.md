@@ -209,3 +209,60 @@ called.* Check the precondition engaged before reading the verdict.
 
 **Removal is architect-gated** — one line, well-documented replacement pattern
 at the sibling caller, but squarely behavior-re-rolling and needs a fan.
+
+## ★★★ CORPUS BLINDNESS + a free repro for the offline/live split (2026-08-04, wave19/21)
+
+Both found by reading `wave19_FULL.json`, no new runs.
+
+### The corpus cannot see access planning at all
+
+**75 fields; none report access-plan state** — no `is_access` count, no plan
+emissions, no `access_pending`, no `carve_attempted`, no unreachable-flag
+count. The one access-adjacent field,
+`b5_ch_scan_incomplete_unreachable_columns`, is **0 across all 48 seeds**.
+
+**And `b5_rescue_fired` is TRUE in 44 of 48 seeds** — the self-rescue path
+behind the colony-global `take(0)` bar is exercised in nearly every seed and
+reported by nothing.
+
+> **Removing that bar could produce ZERO corpus drift and still be a real
+> behavior change. A green fan on that row would be a FALSE GREEN.**
+
+The bar for the seam row must be pre-stated on a **new instrument that exists
+before the row does**. This also explains the gate's survival: it lived through
+every fan because **no fan could see it**.
+
+### Seeds 52 and 54 are a deterministic repro of the offline/live split
+
+Across all 48 seeds' `b5_mine_reachability_probe` / `b5_chop_reachability_probe`:
+
+| bucket | entries | seeds |
+|---|---|---|
+| **offline YES, live router NO** | **10** | **52, 54** |
+| offline NO, live NO | 4 | 52 |
+| live route existed | 26 | 54, 61, 66, 71, 90 |
+| **probe incomplete** | **0** | — |
+
+SPLIT = `path_exists_step: true` + `probe_incomplete: false` while the live
+`timeout_route_states` report `route_exists: false`. **This is bed's exact
+discrepancy in a scenario with no beds and no `plan_access` involvement** — so
+the split is general, not a bed fixture artifact.
+
+**Determinism verified, not assumed.** Raw-log signature across two independent
+fans at the same commit (`ed532c600e`): **wave19 → 26, wave21 → 26. Identical.**
+
+**Zero `probe_incomplete` in the entire corpus** — every probe that ran, ran to
+completion. No "couldn't measure" hiding in this data
+([[log-time-namespace-and-vm-attestation]]: that value must never be read as a
+negative).
+
+**MECHANISM NOT CLAIMED.** Point-model vs body-aware live router, router path
+budget, and chunk-load state at timeout are all live candidates. The value here
+is a **cheap deterministic handle**, not a diagnosis — study 52/54 rather than
+building a bed fixture, then carry the answer back to bed.
+
+### ★ Instrument provenance note
+The newest local `bastion-harness.exe` is **2026-08-03 19:01**, predating all
+three of today's merges (`#64` 02:29, `d3235e5329` 03:09, `460626a6e2` 04:17).
+**Nothing local can measure today's tip until a rebuild.** Caught by attesting
+provenance rather than checking that a binary existed.
