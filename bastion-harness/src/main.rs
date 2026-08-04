@@ -108,13 +108,31 @@ struct Args {
     b5_settle_iters: Option<u64>,
 
     /// bastion (batch prep, DECISIONS #49/#52, 2026-08-04, Fable-directed):
-    /// override for `run_scenario`'s CarvedStair settle loop iteration
-    /// count (each iteration is `tick(&mut server, 30)`; default 45,
-    /// break-early on `ck_cleared && ck_unreachable_final == 0`). Absent
-    /// means the exact pre-existing literal, byte-identical to every
-    /// prior invocation.
+    /// override for `chokepoint_scenario`'s CarvedStair settle loop
+    /// iteration count (corrected attribution, 2026-08-04, Opus's catch --
+    /// this loop lives in `chokepoint_scenario`, not `run_scenario`; each
+    /// iteration is `tick(&mut server, 30)`; default 45, break-early on
+    /// `ck_cleared && ck_unreachable_final == 0`). Absent means the exact
+    /// pre-existing literal, byte-identical to every prior invocation.
+    /// NOT the window `run_scenario`'s speed measurement needs -- see
+    /// `run_sample_ticks` below for that, a genuinely separate thing.
     #[arg(long)]
     ck_settle_iters: Option<u64>,
+
+    /// bastion (batch prep, DECISIONS #49/#52, 2026-08-04, Opus-directed
+    /// correction): the window `run_scenario`'s walk-vs-run displacement
+    /// SAMPLE uses -- two matched pairs (`tick(&mut server, 45)` then
+    /// `distance / 45.0`, once for the walk trip, once for the run trip),
+    /// NOT the CarvedStair settle loop `ck_settle_iters` covers. ONE flag
+    /// drives BOTH the tick count and BOTH literal divisors at all four
+    /// sites -- a flag that only changed the tick calls would silently
+    /// deflate the rate for any window other than the default (measuring
+    /// real displacement over N ticks but dividing by the OLD 45,
+    /// producing a wrong-but-plausible-looking number). Absent means the
+    /// exact pre-existing literal (45) everywhere, byte-identical to
+    /// every prior invocation.
+    #[arg(long)]
+    run_sample_ticks: Option<u64>,
 
     /// T0.52 (T0-004): the serial-vs-parallel equivalence PROBE — run the
     /// deterministic harness on a MULTI-worker pool with the PARALLEL
@@ -19185,9 +19203,13 @@ fn run_scenario(args: &Args) -> ExitCode {
         }
     }
     let p1 = pos_of(&server).unwrap_or(start);
-    tick(&mut server, 45);
+    // bastion (batch prep, 2026-08-04): `--run-sample-ticks` overrides
+    // this window for BOTH the tick count and the divisor (see the flag's
+    // own doc -- a mismatched divisor silently deflates the rate).
+    let sample_ticks = args.run_sample_ticks.unwrap_or(45);
+    tick(&mut server, sample_ticks);
     let p2 = pos_of(&server).unwrap_or(p1);
-    let walk_rate = p1.xy().distance(p2.xy()) / 45.0;
+    let walk_rate = p1.xy().distance(p2.xy()) / sample_ticks as f32;
     // Let the walk trip finish (job completes; colonist idles).
     tick(&mut server, 600);
 
@@ -19212,9 +19234,11 @@ fn run_scenario(args: &Args) -> ExitCode {
         }
     }
     let q1 = pos_of(&server).unwrap_or(start2);
-    tick(&mut server, 45);
+    // Same window as the walk sample above -- must match or the ratio
+    // is measured across two different windows and is meaningless.
+    tick(&mut server, sample_ticks);
     let q2 = pos_of(&server).unwrap_or(q1);
-    let run_rate = q1.xy().distance(q2.xy()) / 45.0;
+    let run_rate = q1.xy().distance(q2.xy()) / sample_ticks as f32;
     let ran_faster = run_rate > walk_rate * 1.15 && walk_rate > 0.01;
 
     // (C) DRAIN while flagged + the governor's forced revert at the
