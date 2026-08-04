@@ -15621,3 +15621,36 @@ cut along the evidence line age well; now shown, not asserted.
 Outstanding: 5b owes the three revert readings its commit CITES as evidence
 (c_rungs_placed/c_top_cleared/c_no_carve) — escalated; an evidence-citing
 commit without the evidence in the record is a claim wearing a citation.
+
+## DAY CLOSE 08/04 — COMPOSITION EXACT-MATCH; ENGINE TIP MEASURED, NOT ASSUMED
+
+Wave24 (merged tip `d3235e5329`): **zero mismatches, 12/48, membership identical
+to wave19.** Two rows merged — #64 (pure affordance refactor) and #63 (the
+flee/work gate, closing my T3.52 error) — **each verified alone AND together on
+a corpus proven deterministic the same day.**
+
+**Verification accounting: six fans (~100 VM-min, ~$1.43) bought:** #61's keeps
+verified (prune stated corpus-unexercised) · a one-line behaviour change caught
+that four other checks passed · **the corpus proven deterministic at full-clause
+level, first measurement ever** · that change isolated across four runs (one
+variable, moved and unmoved) · #63's permit path confirmed, suspend path stated
+structurally unexercised · **the composition measured rather than inferred.**
+Three decisions changed for under the price of a coffee.
+
+**Opus's carry-out, recorded as the campaign's thesis restated at close:**
+almost nothing that cost us was in the code — a stale cache, a masked exit
+code, a deleted log, an aggregate that discarded its keys, four void controls,
+a mis-budgeted cap, a fixture handing stone to a wood job, a comment that
+stopped three people looking, and twice an asserted-unverified git hook. None
+visible in a result. The target rows mostly DISSOLVED (#61 at n=0, #41 at
+zero-of-three); **what survived is infrastructure that compounds** — reports
+that distinguish verdict from diagnostic, a proven baseline, a bar where one
+seed is signal, a mechanical sufficiency check. The bar exists because the
+report row made verdicts comparable; the determinism measurement exists because
+the bar wobbled; the guard finding exists because the measurement made one seed
+legible. **None of it was planned in that order.**
+
+**NEXT SESSION OPENS ON:** the map re-count at `d3235e5329` · bed's
+fixture-first row (probe-at-cap discriminator) · the filed guard row (isolated
+causation, blast-radius premise-check) · chop stragglers (80, 26) · then the
+master-list pivot.
