@@ -187,7 +187,8 @@ these are the same mechanism at different persistence levels, not five findings.
 | seed / case | attempts | completions | reading | mark |
 |---|---|---|---|---|
 | **farm till job** | **4** (4 colonists, 4 vantages) | **0, never** | the specimen: released `unreachable` every time, no recovery, against a path whose stated premise is that these resolve by retry | CORPUS |
-| **90 holdout** | **9** | **0, never** | 26/27 complete, one cell never does; all 9 releases the same writer, colonist at the same dead-end each time. **≈1.8× the attempts of a normal cell for zero completions** | 5b-TRACE |
+| **90 holdout** | **9** | **0, never** | 26/27 complete, one cell never does; all 9 releases the same writer, colonist at the same dead-end each time. **≈1.8× the attempts of a normal cell for zero completions.** ★ **CAUSE UNKNOWN — amended by G1:** the site is multi-layer, the probe is blind to it, and "genuinely unreachable" is **no longer supported**. The *behavioral* reading (9 attempts, 0 completions, never recovers) is untouched and is the only reading the row needs | 5b-TRACE + G1 |
+| **78 chop** | — | 0 (`log_sum` 0) | ★ **NEW, 4th costume.** `chop_cleared`/`log_sum` fail; 2 travel timeouts **both against the same repeated target**; release accounting **exact** — 29 completed + 2 timed-out + 2 removed-externally = 33, **`Other: 0`**. Same TimedOut/churn path as Farm and Mine ⇒ **three job kinds, one mechanism** | 5b-TRACE |
 | **71 frontier** | — | 5/27 blocks | `access_emissions_max: 3` — emitted three access plans, **never starved**. Kills the "the colony-global bar starves it" reading | CORPUS |
 | **66 transient** | — | resolves | contention genuinely resolves here; terrain 27/27 vs board 10 live jobs. **The premise is TRUE for this seed** | 5b-TRACE |
 | **61 recovered end** | — | 27/27 @ 450 iters | not stalled, **slow** — completes at 2.5× the default window. Branch A: window artifact | 5b-TRACE |
@@ -283,9 +284,30 @@ written.
 `HAUL_DROP_STRIKES = 3` (**1571**) is tuned for *drop* semantics (freeing a
 pinned reservation). The new entries only *record*, which is strictly cheaper, so
 a lower threshold is defensible — but **recording at 1 recreates the false-alarm
-spam the #55 comment correctly refuses** (§7). Recommendation: **reuse 3**, and
-if it proves wrong, the corpus says so via `source` counts without a code change.
-Do not invent a second constant to express the same idea.
+spam the #55 comment correctly refuses** (§7). Recommendation: **the value 3**,
+and if it proves wrong the corpus says so via `source` counts without a code
+change. Do not invent a second constant to express the same idea.
+
+**★ RATIFIED WITH AN AMENDMENT (Fable): the VALUE stands, the NAME does not.**
+A constant called `HAUL_DROP_STRIKES` silently gating **farm and mine**
+escalation would be a label-vs-content trap **planted knowingly** — the exact
+defect class this campaign has spent two days cataloguing, and the one that has
+now bitten this packet six times.
+
+**The form:** one shared constant, **renamed to its actual scope**
+(`PERSIST_ESCALATE_STRIKES` or similar), both the `Haul` arm and the new arm
+citing it, and **the declaration comment naming BOTH consumers.** One value,
+corpus-correctable, and a name that tells the truth. If the rename's blast radius
+turns out to be nontrivial, an alias const carrying the same guarantee is
+acceptable; **a bare reuse under the haul name is not.**
+
+**★ The same coupling flag applies one level down, to `stuck_strikes` itself
+(Fable).** Part (a) gives it a **second consumer**: its documented one is arrival
+tolerance (**9625**), and escalation makes its reset semantics load-bearing for
+two mechanisms at once. **The write site (11353) gets a named-case comment
+declaring both consumers**, so that the first person to adjust a reset for one of
+them cannot silently retune the other. This is the write-site/read-site law
+applied *prospectively, at design time* — the cheapest it will ever be.
 
 ---
 
@@ -378,7 +400,84 @@ is still refused.
 
 | gate | what it must show | why this gate |
 |---|---|---|
-| **G1 — column scan** (seed 90 cell) | whether the holdout site is single-surface or multi-layer | The probe caveat's **soundness direction is a property of the error model**: body-width error ⇒ negatives sound; multi-layer collapse ⇒ **both directions unsound**. Until the column is scanned, "laterally unreachable" is an inference from an instrument that may be wrong in the direction that matters. **G1 gates the row's premise, not its implementation.** |
+| **G1 — column scan** (seed 90 cell) | whether the holdout site is single-surface or multi-layer | ★ **RUN by 5b. Result: MULTI-LAYER — the negative is UNSOUND.** Verdict below. |
+
+### ★★★ G1 VERDICT — RUN, and it came back AGAINST the diagnosis
+
+**5b's multi-column dump, seed 90, `x=[17973,17989] y=[9261,9263] z=[330,345]`:**
+
+| column | terrain | probe's `column_height_near` |
+|---|---|---|
+| anchor `(17973,9261)` | solid 330–333, **open 334–337**, solid 338+ | **353** |
+| dead-end target `(17989,9263)` | solid 330–333, **open 334–335**, solid 336–345 | — |
+
+**The probe's "ground" at z=353 is real and irrelevant.** There is a subterranean
+gallery ~20 blocks below it with an open walkable band, and `column_height_near`
+returns only the **topmost** solid layer, so it cannot see any of it. This is the
+**column-collapse** error model, not the body-width one — and per the pre-stated
+rule, **collapse makes the negative unsound in BOTH directions.** Same signature
+as seeds 71 / 54 / 61, now extended to 90.
+
+**Pre-stated branch, honoured:** *multi-layer ⇒ negative UNSOUND, caveat
+everywhere.* Taken.
+
+#### What this KILLS
+
+**The specimen-level diagnosis.** "Seed 90's holdout is genuinely laterally
+unreachable" rested on the probe, and the probe is blind at exactly this site.
+The holdout's cause is now **UNKNOWN** — it may be a real obstruction, or a
+router that cannot find a path through a multi-layer gallery. **The evidence
+table's seed-90 row is amended accordingly.**
+
+#### What this does NOT touch
+
+**Part (c)'s structural claim is a CODE READ, not a probe reading.**
+`blocked_regions` is reachable only through the z-gated carve path (**11370**),
+and that predicate has no lateral term. That is true by inspection of the source
+and does not depend on any terrain instrument. **(a), (b) and (c) all stand
+unchanged.**
+
+#### ★★★★ And the bad news for the diagnosis is GOOD NEWS for the design
+
+> **A reviewer with full terrain dumps, a debug binary, and unlimited time could
+> not determine why this job fails.** If *we* cannot establish the cause, the
+> colony certainly cannot — and **any fix that requires knowing the cause is
+> unbuildable.**
+
+The invariant (#54) asks the system to notice *persistent failure*, **not to
+diagnose it**. G1 is the strongest evidence yet that a **cause-agnostic
+persistence signal is the right instrument**: `stuck_strikes` counts attempts
+without caring whether the obstacle is rock, a gallery, or a pathfinder bug.
+
+**G1 therefore redirects rather than fails the row** — exactly as the batch
+runbook required of every item.
+
+#### ★★ THE ONE REAL AMENDMENT G1 FORCES: the message must not claim a cause
+
+The existing chat line (**12895-12900**) reads:
+
+> *"A designation is blocked — **obstruction** at (x, y, z) can't be reached."*
+
+**That asserts a terrain fact.** G1 has just shown the mechanism behind it cannot
+establish one — the incumbent producer has the same exposure, and has been
+shipping this wording. For the new producer it would be the **same defect that
+killed entry point 2**: a false statement to a human, differing only in which
+coincidence supplies it.
+
+**`route_exhausted` must carry its own message, stating only what is
+established:**
+
+```
+"Colonists have repeatedly failed to reach a designation at (x, y, z)."
+```
+
+A **behavioral** claim — which is precisely what `stuck_strikes` measures — with
+no causal attribution. **The distinct-`source` design already makes this free:**
+two producers, two messages, and `source` tells the drain which to emit.
+
+**Filed against the incumbent, not fixed here:** `plan_access`'s wording
+overclaims by the same argument. Out of this row's scope, stated rather than
+silently inherited.
 | **G2 — FR15 paired A/B** | the stuck-economy's tuning under the new escalation | Mandatory **for ROW B only** — see R3. A new escalation path **invalidates the stuck-economy's tuning** by construction. Paired A/B, same seeds, both arms. **Row A does not trip this**: the census in R3 proves `blocked_regions` has zero behavior consumers. |
 | **G3 — corpus exact-match** | zero drift on all 48 seeds **with `source` counts read** | ★ **Not exact-match alone**, and **not for the reason I first gave.** See the G3 verdict below — the corpus *does* report `blocked_regions`, at the **wrong coordinates**. |
 
