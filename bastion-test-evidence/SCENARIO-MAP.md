@@ -1705,3 +1705,74 @@ member of the last-unit family, which stands at three.**
 grew to 15 normally. **So the one-worldgen-accident-explains-everything story
 is dead: three red clauses, two independent causes** — an unsatisfiable watch,
 and one uncompleted corner till. The missing SOW at the same XY is downstream
+
+## ★★★★ SEAM ROW: un-park condition NOT MET on three seeds — parked on EVIDENCE now
+
+5b's per-caller counters, three seeds, the instrument built for exactly this:
+
+| seed | `self_rescue_calls` | emissions | **starved** | `emergency_calls` / emissions | `access_pending_true_ticks` |
+|---|---|---|---|---|---|
+| 52 | 6 | 0 | **0** | 4 / 3 | **488 — armed, never fired** |
+| 54 | 11 | 0 | **0** | 1 / 0 | **0 — never armed** |
+| 71 | **0 — never engaged** | 0 | **0** | 13 / 3 | **379 — armed, never fired** |
+
+**DECISIONS #52's un-park condition (*"if the counters ever show starved cycles
+anywhere, the row returns"*) has NOT fired.** Seeds 52 and 54 made **17
+self-rescue calls with zero emissions and zero starvation** — those rejections
+are **genuine `plan_access` refusals**, not non-calls. **The row stays parked on
+evidence rather than on absence of evidence.**
+
+**★ "Armed but never fired" is a state nothing could previously express.** Seeds
+52 and 71 had the bar up for 488 and 379 ticks with zero starvation — no carve
+request happened to be pending while it was armed. **That is a latent hazard
+measured as latent**, which is a different and much more useful record than
+either "the bar is harmless" or "the bar is biting."
+
+### ★★ Instrument CROSS-VALIDATED, not merely present
+
+**Seed 71's new `emergency_emissions: 3` reconciles exactly with the corpus's
+pre-existing `b5_cascade_probe.access_emissions_max: 3`** (`members_seen: 1`, so
+max == total). **A new counter that appears and reports plausible numbers can
+still be wired to the wrong thing; one that agrees with an independent existing
+measurement is validated.** This is the field-presence guard upgraded from *"do
+the fields appear"* to *"do they agree with what we already had."*
+
+### ★★★ Seed 71: `self_rescue_calls = 0` — access is NOT its problem
+
+**15 of 27 cells unclaimed for the entire 360-cycle run, and the self-rescue path
+never engaged once.** Its 3 emissions were entirely emergency-side. **So the
+access seam is excluded for seed 71 by direct measurement** — which
+**independently corroborates #59's arbitration-starvation reading from a
+completely different instrument.** Two instruments, one conclusion, no shared
+assumption.
+
+## ★★ `run`'s window test — the harness ALREADY controls for hypothesis (b)
+
+Both speed samples are structurally identical, and each is preceded by a
+**warm-up**:
+
+```rust
+for _ in 0..60 { tick(&mut server, 5); if moved > 2.0 { break; } }
+let p1 = pos_of(&server)..;  tick(&mut server, 45);  let p2 = ..;
+let walk_rate = p1.xy().distance(p2.xy()) / 45.0;      // run side identical
+```
+
+- **Acceleration ramp: already excluded** — sampling starts only after >2 blocks
+  of movement.
+- **Path curvature: cancels in the ratio** — same method and geometry both sides.
+
+> **Both mechanisms behind "deterministic measurement overhead" are already
+> controlled for. The prior moves strongly toward a REAL speed shortfall.**
+
+**Residual, named precisely:** the warm-up exits on a distance threshold checked
+every 5 ticks, so the sample start can differ by up to 5 ticks of phase between
+the two runs — **which matters only if the colonist is still accelerating at 2
+blocks.** The window test still settles it and is cheap; **it is no longer
+expected to rescue the threshold.**
+
+**★ Implementation catch (routed to 5b before they built it):** `run_scenario`
+contains **two loops that both use 45** — the CarvedStair settle loop and the
+displacement sample. **The batch item needs the displacement sample**, and the
+flag must reach **both the `tick()` AND the `/ 45.0` divisor, on both the walk
+and run sides** — otherwise a longer window silently deflates the rate and
+produces a wrong number that looks fine.
