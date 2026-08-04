@@ -3537,6 +3537,21 @@ pub struct BlockedRegionInfo {
     /// reachability gate, which has no emitter access) without needing
     /// plumbing to reach one. `false` until the deferred drain fires it.
     pub notified: bool,
+    /// bastion (task #61, 2026-08-03, Opus's catch): which mechanism
+    /// recorded this entry -- currently always "plan_access" (the
+    /// carve-planner failure site, the only producer). Added when a
+    /// SECOND candidate producer (a task #61 lazy chop probe) was built
+    /// alongside this one; without attribution, two mechanisms both
+    /// landing in `blocked_regions` would be INDISTINGUISHABLE, making
+    /// "is this cell blocked" a void test of which one actually fired --
+    /// exactly the void-control defect that killed the cascade row. That
+    /// second mechanism was measured and then parked (n=0 demonstrated
+    /// cases; see `place_chop_fell`'s comment for the full history) --
+    /// this field is kept because it's cheap, has zero runtime cost, and
+    /// is the instrument that will answer the same question again the
+    /// moment a real second producer exists. Report-only, never read for
+    /// behavior.
+    pub source: &'static str,
 }
 
 /// The job board resource.
@@ -4484,37 +4499,46 @@ impl JobBoard {
             );
             return None;
         }
-        // TASK #56 (chop reachability, 2026-07-30): PROACTIVE rejection
-        // tried and reverted same-day (Fable's ruling) -- the only "from"
-        // reference point available here without new plumbing
-        // (`self.designated.first()`, typically the mine pit) is the
-        // WRONG reference class for testing whether a colonist can reach
-        // a distant discovered tree, so every rejection it issued was
-        // unproven by construction; it produced real false rejections
-        // (seed 74/76's trees, genuinely reachable, wrongly dropped).
-        // Deliberately NOT gating here. Tree-detection's known gap
-        // (validates worldgen suitability -- altitude, spawn rate, the
-        // physical Wood/Leaves blocks -- never colonist walkability)
-        // stays.
+        // TASK #61 (chop visibility, PARKED, 2026-08-03): two proactive/
+        // lazy reachability-probe designs were built, measured, and
+        // reverted here across the same day -- both are dead ends, kept
+        // as a pointer so the next person doesn't retry them blind:
+        // (a) placement-time, probing every newly-discovered tree at
+        // designation -- reverted because the corpus (0-1 trees/seed)
+        // structurally can't measure the cost of probing the reachable
+        // majority; a live multi-tree paint could spike tick time
+        // invisibly to a green fan (Opus's catch).
+        // (b) lazy, firing once at the churn-release site (below, near
+        // `job.unreachable = true`) after a chop job's first stuck-
+        // release, using the actual failing colonist's position -- built,
+        // instrumented (measured 85.79ms per 100k-node probe, mark-once
+        // bounded), and then checked against the ONLY known genuinely-
+        // unreachable chop case (b5 seed 80): its diagnostic never fired.
+        // The pre-existing `plan_access` self-rescue path (see the
+        // churn-release site's own comment) already reports that
+        // specific tree, EARLIER, because chop trees DO enter
+        // `self.designated` (a #56(c)-era comment claiming otherwise was
+        // stale). Evidence base collapsed to n=0 -- (b) was parked, not
+        // landed, per the same standard that killed the cascade row: an
+        // unexercised path with a measured cost and zero demonstrated
+        // benefit is a net negative regardless of how well it's built.
         //
-        // NOTE: a genuinely-unreachable chop tree and routine chop travel
-        // congestion are currently INDISTINGUISHABLE TO THE SCHEDULER --
-        // #55's `blocked_regions` visibility is NOT yet caught reactively
-        // for chop (seeds 119/80/26 still stall silently). Two sites set
-        // `job.unreachable`, neither reports chop: the B5.8 self-rescue
-        // site (logs "auto-access refused (no in-claim route)") only
-        // pushes to `blocked_regions` when the target is in
-        // `board.designated` -- discovered trees never are, only Mine's
-        // planned cells. The routine claim-release site (logs "job
-        // unreachable -- claim released") fires for chop too, but is
-        // deliberately excluded from `blocked_regions` -- it's the
-        // 60-tick churn/amnesty path, and hooking it would false-alarm on
-        // ordinary congestion. That exclusion is correct for congestion
-        // and wrong for a truly-unreachable target; today the two are the
-        // same code path. Real outstanding work, tracked in the same
-        // follow-on row as the PROACTIVE gate (needs real colonist/spawn
-        // positions plumbed through, not designation corners) -- NOT
-        // solved by this commit.
+        // What DOES exist and stays: `BlockedRegionInfo::source` +
+        // `JobBoard::blocked_sources` (attribution, returns every
+        // producer covering a cell, not just the first -- this is the
+        // instrument that PROVED (b) never fired, and it will answer the
+        // same question again the moment a real second reporter exists)
+        // and `remove_job`'s blocked_regions pruning (fixes a genuine
+        // pre-existing #55 staleness gap for Mine AND Chop alike,
+        // evidenced independently of whether any lazy probe ever runs).
+        //
+        // Open, unproven hypothesis for whoever picks this back up: a
+        // FLAT/SIDEWAYS-blocked tree (water/lava/cliff, not elevation)
+        // never routes through `plan_access` at all (that path only
+        // fires when `job.pos.z - feet.z > reach`), so it might still
+        // need a reactive report of its own -- no corpus example found
+        // yet; this is a hypothesis to hunt with evidence, not a design
+        // to build speculatively.
         // Top-down total order NOW (z DESC, then y, x): the felling pass
         // drains bands in this exact order — deterministic, base LAST.
         kept.sort_unstable_by(|a, b| b.z.cmp(&a.z).then(a.y.cmp(&b.y)).then(a.x.cmp(&b.x)));
@@ -4837,6 +4861,43 @@ impl JobBoard {
         // CHOP-FELLING: a removed base-cut takes its stored fell-set with
         // it (moot/unreachable-drop/cancel — the tree stays standing).
         self.chop_fell_sets.remove(&id);
+        // TASK #61 (staleness fix, 2026-08-03, Opus's catch + Opus's own
+        // two corrections, same pass): #55's `blocked_regions` previously
+        // cleared ONLY on explicit designation cancel (`cancel_region`,
+        // above) -- a job that resolves any OTHER way (completes
+        // normally, gets dropped as moot/churning) left its blocked-
+        // report sitting forever, even once the thing it reported no
+        // longer exists. Concretely: task #61's lazy chop probe can latch
+        // a definitive-at-the-time "unreachable" verdict that a LATER
+        // terrain change (a cave-in, a dig from elsewhere) makes false --
+        // the job was never gated on that verdict, so it can still get
+        // claimed and chopped normally, and the stale report would
+        // otherwise never retract.
+        //
+        // Two guards on the fix itself:
+        // - PERFORMANCE: `remove_job` is the hottest path in the system
+        //   (every completed Mine block calls it) -- early-out on
+        //   `blocked_regions.is_empty()` (true the overwhelming majority
+        //   of the time) before touching anything else, so the added
+        //   cost collapses to one branch in the common case.
+        // - OVER-PRUNING: a `blocked_regions` entry covers a REGION,
+        //   which may hold several jobs (Mine's plan_access-triggered
+        //   entries span an arbitrary designated AABB). Pruning on ANY
+        //   contained job's removal would silently retract the report
+        //   for OTHER still-unreachable jobs sharing that region -- "one
+        //   reachable tree completing hides the report for four that
+        //   aren't". Only prune an entry once NO job remains anywhere
+        //   inside it (this specific job has already been removed from
+        //   `self.jobs` above, so the check naturally excludes it without
+        //   special-casing).
+        if let Some(j) = &job
+            && !self.blocked_regions.is_empty()
+        {
+            self.blocked_regions.retain(|b| {
+                !b.region.contains_point(j.pos)
+                    || self.jobs.values().any(|other| b.region.contains_point(other.pos))
+            });
+        }
         job
     }
 
@@ -4945,6 +5006,26 @@ impl JobBoard {
             .iter()
             .find(|b| b.region.contains_point(cell))
             .map(|b| b.blocking_cell)
+    }
+
+    /// bastion (task #61, attribution, 2026-08-03): EVERY mechanism that
+    /// has recorded a block covering `cell`, not just the first. Two
+    /// producers pushing DIFFERENT `Region` values for the same tree (a
+    /// whole-designation AABB vs a single point) would NOT collapse via
+    /// `already_recorded`'s exact-Region dedupe -- both could coexist. A
+    /// scalar first-match here would silently hide whichever mechanism
+    /// pushed second (Opus's catch, 2026-08-03) -- this proved that a
+    /// task #61 candidate lazy chop probe never independently fired on
+    /// the corpus's only genuinely-unreachable chop case (b5 seed 80,
+    /// covered earlier by `plan_access` alone), and that probe was
+    /// parked as a result. Kept as general infrastructure for whenever a
+    /// real second producer exists.
+    pub fn blocked_sources(&self, cell: Vec3<i32>) -> Vec<&'static str> {
+        self.blocked_regions
+            .iter()
+            .filter(|b| b.region.contains_point(cell))
+            .map(|b| b.source)
+            .collect()
     }
 
     /// bastion (B6): is this cell inside a stockpile footprint? XY + a
@@ -11027,6 +11108,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // genuine "no route exists" failure
                                     // (plan_access returning None, below)
                                     // is a strong enough signal to surface.
+                                    //
+                                    // TASK #61 (chop visibility, PARKED,
+                                    // 2026-08-03): a lazy reachability
+                                    // probe was built HERE (same site,
+                                    // guarded by a per-job `reachability_
+                                    // probed` flag, mark-once on the first
+                                    // strike), instrumented, and reverted
+                                    // same day after checking its evidence
+                                    // base directly -- it never fired on
+                                    // the corpus's only known genuinely-
+                                    // unreachable chop tree (b5 seed 80),
+                                    // because `plan_access` (below) already
+                                    // covers that tree's elevated geometry
+                                    // BEFORE this churn-release path is
+                                    // ever reached. n=0 demonstrated cases,
+                                    // measured non-trivial cost when it
+                                    // WOULD fire (85.79ms per 100k-node
+                                    // probe) -- parked per the same
+                                    // standard that killed the cascade row.
+                                    // See `place_chop_fell`'s own comment
+                                    // for the full history and the still-
+                                    // open flat/sideways-blocked hypothesis
+                                    // this might apply to, unproven.
                                 }
                                 to_release.push(entity);
                             }
@@ -12417,6 +12521,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // Emitted inline right below -- no need for
                                 // the deferred drain to fire it again.
                                 notified: true,
+                                source: "plan_access",
                             });
                             chat_emitter.emit(common::event::ChatEvent {
                                 msg: comp::UnresolvedChatMsg::meta(common::comp::Content::Plain(
