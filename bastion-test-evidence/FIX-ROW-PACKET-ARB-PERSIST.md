@@ -1026,3 +1026,82 @@ as designed.* The result was negative; the process was not.
 **Row A stands untouched and is now the whole ballgame:** seeds 71 and 90 — the
 frontier and the holdout — visible for the first time, shipped and verified. The
 harm lives entirely behind a flag that is off.
+
+---
+
+# ROW B′ — THE EVENT-DRIVEN REDESIGN (Ben: fix it now; #60 budget)
+
+**Disposition: REPLACEMENT, not flag-off-in-tree.** Ben's reasoning, adopted:
+*dead harmful code rots and never gets revisited.* The per-tick machinery
+(`amnesty_grants_owed` map, the grant-loop decrement, the per-grant iteration)
+**comes out in the same change** that adds the new shape.
+
+> ⚠ **LINE NUMBERS BELOW INDEX `a85dec2912`.** Row B landed at `f7072cd346`, so
+> they have MOVED. Re-locate by symbol before editing; do not trust these
+> numerically at the new tip. *(This packet's own opening rule, applied to
+> itself.)*
+
+## §B′1 — THE SHAPE, and why it answers seed 76 specifically
+
+**Bench decided AT THE RELEASE SITE, inside the churn `else` arm** — the third
+arm of the three-arm chain (`a85dec2912:11412`), where the job is already being
+released as persistently failing.
+
+**What is ALREADY at that site, requiring nothing new:**
+
+| already present | evidence |
+|---|---|
+| `stuck_strikes` incremented, one line above | **11353** |
+| the release itself (`unreachable`, `churn_events.push`) | **11413–11414** |
+| `route_exhausted`'s record, gated on the same threshold | Row A |
+| the job in hand — **no lookup, no map, no key to guess** | — |
+
+**The bench becomes one comparison inside a branch that already runs.**
+
+> **★ #60 BUDGET, STATED UP FRONT: expected steady-state per-tick cost is ZERO
+> BY CONSTRUCTION.** Not "small" — zero. There is no new per-tick loop, no map
+> maintained across ticks, no per-grant iteration. Work happens **only on a
+> release event**, which is already happening when it happens.
+
+**And that is precisely the seed-76 falsifier.** Seed 76 regressed because Row B's
+per-tick work perturbed timing enough to *manufacture* a threshold crossing in a
+seed where the base leg had **none** (`blocked_regions_count` base `0` → variant
+`1`). **With zero added per-tick work, a manufactured crossing is structurally
+impossible.** The design's central claim is falsifiable by its own worst case.
+
+## §B′2 — SIBLING-CALLER CHECK on the release sites (which arms get the comparison)
+
+There are **26 `to_release` producers**. The bench belongs to **one**.
+
+| release site | gets the bench? | why |
+|---|---|---|
+| **churn else-arm** (11412) | **YES — the only one** | the persistent-failure path; `stuck_strikes` is read here; `route_exhausted` already records here |
+| `Completed` (12525) | **no** | success is not persistence |
+| `TimedOut` (11497) | **no** | ★ *a single timeout is the transient case the Haul comment correctly protects* |
+| `RemovedExternally` (9546) | **no** | the job is gone; nothing to bench |
+| `TargetChanged` (9635) | **no** | the world moved, not the job — 5b's own 4th-producer finding |
+| the remaining 22 `Other` sites | **no** | ★ **unclassified and structurally unexercised in b5** — benching from an unclassified site would act on a population we cannot name |
+
+> **★ The last row is the one to hold the line on.** Those 22 sites are the
+> unexercised denominator found earlier tonight. **A mechanism must not act from a
+> site whose population is unknown** — that is the store's-semantic-unit law in
+> the release-path's clothing.
+
+## §B′3 — PRE-REGISTRATIONS (before a line is written)
+
+1. **Seed 76 must NOT regress.** Base passed 27/27 with zero crossings; the
+   redesign must leave it passing. **This is the design's own falsifier** — if 76
+   still regresses, "zero per-tick cost" is false and the shape is wrong.
+2. **The exposure population (52 54 61 62 66 71 76 80 85 90 92) behaves as before
+   or better.** 11 seeds, conditioned — not the diluted 48-seed aggregate that
+   hid the effect last time.
+3. **Release counters move only where benching fires** — nowhere else.
+4. **A repeat-run control per arm.** The noise floor is known nonzero; an A/B that
+   cannot be read over it is not a gate. *This is what the last A/B lacked.*
+
+## §B′4 — SHIP GATE (unchanged)
+
+Net benefit, or at minimum **provable harmlessness** at corpus scale. **If the
+conditioned read again shows indifference**, the claim ships as
+**correctness + player-visibility** with a null aggregate — and that re-scope goes
+to Ben with the numbers, not asserted here.
