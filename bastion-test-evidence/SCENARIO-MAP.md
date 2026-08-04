@@ -2200,3 +2200,49 @@ progress at 88% and holding. **Completes late ⇒ mid-flight and unremarkable.
 Stalls forever at 0.878 ⇒ "what advances progress and what threshold completes a
 mine cell" becomes the specimen's central question** — and that answer gets the
 all-writers treatment before anyone characterises it.
+
+## ★★★★ DOES SEED 71's BURIAL GATE ITS INTERIOR? — NO. Answered from disk, free.
+
+Architect's UNREAD geometry question, registered to run *after* the queries.
+**It didn't need them** — the corpus already carries the test.
+
+**The test:** if burial gates the interior, the **three buried columns** must
+look different from the **six open** ones at z=602/601. They do not.
+
+| z | y=21071 (open) | y=21072 (**BURIED**) | y=21073 (open) | `unreachable` |
+|---|---|---|---|---|
+| **603** top | `[3,2,2]` | `[2,2,2]` | `[2,2,2]` | 3/3 · **3/3** · 1/3 |
+| **602** mid | `[0,0,0]` | `[0,0,0]` | `[0,0,0]` | 0/3 · **3/3** · 0/3 |
+| **601** bot | `[0,0,0]` | `[0,0,0]` | `[1,1,1]` | 0/3 · 0/3 · 0/3 |
+
+```
+z=602   buried-cols [0,0,0]   open-cols [0,0,0,0,0,0]    IDENTICAL
+z=601   buried-cols [0,0,0]   open-cols [0,1,0,1,0,1]    open cols have MORE
+```
+
+> **The interior is uniformly unattempted whether or not the column above is
+> buried. The tree accounts for its three cells and NO MORE — no amplification.**
+
+### ★★ Two independent fields tell a consistent story
+
+**The `unreachable` FLAG propagates down the buried columns** (z=602: **3/3
+flagged under the tree, 0/3 under open sky**) — exactly what the enclosure test
+should do for a cell beneath an unmined cell beneath a trunk. **Meanwhile
+ATTEMPTS are uniformly zero across all nine.** *Flag tracks geometry; attempts
+track dig order. Neither contradicts the other, and the burial shows up in
+precisely the field that should see it.*
+
+### ★★★ And it SHARPENS the frontier reading
+
+**All NINE z=603 cells were attempted 2–3 times each, and the layer never
+cleared** — including the two that were never flagged `unreachable` at all.
+
+> **Burial explains 3 of 7 FLAGS. It explains none of the STALL.** The frontier
+> failure is uniform across all nine columns, three of which had no obstruction
+> whatsoever. **#59's shape-A evidence is stronger than the 4-of-7 re-scope
+> suggested** — the re-scope removes flags, not attempts, and the attempts are
+> what shape A is about.
+
+**Still pending and unaffected:** the 61/54 queries, which test a different
+question (is the ONE / THREE flagged top cells' obstruction the whole story for
+*those* seeds, where the mined counts are 26/27 and 16/27).
