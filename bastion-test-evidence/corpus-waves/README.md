@@ -31,6 +31,24 @@ valid same-code determinism comparison.**
 `ed532c600e`.** An audit that trusted the filename would have recorded the
 wrong provenance for the run that anchors our determinism claim.
 
+### ★ FILE RENAMED 2026-08-04 (architect ruling) — old → new mapping
+
+```
+wave21-fanlog-BASELINE-RERUN-ed532c600e.txt   (OLD — hash was FALSE)
+        ↓
+wave21-fanlog-BASELINE-RERUN-1bf3ab2e1c.txt   (CURRENT — matches attestation)
+```
+
+**The raw directory `wave21-raw-BASELINE-RERUN/` is unchanged** — it carries no
+hash in its name, so it was never wrong; its logs attest `COMMIT=1bf3ab2e`.
+
+**Why rename rather than leave a dangling reference:** this directory's entire
+value is per-seed provenance, so **a plausible-looking wrong hash is a worse
+trap than a missing file.** A missing file forces the reader here, where this
+section explains everything; a wrong hash forces nothing and is believed. Same
+reasoning as the `wave13_EMPTY` rename above — **the label must not contradict
+the content it names.**
+
 **Rule this instance re-earns:** verify the attested commit before *citing* a
 wave, not only before reading one. The mismatch was invisible for a day because
 nothing compares the label to the attestation, and the label is what gets
