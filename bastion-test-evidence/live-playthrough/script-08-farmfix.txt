@@ -1,0 +1,21 @@
+# Corrected farm plot: survey (script-07) showed y=15998-15999, x=15198-
+# 15204 is flat at z=415 -- using that exact ground height this time
+# (region min.z must equal the real surface exactly; Farm's paint path
+# takes plot.min.z literally with zero tolerance, unlike Mine's whole-box
+# scan). If jobs generate now, Run 1/2's zero-jobs finding was purely my
+# own site-pick miss, not a live/harness divergence.
+note farm fix -- same live server, correct z this time (415, not 418)
+anchor
+spawn 8
+wait 300
+designate farm 15198 15998 415 15204 15999 416
+note farm(fixed) painted -- watching for till jobs
+wait 300
+list_designations
+note checkpoint 1 (~10s)
+wait 900
+list_designations
+note checkpoint 2 (~40s)
+wait 1800
+list_designations
+note checkpoint 3 (~100s) -- run complete

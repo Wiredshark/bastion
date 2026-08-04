@@ -1,0 +1,11 @@
+# Check whether the farm plot's picked z (418, min.z of the painted region)
+# actually has solid ground -- the FARM/PROD-2 trigger pass requires
+# `ground.is_filled()` at exactly plot.min.z for EVERY column, or it skips
+# the whole column ("no field under a hole"). If ground isn't filled at 418
+# across this plot, that alone explains zero jobs regardless of any other
+# bug -- need to know before assuming a live/harness divergence.
+note checking actual terrain height under the run 1/2 farm plot (x 15198-15204, y 15998-16004)
+anchor
+wait 300
+survey 15198 15998 15204 16004 460 380 0
+note farmcheck complete
