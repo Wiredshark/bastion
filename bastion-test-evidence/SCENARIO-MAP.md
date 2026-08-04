@@ -192,10 +192,33 @@ archetype · chronicle · chronicle-capture · lod0 · lod1 · inspect
   - `farm_sown:false` is **DOWNSTREAM** — ≥9 grown is impossible from 8 tilled.
     A dependent clause, exactly like `any_needs_materials` under
     `build_placed`.
-  - `farm_growth_rose:false` is measured at a **SINGLE probe cell**
-    (`plot.min` corner). If the untilled cell is that corner, this is the same
-    fact a third time. **A single-point sample standing in for a plot-level
-    property** — aggregate-late inverted.
+  - ★★★ **`farm_growth_rose:false` is an INSTRUMENT DEFECT — the clause is
+    UNSATISFIABLE in this run.** Chased it rather than handing it off:
+    ```rust
+    let g1 = server.bastion_sprite_growth(probe_cell).unwrap_or(0);  // = 15
+    for _ in 0..900 {
+        let g = ...;
+        if g > g1 { rose = true; }                     // needs g > 15
+        if g >= 15 || grown_cells(&server,15) > 0 {    // breaks AT 15
+            matured = true; break;
+        }
+    }
+    ```
+    **`g1 = 15` at window open** (it is right there in the telemetry). `rose`
+    requires `g > 15`; the same loop **breaks the moment `g >= 15`**. **The crop
+    was already mature before the watch began, so "did it rise" can never become
+    true and the loop exits on iteration one.**
+
+    **`farm_growth_rose: false` reports "growth didn't rise" when the truth is
+    "growth had already finished before we started watching."** Same family as
+    the `tool 0.0` sentinel and the `starvation_cycles: 0` ambiguity — **a
+    clause that CANNOT FIRE, reporting as a failure.** It is also measured at a
+    single `plot.min` cell standing in for a plot-level property.
+
+  > **★ So farm's three red clauses are: ONE instrument defect
+  > (`growth_rose`, unsatisfiable), ONE dependent (`sown`, downstream of
+  > tilled), and ONE possibly-real shortfall (`tilled`, 8 of 9). Only one of
+  > three carries a product signal.**
 
   **The "mystery under both stances" was a count threshold all along.**
 - **zone** — `zone_freed:false`. **RE-RUN at `460626a6e2` 2026-08-04: still
