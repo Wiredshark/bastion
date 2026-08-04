@@ -97,6 +97,25 @@ struct Args {
     #[arg(long, default_value_t = 30.0)]
     tps: f64,
 
+    /// bastion (batch prep, DECISIONS #49/#52, 2026-08-04, Fable-directed):
+    /// override for `b5_scenario`'s mine-settle loop iteration count
+    /// (each iteration is `tick(&mut server, 30)`; default 180, bumped
+    /// once already from 120 for scheduling-tail headroom -- see the
+    /// loop's own comment). Absent means the exact pre-existing literal,
+    /// byte-identical to every prior invocation -- this flag changes
+    /// nothing unless explicitly passed.
+    #[arg(long)]
+    b5_settle_iters: Option<u64>,
+
+    /// bastion (batch prep, DECISIONS #49/#52, 2026-08-04, Fable-directed):
+    /// override for `run_scenario`'s CarvedStair settle loop iteration
+    /// count (each iteration is `tick(&mut server, 30)`; default 45,
+    /// break-early on `ck_cleared && ck_unreachable_final == 0`). Absent
+    /// means the exact pre-existing literal, byte-identical to every
+    /// prior invocation.
+    #[arg(long)]
+    ck_settle_iters: Option<u64>,
+
     /// T0.52 (T0-004): the serial-vs-parallel equivalence PROBE — run the
     /// deterministic harness on a MULTI-worker pool with the PARALLEL
     /// dispatcher (identical seeds/inputs otherwise). A probe run must be
@@ -3200,7 +3219,10 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // worst on a cold first-run-after-build), which occasionally left the
     // last mine block one window short. Wider window = headroom for the
     // scheduling tail; the loop breaks early when all three phases land.
-    for _ in 0..180 {
+    // bastion (batch prep, 2026-08-04): `--b5-settle-iters` overrides this
+    // 180 when passed explicitly; absent, `unwrap_or(180)` reproduces the
+    // exact prior literal -- byte-identical when the flag is unset.
+    for _ in 0..args.b5_settle_iters.unwrap_or(180) {
         tick(&mut server, 30);
         mine_cleared = (mine_min.x..=mine_max.x).all(|x| {
             (mine_min.y..=mine_max.y).all(|y| {
@@ -23514,8 +23536,11 @@ fn chokepoint_scenario(args: &Args) -> ExitCode {
     // window AND give the retry economy room to finish straggler jobs —
     // run 27: all five colonists out with one original job mid-retry at
     // the old fixed settle's end.
+    // bastion (batch prep, 2026-08-04): `--ck-settle-iters` overrides this
+    // 45 when passed explicitly; absent, `unwrap_or(45)` reproduces the
+    // exact prior literal -- byte-identical when the flag is unset.
     let mut ck_unreachable_final = server.bastion_job_audit().unreachable;
-    for _ in 0..45 {
+    for _ in 0..args.ck_settle_iters.unwrap_or(45) {
         tick(&mut server, 30);
         ck_unreachable_final = server.bastion_job_audit().unreachable;
         ck_cleared = job_spots
