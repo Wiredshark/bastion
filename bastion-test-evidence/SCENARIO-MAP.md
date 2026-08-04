@@ -713,3 +713,25 @@ protects.
 **Superseded:** my earlier "a green fan on that row would be a FALSE GREEN."
 Correct version — **a green would be uninformative only about the mechanism's
 internals; seed 71's magnitude is a genuine outcome-level test.**
+
+### ★★ SPECIMEN ATTESTATION at the MERGED tip `d3235e5329` (wave24)
+
+The specimens were found in wave19 (`ed532c600e`). **Rows would be built against
+the merged tip**, so every defining property was re-checked in wave24's raw logs
+— per-seed records recovered via the `@@@SEED n` markers.
+
+| seed | property | wave19 | wave24 | |
+|---|---|---|---|---|
+| **62** | `build_placed` | false | false | OK |
+| | `rescue_fired` | false | false | OK |
+| | `mine_cleared` | true | true | OK |
+| | `chop_cleared` | true | true | OK |
+| **90** | `mine_blocks_mined` | 25 | 25 | OK |
+| | `mine_cleared` | false | false | OK |
+| **78** | `log_sum` | 0 | 0 | OK |
+| | `chop_cleared` | false | false | OK |
+| | `ch_base_blocked_by` | None | None | OK |
+
+**9 of 9 identical.** All three specimens are valid at `d3235e5329`, not only at
+the wave they were discovered in. **A specimen inherits the provenance rule like
+any other status: it is attested at a tip, or it is a claim.**
