@@ -203,3 +203,51 @@ the playthrough: same seed, two parallel legs, metrics collection on, confirm
 slightly different from the one a player would get.
 
 *Method is canonical: parallel legs, separate `--data-dir`s.*
+
+## §4c — ★ ROW B′'s ACCEPTANCE ROWS (added at launch; #61 shipped it)
+
+**The playthrough is Row B′'s acceptance test.** Its corpus aggregate is a proven
+null — so **these rows are where its claimed value either exists or doesn't.**
+Score them honestly; a null here means the fix bought nothing anywhere.
+
+| # | claim | player-language success | what FAILURE looks like | metric |
+|---|---|---|---|---|
+| **14** | **stuck jobs are noticed** | *"A cell nobody could reach stopped being retried over and over."* | colonists visibly cycle on the same unreachable cell all session | benched jobs (count, which cells) |
+| **15** | **the colony stops paying** | *"When something was unreachable, the others got on with useful work instead of queuing for it."* | idle colonists, or the whole crew orbiting one bad cell | freed-colonist activity; other designations' completion |
+| **16** | **benching RELEASES** | *"A job that got shelved came back and was tried again later."* | ★ shelved forever — **a bench that never releases is a drop in disguise** | graduations (count); bench→graduate→re-bench cycles |
+| **17** | **the message is TRUE** | *"I was told colonists kept failing to reach it — and that's exactly what was happening."* | ★ a message asserting an **obstruction** that isn't there | message text vs observed cause |
+
+> **★ ROW 17 IS THE REWORDED MESSAGE'S TRIAL.** The old text —
+> *"obstruction at (x,y,z) can't be reached"* — asserted a **terrain cause** its
+> guard could not establish, and seeds 80/90 proved the guard wrong at both sites
+> checked. The new text — *"colonists have repeatedly failed to reach…"* — claims
+> only what is measured. **Score it on truth, not on presence.** A player reading
+> the old sentence would have believed a false thing.
+
+**Prediction #1 UPGRADES** (was: *"stuck jobs occur and are now visible"*):
+
+> **Stuck jobs occur, are visible, the colony stops wasting effort on them, and
+> the player is told honestly.**
+
+Four claims, four rows, each refutable. **If rows 14–17 score well and the corpus
+still says nothing, that is the finding** — it would mean the harness cannot see a
+class of value the player can, which is the wrong-coordinates lesson one level up.
+
+## §7 — LAUNCH CHECKLIST
+
+- **Shipped tip**, flag at its shipping default. Attest the binary hash.
+- **Real player surface only** — designations painted, zones drawn, commands
+  issued. **Never harness scenario injection**; injecting re-creates the exact
+  defect this run exists to detect.
+- **Seed recorded.** One session, reconnaissance-grade — no corpus determinism bar
+  on run one, but the seed makes anything interesting a repro candidate.
+- **Capture law applies:** full logs + counters persisted to
+  `bastion-test-evidence/`, not just a verdict. *A run that persists only its
+  conclusion is not evidence.*
+- **Metrics are server-side aggregates.** Per-cell diag reads are the shape the
+  observer-effect bisection indicted — **if you reach for more per-cell detail
+  mid-session to explain something, note that you did**, because it perturbs what
+  you're watching.
+- **Score as experienced.** No harness field in the success sentence.
+- **Anything the corpus never saw ⇒ log it as an INSTRUMENT lesson**, not only a
+  game bug.
