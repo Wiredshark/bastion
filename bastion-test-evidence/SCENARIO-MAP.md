@@ -1631,3 +1631,73 @@ listed.**
 time: a rule applied without checking whether its cases are exhaustive.** The
 countermeasure that worked here is the one that keeps working — **read both
 sides of the comparison, not just the surprising one.**
+
+## ★ RESTORED WORKING — the farm entry's detail, recovered from `d4c020bd8e`
+
+**I destroyed this converting the red list to table form** — the till count, the
+corner analysis and the ANSI trap note all lived inside the farm row I
+compressed. **Recovered from git and re-filed here as working, below the
+table.** The compression lesson applies to my own record-keeping:
+**a table is an aggregate, and aggregating late means keeping the structure
+SOMEWHERE, not nowhere.**
+
+★★★ **NO LONGER UNEXPLAINED. Three red clauses collapse to ONE
+root: 8 of 9 cells tilled.** Re-run at `460626a6e2`:
+`FARM TELEMETRY: tilled=8 wheat=2 seeds=15 g1=15`, and
+```rust
+if tilled_count(&server) == 9 { tilled = true; }   // requires ALL NINE
+if grown_cells(&server, 1) >= 9 { sown = true; }   // requires NINE grown
+```
+**The farm WORKS end-to-end** — `matured`, `harvested`, `cycled`,
+`seed_positive` all true, 2 wheat, 15 seeds. **One cell of nine never gets
+tilled**, and:
+- `farm_sown:false` is **DOWNSTREAM** — ≥9 grown is impossible from 8 tilled.
+  A dependent clause, exactly like `any_needs_materials` under
+  `build_placed`.
+- ★★★ **`farm_growth_rose:false` is an INSTRUMENT DEFECT — the clause is
+  UNSATISFIABLE in this run.** Chased it rather than handing it off:
+  ```rust
+  let g1 = server.bastion_sprite_growth(probe_cell).unwrap_or(0);  // = 15
+  for _ in 0..900 {
+      let g = ...;
+      if g > g1 { rose = true; }                     // needs g > 15
+      if g >= 15 || grown_cells(&server,15) > 0 {    // breaks AT 15
+          matured = true; break;
+      }
+  }
+  ```
+  **`g1 = 15` at window open** (it is right there in the telemetry). `rose`
+  requires `g > 15`; the same loop **breaks the moment `g >= 15`**. **The crop
+  was already mature before the watch began, so "did it rise" can never become
+  true and the loop exits on iteration one.**
+
+  **`farm_growth_rose: false` reports "growth didn't rise" when the truth is
+  "growth had already finished before we started watching."** Same family as
+  the `tool 0.0` sentinel and the `starvation_cycles: 0` ambiguity — **a
+  clause that CANNOT FIRE, reporting as a failure.** It is also measured at a
+  single `plot.min` cell standing in for a plot-level property.
+
+> **★ So farm's three red clauses are: ONE instrument defect
+> (`growth_rose`, unsatisfiable), ONE dependent (`sown`, downstream of
+> tilled), and ONE possibly-real shortfall (`tilled`, 8 of 9). Only one of
+> three carries a product signal.**
+
+**The "mystery under both stances" was a count threshold all along.**
+
+★★★ **TILL COUNT = NINE. Class (a): job created, work never performed.**
+From the same log (ANSI stripped — see the trap note below):
+```
+TILL jobs at z=455 : 9 distinct XY   (full 3x3 grid = 9)   missing: NONE
+SOW  jobs at z=456 : 8 distinct XY                          MISSING: (24072, 20239)
+```
+**All nine till jobs EXIST; `tilled_count` reached 8.** One till job was
+created and never completed — so the silent-skip classes (foreign sprite,
+`occupied` suppression, terrain-read bail) are all EXCLUDED. **Farm is a true
+member of the last-unit family, which stands at three.**
+
+★ **POSITION: the missing cell `(24072, 20239)` is a CORNER of the 3×3**
+(min-x, max-y) — structurally distinguished, YES. **But it is NOT `plot.min`
+`(24072, 20237)`, the `growth_rose` probe corner**, which tilled, sowed and
+grew to 15 normally. **So the one-worldgen-accident-explains-everything story
+is dead: three red clauses, two independent causes** — an unsatisfiable watch,
+and one uncompleted corner till. The missing SOW at the same XY is downstream
