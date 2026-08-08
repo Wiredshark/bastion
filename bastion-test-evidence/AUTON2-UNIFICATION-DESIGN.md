@@ -114,6 +114,63 @@ must not gain that** — *needs are urgent, not instantaneous.*
   `is_labor_hold_self_job` unit test at 16689** — **all four must be re-read
   before the build, and the last one REWRITTEN rather than deleted.**
 
+## §5b — ★★★★★★★★ SITE-4 READ DONE: "PRESERVED BY CONSTRUCTION" IS **FALSE**
+
+**I flagged site 4 as the subtlest and UNVERIFIED. Read (`9250-9325`), and it has
+TWO couplings to this design — neither incidental.**
+
+### WHAT THE CARVE-OUT ACTUALLY DOES
+
+**Not merely *"a despondent colonist may still preempt for eat/sleep."* It performs
+a JOB/CONDITION SPLIT:**
+
+1. `already_despondent` ∧ `despond_carve_out_past_interrupt(...)` ⇒
+2. ★ **`board.despond_resume.insert(*uid, until)`** — the deadline survives in a
+   **side table**
+3. ★ **`board.remove_job(aj.job)`** — **the Despond JOB is DESTROYED**
+4. the top-of-arbitration site (**8857-8862**) **deterministically RE-CREATES**
+   Despond from that table when the colonist is free, then **removes the entry**
+
+> *"Eating genuinely PAUSES the breakdown, never ends it; RNG only ever STARTS one."*
+
+### ★★★★★ COUPLING 1 — IT IS THE DESTROY-AND-RECREATE PATTERN FAMILY 1 REPLACES
+
+**§2 rules that the arbiter RE-SELECTS rather than the preempt pass RE-CREATING.**
+★★★ **The Despond carve-out is built ON destroy-and-recreate.** **You cannot leave
+it untouched under a design whose principle is that the entry persists.**
+
+### ★★★★★ COUPLING 2 — IT RELIES ON THE ORPHAN-LEAK PROPERTY BY NAME
+
+Its own comment: *"its dangling `board.jobs` entry is removed so it never leaks
+unclaimed and unvisited — **nothing else ever revisits an orphaned job with no
+ActiveJob pointing at it**."*
+
+★★★ **That is the exact property §2's proof obligation says unification
+dissolves.** **Site 4 is a live CONSUMER of it.** ★ *So the sweep proof isn't only
+about the sweep — this site must be re-derived under the new lifecycle too.*
+
+### ★★★★★★★ AND THE GOOD NEWS: UNDER FAMILY 1 THIS GETS **SIMPLER**
+
+**With a persistent entry, the carve-out becomes SUSPEND-AND-RESELECT:** the
+Despond job **stays on the board**, unselected while the need-drive outranks it,
+and is **re-selected when the need is satisfied.**
+
+> ★★★★ **`despond_resume` becomes DELETABLE — the condition's persistence becomes
+> the JOB's persistence.** **A side table exists only to carry state across a
+> destruction that no longer happens.**
+
+★ **Its full census is 4 sites** *(decl `4337`, re-issue read `8857`, removal
+`8862`, insert `9317`)* — **small, and entirely within this row's blast radius.**
+
+★★ **RULING: site 4 is a REQUIRED DESIGN ITEM, not a preserved one** — ★ **and the
+correct target is deletion of `despond_resume`, not its adaptation.** *Its
+existence is a symptom of the lifecycle family 1 removes.*
+
+★ **NOT claimed:** that deletion is free. **The re-issue site's determinism
+guarantee** *(same deadline, no roll, no cooldown — "an active condition is not a
+new breakdown")* **must be preserved by whatever replaces it**, and **that is an
+acceptance item, not an assumption.**
+
 ## §6 — WHAT THIS DESIGN DOES **NOT** CLAIM
 
 - ★ **Not** that ENDURE changes. **It is correct, tested, and specified** —
