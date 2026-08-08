@@ -148,19 +148,28 @@ impl Component for Needs {
     type Storage = specs::DenseVecStorage<Self>;
 }
 
-/// bastion (AUTON-0, row 48): the arbiter's drive — WHAT a colonist's
-/// autonomy layer has decided it is doing. Utility-AI shape (The Sims/
-/// RimWorld prior art per the packet): score → pick max → COMMIT.
-/// Self-jobs (RestAt/EatFrom/Despond) are deliberately NOT a variant —
-/// they are an exempt occupancy the arbiter steps around (GUARD 6: B7
-/// keeps sole authority for that colonist until the self-job completes;
-/// the full unification is AUTON-2's job). Work carries no JobId — the
-/// ActiveJob comp IS the work handle (no dual source of truth).
+/// bastion (AUTON-0, row 48; AUTON-2 unification, 2026-08-08): the
+/// arbiter's drive — WHAT a colonist's autonomy layer has decided it is
+/// doing. Utility-AI shape (The Sims/RimWorld prior art per the
+/// packet): score → pick max → COMMIT. `Personal` is the self-job
+/// drive — covers all three `is_labor_hold_self_job` kinds
+/// (`RestAt`/`EatFrom`/`Despond`), NOT just needs in the literal sense
+/// (Despond is a breakdown, not a need; the name covers the whole
+/// self-job-execution category on purpose, not "Need", which wouldn't
+/// name its own third member). Flat, deliberately: carries no `JobId`
+/// or job kind — `active_jobs`/`board.jobs` already own that fact, and
+/// a `Personal(kind)` variant would be a second source of truth for
+/// something the job board already tracks (self-jobs get a fresh job
+/// id per retry, so a carried kind could go stale the moment a retry
+/// swaps the underlying job while the Drive itself hasn't changed).
+/// Work carries no JobId either, for the same reason — the ActiveJob
+/// comp IS the work handle.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Drive {
     Work,
     Flee,
     Idle,
+    Personal,
 }
 
 /// bastion (AUTON-0): the per-colonist arbiter state — the current
@@ -716,6 +725,23 @@ pub fn modulated_urgencies(
         (base.1 * (1.0 - 0.2 * b)).max(FLEE_URGENCY_FLOOR.min(base.1)),
         base.2 * (1.0 + 0.4 * s),
     )
+}
+
+/// bastion (AUTON-2 unification, row 50, 2026-08-08): the `Drive::Personal`
+/// urgency — folds the self-job need (`is_labor_hold_self_job`:
+/// RestAt/EatFrom/Despond) into the SAME score→max→commit machinery
+/// `modulated_urgencies` feeds, so GUARD-6's old unconditional bypass
+/// becomes a normal (if lopsided) arbiter win instead of a special case.
+/// Ceiling `< Flee` (per [`FLEE_URGENCY_FLOOR`]'s own floor, 0.8) so a
+/// hostile signal always outranks a nap; floor `== work_urgency` at
+/// `severity == 0.0` so an UNMET-but-inactive need never beats available
+/// work by construction (the caller's `>` — not `>=` — tie-break in the
+/// selection compare leans on this exact equality). Linear, not curved:
+/// no live data yet justifies an asymptote over a ramp (AUTON-1/2's own
+/// "flat v1, shape the curve later" precedent). PURE + RNG-free.
+pub const URGENCY_PERSONAL_CEILING: f32 = 0.95;
+pub fn personal_urgency(work_urgency: f32, severity: f32) -> f32 {
+    work_urgency + (URGENCY_PERSONAL_CEILING - work_urgency) * severity.clamp(0.0, 1.0)
 }
 
 pub fn care_factor(

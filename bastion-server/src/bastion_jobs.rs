@@ -802,15 +802,25 @@ pub(crate) fn flee_preempt_transition(
     (flee_sig && current != comp::bastion::Drive::Flee).then_some(comp::bastion::Drive::Flee)
 }
 
-/// T3.53 (E3, Fable-ruled 2026-07-27): the self-job kinds GUARD 6 holds a
-/// colonist out of Work/Flee/Idle selection for — the mechanism that
-/// makes "labor refusal continuously in force" true for RestAt/EatFrom/
-/// Despond UNIFORMLY, not something T3.53's eat/sleep carve-out had to
-/// add: it was already true for all three before this row.
-// AUTON-2 unification, fixture 1 (2026-08-08): widened from pub(crate) to
-// pub -- the settle invariant (`server::bastion_settle_invariant_
-// violations`) needs this SAME predicate, not a re-derived copy that could
-// drift from the guard's own definition.
+/// T3.53 (E3, Fable-ruled 2026-07-27): the self-job kinds — RestAt/
+/// EatFrom/Despond, "labor refusal continuously in force" UNIFORMLY for
+/// all three, not something T3.53's eat/sleep carve-out had to add: it
+/// was already true for all three before that row.
+///
+/// AUTON-2 unification (row 50, 2026-08-08): pre-unification, GUARD 6
+/// used this predicate to skip a colonist out of Work/Flee/Idle selection
+/// ENTIRELY the instant it was true — an occupancy check that doubled as
+/// an arbiter bypass. Post-unification the bypass is gone (the arbiter's
+/// selection loop scores `Drive::Personal` like any other drive); this
+/// predicate's role narrows to exactly what its name says — IS the
+/// colonist's current/candidate job one of the three self-job kinds —
+/// and callers needing the OLD "occupying one keeps the colonist on it"
+/// behavior get it by feeding this same check into `personal_urgency`'s
+/// sticky-severity branch (this file's arbiter scoring block) rather
+/// than by a selection-loop early-out. Widened from `pub(crate)` to `pub`
+/// at Fixture 1 (2026-08-08) — the settle invariant (`server::bastion_
+/// settle_invariant_violations`) needs this SAME predicate, not a
+/// re-derived copy that could drift from the guard's own definition.
 pub fn is_labor_hold_self_job(kind: &common::bastion::JobKind) -> bool {
     matches!(
         kind,
@@ -8917,6 +8927,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // gate's own forensics). The rare flee-fire branch acquires
             // ad hoc.
             let arb_data = select_tick.then(|| rtsim.rt_state().data());
+            // AUTON-2 unification (row 50, 2026-08-08): Personal's severity
+            // needs the same tuning + trait-stagger the need-check pass
+            // uses (`stagger_interrupt`) — loaded here too rather than
+            // shared across the cadence gap, since MoodConfig::current()
+            // is an assets_manager-cached read (cheap, matches the
+            // existing per-select-tick `arb_data` acquisition pattern),
+            // not a fresh asset load.
+            let mood_cfg = select_tick.then(common::bastion::MoodConfig::current);
+            let stagger_traits_of = |data: &::rtsim::data::Data, entity: specs::Entity| {
+                rtsim_entities
+                    .get(entity)
+                    .and_then(|re| data.npcs.get(*re))
+                    .map_or((false, false), |npc| {
+                        (
+                            npc.personality.is(common::rtsim::PersonalityTrait::Conscientious),
+                            npc.personality.is(common::rtsim::PersonalityTrait::Neurotic),
+                        )
+                    })
+            };
             let personality4_of = |data: &::rtsim::data::Data, entity: specs::Entity| {
                 rtsim_entities
                     .get(entity)
@@ -8945,12 +8974,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 {
                     continue;
                 }
-                // GUARD 6: self-job occupancy — step around.
-                if active_jobs.get(entity).is_some_and(|aj| {
-                    board.jobs.get(&aj.job).is_some_and(|j| is_labor_hold_self_job(&j.kind))
-                }) {
-                    continue;
-                }
+                // GUARD 6 (retired here, AUTON-2 unification, row 50,
+                // 2026-08-08): this used to `continue` — step the colonist
+                // around selection entirely — whenever an ActiveJob pointed
+                // at a self-job (RestAt/EatFrom/Despond). Self-jobs now
+                // WIN selection via `Drive::Personal` (this loop's scoring
+                // block, above) instead of bypassing it; the SAME
+                // `is_labor_hold_self_job` occupancy check that used to
+                // gate this early-out now feeds `p`'s sticky-severity
+                // branch there, so "occupying a self-job keeps the
+                // colonist on it" still holds, just as a score that wins
+                // rather than a guard that shortcuts. `is_labor_hold_self_
+                // job`'s own doc (above its definition) still describes the
+                // occupancy check itself — only its ROLE here changed.
                 // T3.53 (E3, Fable-ruled 2026-07-27): a colonist with NO
                 // ActiveJob (past GUARD 6, so not already self-job-held)
                 // may still be MID-DESPOND-CONDITION — the eat/sleep
@@ -9053,8 +9089,75 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         intr,
                     );
                     arb.last_scores = (w, f, i);
-                    let next = if f >= w && f >= i {
+                    // AUTON-2 unification (row 50, 2026-08-08): Personal's
+                    // severity — GUARD-6's old bypass is retired (site 1,
+                    // below), so a self-job now needs to WIN selection like
+                    // any other drive. Two regimes: ALREADY on a self-job
+                    // (sticky — pinned near the ceiling so the job runs to
+                    // its OWN completion criterion, e.g. RestAt's `rest >=
+                    // comfort + SLEEP_MARGIN`, rather than dropping the
+                    // instant the meter merely crosses back over the much
+                    // lower `interrupt` threshold that STARTED it); not yet
+                    // on one — severity is how far rest/hunger sit below
+                    // their (trait-staggered) interrupt threshold, the same
+                    // inputs the need-check pass ranks candidates by,
+                    // worse-of-the-two (matches that pass's own
+                    // `sort_by`-then-`first()` "most urgent wins" rule).
+                    let mood_cfg = mood_cfg.as_ref();
+                    let p = mood_cfg.map_or(w, |mood_cfg| {
+                        let on_self_job = active_jobs.get(entity).is_some_and(|aj| {
+                            board
+                                .jobs
+                                .get(&aj.job)
+                                .is_some_and(|j| is_labor_hold_self_job(&j.kind))
+                        });
+                        let severity = if on_self_job {
+                            1.0
+                        } else if let Some(needs) = needs_storage.get(entity) {
+                            let (consc, neur) = arb_data
+                                .as_ref()
+                                .map_or((false, false), |d| stagger_traits_of(d, entity));
+                            let rest_interrupt = comp::bastion::stagger_interrupt(
+                                mood_cfg.rest.interrupt,
+                                &colonist.0.values,
+                                consc,
+                                neur,
+                            );
+                            let hunger_interrupt = comp::bastion::stagger_interrupt(
+                                mood_cfg.hunger.interrupt,
+                                &colonist.0.values,
+                                consc,
+                                neur,
+                            );
+                            let rest_sev = if needs.rest < rest_interrupt {
+                                1.0 - needs.rest / rest_interrupt.max(f32::EPSILON)
+                            } else {
+                                0.0
+                            };
+                            let hunger_sev = if needs.hunger < hunger_interrupt {
+                                1.0 - needs.hunger / hunger_interrupt.max(f32::EPSILON)
+                            } else {
+                                0.0
+                            };
+                            rest_sev.max(hunger_sev)
+                        } else {
+                            0.0
+                        };
+                        comp::bastion::personal_urgency(w, severity)
+                    });
+                    // Flee stays top-tier unconditionally (ceiling 0.95 <
+                    // FLEE_URGENCY_FLOOR 0.8's own floor keeps this true for
+                    // every roll, not just the default). Personal beats
+                    // Work only on a STRICT edge (`>`, not `>=`): at
+                    // severity 0.0, `p == w` exactly by construction, so an
+                    // inactive need never outranks available work — the
+                    // equality is the by-design floor from
+                    // `personal_urgency`'s own doc, not a coincidence this
+                    // compare happens to rely on.
+                    let next = if f >= p && f >= w && f >= i {
                         comp::bastion::Drive::Flee
+                    } else if p > w && p >= i {
+                        comp::bastion::Drive::Personal
                     } else if w >= i {
                         comp::bastion::Drive::Work
                     } else {
@@ -9065,6 +9168,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             comp::bastion::Drive::Work => w,
                             comp::bastion::Drive::Flee => f,
                             comp::bastion::Drive::Idle => i,
+                            comp::bastion::Drive::Personal => p,
                         };
                         if score_of(next) > score_of(arb.current) + ARB_HYSTERESIS {
                             arb.current = next;
@@ -9596,6 +9700,31 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 }) {
                     if need_skip_diag {
                         info!(colonist = %uid, "NEED-SKIP-DIAG reason=already_on_need_job");
+                    }
+                    continue;
+                }
+                // AUTON-2 unification (row 50, 2026-08-08): job-CREATION
+                // gated on the arbiter having actually SELECTED Personal
+                // (this file's arbiter scoring block, tick %
+                // ARBITRATION_INTERVAL == 1, runs earlier in this same
+                // cycle than this pass's == 13 offset) — a need crossing
+                // `interrupt` above is a CANDIDATE, not yet a decision;
+                // the arbiter's own hysteresis throttle (the ARB_HYSTERESIS
+                // margin a challenger must beat Work by) is now the one
+                // place that decision gets made, so this pass no longer
+                // creates a need-job unconditionally the instant a meter
+                // dips below its threshold. The already-despondent carve-
+                // out above falls through to here WHILE arb.current is
+                // still Personal from this same cycle's earlier arbiter
+                // tick (it was sticky on the Despond self-job right up
+                // until this pass just cleared it) — so this gate does not
+                // reopen the "eat/sleep during a breakdown" carve-out.
+                if !arbiters
+                    .get(entity)
+                    .is_some_and(|a| a.current == comp::bastion::Drive::Personal)
+                {
+                    if need_skip_diag {
+                        info!(colonist = %uid, "NEED-SKIP-DIAG reason=drive_not_personal");
                     }
                     continue;
                 }
