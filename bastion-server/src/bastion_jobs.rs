@@ -11326,12 +11326,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             .and_then(|v| v.parse::<u64>().ok())
                             == Some(active.job)
                         {
+                            // Class-B live-validation extension (2026-08-08,
+                            // Fable's three-branch discriminator): does the
+                            // colonist ever ATTEMPT a jump near this target,
+                            // or just sit at ground contact? on_ground=None
+                            // + positive velocity.z is the jump signature;
+                            // on_ground=Some the whole time with no upward
+                            // velocity spike is "never attempted."
+                            let physics = physics_states.get(entity);
+                            let velocity = velocities.get(entity).map(|vel| vel.0);
+                            // Opus's precondition check (2026-08-08): the
+                            // arrive-tolerance widening (~9789,
+                            // ARRIVE_DIST=2.5 + stuck_strikes.min(3)*1.2,
+                            // caps at 6.1) only matters if stuck_strikes was
+                            // actually >=3 during the freeze -- otherwise
+                            // the 6.1 proximity to the observed ~6.13-6.15
+                            // freeze point is coincidence, not evidence.
                             info!(
                                 job = active.job,
                                 sdist,
                                 best_dist = active.best_dist,
                                 reset_dist = active.reset_dist,
                                 stuck_time = active.stuck_time,
+                                stuck_strikes = job.stuck_strikes,
+                                on_ground = physics
+                                    .is_some_and(|state| state.on_ground.is_some()),
+                                vel_z = velocity.map(|v| v.z),
                                 "SDIST-TRACE"
                             );
                         }

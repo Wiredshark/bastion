@@ -39,6 +39,33 @@ coinciding with `stuck_time` resetting to `0.0`:
 | 4 | jump 10.52→21.5→22.7 (+~12) | — | **stuck_time resets to 0** again |
 | 5 | frozen at 22.38-22.69 | ~9.7-10s | STUCK_TIMEOUT fires, churn |
 
+## Precondition check (Opus's ask): the arrive-tolerance-widening hypothesis is dead
+
+Opus noted `ARRIVE_DIST=2.5 + stuck_strikes.min(3)*1.2` caps at exactly
+**6.1** at `stuck_strikes>=3`, close to the observed ~6.13-6.15 freeze
+point elsewhere in this trace family, and asked for the precondition to be
+checked before treating that as evidence. Extended `SDIST-TRACE` with
+`stuck_strikes`/`on_ground`/`vel_z` and re-ran: **`stuck_strikes = 0`
+across all 660 ticks of job 33.** `arrive` was 2.5 the whole time, nowhere
+near 6.1 — coincidence, not mechanism, per his own registered criterion.
+
+**Why it's structurally 0, not just 0 this run:** `RestAt` jobs get a
+FRESH job id on every retry (`insert_rest_job`, `stuck_strikes: 0` at
+creation, called anew each time `preempt_pending` fires) — unlike Mine
+jobs, which reuse the SAME job entry across churns and accumulate strikes
+there. The strike-based arrival-tolerance rescue can structurally never
+engage for self-jobs: each bed attempt starts its own counter at 0
+regardless of how many prior attempts at the same bed already failed.
+
+## Bonus finding from the same instrumentation: the colonist IS jumping
+
+`on_ground`/`vel_z` (added alongside `stuck_strikes`) show the colonist
+attempting real jumps during the final trapped zone (sdist ~22.4-22.7):
+`vel_z` peaks at 7.48 with `on_ground=false` at `stuck_time` 0.57, 1.4,
+6.23, 6.77, 7.17, 8.07 — roughly every 0.5-1.5s. None of them close the
+distance. For this specimen, that's Fable's branch 3 (stalls WITH a jump
+attempted and failing), not branch 2 (never attempts a jump at all).
+
 ## The reset branch fires on regression, not just retargeting
 
 `bastion_jobs.rs` ~11342 (unchanged by this investigation, cited for the
