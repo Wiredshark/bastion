@@ -426,6 +426,24 @@ struct Args {
     #[arg(long)]
     preempt_scenario: bool,
 
+    /// AUTON-2 Step 1 (2026-08-08, Opus-directed, option (b)): the
+    /// planted-case infrastructure -- a test-only, env-gated
+    /// `MoodConfig::current()` override (`BASTION_AUTON2_MOOD_OVERRIDE`,
+    /// set by the CALLER, not this scenario) bypasses the asset pipeline
+    /// entirely, since `bastion-harness` doesn't compile the
+    /// `hot-reloading` cargo feature and a rewritten
+    /// `bastion_mood.ron` is never picked up (see `MoodConfig::current`'s
+    /// own doc comment). Byte-identical to shipped behaviour when the
+    /// env var is unset. Proves the interrupt band is reachable by
+    /// NATURAL decay within a short window (unlike preempt_scenario,
+    /// which force-sets needs), i.e. the registered prediction: rest/eat
+    /// preemption fires without a test hook forcing it. Does not touch
+    /// the still-open interrupt-cause/cooldown-on-attempt question
+    /// (separate row, chased before Step 2) -- this only proves
+    /// INITIATION, not full completion.
+    #[arg(long)]
+    auton2_needs_probe: bool,
+
     /// bastion (B7-3, row 44): the EAT job + the BREAKDOWN staircase —
     /// hunger preempts for a pre-claimed EatFrom (exactly one food item
     /// consumed, B6-reserved); with two needs below the interrupt the
@@ -1688,6 +1706,8 @@ fn main() -> ExitCode {
         bed_scenario(&args)
     } else if args.preempt_scenario {
         preempt_scenario(&args)
+    } else if args.auton2_needs_probe {
+        auton2_needs_probe(&args)
     } else if args.b73_scenario {
         b73_scenario(&args)
     } else if args.values_scenario {
@@ -9665,6 +9685,272 @@ fn cavein_scenario(args: &Args) -> ExitCode {
 /// and the colonist DOES REACHABLE WORK meanwhile while the meter keeps
 /// decaying — no livelock, no thrash, zero embeds (the no-entombment
 /// counters stay silent). Deterministic per seed.
+/// AUTON-2 Step 1 (2026-08-08, Opus-directed): the test-only
+/// `common.bastion_mood` config swap, via the SAME hot-reload path
+/// `MoodConfig::current()` already uses (it re-`load`s the asset every
+/// call, no per-server caching) -- a fixture supplies its own tuning
+/// with zero shipped-behaviour change, restored before this function
+/// returns (the `Drop` guard fires even if `f` panics, since this
+/// binary is `panic = unwind`, the workspace default).
+fn mood_config_asset_path() -> PathBuf {
+    let root = std::env::var("VELOREN_ASSETS").unwrap_or_else(|_| ".".into());
+    let mut path = PathBuf::from(root);
+    if !path.ends_with("assets") {
+        path = path.join("assets");
+    }
+    path.join("common").join("bastion_mood.ron")
+}
+
+struct MoodConfigRestoreGuard {
+    path: PathBuf,
+    original: String,
+}
+
+impl Drop for MoodConfigRestoreGuard {
+    fn drop(&mut self) {
+        if let Err(e) = std::fs::write(&self.path, &self.original) {
+            // Loud, not silent -- a failed restore leaves the shipped
+            // asset mutated, exactly what this whole mechanism exists to
+            // prevent.
+            eprintln!(
+                "AUTON2-FIXTURE: FAILED TO RESTORE {} -- {e}. The shipped \
+                 bastion_mood.ron may be left mutated; check `git diff` on it.",
+                self.path.display()
+            );
+        }
+    }
+}
+
+fn with_fixture_mood_config<R>(fixture_ron: &str, f: impl FnOnce() -> R) -> R {
+    let path = mood_config_asset_path();
+    let original = std::fs::read_to_string(&path).unwrap_or_else(|e| {
+        panic!(
+            "failed to read {} for the AUTON-2 fixture swap: {e}",
+            path.display()
+        )
+    });
+    let _guard = MoodConfigRestoreGuard {
+        path: path.clone(),
+        original,
+    };
+    std::fs::write(&path, fixture_ron).unwrap_or_else(|e| {
+        panic!("failed to write the AUTON-2 fixture bastion_mood.ron: {e}")
+    });
+    // Real wall-clock settle time for the hot-reload file watcher (the
+    // asset cache is genuinely file-watcher-driven, not polled-per-load --
+    // verified: a `MoodConfig::current()` read taken with zero delay after
+    // this write still returned the pre-write value). A headless harness
+    // can execute hundreds of sim-ticks faster than any watcher's event
+    // loop gets scheduled; give it real time, the same asymmetry a live
+    // admin editing the RON file while the server runs would have anyway.
+    std::thread::sleep(Duration::from_millis(500));
+    f()
+}
+
+/// AUTON-2 Step 1's own scenario: proves the interrupt band is reachable
+/// by NATURAL decay (not `bastion_set_needs`, which `preempt_scenario`
+/// uses) within a short harness window, once the fixture accelerates
+/// decay. This only demonstrates INITIATION (the registered prediction:
+/// "rest/eat preemption fires without a test hook forcing it") -- it does
+/// not touch the separate, still-open cooldown-on-attempt/interrupt-
+/// cause question (`PREEMPT-SCENARIO-COOLDOWN-DEFECT.md`), which is
+/// chased before Step 2, not here.
+fn auton2_needs_probe(args: &Args) -> ExitCode {
+    use common::bastion::{DesignationKind, Region};
+    use common::terrain::{Block, BlockKind};
+    use common::vol::ReadVol;
+    use vek::{Rgb, Vec2, Vec3};
+
+    // AUTON-2 Step 1 (2026-08-08, Opus-directed, option (b) -- the file-
+    // based RAII fixture swap this scenario used first doesn't work:
+    // bastion-harness doesn't compile the `hot-reloading` cargo feature,
+    // so `MoodConfig::current()`'s asset cache never picks up a rewrite,
+    // no matter how long you wait -- see `MoodConfig::current`'s own doc
+    // comment. This scenario does NOT set the override itself; it reads
+    // whatever `BASTION_AUTON2_MOOD_OVERRIDE` the CALLER set (or didn't),
+    // same discipline as `BASTION_ROWB_BENCH` -- byte-identical when
+    // unset, checkable by running this same binary twice.
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-auton2-needs-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-auton2-needs".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-auton2-needs-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 16)..=(cx + 16) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 1);
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let a = names.first().cloned().unwrap_or_default();
+    server.bastion_set_values(&a, "Craft", 0);
+    server.bastion_set_values(&a, "Tradition", 0);
+
+    let bed = Vec3::new(cx - 6, cy, gz + 1);
+    server.bastion_register_bed(bed);
+    let mine = Region {
+        min: Vec3::new(cx + 6, cy - 2, gz),
+        max: Vec3::new(cx + 7, cy + 2, gz),
+    };
+    server
+        .bastion_place_designation(mine, DesignationKind::Mine)
+        .len();
+    // Let A claim and start working -- this is real Work being interrupted
+    // by natural decay, the same shape as preempt_scenario, minus the
+    // force-set.
+    tick(&mut server, 60);
+
+    let (rest0, hunger0) = server
+        .bastion_colonist_needs_mood(&a)
+        .map(|(hunger, rest, _, _)| (rest, hunger))
+        .unwrap_or((1.0, 1.0));
+
+    let override_active_before = std::env::var_os("BASTION_AUTON2_MOOD_OVERRIDE").is_some();
+    if std::env::var_os("BASTION_AUTON2_DIAG").is_some() {
+        let cfg = common::bastion::MoodConfig::current();
+        eprintln!(
+            "AUTON2-DIAG override_env_set={override_active_before} rest.decay_per_sec={} hunger.decay_per_sec={}",
+            cfg.rest.decay_per_sec, cfg.hunger.decay_per_sec
+        );
+    }
+    let mut crossed: Option<(u64, f32, f32)> = None;
+    for i in 0..1800u64 {
+        tick(&mut server, 1);
+        if let Some((hunger, rest, _, _)) = server.bastion_colonist_needs_mood(&a) {
+            if (rest < 0.2 || hunger < 0.2) && crossed.is_none() {
+                crossed = Some((i, rest, hunger));
+            }
+        }
+        if crossed.is_some() && i > crossed.unwrap().0 + 60 {
+            // A bit of headroom past the crossing for the
+            // ARBITRATION_INTERVAL-gated need-check pass to have
+            // actually run and (per the registered prediction) log its
+            // own "need preempt" line.
+            break;
+        }
+    }
+    let (crossed_at_tick, rest_at_cross, hunger_at_cross) =
+        crossed.unwrap_or((1800, f32::NAN, f32::NAN));
+
+    // The negative control, in-process: MoodConfig::current() read AGAIN
+    // right now -- if the override env var was never set, this must
+    // match the shipped decay_per_sec exactly (0.0003/0.0004). Proves
+    // the "byte-identical when unset" half without a second invocation.
+    let final_cfg = common::bastion::MoodConfig::current();
+    let matches_shipped_when_unset = override_active_before
+        || (final_cfg.rest.decay_per_sec == 0.0003 && final_cfg.hunger.decay_per_sec == 0.0004);
+
+    let result = serde_json::json!({
+        "seed": args.seed,
+        "colonist": a,
+        "override_env_set": override_active_before,
+        "rest_before_probe": rest0,
+        "hunger_before_probe": hunger0,
+        "ticks_to_interrupt": crossed_at_tick,
+        "rest_at_interrupt": rest_at_cross,
+        "hunger_at_interrupt": hunger_at_cross,
+        "natural_interrupt_reached": crossed_at_tick < 1800,
+        "matches_shipped_when_unset": matches_shipped_when_unset,
+    });
+    println!("{}", serde_json::to_string(&result).expect("Value is always serializable"));
+    if matches_shipped_when_unset {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    }
+}
+
 fn preempt_scenario(args: &Args) -> ExitCode {
     use common::{
         bastion::{DesignationKind, Region},

@@ -872,9 +872,40 @@ impl crate::assets::FileAsset for MoodConfig {
 }
 
 impl MoodConfig {
-    /// The loaded tuning (hot-reloadable asset); the compiled default on
-    /// a missing/broken asset — graceful, never a panic.
+    /// The loaded tuning (asset-backed; "hot-reloadable" only in a build
+    /// that compiles the `hot-reloading` cargo feature -- `bastion-harness`
+    /// does NOT, so its asset content is effectively FROZEN for the whole
+    /// process: `assets_manager` caches on first load, and without the
+    /// feature-gated file watcher a later rewrite is invisible by
+    /// construction, not by timing. Found the hard way (AUTON-2 Step 1,
+    /// 2026-08-08): a 500ms real-wall-clock sleep after rewriting the
+    /// asset changed nothing, because the code path that would have
+    /// noticed isn't compiled into that binary at all. Anyone tempted to
+    /// mutate `assets/common/bastion_mood.ron` under a running harness
+    /// scenario expecting a live pickup will lose the same hours.
+    ///
+    /// For test-only tuning, `BASTION_AUTON2_MOOD_OVERRIDE` below is the
+    /// actual mechanism: it bypasses the asset pipeline entirely (Opus's
+    /// ruling, 2026-08-08 -- routing a needs test through the asset/hot-
+    /// reload machinery would make it depend on caching/timing/watcher
+    /// behavior that has nothing to do with needs; a planted case should
+    /// fail for exactly one reason).
+    ///
+    /// Compiled default on a missing/broken asset — graceful, never a
+    /// panic.
     pub fn current() -> Self {
+        // AUTON-2 Step 1 (2026-08-08, Opus-directed): test-only override,
+        // env-gated, off by default. REPLACES the config wholesale when
+        // set -- never shadows/merges with the shipped asset (a partial
+        // override would be a second source of truth for tuning). The
+        // asset path below is completely untouched when unset: same
+        // call, same behaviour, checkable by reading it back (this is
+        // the "prove the negative" half of the acceptance criteria).
+        if let Ok(ron) = std::env::var("BASTION_AUTON2_MOOD_OVERRIDE")
+            && let Ok(cfg) = crate::assets::load_ron::<Self>(ron.as_bytes())
+        {
+            return cfg;
+        }
         use crate::assets::AssetExt;
         Self::load("common.bastion_mood")
             .map(|h| h.read().clone())
