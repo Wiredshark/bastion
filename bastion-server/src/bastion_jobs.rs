@@ -9111,8 +9111,41 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .get(&aj.job)
                                 .is_some_and(|j| is_labor_hold_self_job(&j.kind))
                         });
+                        let on_cooldown = board
+                            .preempt_cooldown
+                            .get(uid)
+                            .is_some_and(|until| time.0 < *until);
                         let severity = if on_self_job {
                             1.0
+                        } else if on_cooldown {
+                            // AUTON-2 unification (2026-08-08, ENDURE
+                            // regression found via preempt_scenario seeds
+                            // 49/50 — endure_dug dropped 14→0 without this):
+                            // a self-job just failed/degraded (STUCK_TIMEOUT
+                            // released it, or the need-check pass tried and
+                            // found no bed/food) and `preempt_cooldown` is
+                            // the EXISTING "don't re-attempt yet" window —
+                            // the need-check pass already respects it (its
+                            // own `if let Some(until) = ... continue` gate).
+                            // Without this check, `p` kept scoring off the
+                            // raw unmet need alone, so a colonist with an
+                            // UNREACHABLE bed stayed pinned on Drive::
+                            // Personal for the ENTIRE cooldown with no self-
+                            // job to execute (on_self_job false — the failed
+                            // job was already released) — `auton_work_ok`/
+                            // `auton_travel_ok` then blocked its Mine claim
+                            // too (neither disjunct matched), converting
+                            // ENDURE's "work through the cooldown" into
+                            // "hold Personal and do nothing," exactly the
+                            // failure mode flagged before this site was
+                            // built. Severity 0.0 during cooldown makes `p`
+                            // fall back to `w` (`p == w` at severity 0, the
+                            // same by-design floor `personal_urgency`'s own
+                            // doc describes), so Work wins normally — the
+                            // cooldown becomes visible to the ARBITER, not
+                            // just to the pass that used to be the only
+                            // thing gating on it.
+                            0.0
                         } else if let Some(needs) = needs_storage.get(entity) {
                             let (consc, neur) = arb_data
                                 .as_ref()
@@ -9143,6 +9176,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         } else {
                             0.0
                         };
+                        if std::env::var_os("BASTION_ARB_PERSONAL_DIAG").is_some() {
+                            info!(
+                                tick = tick.0,
+                                uid = uids.get(entity).map(|u| u.0.get()),
+                                on_self_job,
+                                on_cooldown,
+                                severity,
+                                active_job = active_jobs.get(entity).map(|aj| aj.job),
+                                active_job_kind = active_jobs.get(entity).and_then(|aj| {
+                                    board.jobs.get(&aj.job).map(|j| format!("{:?}", j.kind))
+                                }),
+                                active_job_claimed = active_jobs.get(entity).and_then(|aj| {
+                                    board.jobs.get(&aj.job).map(|j| j.claimed_by.is_some())
+                                }),
+                                active_job_unreachable = active_jobs.get(entity).and_then(|aj| {
+                                    board.jobs.get(&aj.job).map(|j| j.unreachable)
+                                }),
+                                "bastion ARB-PERSONAL-DIAG"
+                            );
+                        }
                         comp::bastion::personal_urgency(w, severity)
                     });
                     // Flee stays top-tier unconditionally (ceiling 0.95 <
@@ -9170,7 +9223,39 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             comp::bastion::Drive::Idle => i,
                             comp::bastion::Drive::Personal => p,
                         };
-                        if score_of(next) > score_of(arb.current) + ARB_HYSTERESIS {
+                        // AUTON-2 unification (ENDURE regression found +
+                        // fixed via preempt_scenario seeds 49/50,
+                        // 2026-08-08): Personal RELINQUISHING is NOT
+                        // symmetric with a Work/Flee/Idle contest.
+                        // `personal_urgency`'s floor is EXACTLY `w` at
+                        // severity 0.0 (by construction, the same equality
+                        // the `p > w` strict-edge comment above relies on)
+                        // — so once Personal is the incumbent, a plain
+                        // `score_of(next) > score_of(arb.current) +
+                        // ARB_HYSTERESIS` check needs Work to beat a TIE by
+                        // the full margin, which it can never do (Work's
+                        // own ceiling here IS that tie point). The naive
+                        // symmetric check measured `endure_dug` 14→0: an
+                        // unreachable self-job's ENDURE release correctly
+                        // dropped severity to 0 and correctly stopped
+                        // winning `next`, but the arbiter stayed wedged on
+                        // Personal forever anyway, blocking `auton_work_ok`
+                        // /`auton_travel_ok` from ever permitting Work
+                        // again. `next != Personal` already means Personal
+                        // just lost its OWN raw win condition (`p > w`, or
+                        // Flee preempted) — there is no close contest left
+                        // to protect against thrash by requiring a margin;
+                        // relinquish immediately. `ARB_COMMIT_SECS`
+                        // (gating this whole block via `time.0 >=
+                        // committed_until`) still rate-limits how often
+                        // this can fire, so sub-tick chatter is unaffected.
+                        // Every OTHER transition (Work<->Flee<->Idle, and
+                        // entry INTO Personal, which still requires `p` to
+                        // clear `w + ARB_HYSTERESIS`) keeps the original
+                        // symmetric anti-thrash margin unchanged.
+                        let switch_ok = arb.current == comp::bastion::Drive::Personal
+                            || score_of(next) > score_of(arb.current) + ARB_HYSTERESIS;
+                        if switch_ok {
                             arb.current = next;
                             arb.committed_until = time.0 + ARB_COMMIT_SECS;
                             switches += 1;
@@ -11489,20 +11574,44 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // Keep the intent asserted (rtsim brain is gated off
                         // while ActiveJob exists, but agents clear activity
                         // on their own in places).
-                        // AUTON-0 GUARD 1 + GUARD 6: the Work-drive gate —
-                        // self-job travel fires UNGATED (B7's authority;
-                        // suppressing it would regress the Opus-cleared
-                        // no-entombment/no-thrash guarantees), Work travel
-                        // requires the Work drive (or an unseen arbiter —
-                        // permissive default pre-first-selection).
-                        let auton_travel_ok = matches!(
-                            job.kind,
-                            common::bastion::JobKind::RestAt { .. }
-                                | common::bastion::JobKind::EatFrom { .. }
-                                | common::bastion::JobKind::Despond { .. }
-                        ) || arbiters
-                            .get(entity)
-                            .is_none_or(|a| a.current == comp::bastion::Drive::Work);
+                        // AUTON-0 GUARD 1 + GUARD 6 (site 2, AUTON-2
+                        // unification row 50, 2026-08-08): the Work/
+                        // Personal-drive gate — self-job travel used to
+                        // fire UNGATED (an unconditional bypass, same
+                        // shape as site 1's old arbiter skip); now it
+                        // requires the arbiter to have actually SELECTED
+                        // Drive::Personal for this colonist, same as Work
+                        // travel requires Drive::Work. The self-job's own
+                        // occupancy (`is_labor_hold_self_job`) is still
+                        // read here — explicitly PARENTHESIZED with the
+                        // drive check, not dropped — because a self-job
+                        // under Work IS a real permitted case (the second
+                        // `||` arm's `is_none_or` unseen-arbiter default,
+                        // and any future path that lands a self-job before
+                        // the arbiter's first select_tick): the fallthrough
+                        // is deliberate, not an oversight this comment
+                        // exists to rule out. Suppressing travel entirely
+                        // would regress the Opus-cleared no-entombment/
+                        // no-thrash guarantees — T3.52b's watchdog-freeze
+                        // (just below) already handles "no Goto issued"
+                        // correctly for BOTH the pre-unification Flee-
+                        // suspend case and this one: `!auton_travel_ok`
+                        // freezes `stuck_time` rather than resetting it, so
+                        // a colonist SUSPENDED off Personal mid-travel
+                        // doesn't lose watchdog progress, but a colonist
+                        // WHO STAYS on Personal (the sticky severity=1.0
+                        // branch keeps it selected the whole time a self-
+                        // job is active) still accrues stuck_time normally
+                        // and can still hit STUCK_TIMEOUT's ENDURE release
+                        // — the loop-breaker for an unreachable self-job
+                        // stays live, not silently disabled by this gate.
+                        let auton_travel_ok = (is_labor_hold_self_job(&job.kind)
+                            && arbiters
+                                .get(entity)
+                                .is_some_and(|a| a.current == comp::bastion::Drive::Personal))
+                            || arbiters
+                                .get(entity)
+                                .is_none_or(|a| a.current == comp::bastion::Drive::Work);
                         if let Some(agent) = agent.as_deref_mut()
                             && auton_travel_ok
                         {
@@ -12551,27 +12660,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // kept accumulating `job.progress` even while a
                     // Survive/Flee spike should have preempted it,
                     // defeating T3.52's own "suspend, don't cancel" intent
-                    // for the one leg that actually does the work. Mirrors
-                    // `auton_travel_ok` exactly: self-jobs (RestAt/EatFrom/
-                    // Despond) bypass unconditionally — whether a fleeing
-                    // colonist should stop eating is AUTON-2's question,
-                    // not this row's, and bypassing is the conservative
-                    // choice that doesn't pre-empt a design decision nobody
-                    // has made yet. `is_none_or`, not a bare equality: an
-                    // entity with no arbiter must PERMIT, not block (the
-                    // same shape as the claim gate — one line, wide blast
-                    // radius if inverted). `continue` here is a SUSPEND —
-                    // the claim stays held, `job.progress` simply doesn't
+                    // for the one leg that actually does the work.
+                    //
+                    // AUTON-2 unification (site 3, row 50, 2026-08-08):
+                    // "whether a fleeing colonist should stop eating" is no
+                    // longer an open question this row defers — it's
+                    // answered by the SAME `Drive::Personal` gate site 2
+                    // now applies to travel, kept explicitly parenthesized
+                    // here too so a self-job under Work still reads as a
+                    // deliberate permitted case, not a dropped guard.
+                    // `is_none_or`, not a bare equality: an entity with no
+                    // arbiter must PERMIT, not block (the same shape as the
+                    // claim gate — one line, wide blast radius if
+                    // inverted). `continue` here STAYS a SUSPEND — the
+                    // claim stays held, `job.progress` simply doesn't
                     // advance this tick, and normal work resumes the tick
-                    // Drive::Work is regained; nothing releases the job.
-                    let auton_work_ok = matches!(
-                        job.kind,
-                        common::bastion::JobKind::RestAt { .. }
-                            | common::bastion::JobKind::EatFrom { .. }
-                            | common::bastion::JobKind::Despond { .. }
-                    ) || arbiters
-                        .get(entity)
-                        .is_none_or(|a| a.current == comp::bastion::Drive::Work);
+                    // Drive::Personal (or Work) is regained; nothing
+                    // releases the job.
+                    let auton_work_ok = (is_labor_hold_self_job(&job.kind)
+                        && arbiters
+                            .get(entity)
+                            .is_some_and(|a| a.current == comp::bastion::Drive::Personal))
+                        || arbiters
+                            .get(entity)
+                            .is_none_or(|a| a.current == comp::bastion::Drive::Work);
                     if !auton_work_ok {
                         continue;
                     }
