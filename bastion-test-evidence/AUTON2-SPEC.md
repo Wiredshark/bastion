@@ -268,6 +268,53 @@ colonists to MORE destinations, not fewer** — this is a standing risk to a
 feature whose whole job is making colonists walk somewhere, and it is named here
 *before* the build rather than discovered during it.
 
+## §4d — ★★★★★★ NAMED REQUIREMENT: SELF-JOBS MUST CARRY PERSISTENT IDENTITY
+
+**Measured (5b, `stuck_strikes = 0` across all 660 ticks of job 33):**
+
+> **`RestAt` jobs get a FRESH JOB ID on every retry** — `preempt_pending` calls
+> `insert_rest_job` anew with `stuck_strikes: 0` at creation — **where Mine jobs
+> persist the SAME entry across churns and accumulate.**
+
+★★★ **So the strike-based arrival-tolerance rescue** (`arrive = ARRIVE_DIST +
+min(strikes,3) × 1.2`, widening 2.5 → 6.1) **can NEVER engage for a self-job. By
+construction. However many attempts fail.**
+
+### ★★★★★ AND IT IS A PURE COMPOSITION DEFECT
+
+**§4c's ENDURE path is correct, tested, and specified**: watchdog releases →
+orphan sweep **removes the job** → cooldown rate-limits. **That removal destroys
+the accumulated state the arrival-tolerance rescue needs in order to exist.**
+
+> **TWO CORRECT MECHANISMS WHOSE COMPOSITION MAKES A THIRD PERMANENTLY
+> UNREACHABLE.** ★ **The campaign's signature at its purest — and the first
+> instance where nothing is even arguably a wrong site.** Each piece does exactly
+> what it was designed to do.
+
+### WHY IT BELONGS HERE AND NOT IN ITS OWN ROW (ruled)
+
+**The defect is a property of the self-job LIFECYCLE, and GUARD-6 retirement
+rewrites exactly that lifecycle.** ★ **Designing an identity fix before
+unification means designing against a lifecycle about to change.**
+
+### ★ THE REQUIREMENT, AND THREE FAMILIES FOR THE DESIGN PASS TO CHOOSE AMONG
+
+> **Self-jobs carry PERSISTENT IDENTITY — or an equivalent `(colonist, target)`
+> accumulator — across retries, so strike-based rescues engage for them the way
+> they already do for Mine.**
+
+| # | family | shape |
+|---|---|---|
+| 1 | **persist the entry** | stop recreating; re-claim the existing `RestAt` instead of sweeping and re-inserting |
+| 2 | **accumulate OUTSIDE job identity** | keep strikes on a `(colonist, target)` key that survives job churn |
+| 3 | **purpose-built self-job rescue** | leave identity alone; give self-jobs their own escalation that doesn't depend on a per-job counter |
+
+★ **Family 2 is the closest match to Row B′'s proven shape** (state keyed on the
+thing that failed, graduating on a tick conjunction) — **but it is the design
+pass's call, not a pre-ruling.** ★★ **Whichever is chosen, note that family 1
+touches the orphan sweep and family 2 touches the store's unit** — *and a new
+producer must fit the store's unit before anything else.*
+
 ## §5 — UNLOADED CHUNKS: (b) CATCH-UP-ON-RELOAD (ruled)
 
 Per-colonist `last_decay_tick: u64`; on reload apply **one** deterministic decay
