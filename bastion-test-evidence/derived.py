@@ -45,6 +45,16 @@ from math import comb
 VERDICT_FIELD = "b5_failed_clauses"
 
 
+def wave_number(name):
+    """Chronological key from the filename. Raises rather than defaulting: an
+    unorderable wave silently sorted to position 0 would invert FIXED and NEW,
+    which is worse than refusing to compare."""
+    m = re.search(r"wave(\d+)", name)
+    if not m:
+        raise ValueError("cannot read a wave number from %r" % name)
+    return int(m.group(1))
+
+
 def failed(v):
     """-> True/False/None. None means the verdict could not be read AT ALL,
     which must never silently become 'passed'."""
@@ -157,6 +167,125 @@ def report_denominators(seeds, flagged):
     print("   control, or declare the gap. Do NOT declare a finding.")
 
 
+def seed_sort(ids):
+    """Sort seed ids NUMERICALLY. JSON object keys are strings, so the obvious
+    sorted() is lexical: '100' < '9', and '7' lands after '48'. Invisible on a
+    49..96 corpus where every id is two digits -- and wrong the first time a
+    wave includes seed 7 or seed 100. Falls back to string order for ids that
+    aren't numeric rather than raising: mis-ORDERED output is cosmetic, a
+    crash in the reporting path is not."""
+    return sorted(ids, key=lambda s: (0, int(s)) if str(s).lstrip("-").isdigit()
+                  else (1, str(s)))
+
+
+def failing_set(seeds):
+    """-> (set of failing seed ids, None) or (None, reason)."""
+    out = set()
+    for s, v in seeds.items():
+        f = failed(v)
+        if f is None:
+            return None, "seed %s has no readable %s" % (s, VERDICT_FIELD)
+        if f:
+            out.add(s)
+    return out, None
+
+
+def cross_wave(waves):
+    """FIXED / NEW / PERSISTENT across waves. `waves` = [(name, seeds), ...] in
+    chronological order.
+
+    WHY (DECISIONS #66 follow-on): the fail COUNT fell 14 -> 11 across the
+    campaign while seed 90 REGRESSED inside that window -- three fixed, one
+    broke, the aggregate netted to "improving" and absorbed the regression
+    whole. And 10 seeds failed in EVERY wave with no list of them anywhere.
+
+      A HEADLINE MOVING THE RIGHT WAY IS NOT EVIDENCE THAT EVERYTHING UNDER
+      IT MOVED THE RIGHT WAY.
+
+    So NEW != empty is an alarm that fires even when the total FALLS, and
+    PERSISTENT is the standing worklist a count can never produce.
+    """
+    print("\n" + "=" * 72)
+    print("CROSS-WAVE IDENTITY DELTA -- %d waves" % len(waves))
+    print("=" * 72)
+    if len(waves) < 2:
+        print("REFUSED: need >= 2 waves to compare.")
+        return 2
+
+    # ---- the precondition is ASSERTED, never assumed. Comparing FIXED/NEW
+    # across different seed sets manufactures both: a seed absent from wave A
+    # and failing in wave B is not "newly broken", it is "not previously run".
+    ref_name, ref_seeds = waves[0]
+    ref_ids = set(ref_seeds)
+    for name, seeds in waves[1:]:
+        if set(seeds) != ref_ids:
+            only_a = len(ref_ids - set(seeds))
+            only_b = len(set(seeds) - ref_ids)
+            print("REFUSED: seed sets differ -- %s has %d seeds, %s has %d "
+                  "(%d only in the first, %d only in the second)."
+                  % (ref_name, len(ref_ids), name, len(seeds), only_a, only_b))
+            print("   FIXED/NEW across different seed sets is meaningless: a")
+            print("   seed absent from the baseline and failing here is NOT")
+            print("   'newly broken', it is 'not previously run'. Compare")
+            print("   waves that ran the same seeds, or compare nothing.")
+            return 2
+
+    fails, order = {}, []
+    for name, seeds in waves:
+        f, why = failing_set(seeds)
+        if f is None:
+            print("REFUSED: %s -- %s. A missing verdict must not count as a "
+                  "pass." % (name, why))
+            return 2
+        fails[name] = f
+        order.append(name)
+
+    print("seed set: %d seeds, IDENTICAL across all waves (asserted)\n"
+          % len(ref_ids))
+    for name in order:
+        print("   %-46s fail %2d/%d" % (name, len(fails[name]), len(ref_ids)))
+
+    first, last = fails[order[0]], fails[order[-1]]
+    fixed, new = seed_sort(first - last), seed_sort(last - first)
+    ever = set().union(*fails.values())
+    always = set.intersection(*fails.values())
+
+    print("\n-- %s  ->  %s" % (order[0], order[-1]))
+    print("   FIXED      (%2d): %s" % (len(fixed), fixed or "none"))
+    print("   NEW        (%2d): %s" % (len(new), new or "none"))
+    print("   PERSISTENT (%2d): %s" % (len(always), seed_sort(always) or "none"))
+    print("   ever-failed %d, always-failed %d, churn %d"
+          % (len(ever), len(always), len(ever) - len(always)))
+
+    rc = 0
+    if new:
+        # Fires on IDENTITY, never on the total -- the whole point.
+        delta = len(last) - len(first)
+        # The gloss adapts, because the two masking cases are different and
+        # the FLAT one is the more deceptive: a count that did not move looks
+        # like a wave where nothing happened.
+        if delta < 0:
+            gloss = "the count FELL and hid this"
+        elif delta == 0:
+            gloss = "the count DID NOT MOVE AT ALL -- %d fixed, %d broke" % (
+                len(fixed), len(new))
+        else:
+            gloss = "the count rose"
+        print("\n[!! REGRESSION] %d seed(s) newly failing: %s" % (len(new), new))
+        print("   Total moved %+d (%d -> %d) -- %s."
+              % (delta, len(first), len(last), gloss))
+        print("   A total that falls or holds steady is NOT evidence that")
+        print("   nothing broke. Only the identity delta shows that.")
+        rc = 1
+    if always:
+        print("\n[!! PERSISTENT] %d seed(s) fail in EVERY wave: %s"
+              % (len(always), seed_sort(always)))
+        print("   This is the standing worklist. A count cannot produce it.")
+        print("   NOTE: 'they all fail' is a property of THIS REPORT, not")
+        print("   evidence of a shared mechanism -- they may be unrelated bugs.")
+    return rc
+
+
 def report_wave(seeds, name):
     """Full derived report for one already-loaded wave. -> rc (0 ok, 2 refused).
 
@@ -195,7 +324,7 @@ def main():
     for a in args:
         paths.extend(sorted(glob.glob(a)) or [a])
 
-    rc = 0
+    rc, loaded = 0, []
     for path in paths:
         try:
             with open(path, encoding="utf-8") as fh:
@@ -204,7 +333,22 @@ def main():
             print("REFUSED %s: %s" % (path, e))
             rc = 2
             continue
-        rc = report_wave(seeds, re.split(r"[\\/]", path)[-1]) or rc
+        name = re.split(r"[\\/]", path)[-1]
+        rc = report_wave(seeds, name) or rc
+        if seeds:
+            loaded.append((path, name, seeds))
+
+    # Cross-wave runs on whatever survived, in WAVE-NUMBER order -- not
+    # argv order (a glob's ordering is lexical: wave7 sorts after wave26) and
+    # not mtime (a copied file lies about when its run happened).
+    if len(loaded) >= 2:
+        try:
+            loaded.sort(key=lambda t: wave_number(t[1]))
+        except ValueError as e:
+            print("\nREFUSED cross-wave: %s -- chronological order cannot be "
+                  "established, and FIXED/NEW are direction-dependent." % e)
+            return rc or 2
+        rc = cross_wave([(n, s) for _, n, s in loaded]) or rc
     return rc
 
 

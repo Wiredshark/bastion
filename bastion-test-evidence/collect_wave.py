@@ -21,6 +21,7 @@ nobody eyeballs every object.
 """
 import collections
 import contextlib
+import glob
 import io
 import json
 import os
@@ -167,9 +168,46 @@ def main():
     try:
         import derived
 
+        this_name = re.split(r"[\\/]", out_path)[-1]
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            drc = derived.report_wave(parsed, out_path.split("/")[-1])
+            drc = derived.report_wave(parsed, this_name)
+            # Cross-wave identity delta against the newest EARLIER wave whose
+            # seed set is IDENTICAL. Auto-picking a baseline is the dangerous
+            # part -- a delta against a wave that ran different seeds invents
+            # both FIXED and NEW -- so the identical-set requirement is the
+            # SELECTION rule, not just a check afterwards. The chosen baseline
+            # is NAMED in the output; an unnamed automatic comparison is a
+            # number whose meaning nobody can reconstruct later.
+            mine = set(parsed)
+            here = os.path.dirname(os.path.abspath(out_path))
+            cands = []
+            for p in glob.glob(os.path.join(here, "*_FULL.json")):
+                nm = re.split(r"[\\/]", p)[-1]
+                if nm == this_name:
+                    continue
+                try:
+                    n = derived.wave_number(nm)
+                    with open(p, encoding="utf-8") as f2:
+                        other = json.load(f2)
+                except Exception:
+                    continue
+                if other and set(other) == mine:
+                    cands.append((n, nm, other))
+            try:
+                mine_n = derived.wave_number(this_name)
+                cands = [c for c in cands if c[0] < mine_n]
+            except ValueError:
+                cands = []
+            if cands:
+                base = max(cands, key=lambda c: c[0])
+                print("\n(cross-wave baseline auto-selected: %s -- newest "
+                      "earlier wave with an IDENTICAL seed set)" % base[1])
+                derived.cross_wave([(base[1], base[2]), (this_name, parsed)])
+            else:
+                print("\n(no cross-wave baseline: no earlier wave in %s shares "
+                      "this seed set exactly. FIXED/NEW are not computed -- "
+                      "they would be meaningless across differing sets.)" % here)
         body = buf.getvalue()
         with open(derived_txt, "w", encoding="utf-8") as fh:
             fh.write(body)
