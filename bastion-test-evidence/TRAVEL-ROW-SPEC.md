@@ -104,7 +104,64 @@ criterion**, not on seed 7. **If seed 7 is a fixture seam, the classifier is wha
 would have said so in one line instead of a survey** — which is the row's case,
 made by its own first specimen.
 
-## §3 — ★★★★★ THE DISCRIMINATORS ALREADY EXIST. WIRE THEM.
+## §3-CORRECTION — ★★★★★★ THE FIELDS ARE ALREADY IN THE CORPUS. §3 BELOW IS WRONG.
+
+**I scanned TOP-LEVEL KEYS ONLY and reported these fields as "reaching
+nothing."** They are **already in the corpus**, nested inside
+**`b5_mine_reachability_probe`**, together with `timeout_route_states`,
+`route_next_idx_pinned`, and `path_exists_{step,jump,scramble}` **from both
+spawn and the last timeout position.**
+
+> ★ **"Enumerate the schema at EVERY level" is a rule I had written down, and I
+> broke it in exactly the way it warns about. A NESTED field and an ABSENT field
+> look identical to a top-level scan** — the campaign's own law, one level down.
+
+**Consequence: §4.1 is much narrower than specced.** For **mine** jobs the
+instrument exists and is rich. ★ **The real gap is probably SELF-JOBS** — the
+probe is populated for mine targets, and seed 7's failure was a **bed**
+(`RestAt`). **That would explain why the bed case stayed invisible while the mine
+case has been richly instrumented for waves.** *Confirm before building.*
+
+### ★★★★★ SEED 90 IS FULLY CHARACTERISED FROM DISK — NO RUN NEEDED
+
+Diffing seed 90 across its regression boundary (wave17 pass → wave18 fail): **17
+of 73 fields moved**, and the verdict names itself —
+`failed_clauses: ['mine_cleared', 'mine_blocks_mined']`, **2 mine jobs unmined.**
+**Stuck cell `[17989, 9263, 338]` — the exact dead-end column from Row A's scan.**
+
+```
+target [17989,9263,336]:   min_distance_to_target =  3.78
+target [17989,9263,338]:   min_distance_to_target = 16.24
+from BOTH spawn and last-timeout position:
+    path_exists_step     = FALSE
+    path_exists_jump     = TRUE
+    path_exists_scramble = TRUE
+timeout_route_states: route_exists TRUE, route_complete FALSE,
+                      route_next_idx pinned at 3, 4, 4, 8, 8
+```
+
+> ★★★★★★ **A STEP PATH DOES NOT EXIST. A JUMP PATH DOES.** The route **exists and
+> never completes.** And the colonist **got within 3.78 units** — by this row's
+> own criterion that is **UNREACHED, not UNREACHABLE.**
+>
+> ★ **It is not a reachability failure. It is a LOCOMOTION-MODE failure** — the
+> colonist got four units away and could not *step* the last bit. **Nothing in
+> the pass/fail line says so**, which is this row's whole thesis, demonstrated by
+> data that has been on disk since wave18.
+
+**Supporting deltas, all consistent:** `timeouts_on_never_completed_jobs 0 → 6`,
+`max_same_target_timeouts 4 → 5`, `mine_jobs_remaining 0 → 2`,
+`cells_below_filled 0 → 1` at the stuck cell, `cavein_drop_cells 1 → 2`.
+★ **The last two together are a lead worth its own look** — the cell's support
+changed underneath it and a cave-in may have altered the approach geometry.
+**Offered as a lead, not a conclusion.**
+
+★ **The window read is NOT how this was answered, and could not have been:**
+waves 14–18 predate the provenance audit, so wave17 has **no attested commit**.
+**The specimen's own diag history answered it instead** — which is what the
+architect predicted it would.
+
+## §3 — ★★★★★ (SUPERSEDED BY §3-CORRECTION) THE DISCRIMINATORS ALREADY EXIST. WIRE THEM.
 
 **Two purpose-built fields are in the engine and reach NOTHING.** Neither appears
 in the 89-key corpus schema.
