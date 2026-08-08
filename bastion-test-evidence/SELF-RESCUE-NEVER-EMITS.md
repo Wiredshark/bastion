@@ -158,6 +158,63 @@ wrong name for what I measured.** The true defect is narrower and still real:
 - **The entire self-rescue carving subsystem is effectively dead code**, while
   its call site fires 71 times and its refusal is invisible behind the backstop.
 
+## §5c — ★★★★★ THE VERDICT CROSS (Fable-requested): CONCENTRATED, BUT CONFOUNDED
+
+**Question: do the 15 self-rescue-refused seeds concentrate in the failures, or
+pass at base rate?** Verdict field is `b5_failed_clauses` (empty list = pass).
+
+### The concentration is real and significant
+
+| | FAIL | PASS |
+|---|--:|--:|
+| **refused > 0** | **7** | 8 |
+| refused = 0 | 4 | 29 |
+
+- base fail rate **22.9%** (11/48) → fail-rate **given refusal 46.7%** (7/15)
+- **2.04×**, odds ratio **6.34**, **Fisher exact one-sided p = 0.0133**
+  (two-sided 0.0219); expected-if-base = 3.4 seeds, observed 7
+- **7 of the 11 failing seeds (64%)** had rescue refusals, vs 31% of all seeds
+
+### ★ BUT THE NATURAL CONTROL SAYS IT IS PROBABLY A MARKER, NOT A CAUSE
+
+**Self-rescue has ZERO successes, so it cannot supply its own comparison group.**
+The emergency path can — 78 emissions, 47/48 seeds calling:
+
+| emergency seeds | fail rate |
+|---|--:|
+| **all-refused** (0 emissions) | 4/13 = **30.8%** |
+| **some emitted** | 7/34 = **20.6%** |
+| | **Fisher two-sided p = 0.467 — NULL** |
+
+> ★★★ **On the one path where refusal and success can be compared, REFUSAL DOES
+> NOT PREDICT FAILURE.** That is the confounder made visible: a seed with terrain
+> hard enough to strand colonists is a seed hard enough to fail, and **both the
+> rescue calls and the failures are downstream of difficulty.**
+
+### ★★★★★ AND THE DECISIVE STRUCTURAL POINT
+
+> **For self-rescue, the corpus CANNOT separate cause from marker — by
+> construction.** The comparison group is *"seeds where self-rescue succeeded,"*
+> and there are **zero** of them. **Exercised-denominator = 0**, in exactly the
+> form the new GATE-FIELDS second clause names.
+
+**So the honest state is one significant result and one null on its natural
+control**, and that is precisely the situation where **you do not declare.**
+
+★ **Answer to the re-rank question: NOT on this number.** The concentration is
+real but unattributable; the sibling control is null; the causal claim needs the
+gate diagnosis, not more statistics. **Re-rank on the diagnosis when it lands.**
+
+★ **Incidental, and worth a look later:** the campaign's two Row A specimens —
+**seeds 71 and 90 — are FAILING but NOT in the refused set.** Whatever fails
+them is a different mechanism from this one.
+
+**Replication caveat, stated so nobody counts it twice:** wave26 reproduces every
+number exactly (7/15, 11/48). ★ **That is NOT independent confirmation** — it is
+the same scenario at a Row-A commit, and identical numbers mean *the runs are
+deterministic and Row A changed nothing here.* **One measurement, verified
+stable; not two measurements agreeing.**
+
 ## §6 — CONSEQUENCE FOR ROW PRIORITY
 
 The condemned-cell row was banked **third**. **A rescue mechanism with a measured
