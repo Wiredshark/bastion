@@ -11331,6 +11331,26 @@ fn farm_scenario(args: &Args) -> ExitCode {
     }
     let no_embeds = server.bastion_center_net_fires() == fires_before;
 
+    // Fable-directed (2026-08-08): survey the exact corner-cell area the
+    // seed-1337 plan_access no-route verdict cites, as the fixture leaves
+    // it -- discriminates "the flattening loop's rock/air cuboid fully
+    // covers this cell" (a real false-negative candidate) from "worldgen
+    // leaks through here" (the July-rule class, honest close). Read-only,
+    // env-gated, zero cost when unset.
+    if std::env::var_os("BASTION_FARM_CORNER_DIAG").is_some() {
+        for z in (454..=457).rev() {
+            for y in 20238..=20240 {
+                for x in 24071..=24075 {
+                    let pos = Vec3::new(x, y, z);
+                    eprintln!(
+                        "CORNER-DIAG pos=({x},{y},{z}) kind={:?}",
+                        server.bastion_block_kind(pos)
+                    );
+                }
+            }
+        }
+    }
+
     let result = serde_json::json!({
         "farm_colonists": names.len(),
         "farm_paint_jobs_zero": paint_jobs == 0,
