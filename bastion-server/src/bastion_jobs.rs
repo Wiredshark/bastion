@@ -11315,6 +11315,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // before this row; no release-path/escalation
                         // logic inside it changed.
                         if auton_travel_ok {
+                        // SDIST-TRACE (2026-08-08, one-off, hysteresis-
+                        // oscillation hypothesis check): per-tick sdist,
+                        // gated to a SINGLE job id via
+                        // BASTION_SDIST_TRACE_JOB=<id> so this never fires
+                        // corpus-wide -- unbounded per-tick logging on a
+                        // real run would be its own observer-effect risk.
+                        if std::env::var("BASTION_SDIST_TRACE_JOB")
+                            .ok()
+                            .and_then(|v| v.parse::<u64>().ok())
+                            == Some(active.job)
+                        {
+                            info!(
+                                job = active.job,
+                                sdist,
+                                best_dist = active.best_dist,
+                                reset_dist = active.reset_dist,
+                                stuck_time = active.stuck_time,
+                                "SDIST-TRACE"
+                            );
+                        }
                         // Closest-approach tracker (Fable-directed,
                         // 2026-07-30): unconditional, every tick, never
                         // reset across claim attempts -- see the field doc
