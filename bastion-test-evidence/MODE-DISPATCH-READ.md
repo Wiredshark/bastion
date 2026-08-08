@@ -125,7 +125,72 @@ earlier today, now paying as evidence.)**
 access, crew strands at the rim"* case named in `AUTO_LADDER_ACCESS`'s own
 comment — **the same defect in a mine-cell costume.** *UNVERIFIED.*
 
-## §5 — (SUPERSEDED BY §4b) WHAT THIS GIVES 5b's HALF
+## §4c — ★★★★★★★★ §4b RETRACTED TOO. I INVERTED THE FIELD, AND THE READ IS DONE.
+
+**5b's `BASTION_BEARING_TRACE_UID` at the dispatch predicate itself:**
+
+    jump_condition = TRUE, 5 times · bearing_z = 2.0 · on_ground = true
+
+> ★★★ **The predicate IS satisfied and the jump input IS pushed.** **§4b's
+> "bearing.z never qualifies, geometrically out of reach" is DEAD**, and so is
+> §1's "never grounded when it matters."
+
+### ★★★★★★ AND THE FIELD I BUILT §4b ON MEANS THE OPPOSITE OF WHAT I SAID
+
+`open_cells` is built (harness **3326-3335**) from
+`bastion_inspect_cell(pos) == Job(_)` — **cells that still have an OPEN JOB.**
+
+> **`cells_below_open` counts cells beneath with UNFINISHED WORK — i.e. STILL
+> SOLID ROCK. Not open air.**
+
+★★★ **I read `below_open=2` as "mined out" and wrote "the colonist destroyed its
+own footing."** **Exactly backwards.** ★ **5b's live terrain dump — z=336-338
+fully solid — CONFIRMS the corpus. There was never a discrepancy; my
+interpretation was the discrepancy**, and they flagged it rather than resolving
+it toward my read.
+
+★ **Also wrong, same paragraph:** *"standable is 3 blocks up"* — job 20's
+standable is **z+1 from its OWN target**, the ordinary stand-on-top position. **I
+compared it to job 2's TARGET z, a different quantity.** ★ **Only LATERAL vs
+ABOVE survives**, which the enclosure finding independently supports.
+
+★★ **Fourth time today reasoning from a field's name rather than its producer —
+and this one I had ALREADY READ the producer of, hours earlier.**
+
+### ★★★★★ THE `push_cancel_input` READ — DONE, AND IT DOESN'T DECIDE THIS CASE
+
+```rust
+push_basic_input(i)  -> push_action(ControlAction::basic_input(i))
+push_cancel_input(i) -> push_action(ControlAction::CancelInput { input: i })
+```
+
+**Both land in the same `actions` queue in order**, so a same-tick push-then-cancel
+**would** process as start-then-cancel. ★ **The two-writer race is structurally
+real — FILED.**
+
+> ★★★ **But it is NOT this specimen's mechanism:** `jump_condition = TRUE` on the
+> 5 ticks that matter, so `jump_if` **pushed**, never cancelled. **§2 is dead for
+> job 20.**
+
+### ★★★★★ THE HONEST RESIDUAL — AND WHY THE CHASER PIECE CLOSES
+
+> **The predicate is satisfied, the jump IS pushed 5 times, and NO progress
+> results — in a cell enclosed by solid rock on all 8 lateral sides, open only
+> straight up.**
+
+★ **5b's `1.75 / 0.0 / -0.75 / 2.5` cycle runs continuously and UNCORRELATED with
+the 5 dispatch ticks** — *wall-contact jitter, not jump response*, against job
+33's isolated **7.48** spikes. ★★ **And the two systems sampling `on_ground`
+differently at the same wall-clock moment is a PIPELINE-POSITION artifact, not a
+physics contradiction** — named rather than resolved toward the convenient
+sample.
+
+★★★ **The remaining question — why a pushed jump produces no displacement in an
+enclosed column — is a PHYSICS / CHARACTER-STATE question, not a Chaser one.**
+**Banked for whoever takes the enclosed-geometry case with a purpose-built
+fixture.**
+
+## §5 — (SUPERSEDED BY §4b, WHICH IS ITSELF RETRACTED — SEE §4c)
 
 **Their trace says WHAT differs between cells 20 and 23. This says what the
 predicate DOES with it.** ★ **Two specific things to pull from the matched pair:**
