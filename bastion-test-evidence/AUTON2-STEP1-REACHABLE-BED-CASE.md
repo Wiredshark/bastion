@@ -94,14 +94,20 @@ measurable:
 | 54 | 2 | completed | 3089 |
 | 55 | 2 | **budget exceeded** | — |
 
-**`interruption_rate = total_interruptions / (total_interruptions +
-zero_interruption_seeds) = 11 / (11 + 0) = 1.0` exactly.** Every single
-observed sleep attempt in this sample was interrupted at least once — not
-"sometimes," not a distribution with a clean tail. Seed 55's completion
-budget (4800 ticks / 160 sim-sec, already widened once from a first-pass
-2400) still wasn't enough after 2 interruptions — a near-miss on budget,
-not a 3rd interruption (the counter would show 3 if a third release had
-actually occurred).
+**`interruption_rate = interruptions / (interruptions + clean_first_attempt_
+completions)`** — both terms EVENT counts, per Opus's exact definition
+(the acceptance instrument for the fix, so it must stay dimensionally
+consistent: an initial pass computed the denominator's second term as a
+SEED count instead of a completion-event count — coincidentally identical
+here since this sample has zero clean completions either way, 11/(11+0)
+either reading, but the two diverge the moment any run produces a clean
+completion, which the fix is expected to make common). **= `11 / (11 + 0)
+= 1.0` exactly.** Every single observed sleep attempt in this sample was
+interrupted at least once — not "sometimes," not a distribution with a
+clean tail. Seed 55's completion budget (4800 ticks / 160 sim-sec, already
+widened once from a first-pass 2400) still wasn't enough after 2
+interruptions — a near-miss on budget, not a 3rd interruption (the counter
+would show 3 if a third release had actually occurred).
 
 **Correction to an earlier read, recorded rather than silently fixed**: an
 initial 4-seed test at the ORIGINAL 2400-tick budget looked like "2 clean,
@@ -123,6 +129,21 @@ looking. Answering it for real needs the observation window moved earlier,
 into the initiation loop itself — not built here, flagged as the natural
 next read (`BASTION_SDIST_TRACE_JOB`, already built for the seed-7 work, is
 the cheapest available instrument for it).
+
+**The matched-pair investigation had no population.** Opus's original Ask 2
+framed this as "what protects some seeds" — but once the counter existed,
+zero seeds were clean, so there was no clean/interrupted pair to compare in
+the first place. The falsifier's own precondition (a population containing
+both outcomes) failed before the investigation could run; caught before
+spending a read on it rather than after.
+
+**Scope of the 1.0 rate**: measured on ONE fixture's fixed geometry (one
+bed offset, one spawn point), not "everywhere." The scoped pre-fix this
+number opens is justified on the MECHANISM being geometry-independent — the
+watchdog times out on stillness, and sleeping is always stillness; there is
+no bed placement in which a sleeping colonist moves — with 1.0 as
+confirming evidence, not the sole basis. That framing survives a future
+measurement on different geometry coming back lower.
 
 ## Verified
 
