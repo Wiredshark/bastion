@@ -1,0 +1,13 @@
+[1785876403212] === bastion_playtest starting: server=127.0.0.1:14004 username=bastion_llm_player script=bastion-test-evidence/live-playthrough/script-01-recon.txt ===
+[1785876403212] parsed 4 script commands
+[1785876407747] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/d479863e-28ed-43f9-817e-f311d6cbab3d), name: "Veloren Server", git_hash: 4144442579, git_timestamp: 1785864017, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1785876407848] requested character join id=CharacterId(2)
+[1785876407848] in-game. entity=Entity(0, Generation(1))
+[1785876409859] player pos at script start: Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1785876409859] [note] recon pass -- reading own position before deciding designation coordinates
+[1785876410859] waited 30 ticks; pos now Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1785876410859] designations (rev=0): []
+[1785876410859] [note] recon complete
+[1785876410859] === script complete, disconnecting ===
+[1785876453121] === bastion_playtest starting: server=127.0.0.1:14004 username=bastion_llm_player script=bastion-test-evidence/live-playthrough/script-02-playthrough.txt ===
+[1785876453122] parsed 38 script commands

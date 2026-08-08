@@ -76,3 +76,70 @@ search, not the terrain), but it's a different kind of work than the
 survey I was asked for, and Opus owns the plan_access/access-planning
 lane. Routing this there per Fable's instruction rather than digging
 further myself.
+
+---
+
+# Addendum: seed 92's chop-target column scan — CORRECTION, multi-layer
+
+Fable's second, paired scan (same session, same tool): does seed 92's raised-
+cap probe negative (`SEED92-RAISED-CAP-PROBE`, this branch, commit
+`350d04630f`) hold at a **single-layer** site, or does the site turn out
+**multi-layer** the way 80 and 90 did?
+
+**Answer: multi-layer. Correcting my earlier claim** — seed 92's completed
+probe negative is **not** a confirmed-sound unreachable specimen. It joins
+80/90 as honest-unknown; the point-negative caveat claims its third scalp.
+
+## Scope correction (Fable's point 1, folded in here)
+
+The raised-cap run only answered the CAP question: the probe is no longer
+budget-limited, it completes and returns a real (not truncated) negative.
+That is a POINT-MODEL negative, and per the standing per-error-model
+caveat, a point-model negative is sound only at single-layer sites — which
+is exactly why 80 and 90 were retired as specimens rather than confirmed:
+their sites scanned multi-layer, so the probe's own single-column mental
+model doesn't hold there, whatever it reports. Seed 92 needed the same
+check before its "known" carried any weight beyond "not cap-limited."
+
+## Method
+
+Added `BASTION_CHOP_COLUMN_SCAN` (env-gated, zero cost when unset) to
+`b5_scenario`, dumping `bastion_block_kind` down the chop target's own
+`(x, y)` column, `z` 250 down to 50 (generous headroom, matching the scale
+of the 80/90 scans). Target column from the run's own
+`b5_ch_base_blocked_by`: `(12964, 26352)`.
+
+## Result (raw dump in `bastion-test-evidence/seed92-column-scan.clean.log`)
+
+| z range | contents |
+|---|---|
+| 250–157 | `Air` |
+| 156 | `Wood` — the chop target itself (the tree trunk `plan_access` was asked to route to) |
+| 155–154 | `Rock` (2 cells) |
+| 153–140 | **`Air` — a 14-cell open gap** |
+| 139–50 | `Rock` (solid, continuing below the scan floor) |
+
+The target tree sits on a 2-block floating shelf at z=154-155, itself
+suspended 14 cells above the real ground (which starts at z=139 and keeps
+going). Same shape as seed 80's site (`solid 90–139, 12-cell gap 140–151,
+one solid block at 152`) and seed 90's (`open band at z=334–337, twenty
+blocks under the probe's reported ground`) — a third instance of the same
+terrain class.
+
+## Verdict
+
+Seed 92 does **not** become the first confirmed-sound unreachable
+specimen. It joins 80 and 90 as **honest-unknown**: the probe completed
+and returned a real, non-cap-limited negative, but the site's own geometry
+means a single-column point-model can't be trusted there regardless of
+what the probe says. Three for three now on multi-layer sites defeating
+this class of specimen — worth naming as its own pattern (not one unlucky
+seed) if this comes up again: a completed reachability-probe negative is
+never sufficient on its own; it needs a paired single-layer confirmation,
+every time, or it stays unknown no matter how definitive the probe's own
+report looks.
+
+The corner-cell case (main body of this document, above) stays the
+opposite and more interesting result BECAUSE it was checked the same way
+and came back single-layer — the discriminator did real work distinguishing
+the two, rather than both scans confirming the same thing.

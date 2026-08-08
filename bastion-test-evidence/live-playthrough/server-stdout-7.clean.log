@@ -1,0 +1,307 @@
+2026-08-04T21:39:09.513235Z  WARN veloren_server_cli::settings: Settings file not found! Creating a template file: E:\veloren-master\.engine-integration-wt\bastion-test-evidence\live-playthrough\userdata\server-cli\settings.template.ron — If you wish to change any settings, copy/move the template to settings.ron and edit the fields as you wish.
+2026-08-04T21:39:09.514270Z  INFO veloren_server_cli: Using userdata folder at E:\veloren-master\.engine-integration-wt\bastion-test-evidence\live-playthrough\userdata
+2026-08-04T21:39:09.542703Z  INFO veloren_server_cli: Starting server...
+2026-08-04T21:39:09.542744Z  INFO veloren_server: Server data dir is: E:\veloren-master\.engine-integration-wt\bastion-test-evidence\live-playthrough\userdata\server
+2026-08-04T21:39:09.542750Z  INFO veloren_server: Authentication is disabled
+2026-08-04T21:39:09.542797Z  INFO veloren_server: Server boot ID: boot/cd5d958d-2540-4472-8763-ae60f56f69bb
+2026-08-04T21:39:09.543179Z  INFO veloren_common_assets: Assets found path=E:\veloren-master\.engine-integration-wt\assets
+2026-08-04T21:39:10.272363Z  INFO veloren_server: content manifest built files=10610
+2026-08-04T21:39:10.289848Z  INFO refinery_core::traits: schema history table is empty, going to apply all migrations
+2026-08-04T21:39:10.290009Z  INFO refinery_core::traits::sync: going to apply 70 migrations in multiple transactions.
+2026-08-04T21:39:10.290016Z  INFO refinery_core::traits::sync: applying migration: V1__character ...
+2026-08-04T21:39:10.292690Z  INFO refinery_core::traits::sync: applying migration: V2__body ...
+2026-08-04T21:39:10.295779Z  INFO refinery_core::traits::sync: applying migration: V3__stats ...
+2026-08-04T21:39:10.298725Z  INFO refinery_core::traits::sync: applying migration: V4__race_species ...
+2026-08-04T21:39:10.302013Z  INFO refinery_core::traits::sync: applying migration: V5__inventory ...
+2026-08-04T21:39:10.304502Z  INFO refinery_core::traits::sync: applying migration: V6__loadout ...
+2026-08-04T21:39:10.306898Z  INFO refinery_core::traits::sync: applying migration: V7__inv_increase ...
+2026-08-04T21:39:10.308334Z  INFO refinery_core::traits::sync: applying migration: V8__skills ...
+2026-08-04T21:39:10.311461Z  INFO refinery_core::traits::sync: applying migration: V9__add_missing_inv_loadout ...
+2026-08-04T21:39:10.313301Z  INFO refinery_core::traits::sync: applying migration: V10__dash_melee_energy_cost_fix ...
+2026-08-04T21:39:10.314633Z  INFO refinery_core::traits::sync: applying migration: V11__migrate_armour_stats ...
+2026-08-04T21:39:10.315968Z  INFO refinery_core::traits::sync: applying migration: V12__update_item_stats ...
+2026-08-04T21:39:10.317298Z  INFO refinery_core::traits::sync: applying migration: V13__fix_projectile_stats ...
+2026-08-04T21:39:10.318597Z  INFO refinery_core::traits::sync: applying migration: V14__power_stat_for_weapons ...
+2026-08-04T21:39:10.320169Z  INFO refinery_core::traits::sync: applying migration: V15__fix_various_problems ...
+2026-08-04T21:39:10.321365Z  INFO refinery_core::traits::sync: applying migration: V16__item_persistence ...
+2026-08-04T21:39:10.332300Z  INFO refinery_core::traits::sync: applying migration: V17__move_sceptres ...
+2026-08-04T21:39:10.336499Z  INFO refinery_core::traits::sync: applying migration: V18__rename_npcweapons ...
+2026-08-04T21:39:10.340547Z  INFO refinery_core::traits::sync: applying migration: V19__move_waypoint_to_stats ...
+2026-08-04T21:39:10.349228Z  INFO refinery_core::traits::sync: applying migration: V20__item_storage ...
+2026-08-04T21:39:10.353974Z  INFO refinery_core::traits::sync: applying migration: V21__shinygem_to_diamond ...
+2026-08-04T21:39:10.358052Z  INFO refinery_core::traits::sync: applying migration: V22__skills ...
+2026-08-04T21:39:10.364745Z  INFO refinery_core::traits::sync: applying migration: V23__purge_duplicate_items ...
+2026-08-04T21:39:10.366160Z  INFO refinery_core::traits::sync: applying migration: V24__remove_duplicate_possess_stick ...
+2026-08-04T21:39:10.367357Z  INFO refinery_core::traits::sync: applying migration: V25__starter_gear ...
+2026-08-04T21:39:10.368577Z  INFO refinery_core::traits::sync: applying migration: V26__weapon_replacements ...
+2026-08-04T21:39:10.370203Z  INFO refinery_core::traits::sync: applying migration: V27__armor_reorganization ...
+2026-08-04T21:39:10.372663Z  INFO refinery_core::traits::sync: applying migration: V28__fix_sturdy_red_backpack ...
+2026-08-04T21:39:10.373853Z  INFO refinery_core::traits::sync: applying migration: V29__fix_other_backpacks ...
+2026-08-04T21:39:10.375204Z  INFO refinery_core::traits::sync: applying migration: V30__fix_leather_set ...
+2026-08-04T21:39:10.376455Z  INFO refinery_core::traits::sync: applying migration: V31__fix_debug_armor ...
+2026-08-04T21:39:10.377750Z  INFO refinery_core::traits::sync: applying migration: V32__reset_sceptre_skills ...
+2026-08-04T21:39:10.379403Z  INFO refinery_core::traits::sync: applying migration: V33__fix_amethyst_staff ...
+2026-08-04T21:39:10.380782Z  INFO refinery_core::traits::sync: applying migration: V34__remove_immunemelee_bexplosion ...
+2026-08-04T21:39:10.382141Z  INFO refinery_core::traits::sync: applying migration: V35__rename_craftsman_hammer ...
+2026-08-04T21:39:10.383382Z  INFO refinery_core::traits::sync: applying migration: V36__deduplicate_items ...
+2026-08-04T21:39:10.384839Z  INFO refinery_core::traits::sync: applying migration: V37__equip_slots ...
+2026-08-04T21:39:10.386135Z  INFO refinery_core::traits::sync: applying migration: V38__reset_bow_skills ...
+2026-08-04T21:39:10.387538Z  INFO refinery_core::traits::sync: applying migration: V39__meat_MR_organization ...
+2026-08-04T21:39:10.389336Z  INFO refinery_core::traits::sync: applying migration: V40__meat_fix ...
+2026-08-04T21:39:10.390620Z  INFO refinery_core::traits::sync: applying migration: V41__mining_tree ...
+2026-08-04T21:39:10.391815Z  INFO refinery_core::traits::sync: applying migration: V42__remove_warlock_warlord ...
+2026-08-04T21:39:10.393066Z  INFO refinery_core::traits::sync: applying migration: V43__pets ...
+2026-08-04T21:39:10.395740Z  INFO refinery_core::traits::sync: applying migration: V44__reduce_asset_duplication ...
+2026-08-04T21:39:10.397117Z  INFO refinery_core::traits::sync: applying migration: V45__new_necklaces ...
+2026-08-04T21:39:10.398331Z  INFO refinery_core::traits::sync: applying migration: V46__skill_persistence ...
+2026-08-04T21:39:10.401632Z  INFO refinery_core::traits::sync: applying migration: V47__ability_sets ...
+2026-08-04T21:39:10.404124Z  INFO refinery_core::traits::sync: applying migration: V48__remove_bomb_pile ...
+2026-08-04T21:39:10.405452Z  INFO refinery_core::traits::sync: applying migration: V49__modular_weapons ...
+2026-08-04T21:39:10.423992Z  INFO refinery_core::traits::sync: applying migration: V50__musical_instruments ...
+2026-08-04T21:39:10.425286Z  INFO refinery_core::traits::sync: applying migration: V51__item_durability ...
+2026-08-04T21:39:10.427979Z  INFO refinery_core::traits::sync: applying migration: V52__miner_helmets ...
+2026-08-04T21:39:10.429522Z  INFO refinery_core::traits::sync: applying migration: V53__potion_combustion ...
+2026-08-04T21:39:10.430787Z  INFO refinery_core::traits::sync: applying migration: V54__overflow_slots ...
+2026-08-04T21:39:10.432179Z  INFO refinery_core::traits::sync: applying migration: V55__steeltonguedrum ...
+2026-08-04T21:39:10.433710Z  INFO refinery_core::traits::sync: applying migration: V56__character_player_uuid_index ...
+2026-08-04T21:39:10.436189Z  INFO refinery_core::traits::sync: applying migration: V57__dwarven_keys ...
+2026-08-04T21:39:10.440391Z  INFO refinery_core::traits::sync: applying migration: V58__npc_armor ...
+2026-08-04T21:39:10.441603Z  INFO refinery_core::traits::sync: applying migration: V59__potion_curious ...
+2026-08-04T21:39:10.442694Z  INFO refinery_core::traits::sync: applying migration: V60__recipe_book ...
+2026-08-04T21:39:10.444038Z  INFO refinery_core::traits::sync: applying migration: V61__fix_recipe_migration ...
+2026-08-04T21:39:10.446030Z  INFO refinery_core::traits::sync: applying migration: V62__hardcore ...
+2026-08-04T21:39:10.449021Z  INFO refinery_core::traits::sync: applying migration: V63__remove_bloodmoon_key ...
+2026-08-04T21:39:10.450329Z  INFO refinery_core::traits::sync: applying migration: V64__erase_pet_names ...
+2026-08-04T21:39:10.451536Z  INFO refinery_core::traits::sync: applying migration: V65__rename_helmet_to_head ...
+2026-08-04T21:39:10.452718Z  INFO refinery_core::traits::sync: applying migration: V66__merge_lantern_recipes ...
+2026-08-04T21:39:10.454013Z  INFO refinery_core::traits::sync: applying migration: V67__more_armor_migrations ...
+2026-08-04T21:39:10.455215Z  INFO refinery_core::traits::sync: applying migration: V68__rename_npcweapon ...
+2026-08-04T21:39:10.456410Z  INFO refinery_core::traits::sync: applying migration: V69__merge_metal_recipes ...
+2026-08-04T21:39:10.457704Z  INFO refinery_core::traits::sync: applying migration: V70__merge_remaining_unique_recipes ...
+2026-08-04T21:39:10.458856Z  INFO veloren_server::persistence: Applied 70 database migration(s):
+2026-08-04T21:39:10.458865Z  INFO veloren_server::persistence:   V1__character (checksum 9117075394110855725)
+2026-08-04T21:39:10.458867Z  INFO veloren_server::persistence:   V2__body (checksum 6157752084147612421)
+2026-08-04T21:39:10.458868Z  INFO veloren_server::persistence:   V3__stats (checksum 13972056030996213876)
+2026-08-04T21:39:10.458870Z  INFO veloren_server::persistence:   V4__race_species (checksum 17725497262845966991)
+2026-08-04T21:39:10.458871Z  INFO veloren_server::persistence:   V5__inventory (checksum 2296204078845749223)
+2026-08-04T21:39:10.458872Z  INFO veloren_server::persistence:   V6__loadout (checksum 4113908176235991387)
+2026-08-04T21:39:10.458874Z  INFO veloren_server::persistence:   V7__inv_increase (checksum 14586618203445988633)
+2026-08-04T21:39:10.458875Z  INFO veloren_server::persistence:   V8__skills (checksum 13750888823142164688)
+2026-08-04T21:39:10.458876Z  INFO veloren_server::persistence:   V9__add_missing_inv_loadout (checksum 7683767586967693766)
+2026-08-04T21:39:10.458878Z  INFO veloren_server::persistence:   V10__dash_melee_energy_cost_fix (checksum 6782154633539230651)
+2026-08-04T21:39:10.458879Z  INFO veloren_server::persistence:   V11__migrate_armour_stats (checksum 4250561370733984852)
+2026-08-04T21:39:10.458880Z  INFO veloren_server::persistence:   V12__update_item_stats (checksum 2682046764058750781)
+2026-08-04T21:39:10.458882Z  INFO veloren_server::persistence:   V13__fix_projectile_stats (checksum 9684998864943125609)
+2026-08-04T21:39:10.458883Z  INFO veloren_server::persistence:   V14__power_stat_for_weapons (checksum 3232427851139713902)
+2026-08-04T21:39:10.458884Z  INFO veloren_server::persistence:   V15__fix_various_problems (checksum 3677284111525558711)
+2026-08-04T21:39:10.458886Z  INFO veloren_server::persistence:   V16__item_persistence (checksum 4071622738827579892)
+2026-08-04T21:39:10.458887Z  INFO veloren_server::persistence:   V17__move_sceptres (checksum 10211991246089338915)
+2026-08-04T21:39:10.458889Z  INFO veloren_server::persistence:   V18__rename_npcweapons (checksum 5874698273404516747)
+2026-08-04T21:39:10.458890Z  INFO veloren_server::persistence:   V19__move_waypoint_to_stats (checksum 4968120725152602896)
+2026-08-04T21:39:10.458891Z  INFO veloren_server::persistence:   V20__item_storage (checksum 15645955395975896442)
+2026-08-04T21:39:10.458892Z  INFO veloren_server::persistence:   V21__shinygem_to_diamond (checksum 14401163018466160915)
+2026-08-04T21:39:10.458894Z  INFO veloren_server::persistence:   V22__skills (checksum 6304664136683765916)
+2026-08-04T21:39:10.458895Z  INFO veloren_server::persistence:   V23__purge_duplicate_items (checksum 8475295354042906120)
+2026-08-04T21:39:10.458897Z  INFO veloren_server::persistence:   V24__remove_duplicate_possess_stick (checksum 3892511089877010706)
+2026-08-04T21:39:10.458898Z  INFO veloren_server::persistence:   V25__starter_gear (checksum 12297568306891341032)
+2026-08-04T21:39:10.458899Z  INFO veloren_server::persistence:   V26__weapon_replacements (checksum 3916756410604680303)
+2026-08-04T21:39:10.458901Z  INFO veloren_server::persistence:   V27__armor_reorganization (checksum 355115092526764820)
+2026-08-04T21:39:10.458902Z  INFO veloren_server::persistence:   V28__fix_sturdy_red_backpack (checksum 383788314415304824)
+2026-08-04T21:39:10.458904Z  INFO veloren_server::persistence:   V29__fix_other_backpacks (checksum 4261054190619340614)
+2026-08-04T21:39:10.458905Z  INFO veloren_server::persistence:   V30__fix_leather_set (checksum 17138102695467063097)
+2026-08-04T21:39:10.458906Z  INFO veloren_server::persistence:   V31__fix_debug_armor (checksum 16042938412753080615)
+2026-08-04T21:39:10.458907Z  INFO veloren_server::persistence:   V32__reset_sceptre_skills (checksum 10182203831248564684)
+2026-08-04T21:39:10.458909Z  INFO veloren_server::persistence:   V33__fix_amethyst_staff (checksum 9604848746900261325)
+2026-08-04T21:39:10.458910Z  INFO veloren_server::persistence:   V34__remove_immunemelee_bexplosion (checksum 5443787630796502227)
+2026-08-04T21:39:10.458911Z  INFO veloren_server::persistence:   V35__rename_craftsman_hammer (checksum 17448708375386734886)
+2026-08-04T21:39:10.458913Z  INFO veloren_server::persistence:   V36__deduplicate_items (checksum 14535474030714730867)
+2026-08-04T21:39:10.458914Z  INFO veloren_server::persistence:   V37__equip_slots (checksum 17670694596716043178)
+2026-08-04T21:39:10.458916Z  INFO veloren_server::persistence:   V38__reset_bow_skills (checksum 2946902497248539682)
+2026-08-04T21:39:10.458917Z  INFO veloren_server::persistence:   V39__meat_MR_organization (checksum 12119461975081911054)
+2026-08-04T21:39:10.458919Z  INFO veloren_server::persistence:   V40__meat_fix (checksum 8567950153632141745)
+2026-08-04T21:39:10.458920Z  INFO veloren_server::persistence:   V41__mining_tree (checksum 4597753416950730742)
+2026-08-04T21:39:10.458922Z  INFO veloren_server::persistence:   V42__remove_warlock_warlord (checksum 7582057148074323076)
+2026-08-04T21:39:10.458924Z  INFO veloren_server::persistence:   V43__pets (checksum 18433196296812969669)
+2026-08-04T21:39:10.458925Z  INFO veloren_server::persistence:   V44__reduce_asset_duplication (checksum 6175258976537178019)
+2026-08-04T21:39:10.458926Z  INFO veloren_server::persistence:   V45__new_necklaces (checksum 13904973024489369378)
+2026-08-04T21:39:10.458927Z  INFO veloren_server::persistence:   V46__skill_persistence (checksum 1232753656384396185)
+2026-08-04T21:39:10.458929Z  INFO veloren_server::persistence:   V47__ability_sets (checksum 14481811957198129698)
+2026-08-04T21:39:10.458930Z  INFO veloren_server::persistence:   V48__remove_bomb_pile (checksum 13241228531294393202)
+2026-08-04T21:39:10.458931Z  INFO veloren_server::persistence:   V49__modular_weapons (checksum 9925744740750174409)
+2026-08-04T21:39:10.458933Z  INFO veloren_server::persistence:   V50__musical_instruments (checksum 17775170093105575001)
+2026-08-04T21:39:10.458934Z  INFO veloren_server::persistence:   V51__item_durability (checksum 9808753765296879698)
+2026-08-04T21:39:10.458936Z  INFO veloren_server::persistence:   V52__miner_helmets (checksum 13463685126931242488)
+2026-08-04T21:39:10.458937Z  INFO veloren_server::persistence:   V53__potion_combustion (checksum 6169398698926532945)
+2026-08-04T21:39:10.458942Z  INFO veloren_server::persistence:   V54__overflow_slots (checksum 7170889244486814327)
+2026-08-04T21:39:10.458943Z  INFO veloren_server::persistence:   V55__steeltonguedrum (checksum 6465091668118394334)
+2026-08-04T21:39:10.458944Z  INFO veloren_server::persistence:   V56__character_player_uuid_index (checksum 5461440106284075476)
+2026-08-04T21:39:10.458946Z  INFO veloren_server::persistence:   V57__dwarven_keys (checksum 2772538222823120165)
+2026-08-04T21:39:10.458947Z  INFO veloren_server::persistence:   V58__npc_armor (checksum 3411445219666517287)
+2026-08-04T21:39:10.458948Z  INFO veloren_server::persistence:   V59__potion_curious (checksum 9869216673629487416)
+2026-08-04T21:39:10.458949Z  INFO veloren_server::persistence:   V60__recipe_book (checksum 6534247327599213578)
+2026-08-04T21:39:10.458951Z  INFO veloren_server::persistence:   V61__fix_recipe_migration (checksum 5921500808049712958)
+2026-08-04T21:39:10.458952Z  INFO veloren_server::persistence:   V62__hardcore (checksum 16200974500114771960)
+2026-08-04T21:39:10.458953Z  INFO veloren_server::persistence:   V63__remove_bloodmoon_key (checksum 2894083738288817494)
+2026-08-04T21:39:10.458954Z  INFO veloren_server::persistence:   V64__erase_pet_names (checksum 8292297408000838344)
+2026-08-04T21:39:10.458956Z  INFO veloren_server::persistence:   V65__rename_helmet_to_head (checksum 2885737095059833865)
+2026-08-04T21:39:10.458957Z  INFO veloren_server::persistence:   V66__merge_lantern_recipes (checksum 14797805935592345465)
+2026-08-04T21:39:10.458958Z  INFO veloren_server::persistence:   V67__more_armor_migrations (checksum 5108486056019802376)
+2026-08-04T21:39:10.458960Z  INFO veloren_server::persistence:   V68__rename_npcweapon (checksum 6316852774348677033)
+2026-08-04T21:39:10.458961Z  INFO veloren_server::persistence:   V69__merge_metal_recipes (checksum 828686277743662713)
+2026-08-04T21:39:10.458962Z  INFO veloren_server::persistence:   V70__merge_remaining_unique_recipes (checksum 2143739316683503356)
+2026-08-04T21:39:10.472130Z  INFO veloren_server::persistence: Database vacuumed
+2026-08-04T21:39:10.512873Z  INFO veloren_world::sim: Starting world generation
+2026-08-04T21:39:12.448540Z  INFO veloren_world::civ: starting peak naming
+2026-08-04T21:39:12.545356Z  INFO veloren_world::civ: all peaks named num_peaks=80
+2026-08-04T21:39:12.545385Z  INFO veloren_world::civ: starting biome naming
+2026-08-04T21:39:12.825575Z  INFO veloren_world::civ: all biomes named biome_count=285
+2026-08-04T21:39:12.826097Z  INFO veloren_world::civ: starting civilisation creation
+2026-08-04T21:39:17.955721Z  WARN veloren_world::civ: Failed to find starting site for civilisation.
+2026-08-04T21:39:18.114131Z  WARN veloren_world::civ: Failed to find starting site for civilisation.
+2026-08-04T21:39:19.298554Z  WARN veloren_world::civ: Failed to find starting site for civilisation.
+2026-08-04T21:39:19.516698Z  WARN veloren_world::civ: Failed to find starting site for civilisation.
+2026-08-04T21:39:19.710541Z  WARN veloren_world::civ: Failed to find starting site for civilisation.
+2026-08-04T21:39:19.710576Z  INFO veloren_world::civ: all civilisations created initial_civ_count=48
+2026-08-04T21:39:21.736369Z  INFO veloren_world::civ: all sites placed cnt=194
+2026-08-04T21:39:23.468370Z  INFO veloren_world::site::economy::context: economy simulation start
+2026-08-04T21:39:23.938670Z  INFO veloren_world::site::economy::context: economy simulation end
+2026-08-04T21:39:23.938708Z  INFO veloren_world::site::economy::context: Towns 4-1395021 avg 147968 inhabitants
+2026-08-04T21:39:32.135695Z  INFO veloren_server::automod: Automod disabled
+2026-08-04T21:39:32.135733Z  INFO veloren_server: bastion: FLAT-TEST-ARENA env check at server boot flat_arena_enabled=false
+2026-08-04T21:39:32.175964Z  INFO veloren_server::rtsim: Looking for rtsim data at E:\veloren-master\.engine-integration-wt\bastion-test-evidence\live-playthrough\userdata\server\rtsim\data.dat...
+2026-08-04T21:39:32.176124Z  INFO veloren_server::rtsim: No rtsim data found. Generating from world...
+2026-08-04T21:39:32.200868Z  INFO veloren_rtsim::generate: Generated 16 rtsim factions.
+2026-08-04T21:39:32.200989Z  INFO veloren_rtsim::generate: Registering 194 rtsim sites from world sites.
+2026-08-04T21:39:32.201263Z  INFO veloren_rtsim::generate: Generated 2008 rtsim NPCs to be spawned.
+2026-08-04T21:39:32.201275Z  INFO veloren_server::rtsim: Rtsim data generated.
+2026-08-04T21:39:32.202737Z  INFO veloren_rtsim: Starting default rtsim rules...
+2026-08-04T21:39:32.202755Z  INFO veloren_rtsim: Initiating 'veloren_rtsim::rule::migrate::Migrate' rule...
+2026-08-04T21:39:32.202766Z  INFO veloren_rtsim: Initiating 'veloren_rtsim::rule::architect::Architect' rule...
+2026-08-04T21:39:32.202771Z  INFO veloren_rtsim: Initiating 'veloren_rtsim::rule::replenish_resources::ReplenishResources' rule...
+2026-08-04T21:39:32.202776Z  INFO veloren_rtsim: Initiating 'veloren_rtsim::rule::report::ReportEvents' rule...
+2026-08-04T21:39:32.202780Z  INFO veloren_rtsim: Initiating 'veloren_rtsim::rule::chronicle_events::ChronicleEvents' rule...
+2026-08-04T21:39:32.202784Z  INFO veloren_rtsim: Initiating 'veloren_rtsim::rule::sync_npcs::SyncNpcs' rule...
+2026-08-04T21:39:32.202787Z  INFO veloren_rtsim: Initiating 'veloren_rtsim::rule::simulate_npcs::SimulateNpcs' rule...
+2026-08-04T21:39:32.202790Z  INFO veloren_rtsim: Initiating 'veloren_rtsim::rule::npc_ai::NpcAi' rule...
+2026-08-04T21:39:32.202797Z  INFO veloren_rtsim: Initiating 'veloren_rtsim::rule::cleanup::CleanUp' rule...
+2026-08-04T21:39:32.277110Z  INFO veloren_server::rtsim::rule: Starting server rtsim rules...
+2026-08-04T21:39:32.277134Z  INFO veloren_rtsim: Initiating 'veloren_server::rtsim::rule::deplete_resources::DepleteResources' rule...
+2026-08-04T21:39:32.290588Z  INFO veloren_server: Server version: 2f59ccde [2026-08-04]
+2026-08-04T21:39:32.290945Z  INFO veloren_server_cli: Server is ready to accept connections. web_port=14005 gameserver_addresses=Map { iter: IntoIter([Tcp { address: [::]:14004 }, Tcp { address: 0.0.0.0:14004 }]) }
+2026-08-04T21:39:32.291723Z  INFO veloren_server_cli::web: listening on 127.0.0.1:14005
+2026-08-04T21:39:37.669994Z  INFO veloren_network::channel: Accepting Tcp from remote_addr="127.xxx.0.xxx:65249" cid=0
+2026-08-04T21:39:37.670591Z  INFO network{p=/hOhjU}::handshake{cid=0}: veloren_network_protocol::handshake: This Handshake is now configured! pid=V2LsJo
+2026-08-04T21:39:37.884173Z  INFO veloren_server::sys::msg::register: New User username="bastion_llm_player"
+2026-08-04T21:39:37.889492Z  INFO veloren_server_cli: Client connected!
+2026-08-04T21:39:44.370171Z  INFO veloren_server::rtsim: bastion: spawned starting colony names=["Kell of the Vale", "Awen Ashborn", "Hesta Brighteye", "Cerys the Wary", "Osric the Younger", "Jena Oakenshield", "Maddoc of the Vale", "Rhosyn of the Vale", "Awen the Stout", "Eira the Steady", "Nia the Younger", "Lira Longstride", "Rhosyn the Stout", "Nia the Quiet", "Awen the Steady", "Maddoc the Quiet"] count=16
+2026-08-04T21:39:44.456093Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Kell of the Vale"
+2026-08-04T21:39:44.456136Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Awen Ashborn"
+2026-08-04T21:39:44.456183Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Hesta Brighteye"
+2026-08-04T21:39:44.456238Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Cerys the Wary"
+2026-08-04T21:39:44.456251Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Osric the Younger"
+2026-08-04T21:39:44.456262Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Jena Oakenshield"
+2026-08-04T21:39:44.456285Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Maddoc of the Vale"
+2026-08-04T21:39:44.456348Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Rhosyn of the Vale"
+2026-08-04T21:39:44.456362Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Awen the Stout"
+2026-08-04T21:39:44.456372Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Eira the Steady"
+2026-08-04T21:39:44.456406Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Nia the Younger"
+2026-08-04T21:39:44.456446Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Lira Longstride"
+2026-08-04T21:39:44.456455Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Rhosyn the Stout"
+2026-08-04T21:39:44.456465Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Nia the Quiet"
+2026-08-04T21:39:44.456486Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Awen the Steady"
+2026-08-04T21:39:44.456523Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Maddoc the Quiet"
+2026-08-04T21:39:59.467456Z  INFO bastion_server::bastion_jobs: bastion: designation placed kind=Mine jobs=18
+2026-08-04T21:40:00.401141Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=17 colonist=76
+2026-08-04T21:40:00.401183Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=11 colonist=77
+2026-08-04T21:40:00.401222Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=15 colonist=78
+2026-08-04T21:40:00.401250Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=9 colonist=79
+2026-08-04T21:40:00.401262Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=14 colonist=80
+2026-08-04T21:40:00.401276Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=16 colonist=81
+2026-08-04T21:40:00.401343Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=13 colonist=82
+2026-08-04T21:40:00.401364Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=12 colonist=83
+2026-08-04T21:40:00.401378Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=10 colonist=84
+2026-08-04T21:40:01.037101Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=10 pos=Vec3 { x: 15209, y: 16008, z: 417 }
+2026-08-04T21:40:01.267808Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=9 pos=Vec3 { x: 15208, y: 16008, z: 417 }
+2026-08-04T21:40:01.437143Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=16 pos=Vec3 { x: 15209, y: 16010, z: 417 }
+2026-08-04T21:40:01.567867Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=12 pos=Vec3 { x: 15208, y: 16009, z: 417 }
+2026-08-04T21:40:01.702561Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=14 pos=Vec3 { x: 15210, y: 16009, z: 417 }
+2026-08-04T21:40:01.734241Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=15 pos=Vec3 { x: 15208, y: 16010, z: 417 }
+2026-08-04T21:40:01.838198Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=17 pos=Vec3 { x: 15210, y: 16010, z: 417 }
+2026-08-04T21:40:02.635945Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=13 pos=Vec3 { x: 15209, y: 16009, z: 417 }
+2026-08-04T21:40:02.968977Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=11 pos=Vec3 { x: 15210, y: 16008, z: 417 }
+2026-08-04T21:40:04.567765Z  INFO bastion_server::bastion_jobs: bastion: job completed job=12 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16009, z: 417 }
+2026-08-04T21:40:05.202698Z  INFO bastion_server::bastion_jobs: bastion: job completed job=16 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16010, z: 417 }
+2026-08-04T21:40:05.568408Z  INFO bastion_server::bastion_jobs: bastion: job completed job=9 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16008, z: 417 }
+2026-08-04T21:40:05.602032Z  INFO bastion_server::bastion_jobs: bastion: job completed job=17 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16010, z: 417 }
+2026-08-04T21:40:05.967917Z  INFO bastion_server::bastion_jobs: bastion: job completed job=11 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16008, z: 417 }
+2026-08-04T21:40:06.001444Z  INFO bastion_server::bastion_jobs: bastion: job completed job=13 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16009, z: 417 }
+2026-08-04T21:40:06.034648Z  INFO bastion_server::bastion_jobs: bastion: job completed job=15 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16010, z: 417 }
+2026-08-04T21:40:06.068291Z  INFO bastion_server::bastion_jobs: bastion: job completed job=10 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16008, z: 417 }
+2026-08-04T21:40:06.401895Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=3 colonist=76
+2026-08-04T21:40:06.902540Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=4 colonist=77
+2026-08-04T21:40:06.902605Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=7 colonist=78
+2026-08-04T21:40:06.902635Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=0 colonist=79
+2026-08-04T21:40:06.902649Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=6 colonist=81
+2026-08-04T21:40:06.902705Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=1 colonist=82
+2026-08-04T21:40:06.935779Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=4 pos=Vec3 { x: 15209, y: 16009, z: 416 }
+2026-08-04T21:40:06.935810Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=7 pos=Vec3 { x: 15209, y: 16010, z: 416 }
+2026-08-04T21:40:06.935816Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=0 pos=Vec3 { x: 15208, y: 16008, z: 416 }
+2026-08-04T21:40:06.935823Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=1 pos=Vec3 { x: 15209, y: 16008, z: 416 }
+2026-08-04T21:40:07.336021Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=6 pos=Vec3 { x: 15208, y: 16010, z: 416 }
+2026-08-04T21:40:07.468782Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=3 pos=Vec3 { x: 15208, y: 16009, z: 416 }
+2026-08-04T21:40:07.701673Z  INFO bastion_server::bastion_jobs: bastion: job completed job=14 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16009, z: 417 }
+2026-08-04T21:40:07.901713Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=8 colonist=80
+2026-08-04T21:40:07.901740Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=2 colonist=83
+2026-08-04T21:40:07.936117Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=8 pos=Vec3 { x: 15210, y: 16010, z: 416 }
+2026-08-04T21:40:07.936144Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=2 pos=Vec3 { x: 15210, y: 16008, z: 416 }
+2026-08-04T21:40:08.901998Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=5 colonist=84
+2026-08-04T21:40:08.934636Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=5 pos=Vec3 { x: 15210, y: 16009, z: 416 }
+2026-08-04T21:40:09.934853Z  INFO bastion_server::bastion_jobs: bastion: job completed job=4 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16009, z: 416 }
+2026-08-04T21:40:10.302171Z  INFO bastion_server::bastion_jobs: bastion: job completed job=1 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16008, z: 416 }
+2026-08-04T21:40:10.934834Z  INFO bastion_server::bastion_jobs: bastion: job completed job=2 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16008, z: 416 }
+2026-08-04T21:40:11.101593Z  INFO bastion_server::bastion_jobs: bastion: job completed job=6 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16010, z: 416 }
+2026-08-04T21:40:11.234984Z  INFO bastion_server::bastion_jobs: bastion: job completed job=3 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16009, z: 416 }
+2026-08-04T21:40:11.235146Z  INFO bastion_server::bastion_jobs: bastion: job completed job=7 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16010, z: 416 }
+2026-08-04T21:40:11.235246Z  INFO bastion_server::bastion_jobs: bastion: job completed job=0 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16008, z: 416 }
+2026-08-04T21:40:13.935509Z  INFO bastion_server::bastion_jobs: bastion: job completed job=8 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16010, z: 416 }
+2026-08-04T21:40:13.968500Z  INFO bastion_server::bastion_jobs: bastion: job completed job=5 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16009, z: 416 }
+2026-08-04T21:40:13.968567Z  INFO bastion_server::bastion_jobs: bastion: MINE DONE — dispersing region=Region { min: Vec3 { x: 15208, y: 16008, z: 416 }, max: Vec3 { x: 15210, y: 16010, z: 418 } }
+2026-08-04T21:40:58.431049Z  INFO bastion_server::bastion_jobs: bastion: emergency egress found no route (retry) from=Vec3 { x: 15231, y: 16019, z: 420 }
+2026-08-04T21:43:25.686144Z  INFO bastion_server::bastion_jobs: bastion: EMERGENCY EGRESS emitted (B5.8-E) kind=Mine steps=3 from=Vec3 { x: 15218, y: 15987, z: 411 }
+2026-08-04T21:43:25.714839Z  INFO bastion_server::bastion_jobs: bastion: emergency egress found no route (retry) from=Vec3 { x: 15218, y: 15987, z: 411 }
+2026-08-04T21:43:25.958558Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=18 colonist=77
+2026-08-04T21:43:25.991792Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=18 pos=Vec3 { x: 15215, y: 15986, z: 415 }
+2026-08-04T21:43:28.995621Z  INFO bastion_server::bastion_jobs: bastion: job completed job=18 kind=Designated(Mine) pos=Vec3 { x: 15215, y: 15986, z: 415 }
+2026-08-04T21:43:29.462592Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=19 colonist=77
+2026-08-04T21:43:29.496282Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=19 pos=Vec3 { x: 15215, y: 15986, z: 416 }
+2026-08-04T21:43:32.496111Z  INFO bastion_server::bastion_jobs: bastion: job completed job=19 kind=Designated(Mine) pos=Vec3 { x: 15215, y: 15986, z: 416 }
+2026-08-04T21:43:33.129830Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=20 colonist=77
+2026-08-04T21:43:36.396577Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=20 pos=Vec3 { x: 15215, y: 15986, z: 417 }
+2026-08-04T21:43:39.506127Z  INFO bastion_server::bastion_jobs: bastion: job completed job=20 kind=Designated(Mine) pos=Vec3 { x: 15215, y: 15986, z: 417 }
+2026-08-04T21:43:40.189098Z  INFO bastion_server::bastion_jobs: bastion: executable emergency route traversal established tick=7363 uid=77 owner=77 descriptor_kind=NaturalShaft approach=Vec3 { x: 15215, y: 15987, z: 411 } entry=Vec3 { x: 15215, y: 15986, z: 411 } top_anchor=Vec3 { x: 15215, y: 15986, z: 416 } dismount=Vec3 { x: 15218, y: 15985, z: 416 } wall_dir=Some(Vec2 { x: 1, y: 0 }) position=Vec3 { x: 15215.503, y: 15986.499, z: 411.0 } on_ground=true on_wall=None writer="emergency_natural_shaft_transaction"
+2026-08-04T21:43:40.206133Z  INFO bastion_server::bastion_jobs: bastion: route-owned traversal task transition uid=77 owner=77 traversal_kind=NaturalShaft from=Reserved to=TraversingEntry tick=7364 elapsed_ticks=1 feet=Vec3 { x: 15215, y: 15986, z: 411 } position=Vec3 { x: 15215.505, y: 15986.499, z: 411.0 } velocity=Vec3 { x: 0.042452473, y: -0.009491219, z: 0.0 } on_ground=true on_wall=None vanilla_climb=false ladder_contact=None body_can_climb=true energy=97.5703125 constructed_ladder_active=false ladder_energy_policy="natural_climb_energy" route_input=Vec2 { x: 0.0, y: 0.0 } top_anchor=Vec3 { x: 15215, y: 15986, z: 416 } exit_target=None target_distance=inf stable_samples=0 release_action="none" release_duration_ticks=0 total_episode_ticks=1 transaction.abort_reason=None agent_activity_before=false agent_activity_after=false writer="bastion_traversal_task"
+2026-08-04T21:43:40.373507Z  INFO bastion_server::bastion_jobs: bastion: route-owned traversal task transition uid=77 owner=77 traversal_kind=NaturalShaft from=TraversingEntry to=TraversingLink tick=7369 elapsed_ticks=6 feet=Vec3 { x: 15215, y: 15986, z: 411 } position=Vec3 { x: 15215.55, y: 15986.499, z: 411.8905 } velocity=Vec3 { x: 0.0, y: -0.0035674172, z: 6.0687513 } on_ground=false on_wall=Some(Vec3 { x: 1.0, y: 0.0, z: 0.0 }) vanilla_climb=true ladder_contact=None body_can_climb=true energy=97.96484375 climb_energy_cost=15.0 climb_movement_speed=5.0 constructed_ladder_active=false ladder_energy_policy="natural_climb_energy" route_input=Vec2 { x: 1.0, y: 0.0 } top_anchor=Vec3 { x: 15215, y: 15986, z: 416 } exit_target=None target_distance=inf stable_samples=0 release_action="none" release_duration_ticks=0 total_episode_ticks=6 transaction.abort_reason=None agent_activity_before=false agent_activity_after=false writer="bastion_traversal_task"
+2026-08-04T21:43:41.572353Z  INFO bastion_server::bastion_jobs: bastion: route-owned traversal task transition uid=77 owner=77 traversal_kind=NaturalShaft from=TraversingLink to=TraversingTopExit tick=7405 elapsed_ticks=42 feet=Vec3 { x: 15215, y: 15986, z: 415 } position=Vec3 { x: 15215.55, y: 15986.499, z: 415.95862 } velocity=Vec3 { x: 0.0, y: -2.9079454e-8, z: 2.1683543 } on_ground=false on_wall=Some(Vec3 { x: 1.0, y: 0.0, z: 0.0 }) vanilla_climb=true ladder_contact=None body_can_climb=true energy=79.96484375 climb_energy_cost=15.0 climb_movement_speed=5.0 constructed_ladder_active=false ladder_energy_policy="natural_climb_energy" route_input=Vec2 { x: 0.0, y: 0.0 } top_anchor=Vec3 { x: 15215, y: 15986, z: 416 } exit_target=None target_distance=inf stable_samples=0 release_action="none" release_duration_ticks=0 total_episode_ticks=42 transaction.abort_reason=None agent_activity_before=false agent_activity_after=false writer="bastion_traversal_task"
+2026-08-04T21:43:41.607161Z  INFO bastion_server::bastion_jobs: bastion: emergency mount exit target preflight blocked uid=77 owner=77 tick=7406 top_anchor=Vec3 { x: 15215, y: 15986, z: 416 } candidate=Some(Vec3 { x: 15215, y: 15984, z: 417 }) preflight_hit=Some(TerrainSweepHit { block: Vec3 { x: 15215, y: 15985, z: 417 }, resolve_dir: Vec3 { x: -0.0, y: 0.036132813, z: -0.0 }, sample: 3, samples: 19 }) cylinder=Some((0.22, 0.0, 1.95)) position=Vec3 { x: 15215.55, y: 15986.499, z: 416.03088 }
+2026-08-04T21:43:41.624244Z  INFO bastion_server::bastion_jobs: bastion: route-owned traversal task transition uid=77 owner=77 traversal_kind=NaturalShaft from=TraversingTopExit to=Abort tick=7406 elapsed_ticks=43 feet=Vec3 { x: 15215, y: 15986, z: 416 } position=Vec3 { x: 15215.55, y: 15986.499, z: 416.03088 } velocity=Vec3 { x: 0.0, y: -2.1003173e-8, z: 1.5666859 } on_ground=false on_wall=Some(Vec3 { x: 1.0, y: 0.0, z: 0.0 }) vanilla_climb=true ladder_contact=None body_can_climb=true energy=79.9296875 climb_energy_cost=15.0 climb_movement_speed=5.0 constructed_ladder_active=false ladder_energy_policy="natural_climb_energy" route_input=Vec2 { x: 0.0, y: 0.0 } top_anchor=Vec3 { x: 15215, y: 15986, z: 416 } exit_target=None target_distance=inf stable_samples=0 release_action="none" release_duration_ticks=0 total_episode_ticks=43 transaction.abort_reason=Some("exit-target-invalid") agent_activity_before=false agent_activity_after=false writer="bastion_traversal_task"
+2026-08-04T21:44:13.483284Z  WARN bastion_server::bastion_jobs: bastion: ULTIMATE FAIL-SAFE — teleporting stuck colonist to ground (organic egress tiers failed) uid=81 name="Jena Oakenshield" feet=Vec3 { x: 15157, y: 16011, z: 416 } d=Vec3 { x: 15153, y: 16007, z: 417 } secs=60.0 active_job=None active_job_state=None active_job_kind=None active_job_is_access=None egress_verdicts=6 egress_plans_emitted=0 egress_no_route=0 climb_free_active=true organic_destination=Some(Vec3 { x: 15154, y: 16007, z: 417 }) head_clear=true on_ground=true on_wall=false character_state=Some("Idle(Data { is_sneaking: false, time_entered: Time(0.0), footwear: Some(Normal) })") velocity=Vec3 { x: -4.9720707e-6, y: -1.8431324e-6, z: 0.0 } access_jobs_pending=0 terminal_cause="egress_plan_or_climb_free_failed"
+2026-08-04T21:44:59.343015Z  INFO bastion_server::bastion_jobs: bastion: emergency access restored (REQ-0040) owner=77 cells=3
+2026-08-04T21:45:00.014639Z  INFO network{p=/hOhjU}::remote{p=V2LsJo}:recv: veloren_network::participant: protocol failed, shutting down channel e=Custom(Tcp(Custom { kind: BrokenPipe, error: "read returned 0 bytes" })) cid=0
+2026-08-04T21:45:00.049884Z  INFO network{p=/hOhjU}:network{p=/hOhjU}:remote{p=V2LsJo}: veloren_network::api: Participant already has been shutdown gracefully
+2026-08-04T21:45:00.051472Z  INFO veloren_server_cli: Client disconnected!
+2026-08-04T21:45:00.358031Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Awen Ashborn"
+2026-08-04T21:45:00.358052Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Cerys the Wary"
+2026-08-04T21:45:00.358055Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Awen the Stout"
+2026-08-04T21:45:00.358057Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Nia the Younger"
+2026-08-04T21:45:00.358060Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Awen the Steady"
+2026-08-04T21:45:00.412719Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Jena Oakenshield"
+2026-08-04T21:45:00.485148Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Kell of the Vale"
+2026-08-04T21:45:00.485175Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Hesta Brighteye"
+2026-08-04T21:45:00.485178Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Osric the Younger"
+2026-08-04T21:45:00.485181Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Maddoc of the Vale"
+2026-08-04T21:45:00.485184Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Rhosyn of the Vale"
+2026-08-04T21:45:00.485186Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Eira the Steady"
+2026-08-04T21:45:00.485189Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Lira Longstride"
+2026-08-04T21:45:00.485192Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Rhosyn the Stout"
+2026-08-04T21:45:00.485194Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Nia the Quiet"
+2026-08-04T21:45:00.485197Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Maddoc the Quiet"

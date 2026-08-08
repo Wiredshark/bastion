@@ -1,0 +1,22 @@
+
+thread 'main' (34164) panicked at C:\Users\q\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\atomic_refcell-0.1.14\src\lib.rs:158:23:
+already immutably borrowed
+stack backtrace:
+   0:     0x7ff66b50a36d - <<std[f84a23b908cf9b4]::sys::backtrace::BacktraceLock>::print::DisplayBacktrace as core[eb6de6226c2a1877]::fmt::Display>::fmt
+   1:     0x7ff66b52b8c1 - core[eb6de6226c2a1877]::fmt::write
+   2:     0x7ff66b519ba2 - <std[f84a23b908cf9b4]::sys::stdio::windows::Stderr as std[f84a23b908cf9b4]::io::Write>::write_fmt
+   3:     0x7ff66b4d96b9 - std[f84a23b908cf9b4]::panicking::default_hook::{closure#0}
+   4:     0x7ff66b4fa03b - std[f84a23b908cf9b4]::panicking::default_hook
+   5:     0x7ff66b4fa32a - std[f84a23b908cf9b4]::panicking::panic_with_hook
+   6:     0x7ff66b4d9797 - std[f84a23b908cf9b4]::panicking::panic_handler::{closure#0}
+   7:     0x7ff66b4cd0df - std[f84a23b908cf9b4]::sys::backtrace::__rust_end_short_backtrace::<std[f84a23b908cf9b4]::panicking::panic_handler::{closure#0}, !>
+   8:     0x7ff66b4da47e - __rustc[4fc4f029b7c9073b]::rust_begin_unwind
+   9:     0x7ff66b52c3ed - core[eb6de6226c2a1877]::panicking::panic_fmt
+  10:     0x7ff66cb26478 - veloren_server[66f45b7c8ea91246]::events::player::handle_client_disconnect
+  11:     0x7ff66ba75615 - <veloren_server[66f45b7c8ea91246]::Server>::handle_serial_events::<veloren_common[71249bbf5509c5bb]::event::ClientDisconnectEvent, <veloren_server[66f45b7c8ea91246]::Server>::handle_all_serial_events::{closure#2}>
+  12:     0x7ff66b289e71 - <veloren_server[66f45b7c8ea91246]::Server>::handle_events
+  13:     0x7ff66b2b41a4 - <veloren_server[66f45b7c8ea91246]::Server>::tick
+  14:     0x7ff66b1e3721 - veloren_server_cli[44edf09c1a800e69]::main
+  15:     0x7ff66b17a596 - std[f84a23b908cf9b4]::sys::backtrace::__rust_begin_short_backtrace::<fn() -> core[eb6de6226c2a1877]::result::Result<(), std[f84a23b908cf9b4]::io::error::Error>, core[eb6de6226c2a1877]::result::Result<(), std[f84a23b908cf9b4]::io::error::Error>>
+  16:     0x7ff66b19925d - std[f84a23b908cf9b4]::rt::lang_start::<core[eb6de6226c2a1877]::result::Result<(), std[f84a23b908cf9b4]::io::error::Error>>::{closure#0}
+  17:     0x7ff66b4f8801 - std[f84a23b908cf9b4]::rt::lang_start_internal

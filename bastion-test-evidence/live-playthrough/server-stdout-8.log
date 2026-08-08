@@ -1,0 +1,302 @@
+[2m2026-08-04T21:59:35.648544Z[0m [33m WARN[0m [2mveloren_server_cli::settings[0m[2m:[0m Settings file not found! Creating a template file: E:\veloren-master\.engine-integration-wt\bastion-test-evidence\live-playthrough\userdata\server-cli\settings.template.ron — If you wish to change any settings, copy/move the template to settings.ron and edit the fields as you wish.
+[2m2026-08-04T21:59:35.649366Z[0m [32m INFO[0m [2mveloren_server_cli[0m[2m:[0m Using userdata folder at E:\veloren-master\.engine-integration-wt\bastion-test-evidence\live-playthrough\userdata
+[2m2026-08-04T21:59:35.677871Z[0m [32m INFO[0m [2mveloren_server_cli[0m[2m:[0m Starting server...
+[2m2026-08-04T21:59:35.677918Z[0m [32m INFO[0m [2mveloren_server[0m[2m:[0m Server data dir is: E:\veloren-master\.engine-integration-wt\bastion-test-evidence\live-playthrough\userdata\server
+[2m2026-08-04T21:59:35.677928Z[0m [32m INFO[0m [2mveloren_server[0m[2m:[0m Authentication is disabled
+[2m2026-08-04T21:59:35.677983Z[0m [32m INFO[0m [2mveloren_server[0m[2m:[0m Server boot ID: boot/fb6035f6-a16f-4360-b0c5-80d5bedcd341
+[2m2026-08-04T21:59:35.678322Z[0m [32m INFO[0m [2mveloren_common_assets[0m[2m:[0m Assets found path=E:\veloren-master\.engine-integration-wt\assets
+[2m2026-08-04T21:59:39.063739Z[0m [32m INFO[0m [2mveloren_server[0m[2m:[0m content manifest built [3mfiles[0m[2m=[0m10610
+[2m2026-08-04T21:59:39.083250Z[0m [32m INFO[0m [2mrefinery_core::traits[0m[2m:[0m schema history table is empty, going to apply all migrations
+[2m2026-08-04T21:59:39.083439Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m going to apply 70 migrations in multiple transactions.
+[2m2026-08-04T21:59:39.083446Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V1__character ...
+[2m2026-08-04T21:59:39.086276Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V2__body ...
+[2m2026-08-04T21:59:39.090019Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V3__stats ...
+[2m2026-08-04T21:59:39.093183Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V4__race_species ...
+[2m2026-08-04T21:59:39.097253Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V5__inventory ...
+[2m2026-08-04T21:59:39.100110Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V6__loadout ...
+[2m2026-08-04T21:59:39.102799Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V7__inv_increase ...
+[2m2026-08-04T21:59:39.104525Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V8__skills ...
+[2m2026-08-04T21:59:39.107883Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V9__add_missing_inv_loadout ...
+[2m2026-08-04T21:59:39.109340Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V10__dash_melee_energy_cost_fix ...
+[2m2026-08-04T21:59:39.110802Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V11__migrate_armour_stats ...
+[2m2026-08-04T21:59:39.112191Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V12__update_item_stats ...
+[2m2026-08-04T21:59:39.113659Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V13__fix_projectile_stats ...
+[2m2026-08-04T21:59:39.115212Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V14__power_stat_for_weapons ...
+[2m2026-08-04T21:59:39.117326Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V15__fix_various_problems ...
+[2m2026-08-04T21:59:39.118930Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V16__item_persistence ...
+[2m2026-08-04T21:59:39.128432Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V17__move_sceptres ...
+[2m2026-08-04T21:59:39.129726Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V18__rename_npcweapons ...
+[2m2026-08-04T21:59:39.130959Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V19__move_waypoint_to_stats ...
+[2m2026-08-04T21:59:39.133682Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V20__item_storage ...
+[2m2026-08-04T21:59:39.138590Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V21__shinygem_to_diamond ...
+[2m2026-08-04T21:59:39.140116Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V22__skills ...
+[2m2026-08-04T21:59:39.144050Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V23__purge_duplicate_items ...
+[2m2026-08-04T21:59:39.148402Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V24__remove_duplicate_possess_stick ...
+[2m2026-08-04T21:59:39.149736Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V25__starter_gear ...
+[2m2026-08-04T21:59:39.153889Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V26__weapon_replacements ...
+[2m2026-08-04T21:59:39.158584Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V27__armor_reorganization ...
+[2m2026-08-04T21:59:39.164179Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V28__fix_sturdy_red_backpack ...
+[2m2026-08-04T21:59:39.168541Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V29__fix_other_backpacks ...
+[2m2026-08-04T21:59:39.173011Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V30__fix_leather_set ...
+[2m2026-08-04T21:59:39.177330Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V31__fix_debug_armor ...
+[2m2026-08-04T21:59:39.181630Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V32__reset_sceptre_skills ...
+[2m2026-08-04T21:59:39.183204Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V33__fix_amethyst_staff ...
+[2m2026-08-04T21:59:39.184586Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V34__remove_immunemelee_bexplosion ...
+[2m2026-08-04T21:59:39.186078Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V35__rename_craftsman_hammer ...
+[2m2026-08-04T21:59:39.187494Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V36__deduplicate_items ...
+[2m2026-08-04T21:59:39.189088Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V37__equip_slots ...
+[2m2026-08-04T21:59:39.190420Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V38__reset_bow_skills ...
+[2m2026-08-04T21:59:39.191764Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V39__meat_MR_organization ...
+[2m2026-08-04T21:59:39.194000Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V40__meat_fix ...
+[2m2026-08-04T21:59:39.195304Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V41__mining_tree ...
+[2m2026-08-04T21:59:39.196685Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V42__remove_warlock_warlord ...
+[2m2026-08-04T21:59:39.198401Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V43__pets ...
+[2m2026-08-04T21:59:39.201289Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V44__reduce_asset_duplication ...
+[2m2026-08-04T21:59:39.202751Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V45__new_necklaces ...
+[2m2026-08-04T21:59:39.204170Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V46__skill_persistence ...
+[2m2026-08-04T21:59:39.208049Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V47__ability_sets ...
+[2m2026-08-04T21:59:39.211123Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V48__remove_bomb_pile ...
+[2m2026-08-04T21:59:39.212621Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V49__modular_weapons ...
+[2m2026-08-04T21:59:39.232386Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V50__musical_instruments ...
+[2m2026-08-04T21:59:39.233843Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V51__item_durability ...
+[2m2026-08-04T21:59:39.236910Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V52__miner_helmets ...
+[2m2026-08-04T21:59:39.238323Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V53__potion_combustion ...
+[2m2026-08-04T21:59:39.239746Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V54__overflow_slots ...
+[2m2026-08-04T21:59:39.241293Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V55__steeltonguedrum ...
+[2m2026-08-04T21:59:39.242734Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V56__character_player_uuid_index ...
+[2m2026-08-04T21:59:39.245591Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V57__dwarven_keys ...
+[2m2026-08-04T21:59:39.247102Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V58__npc_armor ...
+[2m2026-08-04T21:59:39.248663Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V59__potion_curious ...
+[2m2026-08-04T21:59:39.250046Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V60__recipe_book ...
+[2m2026-08-04T21:59:39.251731Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V61__fix_recipe_migration ...
+[2m2026-08-04T21:59:39.253281Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V62__hardcore ...
+[2m2026-08-04T21:59:39.256406Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V63__remove_bloodmoon_key ...
+[2m2026-08-04T21:59:39.257933Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V64__erase_pet_names ...
+[2m2026-08-04T21:59:39.259547Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V65__rename_helmet_to_head ...
+[2m2026-08-04T21:59:39.260936Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V66__merge_lantern_recipes ...
+[2m2026-08-04T21:59:39.262380Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V67__more_armor_migrations ...
+[2m2026-08-04T21:59:39.263828Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V68__rename_npcweapon ...
+[2m2026-08-04T21:59:39.265177Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V69__merge_metal_recipes ...
+[2m2026-08-04T21:59:39.266579Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V70__merge_remaining_unique_recipes ...
+[2m2026-08-04T21:59:39.268155Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m Applied 70 database migration(s):
+[2m2026-08-04T21:59:39.268164Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V1__character (checksum 9117075394110855725)
+[2m2026-08-04T21:59:39.268166Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V2__body (checksum 6157752084147612421)
+[2m2026-08-04T21:59:39.268168Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V3__stats (checksum 13972056030996213876)
+[2m2026-08-04T21:59:39.268170Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V4__race_species (checksum 17725497262845966991)
+[2m2026-08-04T21:59:39.268172Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V5__inventory (checksum 2296204078845749223)
+[2m2026-08-04T21:59:39.268173Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V6__loadout (checksum 4113908176235991387)
+[2m2026-08-04T21:59:39.268175Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V7__inv_increase (checksum 14586618203445988633)
+[2m2026-08-04T21:59:39.268177Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V8__skills (checksum 13750888823142164688)
+[2m2026-08-04T21:59:39.268179Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V9__add_missing_inv_loadout (checksum 7683767586967693766)
+[2m2026-08-04T21:59:39.268180Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V10__dash_melee_energy_cost_fix (checksum 6782154633539230651)
+[2m2026-08-04T21:59:39.268183Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V11__migrate_armour_stats (checksum 4250561370733984852)
+[2m2026-08-04T21:59:39.268184Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V12__update_item_stats (checksum 2682046764058750781)
+[2m2026-08-04T21:59:39.268186Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V13__fix_projectile_stats (checksum 9684998864943125609)
+[2m2026-08-04T21:59:39.268188Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V14__power_stat_for_weapons (checksum 3232427851139713902)
+[2m2026-08-04T21:59:39.268190Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V15__fix_various_problems (checksum 3677284111525558711)
+[2m2026-08-04T21:59:39.268192Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V16__item_persistence (checksum 4071622738827579892)
+[2m2026-08-04T21:59:39.268194Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V17__move_sceptres (checksum 10211991246089338915)
+[2m2026-08-04T21:59:39.268196Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V18__rename_npcweapons (checksum 5874698273404516747)
+[2m2026-08-04T21:59:39.268198Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V19__move_waypoint_to_stats (checksum 4968120725152602896)
+[2m2026-08-04T21:59:39.268199Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V20__item_storage (checksum 15645955395975896442)
+[2m2026-08-04T21:59:39.268201Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V21__shinygem_to_diamond (checksum 14401163018466160915)
+[2m2026-08-04T21:59:39.268203Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V22__skills (checksum 6304664136683765916)
+[2m2026-08-04T21:59:39.268205Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V23__purge_duplicate_items (checksum 8475295354042906120)
+[2m2026-08-04T21:59:39.268207Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V24__remove_duplicate_possess_stick (checksum 3892511089877010706)
+[2m2026-08-04T21:59:39.268209Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V25__starter_gear (checksum 12297568306891341032)
+[2m2026-08-04T21:59:39.268211Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V26__weapon_replacements (checksum 3916756410604680303)
+[2m2026-08-04T21:59:39.268213Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V27__armor_reorganization (checksum 355115092526764820)
+[2m2026-08-04T21:59:39.268215Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V28__fix_sturdy_red_backpack (checksum 383788314415304824)
+[2m2026-08-04T21:59:39.268217Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V29__fix_other_backpacks (checksum 4261054190619340614)
+[2m2026-08-04T21:59:39.268219Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V30__fix_leather_set (checksum 17138102695467063097)
+[2m2026-08-04T21:59:39.268221Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V31__fix_debug_armor (checksum 16042938412753080615)
+[2m2026-08-04T21:59:39.268223Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V32__reset_sceptre_skills (checksum 10182203831248564684)
+[2m2026-08-04T21:59:39.268225Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V33__fix_amethyst_staff (checksum 9604848746900261325)
+[2m2026-08-04T21:59:39.268227Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V34__remove_immunemelee_bexplosion (checksum 5443787630796502227)
+[2m2026-08-04T21:59:39.268229Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V35__rename_craftsman_hammer (checksum 17448708375386734886)
+[2m2026-08-04T21:59:39.268231Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V36__deduplicate_items (checksum 14535474030714730867)
+[2m2026-08-04T21:59:39.268233Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V37__equip_slots (checksum 17670694596716043178)
+[2m2026-08-04T21:59:39.268235Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V38__reset_bow_skills (checksum 2946902497248539682)
+[2m2026-08-04T21:59:39.268237Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V39__meat_MR_organization (checksum 12119461975081911054)
+[2m2026-08-04T21:59:39.268239Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V40__meat_fix (checksum 8567950153632141745)
+[2m2026-08-04T21:59:39.268241Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V41__mining_tree (checksum 4597753416950730742)
+[2m2026-08-04T21:59:39.268244Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V42__remove_warlock_warlord (checksum 7582057148074323076)
+[2m2026-08-04T21:59:39.268246Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V43__pets (checksum 18433196296812969669)
+[2m2026-08-04T21:59:39.268248Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V44__reduce_asset_duplication (checksum 6175258976537178019)
+[2m2026-08-04T21:59:39.268250Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V45__new_necklaces (checksum 13904973024489369378)
+[2m2026-08-04T21:59:39.268252Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V46__skill_persistence (checksum 1232753656384396185)
+[2m2026-08-04T21:59:39.268253Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V47__ability_sets (checksum 14481811957198129698)
+[2m2026-08-04T21:59:39.268256Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V48__remove_bomb_pile (checksum 13241228531294393202)
+[2m2026-08-04T21:59:39.268258Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V49__modular_weapons (checksum 9925744740750174409)
+[2m2026-08-04T21:59:39.268259Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V50__musical_instruments (checksum 17775170093105575001)
+[2m2026-08-04T21:59:39.268261Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V51__item_durability (checksum 9808753765296879698)
+[2m2026-08-04T21:59:39.268264Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V52__miner_helmets (checksum 13463685126931242488)
+[2m2026-08-04T21:59:39.268265Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V53__potion_combustion (checksum 6169398698926532945)
+[2m2026-08-04T21:59:39.268270Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V54__overflow_slots (checksum 7170889244486814327)
+[2m2026-08-04T21:59:39.268272Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V55__steeltonguedrum (checksum 6465091668118394334)
+[2m2026-08-04T21:59:39.268274Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V56__character_player_uuid_index (checksum 5461440106284075476)
+[2m2026-08-04T21:59:39.268276Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V57__dwarven_keys (checksum 2772538222823120165)
+[2m2026-08-04T21:59:39.268278Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V58__npc_armor (checksum 3411445219666517287)
+[2m2026-08-04T21:59:39.268280Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V59__potion_curious (checksum 9869216673629487416)
+[2m2026-08-04T21:59:39.268281Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V60__recipe_book (checksum 6534247327599213578)
+[2m2026-08-04T21:59:39.268283Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V61__fix_recipe_migration (checksum 5921500808049712958)
+[2m2026-08-04T21:59:39.268285Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V62__hardcore (checksum 16200974500114771960)
+[2m2026-08-04T21:59:39.268287Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V63__remove_bloodmoon_key (checksum 2894083738288817494)
+[2m2026-08-04T21:59:39.268289Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V64__erase_pet_names (checksum 8292297408000838344)
+[2m2026-08-04T21:59:39.268291Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V65__rename_helmet_to_head (checksum 2885737095059833865)
+[2m2026-08-04T21:59:39.268293Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V66__merge_lantern_recipes (checksum 14797805935592345465)
+[2m2026-08-04T21:59:39.268295Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V67__more_armor_migrations (checksum 5108486056019802376)
+[2m2026-08-04T21:59:39.268296Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V68__rename_npcweapon (checksum 6316852774348677033)
+[2m2026-08-04T21:59:39.268298Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V69__merge_metal_recipes (checksum 828686277743662713)
+[2m2026-08-04T21:59:39.268300Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V70__merge_remaining_unique_recipes (checksum 2143739316683503356)
+[2m2026-08-04T21:59:39.280951Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m Database vacuumed
+[2m2026-08-04T21:59:39.318260Z[0m [32m INFO[0m [2mveloren_world::sim[0m[2m:[0m Starting world generation
+[2m2026-08-04T21:59:41.295956Z[0m [32m INFO[0m [2mveloren_world::civ[0m[2m:[0m starting peak naming
+[2m2026-08-04T21:59:41.398417Z[0m [32m INFO[0m [2mveloren_world::civ[0m[2m:[0m all peaks named [3mnum_peaks[0m[2m=[0m80
+[2m2026-08-04T21:59:41.398451Z[0m [32m INFO[0m [2mveloren_world::civ[0m[2m:[0m starting biome naming
+[2m2026-08-04T21:59:41.661353Z[0m [32m INFO[0m [2mveloren_world::civ[0m[2m:[0m all biomes named [3mbiome_count[0m[2m=[0m285
+[2m2026-08-04T21:59:41.661862Z[0m [32m INFO[0m [2mveloren_world::civ[0m[2m:[0m starting civilisation creation
+[2m2026-08-04T21:59:45.527837Z[0m [33m WARN[0m [2mveloren_world::civ[0m[2m:[0m Failed to find starting site for civilisation.
+[2m2026-08-04T21:59:45.637484Z[0m [33m WARN[0m [2mveloren_world::civ[0m[2m:[0m Failed to find starting site for civilisation.
+[2m2026-08-04T21:59:46.611670Z[0m [33m WARN[0m [2mveloren_world::civ[0m[2m:[0m Failed to find starting site for civilisation.
+[2m2026-08-04T21:59:46.802457Z[0m [33m WARN[0m [2mveloren_world::civ[0m[2m:[0m Failed to find starting site for civilisation.
+[2m2026-08-04T21:59:46.970881Z[0m [33m WARN[0m [2mveloren_world::civ[0m[2m:[0m Failed to find starting site for civilisation.
+[2m2026-08-04T21:59:46.970910Z[0m [32m INFO[0m [2mveloren_world::civ[0m[2m:[0m all civilisations created [3minitial_civ_count[0m[2m=[0m48
+[2m2026-08-04T21:59:48.610567Z[0m [32m INFO[0m [2mveloren_world::civ[0m[2m:[0m all sites placed [3mcnt[0m[2m=[0m194
+[2m2026-08-04T21:59:50.170137Z[0m [32m INFO[0m [2mveloren_world::site::economy::context[0m[2m:[0m economy simulation start
+[2m2026-08-04T21:59:50.593811Z[0m [32m INFO[0m [2mveloren_world::site::economy::context[0m[2m:[0m economy simulation end
+[2m2026-08-04T21:59:50.593859Z[0m [32m INFO[0m [2mveloren_world::site::economy::context[0m[2m:[0m Towns 4-1395021 avg 147968 inhabitants
+[2m2026-08-04T21:59:58.581572Z[0m [32m INFO[0m [2mveloren_server::automod[0m[2m:[0m Automod disabled
+[2m2026-08-04T21:59:58.581624Z[0m [32m INFO[0m [2mveloren_server[0m[2m:[0m bastion: FLAT-TEST-ARENA env check at server boot [3mflat_arena_enabled[0m[2m=[0mfalse
+[2m2026-08-04T21:59:58.632047Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m Looking for rtsim data at E:\veloren-master\.engine-integration-wt\bastion-test-evidence\live-playthrough\userdata\server\rtsim\data.dat...
+[2m2026-08-04T21:59:58.632215Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m No rtsim data found. Generating from world...
+[2m2026-08-04T21:59:58.656520Z[0m [32m INFO[0m [2mveloren_rtsim::generate[0m[2m:[0m Generated 16 rtsim factions.
+[2m2026-08-04T21:59:58.656658Z[0m [32m INFO[0m [2mveloren_rtsim::generate[0m[2m:[0m Registering 194 rtsim sites from world sites.
+[2m2026-08-04T21:59:58.656975Z[0m [32m INFO[0m [2mveloren_rtsim::generate[0m[2m:[0m Generated 2008 rtsim NPCs to be spawned.
+[2m2026-08-04T21:59:58.656986Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m Rtsim data generated.
+[2m2026-08-04T21:59:58.658193Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Starting default rtsim rules...
+[2m2026-08-04T21:59:58.658211Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::migrate::Migrate' rule...
+[2m2026-08-04T21:59:58.658225Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::architect::Architect' rule...
+[2m2026-08-04T21:59:58.658232Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::replenish_resources::ReplenishResources' rule...
+[2m2026-08-04T21:59:58.658235Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::report::ReportEvents' rule...
+[2m2026-08-04T21:59:58.658238Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::chronicle_events::ChronicleEvents' rule...
+[2m2026-08-04T21:59:58.658240Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::sync_npcs::SyncNpcs' rule...
+[2m2026-08-04T21:59:58.658243Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::simulate_npcs::SimulateNpcs' rule...
+[2m2026-08-04T21:59:58.658246Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::npc_ai::NpcAi' rule...
+[2m2026-08-04T21:59:58.658253Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::cleanup::CleanUp' rule...
+[2m2026-08-04T21:59:58.707815Z[0m [32m INFO[0m [2mveloren_server::rtsim::rule[0m[2m:[0m Starting server rtsim rules...
+[2m2026-08-04T21:59:58.707847Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_server::rtsim::rule::deplete_resources::DepleteResources' rule...
+[2m2026-08-04T21:59:58.716409Z[0m [32m INFO[0m [2mveloren_server[0m[2m:[0m Server version: 2f59ccde [2026-08-04]
+[2m2026-08-04T21:59:58.716806Z[0m [32m INFO[0m [2mveloren_server_cli[0m[2m:[0m Server is ready to accept connections. [3mweb_port[0m[2m=[0m14005 [3mgameserver_addresses[0m[2m=[0mMap { iter: IntoIter([Tcp { address: [::]:14004 }, Tcp { address: 0.0.0.0:14004 }]) }
+[2m2026-08-04T21:59:58.717802Z[0m [32m INFO[0m [2mveloren_server_cli::web[0m[2m:[0m listening on 127.0.0.1:14005
+[2m2026-08-04T22:00:04.746029Z[0m [32m INFO[0m [2mveloren_network::channel[0m[2m:[0m Accepting Tcp from [3mremote_addr[0m[2m=[0m"127.xxx.0.xxx:55009" [3mcid[0m[2m=[0m0
+[2m2026-08-04T22:00:04.746719Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mM7ZnPu[1m}[0m[2m:[0m[1m[0m[2m:[0m[1mhandshake[0m[1m{[0m[3mcid[0m[2m=[0m0[1m}[0m[2m:[0m [2mveloren_network_protocol::handshake[0m[2m:[0m This Handshake is now configured! [3mpid[0m[2m=[0mU/ghvU
+[2m2026-08-04T22:00:04.920930Z[0m [32m INFO[0m [2mveloren_server::sys::msg::register[0m[2m:[0m New User [3musername[0m[2m=[0m"bastion_llm_player"
+[2m2026-08-04T22:00:04.926988Z[0m [32m INFO[0m [2mveloren_server_cli[0m[2m:[0m Client connected!
+[2m2026-08-04T22:00:20.673171Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mM7ZnPu[1m}[0m[2m:[0m[1m[0m[2m:[0m[1mremote[0m[1m{[0m[3mp[0m[2m=[0mU/ghvU[1m}[0m[2m:[0m[1mrecv[0m[2m:[0m [2mveloren_network::participant[0m[2m:[0m protocol failed, shutting down channel [3me[0m[2m=[0mCustom(Tcp(Custom { kind: BrokenPipe, error: "read returned 0 bytes" })) [3mcid[0m[2m=[0m0
+[2m2026-08-04T22:00:20.706777Z[0m [32m INFO[0m [2mveloren_server_cli[0m[2m:[0m Client disconnected!
+[2m2026-08-04T22:00:20.726416Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mM7ZnPu[1m}[0m[2m:[0m[1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mM7ZnPu[1m}[0m[2m:[0m[1mremote[0m[1m{[0m[3mp[0m[2m=[0mU/ghvU[1m}[0m[2m:[0m [2mveloren_network::api[0m[2m:[0m Participant already has been shutdown gracefully
+[2m2026-08-04T22:01:06.077094Z[0m [32m INFO[0m [2mveloren_network::channel[0m[2m:[0m Accepting Tcp from [3mremote_addr[0m[2m=[0m"127.xxx.0.xxx:50165" [3mcid[0m[2m=[0m1
+[2m2026-08-04T22:01:06.077669Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mM7ZnPu[1m}[0m[2m:[0m[1m[0m[2m:[0m[1mhandshake[0m[1m{[0m[3mcid[0m[2m=[0m1[1m}[0m[2m:[0m [2mveloren_network_protocol::handshake[0m[2m:[0m This Handshake is now configured! [3mpid[0m[2m=[0mcmz7oI
+[2m2026-08-04T22:01:06.284049Z[0m [32m INFO[0m [2mveloren_server::sys::msg::register[0m[2m:[0m New User [3musername[0m[2m=[0m"bastion_llm_player"
+[2m2026-08-04T22:01:06.291116Z[0m [32m INFO[0m [2mveloren_server_cli[0m[2m:[0m Client connected!
+[2m2026-08-04T22:01:12.094600Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m bastion: spawned starting colony [3mnames[0m[2m=[0m["Ulric Ashborn", "Quill Ironhand", "Osric Ashborn", "Wynn Ashborn", "Wynn Longstride", "Cerys Ironhand", "Sten Brighteye", "Fenn the Quiet"] [3mcount[0m[2m=[0m8
+[2m2026-08-04T22:01:12.146020Z[0m [32m INFO[0m [2mveloren_server::rtsim::tick[0m[2m:[0m bastion: colonist promoted to loaded entity [3mname[0m[2m=[0m"Osric Ashborn"
+[2m2026-08-04T22:01:12.146192Z[0m [32m INFO[0m [2mveloren_server::rtsim::tick[0m[2m:[0m bastion: colonist promoted to loaded entity [3mname[0m[2m=[0m"Fenn the Quiet"
+[2m2026-08-04T22:01:12.146218Z[0m [32m INFO[0m [2mveloren_server::rtsim::tick[0m[2m:[0m bastion: colonist promoted to loaded entity [3mname[0m[2m=[0m"Sten Brighteye"
+[2m2026-08-04T22:01:12.146304Z[0m [32m INFO[0m [2mveloren_server::rtsim::tick[0m[2m:[0m bastion: colonist promoted to loaded entity [3mname[0m[2m=[0m"Cerys Ironhand"
+[2m2026-08-04T22:01:12.146359Z[0m [32m INFO[0m [2mveloren_server::rtsim::tick[0m[2m:[0m bastion: colonist promoted to loaded entity [3mname[0m[2m=[0m"Wynn Longstride"
+[2m2026-08-04T22:01:12.146377Z[0m [32m INFO[0m [2mveloren_server::rtsim::tick[0m[2m:[0m bastion: colonist promoted to loaded entity [3mname[0m[2m=[0m"Wynn Ashborn"
+[2m2026-08-04T22:01:12.146390Z[0m [32m INFO[0m [2mveloren_server::rtsim::tick[0m[2m:[0m bastion: colonist promoted to loaded entity [3mname[0m[2m=[0m"Quill Ironhand"
+[2m2026-08-04T22:01:12.146415Z[0m [32m INFO[0m [2mveloren_server::rtsim::tick[0m[2m:[0m bastion: colonist promoted to loaded entity [3mname[0m[2m=[0m"Ulric Ashborn"
+[2m2026-08-04T22:01:22.178796Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm plot registered [3mzone[0m[2m=[0m0 [3mregion[0m[2m=[0mRegion { min: Vec3 { x: 15198, y: 15998, z: 415 }, max: Vec3 { x: 15204, y: 15999, z: 416 } }
+[2m2026-08-04T22:01:22.178858Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation placed [3mkind[0m[2m=[0mFarm [3mjobs[0m[2m=[0m0
+[2m2026-08-04T22:01:22.578671Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m0 [3mpos[0m[2m=[0mVec3 { x: 15198, y: 15998, z: 415 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:22.578717Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m1 [3mpos[0m[2m=[0mVec3 { x: 15199, y: 15998, z: 415 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:22.578721Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m2 [3mpos[0m[2m=[0mVec3 { x: 15200, y: 15998, z: 415 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:22.578724Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m3 [3mpos[0m[2m=[0mVec3 { x: 15201, y: 15998, z: 415 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:22.578729Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m4 [3mpos[0m[2m=[0mVec3 { x: 15202, y: 15998, z: 415 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:22.578733Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m5 [3mpos[0m[2m=[0mVec3 { x: 15203, y: 15998, z: 415 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:22.578737Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m6 [3mpos[0m[2m=[0mVec3 { x: 15204, y: 15998, z: 415 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:22.578741Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m7 [3mpos[0m[2m=[0mVec3 { x: 15198, y: 15999, z: 415 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:22.578745Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m8 [3mpos[0m[2m=[0mVec3 { x: 15199, y: 15999, z: 415 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:22.578749Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m9 [3mpos[0m[2m=[0mVec3 { x: 15200, y: 15999, z: 415 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:22.578752Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m10 [3mpos[0m[2m=[0mVec3 { x: 15201, y: 15999, z: 415 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:22.578758Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m11 [3mpos[0m[2m=[0mVec3 { x: 15203, y: 15999, z: 415 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:22.578762Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m12 [3mpos[0m[2m=[0mVec3 { x: 15204, y: 15999, z: 415 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:23.479214Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m12 [3mcolonist[0m[2m=[0m157
+[2m2026-08-04T22:01:23.479258Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m10 [3mcolonist[0m[2m=[0m158
+[2m2026-08-04T22:01:23.479287Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m8 [3mcolonist[0m[2m=[0m159
+[2m2026-08-04T22:01:23.479297Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m11 [3mcolonist[0m[2m=[0m160
+[2m2026-08-04T22:01:23.479308Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m6 [3mcolonist[0m[2m=[0m161
+[2m2026-08-04T22:01:23.479322Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m5 [3mcolonist[0m[2m=[0m162
+[2m2026-08-04T22:01:23.479343Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m4 [3mcolonist[0m[2m=[0m163
+[2m2026-08-04T22:01:23.479352Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m3 [3mcolonist[0m[2m=[0m164
+[2m2026-08-04T22:01:25.745768Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m6 [3mpos[0m[2m=[0mVec3 { x: 15204, y: 15998, z: 415 }
+[2m2026-08-04T22:01:26.048746Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m4 [3mpos[0m[2m=[0mVec3 { x: 15202, y: 15998, z: 415 }
+[2m2026-08-04T22:01:26.178773Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m5 [3mpos[0m[2m=[0mVec3 { x: 15203, y: 15998, z: 415 }
+[2m2026-08-04T22:01:26.249080Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m10 [3mpos[0m[2m=[0mVec3 { x: 15201, y: 15999, z: 415 }
+[2m2026-08-04T22:01:26.612440Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m12 [3mpos[0m[2m=[0mVec3 { x: 15204, y: 15999, z: 415 }
+[2m2026-08-04T22:01:27.079141Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m8 [3mpos[0m[2m=[0mVec3 { x: 15199, y: 15999, z: 415 }
+[2m2026-08-04T22:01:27.146092Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m3 [3mpos[0m[2m=[0mVec3 { x: 15201, y: 15998, z: 415 }
+[2m2026-08-04T22:01:27.179012Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m11 [3mpos[0m[2m=[0mVec3 { x: 15203, y: 15999, z: 415 }
+[2m2026-08-04T22:01:28.748233Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 15204, y: 15998, z: 415 }
+[2m2026-08-04T22:01:29.004706Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m1 [3mcolonist[0m[2m=[0m161
+[2m2026-08-04T22:01:29.086453Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m13 [3mpos[0m[2m=[0mVec3 { x: 15204, y: 15998, z: 416 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:29.417061Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 15202, y: 15998, z: 415 }
+[2m2026-08-04T22:01:29.483909Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m7 [3mcolonist[0m[2m=[0m163
+[2m2026-08-04T22:01:29.516982Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m1 [3mpos[0m[2m=[0mVec3 { x: 15199, y: 15998, z: 415 }
+[2m2026-08-04T22:01:29.551829Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 15203, y: 15998, z: 415 }
+[2m2026-08-04T22:01:29.585207Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m14 [3mpos[0m[2m=[0mVec3 { x: 15202, y: 15998, z: 416 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:29.585238Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m15 [3mpos[0m[2m=[0mVec3 { x: 15203, y: 15998, z: 416 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:29.983953Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m0 [3mcolonist[0m[2m=[0m162
+[2m2026-08-04T22:01:30.150412Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m7 [3mpos[0m[2m=[0mVec3 { x: 15198, y: 15999, z: 415 }
+[2m2026-08-04T22:01:30.183933Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 15203, y: 15999, z: 415 }
+[2m2026-08-04T22:01:30.485260Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m9 [3mcolonist[0m[2m=[0m160
+[2m2026-08-04T22:01:30.517734Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 15201, y: 15998, z: 415 }
+[2m2026-08-04T22:01:30.550982Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 15201, y: 15999, z: 415 }
+[2m2026-08-04T22:01:30.583699Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m16 [3mpos[0m[2m=[0mVec3 { x: 15201, y: 15998, z: 416 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:30.583727Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m17 [3mpos[0m[2m=[0mVec3 { x: 15201, y: 15999, z: 416 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:30.583733Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m18 [3mpos[0m[2m=[0mVec3 { x: 15203, y: 15999, z: 416 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:30.717040Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m0 [3mpos[0m[2m=[0mVec3 { x: 15198, y: 15998, z: 415 }
+[2m2026-08-04T22:01:30.917080Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 15204, y: 15999, z: 415 }
+[2m2026-08-04T22:01:30.983816Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m2 [3mcolonist[0m[2m=[0m157
+[2m2026-08-04T22:01:31.084467Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m19 [3mpos[0m[2m=[0mVec3 { x: 15204, y: 15999, z: 416 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:31.451275Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m2 [3mpos[0m[2m=[0mVec3 { x: 15200, y: 15998, z: 415 }
+[2m2026-08-04T22:01:31.483941Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m9 [3mpos[0m[2m=[0mVec3 { x: 15200, y: 15999, z: 415 }
+[2m2026-08-04T22:01:32.117275Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 15199, y: 15999, z: 415 }
+[2m2026-08-04T22:01:32.518106Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 15199, y: 15998, z: 415 }
+[2m2026-08-04T22:01:32.583860Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m20 [3mpos[0m[2m=[0mVec3 { x: 15199, y: 15998, z: 416 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:32.583890Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m21 [3mpos[0m[2m=[0mVec3 { x: 15199, y: 15999, z: 416 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:33.517265Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 15198, y: 15999, z: 415 }
+[2m2026-08-04T22:01:33.583542Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m22 [3mpos[0m[2m=[0mVec3 { x: 15198, y: 15999, z: 416 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:34.083728Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 15198, y: 15998, z: 415 }
+[2m2026-08-04T22:01:34.483937Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 15200, y: 15999, z: 415 }
+[2m2026-08-04T22:01:34.583630Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m23 [3mpos[0m[2m=[0mVec3 { x: 15198, y: 15998, z: 416 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:34.583653Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m24 [3mpos[0m[2m=[0mVec3 { x: 15200, y: 15999, z: 416 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:01:35.750295Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 15200, y: 15998, z: 415 }
+[2m2026-08-04T22:01:36.084145Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m25 [3mpos[0m[2m=[0mVec3 { x: 15200, y: 15998, z: 416 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-04T22:03:02.167758Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mM7ZnPu[1m}[0m[2m:[0m[1m[0m[2m:[0m[1mremote[0m[1m{[0m[3mp[0m[2m=[0mcmz7oI[1m}[0m[2m:[0m[1mrecv[0m[2m:[0m [2mveloren_network::participant[0m[2m:[0m protocol failed, shutting down channel [3me[0m[2m=[0mCustom(Tcp(Custom { kind: BrokenPipe, error: "read returned 0 bytes" })) [3mcid[0m[2m=[0m1
+[2m2026-08-04T22:03:02.197070Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mM7ZnPu[1m}[0m[2m:[0m[1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mM7ZnPu[1m}[0m[2m:[0m[1mremote[0m[1m{[0m[3mp[0m[2m=[0mcmz7oI[1m}[0m[2m:[0m [2mveloren_network::api[0m[2m:[0m Participant already has been shutdown gracefully
+[2m2026-08-04T22:03:02.198974Z[0m [32m INFO[0m [2mveloren_server_cli[0m[2m:[0m Client disconnected!
+[2m2026-08-04T22:03:02.262860Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m bastion: colonist demoted to SimulationMode::Simulated [3mname[0m[2m=[0m"Ulric Ashborn"
+[2m2026-08-04T22:03:02.296382Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m bastion: colonist demoted to SimulationMode::Simulated [3mname[0m[2m=[0m"Fenn the Quiet"
+[2m2026-08-04T22:03:02.296403Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m bastion: colonist demoted to SimulationMode::Simulated [3mname[0m[2m=[0m"Wynn Ashborn"
+[2m2026-08-04T22:03:02.693915Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m bastion: colonist demoted to SimulationMode::Simulated [3mname[0m[2m=[0m"Cerys Ironhand"
+[2m2026-08-04T22:03:02.724492Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: phantom job retired (task #57) — target cell no longer matches the designation [3mjob[0m[2m=[0m21 [3mpos[0m[2m=[0mVec3 { x: 15199, y: 15999, z: 416 } [3mkind[0m[2m=[0mDesignated(Farm)
+[2m2026-08-04T22:03:02.724520Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: phantom job retired (task #57) — target cell no longer matches the designation [3mjob[0m[2m=[0m20 [3mpos[0m[2m=[0mVec3 { x: 15199, y: 15998, z: 416 } [3mkind[0m[2m=[0mDesignated(Farm)
+[2m2026-08-04T22:03:02.724525Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: phantom job retired (task #57) — target cell no longer matches the designation [3mjob[0m[2m=[0m23 [3mpos[0m[2m=[0mVec3 { x: 15198, y: 15998, z: 416 } [3mkind[0m[2m=[0mDesignated(Farm)
+[2m2026-08-04T22:03:02.724529Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: phantom job retired (task #57) — target cell no longer matches the designation [3mjob[0m[2m=[0m22 [3mpos[0m[2m=[0mVec3 { x: 15198, y: 15999, z: 416 } [3mkind[0m[2m=[0mDesignated(Farm)
+[2m2026-08-04T22:03:02.727646Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m bastion: colonist demoted to SimulationMode::Simulated [3mname[0m[2m=[0m"Osric Ashborn"
+[2m2026-08-04T22:03:02.727667Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m bastion: colonist demoted to SimulationMode::Simulated [3mname[0m[2m=[0m"Sten Brighteye"
+[2m2026-08-04T22:03:02.727671Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m bastion: colonist demoted to SimulationMode::Simulated [3mname[0m[2m=[0m"Wynn Longstride"
+[2m2026-08-04T22:03:02.727675Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m bastion: colonist demoted to SimulationMode::Simulated [3mname[0m[2m=[0m"Quill Ironhand"
+[2m2026-08-04T22:03:03.225311Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: phantom job retired (task #57) — target cell no longer matches the designation [3mjob[0m[2m=[0m24 [3mpos[0m[2m=[0mVec3 { x: 15200, y: 15999, z: 416 } [3mkind[0m[2m=[0mDesignated(Farm)
+[2m2026-08-04T22:03:03.225341Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: phantom job retired (task #57) — target cell no longer matches the designation [3mjob[0m[2m=[0m25 [3mpos[0m[2m=[0mVec3 { x: 15200, y: 15998, z: 416 } [3mkind[0m[2m=[0mDesignated(Farm)
+[2m2026-08-04T22:03:03.225346Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: phantom job retired (task #57) — target cell no longer matches the designation [3mjob[0m[2m=[0m16 [3mpos[0m[2m=[0mVec3 { x: 15201, y: 15998, z: 416 } [3mkind[0m[2m=[0mDesignated(Farm)
+[2m2026-08-04T22:03:03.225350Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: phantom job retired (task #57) — target cell no longer matches the designation [3mjob[0m[2m=[0m17 [3mpos[0m[2m=[0mVec3 { x: 15201, y: 15999, z: 416 } [3mkind[0m[2m=[0mDesignated(Farm)
+[2m2026-08-04T22:03:03.225354Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: phantom job retired (task #57) — target cell no longer matches the designation [3mjob[0m[2m=[0m18 [3mpos[0m[2m=[0mVec3 { x: 15203, y: 15999, z: 416 } [3mkind[0m[2m=[0mDesignated(Farm)
+[2m2026-08-04T22:03:03.225357Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: phantom job retired (task #57) — target cell no longer matches the designation [3mjob[0m[2m=[0m13 [3mpos[0m[2m=[0mVec3 { x: 15204, y: 15998, z: 416 } [3mkind[0m[2m=[0mDesignated(Farm)
+[2m2026-08-04T22:03:03.225361Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: phantom job retired (task #57) — target cell no longer matches the designation [3mjob[0m[2m=[0m14 [3mpos[0m[2m=[0mVec3 { x: 15202, y: 15998, z: 416 } [3mkind[0m[2m=[0mDesignated(Farm)
+[2m2026-08-04T22:03:03.225365Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: phantom job retired (task #57) — target cell no longer matches the designation [3mjob[0m[2m=[0m15 [3mpos[0m[2m=[0mVec3 { x: 15203, y: 15998, z: 416 } [3mkind[0m[2m=[0mDesignated(Farm)
+[2m2026-08-04T22:03:03.225368Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: phantom job retired (task #57) — target cell no longer matches the designation [3mjob[0m[2m=[0m19 [3mpos[0m[2m=[0mVec3 { x: 15204, y: 15999, z: 416 } [3mkind[0m[2m=[0mDesignated(Farm)

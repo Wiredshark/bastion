@@ -1,0 +1,643 @@
+bastion-harness 4561429aec+dirty built 2026-08-08T14:05:16Z
+[2m2026-08-08T14:09:04.476934Z[0m [32m INFO[0m [2mveloren_server[0m[2m:[0m Server data dir is: C:\Users\q\AppData\Local\Temp\bastion-b5-21896-33800
+[2m2026-08-08T14:09:04.477117Z[0m [32m INFO[0m [2mveloren_server[0m[2m:[0m Authentication is disabled
+[2m2026-08-08T14:09:04.477231Z[0m [32m INFO[0m [2mveloren_server[0m[2m:[0m Server boot ID: boot/d30a2ab0-6131-4692-8d0e-c920b7d9b4a9
+[2m2026-08-08T14:09:04.477479Z[0m [32m INFO[0m [2mveloren_common_assets[0m[2m:[0m Certified asset root path=E:\veloren-master\.engine-integration-wt\assets
+[2m2026-08-08T14:09:05.422095Z[0m [32m INFO[0m [2mveloren_server[0m[2m:[0m content manifest built [3mfiles[0m[2m=[0m10610
+[2m2026-08-08T14:09:05.422389Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mDbMigrations
+[2m2026-08-08T14:09:05.479429Z[0m [32m INFO[0m [2mrefinery_core::traits[0m[2m:[0m schema history table is empty, going to apply all migrations
+[2m2026-08-08T14:09:05.479734Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m going to apply 70 migrations in multiple transactions.
+[2m2026-08-08T14:09:05.479755Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V1__character ...
+[2m2026-08-08T14:09:05.487272Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V2__body ...
+[2m2026-08-08T14:09:05.496181Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V3__stats ...
+[2m2026-08-08T14:09:05.503633Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V4__race_species ...
+[2m2026-08-08T14:09:05.512391Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V5__inventory ...
+[2m2026-08-08T14:09:05.523265Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V6__loadout ...
+[2m2026-08-08T14:09:05.539637Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V7__inv_increase ...
+[2m2026-08-08T14:09:05.546629Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V8__skills ...
+[2m2026-08-08T14:09:05.563341Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V9__add_missing_inv_loadout ...
+[2m2026-08-08T14:09:05.568517Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V10__dash_melee_energy_cost_fix ...
+[2m2026-08-08T14:09:05.571000Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V11__migrate_armour_stats ...
+[2m2026-08-08T14:09:05.574366Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V12__update_item_stats ...
+[2m2026-08-08T14:09:05.577269Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V13__fix_projectile_stats ...
+[2m2026-08-08T14:09:05.579766Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V14__power_stat_for_weapons ...
+[2m2026-08-08T14:09:05.582438Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V15__fix_various_problems ...
+[2m2026-08-08T14:09:05.584893Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V16__item_persistence ...
+[2m2026-08-08T14:09:05.595778Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V17__move_sceptres ...
+[2m2026-08-08T14:09:05.598356Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V18__rename_npcweapons ...
+[2m2026-08-08T14:09:05.603803Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V19__move_waypoint_to_stats ...
+[2m2026-08-08T14:09:05.615018Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V20__item_storage ...
+[2m2026-08-08T14:09:05.621056Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V21__shinygem_to_diamond ...
+[2m2026-08-08T14:09:05.626664Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V22__skills ...
+[2m2026-08-08T14:09:05.639844Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V23__purge_duplicate_items ...
+[2m2026-08-08T14:09:05.645887Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V24__remove_duplicate_possess_stick ...
+[2m2026-08-08T14:09:05.656555Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V25__starter_gear ...
+[2m2026-08-08T14:09:05.659517Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V26__weapon_replacements ...
+[2m2026-08-08T14:09:05.662556Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V27__armor_reorganization ...
+[2m2026-08-08T14:09:05.666347Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V28__fix_sturdy_red_backpack ...
+[2m2026-08-08T14:09:05.668867Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V29__fix_other_backpacks ...
+[2m2026-08-08T14:09:05.671581Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V30__fix_leather_set ...
+[2m2026-08-08T14:09:05.674057Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V31__fix_debug_armor ...
+[2m2026-08-08T14:09:05.676638Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V32__reset_sceptre_skills ...
+[2m2026-08-08T14:09:05.678965Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V33__fix_amethyst_staff ...
+[2m2026-08-08T14:09:05.681711Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V34__remove_immunemelee_bexplosion ...
+[2m2026-08-08T14:09:05.684597Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V35__rename_craftsman_hammer ...
+[2m2026-08-08T14:09:05.687133Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V36__deduplicate_items ...
+[2m2026-08-08T14:09:05.692726Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V37__equip_slots ...
+[2m2026-08-08T14:09:05.698224Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V38__reset_bow_skills ...
+[2m2026-08-08T14:09:05.703886Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V39__meat_MR_organization ...
+[2m2026-08-08T14:09:05.710253Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V40__meat_fix ...
+[2m2026-08-08T14:09:05.716129Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V41__mining_tree ...
+[2m2026-08-08T14:09:05.721530Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V42__remove_warlock_warlord ...
+[2m2026-08-08T14:09:05.727121Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V43__pets ...
+[2m2026-08-08T14:09:05.738404Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V44__reduce_asset_duplication ...
+[2m2026-08-08T14:09:05.743857Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V45__new_necklaces ...
+[2m2026-08-08T14:09:05.750086Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V46__skill_persistence ...
+[2m2026-08-08T14:09:05.757287Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V47__ability_sets ...
+[2m2026-08-08T14:09:05.763412Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V48__remove_bomb_pile ...
+[2m2026-08-08T14:09:05.766158Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V49__modular_weapons ...
+[2m2026-08-08T14:09:05.776104Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V50__musical_instruments ...
+[2m2026-08-08T14:09:05.779046Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V51__item_durability ...
+[2m2026-08-08T14:09:05.784734Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V52__miner_helmets ...
+[2m2026-08-08T14:09:05.789834Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V53__potion_combustion ...
+[2m2026-08-08T14:09:05.795769Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V54__overflow_slots ...
+[2m2026-08-08T14:09:05.806693Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V55__steeltonguedrum ...
+[2m2026-08-08T14:09:05.817181Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V56__character_player_uuid_index ...
+[2m2026-08-08T14:09:05.834002Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V57__dwarven_keys ...
+[2m2026-08-08T14:09:05.841818Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V58__npc_armor ...
+[2m2026-08-08T14:09:05.845026Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V59__potion_curious ...
+[2m2026-08-08T14:09:05.847707Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V60__recipe_book ...
+[2m2026-08-08T14:09:05.850663Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V61__fix_recipe_migration ...
+[2m2026-08-08T14:09:05.855364Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V62__hardcore ...
+[2m2026-08-08T14:09:05.862110Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V63__remove_bloodmoon_key ...
+[2m2026-08-08T14:09:05.864753Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V64__erase_pet_names ...
+[2m2026-08-08T14:09:05.867429Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V65__rename_helmet_to_head ...
+[2m2026-08-08T14:09:05.873543Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V66__merge_lantern_recipes ...
+[2m2026-08-08T14:09:05.879041Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V67__more_armor_migrations ...
+[2m2026-08-08T14:09:05.884796Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V68__rename_npcweapon ...
+[2m2026-08-08T14:09:05.890464Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V69__merge_metal_recipes ...
+[2m2026-08-08T14:09:05.896426Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V70__merge_remaining_unique_recipes ...
+[2m2026-08-08T14:09:05.902283Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m Applied 70 database migration(s):
+[2m2026-08-08T14:09:05.902323Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V1__character (checksum 9117075394110855725)
+[2m2026-08-08T14:09:05.902332Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V2__body (checksum 6157752084147612421)
+[2m2026-08-08T14:09:05.902341Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V3__stats (checksum 13972056030996213876)
+[2m2026-08-08T14:09:05.902350Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V4__race_species (checksum 17725497262845966991)
+[2m2026-08-08T14:09:05.902362Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V5__inventory (checksum 2296204078845749223)
+[2m2026-08-08T14:09:05.902371Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V6__loadout (checksum 4113908176235991387)
+[2m2026-08-08T14:09:05.902380Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V7__inv_increase (checksum 14586618203445988633)
+[2m2026-08-08T14:09:05.902389Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V8__skills (checksum 13750888823142164688)
+[2m2026-08-08T14:09:05.902402Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V9__add_missing_inv_loadout (checksum 7683767586967693766)
+[2m2026-08-08T14:09:05.902411Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V10__dash_melee_energy_cost_fix (checksum 6782154633539230651)
+[2m2026-08-08T14:09:05.902419Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V11__migrate_armour_stats (checksum 4250561370733984852)
+[2m2026-08-08T14:09:05.902425Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V12__update_item_stats (checksum 2682046764058750781)
+[2m2026-08-08T14:09:05.902432Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V13__fix_projectile_stats (checksum 9684998864943125609)
+[2m2026-08-08T14:09:05.902437Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V14__power_stat_for_weapons (checksum 3232427851139713902)
+[2m2026-08-08T14:09:05.902443Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V15__fix_various_problems (checksum 3677284111525558711)
+[2m2026-08-08T14:09:05.902449Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V16__item_persistence (checksum 4071622738827579892)
+[2m2026-08-08T14:09:05.902455Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V17__move_sceptres (checksum 10211991246089338915)
+[2m2026-08-08T14:09:05.902462Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V18__rename_npcweapons (checksum 5874698273404516747)
+[2m2026-08-08T14:09:05.902468Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V19__move_waypoint_to_stats (checksum 4968120725152602896)
+[2m2026-08-08T14:09:05.902474Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V20__item_storage (checksum 15645955395975896442)
+[2m2026-08-08T14:09:05.902480Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V21__shinygem_to_diamond (checksum 14401163018466160915)
+[2m2026-08-08T14:09:05.902486Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V22__skills (checksum 6304664136683765916)
+[2m2026-08-08T14:09:05.902492Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V23__purge_duplicate_items (checksum 8475295354042906120)
+[2m2026-08-08T14:09:05.902498Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V24__remove_duplicate_possess_stick (checksum 3892511089877010706)
+[2m2026-08-08T14:09:05.902504Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V25__starter_gear (checksum 12297568306891341032)
+[2m2026-08-08T14:09:05.902510Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V26__weapon_replacements (checksum 3916756410604680303)
+[2m2026-08-08T14:09:05.902516Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V27__armor_reorganization (checksum 355115092526764820)
+[2m2026-08-08T14:09:05.902522Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V28__fix_sturdy_red_backpack (checksum 383788314415304824)
+[2m2026-08-08T14:09:05.902528Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V29__fix_other_backpacks (checksum 4261054190619340614)
+[2m2026-08-08T14:09:05.902534Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V30__fix_leather_set (checksum 17138102695467063097)
+[2m2026-08-08T14:09:05.902540Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V31__fix_debug_armor (checksum 16042938412753080615)
+[2m2026-08-08T14:09:05.902546Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V32__reset_sceptre_skills (checksum 10182203831248564684)
+[2m2026-08-08T14:09:05.902552Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V33__fix_amethyst_staff (checksum 9604848746900261325)
+[2m2026-08-08T14:09:05.902558Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V34__remove_immunemelee_bexplosion (checksum 5443787630796502227)
+[2m2026-08-08T14:09:05.902628Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V35__rename_craftsman_hammer (checksum 17448708375386734886)
+[2m2026-08-08T14:09:05.902638Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V36__deduplicate_items (checksum 14535474030714730867)
+[2m2026-08-08T14:09:05.902645Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V37__equip_slots (checksum 17670694596716043178)
+[2m2026-08-08T14:09:05.902651Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V38__reset_bow_skills (checksum 2946902497248539682)
+[2m2026-08-08T14:09:05.902657Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V39__meat_MR_organization (checksum 12119461975081911054)
+[2m2026-08-08T14:09:05.902666Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V40__meat_fix (checksum 8567950153632141745)
+[2m2026-08-08T14:09:05.902672Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V41__mining_tree (checksum 4597753416950730742)
+[2m2026-08-08T14:09:05.902678Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V42__remove_warlock_warlord (checksum 7582057148074323076)
+[2m2026-08-08T14:09:05.902684Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V43__pets (checksum 18433196296812969669)
+[2m2026-08-08T14:09:05.902690Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V44__reduce_asset_duplication (checksum 6175258976537178019)
+[2m2026-08-08T14:09:05.902696Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V45__new_necklaces (checksum 13904973024489369378)
+[2m2026-08-08T14:09:05.902702Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V46__skill_persistence (checksum 1232753656384396185)
+[2m2026-08-08T14:09:05.902708Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V47__ability_sets (checksum 14481811957198129698)
+[2m2026-08-08T14:09:05.902714Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V48__remove_bomb_pile (checksum 13241228531294393202)
+[2m2026-08-08T14:09:05.902720Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V49__modular_weapons (checksum 9925744740750174409)
+[2m2026-08-08T14:09:05.902727Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V50__musical_instruments (checksum 17775170093105575001)
+[2m2026-08-08T14:09:05.902736Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V51__item_durability (checksum 9808753765296879698)
+[2m2026-08-08T14:09:05.902745Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V52__miner_helmets (checksum 13463685126931242488)
+[2m2026-08-08T14:09:05.902752Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V53__potion_combustion (checksum 6169398698926532945)
+[2m2026-08-08T14:09:05.902760Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V54__overflow_slots (checksum 7170889244486814327)
+[2m2026-08-08T14:09:05.902768Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V55__steeltonguedrum (checksum 6465091668118394334)
+[2m2026-08-08T14:09:05.902776Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V56__character_player_uuid_index (checksum 5461440106284075476)
+[2m2026-08-08T14:09:05.902784Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V57__dwarven_keys (checksum 2772538222823120165)
+[2m2026-08-08T14:09:05.902792Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V58__npc_armor (checksum 3411445219666517287)
+[2m2026-08-08T14:09:05.902799Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V59__potion_curious (checksum 9869216673629487416)
+[2m2026-08-08T14:09:05.902808Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V60__recipe_book (checksum 6534247327599213578)
+[2m2026-08-08T14:09:05.902816Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V61__fix_recipe_migration (checksum 5921500808049712958)
+[2m2026-08-08T14:09:05.902826Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V62__hardcore (checksum 16200974500114771960)
+[2m2026-08-08T14:09:05.902835Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V63__remove_bloodmoon_key (checksum 2894083738288817494)
+[2m2026-08-08T14:09:05.902843Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V64__erase_pet_names (checksum 8292297408000838344)
+[2m2026-08-08T14:09:05.902851Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V65__rename_helmet_to_head (checksum 2885737095059833865)
+[2m2026-08-08T14:09:05.902859Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V66__merge_lantern_recipes (checksum 14797805935592345465)
+[2m2026-08-08T14:09:05.902868Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V67__more_armor_migrations (checksum 5108486056019802376)
+[2m2026-08-08T14:09:05.902876Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V68__rename_npcweapon (checksum 6316852774348677033)
+[2m2026-08-08T14:09:05.902885Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V69__merge_metal_recipes (checksum 828686277743662713)
+[2m2026-08-08T14:09:05.902894Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V70__merge_remaining_unique_recipes (checksum 2143739316683503356)
+[2m2026-08-08T14:09:05.911835Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mDbVacuum
+[2m2026-08-08T14:09:05.958528Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m Database vacuumed
+[2m2026-08-08T14:09:05.964047Z[0m [32m INFO[0m [2mveloren_common_state::plugin[0m[2m:[0m Searching "E:\\veloren-master\\.engine-integration-wt\\assets\\plugins" for plugins...
+[2m2026-08-08T14:09:05.964279Z[0m [32m INFO[0m [2mveloren_common_state::plugin[0m[2m:[0m "E:\\veloren-master\\.engine-integration-wt\\assets\\plugins" does not exist, no plugins loaded
+[2m2026-08-08T14:09:05.995101Z[0m [32m INFO[0m [2mveloren_world::sim[0m[2m:[0m Starting world generation
+[2m2026-08-08T14:09:11.396614Z[0m [32m INFO[0m [2mveloren_world::civ[0m[2m:[0m starting peak naming
+[2m2026-08-08T14:09:11.500283Z[0m [32m INFO[0m [2mveloren_world::civ[0m[2m:[0m all peaks named [3mnum_peaks[0m[2m=[0m74
+[2m2026-08-08T14:09:11.500351Z[0m [32m INFO[0m [2mveloren_world::civ[0m[2m:[0m starting biome naming
+[2m2026-08-08T14:09:11.781438Z[0m [32m INFO[0m [2mveloren_world::civ[0m[2m:[0m all biomes named [3mbiome_count[0m[2m=[0m345
+[2m2026-08-08T14:09:11.782140Z[0m [32m INFO[0m [2mveloren_world::civ[0m[2m:[0m starting civilisation creation
+[2m2026-08-08T14:09:11.800262Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(0, 48)))
+[2m2026-08-08T14:09:11.843537Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(1, 48)))
+[2m2026-08-08T14:09:11.898363Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(2, 48)))
+[2m2026-08-08T14:09:11.898923Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(3, 48)))
+[2m2026-08-08T14:09:12.044084Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(4, 48)))
+[2m2026-08-08T14:09:12.180621Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(5, 48)))
+[2m2026-08-08T14:09:12.180716Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(6, 48)))
+[2m2026-08-08T14:09:12.370724Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(7, 48)))
+[2m2026-08-08T14:09:12.502297Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(8, 48)))
+[2m2026-08-08T14:09:12.770362Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(9, 48)))
+[2m2026-08-08T14:09:13.072885Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(10, 48)))
+[2m2026-08-08T14:09:13.312759Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(11, 48)))
+[2m2026-08-08T14:09:13.434129Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(12, 48)))
+[2m2026-08-08T14:09:13.655156Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(13, 48)))
+[2m2026-08-08T14:09:13.829065Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(14, 48)))
+[2m2026-08-08T14:09:13.855379Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(15, 48)))
+[2m2026-08-08T14:09:13.962304Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(16, 48)))
+[2m2026-08-08T14:09:14.067441Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(17, 48)))
+[2m2026-08-08T14:09:14.158885Z[0m [33m WARN[0m [2mveloren_world::civ[0m[2m:[0m Failed to find starting site for civilisation.
+[2m2026-08-08T14:09:14.158977Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(18, 48)))
+[2m2026-08-08T14:09:14.251839Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(19, 48)))
+[2m2026-08-08T14:09:14.369836Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(20, 48)))
+[2m2026-08-08T14:09:14.496174Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(21, 48)))
+[2m2026-08-08T14:09:14.643119Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(22, 48)))
+[2m2026-08-08T14:09:14.914899Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(23, 48)))
+[2m2026-08-08T14:09:15.078413Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(24, 48)))
+[2m2026-08-08T14:09:15.212429Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(25, 48)))
+[2m2026-08-08T14:09:15.429598Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(26, 48)))
+[2m2026-08-08T14:09:15.543756Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(27, 48)))
+[2m2026-08-08T14:09:15.619922Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(28, 48)))
+[2m2026-08-08T14:09:15.693807Z[0m [33m WARN[0m [2mveloren_world::civ[0m[2m:[0m Failed to find starting site for civilisation.
+[2m2026-08-08T14:09:15.693875Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(29, 48)))
+[2m2026-08-08T14:09:15.861270Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(30, 48)))
+[2m2026-08-08T14:09:16.035505Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(31, 48)))
+[2m2026-08-08T14:09:16.160438Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(32, 48)))
+[2m2026-08-08T14:09:16.235644Z[0m [33m WARN[0m [2mveloren_world::civ[0m[2m:[0m Failed to find starting site for civilisation.
+[2m2026-08-08T14:09:16.235708Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(33, 48)))
+[2m2026-08-08T14:09:16.297583Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(34, 48)))
+[2m2026-08-08T14:09:16.423710Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(35, 48)))
+[2m2026-08-08T14:09:16.451576Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(36, 48)))
+[2m2026-08-08T14:09:16.507810Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(37, 48)))
+[2m2026-08-08T14:09:16.556686Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(38, 48)))
+[2m2026-08-08T14:09:16.650887Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(39, 48)))
+[2m2026-08-08T14:09:16.737064Z[0m [33m WARN[0m [2mveloren_world::civ[0m[2m:[0m Failed to find starting site for civilisation.
+[2m2026-08-08T14:09:16.737129Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(40, 48)))
+[2m2026-08-08T14:09:16.887300Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(41, 48)))
+[2m2026-08-08T14:09:17.008422Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(42, 48)))
+[2m2026-08-08T14:09:17.158196Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(43, 48)))
+[2m2026-08-08T14:09:17.248129Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(44, 48)))
+[2m2026-08-08T14:09:17.408245Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(45, 48)))
+[2m2026-08-08T14:09:17.483945Z[0m [33m WARN[0m [2mveloren_world::civ[0m[2m:[0m Failed to find starting site for civilisation.
+[2m2026-08-08T14:09:17.484006Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(46, 48)))
+[2m2026-08-08T14:09:17.511392Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(CivCreation(47, 48)))
+[2m2026-08-08T14:09:17.511448Z[0m [32m INFO[0m [2mveloren_world::civ[0m[2m:[0m all civilisations created [3minitial_civ_count[0m[2m=[0m48
+[2m2026-08-08T14:09:17.511472Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(WorldCivGenerate(SiteGeneration))
+[2m2026-08-08T14:09:19.540921Z[0m [32m INFO[0m [2mveloren_world::civ[0m[2m:[0m all sites placed [3mcnt[0m[2m=[0m205
+[2m2026-08-08T14:09:20.051143Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(EconomySimulation)
+[2m2026-08-08T14:09:20.051249Z[0m [32m INFO[0m [2mveloren_world::site::economy::context[0m[2m:[0m economy simulation start
+[2m2026-08-08T14:09:20.577921Z[0m [32m INFO[0m [2mveloren_world::site::economy::context[0m[2m:[0m economy simulation end
+[2m2026-08-08T14:09:20.578026Z[0m [32m INFO[0m [2mveloren_world::site::economy::context[0m[2m:[0m Towns 4-1395020 avg 118824 inhabitants
+[2m2026-08-08T14:09:20.578129Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mWorldGen(SpotGeneration)
+[2m2026-08-08T14:09:20.578180Z[0m [32m INFO[0m [2mveloren_common_assets[0m[2m:[0m combine world.manifests.spots
+[2m2026-08-08T14:09:51.056076Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m server init [3mstage[0m[2m=[0mStartingSystems
+[2m2026-08-08T14:09:51.183210Z[0m [32m INFO[0m [2mveloren_common_assets[0m[2m:[0m combine common.recipe_book_manifest
+[2m2026-08-08T14:09:51.255667Z[0m [32m INFO[0m [2mveloren_server::automod[0m[2m:[0m Automod disabled
+[2m2026-08-08T14:09:51.255754Z[0m [32m INFO[0m [2mveloren_server[0m[2m:[0m bastion: FLAT-TEST-ARENA env check at server boot [3mflat_arena_enabled[0m[2m=[0mfalse
+[2m2026-08-08T14:09:51.284707Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m Looking for rtsim data at C:\Users\q\AppData\Local\Temp\bastion-b5-21896-33800\rtsim\data.dat...
+[2m2026-08-08T14:09:51.284858Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m No rtsim data found. Generating from world...
+[2m2026-08-08T14:09:51.320914Z[0m [32m INFO[0m [2mveloren_rtsim::generate[0m[2m:[0m Generated 16 rtsim factions.
+[2m2026-08-08T14:09:51.321050Z[0m [32m INFO[0m [2mveloren_rtsim::generate[0m[2m:[0m Registering 205 rtsim sites from world sites.
+[2m2026-08-08T14:09:51.321188Z[0m [32m INFO[0m [2mveloren_rtsim::generate[0m[2m:[0m Generated 1825 rtsim NPCs to be spawned.
+[2m2026-08-08T14:09:51.321206Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m Rtsim data generated.
+[2m2026-08-08T14:09:51.322823Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Starting default rtsim rules...
+[2m2026-08-08T14:09:51.322859Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::migrate::Migrate' rule...
+[2m2026-08-08T14:09:51.322889Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::architect::Architect' rule...
+[2m2026-08-08T14:09:51.322905Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::replenish_resources::ReplenishResources' rule...
+[2m2026-08-08T14:09:51.322916Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::report::ReportEvents' rule...
+[2m2026-08-08T14:09:51.322925Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::chronicle_events::ChronicleEvents' rule...
+[2m2026-08-08T14:09:51.322932Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::sync_npcs::SyncNpcs' rule...
+[2m2026-08-08T14:09:51.322944Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::simulate_npcs::SimulateNpcs' rule...
+[2m2026-08-08T14:09:51.322953Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::npc_ai::NpcAi' rule...
+[2m2026-08-08T14:09:51.322964Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::cleanup::CleanUp' rule...
+[2m2026-08-08T14:09:51.407447Z[0m [32m INFO[0m [2mveloren_server::rtsim::rule[0m[2m:[0m Starting server rtsim rules...
+[2m2026-08-08T14:09:51.407522Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_server::rtsim::rule::deplete_resources::DepleteResources' rule...
+[2m2026-08-08T14:09:51.418762Z[0m [32m INFO[0m [2mveloren_server[0m[2m:[0m Server version: 4561429a [2026-08-08]
+[2m2026-08-08T14:09:51.419495Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m b5: server booted [3melapsed[0m[2m=[0m47.0155782s
+[2m2026-08-08T14:09:55.266622Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m b5: force-loaded area [3mloaded[0m[2m=[0m121
+[2m2026-08-08T14:09:55.266793Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m bastion: spawned starting colony [3mnames[0m[2m=[0m["Doran the Younger", "Fenn the Steady", "Yara Ashborn"] [3mcount[0m[2m=[0m3
+[2m2026-08-08T14:09:55.627243Z[0m [32m INFO[0m [2mveloren_common_assets[0m[2m:[0m combine common.component_recipe_book
+[2m2026-08-08T14:09:55.785577Z[0m [32m INFO[0m [2mveloren_server::rtsim::tick[0m[2m:[0m bastion: colonist promoted to loaded entity [3mname[0m[2m=[0m"Doran the Younger"
+[2m2026-08-08T14:09:55.785649Z[0m [32m INFO[0m [2mveloren_server::rtsim::tick[0m[2m:[0m bastion: colonist promoted to loaded entity [3mname[0m[2m=[0m"Fenn the Steady"
+[2m2026-08-08T14:09:55.785683Z[0m [32m INFO[0m [2mveloren_server::rtsim::tick[0m[2m:[0m bastion: colonist promoted to loaded entity [3mname[0m[2m=[0m"Yara Ashborn"
+[2m2026-08-08T14:09:56.370269Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation placed [3mkind[0m[2m=[0mMine [3mjobs[0m[2m=[0m27
+[2m2026-08-08T14:09:56.379123Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation placed [3mkind[0m[2m=[0mChop [3mjobs[0m[2m=[0m1
+[2m2026-08-08T14:09:56.390161Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation placed [3mkind[0m[2m=[0mBuild [3mjobs[0m[2m=[0m1
+[2m2026-08-08T14:09:56.484806Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m27 [3mcolonist[0m[2m=[0m1
+[2m2026-08-08T14:09:56.484883Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m28 [3mcolonist[0m[2m=[0m2
+[2m2026-08-08T14:09:56.484900Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m21 [3mcolonist[0m[2m=[0m3
+[2m2026-08-08T14:09:56.891408Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m21 [3mpos[0m[2m=[0mVec3 { x: 12995, y: 26352, z: 140 }
+[2m2026-08-08T14:09:57.646708Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m21 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12995, y: 26352, z: 140 }
+[2m2026-08-08T14:09:57.706540Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m25 [3mcolonist[0m[2m=[0m3
+[2m2026-08-08T14:09:57.715950Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m25 [3mpos[0m[2m=[0mVec3 { x: 12996, y: 26353, z: 140 }
+[2m2026-08-08T14:09:58.921490Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m25 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12996, y: 26353, z: 140 }
+[2m2026-08-08T14:09:58.989344Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m19 [3mcolonist[0m[2m=[0m3
+[2m2026-08-08T14:09:59.000212Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m19 [3mpos[0m[2m=[0mVec3 { x: 12996, y: 26351, z: 140 }
+[2m2026-08-08T14:09:59.033620Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: auto-access refused (no in-claim route) — job unreachable [3mjob[0m[2m=[0m28
+[2m2026-08-08T14:09:59.033708Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation marked BLOCKED (task #55) — notified [3mblocking_cell[0m[2m=[0mVec3 { x: 12976, y: 26372, z: 166 }
+[2m2026-08-08T14:09:59.167079Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m24 [3mcolonist[0m[2m=[0m2
+[2m2026-08-08T14:09:59.522481Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: auto-access refused (no in-claim route) — job unreachable [3mjob[0m[2m=[0m27
+[2m2026-08-08T14:09:59.522549Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation marked BLOCKED (task #55) — notified [3mblocking_cell[0m[2m=[0mVec3 { x: 12964, y: 26352, z: 156 }
+[2m2026-08-08T14:09:59.559204Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m27 [3mcolonist[0m[2m=[0m1
+[2m2026-08-08T14:09:59.981840Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m24 [3mpos[0m[2m=[0mVec3 { x: 12995, y: 26353, z: 140 }
+[2m2026-08-08T14:10:00.107704Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m19 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12996, y: 26351, z: 140 }
+[2m2026-08-08T14:10:00.166823Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m18 [3mcolonist[0m[2m=[0m3
+[2m2026-08-08T14:10:00.176952Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m18 [3mpos[0m[2m=[0mVec3 { x: 12995, y: 26351, z: 140 }
+[2m2026-08-08T14:10:01.303343Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m18 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12995, y: 26351, z: 140 }
+[2m2026-08-08T14:10:01.335949Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m23 [3mcolonist[0m[2m=[0m3
+[2m2026-08-08T14:10:01.347775Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m23 [3mpos[0m[2m=[0mVec3 { x: 12997, y: 26352, z: 140 }
+[2m2026-08-08T14:10:01.409415Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m24 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12995, y: 26353, z: 140 }
+[2m2026-08-08T14:10:01.534183Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m9 [3mcolonist[0m[2m=[0m2
+[2m2026-08-08T14:10:01.550175Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m9 [3mpos[0m[2m=[0mVec3 { x: 12995, y: 26351, z: 139 }
+[2m2026-08-08T14:10:02.402833Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m23 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12997, y: 26352, z: 140 }
+[2m2026-08-08T14:10:02.422337Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m20 [3mcolonist[0m[2m=[0m3
+[2m2026-08-08T14:10:02.428750Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m20 [3mpos[0m[2m=[0mVec3 { x: 12997, y: 26351, z: 140 }
+[2m2026-08-08T14:10:02.754080Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job unreachable — claim released [3mjob[0m[2m=[0m27 [3mpos[0m[2m=[0mVec3 { x: 12964, y: 26352, z: 156 } [3mcolonist[0m[2m=[0mVec3 { x: 12966, y: 26362, z: 153 }
+[2m2026-08-08T14:10:02.862344Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m9 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12995, y: 26351, z: 139 }
+[2m2026-08-08T14:10:02.899641Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m15 [3mcolonist[0m[2m=[0m1
+[2m2026-08-08T14:10:02.899732Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m26 [3mcolonist[0m[2m=[0m2
+[2m2026-08-08T14:10:02.906223Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m26 [3mpos[0m[2m=[0mVec3 { x: 12997, y: 26353, z: 140 }
+[2m2026-08-08T14:10:03.341091Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m20 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12997, y: 26351, z: 140 }
+[2m2026-08-08T14:10:03.423935Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m10 [3mcolonist[0m[2m=[0m3
+[2m2026-08-08T14:10:03.429797Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m10 [3mpos[0m[2m=[0mVec3 { x: 12996, y: 26351, z: 139 }
+[2m2026-08-08T14:10:03.961798Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m26 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12997, y: 26353, z: 140 }
+[2m2026-08-08T14:10:03.996799Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m22 [3mcolonist[0m[2m=[0m2
+[2m2026-08-08T14:10:04.002561Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m22 [3mpos[0m[2m=[0mVec3 { x: 12996, y: 26352, z: 140 }
+[2m2026-08-08T14:10:04.128369Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m10 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12996, y: 26351, z: 139 }
+[2m2026-08-08T14:10:04.260112Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m12 [3mcolonist[0m[2m=[0m3
+[2m2026-08-08T14:10:04.267501Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m12 [3mpos[0m[2m=[0mVec3 { x: 12995, y: 26352, z: 139 }
+[2m2026-08-08T14:10:04.419742Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m15 [3mpos[0m[2m=[0mVec3 { x: 12995, y: 26353, z: 139 }
+[2m2026-08-08T14:10:04.861677Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m22 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12996, y: 26352, z: 140 }
+[2m2026-08-08T14:10:04.896927Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m11 [3mcolonist[0m[2m=[0m2
+[2m2026-08-08T14:10:04.902904Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m11 [3mpos[0m[2m=[0mVec3 { x: 12997, y: 26351, z: 139 }
+[2m2026-08-08T14:10:04.902984Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m12 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12995, y: 26352, z: 139 }
+[2m2026-08-08T14:10:05.007986Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m17 [3mcolonist[0m[2m=[0m3
+[2m2026-08-08T14:10:05.067609Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m17 [3mpos[0m[2m=[0mVec3 { x: 12997, y: 26353, z: 139 }
+[2m2026-08-08T14:10:05.759106Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m17 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12997, y: 26353, z: 139 }
+[2m2026-08-08T14:10:05.773756Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m0 [3mcolonist[0m[2m=[0m3
+[2m2026-08-08T14:10:05.811793Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m0 [3mpos[0m[2m=[0mVec3 { x: 12995, y: 26351, z: 138 }
+[2m2026-08-08T14:10:05.818345Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m15 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12995, y: 26353, z: 139 }
+[2m2026-08-08T14:10:05.837974Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m11 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12997, y: 26351, z: 139 }
+[2m2026-08-08T14:10:05.879429Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m16 [3mcolonist[0m[2m=[0m1
+[2m2026-08-08T14:10:05.879506Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m14 [3mcolonist[0m[2m=[0m2
+[2m2026-08-08T14:10:05.889387Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m16 [3mpos[0m[2m=[0mVec3 { x: 12996, y: 26353, z: 139 }
+[2m2026-08-08T14:10:05.889455Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m14 [3mpos[0m[2m=[0mVec3 { x: 12997, y: 26352, z: 139 }
+[2m2026-08-08T14:10:06.352731Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m0 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12995, y: 26351, z: 138 }
+[2m2026-08-08T14:10:06.369951Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m1 [3mcolonist[0m[2m=[0m3
+[2m2026-08-08T14:10:06.376398Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m1 [3mpos[0m[2m=[0mVec3 { x: 12996, y: 26351, z: 138 }
+[2m2026-08-08T14:10:06.518864Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m14 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12997, y: 26352, z: 139 }
+[2m2026-08-08T14:10:06.537881Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m13 [3mcolonist[0m[2m=[0m2
+[2m2026-08-08T14:10:06.544875Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m13 [3mpos[0m[2m=[0mVec3 { x: 12996, y: 26352, z: 139 }
+[2m2026-08-08T14:10:06.806424Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m1 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12996, y: 26351, z: 138 }
+[2m2026-08-08T14:10:06.868907Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m3 [3mcolonist[0m[2m=[0m3
+[2m2026-08-08T14:10:06.873213Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m3 [3mpos[0m[2m=[0mVec3 { x: 12995, y: 26352, z: 138 }
+[2m2026-08-08T14:10:06.966023Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m16 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12996, y: 26353, z: 139 }
+[2m2026-08-08T14:10:07.052912Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m6 [3mcolonist[0m[2m=[0m1
+[2m2026-08-08T14:10:07.062269Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m6 [3mpos[0m[2m=[0mVec3 { x: 12995, y: 26353, z: 138 }
+[2m2026-08-08T14:10:07.130898Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m13 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12996, y: 26352, z: 139 }
+[2m2026-08-08T14:10:07.150612Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m2 [3mcolonist[0m[2m=[0m2
+[2m2026-08-08T14:10:07.158256Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m2 [3mpos[0m[2m=[0mVec3 { x: 12997, y: 26351, z: 138 }
+[2m2026-08-08T14:10:07.290274Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m3 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12995, y: 26352, z: 138 }
+[2m2026-08-08T14:10:07.331093Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m8 [3mcolonist[0m[2m=[0m3
+[2m2026-08-08T14:10:07.349770Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m8 [3mpos[0m[2m=[0mVec3 { x: 12997, y: 26353, z: 138 }
+[2m2026-08-08T14:10:07.627841Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m2 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12997, y: 26351, z: 138 }
+[2m2026-08-08T14:10:07.645077Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m7 [3mcolonist[0m[2m=[0m2
+[2m2026-08-08T14:10:07.649993Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m7 [3mpos[0m[2m=[0mVec3 { x: 12996, y: 26353, z: 138 }
+[2m2026-08-08T14:10:07.769439Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m8 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12997, y: 26353, z: 138 }
+[2m2026-08-08T14:10:07.838868Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m5 [3mcolonist[0m[2m=[0m3
+[2m2026-08-08T14:10:07.845412Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m5 [3mpos[0m[2m=[0mVec3 { x: 12997, y: 26352, z: 138 }
+[2m2026-08-08T14:10:07.990169Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m6 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12995, y: 26353, z: 138 }
+[2m2026-08-08T14:10:08.058558Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m27 [3mcolonist[0m[2m=[0m1
+[2m2026-08-08T14:10:08.135730Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m7 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12996, y: 26353, z: 138 }
+[2m2026-08-08T14:10:08.172222Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m5 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12997, y: 26352, z: 138 }
+[2m2026-08-08T14:10:08.190967Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m4 [3mcolonist[0m[2m=[0m2
+[2m2026-08-08T14:10:08.194678Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m4 [3mpos[0m[2m=[0mVec3 { x: 12996, y: 26352, z: 138 }
+[2m2026-08-08T14:10:08.497200Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m4 [3mkind[0m[2m=[0mDesignated(Mine) [3mpos[0m[2m=[0mVec3 { x: 12996, y: 26352, z: 138 }
+[2m2026-08-08T14:10:08.497275Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: MINE DONE — dispersing [3mregion[0m[2m=[0mRegion { min: Vec3 { x: 12995, y: 26351, z: 138 }, max: Vec3 { x: 12997, y: 26353, z: 140 } }
+[2m2026-08-08T14:10:08.535789Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m28 [3mcolonist[0m[2m=[0m2
+[2m2026-08-08T14:10:14.738686Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job unreachable — claim released [3mjob[0m[2m=[0m27 [3mpos[0m[2m=[0mVec3 { x: 12964, y: 26352, z: 156 } [3mcolonist[0m[2m=[0mVec3 { x: 12965, y: 26362, z: 152 }
+[2m2026-08-08T14:10:14.738777Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job unreachable — claim released [3mjob[0m[2m=[0m28 [3mpos[0m[2m=[0mVec3 { x: 12976, y: 26372, z: 166 } [3mcolonist[0m[2m=[0mVec3 { x: 12974, y: 26370, z: 152 }
+[2m2026-08-08T14:10:23.490204Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m27 [3mcolonist[0m[2m=[0m1
+[2m2026-08-08T14:10:23.490298Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m28 [3mcolonist[0m[2m=[0m2
+[2m2026-08-08T14:10:26.663675Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job unreachable — claim released [3mjob[0m[2m=[0m27 [3mpos[0m[2m=[0mVec3 { x: 12964, y: 26352, z: 156 } [3mcolonist[0m[2m=[0mVec3 { x: 12966, y: 26361, z: 152 }
+[2m2026-08-08T14:10:27.279160Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job unreachable — claim released [3mjob[0m[2m=[0m28 [3mpos[0m[2m=[0mVec3 { x: 12976, y: 26372, z: 166 } [3mcolonist[0m[2m=[0mVec3 { x: 12974, y: 26372, z: 157 }
+[2m2026-08-08T14:10:31.867248Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: access anchor registered (plan) [3mbase[0m[2m=[0mVec3 { x: 12971, y: 26368, z: 153 }
+[2m2026-08-08T14:10:31.867395Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: EMERGENCY EGRESS emitted (B5.8-E) [3mkind[0m[2m=[0mLadder [3msteps[0m[2m=[0m16 [3mfrom[0m[2m=[0mVec3 { x: 12972, y: 26370, z: 152 }
+[2m2026-08-08T14:10:31.907943Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m29 [3mcolonist[0m[2m=[0m2
+[2m2026-08-08T14:10:31.913419Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m29 [3mpos[0m[2m=[0mVec3 { x: 12971, y: 26368, z: 153 }
+[2m2026-08-08T14:10:33.396462Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation placed [3mkind[0m[2m=[0mBuild [3mjobs[0m[2m=[0m1
+[2m2026-08-08T14:10:33.695441Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: surface designation placed [3mkind[0m[2m=[0mMine [3mjobs[0m[2m=[0m72
+[2m2026-08-08T14:10:33.695604Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation cancelled [3mreleased[0m[2m=[0m0
+[2m2026-08-08T14:10:33.695626Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation placed [3mkind[0m[2m=[0mMine [3mjobs[0m[2m=[0m45
+[2m2026-08-08T14:10:33.695638Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation cancelled [3mreleased[0m[2m=[0m0
+[2m2026-08-08T14:10:33.796038Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: surface designation placed [3mkind[0m[2m=[0mMine [3mjobs[0m[2m=[0m108
+[2m2026-08-08T14:10:33.796113Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation cancelled [3mreleased[0m[2m=[0m0
+[2m2026-08-08T14:10:33.861257Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m29 [3mkind[0m[2m=[0mDesignated(Ladder) [3mpos[0m[2m=[0mVec3 { x: 12971, y: 26368, z: 153 }
+[2m2026-08-08T14:10:33.887769Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: surface designation placed [3mkind[0m[2m=[0mMine [3mjobs[0m[2m=[0m108
+[2m2026-08-08T14:10:33.887856Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation cancelled [3mreleased[0m[2m=[0m0
+[2m2026-08-08T14:10:33.889036Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m30 [3mcolonist[0m[2m=[0m2
+[2m2026-08-08T14:10:33.895001Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m30 [3mpos[0m[2m=[0mVec3 { x: 12971, y: 26368, z: 154 }
+[2m2026-08-08T14:10:34.010679Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: surface designation placed [3mkind[0m[2m=[0mMine [3mjobs[0m[2m=[0m549
+[2m2026-08-08T14:10:34.010772Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation cancelled [3mreleased[0m[2m=[0m0
+[2m2026-08-08T14:10:34.149374Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5589 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.046875, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.542, y: 26380.492, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.155134Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5590 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.048828125, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.555, y: 26380.49, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.161548Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5591 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.05078125, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.564, y: 26380.488, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.167965Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5592 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.571, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.174622Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation placed [3mkind[0m[2m=[0mMine [3mjobs[0m[2m=[0m1
+[2m2026-08-08T14:10:34.175407Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5593 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.576, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.181220Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5594 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.58, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.187510Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5595 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.583, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.187772Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m928 [3mcolonist[0m[2m=[0m1
+[2m2026-08-08T14:10:34.194043Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m928 [3mpos[0m[2m=[0mVec3 { x: 12944, y: 26382, z: 140 }
+[2m2026-08-08T14:10:34.194178Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5596 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.585, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.200029Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5597 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.586, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.206569Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5598 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.587, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.212372Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5599 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.588, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.218394Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5600 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.589, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.224635Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5601 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.589, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.231308Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5602 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.589, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.238287Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5603 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.589, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.244124Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5604 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.589, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.249880Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5605 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.589, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.256011Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5606 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.589, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.262021Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5607 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.589, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.267773Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5608 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.589, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.273974Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5609 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.589, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.279464Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5610 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.589, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.284884Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5611 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.589, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.291497Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5612 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.589, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.297121Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5613 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.589, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.303633Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5614 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.589, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.310123Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5615 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.589, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.316511Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5616 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.589, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.322356Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: constructed-ladder approach corridor invalidated [3mtick[0m[2m=[0m5617 [3muid[0m[2m=[0m2 [3mowner[0m[2m=[0m2 [3mfrontier_job[0m[2m=[0m30 [3mentry[0m[2m=[0mVec3 { x: 12972, y: 26368, z: 152 } [3mwaypoint[0m[2m=[0mVec3 { x: 12972, y: 26369, z: 152 } [3mnext_idx[0m[2m=[0m0 [3mwaypoint_count[0m[2m=[0m2 [3mruntime_hit[0m[2m=[0mSome(TerrainSweepHit { block: Vec3 { x: 12948, y: 26378, z: 143 }, resolve_dir: Vec3 { x: -0.0, y: 0.052734375, z: -0.0 }, sample: 12, samples: 100 }) [3mposition[0m[2m=[0mVec3 { x: 12945.589, y: 26380.486, z: 141.0 } [3mreason[0m[2m=[0m"approach_corridor_edge_stale_or_blocked"
+[2m2026-08-08T14:10:34.322599Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: emergency access restored (REQ-0040) [3mowner[0m[2m=[0m2 [3mcells[0m[2m=[0m16
+[2m2026-08-08T14:10:34.389944Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m45 [3mcolonist[0m[2m=[0m2
+[2m2026-08-08T14:10:34.491762Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation cancelled [3mreleased[0m[2m=[0m1
+[2m2026-08-08T14:10:34.605166Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation placed [3mkind[0m[2m=[0mMine [3mjobs[0m[2m=[0m1
+[2m2026-08-08T14:10:34.606315Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m929 [3mcolonist[0m[2m=[0m1
+[2m2026-08-08T14:10:34.653877Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m929 [3mpos[0m[2m=[0mVec3 { x: 12946, y: 26382, z: 140 }
+[2m2026-08-08T14:10:34.881202Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation cancelled [3mreleased[0m[2m=[0m1
+[2m2026-08-08T14:10:34.994156Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation placed [3mkind[0m[2m=[0mMine [3mjobs[0m[2m=[0m1
+[2m2026-08-08T14:10:35.287664Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation cancelled [3mreleased[0m[2m=[0m0
+[2m2026-08-08T14:10:35.383668Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: chop base-cut placed (CHOP-FELLING) [3mjob[0m[2m=[0m931 [3mbase[0m[2m=[0mVec3 { x: 12855, y: 26347, z: 163 } [3mwood[0m[2m=[0m2048
+[2m2026-08-08T14:10:36.361009Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation cancelled [3mreleased[0m[2m=[0m0
+[2m2026-08-08T14:10:36.361068Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation cancelled [3mreleased[0m[2m=[0m1
+[2m2026-08-08T14:10:36.458034Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation placed [3mkind[0m[2m=[0mChop [3mjobs[0m[2m=[0m1
+[2m2026-08-08T14:10:36.523586Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m932 [3mcolonist[0m[2m=[0m1
+[2m2026-08-08T14:10:36.578195Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m932 [3mpos[0m[2m=[0mVec3 { x: 12944, y: 26384, z: 141 }
+[2m2026-08-08T14:10:37.555729Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job completed [3mjob[0m[2m=[0m932 [3mkind[0m[2m=[0mDesignated(Chop) [3mpos[0m[2m=[0mVec3 { x: 12944, y: 26384, z: 141 }
+[2m2026-08-08T14:10:37.555816Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: MINE DONE — dispersing [3mregion[0m[2m=[0mRegion { min: Vec3 { x: 12944, y: 26384, z: 141 }, max: Vec3 { x: 12944, y: 26384, z: 141 } }
+[2m2026-08-08T14:10:37.629971Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation cancelled [3mreleased[0m[2m=[0m0
+[2m2026-08-08T14:10:37.711503Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation placed [3mkind[0m[2m=[0mMine [3mjobs[0m[2m=[0m1
+[2m2026-08-08T14:10:42.190431Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: emergency egress found no route (retry) [3mfrom[0m[2m=[0mVec3 { x: 12943, y: 26380, z: 141 }
+[2m2026-08-08T14:10:42.203395Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: emergency egress found no route (retry) [3mfrom[0m[2m=[0mVec3 { x: 12943, y: 26380, z: 141 }
+[2m2026-08-08T14:10:44.018832Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: emergency egress found no route (retry) [3mfrom[0m[2m=[0mVec3 { x: 12943, y: 26381, z: 141 }
+[2m2026-08-08T14:10:44.034006Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: emergency egress found no route (retry) [3mfrom[0m[2m=[0mVec3 { x: 12943, y: 26381, z: 141 }
+[2m2026-08-08T14:10:46.113131Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: emergency egress found no route (retry) [3mfrom[0m[2m=[0mVec3 { x: 12943, y: 26381, z: 141 }
+[2m2026-08-08T14:10:46.127511Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: emergency egress found no route (retry) [3mfrom[0m[2m=[0mVec3 { x: 12943, y: 26381, z: 141 }
+[2m2026-08-08T14:10:48.118872Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: emergency egress found no route (retry) [3mfrom[0m[2m=[0mVec3 { x: 12943, y: 26381, z: 141 }
+[2m2026-08-08T14:10:48.132251Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: emergency egress found no route (retry) [3mfrom[0m[2m=[0mVec3 { x: 12943, y: 26381, z: 141 }
+[2m2026-08-08T14:10:49.996242Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: emergency egress found no route (retry) [3mfrom[0m[2m=[0mVec3 { x: 12943, y: 26382, z: 141 }
+[2m2026-08-08T14:10:50.010904Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: emergency egress found no route (retry) [3mfrom[0m[2m=[0mVec3 { x: 12943, y: 26382, z: 141 }
+[2m2026-08-08T14:10:50.163787Z[0m [33m WARN[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: ULTIMATE FAIL-SAFE — teleporting stuck colonist to ground (organic egress tiers failed) [3muid[0m[2m=[0m1 [3mname[0m[2m=[0m"Doran the Younger" [3mfeet[0m[2m=[0mVec3 { x: 12943, y: 26381, z: 142 } [3md[0m[2m=[0mVec3 { x: 12942, y: 26380, z: 151 } [3msecs[0m[2m=[0m60.0 [3mactive_job[0m[2m=[0mNone [3mactive_job_state[0m[2m=[0mNone [3mactive_job_kind[0m[2m=[0mNone [3mactive_job_is_access[0m[2m=[0mNone [3megress_verdicts[0m[2m=[0m10 [3megress_plans_emitted[0m[2m=[0m0 [3megress_no_route[0m[2m=[0m10 [3mclimb_free_active[0m[2m=[0mtrue [3morganic_destination[0m[2m=[0mSome(Vec3 { x: 12943, y: 26381, z: 151 }) [3mhead_clear[0m[2m=[0mtrue [3mon_ground[0m[2m=[0mfalse [3mon_wall[0m[2m=[0mfalse [3mcharacter_state[0m[2m=[0mSome("Idle(Data { is_sneaking: false, time_entered: Time(0.0), footwear: Some(Normal) })") [3mvelocity[0m[2m=[0mVec3 { x: -0.102288045, y: -0.79082406, z: 2.5 } [3maccess_jobs_pending[0m[2m=[0m0 [3mterminal_cause[0m[2m=[0m"egress_no_route_then_climb_free_expired"
+[2m2026-08-08T14:11:00.816020Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: emergency egress found no route (retry) [3mfrom[0m[2m=[0mVec3 { x: 12943, y: 26383, z: 141 }
+[2m2026-08-08T14:11:00.828785Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: emergency egress found no route (retry) [3mfrom[0m[2m=[0mVec3 { x: 12943, y: 26383, z: 141 }
+[2m2026-08-08T14:11:23.572638Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation cancelled [3mreleased[0m[2m=[0m0
+[2m2026-08-08T14:11:23.699505Z[0m [32m INFO[0m [2mbastion_harness[0m[2m:[0m b5: TOOL-0 factors [3mtl_stone[0m[2m=[0m1.5 [3mtl_steel[0m[2m=[0m2.0 [3mtl_stone_chop[0m[2m=[0m1.0 [3mtl_ok[0m[2m=[0mtrue
+COLUMN-SCAN pos=(12964,26352,250) kind=Air
+COLUMN-SCAN pos=(12964,26352,249) kind=Air
+COLUMN-SCAN pos=(12964,26352,248) kind=Air
+COLUMN-SCAN pos=(12964,26352,247) kind=Air
+COLUMN-SCAN pos=(12964,26352,246) kind=Air
+COLUMN-SCAN pos=(12964,26352,245) kind=Air
+COLUMN-SCAN pos=(12964,26352,244) kind=Air
+COLUMN-SCAN pos=(12964,26352,243) kind=Air
+COLUMN-SCAN pos=(12964,26352,242) kind=Air
+COLUMN-SCAN pos=(12964,26352,241) kind=Air
+COLUMN-SCAN pos=(12964,26352,240) kind=Air
+COLUMN-SCAN pos=(12964,26352,239) kind=Air
+COLUMN-SCAN pos=(12964,26352,238) kind=Air
+COLUMN-SCAN pos=(12964,26352,237) kind=Air
+COLUMN-SCAN pos=(12964,26352,236) kind=Air
+COLUMN-SCAN pos=(12964,26352,235) kind=Air
+COLUMN-SCAN pos=(12964,26352,234) kind=Air
+COLUMN-SCAN pos=(12964,26352,233) kind=Air
+COLUMN-SCAN pos=(12964,26352,232) kind=Air
+COLUMN-SCAN pos=(12964,26352,231) kind=Air
+COLUMN-SCAN pos=(12964,26352,230) kind=Air
+COLUMN-SCAN pos=(12964,26352,229) kind=Air
+COLUMN-SCAN pos=(12964,26352,228) kind=Air
+COLUMN-SCAN pos=(12964,26352,227) kind=Air
+COLUMN-SCAN pos=(12964,26352,226) kind=Air
+COLUMN-SCAN pos=(12964,26352,225) kind=Air
+COLUMN-SCAN pos=(12964,26352,224) kind=Air
+COLUMN-SCAN pos=(12964,26352,223) kind=Air
+COLUMN-SCAN pos=(12964,26352,222) kind=Air
+COLUMN-SCAN pos=(12964,26352,221) kind=Air
+COLUMN-SCAN pos=(12964,26352,220) kind=Air
+COLUMN-SCAN pos=(12964,26352,219) kind=Air
+COLUMN-SCAN pos=(12964,26352,218) kind=Air
+COLUMN-SCAN pos=(12964,26352,217) kind=Air
+COLUMN-SCAN pos=(12964,26352,216) kind=Air
+COLUMN-SCAN pos=(12964,26352,215) kind=Air
+COLUMN-SCAN pos=(12964,26352,214) kind=Air
+COLUMN-SCAN pos=(12964,26352,213) kind=Air
+COLUMN-SCAN pos=(12964,26352,212) kind=Air
+COLUMN-SCAN pos=(12964,26352,211) kind=Air
+COLUMN-SCAN pos=(12964,26352,210) kind=Air
+COLUMN-SCAN pos=(12964,26352,209) kind=Air
+COLUMN-SCAN pos=(12964,26352,208) kind=Air
+COLUMN-SCAN pos=(12964,26352,207) kind=Air
+COLUMN-SCAN pos=(12964,26352,206) kind=Air
+COLUMN-SCAN pos=(12964,26352,205) kind=Air
+COLUMN-SCAN pos=(12964,26352,204) kind=Air
+COLUMN-SCAN pos=(12964,26352,203) kind=Air
+COLUMN-SCAN pos=(12964,26352,202) kind=Air
+COLUMN-SCAN pos=(12964,26352,201) kind=Air
+COLUMN-SCAN pos=(12964,26352,200) kind=Air
+COLUMN-SCAN pos=(12964,26352,199) kind=Air
+COLUMN-SCAN pos=(12964,26352,198) kind=Air
+COLUMN-SCAN pos=(12964,26352,197) kind=Air
+COLUMN-SCAN pos=(12964,26352,196) kind=Air
+COLUMN-SCAN pos=(12964,26352,195) kind=Air
+COLUMN-SCAN pos=(12964,26352,194) kind=Air
+COLUMN-SCAN pos=(12964,26352,193) kind=Air
+COLUMN-SCAN pos=(12964,26352,192) kind=Air
+COLUMN-SCAN pos=(12964,26352,191) kind=Air
+COLUMN-SCAN pos=(12964,26352,190) kind=Air
+COLUMN-SCAN pos=(12964,26352,189) kind=Air
+COLUMN-SCAN pos=(12964,26352,188) kind=Air
+COLUMN-SCAN pos=(12964,26352,187) kind=Air
+COLUMN-SCAN pos=(12964,26352,186) kind=Air
+COLUMN-SCAN pos=(12964,26352,185) kind=Air
+COLUMN-SCAN pos=(12964,26352,184) kind=Air
+COLUMN-SCAN pos=(12964,26352,183) kind=Air
+COLUMN-SCAN pos=(12964,26352,182) kind=Air
+COLUMN-SCAN pos=(12964,26352,181) kind=Air
+COLUMN-SCAN pos=(12964,26352,180) kind=Air
+COLUMN-SCAN pos=(12964,26352,179) kind=Air
+COLUMN-SCAN pos=(12964,26352,178) kind=Air
+COLUMN-SCAN pos=(12964,26352,177) kind=Air
+COLUMN-SCAN pos=(12964,26352,176) kind=Air
+COLUMN-SCAN pos=(12964,26352,175) kind=Air
+COLUMN-SCAN pos=(12964,26352,174) kind=Air
+COLUMN-SCAN pos=(12964,26352,173) kind=Air
+COLUMN-SCAN pos=(12964,26352,172) kind=Air
+COLUMN-SCAN pos=(12964,26352,171) kind=Air
+COLUMN-SCAN pos=(12964,26352,170) kind=Air
+COLUMN-SCAN pos=(12964,26352,169) kind=Air
+COLUMN-SCAN pos=(12964,26352,168) kind=Air
+COLUMN-SCAN pos=(12964,26352,167) kind=Air
+COLUMN-SCAN pos=(12964,26352,166) kind=Air
+COLUMN-SCAN pos=(12964,26352,165) kind=Air
+COLUMN-SCAN pos=(12964,26352,164) kind=Air
+COLUMN-SCAN pos=(12964,26352,163) kind=Air
+COLUMN-SCAN pos=(12964,26352,162) kind=Air
+COLUMN-SCAN pos=(12964,26352,161) kind=Air
+COLUMN-SCAN pos=(12964,26352,160) kind=Air
+COLUMN-SCAN pos=(12964,26352,159) kind=Air
+COLUMN-SCAN pos=(12964,26352,158) kind=Air
+COLUMN-SCAN pos=(12964,26352,157) kind=Air
+COLUMN-SCAN pos=(12964,26352,156) kind=Wood
+COLUMN-SCAN pos=(12964,26352,155) kind=Rock
+COLUMN-SCAN pos=(12964,26352,154) kind=Rock
+COLUMN-SCAN pos=(12964,26352,153) kind=Air
+COLUMN-SCAN pos=(12964,26352,152) kind=Air
+COLUMN-SCAN pos=(12964,26352,151) kind=Air
+COLUMN-SCAN pos=(12964,26352,150) kind=Air
+COLUMN-SCAN pos=(12964,26352,149) kind=Air
+COLUMN-SCAN pos=(12964,26352,148) kind=Air
+COLUMN-SCAN pos=(12964,26352,147) kind=Air
+COLUMN-SCAN pos=(12964,26352,146) kind=Air
+COLUMN-SCAN pos=(12964,26352,145) kind=Air
+COLUMN-SCAN pos=(12964,26352,144) kind=Air
+COLUMN-SCAN pos=(12964,26352,143) kind=Air
+COLUMN-SCAN pos=(12964,26352,142) kind=Air
+COLUMN-SCAN pos=(12964,26352,141) kind=Air
+COLUMN-SCAN pos=(12964,26352,140) kind=Air
+COLUMN-SCAN pos=(12964,26352,139) kind=Rock
+COLUMN-SCAN pos=(12964,26352,138) kind=Rock
+COLUMN-SCAN pos=(12964,26352,137) kind=Rock
+COLUMN-SCAN pos=(12964,26352,136) kind=Rock
+COLUMN-SCAN pos=(12964,26352,135) kind=Rock
+COLUMN-SCAN pos=(12964,26352,134) kind=Rock
+COLUMN-SCAN pos=(12964,26352,133) kind=Rock
+COLUMN-SCAN pos=(12964,26352,132) kind=Rock
+COLUMN-SCAN pos=(12964,26352,131) kind=Rock
+COLUMN-SCAN pos=(12964,26352,130) kind=Rock
+COLUMN-SCAN pos=(12964,26352,129) kind=Rock
+COLUMN-SCAN pos=(12964,26352,128) kind=Rock
+COLUMN-SCAN pos=(12964,26352,127) kind=Rock
+COLUMN-SCAN pos=(12964,26352,126) kind=Rock
+COLUMN-SCAN pos=(12964,26352,125) kind=Rock
+COLUMN-SCAN pos=(12964,26352,124) kind=Rock
+COLUMN-SCAN pos=(12964,26352,123) kind=Rock
+COLUMN-SCAN pos=(12964,26352,122) kind=Rock
+COLUMN-SCAN pos=(12964,26352,121) kind=Rock
+COLUMN-SCAN pos=(12964,26352,120) kind=Rock
+COLUMN-SCAN pos=(12964,26352,119) kind=Rock
+COLUMN-SCAN pos=(12964,26352,118) kind=Rock
+COLUMN-SCAN pos=(12964,26352,117) kind=Rock
+COLUMN-SCAN pos=(12964,26352,116) kind=Rock
+COLUMN-SCAN pos=(12964,26352,115) kind=Rock
+COLUMN-SCAN pos=(12964,26352,114) kind=Rock
+COLUMN-SCAN pos=(12964,26352,113) kind=Rock
+COLUMN-SCAN pos=(12964,26352,112) kind=Rock
+COLUMN-SCAN pos=(12964,26352,111) kind=Rock
+COLUMN-SCAN pos=(12964,26352,110) kind=Rock
+COLUMN-SCAN pos=(12964,26352,109) kind=Rock
+COLUMN-SCAN pos=(12964,26352,108) kind=Rock
+COLUMN-SCAN pos=(12964,26352,107) kind=Rock
+COLUMN-SCAN pos=(12964,26352,106) kind=Rock
+COLUMN-SCAN pos=(12964,26352,105) kind=Rock
+COLUMN-SCAN pos=(12964,26352,104) kind=Rock
+COLUMN-SCAN pos=(12964,26352,103) kind=Rock
+COLUMN-SCAN pos=(12964,26352,102) kind=Rock
+COLUMN-SCAN pos=(12964,26352,101) kind=Rock
+COLUMN-SCAN pos=(12964,26352,100) kind=Rock
+COLUMN-SCAN pos=(12964,26352,99) kind=Rock
+COLUMN-SCAN pos=(12964,26352,98) kind=Rock
+COLUMN-SCAN pos=(12964,26352,97) kind=Rock
+COLUMN-SCAN pos=(12964,26352,96) kind=Rock
+COLUMN-SCAN pos=(12964,26352,95) kind=Rock
+COLUMN-SCAN pos=(12964,26352,94) kind=Rock
+COLUMN-SCAN pos=(12964,26352,93) kind=Rock
+COLUMN-SCAN pos=(12964,26352,92) kind=Rock
+COLUMN-SCAN pos=(12964,26352,91) kind=Rock
+COLUMN-SCAN pos=(12964,26352,90) kind=Rock
+COLUMN-SCAN pos=(12964,26352,89) kind=Rock
+COLUMN-SCAN pos=(12964,26352,88) kind=Rock
+COLUMN-SCAN pos=(12964,26352,87) kind=Rock
+COLUMN-SCAN pos=(12964,26352,86) kind=Rock
+COLUMN-SCAN pos=(12964,26352,85) kind=Rock
+COLUMN-SCAN pos=(12964,26352,84) kind=Rock
+COLUMN-SCAN pos=(12964,26352,83) kind=Rock
+COLUMN-SCAN pos=(12964,26352,82) kind=Rock
+COLUMN-SCAN pos=(12964,26352,81) kind=Rock
+COLUMN-SCAN pos=(12964,26352,80) kind=Rock
+COLUMN-SCAN pos=(12964,26352,79) kind=Rock
+COLUMN-SCAN pos=(12964,26352,78) kind=Rock
+COLUMN-SCAN pos=(12964,26352,77) kind=Rock
+COLUMN-SCAN pos=(12964,26352,76) kind=Rock
+COLUMN-SCAN pos=(12964,26352,75) kind=Rock
+COLUMN-SCAN pos=(12964,26352,74) kind=Rock
+COLUMN-SCAN pos=(12964,26352,73) kind=Rock
+COLUMN-SCAN pos=(12964,26352,72) kind=Rock
+COLUMN-SCAN pos=(12964,26352,71) kind=Rock
+COLUMN-SCAN pos=(12964,26352,70) kind=Rock
+COLUMN-SCAN pos=(12964,26352,69) kind=Rock
+COLUMN-SCAN pos=(12964,26352,68) kind=Rock
+COLUMN-SCAN pos=(12964,26352,67) kind=Rock
+COLUMN-SCAN pos=(12964,26352,66) kind=Rock
+COLUMN-SCAN pos=(12964,26352,65) kind=Rock
+COLUMN-SCAN pos=(12964,26352,64) kind=Rock
+COLUMN-SCAN pos=(12964,26352,63) kind=Rock
+COLUMN-SCAN pos=(12964,26352,62) kind=Rock
+COLUMN-SCAN pos=(12964,26352,61) kind=Rock
+COLUMN-SCAN pos=(12964,26352,60) kind=Rock
+COLUMN-SCAN pos=(12964,26352,59) kind=Rock
+COLUMN-SCAN pos=(12964,26352,58) kind=Rock
+COLUMN-SCAN pos=(12964,26352,57) kind=Rock
+COLUMN-SCAN pos=(12964,26352,56) kind=Rock
+COLUMN-SCAN pos=(12964,26352,55) kind=Rock
+COLUMN-SCAN pos=(12964,26352,54) kind=Rock
+COLUMN-SCAN pos=(12964,26352,53) kind=Rock
+COLUMN-SCAN pos=(12964,26352,52) kind=Rock
+COLUMN-SCAN pos=(12964,26352,51) kind=Rock
+COLUMN-SCAN pos=(12964,26352,50) kind=Rock
+{"b5_55_blocked_by":null,"b5_55_clears_on_cancel":true,"b5_55_diag":{"claimant":null,"progress":0.0,"unreachable":true},"b5_55_names_blocker":false,"b5_55_notified_once":false,"b5_access_pending_true_ticks":210,"b5_access_plan_emergency_calls":13,"b5_access_plan_emergency_emissions":1,"b5_access_plan_proactive_descent_calls":0,"b5_access_plan_proactive_descent_emissions":0,"b5_access_plan_self_rescue_calls":2,"b5_access_plan_self_rescue_emissions":0,"b5_access_plan_self_rescue_starved":0,"b5_any_mining_xp":true,"b5_any_needs_materials":false,"b5_any_woodcutting_xp":true,"b5_b15_adjacent_claimed":true,"b5_b15_floater_skipped":true,"b5_b15_ontop_claimed":true,"b5_blocked_regions_count_at_end":0,"b5_blocked_regions_count_at_settle":2,"b5_build_ok_jobs":1,"b5_build_placed":false,"b5_build_stall_jobs":1,"b5_build_stall_untouched":true,"b5_build_stamp":"4561429aec+dirty built 2026-08-08T14:05:16Z","b5_cascade_probe":{"abort_ceiling_max":0,"abort_resets_max":0,"access_emissions_max":1,"frontier_completes_max":0,"members_seen":1,"present":true},"b5_cavein_drop_cells":0,"b5_ch_base_blocked_by":[12964,26352,156],"b5_ch_base_blocked_sources":["plan_access"],"b5_ch_cancel_clean":true,"b5_ch_cells":2048,"b5_ch_engaged":true,"b5_ch_ground_truth_tree_present":true,"b5_ch_ground_truth_witness":{"leaves_pos":[12965,26512,179],"ring_index":10,"wood_pos":[12965,26512,178]},"b5_ch_jobs":1,"b5_ch_leaf_cleared":true,"b5_ch_leaf_diag":null,"b5_ch_leaf_no_drop":true,"b5_ch_mixed":false,"b5_ch_oracle_class":"pass","b5_ch_rings_tried":4,"b5_ch_scan_incomplete":false,"b5_ch_scan_incomplete_rings":0,"b5_ch_scan_incomplete_total_columns":0,"b5_ch_scan_incomplete_unreachable_columns":0,"b5_ch_trees":1,"b5_chop_cleared":false,"b5_chop_jobs":1,"b5_chop_reachability_probe":{"from_last_timeout":{"columns_visited_jump":99994,"columns_visited_scramble":100000,"columns_visited_step":99890,"from":[12966,26361,152],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":true,"standable_target":[12965,26352,156]},"from_spawn":{"columns_visited_jump":99994,"columns_visited_scramble":100000,"columns_visited_step":99890,"from":[12976,26352,142],"path_exists_jump":false,"path_exists_scramble":false,"path_exists_step":false,"probe_incomplete":true,"standable_target":[12965,26352,156]},"last_timeout_pos":[12966.4306640625,26361.8515625,152.0],"min_distance_to_target":9.79164981842041,"route_next_idx_pinned":null,"target":[12964,26352,156],"timeout_route_states":[{"route_complete":null,"route_exists":false,"route_next_idx":null},{"route_complete":null,"route_exists":false,"route_next_idx":null},{"route_complete":null,"route_exists":false,"route_next_idx":null},{"route_complete":null,"route_exists":false,"route_next_idx":null}]},"b5_drift_events":10,"b5_failed_clauses":["chop_cleared","build_placed","log_sum","any_needs_materials","ch_mixed"],"b5_flat_bounds_ok":true,"b5_flat_floor_flat":true,"b5_flat_hint_decoupled":true,"b5_flat_total":108,"b5_gave_item":true,"b5_hill_past_old_cap":true,"b5_hill_reaches_crest":true,"b5_hill_total_ok":true,"b5_live_is_access_count":0,"b5_locomotion":[3363,7,1],"b5_log_sum":0,"b5_max_same_target_timeouts":4,"b5_mine_blocks_mined":27,"b5_mine_cell_diag":[],"b5_mine_cleared":true,"b5_mine_footprint_top_witness":null,"b5_mine_jobs":27,"b5_mine_jobs_remaining":0,"b5_mine_reachability_probe":[],"b5_mine_timeout_position_diag":[],"b5_release_completed":29,"b5_release_other":0,"b5_release_removed_externally":3,"b5_release_target_changed":0,"b5_release_timed_out":7,"b5_rescue_fired":true,"b5_slope_bounds_ok":true,"b5_slope_cancel_clean":true,"b5_slope_columns_ok":true,"b5_slope_jobs_total":72,"b5_slope_legacy_jobs":45,"b5_soak_avg_tick_ms":6.769601166666666,"b5_stone_entities":3,"b5_stone_sum":27,"b5_timeouts_on_never_completed_jobs":4,"b5_tool_ok":true,"b5_tool_steel":2.0,"b5_tool_steel_measured":2.0,"b5_tool_stone":1.5,"b5_tool_stone_measured":1.5,"b5_travel_timeouts":7}
+B5 SCENARIO: FAIL
+B5 FAILED CLAUSES: ["chop_cleared", "build_placed", "log_sum", "any_needs_materials", "ch_mixed"]
+[2m2026-08-08T14:11:27.797811Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m Waiting for rtsim save thread to finish...
+[2m2026-08-08T14:11:28.029165Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m Rtsim save thread finished.

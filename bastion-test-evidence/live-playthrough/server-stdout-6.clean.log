@@ -1,0 +1,967 @@
+2026-08-04T21:21:51.297074Z  WARN veloren_server_cli::settings: Settings file not found! Creating a template file: E:\veloren-master\.engine-integration-wt\bastion-test-evidence\live-playthrough\userdata\server-cli\settings.template.ron — If you wish to change any settings, copy/move the template to settings.ron and edit the fields as you wish.
+2026-08-04T21:21:51.297800Z  INFO veloren_server_cli: Using userdata folder at E:\veloren-master\.engine-integration-wt\bastion-test-evidence\live-playthrough\userdata
+2026-08-04T21:21:51.324641Z  INFO veloren_server_cli: Starting server...
+2026-08-04T21:21:51.324680Z  INFO veloren_server: Server data dir is: E:\veloren-master\.engine-integration-wt\bastion-test-evidence\live-playthrough\userdata\server
+2026-08-04T21:21:51.324686Z  INFO veloren_server: Authentication is disabled
+2026-08-04T21:21:51.324720Z  INFO veloren_server: Server boot ID: boot/74e4a70e-44fb-4054-ae2f-3a62a4ecf4ab
+2026-08-04T21:21:51.325108Z  INFO veloren_common_assets: Assets found path=E:\veloren-master\.engine-integration-wt\assets
+2026-08-04T21:21:51.865630Z  INFO veloren_server: content manifest built files=10610
+2026-08-04T21:21:51.887996Z  INFO refinery_core::traits: schema history table is empty, going to apply all migrations
+2026-08-04T21:21:51.888167Z  INFO refinery_core::traits::sync: going to apply 70 migrations in multiple transactions.
+2026-08-04T21:21:51.888174Z  INFO refinery_core::traits::sync: applying migration: V1__character ...
+2026-08-04T21:21:51.890974Z  INFO refinery_core::traits::sync: applying migration: V2__body ...
+2026-08-04T21:21:51.894186Z  INFO refinery_core::traits::sync: applying migration: V3__stats ...
+2026-08-04T21:21:51.898736Z  INFO refinery_core::traits::sync: applying migration: V4__race_species ...
+2026-08-04T21:21:51.902916Z  INFO refinery_core::traits::sync: applying migration: V5__inventory ...
+2026-08-04T21:21:51.905648Z  INFO refinery_core::traits::sync: applying migration: V6__loadout ...
+2026-08-04T21:21:51.908534Z  INFO refinery_core::traits::sync: applying migration: V7__inv_increase ...
+2026-08-04T21:21:51.909939Z  INFO refinery_core::traits::sync: applying migration: V8__skills ...
+2026-08-04T21:21:51.912442Z  INFO refinery_core::traits::sync: applying migration: V9__add_missing_inv_loadout ...
+2026-08-04T21:21:51.913869Z  INFO refinery_core::traits::sync: applying migration: V10__dash_melee_energy_cost_fix ...
+2026-08-04T21:21:51.915301Z  INFO refinery_core::traits::sync: applying migration: V11__migrate_armour_stats ...
+2026-08-04T21:21:51.916967Z  INFO refinery_core::traits::sync: applying migration: V12__update_item_stats ...
+2026-08-04T21:21:51.918571Z  INFO refinery_core::traits::sync: applying migration: V13__fix_projectile_stats ...
+2026-08-04T21:21:51.920071Z  INFO refinery_core::traits::sync: applying migration: V14__power_stat_for_weapons ...
+2026-08-04T21:21:51.921690Z  INFO refinery_core::traits::sync: applying migration: V15__fix_various_problems ...
+2026-08-04T21:21:51.922982Z  INFO refinery_core::traits::sync: applying migration: V16__item_persistence ...
+2026-08-04T21:21:51.931349Z  INFO refinery_core::traits::sync: applying migration: V17__move_sceptres ...
+2026-08-04T21:21:51.932778Z  INFO refinery_core::traits::sync: applying migration: V18__rename_npcweapons ...
+2026-08-04T21:21:51.934256Z  INFO refinery_core::traits::sync: applying migration: V19__move_waypoint_to_stats ...
+2026-08-04T21:21:51.937605Z  INFO refinery_core::traits::sync: applying migration: V20__item_storage ...
+2026-08-04T21:21:51.939216Z  INFO refinery_core::traits::sync: applying migration: V21__shinygem_to_diamond ...
+2026-08-04T21:21:51.940460Z  INFO refinery_core::traits::sync: applying migration: V22__skills ...
+2026-08-04T21:21:51.944054Z  INFO refinery_core::traits::sync: applying migration: V23__purge_duplicate_items ...
+2026-08-04T21:21:51.945919Z  INFO refinery_core::traits::sync: applying migration: V24__remove_duplicate_possess_stick ...
+2026-08-04T21:21:51.947209Z  INFO refinery_core::traits::sync: applying migration: V25__starter_gear ...
+2026-08-04T21:21:51.948534Z  INFO refinery_core::traits::sync: applying migration: V26__weapon_replacements ...
+2026-08-04T21:21:51.950329Z  INFO refinery_core::traits::sync: applying migration: V27__armor_reorganization ...
+2026-08-04T21:21:51.952678Z  INFO refinery_core::traits::sync: applying migration: V28__fix_sturdy_red_backpack ...
+2026-08-04T21:21:51.953870Z  INFO refinery_core::traits::sync: applying migration: V29__fix_other_backpacks ...
+2026-08-04T21:21:51.955141Z  INFO refinery_core::traits::sync: applying migration: V30__fix_leather_set ...
+2026-08-04T21:21:51.956284Z  INFO refinery_core::traits::sync: applying migration: V31__fix_debug_armor ...
+2026-08-04T21:21:51.957546Z  INFO refinery_core::traits::sync: applying migration: V32__reset_sceptre_skills ...
+2026-08-04T21:21:51.960916Z  INFO refinery_core::traits::sync: applying migration: V33__fix_amethyst_staff ...
+2026-08-04T21:21:51.962201Z  INFO refinery_core::traits::sync: applying migration: V34__remove_immunemelee_bexplosion ...
+2026-08-04T21:21:51.965979Z  INFO refinery_core::traits::sync: applying migration: V35__rename_craftsman_hammer ...
+2026-08-04T21:21:51.967291Z  INFO refinery_core::traits::sync: applying migration: V36__deduplicate_items ...
+2026-08-04T21:21:51.968731Z  INFO refinery_core::traits::sync: applying migration: V37__equip_slots ...
+2026-08-04T21:21:51.969903Z  INFO refinery_core::traits::sync: applying migration: V38__reset_bow_skills ...
+2026-08-04T21:21:51.971171Z  INFO refinery_core::traits::sync: applying migration: V39__meat_MR_organization ...
+2026-08-04T21:21:51.972873Z  INFO refinery_core::traits::sync: applying migration: V40__meat_fix ...
+2026-08-04T21:21:51.974081Z  INFO refinery_core::traits::sync: applying migration: V41__mining_tree ...
+2026-08-04T21:21:51.975238Z  INFO refinery_core::traits::sync: applying migration: V42__remove_warlock_warlord ...
+2026-08-04T21:21:51.976738Z  INFO refinery_core::traits::sync: applying migration: V43__pets ...
+2026-08-04T21:21:51.979308Z  INFO refinery_core::traits::sync: applying migration: V44__reduce_asset_duplication ...
+2026-08-04T21:21:51.980604Z  INFO refinery_core::traits::sync: applying migration: V45__new_necklaces ...
+2026-08-04T21:21:51.981999Z  INFO refinery_core::traits::sync: applying migration: V46__skill_persistence ...
+2026-08-04T21:21:51.985780Z  INFO refinery_core::traits::sync: applying migration: V47__ability_sets ...
+2026-08-04T21:21:51.988372Z  INFO refinery_core::traits::sync: applying migration: V48__remove_bomb_pile ...
+2026-08-04T21:21:51.989693Z  INFO refinery_core::traits::sync: applying migration: V49__modular_weapons ...
+2026-08-04T21:21:52.011105Z  INFO refinery_core::traits::sync: applying migration: V50__musical_instruments ...
+2026-08-04T21:21:52.012385Z  INFO refinery_core::traits::sync: applying migration: V51__item_durability ...
+2026-08-04T21:21:52.015028Z  INFO refinery_core::traits::sync: applying migration: V52__miner_helmets ...
+2026-08-04T21:21:52.016600Z  INFO refinery_core::traits::sync: applying migration: V53__potion_combustion ...
+2026-08-04T21:21:52.017994Z  INFO refinery_core::traits::sync: applying migration: V54__overflow_slots ...
+2026-08-04T21:21:52.019356Z  INFO refinery_core::traits::sync: applying migration: V55__steeltonguedrum ...
+2026-08-04T21:21:52.020513Z  INFO refinery_core::traits::sync: applying migration: V56__character_player_uuid_index ...
+2026-08-04T21:21:52.023063Z  INFO refinery_core::traits::sync: applying migration: V57__dwarven_keys ...
+2026-08-04T21:21:52.024516Z  INFO refinery_core::traits::sync: applying migration: V58__npc_armor ...
+2026-08-04T21:21:52.025992Z  INFO refinery_core::traits::sync: applying migration: V59__potion_curious ...
+2026-08-04T21:21:52.027244Z  INFO refinery_core::traits::sync: applying migration: V60__recipe_book ...
+2026-08-04T21:21:52.028653Z  INFO refinery_core::traits::sync: applying migration: V61__fix_recipe_migration ...
+2026-08-04T21:21:52.030075Z  INFO refinery_core::traits::sync: applying migration: V62__hardcore ...
+2026-08-04T21:21:52.032992Z  INFO refinery_core::traits::sync: applying migration: V63__remove_bloodmoon_key ...
+2026-08-04T21:21:52.036175Z  INFO refinery_core::traits::sync: applying migration: V64__erase_pet_names ...
+2026-08-04T21:21:52.037354Z  INFO refinery_core::traits::sync: applying migration: V65__rename_helmet_to_head ...
+2026-08-04T21:21:52.038621Z  INFO refinery_core::traits::sync: applying migration: V66__merge_lantern_recipes ...
+2026-08-04T21:21:52.039860Z  INFO refinery_core::traits::sync: applying migration: V67__more_armor_migrations ...
+2026-08-04T21:21:52.041207Z  INFO refinery_core::traits::sync: applying migration: V68__rename_npcweapon ...
+2026-08-04T21:21:52.042392Z  INFO refinery_core::traits::sync: applying migration: V69__merge_metal_recipes ...
+2026-08-04T21:21:52.043796Z  INFO refinery_core::traits::sync: applying migration: V70__merge_remaining_unique_recipes ...
+2026-08-04T21:21:52.045112Z  INFO veloren_server::persistence: Applied 70 database migration(s):
+2026-08-04T21:21:52.045120Z  INFO veloren_server::persistence:   V1__character (checksum 9117075394110855725)
+2026-08-04T21:21:52.045122Z  INFO veloren_server::persistence:   V2__body (checksum 6157752084147612421)
+2026-08-04T21:21:52.045123Z  INFO veloren_server::persistence:   V3__stats (checksum 13972056030996213876)
+2026-08-04T21:21:52.045125Z  INFO veloren_server::persistence:   V4__race_species (checksum 17725497262845966991)
+2026-08-04T21:21:52.045126Z  INFO veloren_server::persistence:   V5__inventory (checksum 2296204078845749223)
+2026-08-04T21:21:52.045128Z  INFO veloren_server::persistence:   V6__loadout (checksum 4113908176235991387)
+2026-08-04T21:21:52.045129Z  INFO veloren_server::persistence:   V7__inv_increase (checksum 14586618203445988633)
+2026-08-04T21:21:52.045130Z  INFO veloren_server::persistence:   V8__skills (checksum 13750888823142164688)
+2026-08-04T21:21:52.045131Z  INFO veloren_server::persistence:   V9__add_missing_inv_loadout (checksum 7683767586967693766)
+2026-08-04T21:21:52.045132Z  INFO veloren_server::persistence:   V10__dash_melee_energy_cost_fix (checksum 6782154633539230651)
+2026-08-04T21:21:52.045134Z  INFO veloren_server::persistence:   V11__migrate_armour_stats (checksum 4250561370733984852)
+2026-08-04T21:21:52.045135Z  INFO veloren_server::persistence:   V12__update_item_stats (checksum 2682046764058750781)
+2026-08-04T21:21:52.045136Z  INFO veloren_server::persistence:   V13__fix_projectile_stats (checksum 9684998864943125609)
+2026-08-04T21:21:52.045138Z  INFO veloren_server::persistence:   V14__power_stat_for_weapons (checksum 3232427851139713902)
+2026-08-04T21:21:52.045139Z  INFO veloren_server::persistence:   V15__fix_various_problems (checksum 3677284111525558711)
+2026-08-04T21:21:52.045140Z  INFO veloren_server::persistence:   V16__item_persistence (checksum 4071622738827579892)
+2026-08-04T21:21:52.045142Z  INFO veloren_server::persistence:   V17__move_sceptres (checksum 10211991246089338915)
+2026-08-04T21:21:52.045143Z  INFO veloren_server::persistence:   V18__rename_npcweapons (checksum 5874698273404516747)
+2026-08-04T21:21:52.045144Z  INFO veloren_server::persistence:   V19__move_waypoint_to_stats (checksum 4968120725152602896)
+2026-08-04T21:21:52.045145Z  INFO veloren_server::persistence:   V20__item_storage (checksum 15645955395975896442)
+2026-08-04T21:21:52.045146Z  INFO veloren_server::persistence:   V21__shinygem_to_diamond (checksum 14401163018466160915)
+2026-08-04T21:21:52.045148Z  INFO veloren_server::persistence:   V22__skills (checksum 6304664136683765916)
+2026-08-04T21:21:52.045149Z  INFO veloren_server::persistence:   V23__purge_duplicate_items (checksum 8475295354042906120)
+2026-08-04T21:21:52.045150Z  INFO veloren_server::persistence:   V24__remove_duplicate_possess_stick (checksum 3892511089877010706)
+2026-08-04T21:21:52.045152Z  INFO veloren_server::persistence:   V25__starter_gear (checksum 12297568306891341032)
+2026-08-04T21:21:52.045153Z  INFO veloren_server::persistence:   V26__weapon_replacements (checksum 3916756410604680303)
+2026-08-04T21:21:52.045154Z  INFO veloren_server::persistence:   V27__armor_reorganization (checksum 355115092526764820)
+2026-08-04T21:21:52.045156Z  INFO veloren_server::persistence:   V28__fix_sturdy_red_backpack (checksum 383788314415304824)
+2026-08-04T21:21:52.045157Z  INFO veloren_server::persistence:   V29__fix_other_backpacks (checksum 4261054190619340614)
+2026-08-04T21:21:52.045158Z  INFO veloren_server::persistence:   V30__fix_leather_set (checksum 17138102695467063097)
+2026-08-04T21:21:52.045160Z  INFO veloren_server::persistence:   V31__fix_debug_armor (checksum 16042938412753080615)
+2026-08-04T21:21:52.045161Z  INFO veloren_server::persistence:   V32__reset_sceptre_skills (checksum 10182203831248564684)
+2026-08-04T21:21:52.045162Z  INFO veloren_server::persistence:   V33__fix_amethyst_staff (checksum 9604848746900261325)
+2026-08-04T21:21:52.045164Z  INFO veloren_server::persistence:   V34__remove_immunemelee_bexplosion (checksum 5443787630796502227)
+2026-08-04T21:21:52.045165Z  INFO veloren_server::persistence:   V35__rename_craftsman_hammer (checksum 17448708375386734886)
+2026-08-04T21:21:52.045166Z  INFO veloren_server::persistence:   V36__deduplicate_items (checksum 14535474030714730867)
+2026-08-04T21:21:52.045168Z  INFO veloren_server::persistence:   V37__equip_slots (checksum 17670694596716043178)
+2026-08-04T21:21:52.045169Z  INFO veloren_server::persistence:   V38__reset_bow_skills (checksum 2946902497248539682)
+2026-08-04T21:21:52.045170Z  INFO veloren_server::persistence:   V39__meat_MR_organization (checksum 12119461975081911054)
+2026-08-04T21:21:52.045172Z  INFO veloren_server::persistence:   V40__meat_fix (checksum 8567950153632141745)
+2026-08-04T21:21:52.045173Z  INFO veloren_server::persistence:   V41__mining_tree (checksum 4597753416950730742)
+2026-08-04T21:21:52.045175Z  INFO veloren_server::persistence:   V42__remove_warlock_warlord (checksum 7582057148074323076)
+2026-08-04T21:21:52.045176Z  INFO veloren_server::persistence:   V43__pets (checksum 18433196296812969669)
+2026-08-04T21:21:52.045178Z  INFO veloren_server::persistence:   V44__reduce_asset_duplication (checksum 6175258976537178019)
+2026-08-04T21:21:52.045179Z  INFO veloren_server::persistence:   V45__new_necklaces (checksum 13904973024489369378)
+2026-08-04T21:21:52.045180Z  INFO veloren_server::persistence:   V46__skill_persistence (checksum 1232753656384396185)
+2026-08-04T21:21:52.045181Z  INFO veloren_server::persistence:   V47__ability_sets (checksum 14481811957198129698)
+2026-08-04T21:21:52.045183Z  INFO veloren_server::persistence:   V48__remove_bomb_pile (checksum 13241228531294393202)
+2026-08-04T21:21:52.045184Z  INFO veloren_server::persistence:   V49__modular_weapons (checksum 9925744740750174409)
+2026-08-04T21:21:52.045185Z  INFO veloren_server::persistence:   V50__musical_instruments (checksum 17775170093105575001)
+2026-08-04T21:21:52.045186Z  INFO veloren_server::persistence:   V51__item_durability (checksum 9808753765296879698)
+2026-08-04T21:21:52.045188Z  INFO veloren_server::persistence:   V52__miner_helmets (checksum 13463685126931242488)
+2026-08-04T21:21:52.045189Z  INFO veloren_server::persistence:   V53__potion_combustion (checksum 6169398698926532945)
+2026-08-04T21:21:52.045193Z  INFO veloren_server::persistence:   V54__overflow_slots (checksum 7170889244486814327)
+2026-08-04T21:21:52.045194Z  INFO veloren_server::persistence:   V55__steeltonguedrum (checksum 6465091668118394334)
+2026-08-04T21:21:52.045196Z  INFO veloren_server::persistence:   V56__character_player_uuid_index (checksum 5461440106284075476)
+2026-08-04T21:21:52.045197Z  INFO veloren_server::persistence:   V57__dwarven_keys (checksum 2772538222823120165)
+2026-08-04T21:21:52.045198Z  INFO veloren_server::persistence:   V58__npc_armor (checksum 3411445219666517287)
+2026-08-04T21:21:52.045199Z  INFO veloren_server::persistence:   V59__potion_curious (checksum 9869216673629487416)
+2026-08-04T21:21:52.045201Z  INFO veloren_server::persistence:   V60__recipe_book (checksum 6534247327599213578)
+2026-08-04T21:21:52.045202Z  INFO veloren_server::persistence:   V61__fix_recipe_migration (checksum 5921500808049712958)
+2026-08-04T21:21:52.045203Z  INFO veloren_server::persistence:   V62__hardcore (checksum 16200974500114771960)
+2026-08-04T21:21:52.045204Z  INFO veloren_server::persistence:   V63__remove_bloodmoon_key (checksum 2894083738288817494)
+2026-08-04T21:21:52.045206Z  INFO veloren_server::persistence:   V64__erase_pet_names (checksum 8292297408000838344)
+2026-08-04T21:21:52.045207Z  INFO veloren_server::persistence:   V65__rename_helmet_to_head (checksum 2885737095059833865)
+2026-08-04T21:21:52.045208Z  INFO veloren_server::persistence:   V66__merge_lantern_recipes (checksum 14797805935592345465)
+2026-08-04T21:21:52.045209Z  INFO veloren_server::persistence:   V67__more_armor_migrations (checksum 5108486056019802376)
+2026-08-04T21:21:52.045211Z  INFO veloren_server::persistence:   V68__rename_npcweapon (checksum 6316852774348677033)
+2026-08-04T21:21:52.045212Z  INFO veloren_server::persistence:   V69__merge_metal_recipes (checksum 828686277743662713)
+2026-08-04T21:21:52.045213Z  INFO veloren_server::persistence:   V70__merge_remaining_unique_recipes (checksum 2143739316683503356)
+2026-08-04T21:21:52.057305Z  INFO veloren_server::persistence: Database vacuumed
+2026-08-04T21:21:52.089033Z  INFO veloren_world::sim: Starting world generation
+2026-08-04T21:21:53.862682Z  INFO veloren_world::civ: starting peak naming
+2026-08-04T21:21:53.947416Z  INFO veloren_world::civ: all peaks named num_peaks=80
+2026-08-04T21:21:53.947448Z  INFO veloren_world::civ: starting biome naming
+2026-08-04T21:21:54.194314Z  INFO veloren_world::civ: all biomes named biome_count=285
+2026-08-04T21:21:54.194901Z  INFO veloren_world::civ: starting civilisation creation
+2026-08-04T21:21:57.775716Z  WARN veloren_world::civ: Failed to find starting site for civilisation.
+2026-08-04T21:21:57.872688Z  WARN veloren_world::civ: Failed to find starting site for civilisation.
+2026-08-04T21:21:58.652739Z  WARN veloren_world::civ: Failed to find starting site for civilisation.
+2026-08-04T21:21:58.816145Z  WARN veloren_world::civ: Failed to find starting site for civilisation.
+2026-08-04T21:21:58.953933Z  WARN veloren_world::civ: Failed to find starting site for civilisation.
+2026-08-04T21:21:58.953957Z  INFO veloren_world::civ: all civilisations created initial_civ_count=48
+2026-08-04T21:22:00.502775Z  INFO veloren_world::civ: all sites placed cnt=194
+2026-08-04T21:22:02.076463Z  INFO veloren_world::site::economy::context: economy simulation start
+2026-08-04T21:22:02.484685Z  INFO veloren_world::site::economy::context: economy simulation end
+2026-08-04T21:22:02.484722Z  INFO veloren_world::site::economy::context: Towns 4-1395021 avg 147968 inhabitants
+2026-08-04T21:22:09.428172Z  INFO veloren_server::automod: Automod disabled
+2026-08-04T21:22:09.428206Z  INFO veloren_server: bastion: FLAT-TEST-ARENA env check at server boot flat_arena_enabled=false
+2026-08-04T21:22:09.466181Z  INFO veloren_server::rtsim: Looking for rtsim data at E:\veloren-master\.engine-integration-wt\bastion-test-evidence\live-playthrough\userdata\server\rtsim\data.dat...
+2026-08-04T21:22:09.466325Z  INFO veloren_server::rtsim: No rtsim data found. Generating from world...
+2026-08-04T21:22:09.486939Z  INFO veloren_rtsim::generate: Generated 16 rtsim factions.
+2026-08-04T21:22:09.487031Z  INFO veloren_rtsim::generate: Registering 194 rtsim sites from world sites.
+2026-08-04T21:22:09.487231Z  INFO veloren_rtsim::generate: Generated 2008 rtsim NPCs to be spawned.
+2026-08-04T21:22:09.487239Z  INFO veloren_server::rtsim: Rtsim data generated.
+2026-08-04T21:22:09.488383Z  INFO veloren_rtsim: Starting default rtsim rules...
+2026-08-04T21:22:09.488395Z  INFO veloren_rtsim: Initiating 'veloren_rtsim::rule::migrate::Migrate' rule...
+2026-08-04T21:22:09.488403Z  INFO veloren_rtsim: Initiating 'veloren_rtsim::rule::architect::Architect' rule...
+2026-08-04T21:22:09.488407Z  INFO veloren_rtsim: Initiating 'veloren_rtsim::rule::replenish_resources::ReplenishResources' rule...
+2026-08-04T21:22:09.488410Z  INFO veloren_rtsim: Initiating 'veloren_rtsim::rule::report::ReportEvents' rule...
+2026-08-04T21:22:09.488412Z  INFO veloren_rtsim: Initiating 'veloren_rtsim::rule::chronicle_events::ChronicleEvents' rule...
+2026-08-04T21:22:09.488413Z  INFO veloren_rtsim: Initiating 'veloren_rtsim::rule::sync_npcs::SyncNpcs' rule...
+2026-08-04T21:22:09.488415Z  INFO veloren_rtsim: Initiating 'veloren_rtsim::rule::simulate_npcs::SimulateNpcs' rule...
+2026-08-04T21:22:09.488417Z  INFO veloren_rtsim: Initiating 'veloren_rtsim::rule::npc_ai::NpcAi' rule...
+2026-08-04T21:22:09.488421Z  INFO veloren_rtsim: Initiating 'veloren_rtsim::rule::cleanup::CleanUp' rule...
+2026-08-04T21:22:09.530307Z  INFO veloren_server::rtsim::rule: Starting server rtsim rules...
+2026-08-04T21:22:09.530332Z  INFO veloren_rtsim: Initiating 'veloren_server::rtsim::rule::deplete_resources::DepleteResources' rule...
+2026-08-04T21:22:09.538695Z  INFO veloren_server: Server version: 2f59ccde [2026-08-04]
+2026-08-04T21:22:09.539039Z  INFO veloren_server_cli: Server is ready to accept connections. web_port=14005 gameserver_addresses=Map { iter: IntoIter([Tcp { address: [::]:14004 }, Tcp { address: 0.0.0.0:14004 }]) }
+2026-08-04T21:22:09.539701Z  INFO veloren_server_cli::web: listening on 127.0.0.1:14005
+2026-08-04T21:22:14.474247Z  INFO veloren_network::channel: Accepting Tcp from remote_addr="127.xxx.0.xxx:61716" cid=0
+2026-08-04T21:22:14.474872Z  INFO network{p=29chdU}::handshake{cid=0}: veloren_network_protocol::handshake: This Handshake is now configured! pid=bawIs2
+2026-08-04T21:22:14.631905Z  INFO veloren_server::sys::msg::register: New User username="bastion_llm_player"
+2026-08-04T21:22:14.636573Z  INFO veloren_server_cli: Client connected!
+2026-08-04T21:22:20.405785Z  INFO veloren_server::rtsim: bastion: spawned starting colony names=["Lira the Stout", "Fenn Ashborn", "Vada Ironhand", "Vada Oakenshield", "Hesta Brighteye", "Rhosyn the Wary", "Rhosyn Oakenshield", "Osric Ashborn"] count=8
+2026-08-04T21:22:20.457457Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Lira the Stout"
+2026-08-04T21:22:20.457497Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Fenn Ashborn"
+2026-08-04T21:22:20.457543Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Vada Ironhand"
+2026-08-04T21:22:20.457607Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Vada Oakenshield"
+2026-08-04T21:22:20.457630Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Hesta Brighteye"
+2026-08-04T21:22:20.457641Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Rhosyn the Wary"
+2026-08-04T21:22:20.457670Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Rhosyn Oakenshield"
+2026-08-04T21:22:20.457711Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Osric Ashborn"
+2026-08-04T21:22:30.455505Z  INFO bastion_server::bastion_jobs: bastion: designation placed kind=Mine jobs=423
+2026-08-04T21:22:30.455576Z  INFO bastion_server::bastion_jobs: bastion: designation placed kind=Mine jobs=11
+2026-08-04T21:22:30.956588Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=422 colonist=51
+2026-08-04T21:22:30.956640Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=408 colonist=52
+2026-08-04T21:22:30.956671Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=420 colonist=53
+2026-08-04T21:22:30.956690Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=394 colonist=54
+2026-08-04T21:22:30.956712Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=406 colonist=55
+2026-08-04T21:22:30.956737Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=418 colonist=56
+2026-08-04T21:22:30.956776Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=392 colonist=57
+2026-08-04T21:22:30.956799Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=404 colonist=58
+2026-08-04T21:22:30.988348Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=422 pos=Vec3 { x: 15214, y: 16014, z: 418 }
+2026-08-04T21:22:30.988376Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=408 pos=Vec3 { x: 15214, y: 16012, z: 418 }
+2026-08-04T21:22:30.988403Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=406 pos=Vec3 { x: 15212, y: 16012, z: 418 }
+2026-08-04T21:22:31.489148Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=418 pos=Vec3 { x: 15210, y: 16014, z: 418 }
+2026-08-04T21:22:31.555054Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=394 pos=Vec3 { x: 15214, y: 16010, z: 418 }
+2026-08-04T21:22:31.622501Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=420 pos=Vec3 { x: 15212, y: 16014, z: 418 }
+2026-08-04T21:22:32.055032Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=392 pos=Vec3 { x: 15212, y: 16010, z: 418 }
+2026-08-04T21:22:32.356000Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=404 pos=Vec3 { x: 15210, y: 16012, z: 418 }
+2026-08-04T21:22:33.988370Z  INFO bastion_server::bastion_jobs: bastion: job completed job=408 kind=Designated(Mine) pos=Vec3 { x: 15214, y: 16012, z: 418 }
+2026-08-04T21:22:34.355360Z  INFO bastion_server::bastion_jobs: bastion: job completed job=422 kind=Designated(Mine) pos=Vec3 { x: 15214, y: 16014, z: 418 }
+2026-08-04T21:22:34.457328Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=395 colonist=51
+2026-08-04T21:22:34.457403Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=346 colonist=52
+2026-08-04T21:22:34.621809Z  INFO bastion_server::bastion_jobs: bastion: job completed job=420 kind=Designated(Mine) pos=Vec3 { x: 15212, y: 16014, z: 418 }
+2026-08-04T21:22:34.955188Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=395 pos=Vec3 { x: 15208, y: 16011, z: 418 }
+2026-08-04T21:22:34.955626Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=416 colonist=53
+2026-08-04T21:22:35.024148Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=346 pos=Vec3 { x: 15211, y: 16008, z: 417 }
+2026-08-04T21:22:35.289589Z  INFO bastion_server::bastion_jobs: bastion: job completed job=406 kind=Designated(Mine) pos=Vec3 { x: 15212, y: 16012, z: 418 }
+2026-08-04T21:22:35.455934Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=350 colonist=55
+2026-08-04T21:22:35.522817Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=416 pos=Vec3 { x: 15208, y: 16014, z: 418 }
+2026-08-04T21:22:35.721763Z  INFO bastion_server::bastion_jobs: bastion: job completed job=404 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16012, z: 418 }
+2026-08-04T21:22:35.788396Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=350 pos=Vec3 { x: 15208, y: 16009, z: 417 }
+2026-08-04T21:22:35.957529Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=397 colonist=58
+2026-08-04T21:22:35.988294Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=397 pos=Vec3 { x: 15210, y: 16011, z: 418 }
+2026-08-04T21:22:37.090423Z  INFO bastion_server::bastion_jobs: bastion: job completed job=392 kind=Designated(Mine) pos=Vec3 { x: 15212, y: 16010, z: 418 }
+2026-08-04T21:22:37.455900Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=407 colonist=57
+2026-08-04T21:22:37.488521Z  INFO bastion_server::bastion_jobs: bastion: job completed job=418 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16014, z: 418 }
+2026-08-04T21:22:37.488608Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=407 pos=Vec3 { x: 15213, y: 16012, z: 418 }
+2026-08-04T21:22:37.555505Z  INFO bastion_server::bastion_jobs: bastion: job completed job=394 kind=Designated(Mine) pos=Vec3 { x: 15214, y: 16010, z: 418 }
+2026-08-04T21:22:37.957608Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=393 colonist=54
+2026-08-04T21:22:37.957683Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=419 colonist=56
+2026-08-04T21:22:37.989109Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=419 pos=Vec3 { x: 15211, y: 16014, z: 418 }
+2026-08-04T21:22:38.023733Z  INFO bastion_server::bastion_jobs: bastion: job completed job=346 kind=Designated(Mine) pos=Vec3 { x: 15211, y: 16008, z: 417 }
+2026-08-04T21:22:38.088713Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=393 pos=Vec3 { x: 15213, y: 16010, z: 418 }
+2026-08-04T21:22:38.323380Z  INFO bastion_server::bastion_jobs: bastion: job completed job=395 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16011, z: 418 }
+2026-08-04T21:22:38.455619Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=402 colonist=51
+2026-08-04T21:22:38.455682Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=421 colonist=52
+2026-08-04T21:22:38.488759Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=402 pos=Vec3 { x: 15208, y: 16012, z: 418 }
+2026-08-04T21:22:38.524055Z  INFO bastion_server::bastion_jobs: bastion: job completed job=416 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16014, z: 418 }
+2026-08-04T21:22:38.955966Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=417 colonist=53
+2026-08-04T21:22:38.988522Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=417 pos=Vec3 { x: 15209, y: 16014, z: 418 }
+2026-08-04T21:22:39.156157Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=421 pos=Vec3 { x: 15213, y: 16014, z: 418 }
+2026-08-04T21:22:39.355360Z  INFO bastion_server::bastion_jobs: bastion: job completed job=397 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16011, z: 418 }
+2026-08-04T21:22:39.455699Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=405 colonist=58
+2026-08-04T21:22:39.489481Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=405 pos=Vec3 { x: 15211, y: 16012, z: 418 }
+2026-08-04T21:22:40.090771Z  INFO bastion_server::bastion_jobs: bastion: job completed job=350 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16009, z: 417 }
+2026-08-04T21:22:40.456120Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=433 colonist=55
+2026-08-04T21:22:41.855611Z  INFO bastion_server::bastion_jobs: bastion: job completed job=402 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16012, z: 418 }
+2026-08-04T21:22:41.955998Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=396 colonist=51
+2026-08-04T21:22:41.989082Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=396 pos=Vec3 { x: 15209, y: 16011, z: 418 }
+2026-08-04T21:22:41.989128Z  INFO bastion_server::bastion_jobs: bastion: job completed job=417 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16014, z: 418 }
+2026-08-04T21:22:42.157063Z  INFO bastion_server::bastion_jobs: bastion: job completed job=421 kind=Designated(Mine) pos=Vec3 { x: 15213, y: 16014, z: 418 }
+2026-08-04T21:22:42.455779Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=360 colonist=52
+2026-08-04T21:22:42.455839Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=351 colonist=53
+2026-08-04T21:22:42.523113Z  INFO bastion_server::bastion_jobs: bastion: job completed job=407 kind=Designated(Mine) pos=Vec3 { x: 15213, y: 16012, z: 418 }
+2026-08-04T21:22:42.656416Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=360 pos=Vec3 { x: 15211, y: 16010, z: 417 }
+2026-08-04T21:22:42.855719Z  INFO bastion_server::bastion_jobs: bastion: job completed job=405 kind=Designated(Mine) pos=Vec3 { x: 15211, y: 16012, z: 418 }
+2026-08-04T21:22:42.958705Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=414 colonist=57
+2026-08-04T21:22:42.958758Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=347 colonist=58
+2026-08-04T21:22:42.991203Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=414 pos=Vec3 { x: 15213, y: 16013, z: 418 }
+2026-08-04T21:22:43.355687Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=347 pos=Vec3 { x: 15212, y: 16008, z: 417 }
+2026-08-04T21:22:43.422134Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=351 pos=Vec3 { x: 15209, y: 16009, z: 417 }
+2026-08-04T21:22:43.989146Z  INFO bastion_server::bastion_jobs: bastion: job completed job=419 kind=Designated(Mine) pos=Vec3 { x: 15211, y: 16014, z: 418 }
+2026-08-04T21:22:44.090103Z  INFO bastion_server::bastion_jobs: bastion: job completed job=393 kind=Designated(Mine) pos=Vec3 { x: 15213, y: 16010, z: 418 }
+2026-08-04T21:22:44.457164Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=401 colonist=54
+2026-08-04T21:22:44.457216Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=411 colonist=56
+2026-08-04T21:22:44.490906Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=401 pos=Vec3 { x: 15214, y: 16011, z: 418 }
+2026-08-04T21:22:44.490932Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=411 pos=Vec3 { x: 15210, y: 16013, z: 418 }
+2026-08-04T21:22:44.989460Z  INFO bastion_server::bastion_jobs: bastion: job completed job=396 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16011, z: 418 }
+2026-08-04T21:22:45.389283Z  INFO bastion_server::bastion_jobs: bastion: job completed job=360 kind=Designated(Mine) pos=Vec3 { x: 15211, y: 16010, z: 417 }
+2026-08-04T21:22:45.456418Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=399 colonist=51
+2026-08-04T21:22:45.456483Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=409 colonist=52
+2026-08-04T21:22:45.892166Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=399 pos=Vec3 { x: 15212, y: 16011, z: 418 }
+2026-08-04T21:22:45.892194Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=409 pos=Vec3 { x: 15208, y: 16013, z: 418 }
+2026-08-04T21:22:46.157928Z  INFO bastion_server::bastion_jobs: bastion: job completed job=351 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16009, z: 417 }
+2026-08-04T21:22:46.356041Z  INFO bastion_server::bastion_jobs: bastion: job completed job=347 kind=Designated(Mine) pos=Vec3 { x: 15212, y: 16008, z: 417 }
+2026-08-04T21:22:46.456593Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=358 colonist=53
+2026-08-04T21:22:46.456641Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=353 colonist=58
+2026-08-04T21:22:46.489601Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=358 pos=Vec3 { x: 15209, y: 16010, z: 417 }
+2026-08-04T21:22:46.489636Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=353 pos=Vec3 { x: 15211, y: 16009, z: 417 }
+2026-08-04T21:22:48.022915Z  INFO bastion_server::bastion_jobs: bastion: job completed job=414 kind=Designated(Mine) pos=Vec3 { x: 15213, y: 16013, z: 418 }
+2026-08-04T21:22:48.456613Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=415 colonist=57
+2026-08-04T21:22:48.489515Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=415 pos=Vec3 { x: 15214, y: 16013, z: 418 }
+2026-08-04T21:22:48.622949Z  INFO bastion_server::bastion_jobs: bastion: job completed job=409 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16013, z: 418 }
+2026-08-04T21:22:48.889573Z  INFO bastion_server::bastion_jobs: bastion: job completed job=399 kind=Designated(Mine) pos=Vec3 { x: 15212, y: 16011, z: 418 }
+2026-08-04T21:22:48.959243Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=413 colonist=51
+2026-08-04T21:22:48.959293Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=398 colonist=52
+2026-08-04T21:22:48.989543Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=413 pos=Vec3 { x: 15212, y: 16013, z: 418 }
+2026-08-04T21:22:49.089697Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=398 pos=Vec3 { x: 15211, y: 16011, z: 418 }
+2026-08-04T21:22:49.222768Z  INFO bastion_server::bastion_jobs: bastion: job completed job=358 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16010, z: 417 }
+2026-08-04T21:22:49.456543Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=357 colonist=53
+2026-08-04T21:22:49.489323Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=357 pos=Vec3 { x: 15208, y: 16010, z: 417 }
+2026-08-04T21:22:49.489362Z  INFO bastion_server::bastion_jobs: bastion: job completed job=353 kind=Designated(Mine) pos=Vec3 { x: 15211, y: 16009, z: 417 }
+2026-08-04T21:22:49.956481Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=354 colonist=58
+2026-08-04T21:22:49.989630Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=354 pos=Vec3 { x: 15212, y: 16009, z: 417 }
+2026-08-04T21:22:50.490560Z  INFO bastion_server::bastion_jobs: bastion: job completed job=401 kind=Designated(Mine) pos=Vec3 { x: 15214, y: 16011, z: 418 }
+2026-08-04T21:22:50.490642Z  INFO bastion_server::bastion_jobs: bastion: job completed job=411 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16013, z: 418 }
+2026-08-04T21:22:50.957266Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=400 colonist=54
+2026-08-04T21:22:50.957330Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=410 colonist=56
+2026-08-04T21:22:50.990064Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=400 pos=Vec3 { x: 15213, y: 16011, z: 418 }
+2026-08-04T21:22:50.990094Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=410 pos=Vec3 { x: 15209, y: 16013, z: 418 }
+2026-08-04T21:22:51.624244Z  INFO bastion_server::bastion_jobs: bastion: job completed job=398 kind=Designated(Mine) pos=Vec3 { x: 15211, y: 16011, z: 418 }
+2026-08-04T21:22:51.722930Z  INFO bastion_server::bastion_jobs: bastion: job completed job=413 kind=Designated(Mine) pos=Vec3 { x: 15212, y: 16013, z: 418 }
+2026-08-04T21:22:51.957034Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=412 colonist=51
+2026-08-04T21:22:51.957094Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=366 colonist=52
+2026-08-04T21:22:51.989617Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=412 pos=Vec3 { x: 15211, y: 16013, z: 418 }
+2026-08-04T21:22:51.989646Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=366 pos=Vec3 { x: 15210, y: 16011, z: 417 }
+2026-08-04T21:22:52.022951Z  INFO bastion_server::bastion_jobs: bastion: job completed job=357 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16010, z: 417 }
+2026-08-04T21:22:52.458464Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=364 colonist=53
+2026-08-04T21:22:52.489873Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=364 pos=Vec3 { x: 15208, y: 16011, z: 417 }
+2026-08-04T21:22:52.722976Z  INFO bastion_server::bastion_jobs: bastion: job completed job=354 kind=Designated(Mine) pos=Vec3 { x: 15212, y: 16009, z: 417 }
+2026-08-04T21:22:52.790681Z  INFO bastion_server::bastion_jobs: bastion: job completed job=415 kind=Designated(Mine) pos=Vec3 { x: 15214, y: 16013, z: 418 }
+2026-08-04T21:22:52.958039Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=383 colonist=57
+2026-08-04T21:22:52.958088Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=355 colonist=58
+2026-08-04T21:22:52.991018Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=383 pos=Vec3 { x: 15213, y: 16013, z: 417 }
+2026-08-04T21:22:52.991044Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=355 pos=Vec3 { x: 15213, y: 16009, z: 417 }
+2026-08-04T21:22:54.522912Z  INFO bastion_server::bastion_jobs: bastion: job completed job=366 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16011, z: 417 }
+2026-08-04T21:22:54.723162Z  INFO bastion_server::bastion_jobs: bastion: job completed job=412 kind=Designated(Mine) pos=Vec3 { x: 15211, y: 16013, z: 418 }
+2026-08-04T21:22:54.960612Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=388 colonist=51
+2026-08-04T21:22:54.960670Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=374 colonist=52
+2026-08-04T21:22:54.991364Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=388 pos=Vec3 { x: 15211, y: 16014, z: 417 }
+2026-08-04T21:22:54.991397Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=374 pos=Vec3 { x: 15211, y: 16012, z: 417 }
+2026-08-04T21:22:55.023133Z  INFO bastion_server::bastion_jobs: bastion: job completed job=364 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16011, z: 417 }
+2026-08-04T21:22:55.456991Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=365 colonist=53
+2026-08-04T21:22:55.489862Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=365 pos=Vec3 { x: 15209, y: 16011, z: 417 }
+2026-08-04T21:22:55.724341Z  INFO bastion_server::bastion_jobs: bastion: job completed job=355 kind=Designated(Mine) pos=Vec3 { x: 15213, y: 16009, z: 417 }
+2026-08-04T21:22:55.959267Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=348 colonist=58
+2026-08-04T21:22:55.990113Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=348 pos=Vec3 { x: 15213, y: 16008, z: 417 }
+2026-08-04T21:22:56.023188Z  INFO bastion_server::bastion_jobs: bastion: job completed job=400 kind=Designated(Mine) pos=Vec3 { x: 15213, y: 16011, z: 418 }
+2026-08-04T21:22:56.023250Z  INFO bastion_server::bastion_jobs: bastion: job completed job=410 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16013, z: 418 }
+2026-08-04T21:22:56.458069Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=363 colonist=54
+2026-08-04T21:22:56.458127Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=386 colonist=56
+2026-08-04T21:22:56.495637Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=363 pos=Vec3 { x: 15214, y: 16010, z: 417 }
+2026-08-04T21:22:56.495667Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=386 pos=Vec3 { x: 15209, y: 16014, z: 417 }
+2026-08-04T21:22:57.393270Z  INFO bastion_server::bastion_jobs: bastion: job completed job=383 kind=Designated(Mine) pos=Vec3 { x: 15213, y: 16013, z: 417 }
+2026-08-04T21:22:57.567494Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=390 colonist=57
+2026-08-04T21:22:57.595105Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=390 pos=Vec3 { x: 15213, y: 16014, z: 417 }
+2026-08-04T21:22:57.671584Z  INFO bastion_server::bastion_jobs: bastion: job completed job=374 kind=Designated(Mine) pos=Vec3 { x: 15211, y: 16012, z: 417 }
+2026-08-04T21:22:57.683165Z  INFO bastion_server::bastion_jobs: bastion: auto-access refused (no in-claim route) — job unreachable job=433
+2026-08-04T21:22:57.683209Z  INFO bastion_server::bastion_jobs: bastion: designation marked BLOCKED (task #55) — notified blocking_cell=Vec3 { x: 15183, y: 16049, z: 460 }
+2026-08-04T21:22:57.852234Z  INFO bastion_server::bastion_jobs: bastion: job completed job=388 kind=Designated(Mine) pos=Vec3 { x: 15211, y: 16014, z: 417 }
+2026-08-04T21:22:58.084183Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=375 colonist=51
+2026-08-04T21:22:58.084245Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=377 colonist=52
+2026-08-04T21:22:58.084279Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=433 colonist=55
+2026-08-04T21:22:58.113256Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=375 pos=Vec3 { x: 15212, y: 16012, z: 417 }
+2026-08-04T21:22:58.147973Z  INFO bastion_server::bastion_jobs: bastion: job completed job=365 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16011, z: 417 }
+2026-08-04T21:22:58.314960Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=377 pos=Vec3 { x: 15214, y: 16012, z: 417 }
+2026-08-04T21:22:58.582118Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=403 colonist=53
+2026-08-04T21:22:58.847238Z  INFO bastion_server::bastion_jobs: bastion: job completed job=348 kind=Designated(Mine) pos=Vec3 { x: 15213, y: 16008, z: 417 }
+2026-08-04T21:22:59.080958Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=352 colonist=58
+2026-08-04T21:22:59.248532Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=403 pos=Vec3 { x: 15209, y: 16012, z: 418 }
+2026-08-04T21:22:59.349255Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=352 pos=Vec3 { x: 15210, y: 16009, z: 417 }
+2026-08-04T21:23:00.647534Z  INFO bastion_server::bastion_jobs: bastion: job completed job=375 kind=Designated(Mine) pos=Vec3 { x: 15212, y: 16012, z: 417 }
+2026-08-04T21:23:00.647632Z  INFO bastion_server::bastion_jobs: bastion: job completed job=377 kind=Designated(Mine) pos=Vec3 { x: 15214, y: 16012, z: 417 }
+2026-08-04T21:23:01.081885Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=367 colonist=51
+2026-08-04T21:23:01.081949Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=376 colonist=52
+2026-08-04T21:23:01.114423Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=367 pos=Vec3 { x: 15211, y: 16011, z: 417 }
+2026-08-04T21:23:01.114450Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=376 pos=Vec3 { x: 15213, y: 16012, z: 417 }
+2026-08-04T21:23:01.380233Z  INFO bastion_server::bastion_jobs: bastion: job completed job=390 kind=Designated(Mine) pos=Vec3 { x: 15213, y: 16014, z: 417 }
+2026-08-04T21:23:01.581446Z  INFO bastion_server::bastion_jobs: bastion: job completed job=403 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16012, z: 418 }
+2026-08-04T21:23:01.581951Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=343 colonist=53
+2026-08-04T21:23:01.581997Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=391 colonist=57
+2026-08-04T21:23:01.613743Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=391 pos=Vec3 { x: 15214, y: 16014, z: 417 }
+2026-08-04T21:23:01.648448Z  INFO bastion_server::bastion_jobs: bastion: job completed job=363 kind=Designated(Mine) pos=Vec3 { x: 15214, y: 16010, z: 417 }
+2026-08-04T21:23:01.648546Z  INFO bastion_server::bastion_jobs: bastion: job completed job=386 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16014, z: 417 }
+2026-08-04T21:23:01.815056Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=343 pos=Vec3 { x: 15208, y: 16008, z: 417 }
+2026-08-04T21:23:01.880917Z  INFO bastion_server::bastion_jobs: bastion: job completed job=352 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16009, z: 417 }
+2026-08-04T21:23:02.080978Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=356 colonist=54
+2026-08-04T21:23:02.081038Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=389 colonist=56
+2026-08-04T21:23:02.081060Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=345 colonist=58
+2026-08-04T21:23:02.113732Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=356 pos=Vec3 { x: 15214, y: 16009, z: 417 }
+2026-08-04T21:23:02.113768Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=389 pos=Vec3 { x: 15212, y: 16014, z: 417 }
+2026-08-04T21:23:02.113774Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=345 pos=Vec3 { x: 15210, y: 16008, z: 417 }
+2026-08-04T21:23:03.447147Z  INFO bastion_server::bastion_jobs: bastion: job completed job=376 kind=Designated(Mine) pos=Vec3 { x: 15213, y: 16012, z: 417 }
+2026-08-04T21:23:03.581291Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=369 colonist=52
+2026-08-04T21:23:03.613754Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=369 pos=Vec3 { x: 15213, y: 16011, z: 417 }
+2026-08-04T21:23:03.647392Z  INFO bastion_server::bastion_jobs: bastion: job completed job=367 kind=Designated(Mine) pos=Vec3 { x: 15211, y: 16011, z: 417 }
+2026-08-04T21:23:04.082222Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=380 colonist=51
+2026-08-04T21:23:04.114895Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=380 pos=Vec3 { x: 15210, y: 16013, z: 417 }
+2026-08-04T21:23:04.147264Z  INFO bastion_server::bastion_jobs: bastion: job completed job=343 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16008, z: 417 }
+2026-08-04T21:23:04.581172Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=371 colonist=53
+2026-08-04T21:23:04.647382Z  INFO bastion_server::bastion_jobs: bastion: job completed job=345 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16008, z: 417 }
+2026-08-04T21:23:04.847689Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=371 pos=Vec3 { x: 15208, y: 16012, z: 417 }
+2026-08-04T21:23:05.081245Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=359 colonist=58
+2026-08-04T21:23:05.113417Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=359 pos=Vec3 { x: 15210, y: 16010, z: 417 }
+2026-08-04T21:23:05.381925Z  INFO bastion_server::bastion_jobs: bastion: job completed job=391 kind=Designated(Mine) pos=Vec3 { x: 15214, y: 16014, z: 417 }
+2026-08-04T21:23:05.581570Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=385 colonist=57
+2026-08-04T21:23:05.780327Z  INFO bastion_server::bastion_jobs: bastion: job completed job=369 kind=Designated(Mine) pos=Vec3 { x: 15213, y: 16011, z: 417 }
+2026-08-04T21:23:05.915026Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=385 pos=Vec3 { x: 15208, y: 16014, z: 417 }
+2026-08-04T21:23:06.083379Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=370 colonist=52
+2026-08-04T21:23:06.113718Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=370 pos=Vec3 { x: 15214, y: 16011, z: 417 }
+2026-08-04T21:23:06.413688Z  INFO bastion_server::bastion_jobs: bastion: job completed job=356 kind=Designated(Mine) pos=Vec3 { x: 15214, y: 16009, z: 417 }
+2026-08-04T21:23:06.413770Z  INFO bastion_server::bastion_jobs: bastion: job completed job=389 kind=Designated(Mine) pos=Vec3 { x: 15212, y: 16014, z: 417 }
+2026-08-04T21:23:06.447037Z  INFO bastion_server::bastion_jobs: bastion: job completed job=380 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16013, z: 417 }
+2026-08-04T21:23:06.582251Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=368 colonist=51
+2026-08-04T21:23:06.582301Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=349 colonist=54
+2026-08-04T21:23:06.582333Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=387 colonist=56
+2026-08-04T21:23:06.613631Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=368 pos=Vec3 { x: 15212, y: 16011, z: 417 }
+2026-08-04T21:23:06.613668Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=387 pos=Vec3 { x: 15210, y: 16014, z: 417 }
+2026-08-04T21:23:06.781453Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=349 pos=Vec3 { x: 15214, y: 16008, z: 417 }
+2026-08-04T21:23:07.015067Z  INFO bastion_server::bastion_jobs: bastion: job completed job=371 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16012, z: 417 }
+2026-08-04T21:23:07.081340Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=372 colonist=53
+2026-08-04T21:23:07.114973Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=372 pos=Vec3 { x: 15209, y: 16012, z: 417 }
+2026-08-04T21:23:07.450421Z  INFO bastion_server::bastion_jobs: bastion: job completed job=359 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16010, z: 417 }
+2026-08-04T21:23:07.582837Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=344 colonist=58
+2026-08-04T21:23:07.748933Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=344 pos=Vec3 { x: 15209, y: 16008, z: 417 }
+2026-08-04T21:23:08.114664Z  INFO bastion_server::bastion_jobs: bastion: job unreachable — claim released job=433 pos=Vec3 { x: 15183, y: 16049, z: 460 } colonist=Vec3 { x: 15197, y: 16045, z: 428 }
+2026-08-04T21:23:08.281522Z  INFO bastion_server::bastion_jobs: bastion: job completed job=370 kind=Designated(Mine) pos=Vec3 { x: 15214, y: 16011, z: 417 }
+2026-08-04T21:23:08.582087Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=384 colonist=52
+2026-08-04T21:23:08.582140Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=340 colonist=55
+2026-08-04T21:23:08.781232Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=384 pos=Vec3 { x: 15214, y: 16013, z: 417 }
+2026-08-04T21:23:08.948189Z  INFO bastion_server::bastion_jobs: bastion: job completed job=368 kind=Designated(Mine) pos=Vec3 { x: 15212, y: 16011, z: 417 }
+2026-08-04T21:23:09.081946Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=361 colonist=51
+2026-08-04T21:23:09.280803Z  INFO bastion_server::bastion_jobs: bastion: job completed job=372 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16012, z: 417 }
+2026-08-04T21:23:09.315153Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=361 pos=Vec3 { x: 15212, y: 16010, z: 417 }
+2026-08-04T21:23:09.582299Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=315 colonist=53
+2026-08-04T21:23:09.614301Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=315 pos=Vec3 { x: 15208, y: 16011, z: 416 }
+2026-08-04T21:23:09.826692Z  INFO bastion_server::bastion_jobs: bastion: job completed job=385 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16014, z: 417 }
+2026-08-04T21:23:10.226840Z  INFO bastion_server::bastion_jobs: bastion: job completed job=344 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16008, z: 417 }
+2026-08-04T21:23:10.227383Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=378 colonist=57
+2026-08-04T21:23:10.227413Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=433 colonist=58
+2026-08-04T21:23:10.259865Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=378 pos=Vec3 { x: 15208, y: 16013, z: 417 }
+2026-08-04T21:23:11.060457Z  INFO bastion_server::bastion_jobs: bastion: job completed job=387 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16014, z: 417 }
+2026-08-04T21:23:11.093243Z  INFO bastion_server::bastion_jobs: bastion: job completed job=384 kind=Designated(Mine) pos=Vec3 { x: 15214, y: 16013, z: 417 }
+2026-08-04T21:23:11.226657Z  INFO bastion_server::bastion_jobs: bastion: job completed job=349 kind=Designated(Mine) pos=Vec3 { x: 15214, y: 16008, z: 417 }
+2026-08-04T21:23:11.227194Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=328 colonist=52
+2026-08-04T21:23:11.227234Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=326 colonist=54
+2026-08-04T21:23:11.227271Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=373 colonist=56
+2026-08-04T21:23:11.260102Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=328 pos=Vec3 { x: 15214, y: 16012, z: 416 }
+2026-08-04T21:23:11.260165Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=373 pos=Vec3 { x: 15210, y: 16012, z: 417 }
+2026-08-04T21:23:11.793398Z  INFO bastion_server::bastion_jobs: bastion: job completed job=361 kind=Designated(Mine) pos=Vec3 { x: 15212, y: 16010, z: 417 }
+2026-08-04T21:23:11.927042Z  INFO bastion_server::bastion_jobs: bastion: job completed job=315 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16011, z: 416 }
+2026-08-04T21:23:12.231947Z  INFO bastion_server::bastion_jobs: bastion: access anchor registered (plan) base=Vec3 { x: 15208, y: 16010, z: 418 }
+2026-08-04T21:23:12.232031Z  INFO bastion_server::bastion_jobs: bastion: proactive descent access emitted (B5.8-E/DPA-1) job=266 kind=Ladder steps=2
+2026-08-04T21:23:12.232096Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=362 colonist=51
+2026-08-04T21:23:12.232150Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=309 colonist=53
+2026-08-04T21:23:12.260225Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=362 pos=Vec3 { x: 15213, y: 16010, z: 417 }
+2026-08-04T21:23:12.260257Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=309 pos=Vec3 { x: 15209, y: 16010, z: 416 }
+2026-08-04T21:23:13.060244Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=326 pos=Vec3 { x: 15212, y: 16012, z: 416 }
+2026-08-04T21:23:13.294732Z  INFO bastion_server::bastion_jobs: bastion: job completed job=328 kind=Designated(Mine) pos=Vec3 { x: 15214, y: 16012, z: 416 }
+2026-08-04T21:23:13.627074Z  INFO bastion_server::bastion_jobs: bastion: job completed job=378 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16013, z: 417 }
+2026-08-04T21:23:13.727359Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=335 colonist=52
+2026-08-04T21:23:13.727419Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=311 colonist=57
+2026-08-04T21:23:13.760271Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=335 pos=Vec3 { x: 15214, y: 16013, z: 416 }
+2026-08-04T21:23:14.261953Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=311 pos=Vec3 { x: 15211, y: 16010, z: 416 }
+2026-08-04T21:23:14.294890Z  INFO bastion_server::bastion_jobs: bastion: job completed job=309 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16010, z: 416 }
+2026-08-04T21:23:14.427253Z  INFO bastion_server::bastion_jobs: bastion: job completed job=362 kind=Designated(Mine) pos=Vec3 { x: 15213, y: 16010, z: 417 }
+2026-08-04T21:23:14.727427Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=297 colonist=51
+2026-08-04T21:23:14.727492Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=302 colonist=53
+2026-08-04T21:23:14.761014Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=297 pos=Vec3 { x: 15211, y: 16008, z: 416 }
+2026-08-04T21:23:14.761041Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=302 pos=Vec3 { x: 15209, y: 16009, z: 416 }
+2026-08-04T21:23:15.561137Z  INFO bastion_server::bastion_jobs: bastion: job completed job=373 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16012, z: 417 }
+2026-08-04T21:23:15.727491Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=379 colonist=56
+2026-08-04T21:23:15.761448Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=379 pos=Vec3 { x: 15209, y: 16013, z: 417 }
+2026-08-04T21:23:15.794153Z  INFO bastion_server::bastion_jobs: bastion: job completed job=335 kind=Designated(Mine) pos=Vec3 { x: 15214, y: 16013, z: 416 }
+2026-08-04T21:23:16.227737Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=321 colonist=52
+2026-08-04T21:23:16.260414Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=321 pos=Vec3 { x: 15214, y: 16011, z: 416 }
+2026-08-04T21:23:16.793812Z  INFO bastion_server::bastion_jobs: bastion: job completed job=302 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16009, z: 416 }
+2026-08-04T21:23:16.926978Z  INFO bastion_server::bastion_jobs: bastion: job completed job=297 kind=Designated(Mine) pos=Vec3 { x: 15211, y: 16008, z: 416 }
+2026-08-04T21:23:17.228902Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=306 colonist=51
+2026-08-04T21:23:17.228992Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=316 colonist=53
+2026-08-04T21:23:17.260564Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=306 pos=Vec3 { x: 15213, y: 16009, z: 416 }
+2026-08-04T21:23:17.260588Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=316 pos=Vec3 { x: 15209, y: 16011, z: 416 }
+2026-08-04T21:23:17.360715Z  INFO bastion_server::bastion_jobs: bastion: job completed job=326 kind=Designated(Mine) pos=Vec3 { x: 15212, y: 16012, z: 416 }
+2026-08-04T21:23:17.627036Z  INFO bastion_server::bastion_jobs: bastion: job completed job=311 kind=Designated(Mine) pos=Vec3 { x: 15211, y: 16010, z: 416 }
+2026-08-04T21:23:17.727585Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=319 colonist=54
+2026-08-04T21:23:17.727649Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=342 colonist=57
+2026-08-04T21:23:17.760403Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=319 pos=Vec3 { x: 15212, y: 16011, z: 416 }
+2026-08-04T21:23:17.893840Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=342 pos=Vec3 { x: 15214, y: 16014, z: 416 }
+2026-08-04T21:23:18.161311Z  INFO bastion_server::bastion_jobs: bastion: job completed job=321 kind=Designated(Mine) pos=Vec3 { x: 15214, y: 16011, z: 416 }
+2026-08-04T21:23:18.228115Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=382 colonist=52
+2026-08-04T21:23:18.627792Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=382 pos=Vec3 { x: 15212, y: 16013, z: 417 }
+2026-08-04T21:23:18.794595Z  INFO bastion_server::bastion_jobs: bastion: job unreachable — claim released job=340 pos=Vec3 { x: 15212, y: 16014, z: 416 } colonist=Vec3 { x: 15197, y: 16045, z: 425 }
+2026-08-04T21:23:19.161372Z  INFO bastion_server::bastion_jobs: bastion: job completed job=316 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16011, z: 416 }
+2026-08-04T21:23:19.228045Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=310 colonist=53
+2026-08-04T21:23:19.228092Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=308 colonist=55
+2026-08-04T21:23:19.261055Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=310 pos=Vec3 { x: 15210, y: 16010, z: 416 }
+2026-08-04T21:23:19.294335Z  INFO bastion_server::bastion_jobs: bastion: job completed job=306 kind=Designated(Mine) pos=Vec3 { x: 15213, y: 16009, z: 416 }
+2026-08-04T21:23:19.528050Z  INFO bastion_server::bastion_jobs: bastion: job completed job=379 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16013, z: 417 }
+2026-08-04T21:23:19.728144Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=305 colonist=51
+2026-08-04T21:23:19.728195Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=338 colonist=56
+2026-08-04T21:23:19.761228Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=305 pos=Vec3 { x: 15212, y: 16009, z: 416 }
+2026-08-04T21:23:19.761259Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=338 pos=Vec3 { x: 15210, y: 16014, z: 416 }
+2026-08-04T21:23:20.527932Z  INFO bastion_server::bastion_jobs: bastion: job completed job=382 kind=Designated(Mine) pos=Vec3 { x: 15212, y: 16013, z: 417 }
+2026-08-04T21:23:20.728166Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=333 colonist=52
+2026-08-04T21:23:20.761294Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=333 pos=Vec3 { x: 15212, y: 16013, z: 416 }
+2026-08-04T21:23:20.894812Z  INFO bastion_server::bastion_jobs: bastion: job completed job=342 kind=Designated(Mine) pos=Vec3 { x: 15214, y: 16014, z: 416 }
+2026-08-04T21:23:21.161586Z  INFO bastion_server::bastion_jobs: bastion: job completed job=310 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16010, z: 416 }
+2026-08-04T21:23:21.228359Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=317 colonist=53
+2026-08-04T21:23:21.228427Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=303 colonist=57
+2026-08-04T21:23:21.261277Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=317 pos=Vec3 { x: 15210, y: 16011, z: 416 }
+2026-08-04T21:23:21.528017Z  INFO bastion_server::bastion_jobs: bastion: job completed job=319 kind=Designated(Mine) pos=Vec3 { x: 15212, y: 16011, z: 416 }
+2026-08-04T21:23:21.528131Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=303 pos=Vec3 { x: 15210, y: 16009, z: 416 }
+2026-08-04T21:23:21.728275Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=320 colonist=54
+2026-08-04T21:23:21.761387Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=320 pos=Vec3 { x: 15213, y: 16011, z: 416 }
+2026-08-04T21:23:21.794525Z  INFO bastion_server::bastion_jobs: bastion: job completed job=305 kind=Designated(Mine) pos=Vec3 { x: 15212, y: 16009, z: 416 }
+2026-08-04T21:23:22.228586Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=307 colonist=51
+2026-08-04T21:23:22.261787Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=307 pos=Vec3 { x: 15214, y: 16009, z: 416 }
+2026-08-04T21:23:22.661397Z  INFO bastion_server::bastion_jobs: bastion: job completed job=333 kind=Designated(Mine) pos=Vec3 { x: 15212, y: 16013, z: 416 }
+2026-08-04T21:23:22.728272Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=334 colonist=52
+2026-08-04T21:23:22.761456Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=334 pos=Vec3 { x: 15213, y: 16013, z: 416 }
+2026-08-04T21:23:23.161562Z  INFO bastion_server::bastion_jobs: bastion: job completed job=317 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16011, z: 416 }
+2026-08-04T21:23:23.228789Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=323 colonist=53
+2026-08-04T21:23:23.261519Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=323 pos=Vec3 { x: 15209, y: 16012, z: 416 }
+2026-08-04T21:23:23.527918Z  INFO bastion_server::bastion_jobs: bastion: job completed job=338 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16014, z: 416 }
+2026-08-04T21:23:23.728375Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=381 colonist=56
+2026-08-04T21:23:23.761259Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=381 pos=Vec3 { x: 15211, y: 16013, z: 417 }
+2026-08-04T21:23:24.294685Z  INFO bastion_server::bastion_jobs: bastion: job completed job=307 kind=Designated(Mine) pos=Vec3 { x: 15214, y: 16009, z: 416 }
+2026-08-04T21:23:24.528303Z  INFO bastion_server::bastion_jobs: bastion: job completed job=334 kind=Designated(Mine) pos=Vec3 { x: 15213, y: 16013, z: 416 }
+2026-08-04T21:23:24.528381Z  INFO bastion_server::bastion_jobs: bastion: job completed job=303 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16009, z: 416 }
+2026-08-04T21:23:24.728409Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=318 colonist=51
+2026-08-04T21:23:24.728461Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=341 colonist=52
+2026-08-04T21:23:24.728489Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=304 colonist=57
+2026-08-04T21:23:24.761435Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=318 pos=Vec3 { x: 15211, y: 16011, z: 416 }
+2026-08-04T21:23:24.761463Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=341 pos=Vec3 { x: 15213, y: 16014, z: 416 }
+2026-08-04T21:23:24.761478Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=304 pos=Vec3 { x: 15211, y: 16009, z: 416 }
+2026-08-04T21:23:25.028116Z  INFO bastion_server::bastion_jobs: bastion: job completed job=323 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16012, z: 416 }
+2026-08-04T21:23:25.228693Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=295 colonist=53
+2026-08-04T21:23:25.261482Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=295 pos=Vec3 { x: 15209, y: 16008, z: 416 }
+2026-08-04T21:23:25.528208Z  INFO bastion_server::bastion_jobs: bastion: job completed job=320 kind=Designated(Mine) pos=Vec3 { x: 15213, y: 16011, z: 416 }
+2026-08-04T21:23:25.730246Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=327 colonist=54
+2026-08-04T21:23:25.764281Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=327 pos=Vec3 { x: 15213, y: 16012, z: 416 }
+2026-08-04T21:23:26.528711Z  INFO bastion_server::bastion_jobs: bastion: job completed job=341 kind=Designated(Mine) pos=Vec3 { x: 15213, y: 16014, z: 416 }
+2026-08-04T21:23:26.661780Z  INFO bastion_server::bastion_jobs: bastion: job completed job=318 kind=Designated(Mine) pos=Vec3 { x: 15211, y: 16011, z: 416 }
+2026-08-04T21:23:26.728514Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=313 colonist=51
+2026-08-04T21:23:26.728566Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=300 colonist=52
+2026-08-04T21:23:26.761719Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=313 pos=Vec3 { x: 15213, y: 16010, z: 416 }
+2026-08-04T21:23:27.028351Z  INFO bastion_server::bastion_jobs: bastion: job completed job=295 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16008, z: 416 }
+2026-08-04T21:23:27.128177Z  INFO bastion_server::bastion_jobs: bastion: job completed job=381 kind=Designated(Mine) pos=Vec3 { x: 15211, y: 16013, z: 417 }
+2026-08-04T21:23:27.228645Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=324 colonist=53
+2026-08-04T21:23:27.228698Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=339 colonist=56
+2026-08-04T21:23:27.261592Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=300 pos=Vec3 { x: 15214, y: 16008, z: 416 }
+2026-08-04T21:23:27.261614Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=324 pos=Vec3 { x: 15210, y: 16012, z: 416 }
+2026-08-04T21:23:27.261621Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=339 pos=Vec3 { x: 15211, y: 16014, z: 416 }
+2026-08-04T21:23:27.762958Z  INFO bastion_server::bastion_jobs: bastion: job completed job=304 kind=Designated(Mine) pos=Vec3 { x: 15211, y: 16009, z: 416 }
+2026-08-04T21:23:28.228653Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=298 colonist=57
+2026-08-04T21:23:28.261799Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=298 pos=Vec3 { x: 15212, y: 16008, z: 416 }
+2026-08-04T21:23:28.661927Z  INFO bastion_server::bastion_jobs: bastion: job completed job=313 kind=Designated(Mine) pos=Vec3 { x: 15213, y: 16010, z: 416 }
+2026-08-04T21:23:28.728767Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=312 colonist=51
+2026-08-04T21:23:28.761678Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=312 pos=Vec3 { x: 15212, y: 16010, z: 416 }
+2026-08-04T21:23:28.961665Z  INFO bastion_server::bastion_jobs: bastion: job completed job=300 kind=Designated(Mine) pos=Vec3 { x: 15214, y: 16008, z: 416 }
+2026-08-04T21:23:28.961738Z  INFO bastion_server::bastion_jobs: bastion: job completed job=324 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16012, z: 416 }
+2026-08-04T21:23:29.128528Z  INFO bastion_server::bastion_jobs: bastion: job completed job=327 kind=Designated(Mine) pos=Vec3 { x: 15213, y: 16012, z: 416 }
+2026-08-04T21:23:29.229214Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=314 colonist=52
+2026-08-04T21:23:29.229287Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=296 colonist=53
+2026-08-04T21:23:29.229311Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=325 colonist=54
+2026-08-04T21:23:29.261791Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=314 pos=Vec3 { x: 15214, y: 16010, z: 416 }
+2026-08-04T21:23:29.261815Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=296 pos=Vec3 { x: 15210, y: 16008, z: 416 }
+2026-08-04T21:23:29.261820Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=325 pos=Vec3 { x: 15211, y: 16012, z: 416 }
+2026-08-04T21:23:29.261833Z  INFO bastion_server::bastion_jobs: bastion: job unreachable — claim released job=308 pos=Vec3 { x: 15208, y: 16010, z: 416 } colonist=Vec3 { x: 15197, y: 16045, z: 425 }
+2026-08-04T21:23:29.728672Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=336 colonist=55
+2026-08-04T21:23:30.528800Z  INFO bastion_server::bastion_jobs: bastion: job completed job=312 kind=Designated(Mine) pos=Vec3 { x: 15212, y: 16010, z: 416 }
+2026-08-04T21:23:30.628314Z  INFO bastion_server::bastion_jobs: bastion: job completed job=339 kind=Designated(Mine) pos=Vec3 { x: 15211, y: 16014, z: 416 }
+2026-08-04T21:23:30.728833Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=340 colonist=51
+2026-08-04T21:23:30.728986Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=308 colonist=56
+2026-08-04T21:23:30.895094Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=308 pos=Vec3 { x: 15208, y: 16010, z: 416 }
+2026-08-04T21:23:30.961680Z  INFO bastion_server::bastion_jobs: bastion: job completed job=314 kind=Designated(Mine) pos=Vec3 { x: 15214, y: 16010, z: 416 }
+2026-08-04T21:23:30.961730Z  INFO bastion_server::bastion_jobs: bastion: job completed job=296 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16008, z: 416 }
+2026-08-04T21:23:30.995068Z  INFO bastion_server::bastion_jobs: bastion: job completed job=298 kind=Designated(Mine) pos=Vec3 { x: 15212, y: 16008, z: 416 }
+2026-08-04T21:23:31.229045Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=299 colonist=52
+2026-08-04T21:23:31.229109Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=294 colonist=53
+2026-08-04T21:23:31.229149Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=322 colonist=57
+2026-08-04T21:23:31.261819Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=299 pos=Vec3 { x: 15213, y: 16008, z: 416 }
+2026-08-04T21:23:31.261847Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=294 pos=Vec3 { x: 15208, y: 16008, z: 416 }
+2026-08-04T21:23:31.563945Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=340 pos=Vec3 { x: 15212, y: 16014, z: 416 }
+2026-08-04T21:23:31.761775Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=322 pos=Vec3 { x: 15208, y: 16012, z: 416 }
+2026-08-04T21:23:32.629173Z  INFO bastion_server::bastion_jobs: bastion: job completed job=325 kind=Designated(Mine) pos=Vec3 { x: 15211, y: 16012, z: 416 }
+2026-08-04T21:23:32.728894Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=331 colonist=54
+2026-08-04T21:23:32.961853Z  INFO bastion_server::bastion_jobs: bastion: job completed job=299 kind=Designated(Mine) pos=Vec3 { x: 15213, y: 16008, z: 416 }
+2026-08-04T21:23:32.961911Z  INFO bastion_server::bastion_jobs: bastion: job completed job=294 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16008, z: 416 }
+2026-08-04T21:23:33.061895Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=331 pos=Vec3 { x: 15210, y: 16013, z: 416 }
+2026-08-04T21:23:33.228836Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=301 colonist=52
+2026-08-04T21:23:33.228894Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=330 colonist=53
+2026-08-04T21:23:33.328595Z  INFO bastion_server::bastion_jobs: bastion: job completed job=340 kind=Designated(Mine) pos=Vec3 { x: 15212, y: 16014, z: 416 }
+2026-08-04T21:23:33.396148Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=330 pos=Vec3 { x: 15209, y: 16013, z: 416 }
+2026-08-04T21:23:33.728911Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=332 colonist=51
+2026-08-04T21:23:33.761904Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=332 pos=Vec3 { x: 15211, y: 16013, z: 416 }
+2026-08-04T21:23:34.162331Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=301 pos=Vec3 { x: 15208, y: 16009, z: 416 }
+2026-08-04T21:23:34.262350Z  INFO bastion_server::bastion_jobs: bastion: job completed job=308 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16010, z: 416 }
+2026-08-04T21:23:34.495150Z  INFO bastion_server::bastion_jobs: bastion: job completed job=322 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16012, z: 416 }
+2026-08-04T21:23:34.728935Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=329 colonist=56
+2026-08-04T21:23:34.729026Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=337 colonist=57
+2026-08-04T21:23:34.995462Z  INFO bastion_server::bastion_jobs: bastion: job completed job=330 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16013, z: 416 }
+2026-08-04T21:23:34.995550Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=337 pos=Vec3 { x: 15209, y: 16014, z: 416 }
+2026-08-04T21:23:35.062260Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=329 pos=Vec3 { x: 15208, y: 16013, z: 416 }
+2026-08-04T21:23:35.528652Z  INFO bastion_server::bastion_jobs: bastion: job completed job=332 kind=Designated(Mine) pos=Vec3 { x: 15211, y: 16013, z: 416 }
+2026-08-04T21:23:35.762280Z  INFO bastion_server::bastion_jobs: bastion: job completed job=301 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16009, z: 416 }
+2026-08-04T21:23:36.428649Z  INFO bastion_server::bastion_jobs: bastion: job completed job=331 kind=Designated(Mine) pos=Vec3 { x: 15210, y: 16013, z: 416 }
+2026-08-04T21:23:37.528995Z  INFO bastion_server::bastion_jobs: bastion: job completed job=337 kind=Designated(Mine) pos=Vec3 { x: 15209, y: 16014, z: 416 }
+2026-08-04T21:23:38.063158Z  INFO bastion_server::bastion_jobs: bastion: job completed job=329 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16013, z: 416 }
+2026-08-04T21:23:39.962745Z  INFO bastion_server::bastion_jobs: bastion: colonist arrived at job site, working (B5) job=336 pos=Vec3 { x: 15208, y: 16014, z: 416 }
+2026-08-04T21:23:44.263667Z  INFO bastion_server::bastion_jobs: bastion: job completed job=336 kind=Designated(Mine) pos=Vec3 { x: 15208, y: 16014, z: 416 }
+2026-08-04T21:28:30.529878Z  INFO network{p=29chdU}::remote{p=bawIs2}:recv: veloren_network::participant: protocol failed, shutting down channel e=Custom(Tcp(Custom { kind: BrokenPipe, error: "read returned 0 bytes" })) cid=0
+2026-08-04T21:28:30.542988Z  INFO network{p=29chdU}:network{p=29chdU}:remote{p=bawIs2}: veloren_network::api: Participant already has been shutdown gracefully
+2026-08-04T21:28:30.544447Z  INFO veloren_server_cli: Client disconnected!
+2026-08-04T21:28:30.608691Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Lira the Stout"
+2026-08-04T21:28:30.608715Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Fenn Ashborn"
+2026-08-04T21:28:30.608718Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Vada Oakenshield"
+2026-08-04T21:28:30.608721Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Hesta Brighteye"
+2026-08-04T21:28:30.608723Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Rhosyn the Wary"
+2026-08-04T21:28:30.608726Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Rhosyn Oakenshield"
+2026-08-04T21:28:30.608728Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Osric Ashborn"
+2026-08-04T21:28:30.703636Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=10 pos=Vec3 { x: 15211, y: 16009, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.703664Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=52 pos=Vec3 { x: 15211, y: 16008, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.703669Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=136 pos=Vec3 { x: 15211, y: 16013, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.703673Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=96 pos=Vec3 { x: 15213, y: 16014, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.703678Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=178 pos=Vec3 { x: 15211, y: 16012, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.703681Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=222 pos=Vec3 { x: 15213, y: 16011, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.703685Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=262 pos=Vec3 { x: 15211, y: 16010, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.703689Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=195 pos=Vec3 { x: 15214, y: 16014, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.703693Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=127 pos=Vec3 { x: 15209, y: 16012, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.703697Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=253 pos=Vec3 { x: 15209, y: 16009, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.703700Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=111 pos=Vec3 { x: 15214, y: 16009, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.703704Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=69 pos=Vec3 { x: 15214, y: 16010, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.703707Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=211 pos=Vec3 { x: 15209, y: 16010, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.703711Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=237 pos=Vec3 { x: 15214, y: 16013, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.703715Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=36 pos=Vec3 { x: 15209, y: 16013, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.703719Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=152 pos=Vec3 { x: 15213, y: 16008, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.703723Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=162 pos=Vec3 { x: 15209, y: 16010, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.703728Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=278 pos=Vec3 { x: 15213, y: 16012, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.703731Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=85 pos=Vec3 { x: 15209, y: 16013, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.703735Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=288 pos=Vec3 { x: 15209, y: 16014, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.703739Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=26 pos=Vec3 { x: 15213, y: 16011, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.703743Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=267 pos=Vec3 { x: 15209, y: 16011, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.703748Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=51 pos=Vec3 { x: 15210, y: 16008, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.703752Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=15 pos=Vec3 { x: 15209, y: 16010, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.703756Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=141 pos=Vec3 { x: 15209, y: 16014, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.703760Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=177 pos=Vec3 { x: 15210, y: 16012, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.703764Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=238 pos=Vec3 { x: 15208, y: 16014, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.703768Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=112 pos=Vec3 { x: 15208, y: 16010, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.703772Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=64 pos=Vec3 { x: 15209, y: 16010, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.703776Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=62 pos=Vec3 { x: 15214, y: 16009, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.703781Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=80 pos=Vec3 { x: 15211, y: 16012, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.703785Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=206 pos=Vec3 { x: 15211, y: 16009, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.703789Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=157 pos=Vec3 { x: 15211, y: 16009, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.703793Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=31 pos=Vec3 { x: 15211, y: 16012, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.703797Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=161 pos=Vec3 { x: 15208, y: 16010, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.703800Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=35 pos=Vec3 { x: 15208, y: 16013, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.703805Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=79 pos=Vec3 { x: 15210, y: 16012, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.703809Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=201 pos=Vec3 { x: 15213, y: 16008, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.703812Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=243 pos=Vec3 { x: 15213, y: 16014, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.703817Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=283 pos=Vec3 { x: 15211, y: 16013, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.703821Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=4 pos=Vec3 { x: 15212, y: 16008, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.703825Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=121 pos=Vec3 { x: 15210, y: 16011, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.703829Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=256 pos=Vec3 { x: 15212, y: 16009, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.703833Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=58 pos=Vec3 { x: 15210, y: 16009, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.703838Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=20 pos=Vec3 { x: 15214, y: 16010, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.703842Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=188 pos=Vec3 { x: 15214, y: 16013, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.703846Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=254 pos=Vec3 { x: 15210, y: 16009, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.703850Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=172 pos=Vec3 { x: 15212, y: 16011, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.703854Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=42 pos=Vec3 { x: 15208, y: 16014, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.703858Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=105 pos=Vec3 { x: 15208, y: 16009, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.703862Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=142 pos=Vec3 { x: 15210, y: 16014, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.703866Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=272 pos=Vec3 { x: 15214, y: 16011, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.703870Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=95 pos=Vec3 { x: 15212, y: 16014, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.703874Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=217 pos=Vec3 { x: 15208, y: 16011, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.703878Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=227 pos=Vec3 { x: 15211, y: 16012, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.703882Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=74 pos=Vec3 { x: 15212, y: 16011, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.703886Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=244 pos=Vec3 { x: 15214, y: 16014, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.703890Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=9 pos=Vec3 { x: 15210, y: 16009, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.703894Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=122 pos=Vec3 { x: 15211, y: 16011, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.703897Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=196 pos=Vec3 { x: 15208, y: 16008, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.703902Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=187 pos=Vec3 { x: 15213, y: 16013, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.703906Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=57 pos=Vec3 { x: 15209, y: 16009, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.703912Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=131 pos=Vec3 { x: 15213, y: 16012, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.703916Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=261 pos=Vec3 { x: 15210, y: 16010, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.703928Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=106 pos=Vec3 { x: 15209, y: 16009, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.703933Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=171 pos=Vec3 { x: 15211, y: 16011, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.703937Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=212 pos=Vec3 { x: 15210, y: 16010, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.703941Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=41 pos=Vec3 { x: 15214, y: 16013, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.703945Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=147 pos=Vec3 { x: 15208, y: 16008, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.703949Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=277 pos=Vec3 { x: 15212, y: 16012, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.703953Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=90 pos=Vec3 { x: 15214, y: 16013, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.703957Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=228 pos=Vec3 { x: 15212, y: 16012, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.703962Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=25 pos=Vec3 { x: 15212, y: 16011, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.703966Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=293 pos=Vec3 { x: 15214, y: 16014, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.703970Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=434 pos=Vec3 { x: 15208, y: 16010, z: 418 } kind=Designated(Ladder)
+2026-08-04T21:28:30.703974Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=140 pos=Vec3 { x: 15208, y: 16014, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.703980Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=73 pos=Vec3 { x: 15211, y: 16011, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.703984Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=174 pos=Vec3 { x: 15214, y: 16011, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.703989Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=241 pos=Vec3 { x: 15211, y: 16014, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.703994Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=115 pos=Vec3 { x: 15211, y: 16010, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.703998Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=199 pos=Vec3 { x: 15211, y: 16008, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704003Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=56 pos=Vec3 { x: 15208, y: 16009, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704007Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=258 pos=Vec3 { x: 15214, y: 16009, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704011Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=126 pos=Vec3 { x: 15208, y: 16012, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704015Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=215 pos=Vec3 { x: 15213, y: 16010, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704019Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=40 pos=Vec3 { x: 15213, y: 16013, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704024Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=274 pos=Vec3 { x: 15209, y: 16012, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704027Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=14 pos=Vec3 { x: 15208, y: 16010, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704033Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=156 pos=Vec3 { x: 15210, y: 16009, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704036Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=89 pos=Vec3 { x: 15213, y: 16013, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704041Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=158 pos=Vec3 { x: 15212, y: 16009, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704045Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=30 pos=Vec3 { x: 15210, y: 16012, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704049Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=55 pos=Vec3 { x: 15214, y: 16008, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704054Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=99 pos=Vec3 { x: 15209, y: 16008, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704059Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=116 pos=Vec3 { x: 15212, y: 16010, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704062Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=225 pos=Vec3 { x: 15209, y: 16012, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704067Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=242 pos=Vec3 { x: 15212, y: 16014, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704072Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=284 pos=Vec3 { x: 15212, y: 16013, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704077Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=194 pos=Vec3 { x: 15213, y: 16014, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704082Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=189 pos=Vec3 { x: 15208, y: 16014, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704086Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=129 pos=Vec3 { x: 15211, y: 16012, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704090Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=263 pos=Vec3 { x: 15212, y: 16010, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704094Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=210 pos=Vec3 { x: 15208, y: 16010, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704098Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=3 pos=Vec3 { x: 15211, y: 16008, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704101Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=173 pos=Vec3 { x: 15213, y: 16011, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704105Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=68 pos=Vec3 { x: 15213, y: 16010, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704161Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=145 pos=Vec3 { x: 15213, y: 16014, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704172Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=279 pos=Vec3 { x: 15214, y: 16012, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704175Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=39 pos=Vec3 { x: 15212, y: 16013, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704179Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=100 pos=Vec3 { x: 15210, y: 16008, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704183Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=19 pos=Vec3 { x: 15213, y: 16010, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704186Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=226 pos=Vec3 { x: 15210, y: 16012, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704189Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=84 pos=Vec3 { x: 15208, y: 16013, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704191Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=94 pos=Vec3 { x: 15211, y: 16014, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704194Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=247 pos=Vec3 { x: 15210, y: 16008, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704197Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=8 pos=Vec3 { x: 15209, y: 16009, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704199Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=205 pos=Vec3 { x: 15210, y: 16009, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704202Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=46 pos=Vec3 { x: 15212, y: 16014, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704205Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=130 pos=Vec3 { x: 15212, y: 16012, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704208Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=184 pos=Vec3 { x: 15210, y: 16013, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704211Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=268 pos=Vec3 { x: 15210, y: 16011, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704213Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=125 pos=Vec3 { x: 15214, y: 16011, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704216Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=168 pos=Vec3 { x: 15208, y: 16011, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704218Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=109 pos=Vec3 { x: 15212, y: 16009, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704221Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=67 pos=Vec3 { x: 15212, y: 16010, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704223Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=146 pos=Vec3 { x: 15214, y: 16014, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704226Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=83 pos=Vec3 { x: 15214, y: 16012, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704229Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=231 pos=Vec3 { x: 15208, y: 16013, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704232Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=24 pos=Vec3 { x: 15211, y: 16011, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704234Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=221 pos=Vec3 { x: 15212, y: 16011, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704237Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=290 pos=Vec3 { x: 15211, y: 16014, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704239Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=200 pos=Vec3 { x: 15212, y: 16008, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704242Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=183 pos=Vec3 { x: 15209, y: 16013, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704245Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=13 pos=Vec3 { x: 15214, y: 16009, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704248Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=248 pos=Vec3 { x: 15211, y: 16008, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704250Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=110 pos=Vec3 { x: 15213, y: 16009, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704253Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=135 pos=Vec3 { x: 15210, y: 16013, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704255Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=257 pos=Vec3 { x: 15213, y: 16009, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704258Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=61 pos=Vec3 { x: 15213, y: 16009, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704261Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=232 pos=Vec3 { x: 15209, y: 16013, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704263Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=151 pos=Vec3 { x: 15212, y: 16008, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704272Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=273 pos=Vec3 { x: 15208, y: 16012, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704274Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=45 pos=Vec3 { x: 15211, y: 16014, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704277Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=216 pos=Vec3 { x: 15214, y: 16010, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704279Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=78 pos=Vec3 { x: 15209, y: 16012, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704281Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=167 pos=Vec3 { x: 15214, y: 16010, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704284Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=289 pos=Vec3 { x: 15210, y: 16014, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704287Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=29 pos=Vec3 { x: 15209, y: 16012, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704289Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=33 pos=Vec3 { x: 15213, y: 16012, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704292Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=77 pos=Vec3 { x: 15208, y: 16012, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704294Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=119 pos=Vec3 { x: 15208, y: 16011, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704296Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=159 pos=Vec3 { x: 15213, y: 16009, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704299Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=203 pos=Vec3 { x: 15208, y: 16009, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704302Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=245 pos=Vec3 { x: 15208, y: 16008, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704305Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=285 pos=Vec3 { x: 15213, y: 16013, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704307Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=60 pos=Vec3 { x: 15212, y: 16009, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704310Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=128 pos=Vec3 { x: 15210, y: 16012, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704312Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=186 pos=Vec3 { x: 15212, y: 16013, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704315Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=18 pos=Vec3 { x: 15212, y: 16010, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704318Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=2 pos=Vec3 { x: 15210, y: 16008, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704320Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=44 pos=Vec3 { x: 15210, y: 16014, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704323Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=144 pos=Vec3 { x: 15212, y: 16014, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704326Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=170 pos=Vec3 { x: 15210, y: 16011, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704328Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=103 pos=Vec3 { x: 15213, y: 16008, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704331Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=93 pos=Vec3 { x: 15210, y: 16014, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704334Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=219 pos=Vec3 { x: 15210, y: 16011, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704336Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=229 pos=Vec3 { x: 15213, y: 16012, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704339Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=270 pos=Vec3 { x: 15212, y: 16011, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704342Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=72 pos=Vec3 { x: 15210, y: 16011, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704344Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=198 pos=Vec3 { x: 15210, y: 16008, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704347Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=59 pos=Vec3 { x: 15211, y: 16009, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704350Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=7 pos=Vec3 { x: 15208, y: 16009, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704352Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=133 pos=Vec3 { x: 15208, y: 16013, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704355Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=185 pos=Vec3 { x: 15211, y: 16013, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704358Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=246 pos=Vec3 { x: 15209, y: 16008, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704360Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=120 pos=Vec3 { x: 15209, y: 16011, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704363Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=149 pos=Vec3 { x: 15210, y: 16008, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704366Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=23 pos=Vec3 { x: 15210, y: 16011, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704370Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=259 pos=Vec3 { x: 15208, y: 16010, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704373Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=169 pos=Vec3 { x: 15209, y: 16011, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704375Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=230 pos=Vec3 { x: 15214, y: 16012, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704378Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=275 pos=Vec3 { x: 15210, y: 16012, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704380Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=43 pos=Vec3 { x: 15209, y: 16014, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704382Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=104 pos=Vec3 { x: 15214, y: 16008, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704385Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=214 pos=Vec3 { x: 15212, y: 16010, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704387Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=88 pos=Vec3 { x: 15212, y: 16013, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704390Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=180 pos=Vec3 { x: 15213, y: 16012, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704392Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=50 pos=Vec3 { x: 15209, y: 16008, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704395Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=98 pos=Vec3 { x: 15208, y: 16008, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704397Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=12 pos=Vec3 { x: 15213, y: 16009, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704401Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=134 pos=Vec3 { x: 15209, y: 16013, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704403Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=264 pos=Vec3 { x: 15213, y: 16010, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704406Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=71 pos=Vec3 { x: 15209, y: 16011, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704408Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=251 pos=Vec3 { x: 15214, y: 16008, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704411Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=113 pos=Vec3 { x: 15209, y: 16010, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704413Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=87 pos=Vec3 { x: 15211, y: 16013, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704416Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=193 pos=Vec3 { x: 15212, y: 16014, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704419Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=235 pos=Vec3 { x: 15212, y: 16013, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704422Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=209 pos=Vec3 { x: 15214, y: 16009, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704424Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=164 pos=Vec3 { x: 15211, y: 16010, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704427Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=34 pos=Vec3 { x: 15214, y: 16012, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704429Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=28 pos=Vec3 { x: 15208, y: 16012, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704432Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=150 pos=Vec3 { x: 15211, y: 16008, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704435Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=280 pos=Vec3 { x: 15208, y: 16013, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704437Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=286 pos=Vec3 { x: 15214, y: 16013, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704440Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=139 pos=Vec3 { x: 15214, y: 16013, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704443Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=97 pos=Vec3 { x: 15214, y: 16014, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704445Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=179 pos=Vec3 { x: 15212, y: 16012, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704448Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=204 pos=Vec3 { x: 15209, y: 16009, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704450Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=49 pos=Vec3 { x: 15208, y: 16008, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704453Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=269 pos=Vec3 { x: 15211, y: 16011, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704456Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=114 pos=Vec3 { x: 15210, y: 16010, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704460Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=190 pos=Vec3 { x: 15209, y: 16014, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704463Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=252 pos=Vec3 { x: 15208, y: 16009, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704465Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=1 pos=Vec3 { x: 15209, y: 16008, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704468Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=66 pos=Vec3 { x: 15211, y: 16010, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704470Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=236 pos=Vec3 { x: 15213, y: 16013, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704473Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=17 pos=Vec3 { x: 15211, y: 16010, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704475Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=155 pos=Vec3 { x: 15209, y: 16009, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704478Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=82 pos=Vec3 { x: 15213, y: 16012, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704480Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=163 pos=Vec3 { x: 15210, y: 16010, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704482Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=220 pos=Vec3 { x: 15211, y: 16011, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704485Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=6 pos=Vec3 { x: 15214, y: 16008, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704487Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=207 pos=Vec3 { x: 15212, y: 16009, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704490Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=48 pos=Vec3 { x: 15214, y: 16014, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704493Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=132 pos=Vec3 { x: 15214, y: 16012, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704495Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=182 pos=Vec3 { x: 15208, y: 16013, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704498Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=249 pos=Vec3 { x: 15212, y: 16008, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704501Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=266 pos=Vec3 { x: 15208, y: 16011, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704503Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=123 pos=Vec3 { x: 15212, y: 16011, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704506Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=148 pos=Vec3 { x: 15209, y: 16008, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704509Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=65 pos=Vec3 { x: 15210, y: 16010, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704512Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=166 pos=Vec3 { x: 15213, y: 16010, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704515Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=233 pos=Vec3 { x: 15210, y: 16013, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704517Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=107 pos=Vec3 { x: 15210, y: 16009, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704520Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=81 pos=Vec3 { x: 15212, y: 16012, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704523Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=292 pos=Vec3 { x: 15213, y: 16014, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704526Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=22 pos=Vec3 { x: 15209, y: 16011, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704528Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=223 pos=Vec3 { x: 15214, y: 16011, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704531Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=181 pos=Vec3 { x: 15214, y: 16012, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704533Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=76 pos=Vec3 { x: 15214, y: 16011, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704536Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=137 pos=Vec3 { x: 15212, y: 16013, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704538Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=202 pos=Vec3 { x: 15214, y: 16008, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704541Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=11 pos=Vec3 { x: 15212, y: 16009, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704544Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=271 pos=Vec3 { x: 15213, y: 16011, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704547Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=124 pos=Vec3 { x: 15213, y: 16011, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704551Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=63 pos=Vec3 { x: 15208, y: 16010, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704553Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=250 pos=Vec3 { x: 15213, y: 16008, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704556Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=108 pos=Vec3 { x: 15211, y: 16009, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704558Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=47 pos=Vec3 { x: 15213, y: 16014, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704561Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=234 pos=Vec3 { x: 15211, y: 16013, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704563Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=291 pos=Vec3 { x: 15212, y: 16014, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704566Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=165 pos=Vec3 { x: 15212, y: 16010, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704568Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=153 pos=Vec3 { x: 15214, y: 16008, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704570Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=92 pos=Vec3 { x: 15209, y: 16014, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704573Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=218 pos=Vec3 { x: 15209, y: 16011, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704576Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=27 pos=Vec3 { x: 15214, y: 16011, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704578Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=287 pos=Vec3 { x: 15208, y: 16014, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704581Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=176 pos=Vec3 { x: 15209, y: 16012, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704584Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=138 pos=Vec3 { x: 15213, y: 16013, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704586Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=75 pos=Vec3 { x: 15213, y: 16011, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704589Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=197 pos=Vec3 { x: 15209, y: 16008, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704591Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=260 pos=Vec3 { x: 15209, y: 16010, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704594Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=54 pos=Vec3 { x: 15213, y: 16008, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704596Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=117 pos=Vec3 { x: 15213, y: 16010, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704599Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=255 pos=Vec3 { x: 15211, y: 16009, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704602Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=0 pos=Vec3 { x: 15208, y: 16008, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704604Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=213 pos=Vec3 { x: 15211, y: 16010, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704607Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=38 pos=Vec3 { x: 15211, y: 16013, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704610Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=276 pos=Vec3 { x: 15211, y: 16012, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704612Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=239 pos=Vec3 { x: 15209, y: 16014, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704615Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=16 pos=Vec3 { x: 15210, y: 16010, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704617Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=160 pos=Vec3 { x: 15214, y: 16009, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704620Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=154 pos=Vec3 { x: 15208, y: 16009, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704623Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=91 pos=Vec3 { x: 15208, y: 16014, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704625Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=265 pos=Vec3 { x: 15214, y: 16010, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704628Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=32 pos=Vec3 { x: 15212, y: 16012, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704631Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=53 pos=Vec3 { x: 15212, y: 16008, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704633Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=282 pos=Vec3 { x: 15210, y: 16013, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704636Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=101 pos=Vec3 { x: 15211, y: 16008, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704640Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=240 pos=Vec3 { x: 15210, y: 16014, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704643Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=70 pos=Vec3 { x: 15208, y: 16011, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:30.704645Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=143 pos=Vec3 { x: 15211, y: 16014, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704648Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=5 pos=Vec3 { x: 15213, y: 16008, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704650Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=435 pos=Vec3 { x: 15208, y: 16010, z: 419 } kind=Designated(Ladder)
+2026-08-04T21:28:30.704653Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=118 pos=Vec3 { x: 15214, y: 16010, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704655Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=191 pos=Vec3 { x: 15210, y: 16014, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704657Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=21 pos=Vec3 { x: 15208, y: 16011, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704660Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=192 pos=Vec3 { x: 15211, y: 16014, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704662Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=208 pos=Vec3 { x: 15213, y: 16009, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704665Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=102 pos=Vec3 { x: 15212, y: 16008, z: 412 } kind=Designated(Mine)
+2026-08-04T21:28:30.704667Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=175 pos=Vec3 { x: 15208, y: 16012, z: 413 } kind=Designated(Mine)
+2026-08-04T21:28:30.704671Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=281 pos=Vec3 { x: 15209, y: 16013, z: 415 } kind=Designated(Mine)
+2026-08-04T21:28:30.704673Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=37 pos=Vec3 { x: 15210, y: 16013, z: 410 } kind=Designated(Mine)
+2026-08-04T21:28:30.704675Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=224 pos=Vec3 { x: 15208, y: 16012, z: 414 } kind=Designated(Mine)
+2026-08-04T21:28:30.704678Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=86 pos=Vec3 { x: 15210, y: 16013, z: 411 } kind=Designated(Mine)
+2026-08-04T21:28:31.007882Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Vada Ironhand"
+2026-08-04T21:28:31.202894Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=430 pos=Vec3 { x: 15182, y: 16048, z: 460 } kind=Designated(Mine)
+2026-08-04T21:28:31.202923Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=429 pos=Vec3 { x: 15184, y: 16047, z: 460 } kind=Designated(Mine)
+2026-08-04T21:28:31.202927Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=424 pos=Vec3 { x: 15183, y: 16047, z: 459 } kind=Designated(Mine)
+2026-08-04T21:28:31.202931Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=423 pos=Vec3 { x: 15182, y: 16047, z: 459 } kind=Designated(Mine)
+2026-08-04T21:28:31.202943Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=433 pos=Vec3 { x: 15183, y: 16049, z: 460 } kind=Designated(Mine)
+2026-08-04T21:28:31.202949Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=428 pos=Vec3 { x: 15183, y: 16047, z: 460 } kind=Designated(Mine)
+2026-08-04T21:28:31.202954Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=427 pos=Vec3 { x: 15182, y: 16047, z: 460 } kind=Designated(Mine)
+2026-08-04T21:28:31.202957Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=432 pos=Vec3 { x: 15184, y: 16048, z: 460 } kind=Designated(Mine)
+2026-08-04T21:28:31.202961Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=431 pos=Vec3 { x: 15183, y: 16048, z: 460 } kind=Designated(Mine)
+2026-08-04T21:28:31.202965Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=426 pos=Vec3 { x: 15182, y: 16048, z: 459 } kind=Designated(Mine)
+2026-08-04T21:28:31.202968Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=425 pos=Vec3 { x: 15184, y: 16047, z: 459 } kind=Designated(Mine)
+2026-08-04T21:29:58.929743Z  INFO veloren_network::channel: Accepting Tcp from remote_addr="127.xxx.0.xxx:49982" cid=1
+2026-08-04T21:29:58.930354Z  INFO network{p=29chdU}::handshake{cid=1}: veloren_network_protocol::handshake: This Handshake is now configured! pid=a6HA/S
+2026-08-04T21:29:59.112048Z  INFO veloren_server::sys::msg::register: New User username="bastion_llm_player"
+2026-08-04T21:29:59.117249Z  INFO veloren_server_cli: Client connected!
+2026-08-04T21:30:03.120652Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Vada Ironhand"
+2026-08-04T21:30:03.120769Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Osric Ashborn"
+2026-08-04T21:30:03.120894Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Rhosyn Oakenshield"
+2026-08-04T21:30:03.121755Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Rhosyn the Wary"
+2026-08-04T21:30:03.122381Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Fenn Ashborn"
+2026-08-04T21:30:03.122444Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Lira the Stout"
+2026-08-04T21:30:03.122492Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Hesta Brighteye"
+2026-08-04T21:30:03.122534Z  INFO veloren_server::rtsim::tick: bastion: colonist promoted to loaded entity name="Vada Oakenshield"
+2026-08-04T21:30:05.112404Z  INFO bastion_server::bastion_jobs: bastion: designation placed kind=Mine jobs=9
+2026-08-04T21:30:05.680312Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=442 colonist=107
+2026-08-04T21:30:05.680359Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=443 colonist=108
+2026-08-04T21:30:05.680399Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=444 colonist=109
+2026-08-04T21:31:35.328066Z  WARN bastion_server::bastion_jobs: bastion: ULTIMATE FAIL-SAFE — teleporting stuck colonist to ground (organic egress tiers failed) uid=109 name="Vada Ironhand" feet=Vec3 { x: 15203, y: 15997, z: 416 } d=Vec3 { x: 15200, y: 16000, z: 417 } secs=60.0 active_job=Some(444) active_job_state=Some("Waiting") active_job_kind=Some("Designated(Mine)") active_job_is_access=Some(false) egress_verdicts=0 egress_plans_emitted=0 egress_no_route=0 climb_free_active=false organic_destination=Some(Vec3 { x: 15200, y: 15999, z: 417 }) head_clear=true on_ground=true on_wall=false character_state=Some("Sit") velocity=Vec3 { x: -0.0071355677, y: -0.0014653398, z: 0.0 } access_jobs_pending=0 terminal_cause="below_grade_watch_without_egress_verdict"
+2026-08-04T21:32:28.688809Z  INFO bastion_server::bastion_jobs: bastion: auto-access refused (no in-claim route) — job unreachable job=444
+2026-08-04T21:32:28.688834Z  INFO bastion_server::bastion_jobs: bastion: designation marked BLOCKED (task #55) — notified blocking_cell=Vec3 { x: 15178, y: 16010, z: 424 }
+2026-08-04T21:32:30.281029Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=444 colonist=109
+2026-08-04T21:32:40.320445Z  INFO bastion_server::bastion_jobs: bastion: job unreachable — claim released job=444 pos=Vec3 { x: 15178, y: 16010, z: 424 } colonist=Vec3 { x: 15179, y: 16010, z: 416 }
+2026-08-04T21:33:39.246105Z  INFO bastion_server::bastion_jobs: bastion: auto-access refused (no in-claim route) — job unreachable job=442
+2026-08-04T21:33:50.710187Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=442 colonist=107
+2026-08-04T21:33:50.710238Z  INFO bastion_server::bastion_jobs: bastion: job claimed job=444 colonist=109
+2026-08-04T21:34:05.205737Z  INFO network{p=29chdU}::remote{p=a6HA/S}:recv: veloren_network::participant: protocol failed, shutting down channel e=Custom(Tcp(Custom { kind: BrokenPipe, error: "read returned 0 bytes" })) cid=1
+2026-08-04T21:34:05.219844Z  INFO network{p=29chdU}:network{p=29chdU}:remote{p=a6HA/S}: veloren_network::api: Participant already has been shutdown gracefully
+2026-08-04T21:34:05.221864Z  INFO veloren_server_cli: Client disconnected!
+2026-08-04T21:34:05.314038Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Vada Ironhand"
+2026-08-04T21:34:05.314064Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Lira the Stout"
+2026-08-04T21:34:05.342791Z  INFO bastion_server::bastion_jobs: bastion: job moot mid-travel — target block changed; dropped job=443 kind=Designated(Mine) pos=Vec3 { x: 15177, y: 16010, z: 424 }
+2026-08-04T21:34:05.347630Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Osric Ashborn"
+2026-08-04T21:34:05.347653Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Fenn Ashborn"
+2026-08-04T21:34:05.607936Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=440 pos=Vec3 { x: 15177, y: 16009, z: 424 } kind=Designated(Mine)
+2026-08-04T21:34:05.607962Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=439 pos=Vec3 { x: 15179, y: 16008, z: 424 } kind=Designated(Mine)
+2026-08-04T21:34:05.607967Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=444 pos=Vec3 { x: 15178, y: 16010, z: 424 } kind=Designated(Mine)
+2026-08-04T21:34:05.607972Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=438 pos=Vec3 { x: 15178, y: 16008, z: 424 } kind=Designated(Mine)
+2026-08-04T21:34:05.607976Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=437 pos=Vec3 { x: 15177, y: 16008, z: 424 } kind=Designated(Mine)
+2026-08-04T21:34:05.607980Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=442 pos=Vec3 { x: 15179, y: 16009, z: 424 } kind=Designated(Mine)
+2026-08-04T21:34:05.607986Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=441 pos=Vec3 { x: 15178, y: 16009, z: 424 } kind=Designated(Mine)
+2026-08-04T21:34:05.607991Z  INFO bastion_server::bastion_jobs: bastion: phantom job retired (task #57) — target cell no longer matches the designation job=436 pos=Vec3 { x: 15177, y: 16008, z: 423 } kind=Designated(Mine)
+2026-08-04T21:34:05.711101Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Hesta Brighteye"
+2026-08-04T21:34:05.744711Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Rhosyn Oakenshield"
+2026-08-04T21:34:05.744736Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Rhosyn the Wary"
+2026-08-04T21:34:05.744741Z  INFO veloren_server::rtsim: bastion: colonist demoted to SimulationMode::Simulated name="Vada Oakenshield"

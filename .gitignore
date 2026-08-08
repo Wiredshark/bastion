@@ -1,6 +1,10 @@
 # Project-specific
 ## Veloren
 *.log
+# Capture law (Fable, 2026-08-08): fan/probe evidence logs are
+# attestation-bearing artifacts and must be versionable, not silently
+# dropped by the blanket *.log rule above.
+!bastion-test-evidence/**/*.log
 *.rar
 assets/tweak/
 maps

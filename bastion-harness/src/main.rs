@@ -4467,6 +4467,21 @@ fn b5_scenario(args: &Args) -> ExitCode {
     let max_same_target_timeouts = server.bastion_max_same_target_timeouts();
     let drift_events_total = server.bastion_drift_events_total();
 
+    // Fable-directed (2026-08-08, batch item 6 method, seed 92 classification):
+    // column scan at chop_base's (x,y) -- same move as seed 80/90's closing
+    // scans (BATCH-RUNBOOK item 6/SCENARIO-MAP.md ~1512-1537): single-layer
+    // ⇒ the probe's completed negative stands sound; multi-layer (an open
+    // gap under the reported ground) ⇒ unsound, joins 80/90's retired class.
+    // Env-gated, zero cost when unset, read-only.
+    if std::env::var_os("BASTION_CHOP_COLUMN_SCAN").is_some() {
+        for z in (50..=250).rev() {
+            let pos = Vec3::new(chop_base.x, chop_base.y, z);
+            if let Some(k) = server.bastion_block_kind(pos) {
+                eprintln!("COLUMN-SCAN pos=({},{},{}) kind={:?}", pos.x, pos.y, z, k);
+            }
+        }
+    }
+
     let result = serde_json::json!({
         "b5_mine_jobs": mine_jobs,
         "b5_chop_jobs": chop_jobs,
