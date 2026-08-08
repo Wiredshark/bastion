@@ -4342,6 +4342,24 @@ pub struct JobBoard {
     /// footprints (the stockpiles shape); the farm pass reads cell state
     /// inside them and generates till/sow/harvest jobs forever.
     pub farms: Vec<(common::bastion::ZoneId, Region)>,
+    /// bastion (FARM-PAINT, row 2026-08-08): the real ground z per
+    /// (x,y) column of a registered farm plot, resolved ONCE at
+    /// registration via [`column_surface_z`] against the painted
+    /// `region.min.z` as a HINT, not a literal. `farms` (above) keeps
+    /// its exact 2-tuple shape — `.chain(board.stockpiles.iter())` at
+    /// two call sites requires matching tuple arity, so the resolved
+    /// z lives in this SEPARATE, flat, plot-agnostic map instead of a
+    /// third tuple field. Keyed by raw (x,y): farm plots don't overlap
+    /// in XY by construction (paint would create duplicate jobs
+    /// otherwise, the same invariant every other designation kind
+    /// already relies on). A column absent here (paint over open
+    /// water / an unloaded chunk -- `column_surface_z` returned `None`)
+    /// is silently skipped by the trigger pass, same as today's
+    /// `!ground.is_filled()` "no field under a hole" case -- never a
+    /// job on unresolved ground. Resolved once, not re-scanned per
+    /// tick: cheap, and avoids the surface moving under a growing crop
+    /// or a nearby dig re-answering the question mid-season.
+    farm_column_z: std::collections::BTreeMap<(i32, i32), i32>,
     /// bastion (FARM): per-sown-cell last stage-advance time (game
     /// seconds) — the deterministic growth clock. BTreeMap: structural
     /// ordering, never hash-iteration order (the PATH-0 discipline).
@@ -4634,16 +4652,48 @@ impl JobBoard {
             self.activity_zones.push((id, zk, region));
             info!(zone = id, kind = ?zk, ?region, "bastion: activity zone registered");
         }
-        // FARM (row 46): a farm paint REGISTERS the plot (the Stockpile
-        // shape) — no jobs here (job_wanted = false for Farm); the farm
-        // pass owns per-cell job creation from cell state, forever.
-        // v1 farms are FLAT plots: region.min.z is the field's ground
-        // level (per-column surface resolution is a slope extension).
+        // FARM-PAINT (row 2026-08-08, supersedes the old "v1 farms are
+        // FLAT plots, region.min.z is the field's ground level" note):
+        // Farm is Area2D (`kind.footprint_mode()`) -- the client NEVER
+        // sends a z_extent for it (voxygen's session/mod.rs branches on
+        // exactly that mode to send `None`), so `region.min.z` was never
+        // more than the height the player's PICK PLANE happened to be
+        // at when they dragged -- a guess, not a measurement, and the
+        // trigger pass took it literally: one block off in either
+        // direction and every column's `is_filled()` check failed,
+        // silently producing zero jobs forever (the live-observed
+        // defect this row fixes). Resolve each column's REAL surface
+        // now, at registration, using `region.min.z` as a HINT into
+        // `column_surface_z`'s existing ±window search (the same
+        // resolver relative-mode z_extent designations already use via
+        // `resolve_column_surface` -- Farm has no floor_z to dispatch
+        // flat-mode from, so this calls the relative-mode half
+        // directly rather than constructing a dummy ZExtent to route
+        // through the dispatcher for no benefit).
         if kind == DesignationKind::Farm {
             let id = self.next_zone;
             self.next_zone += 1;
             self.farms.push((id, region));
-            info!(zone = id, ?region, "bastion: farm plot registered");
+            let mut resolved = 0u32;
+            let mut unresolved = 0u32;
+            for y in region.min.y..=region.max.y {
+                for x in region.min.x..=region.max.x {
+                    match column_surface_z(terrain, x, y, region.min.z) {
+                        Some(z) => {
+                            self.farm_column_z.insert((x, y), z);
+                            resolved += 1;
+                        },
+                        None => unresolved += 1,
+                    }
+                }
+            }
+            info!(
+                zone = id,
+                ?region,
+                resolved,
+                unresolved,
+                "bastion: farm plot registered, per-column surface resolved"
+            );
         }
         // One job per block, regardless of kind: repainting a region — or
         // overlapping designations (Mine and Chop both match a Wood block,
@@ -9025,9 +9075,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             let mut stage_ups: Vec<(Vec3<i32>, Block, u8)> = Vec::new();
             let mut evict: Vec<Vec3<i32>> = Vec::new();
             for (_, plot) in board.farms.iter() {
-                let gz = plot.min.z;
                 for y in plot.min.y..=plot.max.y {
                     for x in plot.min.x..=plot.max.x {
+                        // FARM-PAINT: the resolved-at-registration surface
+                        // for THIS column, not the plot's painted
+                        // `min.z` literally (see `farm_column_z`'s own
+                        // doc). A column absent here (paint over open
+                        // water / an unloaded chunk at registration time)
+                        // is silently skipped -- same "no field under a
+                        // hole" treatment the `!ground.is_filled()` arm
+                        // below already gives an unresolved column that
+                        // DID get a z.
+                        let Some(&gz) = board.farm_column_z.get(&(x, y)) else {
+                            continue;
+                        };
                         let gpos = Vec3::new(x, y, gz);
                         let cpos = gpos + Vec3::unit_z();
                         let Ok(ground) = terrain.get(gpos).copied() else {
@@ -11585,6 +11646,57 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         ?col,
                                         ?neighbors,
                                         "STUCK-TERRAIN-DIAG: column + cardinal neighbors at timeout"
+                                    );
+                                    // TARGET-TERRAIN-DIAG (2026-08-08,
+                                    // 20-vs-23 matched-pair read, Opus-
+                                    // directed): the STUCK-TERRAIN-DIAG
+                                    // block above shows what's at the
+                                    // COLONIST's stuck position; this shows
+                                    // what's at the JOB'S OWN target cell,
+                                    // with all 8 horizontal neighbors (not
+                                    // just cardinal) -- the bounded
+                                    // question is a LOCAL geometry diff
+                                    // between two adjacent target cells,
+                                    // one that dispatches and one that
+                                    // never does.
+                                    let tpos = job.pos;
+                                    let tcol: Vec<(i32, common::terrain::BlockKind)> =
+                                        (tpos.z - 3..=tpos.z + 3)
+                                            .filter_map(|z| {
+                                                terrain
+                                                    .get(Vec3::new(tpos.x, tpos.y, z))
+                                                    .ok()
+                                                    .map(|b| (z, b.kind()))
+                                            })
+                                            .collect();
+                                    let tneighbors: Vec<(
+                                        &str,
+                                        Option<common::terrain::BlockKind>,
+                                    )> = [
+                                        ("+x", Vec3::new(tpos.x + 1, tpos.y, tpos.z)),
+                                        ("-x", Vec3::new(tpos.x - 1, tpos.y, tpos.z)),
+                                        ("+y", Vec3::new(tpos.x, tpos.y + 1, tpos.z)),
+                                        ("-y", Vec3::new(tpos.x, tpos.y - 1, tpos.z)),
+                                        ("+x+y", Vec3::new(tpos.x + 1, tpos.y + 1, tpos.z)),
+                                        ("+x-y", Vec3::new(tpos.x + 1, tpos.y - 1, tpos.z)),
+                                        ("-x+y", Vec3::new(tpos.x - 1, tpos.y + 1, tpos.z)),
+                                        ("-x-y", Vec3::new(tpos.x - 1, tpos.y - 1, tpos.z)),
+                                    ]
+                                    .into_iter()
+                                    .map(|(dir, p)| (dir, terrain.get(p).ok().map(|b| b.kind())))
+                                    .collect();
+                                    let above_target: Option<common::terrain::BlockKind> =
+                                        terrain
+                                            .get(Vec3::new(tpos.x, tpos.y, tpos.z + 1))
+                                            .ok()
+                                            .map(|b| b.kind());
+                                    info!(
+                                        job = active.job,
+                                        target = ?tpos,
+                                        ?tcol,
+                                        ?tneighbors,
+                                        ?above_target,
+                                        "TARGET-TERRAIN-DIAG: column + 8-neighbors at the job's own target cell"
                                     );
                                 }
                                 job.claimed_by = None;

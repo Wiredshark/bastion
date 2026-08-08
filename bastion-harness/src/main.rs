@@ -120,6 +120,18 @@ struct Args {
     #[arg(long)]
     b5_probe_node_cap: Option<usize>,
 
+    /// FARM-PAINT planted-test (2026-08-08): offsets `farm_scenario`'s
+    /// plot paint z by this amount BEFORE placement, while the real
+    /// terrain (the flush plateau) stays exactly where it was --
+    /// simulating the live-observed player mistake (a farm painted 1-3
+    /// blocks off real ground) without touching the fixture's own
+    /// correct-height path. Positive = painted above real ground
+    /// (`column_surface_z`'s downward half must recover it); negative =
+    /// below (upward half). Absent/0 is byte-identical to every prior
+    /// invocation.
+    #[arg(long)]
+    farm_paint_z_offset: Option<i32>,
+
     /// bastion (batch prep, DECISIONS #49/#52, 2026-08-04, Fable-directed):
     /// override for `chokepoint_scenario`'s CarvedStair settle loop
     /// iteration count (corrected attribution, 2026-08-04, Opus's catch --
@@ -11590,9 +11602,10 @@ fn farm_scenario(args: &Args) -> ExitCode {
 
     // The plot (3×3, west) + the stockpile (2×2, near the colony) with
     // ONE 14-seed stack — the sow economy's bootstrap stock.
+    let paint_z = gz + args.farm_paint_z_offset.unwrap_or(0);
     let plot = Region {
-        min: Vec3::new(cx - 8, cy - 3, gz),
-        max: Vec3::new(cx - 6, cy - 1, gz),
+        min: Vec3::new(cx - 8, cy - 3, paint_z),
+        max: Vec3::new(cx - 6, cy - 1, paint_z),
     };
     let plot_probe = Region {
         min: plot.min,
