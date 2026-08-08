@@ -3387,6 +3387,23 @@ impl Server {
             .map(|j| (j.required_item, j.reservation.is_some()))
     }
 
+    /// bastion (AUTON2-STEP1 watchdog-defect trace, harness hook,
+    /// 2026-08-08): the numeric `JobId` at an EXACT position, so a caller
+    /// can gate `BASTION_SDIST_TRACE_JOB=<id>` on a self-job it doesn't
+    /// know the id of in advance (self-jobs like RestAt get a FRESH id
+    /// per retry -- there is no static id to hardcode). Same exact-match
+    /// pattern as `bastion_job_material_info` (every call site already
+    /// knows the job's own designated position). Read-only.
+    pub fn bastion_job_id_at(&self, pos: vek::Vec3<i32>) -> Option<u64> {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .jobs
+            .iter()
+            .find(|(_, j)| j.pos == pos)
+            .map(|(id, _)| *id)
+    }
+
     /// bastion (TRAVEL-ROW-SPEC §4.1, harness hook, 2026-08-08): closest
     /// approach ever achieved, for every job position that has incurred at
     /// least one travel timeout -- one value per position in

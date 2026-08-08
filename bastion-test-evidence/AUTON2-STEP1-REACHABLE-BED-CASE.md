@@ -206,10 +206,85 @@ measurement on different geometry coming back lower.
 ## Status
 
 The fixture proves the machinery CAN complete end-to-end from a genuine
-decay trigger — and in doing so, measured a real defect (100% interruption
-rate on first sleep attempt) that no prior corpus run had surfaced, because
-no prior scenario ever let a colonist reach and occupy a bed under natural
-decay for long enough to be interrupted. The defect is filed (DECISIONS
-#69) and is NOT this fixture's to fix; `occupancy_interruptions` is left in
-place as the acceptance instrument for whatever fix lands, measuring the
-rate before and after.
+decay trigger. The 100%-interruption-rate defect claim above is
+**superseded by the final finding below** — read that section as current;
+this "Status" paragraph is preserved for the record of what was originally
+concluded, alongside the top-of-file correction.
+
+## FINAL FINDING (2026-08-08, after two instrumentation fixes)
+
+Two bugs in this fixture's own instrumentation were found and fixed before
+the underlying phenomenon could be trusted:
+
+**Bug 1 — reservation read as arrival** (the correction at the top of this
+file). Fixed by adding a TRUE arrival signal: `bastion_colonist_states_
+full()` (an already-existing getter, no new engine state) exposes
+`ActiveJobState::Arrived` directly. New fields `ticks_to_true_arrival`/
+`arrived_at_bed`; the old reservation-based fields were kept but renamed
+honestly (`ticks_to_bed_occupied` → `ticks_to_bed_reserved`, `bed_claimed_
+and_arrived` → `bed_claimed`), and `completion_classification` now gates
+on the real signal.
+
+**Bug 2 — `occupancy_interruptions` off by one.** The restore-threshold
+check ran AFTER the interruption-count check in the loop; since the real
+completion arm clears the reservation the SAME tick rest crosses the
+threshold, every clean completion's own reservation-clear was miscounted
+as its own "interruption" (`ticks_to_rest_restored` was still `None` at
+the moment the guard evaluated). Confirmed directly: seeds that arrived on
+tick 0–2 with a single continuous reservation for the whole run (verified
+via `BASTION_SDIST_TRACE_JOB` showing only one job id, no
+`AUTON2-TRACE-SWITCH` event) still reported `occupancy_interruptions: 1`.
+Fixed by reordering the two checks.
+
+**The corrected 7-seed table** (seeds 49–55, same accelerated override):
+
+| seed | ticks_to_true_arrival | occupancy_interruptions (corrected) | outcome |
+|---|---|---|---|
+| 49 | 369 | 0 | completed |
+| 50 | 1801 | 1 | completed |
+| 51 | 2 | 0 | completed |
+| 52 | 1823 | 1 | completed |
+| 53 | 0 | 0 | completed |
+| 54 | 1808 | 1 | completed |
+| 55 | null (never arrived) | 2 | **budget exceeded** |
+
+**The real split: 3 of 7 seeds (49, 51, 53) arrive clean on the very first
+reservation — zero genuine watchdog releases.** 4 of 7 (50, 52, 54, 55)
+show at least one genuine reservation-drop-then-retry, with seed 55 never
+succeeding at all within the 4800-tick budget. **Not the 100% rate
+originally reported** — that number was the counting artifact inflating
+every seed's count by exactly one.
+
+**What the genuine retries look like, per the `BASTION_SDIST_TRACE_JOB`
+trace (seed 50, first attempt, job 10):** `sdist` never drops below ~17
+for the entire pre-release window; jump-attempt signatures (`vel_z=2.5`
+spikes, `on_ground` flickering) with zero net progress; `stuck_time`
+climbs smoothly and continuously to ~10.0 (within noise of `STUCK_
+TIMEOUT`). The watchdog fires correctly on a genuinely obstructed travel
+attempt. The retry (job 11, created ~60 sim-sec later per `PREEMPT_
+COOLDOWN_SECS`) then closes the remaining distance and arrives — the
+"retry" is not a symptom of anything broken in the retry path itself.
+
+**Filed as a TRAVEL-ROW specimen, not chased for a fix** (per Opus and
+Fable's explicit direction): a bed placed one block above a flush plateau
+floor fails first-approach roughly 4 times in 7 (this specific fixture's
+sample), with a reproducible jump-attempt/zero-progress signature,
+succeeding on a later attempt in 3 of those 4 cases and exceeding a
+generous (160 sim-sec) budget in the 4th. This is the same one-block-short
+/ small-obstacle class as the mine-26/27 cluster and the chopfell egress
+work — a new specimen for an existing row, not a new defect class. The
+bounded question for whoever picks this up: what differs between the
+failed first attempt and the successful retry at the SAME bed (a matched
+pair across attempts, not across seeds) — candidates include final-approach
+geometry and whether the retry's spawn position happens to be closer.
+
+**Two upstream corrections, filed for the next report window (not
+blocking, per Fable):** `insert_rest_job`'s `slot.occupant` field is named
+in a way that reads as "presence" but means "reservation" — a naming trap
+this fixture fell into once and any future caller could fall into again.
+
+**DECISIONS #69/#70's original mechanism (watchdog interrupts an
+in-progress sleep) is retracted in full** — no fix was built on it. The
+pre-fix Opus/Fable had opened is cancelled. `occupancy_interruptions` (now
+counting correctly) and `ticks_to_true_arrival` remain in the fixture as
+the honest instruments for whoever picks up the travel-row specimen.

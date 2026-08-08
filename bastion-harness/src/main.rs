@@ -10252,8 +10252,20 @@ fn auton2_needs_probe(args: &Args) -> ExitCode {
     // read back post-removal above) rather than an invented threshold,
     // so "restored" means what the mechanism itself means by it.
     const RESTORE_THRESHOLD: f32 = 0.6;
+    // CORRECTION (2026-08-08, same day, after BASTION_SDIST_TRACE_JOB):
+    // `bastion_bed_slot`'s occupant is set at RestAt job CREATION
+    // (`insert_rest_job`'s own comment: "reserve the bed at CREATION,
+    // not at arrival"), NOT at physical arrival -- `ticks_to_bed_
+    // occupied`/`bed_claimed_and_arrived` below measure the job's
+    // RESERVATION, never the colonist actually reaching the bed. Kept
+    // (renamed honestly) for what they actually show; the TRUE arrival
+    // signal is `bastion_colonist_states_full()`'s `ActiveJobState::
+    // Arrived` bit, tracked separately below as `ticks_to_true_arrival`/
+    // `arrived_at_bed` -- exactly the checklist's item-2 disambiguation,
+    // this time on the right signal.
     let mut ticks_to_bed_occupied: Option<u64> = None;
     let mut rest_at_occupied: Option<f32> = None;
+    let mut ticks_to_true_arrival: Option<u64> = None;
     let mut ticks_to_rest_restored: Option<u64> = None;
     let mut rest_at_restore: Option<f32> = None;
     let mut ticks_to_bed_released: Option<u64> = None;
@@ -10278,30 +10290,79 @@ fn auton2_needs_probe(args: &Args) -> ExitCode {
         // travel + full sleep), plus margin.
         const COMPLETION_BUDGET: u64 = 4800;
         let mut was_occupied_by_us = false;
+        // DECISIONS #70 (Opus/Fable, 2026-08-08), step 1 of the sleep-
+        // killer fix: the ONE number that settles suspend-vs-reset --
+        // does the stall clock ACCUMULATE across the whole occupancy
+        // window (a fresh clock at arrival running the full STUCK_TIMEOUT
+        // during sleep), or was it ALREADY partly spent before arrival
+        // (a short remainder expiring shortly after)? `BASTION_SDIST_
+        // TRACE_JOB` traces `stuck_time` per tick for one job id, but
+        // self-jobs get a FRESH id per retry -- there is no id to
+        // hardcode, so this chases the job actually AT the bed each
+        // tick, gated to `completion_diag` (the same opt-in as the
+        // coarse prints; the trace's own per-tick logging is otherwise
+        // an observer-effect risk on every other run of this probe).
+        let mut traced_job: Option<u64> = None;
+        let mut occupied_since: Option<u64> = None;
         for i in 0..COMPLETION_BUDGET {
+            let job_here = server.bastion_job_id_at(bed);
+            if completion_diag {
+                if job_here != traced_job {
+                    // SAFETY: single-threaded harness control flow.
+                    unsafe {
+                        match job_here {
+                            Some(id) => std::env::set_var("BASTION_SDIST_TRACE_JOB", id.to_string()),
+                            None => std::env::remove_var("BASTION_SDIST_TRACE_JOB"),
+                        }
+                    }
+                    eprintln!("AUTON2-TRACE-SWITCH i={i} old_job={traced_job:?} new_job={job_here:?}");
+                    traced_job = job_here;
+                }
+            }
             tick(&mut server, 1);
             let rest_now = server.bastion_colonist_needs_mood(&a).map(|(_, rest, _, _)| rest);
             let occupant_now = server.bastion_bed_slot(bed).and_then(|(_, occ)| occ);
             let occupied_by_us_now = occupant_now == uid;
-            // Item 2 (Opus review checklist, AUTON-2 Step 1): ARRIVAL is
-            // its own milestone, asserted separately from restoration --
-            // occupant == this colonist's uid is the earliest externally
-            // observable claim+travel+arrive signal (RestAt is
-            // pre-claimed at creation, so there is no separate "claimed"
-            // event upstream of this to watch for).
+            // CORRECTION: this is the job's RESERVATION signal (set at
+            // `insert_rest_job` creation), not arrival -- kept and
+            // renamed honestly rather than removed, since it's still the
+            // correct "a RestAt claim exists" signal for interruption/
+            // retry bookkeeping below.
             if ticks_to_bed_occupied.is_none() && occupied_by_us_now {
                 ticks_to_bed_occupied = Some(i);
                 rest_at_occupied = rest_now;
             }
-            // Named and counted, not hidden: a stuck-watchdog release
-            // before restoration completes (see budget comment above) is
-            // a real, specified retry path -- track it explicitly rather
-            // than let a silent re-occupancy read as one uninterrupted
-            // sleep.
-            if was_occupied_by_us && !occupied_by_us_now && ticks_to_rest_restored.is_none() {
-                occupancy_interruptions += 1;
+            if !was_occupied_by_us && occupied_by_us_now {
+                occupied_since = Some(i);
             }
-            was_occupied_by_us = occupied_by_us_now;
+            // THE TRUE arrival signal (item 2, done right this time):
+            // `ActiveJobState::Arrived`, not the reservation above. Only
+            // meaningful for the SAME job id currently at the bed --
+            // stale on a retry otherwise.
+            if ticks_to_true_arrival.is_none()
+                && let Some(this_job) = job_here
+                && server
+                    .bastion_colonist_states_full()
+                    .iter()
+                    .any(|(u, _, _, job)| {
+                        Some(*u) == uid && *job == Some((this_job, true))
+                    })
+            {
+                ticks_to_true_arrival = Some(i);
+            }
+            // CORRECTION: this restore-threshold check must run BEFORE
+            // the interruption count below -- the real completion arm
+            // clears the reservation the SAME tick rest crosses the
+            // threshold, so checking interruption first (as the
+            // original ordering did) miscounted every clean completion
+            // as its own "interruption": `ticks_to_rest_restored` was
+            // still `None` at that point, so the guard let it through.
+            // Confirmed directly: seeds that arrived instantly (tick 0-2)
+            // on a SINGLE continuous reservation (no genuine mid-run
+            // drop, verified via BASTION_SDIST_TRACE_JOB showing only
+            // one job id for the whole run) still reported
+            // `occupancy_interruptions: 1` -- off by exactly one, always
+            // in the same direction.
             if ticks_to_bed_occupied.is_some()
                 && let Some(rest) = rest_now
                 && rest >= RESTORE_THRESHOLD
@@ -10310,6 +10371,22 @@ fn auton2_needs_probe(args: &Args) -> ExitCode {
                 ticks_to_rest_restored = Some(i);
                 rest_at_restore = Some(rest);
             }
+            // Named and counted, not hidden: a stuck-watchdog release
+            // before restoration completes (see budget comment above) is
+            // a real, specified retry path -- track it explicitly rather
+            // than let a silent re-occupancy read as one uninterrupted
+            // sleep.
+            if was_occupied_by_us && !occupied_by_us_now && ticks_to_rest_restored.is_none() {
+                occupancy_interruptions += 1;
+                if completion_diag && let Some(start) = occupied_since {
+                    let interval_ticks = i - start;
+                    eprintln!(
+                        "AUTON2-OCCUPANCY-INTERVAL start_tick={start} end_tick={i} interval_ticks={interval_ticks} interval_sim_secs={:.4}",
+                        interval_ticks as f64 / args.tps
+                    );
+                }
+            }
+            was_occupied_by_us = occupied_by_us_now;
             // Item 4: WORK RESUMES -- a colonist that reaches the comfort
             // band and then sleeps forever is not a success. The real
             // completion arm clears the slot's occupant back to `None`
@@ -10330,17 +10407,26 @@ fn auton2_needs_probe(args: &Args) -> ExitCode {
             }
         }
     }
-    let bed_claimed_and_arrived = ticks_to_bed_occupied.is_some();
+    // CORRECTION: renamed from `bed_claimed_and_arrived` -- this is the
+    // RESERVATION signal (job exists), not arrival. `arrived_at_bed`
+    // below (`ticks_to_true_arrival`, `ActiveJobState::Arrived`) is the
+    // real one.
+    let bed_claimed = ticks_to_bed_occupied.is_some();
+    let arrived_at_bed = ticks_to_true_arrival.is_some();
     let rest_restored = ticks_to_rest_restored.is_some();
     let job_completed = ticks_to_bed_released.is_some();
     // Item 2's disambiguation, one glance: distinguishes a TRAVEL-row
     // failure (never arrived -- nothing to do with needs) from a
     // NEEDS-row failure (arrived, never restored) from success, so a
     // red `completion_ok` never reads as "the need machinery is broken"
-    // when the actual cause is travel/pathing (a different row).
+    // when the actual cause is travel/pathing (a different row). Now
+    // gated on `arrived_at_bed` (the real signal), not `bed_claimed`
+    // (which is true from job creation regardless of whether the
+    // colonist ever gets there -- the exact conflation this fixture
+    // fell into on its first pass).
     let completion_classification = if !(natural_interrupt_reached && override_active_before) {
         "not_under_test"
-    } else if !bed_claimed_and_arrived {
+    } else if !arrived_at_bed {
         "travel_row_failure_never_arrived"
     } else if !rest_restored {
         "needs_row_failure_arrived_never_restored"
@@ -10353,7 +10439,7 @@ fn auton2_needs_probe(args: &Args) -> ExitCode {
     // byte-identical-absent leg has nothing to complete and must not
     // fail on that account (vacuously true).
     let completion_ok = !(natural_interrupt_reached && override_active_before)
-        || (bed_claimed_and_arrived && rest_restored && job_completed);
+        || (arrived_at_bed && rest_restored && job_completed);
     // Item 6 (Opus review checklist): the planted-failure falsifier --
     // "disable the override => RED". `completion_ok` alone is vacuously
     // true when the override is absent (it's proving a DIFFERENT claim,
@@ -10379,9 +10465,11 @@ fn auton2_needs_probe(args: &Args) -> ExitCode {
         "hunger_at_interrupt": hunger_at_cross,
         "natural_interrupt_reached": natural_interrupt_reached,
         "matches_shipped_when_unset": matches_shipped_when_unset,
-        "ticks_to_bed_occupied": ticks_to_bed_occupied,
-        "rest_at_bed_occupied": rest_at_occupied,
-        "bed_claimed_and_arrived": bed_claimed_and_arrived,
+        "ticks_to_bed_reserved": ticks_to_bed_occupied,
+        "rest_at_bed_reserved": rest_at_occupied,
+        "bed_claimed": bed_claimed,
+        "ticks_to_true_arrival": ticks_to_true_arrival,
+        "arrived_at_bed": arrived_at_bed,
         "ticks_to_rest_restored": ticks_to_rest_restored,
         "rest_at_restore": rest_at_restore,
         "rest_restored": rest_restored,
