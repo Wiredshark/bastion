@@ -449,10 +449,14 @@ struct Args {
     /// env var is unset. Proves the interrupt band is reachable by
     /// NATURAL decay within a short window (unlike preempt_scenario,
     /// which force-sets needs), i.e. the registered prediction: rest/eat
-    /// preemption fires without a test hook forcing it. Does not touch
-    /// the still-open interrupt-cause/cooldown-on-attempt question
-    /// (separate row, chased before Step 2) -- this only proves
-    /// INITIATION, not full completion.
+    /// preemption fires without a test hook forcing it. Fable-directed
+    /// extension (2026-08-08, AUTON-2 Step 1 reachable-bed case): also
+    /// proves COMPLETION -- claim -> travel -> arrive (bed occupancy) ->
+    /// sleep -> restore (rest climbs to the comfort band) -- from that
+    /// SAME natural-decay trigger, the pipeline the corpus had never
+    /// observed fire from a genuine interrupt rather than a forced
+    /// `bastion_set_needs`. Does not touch the still-open
+    /// interrupt-cause/cooldown-on-attempt question (separate row).
     #[arg(long)]
     auton2_needs_probe: bool,
 
@@ -10186,6 +10190,7 @@ fn auton2_needs_probe(args: &Args) -> ExitCode {
     }
     let (crossed_at_tick, rest_at_cross, hunger_at_cross) =
         crossed.unwrap_or((1800, f32::NAN, f32::NAN));
+    let natural_interrupt_reached = crossed_at_tick < 1800;
 
     // The negative control, in-process: MoodConfig::current() read AGAIN
     // right now -- if the override env var was never set, this must
@@ -10194,6 +10199,174 @@ fn auton2_needs_probe(args: &Args) -> ExitCode {
     let final_cfg = common::bastion::MoodConfig::current();
     let matches_shipped_when_unset = override_active_before
         || (final_cfg.rest.decay_per_sec == 0.0003 && final_cfg.hunger.decay_per_sec == 0.0004);
+
+    // AUTON-2 Step 1, THE COMPLETION HALF (2026-08-08, Fable-directed):
+    // the probe above only proves INITIATION (the registered
+    // prediction -- rest preemption fires from natural decay, no test
+    // hook forcing it). This continues past the crossing to prove
+    // COMPLETION -- claim -> travel -> arrive -> sleep -> restore -- the
+    // pipeline the corpus has never observed fire from a genuine decay
+    // trigger. `preempt_scenario` proves the SAME pipeline but only
+    // from a forced `bastion_set_needs`; this is the decay-driven twin.
+    // Bed occupancy (`bastion_bed_slot`'s occupant slot == this
+    // colonist's uid) is the observable for claim+travel+arrive in one
+    // check -- RestAt is pre-claimed at creation (no separate "claimed"
+    // event to watch for), so occupancy is the first externally
+    // observable milestone after the interrupt fires. Only meaningful
+    // when the override is set AND the interrupt was actually reached;
+    // the absent-override leg is testing byte-identical-when-unset
+    // only and has nothing to complete -- gating completion on it would
+    // fail a run that was never asked to demonstrate the pipeline.
+    // MEASURED, not assumed: a decay rate fast enough to cross the
+    // interrupt band in a short initiation window (this run: 0.04/sec,
+    // crossing in 511 ticks) is FASTER than a bedroll's own recovery
+    // ceiling (`BED_REST_RECOVERY_PER_SEC` * `BedKind::Bedroll.quality()`
+    // = 0.02*0.6 = 0.012/sec) -- decay never pauses for sleep
+    // (`decay_needs` runs unconditionally every tick regardless of job
+    // state), so a decay rate anywhere near the recovery rate makes
+    // net-during-sleep negative or barely positive. First run at
+    // decay=0.04 confirmed this directly: bed occupied at rest=0.117
+    // and never recovered in the full completion budget. Rather than
+    // hunt for one constant threading BOTH a fast interrupt-cross and a
+    // healthy sleep-recovery (they pull opposite directions on the same
+    // number), drop back to the SHIPPED decay for the completion phase
+    // once the interrupt has fired -- this is what "unset -> shipped
+    // constants" already independently proves correct
+    // (`matches_shipped_when_unset`, computed above, BEFORE this
+    // removal). The acceleration's whole job was making the CROSSING
+    // observable in a short window; recovery under shipped decay was
+    // never the part that needed to be fast.
+    if natural_interrupt_reached && override_active_before {
+        // SAFETY: single-threaded at this point in the harness's own
+        // control flow (no other thread reads/writes env vars
+        // concurrently in this binary's test scenarios).
+        unsafe {
+            std::env::remove_var("BASTION_AUTON2_MOOD_OVERRIDE");
+        }
+    }
+    let uid = server.bastion_colonist_uid(&a);
+    let completion_diag = std::env::var_os("BASTION_AUTON2_DIAG").is_some();
+    // The real RestAt completion bar (bastion_jobs.rs's own SLEEP arm,
+    // `slept = needs.rest >= cfg.rest.comfort + SLEEP_MARGIN`) --
+    // matched here exactly (0.5 + 0.1 = 0.6, both shipped constants,
+    // read back post-removal above) rather than an invented threshold,
+    // so "restored" means what the mechanism itself means by it.
+    const RESTORE_THRESHOLD: f32 = 0.6;
+    let mut ticks_to_bed_occupied: Option<u64> = None;
+    let mut rest_at_occupied: Option<f32> = None;
+    let mut ticks_to_rest_restored: Option<u64> = None;
+    let mut rest_at_restore: Option<f32> = None;
+    let mut ticks_to_bed_released: Option<u64> = None;
+    let mut occupancy_interruptions: u32 = 0;
+    if natural_interrupt_reached && override_active_before {
+        // 160 sim-sec at the default 30 tps. MEASURED, not guessed: a
+        // first-pass 2400-tick (80 sim-sec) budget flaked on 2 of 4
+        // seeds. Traced with BASTION_AUTON2_DIAG: the colonist occupied
+        // the bed immediately, but was released again ~10 sim-sec later
+        // (bed_occupant -> None) with no rest gain -- the Traveling-
+        // state stuck-watchdog, which tracks `sdist` shrinking toward
+        // the target, has no separate "already arrived, now sleeping"
+        // state to exempt it, so standing still while restoring reads
+        // as "no further progress" and times out at STUCK_TIMEOUT
+        // (10s). The job then sits under `PREEMPT_COOLDOWN_SECS` (60s)
+        // before the need-check re-fires and a SECOND RestAt claim
+        // succeeds. This matches Opus's own framing exactly ("watchdog
+        // releases... all correct, all specified, and the colonist
+        // never sleeps") -- not a bug this fixture is chasing, but a
+        // real, specified retry path the budget must survive: ~10s
+        // (first attempt) + 60s (cooldown) + ~40s (second attempt's
+        // travel + full sleep), plus margin.
+        const COMPLETION_BUDGET: u64 = 4800;
+        let mut was_occupied_by_us = false;
+        for i in 0..COMPLETION_BUDGET {
+            tick(&mut server, 1);
+            let rest_now = server.bastion_colonist_needs_mood(&a).map(|(_, rest, _, _)| rest);
+            let occupant_now = server.bastion_bed_slot(bed).and_then(|(_, occ)| occ);
+            let occupied_by_us_now = occupant_now == uid;
+            // Item 2 (Opus review checklist, AUTON-2 Step 1): ARRIVAL is
+            // its own milestone, asserted separately from restoration --
+            // occupant == this colonist's uid is the earliest externally
+            // observable claim+travel+arrive signal (RestAt is
+            // pre-claimed at creation, so there is no separate "claimed"
+            // event upstream of this to watch for).
+            if ticks_to_bed_occupied.is_none() && occupied_by_us_now {
+                ticks_to_bed_occupied = Some(i);
+                rest_at_occupied = rest_now;
+            }
+            // Named and counted, not hidden: a stuck-watchdog release
+            // before restoration completes (see budget comment above) is
+            // a real, specified retry path -- track it explicitly rather
+            // than let a silent re-occupancy read as one uninterrupted
+            // sleep.
+            if was_occupied_by_us && !occupied_by_us_now && ticks_to_rest_restored.is_none() {
+                occupancy_interruptions += 1;
+            }
+            was_occupied_by_us = occupied_by_us_now;
+            if ticks_to_bed_occupied.is_some()
+                && let Some(rest) = rest_now
+                && rest >= RESTORE_THRESHOLD
+                && ticks_to_rest_restored.is_none()
+            {
+                ticks_to_rest_restored = Some(i);
+                rest_at_restore = Some(rest);
+            }
+            // Item 4: WORK RESUMES -- a colonist that reaches the comfort
+            // band and then sleeps forever is not a success. The real
+            // completion arm clears the slot's occupant back to `None`
+            // the same tick it removes the job; watch for that instead
+            // of assuming reaching the threshold implies release.
+            if ticks_to_rest_restored.is_some() && occupant_now.is_none() {
+                ticks_to_bed_released = Some(i);
+                break;
+            }
+            // Coarse, per-event only (not per-tick): the observer-effect
+            // law -- a per-tick diag read has previously been measured
+            // to change the very timing it reports on.
+            if completion_diag && i % 120 == 0 {
+                eprintln!(
+                    "AUTON2-COMPLETION-DIAG i={i} rest={rest_now:?} bed_occupant={occupant_now:?} release_reasons(other,timed_out,completed,removed_ext,target_changed)={:?}",
+                    server.bastion_release_reason_counts()
+                );
+            }
+        }
+    }
+    let bed_claimed_and_arrived = ticks_to_bed_occupied.is_some();
+    let rest_restored = ticks_to_rest_restored.is_some();
+    let job_completed = ticks_to_bed_released.is_some();
+    // Item 2's disambiguation, one glance: distinguishes a TRAVEL-row
+    // failure (never arrived -- nothing to do with needs) from a
+    // NEEDS-row failure (arrived, never restored) from success, so a
+    // red `completion_ok` never reads as "the need machinery is broken"
+    // when the actual cause is travel/pathing (a different row).
+    let completion_classification = if !(natural_interrupt_reached && override_active_before) {
+        "not_under_test"
+    } else if !bed_claimed_and_arrived {
+        "travel_row_failure_never_arrived"
+    } else if !rest_restored {
+        "needs_row_failure_arrived_never_restored"
+    } else if !job_completed {
+        "needs_row_failure_restored_never_released"
+    } else {
+        "completed"
+    };
+    // Completion is only asserted when it was actually under test; the
+    // byte-identical-absent leg has nothing to complete and must not
+    // fail on that account (vacuously true).
+    let completion_ok = !(natural_interrupt_reached && override_active_before)
+        || (bed_claimed_and_arrived && rest_restored && job_completed);
+    // Item 6 (Opus review checklist): the planted-failure falsifier --
+    // "disable the override => RED". `completion_ok` alone is vacuously
+    // true when the override is absent (it's proving a DIFFERENT claim,
+    // byte-identical-when-unset), so it cannot by itself demonstrate the
+    // test has teeth. THIS is the field a caller asserting the
+    // registered prediction ("rest preemption fires and completes")
+    // should gate on: it requires the override to have actually been
+    // exercised, not just "nothing failed." Disabling the override
+    // structurally flips this to `false` (already demonstrated by the
+    // control run: `override_env_set=false` -> `natural_interrupt_
+    // reached=false` -> this is `false`), independent of any other
+    // field's value.
+    let planted_case_proven = override_active_before && natural_interrupt_reached && completion_ok;
 
     let result = serde_json::json!({
         "seed": args.seed,
@@ -10204,11 +10377,23 @@ fn auton2_needs_probe(args: &Args) -> ExitCode {
         "ticks_to_interrupt": crossed_at_tick,
         "rest_at_interrupt": rest_at_cross,
         "hunger_at_interrupt": hunger_at_cross,
-        "natural_interrupt_reached": crossed_at_tick < 1800,
+        "natural_interrupt_reached": natural_interrupt_reached,
         "matches_shipped_when_unset": matches_shipped_when_unset,
+        "ticks_to_bed_occupied": ticks_to_bed_occupied,
+        "rest_at_bed_occupied": rest_at_occupied,
+        "bed_claimed_and_arrived": bed_claimed_and_arrived,
+        "ticks_to_rest_restored": ticks_to_rest_restored,
+        "rest_at_restore": rest_at_restore,
+        "rest_restored": rest_restored,
+        "ticks_to_bed_released": ticks_to_bed_released,
+        "job_completed": job_completed,
+        "occupancy_interruptions": occupancy_interruptions,
+        "completion_classification": completion_classification,
+        "completion_ok": completion_ok,
+        "planted_case_proven": planted_case_proven,
     });
     println!("{}", serde_json::to_string(&result).expect("Value is always serializable"));
-    if matches_shipped_when_unset {
+    if matches_shipped_when_unset && completion_ok {
         ExitCode::SUCCESS
     } else {
         ExitCode::from(1)
