@@ -98,6 +98,14 @@ must not gain that** — *needs are urgent, not instantaneous.*
 
 - ★★★ **Planted-failure: disable the need→urgency mapping; the planted case must
   go RED.** *A test that cannot fail is not one.*
+- ★★★★★ **CORRECTED PREDICTION (my §7 was wrong in BOTH halves).** I registered
+  *"`preempted_rested` and `ate` flip green when step 1 lands."*
+  ★ **`preempted_rested` was ALREADY GREEN — it could never flip.**
+  ★★ **`ate` CANNOT flip at step 1 — it is expected-red BY DESIGN until THIS
+  row lands.** *One was already satisfied; the other unsatisfiable by the step I
+  attached it to, and I paired them without reading either producer.*
+  > **Corrected split: `preempted_rested` + `occupancy_interruptions == 0` is the
+  > PRE-FIX's bar. `ate` and the EAT chain are THIS ROW's bar.**
 - ★ **GUARD-6 completeness: all five sites, or none.** **A guard removed at one
   site and left at another is worse than either state.**
 - ★★ **Identity: `stuck_strikes` on a re-selected `RestAt` must ACCUMULATE across
@@ -113,6 +121,24 @@ must not gain that** — *needs are urgent, not instantaneous.*
   `thrash_bounded (1..=3)`)*, `bed_scenario`, `needs_scenario`, and ★ **the
   `is_labor_hold_self_job` unit test at 16689** — **all four must be re-read
   before the build, and the last one REWRITTEN rather than deleted.**
+- ★★★★★★★ **AND `b73_scenario` — WHICH I OMITTED, AND WHICH IS THE ROW'S
+  DIRECT ACCEPTANCE TEST.** Its own comment (`main.rs` ~10636) says why it is red:
+
+  > *"b73 is currently EXPECTED-RED: **it tests needs-as-DRIVES, which the `Drive`
+  > enum deliberately does not implement** … **the full unification is AUTON-2's
+  > job**. Tracked-red on the M3A pattern: it holds its fingerprint, and only a
+  > SHIFT re-flags."*
+
+  ★★★ **b73 is red BECAUSE IT TESTS THIS ROW.** **It is not a deferral and not a
+  tuning artifact** — *both prior labels were guesses made without reading the
+  site.* ★ **Its EAT chain is already the right shape:** `ate → eat_conserved /
+  paused / resumed`, **a dependent-pair structure where `ate` is the ROOT** — *if
+  the colonist never ate, the three downstream flags carry no information.*
+  ★★ **The fixture already encodes the wake-vs-defect distinction.**
+
+  > ★★★★★ **STEP 3's acceptance is b73 GOING GREEN — its EAT chain and its
+  > BREAK chain both.** **That is the row's real bar, and it was written before
+  > the row was.**
 
 ## §5b — ★★★★★★★★ SITE-4 READ DONE: "PRESERVED BY CONSTRUCTION" IS **FALSE**
 
