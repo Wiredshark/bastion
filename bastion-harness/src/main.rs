@@ -4487,6 +4487,24 @@ fn b5_scenario(args: &Args) -> ExitCode {
     let max_same_target_timeouts = server.bastion_max_same_target_timeouts();
     let drift_events_total = server.bastion_drift_events_total();
 
+    // TRAVEL-ROW-SPEC §4.1 (2026-08-08): the discriminator this row exists
+    // to wire -- min_distance_to_target/last_timeout_pos have been
+    // maintained every tick since 2026-07-30 (mechanism-2 terrain probe)
+    // and never reached the harness JSON until now. Additive only: no
+    // existing field's meaning changes, so every historical baseline stays
+    // comparable and holdcheck sees these as new (--expect-new).
+    let travel_timeout_min_distances = server.bastion_travel_timeout_min_distances();
+    let travel_timeout_last_positions: Vec<serde_json::Value> = server
+        .bastion_travel_timeout_last_positions()
+        .into_iter()
+        .map(|(job_pos, last_pos)| {
+            serde_json::json!({
+                "job_pos": [job_pos.x, job_pos.y, job_pos.z],
+                "last_pos": [last_pos.x, last_pos.y, last_pos.z],
+            })
+        })
+        .collect();
+
     // Fable-directed (2026-08-08, batch item 6 method, seed 92 classification):
     // column scan at chop_base's (x,y) -- same move as seed 80/90's closing
     // scans (BATCH-RUNBOOK item 6/SCENARIO-MAP.md ~1512-1537): single-layer
@@ -4614,6 +4632,21 @@ fn b5_scenario(args: &Args) -> ExitCode {
         // position which is STILL open right now (never completed) --
         // "friction happened AND stuck", not just "friction happened".
         "b5_timeouts_on_never_completed_jobs": timeouts_on_never_completed_jobs,
+        // TRAVEL-ROW-SPEC §4.1 (2026-08-08): THE discriminator, wired --
+        // both fields existed since 2026-07-30 (mechanism-2 terrain probe)
+        // and never reached disk before this. One entry per job position
+        // that incurred at least one travel timeout this run.
+        // `min_distances`: closest approach ever achieved toward that
+        // position, across every claim attempt (small == the colonist got
+        // close, so classify UNREACHED once §4.2's threshold lands; large
+        // == never approached, UNREACHABLE). `last_positions`: the
+        // colonist's actual (job_pos, last_pos) at that position's most
+        // recent timeout -- diagnosis input, not classification input.
+        // Report-only: does not gate `pass`, and no threshold is applied
+        // here (§4.2 derives one from this distribution once real corpus
+        // data exists -- not guessed).
+        "b5_travel_timeout_min_distances": travel_timeout_min_distances,
+        "b5_travel_timeout_last_positions": travel_timeout_last_positions,
         // Reported for completeness; does NOT discriminate (fires at
         // similar rates in passing and failing runs) -- never gate on this
         // alone (Fable's ruling, 2026-07-30).

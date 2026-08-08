@@ -3362,6 +3362,46 @@ impl Server {
             .unwrap_or(0)
     }
 
+    /// bastion (TRAVEL-ROW-SPEC §4.1, harness hook, 2026-08-08): closest
+    /// approach ever achieved, for every job position that has incurred at
+    /// least one travel timeout -- one value per position in
+    /// `timeout_counts_by_pos`, read from `min_distance_to_target` (which
+    /// is written for every actively-traveled target, not just ones that
+    /// timed out; filtering to the timeout set is what makes this the
+    /// travel-failure discriminator rather than a general locomotion
+    /// stat). Small ⇒ the colonist got close, so the target was reachable
+    /// and travel failed (UNREACHED). Large ⇒ never approached
+    /// (UNREACHABLE). §4.2's threshold is derived from this distribution,
+    /// not guessed. Read-only, no world writes, zero added hot-path cost
+    /// (`min_distance_to_target` is already maintained every tick this
+    /// reads at settle).
+    pub fn bastion_travel_timeout_min_distances(&self) -> Vec<f32> {
+        let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
+        board
+            .timeout_counts_by_pos
+            .keys()
+            .filter_map(|pos| board.min_distance_to_target.get(pos).copied())
+            .collect()
+    }
+
+    /// bastion (TRAVEL-ROW-SPEC §4.1, harness hook, 2026-08-08): (job
+    /// position, colonist's actual position at that job's most recent
+    /// travel timeout) for every position that has incurred at least one
+    /// travel timeout. Diagnosis input (lets an offline probe start from
+    /// where a failing attempt actually stood, per `last_timeout_pos`'s
+    /// own field doc) -- not the classification input, see
+    /// `bastion_travel_timeout_min_distances` for that. Read-only.
+    pub fn bastion_travel_timeout_last_positions(
+        &self,
+    ) -> Vec<(vek::Vec3<i32>, vek::Vec3<f32>)> {
+        let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
+        board
+            .timeout_counts_by_pos
+            .keys()
+            .filter_map(|pos| board.last_timeout_pos.get(pos).map(|lp| (*pos, *lp)))
+            .collect()
+    }
+
     /// bastion (task #55, harness hook, 2026-07-30): how many designation
     /// Regions are currently recorded as blocked. The acceptance test's
     /// edge-trigger check: this must reach exactly 1 (not re-increment
