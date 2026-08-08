@@ -3592,6 +3592,42 @@ fn b5_scenario(args: &Args) -> ExitCode {
         })
         .map(probe_target)
         .collect();
+    // SELF-JOB MODE-TRIPLE WIRING (TRAVEL-ROW-SPEC follow-on, 2026-08-08,
+    // Opus-directed): the same step/jump/scramble reachability probe
+    // above has only ever run for mine cells (mine_cell_diag's own
+    // positions). Self-jobs (RestAt/EatFrom/Despond -- e.g. seed 7's bed)
+    // never got it, which is the actual gap the row's "self-jobs are the
+    // real §4.1 gap" reading pointed at. `probe_target` is already
+    // job-kind-agnostic (takes a bare Vec3<i32>); the only mine-specific
+    // part was WHICH positions fed it. Reuses §4.1's generic timeout-
+    // position list (`bastion_travel_timeout_last_positions`, kind-
+    // agnostic by construction -- see that method's own doc) and
+    // subtracts mine_cell_diag's own positions so this is additive
+    // coverage, not duplicated work: whatever's left is every non-mine
+    // (i.e. self-job, in this scenario) position that ever timed out.
+    // Region-bounds exclusion, not mine_cell_diag-position exclusion: a
+    // mine cell that timed out earlier and later COMPLETED is gone from
+    // mine_cell_diag by the time this reads (diag lists only still-open
+    // cells -- confirmed on seed 90, job 23's own family: it completed
+    // and left no mine_cell_diag trace, but its position still carries
+    // historical timeout data in the kind-agnostic §4.1 map). Excluding
+    // only mine_cell_diag's positions let completed mine cells leak
+    // through mislabeled as self-jobs on the first version of this
+    // filter (caught before commit by checking seed 90's actual output:
+    // its "self_job" field held 6 entries, all still inside the mine
+    // designation). Excluding the whole mine region instead is correct
+    // regardless of a cell's completion state.
+    let self_job_reachability_probe: Vec<serde_json::Value> = server
+        .bastion_travel_timeout_last_positions()
+        .into_iter()
+        .map(|(job_pos, _)| job_pos)
+        .filter(|p| {
+            !(mine_min.x..=mine_max.x).contains(&p.x)
+                || !(mine_min.y..=mine_max.y).contains(&p.y)
+                || !(mine_min.z..=mine_max.z).contains(&p.z)
+        })
+        .map(probe_target)
+        .collect();
     // STRUCTURAL-POSITION TEST (Fable-directed, 2026-07-30, corrected):
     // her first version of this test (classifying still-OPEN cells'
     // position) repeats the same tautology the attribution metric just
@@ -4569,6 +4605,13 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_mine_reachability_probe": mine_reachability_probe,
         // Same probe against chop_base, only when chop never completed.
         "b5_chop_reachability_probe": chop_reachability_probe,
+        // SELF-JOB MODE-TRIPLE WIRING (TRAVEL-ROW-SPEC follow-on,
+        // 2026-08-08): the same probe, additive coverage for every
+        // timed-out position NOT already in b5_mine_cell_diag -- in this
+        // scenario, self-jobs (RestAt/EatFrom/Despond). Empty when no
+        // self-job ever timed out this run (the common case) -- absence
+        // is the expected zero, not a gap.
+        "b5_self_job_reachability_probe": self_job_reachability_probe,
         // TASK #61 DIAG: was chop_base's OWN blocked_regions entry ever
         // recorded -- checking the right position (b5_55_blocked_by
         // checks an unrelated buried-mine fixture, not chop_base).
