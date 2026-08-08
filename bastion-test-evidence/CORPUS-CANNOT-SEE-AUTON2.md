@@ -81,6 +81,51 @@ existing `board.travel_timeouts += 1`).
 - **It does not authorize a fan.** No behaviour has changed; there is nothing to
   fan yet.
 
+## §4b — ★★★★★ WITHDRAWN: MY OWN FALSIFICATION CRITERION WAS UNSOUND
+
+§3 said *"if `RestAt` never appears among the 222, §4c's structural read is
+refuted by the corpus."* **Withdrawn. I specified a refutation without checking
+that its precondition holds.**
+
+`bastion-harness/src/main.rs` carries **separate scenarios** — `b5_scenario`
+(**1943**) and `bed_scenario` (**11951**). **The corpus fan runs `b5`** (every
+field is `b5_`-prefixed), and beds exist only via `board.beds.insert`
+(**12614**) when a `DesignationKind::Bed` job **completes**.
+
+> **The b5 corpus almost certainly contains NO BEDS. A by-kind map would show
+> zero `RestAt` for a reason unrelated to whether §4c is correct — and I would
+> have read that zero as refuting myself.**
+
+★ **A falsifier must assert its own precondition.** I broke that rule inside the
+same document that praises refutation-capable tests. **A wrong falsifier is worse
+than none:** it manufactures a confident *"refuted"* from an instrument that was
+never looking — precisely the defect §1 above indicts, committed one section
+later. **The map remains worth building as a permanent attribution upgrade. The
+test attached to it is gone.**
+
+## §4c — ★★★ THE REAL INSTRUMENT EXISTS, AND THE CASE HAS A DESIGNED ANSWER
+
+`preempt_scenario`'s own doc (**336-341**):
+
+> *"an unreachable bed degrades to **ENDURE** (works through the cooldown, meter
+> keeps decaying, no livelock, zero embeds)."*
+
+**The unreachable-bed case is not unknown — it is a NAMED, SPECIFIED
+degradation.** So the 6-initiation trace is one of two things, with different
+fixes:
+
+- **(a) ENDURE works as designed** ⇒ the complaint is that *enduring forever* is
+  a bad end state. **A design row, not a bug.**
+- **(b) ENDURE never engages** ⇒ a documented, designed live path that does not
+  fire. **The gate-must-test-live-path class.**
+
+★ And `preempted_rested` — the expected-red we have circled for two days — **is
+that scenario's own acceptance test.** Its needs are **force-set**, so it reaches
+the band by construction and is independent of the decay tuning entirely.
+
+**Order: read `preempt_scenario` before building any new instrument.** It may
+already print the discriminator.
+
 ## §5 — THE STANDING LESSON
 
 > **Before believing a corpus is silent on a defect, ENUMERATE THE FIELDS IT
