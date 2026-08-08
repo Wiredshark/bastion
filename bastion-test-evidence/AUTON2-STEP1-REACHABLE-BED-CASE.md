@@ -1,5 +1,35 @@
 # AUTON-2 Step 1: the planted reachable-bed case, and a defect it found
 
+> **★★★★★ CORRECTION (2026-08-08, same day, after `BASTION_SDIST_TRACE_JOB`
+> ran): the "watchdog interrupts an in-progress sleep" diagnosis below is
+> WRONG.** `bastion_bed_slot`'s occupant field is set at RestAt job
+> **creation** (`insert_rest_job`'s own comment: "reserve the bed at
+> CREATION, not at arrival") — NOT at physical arrival. `bed_claimed_and_
+> arrived`/`ticks_to_bed_occupied` were measuring the job's **reservation**,
+> not the colonist actually reaching the bed — precisely the travel-row-vs-
+> needs-row conflation the checklist's item 2 named as the trap to avoid,
+> and this fixture fell into it by using the wrong signal for "arrival."
+>
+> A direct per-tick trace of seed 50's real interruption (job 10, occupancy
+> interval 0→304 ticks / 10.13 sim-sec) shows `sdist` **never dropping below
+> ~17** for the entire window — the colonist never got near the bed at all
+> — with jump-attempt signatures (`vel_z=2.5` spikes, `on_ground` flickering)
+> and zero net progress. `stuck_time` climbs smoothly and continuously from
+> ~0 to ~10.0, so the stuck-watchdog fired correctly on a genuinely stuck
+> **travel** attempt, not on a sleeping colonist. This looks like a
+> pathing/obstacle issue specific to this bed's placement (one block above
+> the flush plateau floor), not a needs-vs-watchdog interaction.
+>
+> **DECISIONS #69/#70's mechanism, as reported, was wrong. No fix was built
+> on it** — caught before landing any code. `occupancy_interruptions` and
+> the `interruption_rate = 1.0` measurement likely still hold as raw
+> numbers (a real multi-attempt retry cycle exists), but their
+> **interpretation** below is retracted: read "arrived and sleeping, then
+> evicted" as "repeatedly failed to arrive, then eventually succeeded."
+> The rest of this document is preserved as originally written, for the
+> record of what was measured and where the reasoning went wrong — do not
+> treat the "Root cause" section below as current.
+
 Extends `auton2_needs_probe` (already existing, already committed, previously
 only proved INITIATION) with a COMPLETION phase — claim → travel → arrive →
 sleep → restore → resume work — from a genuine decay-driven interrupt, the
