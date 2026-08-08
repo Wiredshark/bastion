@@ -30,7 +30,58 @@ declared.
 > ★★★ **"Class B is rare" and "the probe rarely runs" are indistinguishable in
 > this data.** Absence of a probe is not absence of the class.
 
-## §3 — ★★★★★★★ AND THE PERMANENT FAILING CORE IS LARGELY INVISIBLE TO IT
+## §3 — ★★★★★★ RETRACTED: THE DIAGNOSTIC IS CORRECTLY SCOPED, NOT BLIND
+
+**I claimed the permanent core is "unseen by the campaign's best diagnostic" and
+that "nobody noticed the diagnostic wasn't pointed at it." WRONG. I read the
+coverage number without reading the producer.**
+
+`mine_cell_diag` (harness `3338-3397`) scans the **mine designation volume** and
+includes every cell that **still holds an open Job**. Its own comment says it:
+
+> *"this cell being present in `mine_cell_diag` at all already means it never
+> completed"*
+
+★ **It is not a gate. It is a DEFINITION.** Non-empty **iff the mine has
+unfinished cells**. So the 6 probed seeds are **exactly the seeds whose mine did
+not finish** — the correct and intended population for a mine probe.
+
+**And the split is perfect:**
+
+| | failing seeds | fail a MINE clause |
+|---|--:|--:|
+| **probed** | 5 | **4** |
+| **UNPROBED** | 6 | ★ **0** |
+
+> **The 6 unprobed failures are not mine failures at all** — they are
+> `chop_cleared` / `log_sum` / `build_placed` / `any_needs_materials` /
+> `ch_mixed`. **A mine diagnostic correctly declines to describe them.**
+
+★★ **The coverage gap is real but different from what I said:** the **mine**
+family has a rich diagnostic; **the chop/build family has NONE.** That is the
+honest statement, and it is a smaller and more actionable claim.
+
+## §3b — ★★★★★ AND THE CORE IS PROBABLY ~3 FAMILIES, NOT 10 BUGS
+
+I wrote that the 10 core seeds *"may be ten unrelated bugs."* **The clause
+structure says otherwise:**
+
+| family | seeds | clauses |
+|---|---|---|
+| **MINE** | 54, 61, 71 (+90 regressed in) | `mine_cleared`, `mine_blocks_mined` |
+| ★ **CHOP → MATERIALS → BUILD** | 78, 80, 85, 92 (62 partial) | `chop_cleared`, `log_sum`, `build_placed`, `any_needs_materials` |
+| isolated | 66 (`tl_ok`), 68 (`ch_mixed`) | — |
+
+★★★ **The second family looks like ONE upstream failure cascading:** chopping
+fails → no logs → no materials → build fails. **Four clauses, one cause** —
+`build_placed` and `any_needs_materials` co-occur **6 times**, `chop_cleared` and
+`log_sum` **4 times.**
+
+> **The standing worklist is probably ~3 root causes, not 10.** ★ *Offered as
+> structure, not proof* — co-occurrence is consistent with a cascade **and** with
+> correlated difficulty, and only a read of the chop path settles it.
+
+## §3c — (SUPERSEDED) THE ORIGINAL CLAIM
 
 **6 of the 10 always-failing seeds have NO probe and NO `mine_cell_diag` at
 all:** **62, 68, 78, 80, 85, 92.**
