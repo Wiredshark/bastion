@@ -10454,6 +10454,43 @@ fn auton2_needs_probe(args: &Args) -> ExitCode {
     // field's value.
     let planted_case_proven = override_active_before && natural_interrupt_reached && completion_ok;
 
+    // TRAVEL-ROW-SPEC.md §5's PLANTED-FAILURE TEST (2026-08-08,
+    // Opus-directed): this bed is the "reachable target the colonist
+    // fails to reach" half of the required pair (the other half,
+    // preempt_scenario's floating sky_bed, is already proven UNREACHABLE
+    // by construction). Reuses the exact same mechanism as the sky_bed
+    // positive case (bastion_travel_timeout_last_positions +
+    // bastion_offline_reachability_probe) -- reading the mechanism
+    // directly, not duplicating a JSON schema. Precondition, stated
+    // before reading the result (Opus): the bed must classify
+    // `path_exists_step = TRUE`, or this comparison is uninterpretable
+    // (both targets would land in an unreachable-ish class and "pass"
+    // for the wrong reason).
+    let travel_row_probe_positions = server.bastion_travel_timeout_last_positions();
+    let bed_probed = travel_row_probe_positions
+        .iter()
+        .find(|(job_pos, _)| *job_pos == bed);
+    let spawn_pos = Vec3::new(cx, cy, gz + 2);
+    let bed_probe_result = bed_probed.map(|(job_pos, _)| {
+        let (standable, step, jump, scramble, incomplete, ..) =
+            server.bastion_offline_reachability_probe(spawn_pos, *job_pos, 100_000);
+        (standable, step, jump, scramble, incomplete)
+    });
+    let bed_probe_json = bed_probe_result.map(|(standable, step, jump, scramble, incomplete)| {
+        serde_json::json!({
+            "standable_target": standable.map(|s| [s.x, s.y, s.z]),
+            "path_exists_step": step,
+            "path_exists_jump": jump,
+            "path_exists_scramble": scramble,
+            "probe_incomplete": incomplete,
+        })
+    });
+    // The precondition, checked (not assumed): step-reachable, per
+    // Opus's expectation (6 of 7 seeds arrive eventually) -- stated
+    // before the classification comparison so the result lands in a
+    // named box either way.
+    let bed_precondition_step_reachable = bed_probe_result.is_some_and(|(_, step, _, _, _)| step);
+
     let result = serde_json::json!({
         "seed": args.seed,
         "colonist": a,
@@ -10479,6 +10516,9 @@ fn auton2_needs_probe(args: &Args) -> ExitCode {
         "completion_classification": completion_classification,
         "completion_ok": completion_ok,
         "planted_case_proven": planted_case_proven,
+        "bed_probed": bed_probed.is_some(),
+        "bed_probe_result": bed_probe_json,
+        "bed_precondition_step_reachable": bed_precondition_step_reachable,
     });
     println!("{}", serde_json::to_string(&result).expect("Value is always serializable"));
     if matches_shipped_when_unset && completion_ok {
