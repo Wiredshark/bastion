@@ -3481,6 +3481,26 @@ impl Server {
             .collect()
     }
 
+    /// bastion (AUTON-2 unification, FIXTURE 1's invariant LIVE IN
+    /// EVERY SCENARIO, harness hook, 2026-08-08): the CUMULATIVE count
+    /// (`JobBoard::settle_invariant_violations`, incremented at the
+    /// existing orphan sweep's own ~2 Hz cadence -- every scenario that
+    /// ticks the server, and production, exercise it automatically, no
+    /// per-scenario wiring). Distinct from `bastion_settle_
+    /// invariant_violations` above (a live snapshot at ONE instant);
+    /// this counts every settle-time pass across the WHOLE run, so a
+    /// violation that self-heals before the next harness poll is still
+    /// counted. Pre-unification this is EXPECTED to be nonzero in any
+    /// scenario exercising a self-job release path (see the field's
+    /// own doc) -- becomes the real regression bar (expected 0) once
+    /// GUARD-6 lands.
+    pub fn bastion_settle_invariant_violation_count(&self) -> u64 {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .settle_invariant_violations
+    }
+
     /// bastion (TRAVEL-ROW-SPEC §4.1, harness hook, 2026-08-08): closest
     /// approach ever achieved, for every job position that has incurred at
     /// least one travel timeout -- one value per position in

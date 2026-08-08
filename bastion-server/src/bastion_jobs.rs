@@ -3864,6 +3864,26 @@ pub struct JobBoard {
     command_admission: common::command_protocol::AdmissionLedger,
     next_id: JobId,
     pub jobs: HashMap<JobId, Job>,
+    /// bastion (AUTON-2 unification, FIXTURE 1's invariant made live in
+    /// EVERY scenario, 2026-08-08): a silent, cumulative counter --
+    /// incremented at the EXISTING orphan sweep's own cadence
+    /// (`ARBITRATION_INTERVAL`, ~2 Hz), not a new per-tick scan (the
+    /// acceptance spec's own budget rules that out: "settle-time
+    /// reads only... no per-tick"). The sweep already computes this
+    /// invariant's exact population for its own purposes (self-jobs
+    /// with no claimant, about to be removed because nothing else can
+    /// reach them) -- counting it there is free. NOT a debug_assert:
+    /// pre-unification this invariant is EXPECTED to fire broadly
+    /// (GUARD-6 site 1 makes self-jobs unconditionally unselectable, so
+    /// today the invariant reduces to "no self-job may be unclaimed" --
+    /// any release path, including preempt_scenario's own designed
+    /// ENDURE degradation, legitimately trips it). Read-only via
+    /// `Server::bastion_settle_invariant_violations` (a live snapshot
+    /// at one instant) and this cumulative count (every sweep across
+    /// the whole run, so a violation that self-heals before the next
+    /// harness poll is still counted); becomes a real regression guard
+    /// once GUARD-6 unification lands and the count should hold at 0.
+    pub settle_invariant_violations: u64,
     /// bastion (B5.8): the union of placed designation volumes — the
     /// colony's terrain-claim mask. Auto carve-steps (self-rescue) is
     /// confined to this mask (expanded by the stair's own rise), so the
@@ -8747,6 +8767,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 })
                 .map(|(id, _)| *id)
                 .collect();
+            // AUTON-2 unification, FIXTURE 1's invariant LIVE IN EVERY
+            // SCENARIO (2026-08-08, Opus-directed): this sweep already
+            // computes the invariant's exact population -- self-jobs
+            // with no claimant, about to be removed precisely because
+            // nothing else can reach them -- for FREE, at this sweep's
+            // own ~2 Hz cadence (`ARBITRATION_INTERVAL`), not a new
+            // per-tick scan (which the acceptance spec's own budget
+            // note rules out: "settle-time reads only... no per-tick").
+            // Counts the `is_labor_hold_self_job` subset specifically
+            // (RestAt/EatFrom/Despond) -- `DepositRun` is swept here
+            // too but is NOT part of GUARD-6's own three-kind predicate,
+            // so it's excluded to keep this exactly the fixture's
+            // invariant, not a superset of it. Silent counter, not a
+            // panic -- see the field's own doc for why.
+            board.settle_invariant_violations += orphans
+                .iter()
+                .filter(|id| {
+                    board
+                        .jobs
+                        .get(*id)
+                        .is_some_and(|j| is_labor_hold_self_job(&j.kind))
+                })
+                .count() as u64;
             for id in orphans {
                 board.remove_job(id);
             }

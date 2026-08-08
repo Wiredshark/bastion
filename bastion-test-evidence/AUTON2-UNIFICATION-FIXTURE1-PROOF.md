@@ -74,3 +74,51 @@ unrelated reason. It is testing the change it's meant to test.
 - The actual GUARD-6 unification build (5 sites, `despond_resume`
   deletion, the arbiter ranking) — this document proves only the
   precondition for starting it.
+
+## Addendum: step 2 — the invariant live in EVERY scenario (2026-08-08)
+
+Per `AUTON2-ACCEPTANCE-FIXTURES.md`'s own note ("an invariant that only
+runs in the fixture that tests it protects nothing else"), the invariant
+now runs automatically across every scenario, not just this one.
+
+**Wiring, corrected once before landing.** First attempt hooked
+`Server::cleanup()` — the one shared choke point every scenario's `tick()`
+closure calls, and production too — with a fresh full scan of `board.jobs`
+every call. Opus flagged this before it built: the acceptance spec's own
+budget explicitly rules out "no per-tick" scans, and `cleanup()` runs at
+full tick rate (30 Hz), not arbitration cadence. **Corrected to hook the
+EXISTING orphan sweep instead** (`bastion_jobs.rs`, gated at `tick %
+ARBITRATION_INTERVAL == 9`, ~2 Hz) — that sweep already computes this
+invariant's exact population (self-jobs with no claimant) for its own
+purpose, right before removing them. Counting there is free: zero new
+scans, correct cadence, and the semantics are arguably better — the sweep
+catches the TRANSIENT state (a job about to be reaped because nothing else
+can reach it), which is exactly Fixture 1's own violation (fired at tick
+304, the release tick, not at any later settle point).
+
+New: `JobBoard::settle_invariant_violations: u64` (cumulative, silent —
+NOT a `debug_assert`, since the invariant is currently expected to be
+violated broadly; a hard assert would crash every scenario exercising a
+self-job release path) and `Server::bastion_settle_invariant_violation_
+count()` (the harness-side getter).
+
+**Pre-stated expectation (Opus), recorded before running rather than
+after:** turning this on will make it fire broadly — every scenario that
+exercises a self-job release path, including `preempt_scenario`, where
+ENDURE releases the claim BY DESIGN. **That breadth is the credential, not
+an alarm.** A firing there is not a new defect; it is the exact
+pre-unification state this row exists to change. The actual finding would
+be a scenario that fires it WITHOUT a release path.
+
+**Regression-checked**: `auton2_needs_probe --seed 50` still shows
+`settle_invariant_holds: false` at `tick 304` (the live-snapshot variant,
+unchanged); `preempt_scenario --seed 49` still passes clean
+(`thrash_bounded`/`endured`/`preempted_rested` all true) — the new
+counter's wiring doesn't touch behavior, only measures it.
+
+**The after-state bar, stated now so it isn't re-derived later:**
+post-GUARD-6, this same counter (and the live-snapshot position list) must
+read ZERO across these same scenarios — because `arbiter-selectable`
+becomes `true` for self-jobs once family 1 lands, which is the entire
+point of the unification. Same invariant, same scenarios, opposite result:
+the before/after in one instrument.
