@@ -146,9 +146,63 @@ immediately by `preempt_attempts += 1`:**
 Measured: **6 initiations over ~330 s ≈ one per 55–60 s**, bed A abandoned after
 3, bed B after 3, **one** completed sleep.
 
-### ★★ WHY THE OBVIOUS FIX IS UNSAFE, AND THE ORDER IS THEREFORE FORCED
+### ★★★★★ §4c — CHASED. **NOTHING INTERRUPTS THE SLEEP. THE SLEEP NEVER STARTS.**
 
-**Open and unchased: WHAT INTERRUPTS AN IN-PROGRESS SLEEP?**
+**Read `5f8cdf1392`, five sites, re-located by symbol. The question below had no
+referent** — *"what interrupts an in-progress sleep"* presupposed the sleep began.
+**It does not.** What fires is a **TRAVEL timeout**, and it is **kind-agnostic**.
+
+| # | site | effect on a `RestAt` |
+|---|---|---|
+| 1 | `insert_rest_job` **5337** | **PRE-CLAIMED**; bed reserved at **creation** |
+| 2 | `auton_travel_ok` **11250** | self-jobs travel **UNGATED** → watchdog **NOT frozen** |
+| 3 | travel timeout **~11490** | `claimed_by = None` + release — ★ **no kind check** |
+| 4 | to_release drain **12816** | clears bed occupancy **by uid** |
+| 5 | orphan sweep **8669** | `RestAt` **is** in the filter → job **removed** |
+
+**The two sites that look like sleep-interrupts are not:** `auton_work_ok`
+(**12190**) is *"a SUSPEND — the claim stays held… nothing releases the job"* and
+self-jobs bypass it unconditionally; job-moot (**12452**) has `RestAt => false`.
+
+★ **Two of my own theories, killed by my own follow-through:** *"the orphaned
+RestAt is unclaimable forever"* (refuted — sweep **8669** covers it) and *"the bed
+leaks, because `remove_job`'s `slot.occupant == j.claimed_by` guard cannot match
+after step 3 nulls `claimed_by`"* (refuted — the drain clears by **uid**, and runs
+first). **The second would have elegantly explained bed A → bed B. It was wrong.**
+
+> ## ★ WHY NOBODY NOTICED: EVERY SINGLE SITE IS CORRECT
+> Nothing leaks, nothing errors, nothing logs. The bed frees, the job sweeps, the
+> colonist is healthy. **The system cleans up after itself perfectly**, and the
+> only visible consequence is *a colonist that never sleeps.*
+>
+> **A COMPLETE, CORRECT CLEANUP PATH IS INDISTINGUISHABLE FROM A COMPLETED TASK.**
+> *Tenth costume of the law — and the first where **no single site is wrong.***
+
+**It predicts the measurement:** 6 initiations / ~330 s ≈ **one per cooldown**,
+because the cooldown is the only rate limit on the retry loop.
+
+### ★★★ THEREFORE THE COOLDOWN IS THE WRONG OBJECT TO FIX
+
+> **The failure is a property of the (colonist, bed) PAIR. The cooldown AND the
+> release both record it on the COLONIST.** So the retry re-picks the same
+> unreachable bed and re-pays the same timeout — **rate-limiting the colonist was
+> always treating the symptom.**
+
+Cooldown-on-completion is leak-safe but yields **retry-every-slot against a bed
+demonstrably unreachable**: the cause does not dissolve the thrash, it **confirms**
+it. ★ **Expected landing: Row B′'s `benched_until_tick` shape, on the BED** — a
+proven, measured mechanism rather than a new one. *Held pending 5b's trace.*
+
+**Still open, and empirical:** (1) does the timeout **observably** fire —
+`BASTION_LEGC_DIAG` (**11487**) already prints `stuck_time`/`sdist`/`drive`, so
+likely **no new instrumentation**; (2) **why** the travel stalls — the fifth
+appearance of *displaced colonists failing to arrive*; (3) every one of the ~6
+terminations must land in a **named row above** — ★ *one that lands in none
+refutes this read.*
+
+### ★★ (SUPERSEDED FRAMING — kept because the ORDER it forced was right)
+
+**Was open and unchased: WHAT INTERRUPTS AN IN-PROGRESS SLEEP?**
 
 > Change cooldown-on-initiation → cooldown-on-completion **without knowing why
 > sleeps abort**, and *"locked out 60 s"* becomes **"retries every tick."** The
