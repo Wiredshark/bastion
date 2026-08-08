@@ -22,24 +22,64 @@ Job 20 and job 23's targets are **one block apart in y** (9263 vs 9264),
 same z (338), same mine designation — as close to a matched pair as this
 corpus offers, and they resolve completely differently.
 
-## Job 20: the genuine failure, physics-confirmed
+## Job 20: correction — the jump IS occasionally dispatched, but never produces progress
 
-`BASTION_SDIST_TRACE_JOB=20` across job 20's full lifetime (4 churn
-cycles, 2031 ticks, `stuck_strikes` climbing 0→4): **`on_ground=false`
-fires 1781/2031 ticks, but every `vel_z` sampled while airborne is in the
-0.005-0.35 range** — ordinary walking-gait air time, not a jump. **Zero
-ticks anywhere in the trace show a jump-velocity spike** (contrast job 33
-below, which peaks at 7.48). `min sdist = 16.24` (matches the probe's
-`min_distance_to_target` exactly), `max sdist = 60.87` — genuine large
-excursions, consistent with the seed-7 freeze/jump-elsewhere pattern, but
-never once with an actual jump attempt near the target.
+**Earlier draft of this note claimed "zero jump attempts anywhere in the
+trace." That claim was too strong and is corrected here.** Extending the
+instrumentation to the actual dispatch predicate
+(`server/agent/src/action_nodes.rs::traverse`, `jump_if((on_ground &&
+bearing.z > 1.5) || can_fly)`) shows `jump_condition = true` fires **5
+times** in a ~0.37s window (`BASTION_BEARING_TRACE_UID=3`), each with
+`bearing_z = 2.0` and `on_ground = true` — the dispatch predicate is
+satisfied and the jump input IS pushed.
 
-**This is Fable's branch 2: stalls WITHOUT attempting a jump.** Not a
-capability gap — a dispatch gap. The colonist has a route (`route_exists:
-true` every sample, per the raw `timeout_route_states` list, never `false`
-— refuting the astar-reset/"search never produced a route" hypothesis for
-this specimen), the route never completes, and whatever would trigger a
-jump-tier move along that route never fires.
+**But `SDIST-TRACE`'s own reading of `on_ground`/`vel_z`, sampled from a
+different system (`bastion_jobs.rs`) at nearly the same wall-clock instant,
+shows `on_ground = false` and a small, REPEATING four-value `vel_z` cycle
+(1.75 → 0.0 → -0.75 → 2.5) that persists continuously through and beyond
+the dispatch window** — not a jump spike (contrast job 33's isolated 7.48
+peaks), and not correlated with the 5 specific dispatch ticks; the cycle
+runs before, during, and after them unchanged. Two readings of the same
+moment disagree on `on_ground` by microseconds — consistent with the two
+systems sampling physics state at different points in the tick pipeline,
+not a contradiction in the underlying physics itself.
+
+**What this most likely means, not yet fully confirmed:** the small
+periodic `vel_z` cycle reads as collision/wall-jitter rather than
+locomotion — consistent with the terrain dump below, which shows the
+target's own layer (z=338) is enclosed by solid Rock on **all 8 lateral
+neighbors**. The colonist appears to be bumping against a wall rather than
+approaching an open jump-off point; the rare dispatch events may be firing
+into that same jitter and being absorbed by it, or may be genuinely
+cancelled same-tick (Opus's `unstuck_if`-push / `traverse`-cancel race
+hypothesis — `push_cancel_input`'s same-tick-vs-next-tick semantics are
+unread and would decide this outright, flagged as a further read, not
+chased here).
+
+**Revised verdict: still Fable's branch 2 in effect** (the colonist never
+makes progress and the observable physics never shows a real jump), but
+the mechanism is sharper than "dispatch never fires" — it fires rarely and
+produces nothing, in a context (full rock enclosure at the working layer)
+that looks like collision jitter rather than a clean miss. `min sdist =
+16.24` (matches the probe exactly), `max sdist = 60.87` — genuine large
+excursions elsewhere in the run, but the specific window examined here
+never leaves a ~0.08-unit band. `route_exists: true` every sample (per the
+raw `timeout_route_states` list) still refutes the astar-reset/"search
+never produced a route" hypothesis for this specimen.
+
+## Target-cell terrain dump: fully enclosed at its own layer
+
+`TARGET-TERRAIN-DIAG` at job 20's target `(17989, 9263, 338)`: column
+`z=336..338` all `Rock` (unmined), `z=339..341` all `Air`. **All 8
+horizontal neighbors at z=338 are `Rock`.** The only open direction is
+straight up. This is consistent with — but not identical to — Opus's
+corpus-derived read (`b5_mine_cell_diag`'s `standable_target` one z above
+`job_pos`, `below_open=2`, `top=true`): the live dump confirms the target
+itself is a sealed plug reachable only from above, though `below_open=2`
+in the corpus record refers to a different reference frame (cells below
+the stand-at position across the wider dig, not this exact column, which
+reads fully solid at the mining layer itself) — flagged as a discrepancy
+worth resolving before leaning further on either reading alone.
 
 **TGT-DRIFT correlation confirms the target itself never destabilizes
 either.** Of 12 `TGT-DRIFT` events in the full run, **none** precede any

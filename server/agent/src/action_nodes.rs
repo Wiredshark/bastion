@@ -499,11 +499,28 @@ impl AgentData<'_> {
             bearing.xy().try_normalized().unwrap_or_else(Vec2::zero) * speed;
 
         // Only jump if we are grounded and can't blockhop or if we can fly
-        self.jump_if(
-            (self.physics_state.on_ground.is_some() && bearing.z > 1.5)
-                || self.traversal_config.can_fly,
-            controller,
-        );
+        let jump_condition = (self.physics_state.on_ground.is_some() && bearing.z > 1.5)
+            || self.traversal_config.can_fly;
+        // BEARING-TRACE (2026-08-08, 20-vs-23 matched-pair read, Opus-
+        // directed): gated to a single uid via BASTION_BEARING_TRACE_UID
+        // so it never fires corpus-wide. bearing.z is the jump_if
+        // predicate's other conjunct -- min_distance_to_target and
+        // on_ground alone can't distinguish "never qualifies" from
+        // "qualifies but rarely grounded."
+        if std::env::var("BASTION_BEARING_TRACE_UID")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            == Some(self.uid.0.get())
+        {
+            tracing::info!(
+                uid = self.uid.0.get(),
+                bearing_z = bearing.z,
+                on_ground = self.physics_state.on_ground.is_some(),
+                jump_condition,
+                "BEARING-TRACE"
+            );
+        }
+        self.jump_if(jump_condition, controller);
         controller.inputs.move_z = bearing.z;
     }
 
