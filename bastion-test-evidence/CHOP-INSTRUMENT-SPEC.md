@@ -61,6 +61,14 @@ anyone make progress? was it offered and passed over? was the claimant starved?*
 - ★★★ **PLACEMENT: END-OF-RUN, after final verdicts** — the presumptively safe
   shape per the ruling. **Nothing left to perturb.** *No mid-run capture, so no
   noise-floor run is required before trusting a widened wave.*
+- ★★★★★ **AND THE PRESUMPTION IS VERIFIED FREE, NOT TRUSTED** (Fable's
+  refinement): **the additive window's own hold-check on PRE-EXISTING fields IS
+  the noise detector.** If settle-time reads perturbed anything, **old fields
+  move and the hold-check fires**; if they hold, **the presumption is confirmed
+  as a side effect.** ★ **Read the hold-check result AS that confirmation and say
+  so in the wave notes** — *"presumptively safe" becomes "measured safe" at zero
+  cost.* **A presumption that can be checked for free must never be left a
+  presumption.**
 - **Reads are at settle, not per tick.** ★ **The observer-effect bisection
   indicted PER-CELL, PER-TICK reads; this is per-job, once.**
 - **Additive schema window**, comparable baselines, `--expect-new` covers it, and
