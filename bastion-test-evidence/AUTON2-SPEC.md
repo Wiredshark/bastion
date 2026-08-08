@@ -181,7 +181,53 @@ first). **The second would have elegantly explained bed A → bed B. It was wron
 **It predicts the measurement:** 6 initiations / ~330 s ≈ **one per cooldown**,
 because the cooldown is the only rate limit on the retry loop.
 
-### ★★★ THEREFORE THE COOLDOWN IS THE WRONG OBJECT TO FIX
+### ★★★★★★ §4c RETRACTED IN PART — THE CHAIN IS THE **DESIGNED** ENDURE PATH
+
+**I enumerated the mechanism correctly and then called a specified, tested,
+working design a defect.** `preempt_scenario`'s own doc
+(`bastion-harness/src/main.rs:6615-6620`):
+
+> *"A colonist whose only bed is SEALED inside rock degrades to ENDURE: **the
+> travel watchdog releases the unreachable RestAt, the orphan sweep removes it,
+> the preempt cooldown holds re-attempts off**, and the colonist DOES REACHABLE
+> WORK meanwhile while the meter keeps decaying — no livelock, no thrash, zero
+> embeds."*
+
+**That is §4c's chain, verbatim, as the intended behaviour.** It is asserted
+numerically too: `thrash_bounded = (1..=3)` over 120 s, with the intent stated —
+*"without the 60s cooldown the 120s window would fire ~6-8 attempts; the rate
+bound proves the guard."* ★ **5b's 6 initiations over ~330 s ≈ 1 per 55 s is
+CONSISTENT with that bound.** The cooldown is doing its job.
+
+★ **And "ENDURE" is not an engine state at all** — zero code, two comments. It is
+a **harness-side derived assertion** (`6833`): `endured = own2 && rest_end <
+rest_start && endure_dug >= 1`. **I characterised it from a doc comment's
+phrasing rather than its implementation** — the read-the-content rule, broken by
+its own author.
+
+> **CONSEQUENCE: the cooldown-semantic fix and the bench-the-pair direction are
+> WRONG, not merely premature.** They target a working guard. The forced ordering
+> saved us, but for the wrong reason — I thought the cooldown masked an unknown
+> interrupt; it was implementing a known design.
+
+### ★★★★★ WHAT SURVIVES, AND IT IS SHARPER
+
+ENDURE is designed for a bed **genuinely unreachable** (the fixture builds a
+floating slab with no route up). **5b's seed 7 is not that:** the colonist moved,
+z tracked correctly, and it ended **22.5 units out from a 13.6-unit start**,
+displaced laterally the wrong way — **a bed it plausibly could have reached,
+failed by the travel system.**
+
+> **ENDURE CANNOT DISTINGUISH "UNREACHABLE" FROM "UNREACHED."** Both produce
+> release → sweep → cooldown → work-meanwhile → no complaint. ★ **Here the
+> DESIGNED DEGRADATION IS THE CONCEALMENT** — a correct, deliberate mechanism
+> silently absorbing a different failure it was never meant to cover.
+
+**That is why displaced-colonists-failing-to-arrive has never surfaced as a bug
+in five appearances: ENDURE catches it and calls it normal.** The real row is the
+**travel failure**, and seed 7 at `(21872,16025,250)` is its repro.
+
+### ★★★ (SUPERSEDED) THEREFORE THE COOLDOWN IS THE WRONG OBJECT TO FIX
 
 > **The failure is a property of the (colonist, bed) PAIR. The cooldown AND the
 > release both record it on the COLONIST.** So the retry re-picks the same
