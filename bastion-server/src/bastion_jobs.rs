@@ -11511,6 +11511,42 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         "bastion LEGC-DIAG: travel timeout firing"
                                     );
                                 }
+                                // STUCK-TERRAIN-DIAG (2026-08-08, interrupt-
+                                // cause investigation): what's physically at
+                                // the colonist's ACTUAL position when a
+                                // travel timeout fires -- LEGC-DIAG shows
+                                // WHERE it is, this shows WHAT'S there. Env-
+                                // gated, one-shot per timeout (rare: ~6/run),
+                                // zero cost when unset.
+                                if std::env::var_os("BASTION_STUCK_TERRAIN_DIAG").is_some() {
+                                    let feet = pos.0.map(|e| e.floor() as i32);
+                                    let col: Vec<(i32, common::terrain::BlockKind)> = (feet
+                                        .z
+                                        - 2..=feet.z + 3)
+                                        .filter_map(|z| {
+                                            terrain
+                                                .get(Vec3::new(feet.x, feet.y, z))
+                                                .ok()
+                                                .map(|b| (z, b.kind()))
+                                        })
+                                        .collect();
+                                    let neighbors: Vec<(&str, Option<common::terrain::BlockKind>)> = [
+                                        ("+x", Vec3::new(feet.x + 1, feet.y, feet.z)),
+                                        ("-x", Vec3::new(feet.x - 1, feet.y, feet.z)),
+                                        ("+y", Vec3::new(feet.x, feet.y + 1, feet.z)),
+                                        ("-y", Vec3::new(feet.x, feet.y - 1, feet.z)),
+                                    ]
+                                    .into_iter()
+                                    .map(|(dir, p)| (dir, terrain.get(p).ok().map(|b| b.kind())))
+                                    .collect();
+                                    info!(
+                                        job = active.job,
+                                        feet = ?feet,
+                                        ?col,
+                                        ?neighbors,
+                                        "STUCK-TERRAIN-DIAG: column + cardinal neighbors at timeout"
+                                    );
+                                }
                                 job.claimed_by = None;
                                 // B5.8-E: strike -- grows the remote-work
                                 // arrival tolerance (see the arrive calc).
