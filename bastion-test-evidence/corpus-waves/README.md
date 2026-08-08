@@ -81,6 +81,7 @@ ZONE=us-east1-b STAGGER=25 BRANCH=<branch> \
   > corpus-waves/wave<N>-fanlog-<commit>.txt 2>&1
 
 # 2. collect  — REFUSES rather than guesses; exit 2 = do not use the result
+#    ALSO writes wave<N>_FULL.DERIVED.txt automatically (step 3 is not a step)
 python collect_wave.py corpus-waves/wave<N>_FULL.json /tmp/bastion-pool/bastion-pool-*.log
 ```
 
@@ -90,6 +91,42 @@ wave13's `{}` is now unwritable. It excludes-and-names, rather than silently
 dropping: empty blocks, unparseable blocks, and seeds short of the **modal key
 set** (the 2026-08-03 short-JSON ghost — a seed missing fields is UNPROVEN, not
 a data point).
+
+### The derived-quantity check runs ITSELF (DECISIONS #66)
+
+★ **There is no step 3.** `collect_wave.py` invokes `derived.py` on every wave it
+writes, echoes the report to stdout, and drops a `*_FULL.DERIVED.txt` beside the
+wave. **You cannot produce a wave without producing its rates,
+concentrations, and instrument-gaps.**
+
+**Why it is wired in rather than documented as a habit:** the self-rescue path's
+**100% refusal rate (71 calls, 0 plans)** sat unread because the finding was a
+**subtraction of two adjacent columns that no report performed**. Both fields
+were built *for that question* and present in every baseline.
+
+> **A MEASUREMENT NOBODY COMPUTES IS INDISTINGUISHABLE FROM ONE NOBODY TOOK** —
+> and a standing check that must be invoked by hand is **the same failure mode
+> one level up.**
+
+Three families, each present because it was needed and absent:
+
+1. **RATES** — every `*_calls`/`*_emissions` pair, **auto-discovered by name**, so
+   a new caller added upstream appears with no edit here.
+2. **CONCENTRATION** — flagged population × verdict, Fisher exact two-sided.
+3. **DENOMINATORS** — populations with **no successes** are reported as
+   `INSTRUMENT GAP`. ★ A 100% rate **cannot separate cause from marker** when no
+   seed ever succeeded; that is a gap, not a result. *This clause exists because
+   its absence let a false falsifier be registered as discipline.*
+
+**Two deliberate refusals in its own output:** a wave with no verdict field is
+**REFUSED with the reason written into the sidecar** (never an empty file — the
+tool obeys the exclusion-vs-absence law it enforces), and Fisher returns
+**undefined** on a zero margin rather than `1.0`.
+
+★ **The derived rc is REPORTED, never merged into the collector's exit code.**
+The seed data is valid regardless of what the analysis finds; conflating *"I
+could not analyse this"* with *"the collection failed"* would be this repo's own
+central defect, committed by the tool built to catch it.
 
 ### Comparing two waves
 

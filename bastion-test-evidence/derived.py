@@ -157,6 +157,35 @@ def report_denominators(seeds, flagged):
     print("   control, or declare the gap. Do NOT declare a finding.")
 
 
+def report_wave(seeds, name):
+    """Full derived report for one already-loaded wave. -> rc (0 ok, 2 refused).
+
+    Importable so `collect_wave.py` can run it automatically on every wave it
+    writes -- a check you must remember to run is the same failure mode one
+    level up from the one this file exists to fix.
+    """
+    print("\n" + "=" * 72)
+    print("WAVE %s -- %d seeds" % (name, len(seeds)))
+    print("=" * 72)
+    if not seeds:
+        print("REFUSED: zero seeds. An empty dict shaped like a baseline is "
+              "the wave13 failure -- not a result.")
+        return 2
+    counts = collections.Counter(frozenset(v) for v in seeds.values())
+    keys, modal_n = counts.most_common(1)[0]
+    if modal_n != len(seeds):
+        print("[!!] schema not uniform: modal key set held by %d/%d seeds"
+              % (modal_n, len(seeds)))
+    if VERDICT_FIELD not in keys:
+        print("REFUSED: no %s field -- concentration is not computable and "
+              "an absent verdict must not default to pass." % VERDICT_FIELD)
+        return 2
+    flagged = report_rates(seeds, keys)
+    rc = report_concentration(seeds, flagged)
+    report_denominators(seeds, flagged)
+    return rc
+
+
 def main():
     args = sys.argv[1:]
     if not args:
@@ -175,28 +204,7 @@ def main():
             print("REFUSED %s: %s" % (path, e))
             rc = 2
             continue
-        name = re.split(r"[\\/]", path)[-1]
-        print("\n" + "=" * 72)
-        print("WAVE %s -- %d seeds" % (name, len(seeds)))
-        print("=" * 72)
-        if not seeds:
-            print("REFUSED: zero seeds. An empty dict shaped like a baseline is "
-                  "the wave13 failure -- not a result.")
-            rc = 2
-            continue
-        counts = collections.Counter(frozenset(v) for v in seeds.values())
-        keys, modal_n = counts.most_common(1)[0]
-        if modal_n != len(seeds):
-            print("[!!] schema not uniform: modal key set held by %d/%d seeds"
-                  % (modal_n, len(seeds)))
-        if VERDICT_FIELD not in keys:
-            print("REFUSED: no %s field -- concentration is not computable and "
-                  "an absent verdict must not default to pass." % VERDICT_FIELD)
-            rc = 2
-            continue
-        flagged = report_rates(seeds, keys)
-        rc = report_concentration(seeds, flagged) or rc
-        report_denominators(seeds, flagged)
+        rc = report_wave(seeds, re.split(r"[\\/]", path)[-1]) or rc
     return rc
 
 

@@ -20,9 +20,17 @@ absent fields as false/zero produces a confident wrong verdict, and at 48 seeds
 nobody eyeballs every object.
 """
 import collections
+import contextlib
+import io
 import json
+import os
 import re
 import sys
+
+# Import `derived` from this script's own directory regardless of cwd -- the
+# collector is documented as being run from bastion-test-evidence/ but has
+# been run from the repo root more than once.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 SEED_RE = re.compile(r"^@@@SEED (\d+)@@@\s*$")
 
@@ -142,6 +150,39 @@ def main():
     with open(out_path, "w", encoding="utf-8") as fh:
         json.dump(parsed, fh, indent=1, sort_keys=True)
     print(f"\nwrote {out_path}: {len(parsed)} seeds @ COMMIT={commit}")
+
+    # DECISIONS #66: the derived-quantity check runs HERE, not when someone
+    # remembers. The 100% self-rescue refusal rate sat unread because the
+    # finding was a subtraction of two adjacent columns that no report
+    # performed -- and a standing check that must be invoked by hand is the
+    # same failure mode one level up. A wave cannot be produced without its
+    # rates, concentrations, and instrument-gaps being produced with it.
+    #
+    # Deliberately NON-FATAL to the collection: the seed data is valid
+    # regardless of what the analysis finds, and conflating "I could not
+    # analyse this" with "the collection failed" would be this repo's own
+    # exclusion-vs-absence defect. The derived rc is REPORTED, never merged
+    # into the collector's exit code.
+    derived_txt = re.sub(r"\.json$", "", out_path) + ".DERIVED.txt"
+    try:
+        import derived
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            drc = derived.report_wave(parsed, out_path.split("/")[-1])
+        body = buf.getvalue()
+        with open(derived_txt, "w", encoding="utf-8") as fh:
+            fh.write(body)
+        # Echo to stdout too: evidence has to land in the transcript, not
+        # only on a disk someone else may clean.
+        print(body)
+        print(f"wrote {derived_txt}  (derived rc={drc}, "
+              f"NOT merged into this script's exit code)")
+    except Exception as e:
+        print(f"[!!] derived check could not run: {e!r}")
+        print("     The wave file above is still valid. Run "
+              "`python derived.py <the wave>` by hand and find out why.")
+
     return 0 if not (bad or unproven) else 1
 
 
