@@ -9814,18 +9814,33 @@ fn preempt_scenario(args: &Args) -> ExitCode {
     // PREEMPT: rest below the interrupt — the need-check drops the mine
     // claim and self-assigns RestAt; A sleeps to the satisfied band.
     server.bastion_set_needs(&a, 1.0, 0.15, 1.0);
+    if std::env::var_os("BASTION_PREEMPT_DIAG").is_some() {
+        let real_values = server.bastion_colonist_values(&a);
+        eprintln!(
+            "PREEMPT-DIAG values={:?} temperament(consc,neur)={:?}",
+            real_values,
+            server.bastion_colonist_temperament(&a)
+        );
+    }
     let mut preempted_rested = false;
     // UNSET vs MEASURED: this is only assigned inside the `rest >= 0.58`
     // branch below. As a bare `0usize` it was indistinguishable from a real
     // measurement of zero -- and worse, it FEEDS the gating term `paused`, so
     // a run that never sampled scored as a run that failed to pause.
     let mut jobs_at_rest_peak: Option<usize> = None;
-    for _ in 0..360 {
+    let preempt_diag = std::env::var_os("BASTION_PREEMPT_DIAG").is_some();
+    for i in 0..360 {
         tick(&mut server, 10);
         let rest = server
             .bastion_colonist_needs_mood(&a)
             .map(|v| v.1)
             .unwrap_or(0.0);
+        if preempt_diag && i % 12 == 0 {
+            eprintln!(
+                "PREEMPT-DIAG i={i} rest={rest} mine_jobs_open={}",
+                server.bastion_jobs_in_region(mine)
+            );
+        }
         if rest >= 0.58 {
             preempted_rested = true;
             jobs_at_rest_peak = Some(server.bastion_jobs_in_region(mine));
