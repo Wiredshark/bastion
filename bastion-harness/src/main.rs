@@ -469,6 +469,15 @@ struct Args {
     #[arg(long)]
     b73_scenario: bool,
 
+    /// AUTON-2 unification, FIXTURE 2 (2026-08-08, Opus-directed):
+    /// despond-resume determinism, the REGRESSION fixture (must be
+    /// GREEN on tip BEFORE the GUARD-6 build, unlike Fixture 1 which
+    /// must be RED) -- the eat-carve-out's re-issue guarantee (same
+    /// `until`, no cooldown consumed, no `break_chance` re-roll) per
+    /// `AUTON2-ACCEPTANCE-FIXTURES.md`.
+    #[arg(long)]
+    auton2_despond_resume_fixture: bool,
+
     /// bastion (B-AG3 slice 1, row 41): the VALUES divergence — two
     /// colonists with different ±50 value weights receive the SAME
     /// chronicle thought kind and show measurably different mood deltas
@@ -1726,6 +1735,8 @@ fn main() -> ExitCode {
         auton2_needs_probe(&args)
     } else if args.b73_scenario {
         b73_scenario(&args)
+    } else if args.auton2_despond_resume_fixture {
+        auton2_despond_resume_fixture(&args)
     } else if args.values_scenario {
         values_scenario(&args)
     } else if args.derive_scenario {
@@ -11348,6 +11359,312 @@ fn b73_scenario(args: &Args) -> ExitCode {
         && names.len() == 1;
     println!("{}", result);
     println!("B73 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// bastion (AUTON-2 unification, FIXTURE 2 "DESPOND-RESUME DETERMINISM",
+/// 2026-08-08, Opus-directed): the REGRESSION fixture -- must be GREEN
+/// on tip BEFORE the GUARD-6 build (the opposite of Fixture 1's
+/// must-fail-first). Per `AUTON2-ACCEPTANCE-FIXTURES.md`: force a
+/// breakdown, drive hunger past its interrupt WHILE despondent (the
+/// eat-carve-out fires: despond job destroyed, `until` recorded in
+/// `despond_resume`), let the eat resolve, then assert on the re-issue:
+/// `until` byte-identical, `preempt_attempts` unchanged (no cooldown
+/// consumed), same job kind. `preempt_attempts` is read directly rather
+/// than a separate roll-count instrument -- it is ALREADY exactly a
+/// roll-count (incremented only inside the breakdown-roll's own success
+/// branch, `bastion_jobs.rs` ~9448 -- the re-issue site never touches
+/// it), confirmed by reading the producer before reuse.
+fn auton2_despond_resume_fixture(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{DesignationKind, Region},
+        terrain::{Block, BlockKind},
+        vol::ReadVol,
+    };
+    use vek::{Rgb, Vec2, Vec3};
+
+    const MUSHROOM: &str = "common.items.food.mushroom";
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-auton2-despond-resume-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-auton2-despond-resume".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-auton2-despond-resume-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 16)..=(cx + 16) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 1);
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let a = names.first().cloned().unwrap_or_default();
+    let uid = server.bastion_colonist_uid(&a).unwrap_or(0);
+    let center = Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0);
+
+    // Food nearby -- the carve-out's preempt target, no bed (isolates
+    // this fixture to the hunger leg, avoiding this session's own
+    // travel-row specimen at a bed).
+    let food_pos = Vec3::new(cx as f32 - 6.5, cy as f32 + 0.5, gz as f32 + 1.5);
+    server.bastion_spawn_item(food_pos, MUSHROOM, 1);
+    tick(&mut server, 5);
+
+    // A mine strip so the colonist has claimable work to be despondent
+    // AWAY from (matches b73's own pattern; not load-bearing for this
+    // fixture's assertions, just a realistic backdrop).
+    let mine = Region {
+        min: Vec3::new(cx + 6, cy - 2, gz),
+        max: Vec3::new(cx + 7, cy + 2, gz),
+    };
+    server
+        .bastion_place_designation(mine, DesignationKind::Mine)
+        .len();
+    tick(&mut server, 60);
+
+    // FORCE THE BREAKDOWN, without a rest/hunger TIE: a first attempt
+    // zeroed all three needs and found the fixture stuck forever on
+    // `NEED-SKIP-DIAG reason=no_bed_found` -- with rest==hunger==0.0
+    // exactly, the candidate sort is stable and rest was pushed first
+    // (`bastion_jobs.rs` ~9484 before ~9494), so rest wins the tie and
+    // is attempted every pass; this scenario has no bed, so hunger
+    // never even gets tried. Fixed by keeping rest safely ABOVE any
+    // staggered interrupt ceiling (base 0.2 * 1.5 = 0.3 max, per
+    // `stagger_interrupt`'s own doc) so hunger is the ONLY need-
+    // preempt candidate, while rest's own comfort-band shortfall still
+    // contributes enough to mood to cross `break_minor` (0.6 base -
+    // 0.5*0.5 hunger - 0.4*0.15 rest - 0.15*0.4 recreation ≈ 0.23).
+    // MEASURED, not guessed: a first pass used a coarse 10-tick
+    // detection loop for `broke`, then a separate tight 1-tick loop to
+    // capture `original_until` -- and missed it every time (`null`).
+    // The carve-out fires fast enough (hunger is already below
+    // interrupt from the moment despond starts) that the 10-tick
+    // overshoot from the coarse loop's OWN last step was enough to
+    // land past the despond job's removal before the tight loop even
+    // began. Fixed by polling at 1-tick granularity from the start,
+    // continuously, capturing `original_until` the SAME tick `broke`
+    // is first observed rather than after a separate detection step.
+    // MEASURED, not guessed, twice over: (1) a coarse-then-tight two-
+    // loop capture missed `original_until` every time (always `null`);
+    // (2) switching to CONTINUOUS 1-tick polling from the very start
+    // STILL missed it -- `BASTION_DESPOND_DEBUG` traced `despond_jobs`
+    // staying 0 for 40 straight ticks starting the instant `broke` was
+    // observed. The eat-carve-out's own precondition (hunger already
+    // below interrupt) is structurally required to get mood below
+    // `break_minor` in the first place (verified: even AT hunger's own
+    // interrupt, with recreation floored too, mood stays ~0.39 -- well
+    // above break_minor's 0.25), so the carve-out is eligible to fire
+    // on the very next arbitration pass after creation, which measured
+    // faster than single-tick polling can observe between two full
+    // `tick()` calls.
+    //
+    // Fixed by not racing the read at all: `until` is deterministic
+    // (`SimSecs::after`, `common/src/bastion.rs:790` -- plain `now.0 +
+    // self.0`, no rounding), so reading `bastion_sim_time()` the tick
+    // the roll is observed to have fired and adding the shipped
+    // `despond_secs` (60.0; this fixture applies no override) computes
+    // the SAME value the engine's own roll computed, exactly, without
+    // needing to catch the live job at all.
+    let attempts_before_break = server.bastion_preempt_attempts();
+    server.bastion_set_needs(&a, 0.0, 0.35, 0.0);
+    let mut broke = false;
+    let mut sim_time_at_break: Option<f64> = None;
+    for _ in 0..7200u64 {
+        tick(&mut server, 1);
+        if !broke && server.bastion_preempt_attempts() > attempts_before_break {
+            broke = true;
+            sim_time_at_break = Some(server.bastion_sim_time());
+            break;
+        }
+    }
+    const DESPOND_SECS_SHIPPED: f64 = 60.0;
+    let original_until = sim_time_at_break.map(|t| t + DESPOND_SECS_SHIPPED);
+    let attempts_after_break = server.bastion_preempt_attempts();
+
+    // LET THE CARVE-OUT FIRE AND THE EAT RESOLVE: hunger is already 0.0
+    // (below interrupt) from the breakdown-forcing step above, so the
+    // carve-out's own precondition is already met -- just wait for the
+    // despond job to clear and the eat to complete. Coarser cadence is
+    // fine here (nothing else being captured mid-window).
+    let mut ate = false;
+    let mut sim_time_at_ate: Option<f64> = None;
+    for _ in 0..360 {
+        tick(&mut server, 10);
+        let hunger = server
+            .bastion_colonist_needs_mood(&a)
+            .map(|v| v.0)
+            .unwrap_or(0.0);
+        if hunger >= 0.4 {
+            ate = true;
+            sim_time_at_ate = Some(server.bastion_sim_time());
+            break;
+        }
+    }
+    // Opus's ruling (2026-08-08): the ONE read that settles vacuous-vs-
+    // real for `no_reroll_on_resume` before spending further cycles --
+    // does `despond_resume` (the carve-out's own side table, read
+    // directly, not the live job) actually hold an entry right after
+    // the eat that must have followed the carve-out? Populated = the
+    // carve-out ran and the no-reroll assertion is real, just its
+    // resume-observation eluded capture. Empty = the carve-out never
+    // fired and the assertion was vacuous.
+    let despond_resume_after_eat = server.bastion_despond_resume_pending(uid);
+    if std::env::var_os("BASTION_DESPOND_DEBUG").is_some() {
+        eprintln!(
+            "DESPOND-DEBUG ate={ate} sim_time_at_ate={sim_time_at_ate:?} original_until={original_until:?} despond_resume_after_eat={despond_resume_after_eat:?}"
+        );
+    }
+
+    // RESUME: once the eat job clears, the re-issue should recreate
+    // Despond from the table with the ORIGINAL deadline. Same 1-tick
+    // continuous polling as above, for the same reason.
+    let resume_debug = std::env::var_os("BASTION_DESPOND_DEBUG").is_some();
+    let mut resumed_until: Option<f64> = None;
+    for i in 0..3600u64 {
+        tick(&mut server, 1);
+        if let Some(u) = server.bastion_despond_until(uid) {
+            resumed_until = Some(u);
+            break;
+        }
+        if resume_debug && i < 40 {
+            let has_active_job = server
+                .bastion_colonist_states_full()
+                .iter()
+                .find(|(u, ..)| Some(*u) == server.bastion_colonist_uid(&a))
+                .is_some_and(|(_, _, _, job)| job.is_some());
+            eprintln!(
+                "DESPOND-RESUME-DEBUG i={i} has_active_job={has_active_job} despond_jobs={} sim_time={:.3}",
+                server.bastion_despond_jobs(),
+                server.bastion_sim_time()
+            );
+        }
+    }
+    let attempts_after_resume = server.bastion_preempt_attempts();
+
+    let until_byte_identical = match (original_until, resumed_until) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    };
+    // THE HARD ASSERTION (design's own emphasis): a roll COUNT, not a
+    // roll RESULT -- a re-roll could coincidentally reproduce the same
+    // deadline, and "same value" alone would then pass a broken build.
+    let no_reroll_on_resume = attempts_after_resume == attempts_after_break;
+
+    let result = serde_json::json!({
+        "seed": args.seed,
+        "colonist": a,
+        "broke": broke,
+        "ate": ate,
+        "original_until": original_until,
+        "resumed_until": resumed_until,
+        "until_byte_identical": until_byte_identical,
+        "attempts_before_break": attempts_before_break,
+        "attempts_after_break": attempts_after_break,
+        "attempts_after_resume": attempts_after_resume,
+        "no_reroll_on_resume": no_reroll_on_resume,
+    });
+    println!("{}", serde_json::to_string(&result).expect("Value is always serializable"));
+    let pass = broke && ate && until_byte_identical && no_reroll_on_resume;
+    println!(
+        "AUTON2 DESPOND-RESUME FIXTURE: {}",
+        if pass { "PASS" } else { "FAIL" }
+    );
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);

@@ -2417,6 +2417,56 @@ impl Server {
             .count()
     }
 
+    /// bastion (AUTON-2 unification, FIXTURE 2, harness hook,
+    /// 2026-08-08): current sim seconds (`common::resources::Time`).
+    /// MEASURED reason this exists: the live Despond job is visible for
+    /// too short a window to catch by polling between ticks -- the
+    /// eat-carve-out's own precondition (hunger already below
+    /// interrupt, structurally required to drop mood below
+    /// `break_minor` in the first place) makes it eligible to fire on
+    /// the very next arbitration pass after the job is created, and
+    /// per-tick polling still missed it. `until` is deterministic
+    /// (`time_at_roll + despond_secs`), so reading the sim clock at the
+    /// roll and computing the expectation analytically sidesteps the
+    /// race entirely rather than trying to win it.
+    pub fn bastion_sim_time(&self) -> f64 {
+        self.state.ecs().read_resource::<common::resources::Time>().0
+    }
+
+    /// bastion (AUTON-2 unification, FIXTURE 2 "DESPOND-RESUME
+    /// DETERMINISM", harness hook, 2026-08-08): the `until` deadline of
+    /// the named colonist's live Despond job, if one exists. Read-only.
+    /// The fixture's own falsifier requires this byte-identical across a
+    /// resume ("same deadline, no re-roll") -- reads the raw `f64`, not
+    /// a rounded/derived form, so a re-roll's ULP drift is visible.
+    pub fn bastion_despond_until(&self, uid: u64) -> Option<f64> {
+        use common::uid::Uid;
+        let target = Uid(std::num::NonZeroU64::new(uid)?);
+        let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
+        board.jobs.values().find_map(|j| match j.kind {
+            common::bastion::JobKind::Despond { until } if j.claimed_by == Some(target) => {
+                Some(until)
+            },
+            _ => None,
+        })
+    }
+
+    /// bastion (AUTON-2 unification, Fixture 2, harness hook,
+    /// 2026-08-08): the ONE read that settles vacuous-vs-real for
+    /// `no_reroll_on_resume` -- reads `despond_resume` directly (the
+    /// carve-out's own side table), distinct from `bastion_despond_
+    /// until` which reads the live JOB. Populated = the carve-out's
+    /// insert actually ran; empty = it never fired and the resume
+    /// assertion was never under test.
+    pub fn bastion_despond_resume_pending(&self, uid: u64) -> Option<f64> {
+        use common::uid::Uid;
+        let target = Uid(std::num::NonZeroU64::new(uid)?);
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .probe_despond_resume(target)
+    }
+
     /// bastion (HIST-1, harness hook): chronicle capture vitals —
     /// `(death_entries, last_death_actor_count, theft_entries,
     /// theft_pos_ok, reports_len)`. Reports ride along so the sibling

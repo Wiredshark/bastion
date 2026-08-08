@@ -5261,6 +5261,14 @@ impl JobBoard {
 
     pub fn probe_reservations(&self) -> usize { self.reservations.len() }
 
+    /// bastion (AUTON-2 unification, Fixture 2, harness probe,
+    /// 2026-08-08): the ONE read that settles vacuous-vs-real for the
+    /// no-reroll-on-resume assertion -- did the eat-carve-out's own
+    /// insert into `despond_resume` actually happen? Read-only.
+    pub fn probe_despond_resume(&self, uid: Uid) -> Option<f64> {
+        self.despond_resume.get(&uid).copied()
+    }
+
     pub fn remove_job(&mut self, id: JobId) -> Option<Job> {
         let job = self.jobs.remove(&id);
         if let Some(j) = &job
