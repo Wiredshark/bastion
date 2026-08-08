@@ -3569,22 +3569,34 @@ fn b5_scenario(args: &Args) -> ExitCode {
                 })
             })
             .collect();
-        // Cheap summary so a reader doesn't have to scan the sequence by
-        // hand: is next_idx the SAME across every recorded timeout
-        // (pinned) or does it ever change (advancing)? None if there
-        // aren't at least two samples to compare, or any sample lacked an
-        // idx at all.
-        let route_next_idx_pinned: Option<bool> = {
-            let idxs: Option<Vec<usize>> = route_states.iter().map(|(_, _, idx)| *idx).collect();
-            idxs.filter(|v| v.len() >= 2)
-                .map(|v| v.windows(2).all(|w| w[0] == w[1]))
+        // REG-2 (MUTATING-WINDOW-DELTA-REGISTRATIONS.md, 2026-08-08): the
+        // old binary summary's `null` carried two different facts under
+        // one label -- "too few timeout samples to compare" and "at
+        // least one sample had no route at all" (the astar-reset
+        // population, the substantive case the old summary hid). Split
+        // three ways, reading `route_exists` from each entry directly
+        // (not inferred from `route_next_idx`'s presence, even though
+        // `ChaserDiagnosticSnapshot` derives both from the same `Option`
+        // and so happen to agree -- the spec asks for the fact, not a
+        // proxy for it).
+        let route_next_idx_summary: &'static str = if route_states.len() < 2 {
+            "too_few_samples"
+        } else if route_states.iter().any(|(exists, _, _)| !exists) {
+            "no_route_present"
+        } else {
+            let idxs: Vec<usize> = route_states.iter().filter_map(|(_, _, idx)| *idx).collect();
+            if idxs.windows(2).all(|w| w[0] == w[1]) {
+                "compared: pinned"
+            } else {
+                "compared: advancing"
+            }
         };
         serde_json::json!({
             "target": [target.x, target.y, target.z],
             "min_distance_to_target": min_distance,
             "last_timeout_pos": last_timeout.map(|p| [p.x, p.y, p.z]),
             "timeout_route_states": route_states_json,
-            "route_next_idx_pinned": route_next_idx_pinned,
+            "route_next_idx_pinned": route_next_idx_summary,
             "from_spawn": probe_from(spawn_pos),
             "from_last_timeout": last_timeout.map(|p| {
                 probe_from(Vec3::new(p.x.floor() as i32, p.y.floor() as i32, p.z.floor() as i32))
@@ -4457,21 +4469,43 @@ fn b5_scenario(args: &Args) -> ExitCode {
     let tool_name = names.first().cloned().unwrap_or_default();
     let tl_equip_stone = server.bastion_equip_tool(&tool_name, "common.items.tool.pickaxe_stone");
     let tl_stone_raw = server.bastion_colonist_tool_factor(&tool_name, WorkType::Mine);
-    let tl_stone = tl_stone_raw.unwrap_or(0.0);
     let tl_stone_chop = server
         .bastion_colonist_tool_factor(&tool_name, WorkType::Chop)
         .unwrap_or(0.0);
     let tl_equip_steel = server.bastion_equip_tool(&tool_name, "common.items.tool.pickaxe_steel");
     let tl_steel_raw = server.bastion_colonist_tool_factor(&tool_name, WorkType::Mine);
-    let tl_steel = tl_steel_raw.unwrap_or(0.0);
-    let tl_ok = tl_equip_stone
-        && tl_equip_steel
-        && (tl_stone - 1.5).abs() < 0.001   // stone pick: the crude relief
-        && (tl_steel - 2.0).abs() < 0.001   // steel pick: measurably faster
-        && (tl_stone_chop - 1.0).abs() < 0.001; // wrong verb: the slow base
+    // REG-1 (MUTATING-WINDOW-DELTA-REGISTRATIONS.md, 2026-08-08): the
+    // sentinel fix. `tl_stone`/`tl_steel` were `.unwrap_or(0.0)` --
+    // 0.0 sits below the metric's own documented 1.0 floor, reachable
+    // ONLY via the lookup failing (never a real measurement), and
+    // survived every presence check silently (seed 66). Now `Option`,
+    // propagating the real absence instead of a value that looks like
+    // data. `b5_tool_stone_measured`/`_steel_measured` (added earlier,
+    // additive-only, as a workaround before this mutating window was
+    // eligible) now carry the SAME information as these -- left in
+    // place since removing them isn't part of this registered delta,
+    // not because they're still doing independent work.
+    let tl_stone: Option<f32> = tl_stone_raw;
+    let tl_steel: Option<f32> = tl_steel_raw;
+    // `tl_ok` is the trap the spec names explicitly: flipping it to
+    // `true` on a poisoned reading would ASSERT the tools were fine,
+    // which the guard never established. `None` when either factor is
+    // missing -- "unknown," not "pass" and not the old silent "fail."
+    // `tl_stone_chop` keeps its own pre-existing sentinel unchanged;
+    // it isn't part of REG-1's registered 3-field/1-seed delta.
+    let tl_ok: Option<bool> = match (tl_stone, tl_steel) {
+        (Some(stone), Some(steel)) => Some(
+            tl_equip_stone
+                && tl_equip_steel
+                && (stone - 1.5).abs() < 0.001 // stone pick: the crude relief
+                && (steel - 2.0).abs() < 0.001 // steel pick: measurably faster
+                && (tl_stone_chop - 1.0).abs() < 0.001, // wrong verb: the slow base
+        ),
+        _ => None,
+    };
     info!(
-        tl_stone,
-        tl_steel, tl_stone_chop, tl_ok, "b5: TOOL-0 factors"
+        ?tl_stone,
+        ?tl_steel, tl_stone_chop, ?tl_ok, "b5: TOOL-0 factors"
     );
 
     // 8. Zero-input soak.
@@ -4581,8 +4615,13 @@ fn b5_scenario(args: &Args) -> ExitCode {
         ("ch_leaf_cleared", ch_leaf_cleared),
         ("ch_leaf_no_drop", ch_leaf_no_drop),
         // TOOL-0: equipped-tool factor end-to-end (stone 1.5, steel 2.0,
-        // wrong-verb 1.0); the curve itself is unit-pinned.
-        ("tl_ok", tl_ok),
+        // wrong-verb 1.0); the curve itself is unit-pinned. REG-1 made
+        // `tl_ok` an `Option<bool>` (null on a missing measurement,
+        // never a silent `true`) for the JSON report; gating still
+        // needs a plain bool here, and `false`-on-unknown preserves
+        // this scenario's exact prior pass/fail behavior (a missing
+        // measurement failed the old sentinel-`false` gate too).
+        ("tl_ok", tl_ok.unwrap_or(false)),
         ("avg_tick_ms_budget", avg_tick_ms < 100.0),
     ];
     // RULING (Fable, 2026-07-30 chop-oracle row): `precondition_unmet`
@@ -4681,7 +4720,14 @@ fn b5_scenario(args: &Args) -> ExitCode {
     let result = serde_json::json!({
         "b5_mine_jobs": mine_jobs,
         "b5_chop_jobs": chop_jobs,
-        "b5_build_ok_jobs": build_ok_jobs,
+        // REG-4 (MUTATING-WINDOW-DELTA-REGISTRATIONS.md, 2026-08-08): pure
+        // rename `b5_build_ok_jobs`/`b5_build_stall_jobs`/`b5_build_stall_
+        // untouched` -> `_fixture_count`/`_fixture_count`/`_control_
+        // untouched`. These are constant (1/1/true) on all 48 seeds,
+        // passing and failing alike -- fixture descriptors dressed as
+        // diagnostics. The rename makes the name match the content; it
+        // does NOT make them discriminate.
+        "b5_build_ok_fixture_count": build_ok_jobs,
         // CHOP + BUILD INSTRUMENT WINDOW (2026-08-08): per-job state at
         // settle for whatever's still open -- separates "never claimed"
         // / "claimed, never arrived" / "arrived, never requested
@@ -4693,7 +4739,7 @@ fn b5_scenario(args: &Args) -> ExitCode {
         // 61/62/80/85/92 here, or the instrument has measured nothing.
         "b5_ch_job_diag": ch_job_diag,
         "b5_build_job_diag": build_job_diag,
-        "b5_build_stall_jobs": build_stall_jobs,
+        "b5_build_stall_fixture_count": build_stall_jobs,
         // BUILD-INTEGRITY STAMP (Fable-directed, 2026-07-30): the same
         // stale-exe guard `--version`/the VM fan already assert on
         // (BUILD_STAMP, this file's own commit-sha+build-time constant),
@@ -4866,7 +4912,11 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_failed_clauses": failed_clauses,
         "b5_stone_entities": stone_entities,
         "b5_log_sum": log_sum,
-        "b5_build_stall_untouched": build_stall_untouched,
+        // Fable's reclassification (from this window's own CHOP-BUILD
+        // window finding): `build_stall_pos` is a deliberate NEGATIVE
+        // CONTROL, not a stalled diagnostic still waiting to fire --
+        // the name now says so.
+        "b5_build_stall_control_untouched": build_stall_untouched,
         "b5_any_needs_materials": any_needs_materials,
         "b5_any_mining_xp": any_mining_xp,
         "b5_any_woodcutting_xp": any_woodcutting_xp,
@@ -4928,25 +4978,30 @@ fn b5_scenario(args: &Args) -> ExitCode {
         // TASK #55 (blocked-designation visibility): report-only for now,
         // does not gate `pass` -- new feature, want to see it fire
         // reliably across a corpus before promoting to a gated clause.
-        "b5_55_notified_once": b55_notified_once,
-        "b5_55_names_blocker": b55_names_blocker,
-        "b5_55_blocked_by": b55_blocked_by,
-        "b5_55_clears_on_cancel": b55_clears_on_cancel,
-        "b5_55_diag": b55_diag,
+        // REG-3 (MUTATING-WINDOW-DELTA-REGISTRATIONS.md, 2026-08-08):
+        // pure rename `b5_55_*` -> `b5_blocked_designation_*`, matching
+        // the `b5_mine_*`/`b5_ch_*` family convention. Values unchanged
+        // -- `names_blocker`/`notified_once` are still `false` on every
+        // seed (the known "fixed cells, wrong coordinates" defect); the
+        // rename does not fix that, only names it consistently.
+        "b5_blocked_designation_notified_once": b55_notified_once,
+        "b5_blocked_designation_names_blocker": b55_names_blocker,
+        "b5_blocked_designation_blocked_by": b55_blocked_by,
+        "b5_blocked_designation_clears_on_cancel": b55_clears_on_cancel,
+        "b5_blocked_designation_diag": b55_diag,
+        // report-fix backlog item 4 (2026-08-04) added `_measured` below
+        // as an additive-only `Option<f32>` sidecar because `b5_tool_
+        // stone`/`_steel` here were `.unwrap_or(0.0)` sentinels -- 0.0
+        // sits below the metric's own documented 1.0 floor, reachable
+        // ONLY via `None` (the lookup failing), never a real
+        // measurement, and survived silently (seed 66). REG-1
+        // (MUTATING-WINDOW-DELTA-REGISTRATIONS.md, 2026-08-08) then
+        // mutated these two fields directly to the same `Option<f32>`,
+        // so they now agree with `_measured` on every seed; `_measured`
+        // stays only because removing it isn't part of that registered
+        // delta.
         "b5_tool_stone": tl_stone,
         "b5_tool_steel": tl_steel,
-        // report-fix backlog item 4 (2026-08-04): `b5_tool_stone`/`_steel`
-        // above are `.unwrap_or(0.0)` sentinels -- 0.0 sits below the
-        // metric's own documented 1.0 floor, so it is reachable ONLY via
-        // `None` (the lookup failing), never a real measurement. Seed 66
-        // is instrument-suspect on exactly this collapse. Fixed as a NEW
-        // field carrying the raw `Option<f32>` (serde emits `null` for
-        // `None`) rather than mutating the existing sentinel fields --
-        // strictly additive: the two fields above are byte-identical to
-        // every prior run, on every seed, and this is the whole
-        // enumerable delta: `b5_tool_stone_measured`/`_steel_measured`
-        // appear as `null` on exactly the seeds whose lookup fails (seed
-        // 66 and any other), a real value everywhere else.
         "b5_tool_stone_measured": tl_stone_raw,
         "b5_tool_steel_measured": tl_steel_raw,
         "b5_tool_ok": tl_ok,

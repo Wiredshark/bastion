@@ -1772,7 +1772,12 @@ pub fn column_flat_surface_z(terrain: &TerrainGrid, x: i32, y: i32, floor_z: i32
 /// ±window around the paint plane ([`column_surface_z`]). ONE function so
 /// job generation, echo bounds, AND the paint-time volume gate all resolve the
 /// SAME surface (the echo-bounds invariant + an honest volume cap depend on
-/// it).
+/// it) -- for z-extent kinds. Area2D kinds (Farm, Chop) never carry a
+/// `ZExtent` and so cannot call this function at all; they resolve
+/// separately by calling [`column_surface_z`] directly BY SIGNATURE, not
+/// by choice (FARM-PAINT-FIX.md). If Area2D kinds ever gain flat-mode
+/// semantics, unify first, before assuming this doc's "ONE function"
+/// claim already covers them.
 pub fn resolve_column_surface(
     terrain: &TerrainGrid,
     x: i32,
