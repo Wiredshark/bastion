@@ -3362,6 +3362,31 @@ impl Server {
             .unwrap_or(0)
     }
 
+    /// bastion (BUILD-INSTRUMENT-SPEC/CHOP-INSTRUMENT-SPEC, harness hook,
+    /// 2026-08-08): `(required_item, has_reservation)` for the job at an
+    /// EXACT position, if one exists there. `BastionInspectKind::Job`
+    /// (the general-purpose inspect payload, also client-facing) doesn't
+    /// carry these two `Job` fields; both specs ask for them "already
+    /// fields on `Job` -- no new engine state, a JOIN" -- this is that
+    /// join's missing half, added as its own minimal getter rather than
+    /// widening the shared inspect struct's shape. Exact-position match
+    /// (not `bastion_inspect_cell`'s nearby-column search): every call
+    /// site knows the job's own designated position precisely (mine
+    /// cells, chop bases, build slots are all placed at literal
+    /// coordinates the caller already has). Read-only, no world writes.
+    pub fn bastion_job_material_info(
+        &self,
+        pos: vek::Vec3<i32>,
+    ) -> Option<(Option<&'static str>, bool)> {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .jobs
+            .values()
+            .find(|j| j.pos == pos)
+            .map(|j| (j.required_item, j.reservation.is_some()))
+    }
+
     /// bastion (TRAVEL-ROW-SPEC §4.1, harness hook, 2026-08-08): closest
     /// approach ever achieved, for every job position that has incurred at
     /// least one travel timeout -- one value per position in

@@ -3721,6 +3721,52 @@ fn b5_scenario(args: &Args) -> ExitCode {
     } else {
         Some(probe_target(chop_base))
     };
+    // CHOP INSTRUMENT WINDOW (CHOP-INSTRUMENT-SPEC.md, 2026-08-08): one
+    // entry for the fixture's own chop job at `chop_base` if it's still
+    // open here, mirroring mine_cell_diag's own shape (§3: "no new
+    // engine state, a JOIN"). Deliberately `chop_base`, NOT `ch_aabb`
+    // (the SEPARATE ring-search mechanism below, ch_trees/ch_ground_
+    // truth_witness -- an independent test of auto-tree-detection that
+    // DELIBERATELY cancels every designation it finds, including a
+    // sweeping ±160-block area erase; using its aabb here would either
+    // read nothing yet or, worse, read a target this same function is
+    // about to destroy). `chop_cleared`/`chop_reachability_probe`
+    // already treat `chop_base` as THE gated fixture -- same object,
+    // same timing, right before the ring-search runs. Captured here for
+    // the same reason as build_job_diag above: a later, unrelated
+    // designation-churn/skill-soak phase measurably clears jobs before
+    // the scenario's true end, so end-of-run would be too late. Empty
+    // means resolved by THIS point (or `chop_cleared`), not "not looked
+    // at."
+    let ch_job_diag: Vec<serde_json::Value> = [chop_base]
+        .into_iter()
+        .filter_map(|pos| {
+            let common::comp::bastion::BastionInspectKind::Job(j) =
+                server.bastion_inspect_cell(pos)?
+            else {
+                return None;
+            };
+            let (starv_cycles, starv_crowded, cycles_since_claim, claims_here) =
+                server.bastion_starvation_stats(pos);
+            let (required_item, has_reservation) =
+                server.bastion_job_material_info(pos).unwrap_or((None, false));
+            Some(serde_json::json!({
+                "pos": [pos.x, pos.y, pos.z],
+                "claimant": j.claimant,
+                "progress": j.progress,
+                "times_offered": claims_here,
+                "cycles_since_last_claim": cycles_since_claim,
+                "starvation_cycles": starv_cycles,
+                "starvation_crowded_cycles": starv_crowded,
+                "timeouts_on_this_cell": server.bastion_timeout_count_for_pos(pos),
+                "unreachable": j.unreachable,
+                "blocked_by": j.blocked_by.map(|p| [p.x, p.y, p.z]),
+                "needs_materials": j.needs_materials,
+                "required_item": required_item,
+                "has_reservation": has_reservation,
+            }))
+        })
+        .collect();
     // TASK #61 DIAG (2026-08-03): does `chop_base` itself show up as
     // blocked -- checking THE RIGHT position this time, not the
     // unrelated b55 buried_pos fixture. `_sources` is what proved a
@@ -3811,6 +3857,52 @@ fn b5_scenario(args: &Args) -> ExitCode {
     let build_stall_kind = server.bastion_block_kind(build_stall_pos);
     let build_stall_untouched = build_stall_kind.is_none_or(|k| !k.is_filled());
     let any_needs_materials = server.bastion_any_job_needs_materials();
+    // BUILD INSTRUMENT WINDOW (BUILD-INSTRUMENT-SPEC.md, 2026-08-08):
+    // one entry per Build job still open here, mirroring mine_cell_
+    // diag's own shape (§3: "no new engine state, a JOIN" -- every
+    // field is already a getter mine_cell_diag itself calls, plus the
+    // one new required_item/reservation getter). Captured HERE, right
+    // after build's own resolution window (the "couple of arbitration
+    // cycles" tick above), NOT at the scenario's literal end -- moved
+    // after measuring directly that a later, unrelated designation-
+    // churn/skill-soak phase silently clears these jobs before the
+    // scenario's true end (seed 71: job 28 churned twice then vanished
+    // from bastion_inspect_cell; job 32 claimed once then same). Reading
+    // at the literal end returned an empty diag for a KNOWN-FAILING seed
+    // (build_placed: false) -- indistinguishable from "completed,"
+    // exactly the ambiguity both specs' own regression clause warns
+    // against. Empty here means the job genuinely resolved by THIS
+    // point, not "not looked at" -- still the same convention, just
+    // anchored to the moment that's actually true for.
+    let build_job_diag: Vec<serde_json::Value> = [build_ok_pos, build_stall_pos]
+        .into_iter()
+        .filter_map(|pos| {
+            let common::comp::bastion::BastionInspectKind::Job(j) =
+                server.bastion_inspect_cell(pos)?
+            else {
+                return None;
+            };
+            let (starv_cycles, starv_crowded, cycles_since_claim, claims_here) =
+                server.bastion_starvation_stats(pos);
+            let (required_item, has_reservation) =
+                server.bastion_job_material_info(pos).unwrap_or((None, false));
+            Some(serde_json::json!({
+                "pos": [pos.x, pos.y, pos.z],
+                "claimant": j.claimant,
+                "progress": j.progress,
+                "times_offered": claims_here,
+                "cycles_since_last_claim": cycles_since_claim,
+                "starvation_cycles": starv_cycles,
+                "starvation_crowded_cycles": starv_crowded,
+                "timeouts_on_this_cell": server.bastion_timeout_count_for_pos(pos),
+                "unreachable": j.unreachable,
+                "blocked_by": j.blocked_by.map(|p| [p.x, p.y, p.z]),
+                "needs_materials": j.needs_materials,
+                "required_item": required_item,
+                "has_reservation": has_reservation,
+            }))
+        })
+        .collect();
     // Any of the 3 colonists may have been the one arbitration assigned to
     // each work type — check across all of them, not a specific name.
     let any_mining_xp = names
@@ -4568,10 +4660,39 @@ fn b5_scenario(args: &Args) -> ExitCode {
         }
     }
 
+    // CHOP + BUILD INSTRUMENT WINDOW (CHOP-INSTRUMENT-SPEC.md /
+    // BUILD-INSTRUMENT-SPEC.md, 2026-08-08): ch_job_diag/build_job_diag
+    // are computed EARLIER in this function (right after each
+    // designation's own resolution window, near `build_stall_kind` and
+    // `ch_trees`/`ch_aabb`) -- NOT here. The specs' own "END-OF-RUN,
+    // nothing left to perturb" placement rationale does not hold for
+    // this scenario: measured directly (seed 71) that job 28 (build_ok,
+    // churned twice) and job 32 (build_stall, claimed once) both vanish
+    // from `bastion_inspect_cell` well before the scenario's true end --
+    // a later, unrelated designation-churn/skill-soak phase (repeated
+    // "surface designation placed"/"designation cancelled" pairs,
+    // escalating job counts, clearly a different test's own activity)
+    // silently clears them as a side effect. Reading at the literal end
+    // returned an empty diag for a KNOWN-FAILING seed (build_placed:
+    // false), which would have been indistinguishable from "completed" --
+    // exactly the ambiguity both specs' own regression clause warns
+    // against. See BUILD-CHOP-INSTRUMENT-WINDOW.md for the full trace.
+
     let result = serde_json::json!({
         "b5_mine_jobs": mine_jobs,
         "b5_chop_jobs": chop_jobs,
         "b5_build_ok_jobs": build_ok_jobs,
+        // CHOP + BUILD INSTRUMENT WINDOW (2026-08-08): per-job state at
+        // settle for whatever's still open -- separates "never claimed"
+        // / "claimed, never arrived" / "arrived, never requested
+        // materials" (build's own three-state acceptance criterion),
+        // currently INSTRUMENT-GAP. Empty means completed, not unlooked-
+        // at. Seed 71 is BUILD-INSTRUMENT-SPEC.md's own calibration
+        // case: its build failure is already explained (mine failed
+        // first, stone_sum=5 not 27) and MUST classify differently from
+        // 61/62/80/85/92 here, or the instrument has measured nothing.
+        "b5_ch_job_diag": ch_job_diag,
+        "b5_build_job_diag": build_job_diag,
         "b5_build_stall_jobs": build_stall_jobs,
         // BUILD-INTEGRITY STAMP (Fable-directed, 2026-07-30): the same
         // stale-exe guard `--version`/the VM fan already assert on
