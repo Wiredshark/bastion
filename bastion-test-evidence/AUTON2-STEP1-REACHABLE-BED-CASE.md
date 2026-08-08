@@ -255,6 +255,17 @@ succeeding at all within the 4800-tick budget. **Not the 100% rate
 originally reported** — that number was the counting artifact inflating
 every seed's count by exactly one.
 
+**Two matched pairs, two axes** (Fable, DECISIONS #71 follow-up): the
+corrected instrument creates a comparison Opus's original Ask 2 wanted but
+had no population for — 49/51/53 (clean) vs 50/52/54/55 (retry), same
+fixture, same bed, same colonist setup, differing seed. What differs
+between a clean-arrival seed and a retry seed at the identical one-block-up
+bed is the row's ready-made bounded question, alongside the
+within-seed matched pair (a single seed's failed first attempt vs its
+successful retry at the exact same target — "same colonist, same target,
+same geometry, one fails and the next succeeds"). Filed as two
+comparisons, not chased into either.
+
 **What the genuine retries look like, per the `BASTION_SDIST_TRACE_JOB`
 trace (seed 50, first attempt, job 10):** `sdist` never drops below ~17
 for the entire pre-release window; jump-attempt signatures (`vel_z=2.5`
