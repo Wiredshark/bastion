@@ -11396,6 +11396,20 @@ fn farm_scenario(args: &Args) -> ExitCode {
     // leaks through here" (the July-rule class, honest close). Read-only,
     // env-gated, zero cost when unset.
     if std::env::var_os("BASTION_FARM_CORNER_DIAG").is_some() {
+        // Opus-directed follow-up (2026-08-08): the churn-arm log lines
+        // show repeated "job unreachable -- claim released" events citing
+        // colonists at z~446-450 against a plot at z=455 -- a 9-cell gap,
+        // never surveyed. Column scan at recurring colonist positions
+        // (from the churn log, not guessed) to check for a real cliff the
+        // 454-457 window above never looked below.
+        for &(cx2, cy2) in &[(24081, 20239), (24071, 20233), (24081, 20253)] {
+            for z in (400..=460).rev() {
+                let pos = Vec3::new(cx2, cy2, z);
+                if let Some(k) = server.bastion_block_kind(pos) {
+                    eprintln!("CLIFF-SCAN pos=({cx2},{cy2},{z}) kind={k:?}");
+                }
+            }
+        }
         for z in (454..=457).rev() {
             for y in 20238..=20240 {
                 for x in 24071..=24075 {
