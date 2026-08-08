@@ -10261,6 +10261,43 @@ fn preempt_scenario(args: &Args) -> ExitCode {
     // anyway (no livelock/thrash), nothing embedded.
     let endured = own2 && rest_end < rest_start && endure_dug >= 1;
     let no_embeds = fires_after == fires_before;
+
+    // SELF-JOB PROBE POSITIVE CASE (2026-08-08, Opus-directed): the
+    // planted-positive mirror of a planted-failure test. `self_job_
+    // reachability_probe` (b5_scenario, SELF-JOB-MODE-TRIPLE-WIRING.md)
+    // has never been observed populated -- an instrument that has never
+    // fired is indistinguishable from one that cannot. sky_bed is
+    // unreachable BY CONSTRUCTION (no route up at all, per this
+    // fixture's own doc comment above), so it's a guaranteed precondition
+    // for the SAME underlying mechanism (bastion_travel_timeout_last_
+    // positions + bastion_offline_reachability_probe) that field reuses.
+    // Reads the mechanism directly rather than duplicating b5_scenario's
+    // full JSON schema onto a different scenario -- the wiring under
+    // test is the two Server methods, not the JSON field name.
+    let self_job_probe_positions = server.bastion_travel_timeout_last_positions();
+    let sky_bed_probed = self_job_probe_positions
+        .iter()
+        .find(|(job_pos, _)| *job_pos == sky_bed);
+    let sky_bed_probe_result = sky_bed_probed.map(|(job_pos, _)| {
+        let spawn_pos = Vec3::new(cx, cy, gz + 2);
+        let (standable, step, jump, scramble, incomplete, ..) = server
+            .bastion_offline_reachability_probe(spawn_pos, *job_pos, 100_000);
+        serde_json::json!({
+            "standable_target": standable.map(|s| [s.x, s.y, s.z]),
+            "path_exists_step": step,
+            "path_exists_jump": jump,
+            "path_exists_scramble": scramble,
+            "probe_incomplete": incomplete,
+        })
+    });
+    if std::env::var_os("BASTION_SELFJOB_PROBE_DIAG").is_some() {
+        eprintln!(
+            "SELFJOB-PROBE-DIAG: sky_bed={:?} present_in_timeout_map={} probe_result={:?}",
+            sky_bed,
+            sky_bed_probed.is_some(),
+            sky_bed_probe_result
+        );
+    }
     // ANTI-THRASH BY CONSTRUCTION (architect assert #1): this fixture
     // WOULD flap without the guards — the watchdog releases an
     // unreachable RestAt in ~10-20s, so without the 60s cooldown the

@@ -49,16 +49,31 @@ bounds don't change.
   region-bounds filter works whether or not the mine cells it's excluding
   are still open, unlike the buggy first version.
 
-**Not yet observed: a populated `self_job_reachability_probe` entry.**
-Neither seed's `b5_scenario` run produced a genuine self-job timeout in
-this ad-hoc testing — the bed component in this scenario doesn't appear
-to fail on these two seeds. The mechanism reuses `probe_target` and the
-region-exclusion logic verbatim from the already-proven mine path, so a
-positive case is expected to work correctly by construction, but this
-hasn't been empirically confirmed with a real failing self-job. Flagging
-honestly rather than claiming full end-to-end verification — a seed with
-an actual bed/self-job timeout (or a purpose-built fixture) would close
-this the rest of the way.
+## Positive case closed (Opus-directed): `preempt_scenario`'s floating bed
+
+The gap above — "expected to work by construction, not empirically
+confirmed" — is now closed. `preempt_scenario`'s PHASE 2 fixture
+(`sky_bed`, a floating bed with no route up, unreachable **by
+construction**) is a guaranteed-precondition planted-positive test — the
+mirror of a planted-failure test, and it didn't need a new fixture.
+
+New env-gated check (`BASTION_SELFJOB_PROBE_DIAG`) reads the exact same
+two mechanisms `b5_self_job_reachability_probe` reuses
+(`bastion_travel_timeout_last_positions` +
+`bastion_offline_reachability_probe`) directly against `sky_bed`, rather
+than duplicating `b5_scenario`'s full JSON schema onto a different
+scenario — the wiring under test is the two `Server` methods, not the
+field name.
+
+**Result (seed 42):** `sky_bed` present in the timeout-position map
+(`present_in_timeout_map=true`), and the probe returns a fully-determined
+negative — `path_exists_step=false, path_exists_jump=false,
+path_exists_scramble=false, probe_incomplete=false, standable_target=
+None` — exactly matching the fixture's own design intent ("the floating
+slab has no route up"). Not a budget cap firing (`probe_incomplete`
+would be `true` for that); a genuine, complete "no path exists" verdict
+on all three tiers. The mechanism is now proven end-to-end, not just by
+inference from the mine path.
 
 ## Status
 
