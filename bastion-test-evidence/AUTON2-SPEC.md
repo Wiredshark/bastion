@@ -99,6 +99,47 @@ hunger  2000s to interrupt = 1.11 days  ->  0.90x/day   (intent ~2)   ~2.2x too 
 `decay_per_sec ≈ 0.00044`; hunger ≈ 2×/day → `≈ 0.00089`. *Arithmetic only —
 verify against the day length in force before applying.*
 
+### ★★★★★★★ THE RE-TUNE'S HARD INVARIANT (measured by 5b, 2026-08-08)
+
+**`decay_needs` runs UNCONDITIONALLY during sleep — by shipped design.** So sleep
+is a **race between recovery and decay**, not a pause on decay. **READ:**
+
+```
+BED_REST_RECOVERY_PER_SEC = 0.02          (bastion_jobs.rs:1456)
+recovery = BED_REST_RECOVERY_PER_SEC * kind.quality() * dt   (11868)
+BedKind::Bedroll => 0.6   |   BedKind::Frame => 1.0          (common/src/bastion.rs:974-975)
+```
+
+> ## ★★★★★ **THE INVARIANT: `rest decay_per_sec  <  BED_REST_RECOVERY_PER_SEC × WORST bed quality`, WITH MARGIN.**
+>
+> **Worst tier today is `Bedroll` (0.6) ⇒ ceiling `0.02 × 0.6 = 0.012/sec`.**
+
+**Measured:** net **+0.0117/sec** at shipped constants *(0.012 − 0.0003)*. ★★★
+**And 5b measured the failure directly: an accelerated 0.04 decay OUTRAN the
+0.012 bedroll ceiling — `rest` NEVER recovered across 2400 ticks.**
+
+★ **The day-aligned targets have enormous headroom** — `≈0.00045` against a
+`0.012` ceiling, **~26×.** ★★ **So this invariant does not constrain THIS re-tune
+at all.** **It goes in the spec because of how it FAILS:**
+
+> ★★★ **SILENTLY, the day someone adds a lower bed tier or tunes by feel.**
+> **Sleep becomes a treadmill and colonists wake MORE TIRED than the hysteresis
+> expects** — *and nothing in the system says so; the sleep just never completes.*
+
+★★ **State the worst-quality case explicitly in any future tuning**, not the
+typical one — **a tier added below `Bedroll` moves the ceiling, and the
+inequality is against the WORST, never the average.**
+
+### ★★★★★ AND THE FIXTURE PATTERN IT PRODUCED IS REUSABLE
+
+5b's fix: **PHASE-SCOPED acceleration** — the override drops to shipped values
+**the moment the crossing is observed.**
+
+> ★★★ **One constant was serving two phases with OPPOSITE needs:** *"cross the
+> band fast"* wants a big decay; *"then actually recover"* needs a small one.
+> ★ **The fixture edition of one-predicate-two-questions** — and the fix is the
+> same shape: **split the constant by phase rather than compromise it.**
+
 > **★ "COMPLETE BUT INVISIBLE → COMPLETE AND FELT."** Colonists live on the clock
 > the world runs on. That is the row's one-line justification.
 
