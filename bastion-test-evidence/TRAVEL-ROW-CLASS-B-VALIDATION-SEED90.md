@@ -41,6 +41,18 @@ true` every sample, per the raw `timeout_route_states` list, never `false`
 this specimen), the route never completes, and whatever would trigger a
 jump-tier move along that route never fires.
 
+**TGT-DRIFT correlation confirms the target itself never destabilizes
+either.** Of 12 `TGT-DRIFT` events in the full run, **none** precede any
+of job 20's four timeouts for its own colonist (uid 3 for the first
+attempt, uid 1 for the remaining three — the job gets reclaimed by a
+different colonist between attempts, but neither colonist's own steer
+target is ever reset by an astar-reset before its timeout fires). `steer =
+target = (17989.5, 9263.5, 339.0)` holds constant across all four
+attempts. Two independent negatives (no astar-reset, route always exists)
+converge on the same reading: the failure sits downstream of both
+retargeting and search, in whatever decides HOW to execute a route that
+was already found.
+
 ## Job 2: contrast — the same instrumentation shows real jump attempts elsewhere
 
 For comparison (seed 7, not seed 90, but the same `SDIST-TRACE` build):
