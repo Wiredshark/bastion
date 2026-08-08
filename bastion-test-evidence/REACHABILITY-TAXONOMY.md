@@ -41,7 +41,57 @@ and it is 22 timeouts across 5 seeds — not one specimen.** Seeds: **52, 54, 61
 plainly, because *"the rescue/travel system failed 92 times"* would have been a
 gross mischaracterisation. **Most of those failures are honest.**
 
-## §3 — ★★★★★★★★ CLASS B IS EXACTLY SEEDS 71 AND 90
+## §0 — ★★★★★★ RETRACTED BY THE ARBITER (`569f47fd40`): CLASS B'S MECHANISM
+
+**Live traversal at seed 90's cells. The probe OVER-FLAGS.**
+
+| job | target | result |
+|---|---|---|
+| **2** (`min_dist 3.78`) | `[17989,9263,336]` | ★ **ARRIVES** — 1 churn, completes 8.3 s later, **reproducible** |
+| **23** | `[17989,9264,338]` | ★ **ARRIVES** — 2 churns, completes |
+| **20** | `[17989,9263,338]` | **never resolves** — 4 churn cycles |
+
+> ★★★ **At least 2 of 3 Class-B cells succeed live anyway** — Fable's **branch 1**
+> confirmed: **the probe's step-model is wrong.**
+
+★★ **And the one that fails does NOT fail the way §3 says the class fails.**
+Job 20: `on_ground=false` **1781/2031 ticks**, every airborne `vel_z` **0.005–0.35**
+— **ordinary walking-gait air time, ZERO jump spikes**, against job 33's **7.48**.
+
+> **BRANCH 2, physics-confirmed: a MODE-DISPATCH gap, not a capability gap. The
+> colonist never attempts the jump at all.**
+
+★ **`route_exists = true` every sample kills astar-reset for this specimen**; raw
+`[8,8,3,4,4]` reads as **repeated recomputation**, not one route pinned.
+*(Suggestive only — **the recompute trigger's producer is unread**.)*
+
+### ★ WHAT I OWN
+
+**I named a mechanism from an instrument I had ALREADY flagged as contradicted
+41% of the time**, having written the warning myself — *"if the probe is the
+wrong instrument, Class B is an artifact."* **It is, partly.**
+
+> ★★★ **WHAT SURVIVES, and it is better than the taxonomy:**
+> **"Class B isn't one mechanism. A fix aimed at the label would be aimed at
+> three different things."**
+
+**STANDING:** the **class COUNTS** and the **71/90 landing** remain valid as
+*probe output* — **now known to over-flag.** ★ **§1's dead distance threshold is
+UNAFFECTED**; it never depended on the probe being right. **§3's mechanism claim
+below is RETRACTED.**
+
+### ★★★★★★★ AND THE RUN HANDED OVER A MATCHED CONTROL
+
+> **Job 20 `[17989,9263,338]` and job 23 `[17989,9264,338]` are ONE Y-UNIT APART
+> — same z, same designation. One never resolves; the other completes in 2
+> churns.**
+
+★★★ **The tightest natural control the campaign has produced, and nobody
+constructed it.** Colony, colonist class, designation and z are **held constant by
+construction**, so the open question is bounded to: **what differs between two
+cells one block apart such that dispatch fires for one and never for the other?**
+
+## §3 — ★★★★★★★★ (MECHANISM RETRACTED — see §0) CLASS B IS EXACTLY SEEDS 71 AND 90
 
 > **The MODE-LIMITED class spans TWO seeds in the entire corpus: 71 and 90 — the
 > campaign's two Row A specimens, and the pair already carrying a registered
