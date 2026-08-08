@@ -70,6 +70,42 @@ is unchanged and still correct.** **Only the WHERE was wrong.**
 > ★ **Net effect on the build: do NOT spend effort adding `z_extent` acceptance
 > to Farm. It is already there. Change the JOB GENERATOR.**
 
+## §1c — ★★★★★★★★ 5b's READ COMPLETES IT: Area2D KINDS STRUCTURALLY CARRY NO EXTENT
+
+**My §1b said "change the job generator, `z_extent` is already accepted." Half
+right. 5b read the remaining layer and it reframes the design target.**
+
+| READ | site | finding |
+|---|---|---|
+| `DesignationKind::Farm` → `FootprintMode::Area2D` | `common/src/bastion.rs:491` | same arm as the other Area2D kinds |
+| voxygen sends `None` for `z_extent` whenever `footprint_mode() == Area2D` | `session/mod.rs:1117-1120` | ★ **Farm NEVER sends `z_extent` at all** |
+
+★ **And that is not a second, independent gap — it is the SAME shape**, stated by
+the code's own comment on CHOP's redesign:
+
+> *"an Area2D kind paints a PURE XY FOOTPRINT — no volume, no extent on the wire.
+> The server resolves whole trees rooted in it and echoes per-tree boxes."*
+
+> ## ★★★★★ SO THE DESIGN TARGET IS NOT "MAKE FARM CARRY AN EXTENT IT
+> STRUCTURALLY CANNOT." **It is PURE SERVER-SIDE PER-COLUMN RESOLUTION FROM THE
+> XY FOOTPRINT ALONE** — *exactly the pattern CHOP already implements for trees.*
+
+### ★★★ AND THE SIBLING-CHECK WAS POINTED AT THE WRONG SIBLING
+
+§1 said *"other kinds resolve surface-relative via `z_extent`; Farm is the sibling
+that never got it."* ★ **Wrong sibling.** **The right one is CHOP** — an Area2D
+kind that already resolves server-side from a pure XY footprint and echoes
+resolved boxes. ★★ **Farm's fix has a WORKING SIBLING TO COPY, not a capability
+to import.**
+
+★ **`column_flat_surface_z` remains the resolver** *(and is what the `z_extent`
+handler itself calls)* — that has survived all three framings.
+
+**Corrected target, final:** in `bastion_jobs.rs`'s farm job generator
+(**~4640-4647**), **resolve per-column ground z at registration FROM XY ALONE**,
+store it with the plot, and **gate the trigger pass against the STORED z, not
+`plot.min.z`.** ★ **§2, §3 and §5 below are unaffected.**
+
 ## §2 — THE FIX
 
 **1. Farm paint accepts `z_extent`** like the kinds that already do, taking the
