@@ -807,7 +807,11 @@ pub(crate) fn flee_preempt_transition(
 /// makes "labor refusal continuously in force" true for RestAt/EatFrom/
 /// Despond UNIFORMLY, not something T3.53's eat/sleep carve-out had to
 /// add: it was already true for all three before this row.
-pub(crate) fn is_labor_hold_self_job(kind: &common::bastion::JobKind) -> bool {
+// AUTON-2 unification, fixture 1 (2026-08-08): widened from pub(crate) to
+// pub -- the settle invariant (`server::bastion_settle_invariant_
+// violations`) needs this SAME predicate, not a re-derived copy that could
+// drift from the guard's own definition.
+pub fn is_labor_hold_self_job(kind: &common::bastion::JobKind) -> bool {
     matches!(
         kind,
         common::bastion::JobKind::RestAt { .. }

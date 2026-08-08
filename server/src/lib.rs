@@ -3404,6 +3404,33 @@ impl Server {
             .map(|(id, _)| *id)
     }
 
+    /// bastion (AUTON-2 UNIFICATION, FIXTURE 1 "TRY-TO-ORPHAN", harness
+    /// hook, 2026-08-08): the settle invariant, `AUTON2-ACCEPTANCE-
+    /// FIXTURES.md` -- for every self-job (`is_labor_hold_self_job`:
+    /// `RestAt`/`EatFrom`/`Despond`) in `board.jobs`, either it is
+    /// claimed OR it is reachable by the arbiter's selection. Under the
+    /// PRE-unification lifecycle, self-jobs are UNCONDITIONALLY skipped
+    /// by arbiter selection (GUARD-6 site 1, `~8838`) -- "reachable by
+    /// selection" is always `false` there, so the invariant reduces
+    /// exactly to "no self-job may be unclaimed" on today's tip. Under
+    /// unification (family 1) the arbiter re-selects, so an unclaimed
+    /// self-job stops being a violation -- this hook's caller supplies
+    /// the reduction that's live at whatever tip it runs against; today
+    /// that reduction is unclaimed-implies-violation. Returns the
+    /// violating positions (empty = invariant holds). Settle-time only
+    /// (one pass over `board.jobs`), per the fixture's own budget --
+    /// never call this per-tick.
+    pub fn bastion_settle_invariant_violations(&self) -> Vec<vek::Vec3<i32>> {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .jobs
+            .values()
+            .filter(|j| bastion_jobs::is_labor_hold_self_job(&j.kind) && j.claimed_by.is_none())
+            .map(|j| j.pos)
+            .collect()
+    }
+
     /// bastion (TRAVEL-ROW-SPEC §4.1, harness hook, 2026-08-08): closest
     /// approach ever achieved, for every job position that has incurred at
     /// least one travel timeout -- one value per position in

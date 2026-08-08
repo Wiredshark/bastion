@@ -10270,6 +10270,8 @@ fn auton2_needs_probe(args: &Args) -> ExitCode {
     let mut rest_at_restore: Option<f32> = None;
     let mut ticks_to_bed_released: Option<u64> = None;
     let mut occupancy_interruptions: u32 = 0;
+    let mut settle_invariant_violation_tick: Option<u64> = None;
+    let mut settle_invariant_violation_pos: Option<Vec3<i32>> = None;
     if natural_interrupt_reached && override_active_before {
         // 160 sim-sec at the default 30 tps. MEASURED, not guessed: a
         // first-pass 2400-tick (80 sim-sec) budget flaked on 2 of 4
@@ -10387,6 +10389,28 @@ fn auton2_needs_probe(args: &Args) -> ExitCode {
                 }
             }
             was_occupied_by_us = occupied_by_us_now;
+            // AUTON-2 UNIFICATION FIXTURE 1 (TRY-TO-ORPHAN), THE PLANTED-
+            // FAILURE PROOF (2026-08-08): checked every tick of this
+            // window rather than only at the release edge, since it's
+            // unclear from this fixture alone exactly which tick
+            // `board.beds`'s occupant clears relative to `job.claimed_by`
+            // going None (STUCK_TIMEOUT sets claimed_by=None without
+            // calling remove_job, so occupant may lag by one or more
+            // ticks) -- a per-tick settle-invariant read over `board.
+            // jobs` is a single cheap pass, matching the fixture's own
+            // stated budget ("cheap enough to run in EVERY scenario").
+            // This fixture is REQUIRED to go RED on the current
+            // (pre-unification) tip: under GUARD-6 site 1, self-jobs are
+            // unconditionally skipped by arbiter selection, so an
+            // unclaimed self-job here is unclaimable by construction --
+            // exactly AUTON2-ACCEPTANCE-FIXTURES.md's planted-failure
+            // credential for path 1 (travel-timeout release).
+            if let Some(&first) = server.bastion_settle_invariant_violations().first()
+                && settle_invariant_violation_tick.is_none()
+            {
+                settle_invariant_violation_tick = Some(i);
+                settle_invariant_violation_pos = Some(first);
+            }
             // Item 4: WORK RESUMES -- a colonist that reaches the comfort
             // band and then sleeps forever is not a success. The real
             // completion arm clears the slot's occupant back to `None`
@@ -10519,6 +10543,9 @@ fn auton2_needs_probe(args: &Args) -> ExitCode {
         "bed_probed": bed_probed.is_some(),
         "bed_probe_result": bed_probe_json,
         "bed_precondition_step_reachable": bed_precondition_step_reachable,
+        "settle_invariant_violation_tick": settle_invariant_violation_tick,
+        "settle_invariant_violation_pos": settle_invariant_violation_pos.map(|p| [p.x, p.y, p.z]),
+        "settle_invariant_holds": settle_invariant_violation_tick.is_none(),
     });
     println!("{}", serde_json::to_string(&result).expect("Value is always serializable"));
     if matches_shipped_when_unset && completion_ok {
