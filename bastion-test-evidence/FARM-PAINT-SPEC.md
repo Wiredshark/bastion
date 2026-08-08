@@ -34,6 +34,42 @@ path"*, carried on the wire at `common/net/src/msg/client.rs:166-175`, handled a
 siblings also need this fix?"* Here the capability exists and **Farm is the
 sibling that never got it.** Do not invent a resolver — **wire the existing one.**
 
+## §1b — ★★★★★★★ PRE-BUILD VERIFICATION CORRECTED §1's FRAMING (2026-08-08)
+
+**I re-verified the spec's EXISTENCE claim before 5b builds on it — the exact
+class I got wrong four times today. It was wrong here too.**
+
+★ **`z_extent` is ALREADY kind-agnostic, end to end.** READ:
+
+| layer | site | finding |
+|---|---|---|
+| wire | `common/net/src/msg/client.rs:172-176` | `BastionPlaceDesignation { region, kind, z_extent }` — ★ **`z_extent` is a MESSAGE field, independent of `kind`** |
+| client API | `client/src/lib.rs:2812-2821` | `bastion_place_designation(region, kind, z_extent)` — ★ **no per-kind gate anywhere** |
+| server handler | `server/src/sys/msg/in_game.rs:334+` | `if let Some(extent) = z_extent {` — ★ **does NOT branch on `kind`** |
+
+> ★★★ **So "Farm paint accepts `z_extent` like the kinds that already do" is a
+> non-fix: the plumbing ALREADY accepts it for Farm.** **§1's "wire the existing
+> resolver" pointed at a layer that is not the problem.**
+
+### ★★★★★ WHERE THE DEFECT ACTUALLY LIVES — and §1 already quoted it
+
+**The FARM JOB GENERATOR** (`bastion_jobs.rs:4640-4647`), whose own comment says:
+
+> *"v1 farms are FLAT plots: `region.min.z` is the field's ground level
+> (**per-column surface resolution is a slope extension**)."*
+
+★★ **Even when `z_extent` resolves per-column bounds on the wire, the farm
+generator COLLAPSES them to `region.min.z`.** **The defect is DOWNSTREAM of
+`z_extent` entirely.**
+
+★ **`column_flat_surface_z`** (used by the `z_extent` handler) **IS the existing
+resolver to reuse** — that half of §1 stands. ★★ **And §2's fix — resolve
+per-column ONCE at registration, store per column, check against the STORED z —
+is unchanged and still correct.** **Only the WHERE was wrong.**
+
+> ★ **Net effect on the build: do NOT spend effort adding `z_extent` acceptance
+> to Farm. It is already there. Change the JOB GENERATOR.**
+
 ## §2 — THE FIX
 
 **1. Farm paint accepts `z_extent`** like the kinds that already do, taking the
