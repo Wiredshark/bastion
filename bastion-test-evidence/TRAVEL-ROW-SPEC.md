@@ -49,6 +49,61 @@ is a strong, specific signature** worth its own hypothesis.
 a stale arbiter, but `auton_travel_ok` (**~11248**) exempts self-jobs
 unconditionally and the `Goto` fired every tick. **Dropped, correctly.**
 
+## §2b — ★★★★★ THE SITE SURVEY (5b, `bbe4dd5698`) — AND THE SPECIMEN IS NOW IN DOUBT
+
+**Eight timeouts · FOUR different targets** (2 bed-retries + 4 distinct mine
+jobs) · x/z track whichever target is current · ★ **`y` NEVER MOVES:
+y ≈ 16003 ± 0.55, every time.**
+
+> **That shape is not terrain.** A physical obstruction fails **differently by
+> approach bearing**; four targets at different x/z would jam in four different
+> places. **A fixed `y` across all of them means something CLAMPS `y`, not blocks
+> it.** Terrain there is unremarkable — Earth/Grass, one Rock or Wood neighbour.
+> **Not a wall, not a pit.**
+
+★ **Both prior candidates are dead** — obstruction (ruled out by the terrain
+dump) and per-target geometry (ruled out by cross-target invariance).
+
+### ★★★ AND IT MAY BE A FIXTURE ARTIFACT — TEST BEFORE ATTRIBUTING
+
+**y ≈ 16003 is ONE BLOCK OUTSIDE `preempt_scenario`'s own flattened plateau**
+(`y ∈ cy-12..=cy+12`, `cy = 16016` ⇒ seam at **16004**). **The colonist is pinned
+at the seam between flattened and unflattened terrain, 8 times out of 8.**
+
+> **A boundary a FIXTURE created is not a defect the GAME has.** If the seam
+> causes this, **seed 7 is an instrument defect** and the row loses its specimen.
+
+★ **The corpus has form:** 10.4% of a 144-seed failure set were fixture
+false-failures, and **this is exactly their shape.** **Discriminator:** does
+y-pinning appear in a scenario with **no flattened plateau** (`b5_scenario`)?
+Only-at-a-seam ⇒ fixture. **`BASTION_STUCK_TERRAIN_DIAG` already emits what's
+needed.** ★ **Run it AFTER §4.1 — the wiring does not depend on it.**
+
+### ★★★ A SECOND MECHANISM, COMPOSING RATHER THAN COMPETING
+
+**The `± 0.55` is the tell.** The stall-clock reset (R3 fix-1, **~11340**) needs
+**≥ 1.0 block of NET progress**:
+
+```rust
+if active.reset_dist - sdist >= 1.0 { active.reset_dist = sdist; active.stuck_time = 0.0; }
+```
+
+> **A colonist oscillating with amplitude < 1.0 block NEVER zeroes the clock.**
+> It is genuinely moving, `Goto` fires every tick, and it times out anyway.
+> **The hysteresis exists to stop sub-block wobble from starving the watchdog —
+> and here sub-block wobble is indistinguishable from a true stall.**
+
+★ **The seam may CAUSE the oscillation while the hysteresis makes it FATAL.**
+Two mechanisms, one symptom — **name both before repairing either**
+(sufficient-blocker law). **Confirm `staged_at_anchor` was false**: this case
+takes the ordinary pipeline, so the queue-release grace at **~11372** never
+applies. *If it was true, that is a different and more interesting story.*
+
+★ **NONE OF THIS WEAKENS THE ROW.** The row was approved on the **observability
+criterion**, not on seed 7. **If seed 7 is a fixture seam, the classifier is what
+would have said so in one line instead of a survey** — which is the row's case,
+made by its own first specimen.
+
 ## §3 — ★★★★★ THE DISCRIMINATORS ALREADY EXIST. WIRE THEM.
 
 **Two purpose-built fields are in the engine and reach NOTHING.** Neither appears
