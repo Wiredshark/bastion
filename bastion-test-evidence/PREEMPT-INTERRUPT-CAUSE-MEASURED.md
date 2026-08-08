@@ -61,27 +61,44 @@ this ran. `drive` in the log is read for diagnostic display only here; it
 does not gate or redirect this colonist's movement. Wrong mechanism,
 checked and dropped rather than asserted.
 
-## What's still open
+## What's still open — and one candidate narrowed, not chased further
 
 Why the colonist's actual path diverged from a straight line to the bed —
 gained altitude correctly, moved laterally the wrong way — is not yet
-isolated to a cause. Two live candidates, neither confirmed:
+isolated to a cause. Two candidates were on the table; one is now much
+weaker, checked directly against `preempt_scenario`'s own setup rather than
+argued:
 
-1. A genuine terrain obstruction/detour specific to this bed's site (same
-   shape as the seed-1337/seed-92 corner-cell investigations — would need
-   the same site-survey treatment: a block-kind dump of the columns
-   between the colonist's start position and the bed).
-2. A chaser retry/oscillation pattern — this same function's own earlier
-   comments (the "MIRAGE anchor"/`staged_at_anchor` grace-window logic,
-   ~11372-11444) already document that stalls-while-pathing-toward-a-real-
-   target are a known, handled shape for OTHER job kinds; whether the same
-   applies here (and whether RestAt gets the same grace) is unchecked.
+1. **Genuine terrain obstruction, WEAKENED.** `preempt_scenario` builds a
+   deliberately FLAT, obstruction-free plateau — the same "B7-1
+   fixture-geometry lesson" `farm_scenario` cites (`bastion-harness/src/
+   main.rs`, `preempt_scenario`'s own setup): rock filled solid from
+   `gz-6` to `gz`, air from `gz+1` to `gz+8`, across the FULL `(cx±16,
+   cy±12)` rectangle. Both the bed (`cx-6, cy, gz+1`) and the mine strip
+   (`cx+6..cx+7, cy-2..cy+2, gz`) sit well inside that flattened area —
+   there is no terrain feature between them to detour around. This doesn't
+   rule out a site-specific bug in this exact fixture, but it does rule
+   out "real, unplanned worldgen obstruction" as the explanation — the
+   ground here was built precisely to not have any.
+2. **A chaser retry/oscillation pattern, now the live candidate.** The raw
+   trace shows something concrete worth naming: BOTH preempt attempts in
+   this run (the one that churned AND the one that succeeded) logged a
+   `TGT-DRIFT (astar-reset trigger)` line whose `from`/`to` values
+   flip-flopped between the bed's coordinates and a point back near the
+   mine site — i.e. the path target itself was reset mid-attempt, more
+   than once, even on the attempt that eventually slept. Whether that
+   flip-flop is cosmetic (the astar-reset recovers fine most of the time,
+   explaining why most attempts succeed) or is the actual failure
+   mechanism on the attempts that don't recover in time is unmeasured —
+   this note stops at naming the signal, not diagnosing it, since it's
+   genuine pathing-internals territory (the Chaser, not this file) and a
+   separate-scoped dig from here.
 
 Not pursued further in this pass — this note exists to convert "travel
 fails" from an inferred class-membership claim into a cited, measured
-instance with a job id, position, and a refuted alternate mechanism, per
-Opus's ask. The site-survey (candidate 1) is the natural next step if this
-is worth chasing further before AUTON-2 Step 2.
+instance with a job id, position, and a refuted/weakened alternate
+mechanism, per Opus's ask. A `TGT-DRIFT`-focused dig into the Chaser is the
+natural next step if this is worth chasing further before AUTON-2 Step 2.
 
 ## Instrumentation used (all pre-existing, env-gated, zero cost when unset)
 
