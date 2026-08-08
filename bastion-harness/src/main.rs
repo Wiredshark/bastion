@@ -108,6 +108,18 @@ struct Args {
     #[arg(long)]
     b5_settle_iters: Option<u64>,
 
+    /// bastion (BATCH-RUNBOOK.md item 5, 2026-08-08, Fable-directed):
+    /// override for the mine/chop MECHANISM-2 offline reachability probe's
+    /// node cap (`run_once`, `probe_from`'s `bastion_offline_reachability_probe`
+    /// call -- one call site, shared by both the mine and chop probes via
+    /// `probe_target`). Default 100_000; seed 92's chop probe hits it
+    /// (`columns_visited_step: 99890`, `probe_incomplete: true` on both
+    /// vantages) -- UNKNOWN, not a negative (Fable's ruling: raise the cap
+    /// rather than read caps as negatives). Absent means the exact
+    /// pre-existing literal, byte-identical to every prior invocation.
+    #[arg(long)]
+    b5_probe_node_cap: Option<usize>,
+
     /// bastion (batch prep, DECISIONS #49/#52, 2026-08-04, Fable-directed):
     /// override for `chokepoint_scenario`'s CarvedStair settle loop
     /// iteration count (corrected attribution, 2026-08-04, Opus's catch --
@@ -3479,7 +3491,11 @@ fn b5_scenario(args: &Args) -> ExitCode {
         let last_timeout = server.bastion_last_timeout_pos(target);
         let probe_from = |from: Vec3<i32>| -> serde_json::Value {
             let (standable, step, jump, scramble, incomplete, cols_step, cols_jump, cols_scramble) =
-                server.bastion_offline_reachability_probe(from, target, 100_000);
+                server.bastion_offline_reachability_probe(
+                    from,
+                    target,
+                    args.b5_probe_node_cap.unwrap_or(100_000),
+                );
             serde_json::json!({
                 "from": [from.x, from.y, from.z],
                 "standable_target": standable.map(|s| [s.x, s.y, s.z]),
