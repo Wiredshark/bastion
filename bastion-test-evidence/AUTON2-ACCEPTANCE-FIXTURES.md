@@ -107,6 +107,55 @@ draw)* — ★ **the fixture must go RED on the roll-count assertion, and it mus
 RED even if the drawn deadline happens to match.** **If a planted re-roll passes,
 the assertion is on the wrong quantity.**
 
+## ★★★★★★★ FIXTURE 2 — SCOPING ERROR CORRECTED (2026-08-08, after 5b's build attempt)
+
+**I specced this as *"prove the current mechanism's behaviour."* WRONG SHAPE, and
+it cost 5b real cycles on what I called cheap.**
+
+### ★★★ THE GUARANTEE BECOMES STRUCTURAL UNDER FAMILY 1
+
+**§5b of the design says `despond_resume` and the whole destroy-and-recreate
+should be DELETED.** ★★★★★ **Under family 1 the Despond job PERSISTS — so the
+deadline persists trivially, and NO RE-ROLL CAN OCCUR BECAUSE NOTHING
+RE-CREATES.**
+
+> ★★ **Fixture 2's "before" tests a mechanism scheduled for deletion, to protect a
+> property the deletion makes UNBREAKABLE.**
+
+★ **Correct scope: not *"prove the mechanism"* but *"confirm the guarantee's
+INTENT is carried forward."*** ★★★ **It belongs as an ACCEPTANCE ITEM ON THE
+UNIFICATION, not a before-fixture** — *and under persistence it should be
+trivially true, which is itself evidence the design was right.*
+
+### ★★★★★ AND 5b FOUND THE VACUITY TRAP IN IT
+
+**They confirmed `no_reroll_on_resume = true` — then flagged their own result:**
+
+> *"`original_until`'s analytical derivation only proves the ROLL fired, not that
+> the carve-out's insert succeeded."*
+
+★★★ **If the carve-out never ran, no resume happened — so of course no re-roll.**
+
+> ## ★★★★★ **AN ASSERTION THAT PASSES BECAUSE ITS PRECONDITION NEVER FIRED IS
+> NOT A PASSING ASSERTION.**
+
+★ **Same shape as b73's own EAT chain** *(`paused` carries no information without
+`ate`)* — **which is exactly why that fixture encodes dependency explicitly, and
+why this one should have.**
+
+★★ **Resolution ruled: ONE direct read of `board.despond_resume`'s contents**
+*(empty ⇒ vacuous, document the limit; populated ⇒ the assertion is real, only the
+observation is missing)*, **then MOVE ON either way.** ★ **Do not harden an
+observation of code about to be deleted.**
+
+### ★ WHAT SURVIVES FROM THE ATTEMPT
+
+**5b's two fixture-construction bug fixes** — ★ *a rest/hunger tie that the stable
+sort resolves toward rest, which then starves forever on `no_bed_found` in a
+bedless fixture*; ★★ *and they killed their own travel-expiry hypothesis with
+numbers (`sim_time_at_ate 17.77` vs `original_until 63.43`).* **Both real, both
+kept.**
+
 ## BUDGET (both fixtures)
 
 - ★ **Settle-time reads only** — the invariant is one pass over `board.jobs` at
