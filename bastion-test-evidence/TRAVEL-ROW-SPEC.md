@@ -104,6 +104,45 @@ criterion**, not on seed 7. **If seed 7 is a fixture seam, the classifier is wha
 would have said so in one line instead of a survey** — which is the row's case,
 made by its own first specimen.
 
+## §2c — ★★★★★★★★ THE SPECIMEN SET NOW SPANS THREE JOB KINDS, ONE SIGNATURE
+
+**AUTON-2 step 1's fixture (2026-08-08 evening) contributed a third specimen, and
+it re-shapes the row.**
+
+| specimen | job kind | geometry | signature |
+|---|---|---|---|
+| seed 7 | ★ **`RestAt` (bed)** | *fixture plateau seam* | y-pinned, never closes |
+| ★ **step-1 bed** | ★ **`RestAt`** | ★ **`gz+1` — ONE BLOCK above the floor** | **jump attempts, `sdist` never below ~17, zero net progress in 10s** |
+| mine 26/27 | **`Mine`** | **one block short** | same class |
+| chopfell egress | **`Chop`** | small-tree egress | same class |
+
+> ## ★★★★★ **THREE JOB KINDS. ONE COMMON SIGNATURE: SMALL-STEP TRAVERSAL FAILING ON FIRST ATTEMPTS.**
+
+★★★ **That is the row's opening design question, named by its own evidence rather
+than by a hypothesis** — and it is **far stronger than the single-specimen framing
+this spec opened with.**
+
+### ★★ AND THE STEP-1 SPECIMEN IS THE BEST-INSTRUMENTED ONE
+
+**100% first-attempt approach failure, success on retry** — ★ **a matched pair
+ACROSS ATTEMPTS rather than across seeds**, *which is a cleaner control than
+anything the corpus offered:* **same colonist, same target, same geometry, one
+fails and the next succeeds.**
+
+★ **`occupancy_interruptions` counts those retry cycles** *(its NAME is filed as a
+defect — it counts failed-approach-then-retry, not interruptions of anything)*.
+
+### ★★★★★ AND A HARD-WON CAVEAT ON THE SIGNAL
+
+> **`bastion_bed_slot.occupant` is set at JOB CREATION, not at arrival** —
+> *"reserve the bed at CREATION, not at arrival."*
+
+★★★ **Any arrival assertion in this row MUST use the `ActiveJobState` transition
+out of `Traveling`, or distance under the arrive tolerance — NEVER the bed slot.**
+★ **Two DECISIONS entries were filed on that misreading before a per-tick trace
+killed it.** *Zero code was written, because the queue put the trace before the
+build.*
+
 ## §3-CORRECTION — ★★★★★★ THE FIELDS ARE ALREADY IN THE CORPUS. §3 BELOW IS WRONG.
 
 **I scanned TOP-LEVEL KEYS ONLY and reported these fields as "reaching
