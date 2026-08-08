@@ -22,6 +22,19 @@ Row B′). Line numbers move — **re-locate by symbol before editing.**
 | preempt cooldown + no-re-preempt guard | `9425-9440` | wired |
 | self-jobs `RestAt` / `EatFrom` | `insert_rest_job` / `insert_eat_job` | exist |
 
+> ## ⚠ §1 AMENDED AFTER MEASUREMENT — "ALREADY ARBITRATING" WAS READ, NOT VERIFIED
+> The table above is **read from code**. 5b then **measured** it, and the precise
+> statement is narrower than what I first wrote:
+>
+> **The arbitration WORKS — it selects, it finds a bed, it issues a preempt.**
+> *(Measured: 6 initiations, 2 bed targets, one completed sleep.)*
+> **The FOLLOW-THROUGH is where it dies, and TWO GUARDS HIDE THAT:** the preempt
+> cooldown treats *initiation* as success (§4b), and the churn path releases the
+> claim silently.
+>
+> **Unification touches neither.** *"The code exists"* and *"the code runs"* are
+> different claims — and I made the first while asserting the second.
+
 **The gap is not the needs. It is WHO arbitrates them.** `Drive`
 (`comp/bastion.rs:160`) says so itself:
 
@@ -93,11 +106,67 @@ verify against the day length in force before applying.*
 
 - **the playthrough's "needs inert"** — 4.5 min is **14%** of the shortest cycle.
   *The prediction was mis-specified; the game was fine.*
-- **both expected-reds** — a b5 window (~167 sim-sec) is **8%** of it.
-  `preempted_rested` and b73's `ate` are **TUNING ARTIFACTS, not design
-  deferrals**: unreachable at shipped constants, so they could never have gone
-  green however correct the code was. **Re-label now, not with the row.**
+- **b73's `ate`** — a b5 window (~167 sim-sec) is **8%** of the shortest cycle,
+  so this one plausibly **is** a tuning artifact. *Untraced — do not re-label
+  until someone measures it, per the mistake below.*
+- ~~**`preempted_rested` is a tuning artifact**~~ — ★ **STRUCK. WRONG.**
+  `preempt_scenario` **force-sets** `rest = 0.15` via `bastion_set_needs`,
+  **below the 0.2 interrupt, bypassing decay entirely.** The band is reached by
+  construction, so the timescale finding does not apply to it at all.
+  **My re-label would have buried a real defect under a bookkeeping
+  correction.** See §4b — the actual cause is code-grounded and different.
 - **why nobody noticed** — no window we run is long enough to see it.
+
+## §4b — ★ THE PREEMPT DEFECT: COOLDOWN RENEWED BY INITIATION, NOT COMPLETION
+
+**Five stories were proposed for `preempted_rested`. Four are dead. This is the
+survivor, and it is the only one grounded in code rather than inference:**
+
+| # | story | fate |
+|---|---|---|
+| 1 | "design deferral" | original label, never checked |
+| 2 | "tuning artifact" | **mine — refuted:** needs are force-set below the band |
+| 3 | "mechanism never fires" | 5b's first trace — **refuted by their own second run** |
+| 4 | "sampling artifact: 12 s window vs 60 s period" | **mine — refuted:** the run was ~330 s. *An infinite window would not help either.* |
+| 5 | **cooldown renewed by INITIATION** | ★ **survives — READ, three sites** |
+
+**READ — all three writers, `time.0 + PREEMPT_COOLDOWN_SECS` (=60), each followed
+immediately by `preempt_attempts += 1`:**
+
+    9377  breakdown/despond roll
+    9527  EAT   — fires when food is FOUND, not when eating completes
+    9592  REST  — fires when `bed_pos` is FOUND, before the colonist walks anywhere
+
+> **AN ATTEMPT AND A SUCCESS RENDER IDENTICALLY TO THE COOLDOWN.** It cannot
+> distinguish *"I slept"* from *"I never got there,"* so it penalises both — and
+> a colonist whose bed is unreachable is rate-limited to **one try per 60 s by
+> the guard meant to stop it thrashing.** *(Ninth costume of the campaign's
+> central law.)*
+
+Measured: **6 initiations over ~330 s ≈ one per 55–60 s**, bed A abandoned after
+3, bed B after 3, **one** completed sleep.
+
+### ★★ WHY THE OBVIOUS FIX IS UNSAFE, AND THE ORDER IS THEREFORE FORCED
+
+**Open and unchased: WHAT INTERRUPTS AN IN-PROGRESS SLEEP?**
+
+> Change cooldown-on-initiation → cooldown-on-completion **without knowing why
+> sleeps abort**, and *"locked out 60 s"* becomes **"retries every tick."** The
+> cooldown is currently **the only thing masking an unknown interrupt.** Remove
+> the mask without removing the cause and you get precisely the thrash it exists
+> to prevent, now unbounded.
+
+**So: find the interrupt cause FIRST, then fix the cooldown semantic.** The
+reverse order is **strictly worse than doing nothing** — and that makes the
+*interrupt* the row, with the cooldown a symptom-mask over it.
+
+### ★ NAMED RISK: DISPLACED COLONISTS FAILING TO ARRIVE (fourth appearance)
+
+bed walk-test · seeds 52/54's vantage split · farm colonists 9 blocks below ·
+**a colonist that cannot reach its bed.** Four rows, one shape. **AUTON-2 sends
+colonists to MORE destinations, not fewer** — this is a standing risk to a
+feature whose whole job is making colonists walk somewhere, and it is named here
+*before* the build rather than discovered during it.
 
 ## §5 — UNLOADED CHUNKS: (b) CATCH-UP-ON-RELOAD (ruled)
 
@@ -114,10 +183,20 @@ support it, **that is a report** and the ruling revisits.
    the existing hot-reload. `MoodConfig::current()` already falls back to the
    compiled default on a missing asset, so a fixture supplies its own tuning with
    **zero shipped-behaviour change.** Gives every later step its instrument.
-2. **Unification at CURRENT constants** — the behaviour change, isolated.
-3. **The re-tune, ALONE** — one asset, arithmetic-verified before any run.
+   **★ UNBLOCKED — proceeds now, independent of §4b.**
+2. **★ NEW — THE INTERRUPT CAUSE (§4b), BEFORE UNIFICATION.** *What aborts an
+   in-progress sleep?* Then, and only then, the cooldown semantic.
+   **Why it gates Step 3:** unification's acceptance is *"the planted case
+   rests."* **A case that cannot complete a rest cannot demonstrate
+   unification** — the gate would be measuring the wrong failure.
+3. **Unification at CURRENT constants** — the behaviour change, isolated.
+4. **The re-tune, ALONE** — one asset, arithmetic-verified before any run.
 
 **Two behaviour changes in one window are confounded by construction.**
+
+> ★ **The order is forced, not preferred.** Step 2 before 3 because a corrupted
+> gate is worse than a late one; the cause before the cooldown fix because
+> removing the mask without the cause is *strictly worse than doing nothing*.
 
 ## §7 — ACCEPTANCE + BUDGET
 
