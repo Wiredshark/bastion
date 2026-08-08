@@ -87,7 +87,45 @@ condition the code does not separately express.**
 justification hasn't matched the case it fires on *(the shove-reset branch's
 "target switched"; ENDURE's "unreachable bed"; now this)*.
 
-## §5 — WHAT THIS GIVES 5b's HALF
+## §4b — ★★★★★★ REFUTED AND REPLACED: THE DISCRIMINATOR IS THE STAND-AT CELL
+
+**5b measured the matched pair. My grounded-fraction framing is BACKWARDS:**
+
+    job 23 (SUCCEEDS): grounded   2/603  =  0.3%
+    job 20 (FAILS)   : grounded 250/2031 = 12.3%   <- 40x MORE grounded
+
+★ **Raw grounded-fraction does not predict dispatch.** Job 23 needed **one** of
+its two grounded ticks to coincide with a qualifying bearing; job 20 had **250
+opportunities** and never got one.
+
+### ★★★★★★★ AND THE CORPUS ALREADY HELD THE REASON
+
+| target | `standable_target` | below_open | top | minDist | progress | offered/timeouts |
+|---|---|--:|---|--:|--:|---|
+| **job 2** `[…,9263,336]` | ★ `[…,9264,336]` — **same z, lateral** | 0 | F | **3.78** | **0.878** | 2 / 1 |
+| **job 20** `[…,9263,338]` | ★★★ `[…,9263,339]` — **z+3, ABOVE** | **2** | **T** | **16.24** | **0.000** | **5 / 5** |
+
+> ★★★★★ **Job 2's stand-at cell is LATERAL. Job 20's is THREE BLOCKS UP** — and
+> job 20 is `top=True` with `below_open=2`: **the two cells beneath it are
+> already mined out.** **The colonist destroyed its own footing, and the only
+> standable position left is a perch on top.**
+
+★ **A jump gains ~1 block.** So this is **not** a near-miss on a threshold — the
+route is trying to deliver a colonist to a perch **3 blocks above open air**,
+which is why `bearing.z` never qualifies and why there are **zero `vel_z` spikes
+in 2031 ticks.** ★ **"Never even attempts" is geometrically correct behaviour
+from the dispatch's point of view.**
+
+★★ **Job 23's ABSENCE from `mine_cell_diag` is itself confirming** — the diag
+lists only cells still holding an open job, so *the one that completed left no
+trace.* **(The same definition-not-gate property I retracted a wrong claim about
+earlier today, now paying as evidence.)**
+
+★★★ **Candidate class:** this looks like the known *"digs clean, zero descent
+access, crew strands at the rim"* case named in `AUTO_LADDER_ACCESS`'s own
+comment — **the same defect in a mine-cell costume.** *UNVERIFIED.*
+
+## §5 — (SUPERSEDED BY §4b) WHAT THIS GIVES 5b's HALF
 
 **Their trace says WHAT differs between cells 20 and 23. This says what the
 predicate DOES with it.** ★ **Two specific things to pull from the matched pair:**
