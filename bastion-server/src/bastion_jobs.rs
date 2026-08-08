@@ -9188,6 +9188,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // no autonomy changes, by declaration.
         if dt.0 > f32::EPSILON && tick.0 % ARBITRATION_INTERVAL as u64 == 13 {
             let mood_cfg = common::bastion::MoodConfig::current();
+            // Opus-directed (2026-08-08): the need-check pass is a chain of
+            // silent early-outs -- "no preemption occurred" and "preemption
+            // was skipped at gate N" are indistinguishable from outside,
+            // the exclusion-vs-absence law sitting inside the pass itself.
+            // One log line per `continue`, keyed by reason, event-gated,
+            // zero cost when unset. Prerequisite for tuning: accelerating
+            // decay cannot help if the mechanism never engages.
+            let need_skip_diag = std::env::var_os("BASTION_NEED_SKIP_DIAG").is_some();
             // AUTON-2 (row 50): personality for the trait-stagger rides
             // the same rtsim read guard the mood pass uses (the :%15==11
             // idiom) — zero new coupling.
@@ -9219,6 +9227,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     positions.get(entity),
                     needs_storage.get(entity),
                 ) else {
+                    if need_skip_diag {
+                        info!(colonist = %uid, "NEED-SKIP-DIAG reason=missing_component");
+                    }
                     continue;
                 };
                 // B7-3 + T3.53 (E3 ruling #5, eat/sleep carve-out, labor
@@ -9274,6 +9285,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         rest_interrupt,
                         hunger_interrupt,
                     ) {
+                        if need_skip_diag {
+                            info!(
+                                colonist = %uid,
+                                rest = needs.rest,
+                                hunger = needs.hunger,
+                                rest_interrupt,
+                                hunger_interrupt,
+                                "NEED-SKIP-DIAG reason=despondent_not_past_interrupt"
+                            );
+                        }
                         continue;
                     }
                     // This SPECIFIC Despond JOB concludes here (its
@@ -9417,14 +9438,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 candidates
                     .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
                 if candidates.is_empty() {
+                    if need_skip_diag {
+                        info!(
+                            colonist = %uid,
+                            rest = needs.rest,
+                            hunger = needs.hunger,
+                            "NEED-SKIP-DIAG reason=no_need_below_interrupt"
+                        );
+                    }
                     continue;
                 }
                 let want_eat = candidates.first().is_some_and(|c| c.1 == 1);
-                if board
-                    .preempt_cooldown
-                    .get(uid)
-                    .is_some_and(|until| time.0 < *until)
+                if let Some(until) = board.preempt_cooldown.get(uid)
+                    && time.0 < *until
                 {
+                    if need_skip_diag {
+                        info!(
+                            colonist = %uid,
+                            until,
+                            now = time.0,
+                            remaining = until - time.0,
+                            "NEED-SKIP-DIAG reason=preempt_cooldown_active"
+                        );
+                    }
                     continue;
                 }
                 // Already on a need job? (Either kind — no re-preempt.)
@@ -9437,6 +9473,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         )
                     })
                 }) {
+                    if need_skip_diag {
+                        info!(colonist = %uid, "NEED-SKIP-DIAG reason=already_on_need_job");
+                    }
                     continue;
                 }
                 // B7-3: the EAT path — the most-urgent need is hunger:
@@ -9506,6 +9545,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             *uid,
                             PendingNeed::Eat(item, rid, ipos, def),
                         ));
+                    } else if need_skip_diag {
+                        info!(colonist = %uid, "NEED-SKIP-DIAG reason=no_food_found");
                     }
                     // No food anywhere: honest starvation endure — the
                     // meter decays to the mood floor (and the breakdown
@@ -9540,7 +9581,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         })
                         .map(|(p, _)| *p)
                 });
-                let Some(bed_pos) = bed else { continue };
+                let Some(bed_pos) = bed else {
+                    if need_skip_diag {
+                        info!(colonist = %uid, "NEED-SKIP-DIAG reason=no_bed_found");
+                    }
+                    continue;
+                };
                 board
                     .preempt_cooldown
                     .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
