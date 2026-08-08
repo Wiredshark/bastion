@@ -1,8 +1,16 @@
-# Seed 7, job 33: the stuck-clock resets on backward jumps, not just target switches
+# Seed 7, job 33/34: the stuck-clock resets on backward jumps, not just target switches
 
 Follow-on to TRAVEL-ROW-SEED7-SITE-SURVEY.md, testing Opus's hysteresis
 hypothesis ("sub-block oscillation never zeroes stuck_time"). The measured
 trace refines it into something sharper and different in shape.
+
+**Reproduced independently on the retry (job 34, same colonist, same
+bed, ~55s later after the cooldown): freeze at sdist ≈ 6.15 (vs job 33's
+6.13-6.96) for ~6.9s (vs job 33's ~7.03s), then a monotonic climb away
+from the target (this time gradual, not a discrete jump), crossing the
+`>best_dist+4.0` threshold, ending in the same 22.4-22.7 trapped band at
+final timeout (stuck_time 9.97). Same closest approach, same stall
+duration, same terminal band, two independent attempts. Not a one-off.**
 
 ## Instrumentation
 
