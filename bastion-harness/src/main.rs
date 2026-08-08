@@ -11346,6 +11346,34 @@ fn farm_scenario(args: &Args) -> ExitCode {
     }
     let no_embeds = server.bastion_center_net_fires() == fires_before;
 
+    // Opus-directed (2026-08-08): which access_plan call site fired for the
+    // corner cell -- self_rescue (target above feet, ascent guaranteed),
+    // emergency (bubble mask), or proactive_descent (dig_provisioned, a
+    // DESCENT -- where carve_ramp's `rise <= 0` returns None immediately,
+    // structurally, regardless of terrain). Same accessor b5_scenario
+    // already uses (`bastion_access_plan_stats`), farm_scenario just never
+    // read it before. Env-gated, zero cost when unset, read-only.
+    if std::env::var_os("BASTION_FARM_CORNER_DIAG").is_some() {
+        let (
+            self_rescue_calls,
+            self_rescue_emissions,
+            emergency_calls,
+            emergency_emissions,
+            proactive_descent_calls,
+            proactive_descent_emissions,
+            self_rescue_starved,
+            access_pending_true_ticks,
+            access_jobs_count,
+        ) = server.bastion_access_plan_stats();
+        eprintln!(
+            "ACCESS-PLAN-DIAG self_rescue calls={self_rescue_calls} emissions={self_rescue_emissions} \
+             emergency calls={emergency_calls} emissions={emergency_emissions} \
+             proactive_descent calls={proactive_descent_calls} emissions={proactive_descent_emissions} \
+             self_rescue_starved={self_rescue_starved} access_pending_true_ticks={access_pending_true_ticks} \
+             access_jobs_count={access_jobs_count}"
+        );
+    }
+
     // Fable-directed (2026-08-08): survey the exact corner-cell area the
     // seed-1337 plan_access no-route verdict cites, as the fixture leaves
     // it -- discriminates "the flattening loop's rock/air cuboid fully
