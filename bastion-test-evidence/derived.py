@@ -190,6 +190,74 @@ def failing_set(seeds):
     return out, None
 
 
+def field_constant(seeds, field):
+    """-> (is_constant, the_value) or (None, None) if the field is absent."""
+    vals = set()
+    for v in seeds.values():
+        if field not in v:
+            return None, None
+        vals.add(json.dumps(v[field], sort_keys=True))
+    if not vals:
+        return None, None
+    return len(vals) == 1, next(iter(vals))
+
+
+def constancy_transitions(waves, ref_ids):
+    """Fields that STOPPED varying between the first and last wave.
+
+    WHY (DECISIONS #66 follow-on): 38 of 93 fields never vary at all, and four
+    of those are instruments that have NEVER ONCE FIRED -- including the
+    self-rescue emission counter whose permanent zero was a 100% failure rate
+    nobody had computed. A field that is constant from birth is visible to
+    anyone who looks. A field that STOPS varying is not: it looks exactly like
+    a healthy field on any single wave.
+
+      A DIAGNOSTIC THAT STOPS VARYING HAS USUALLY STOPPED WORKING.
+
+    DELIBERATELY NOT CLASSIFIED. A field can stop varying because
+      (a) the instrument broke                  -- a regression, and
+      (b) the thing it measured stopped happening -- an improvement,
+    and those are the exclusion-vs-absence pair one more time. This reports
+    the transition AND the value it froze at, and lets the reader decide;
+    guessing between them here would be the very defect the tool exists for.
+    """
+    print("\n== 4. CONSTANCY TRANSITIONS (a field that stopped varying)")
+    first_name, first = waves[0]
+    last_name, last = waves[-1]
+    shared = set(next(iter(first.values()))) & set(next(iter(last.values())))
+    froze, thawed = [], []
+    for f in sorted(shared):
+        was, _ = field_constant(first, f)
+        now, now_val = field_constant(last, f)
+        if was is None or now is None:
+            continue
+        if not was and now:
+            froze.append((f, now_val))
+        elif was and not now:
+            thawed.append(f)
+    n_const = sum(1 for f in sorted(shared)
+                  if field_constant(last, f)[0])
+    print("   constant fields in %s: %d of %d shared (%.0f%%)"
+          % (last_name, n_const, len(shared), 100.0 * n_const / len(shared)))
+    if thawed:
+        print("   STARTED varying (%d): %s" % (len(thawed), thawed))
+    if not froze:
+        print("   none stopped varying between %s and %s" % (first_name, last_name))
+        return 0
+    print("\n[!! STOPPED VARYING] %d field(s) varied in %s and are CONSTANT in %s:"
+          % (len(froze), first_name, last_name))
+    for f, val in froze:
+        show = val if len(val) <= 40 else val[:37] + "..."
+        print("      %-46s now ALWAYS %s" % (f, show))
+    print("\n   TWO READINGS, and this tool will not choose between them:")
+    print("     (a) the instrument stopped working  -> a silent regression")
+    print("     (b) what it measured stopped happening -> a real improvement")
+    print("   The frozen VALUE is the clue: a field stuck at its passing value")
+    print("   suggests (b); one stuck at zero/null/failing suggests (a).")
+    print("   Check the producer before concluding either.")
+    return 1
+
+
 def cross_wave(waves):
     """FIXED / NEW / PERSISTENT across waves. `waves` = [(name, seeds), ...] in
     chronological order.
@@ -257,7 +325,7 @@ def cross_wave(waves):
     print("   ever-failed %d, always-failed %d, churn %d"
           % (len(ever), len(always), len(ever) - len(always)))
 
-    rc = 0
+    rc = constancy_transitions(waves, ref_ids)
     if new:
         # Fires on IDENTITY, never on the total -- the whole point.
         delta = len(last) - len(first)
