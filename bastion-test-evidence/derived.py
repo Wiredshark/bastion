@@ -283,20 +283,51 @@ def cross_wave(waves):
     # ---- the precondition is ASSERTED, never assumed. Comparing FIXED/NEW
     # across different seed sets manufactures both: a seed absent from wave A
     # and failing in wave B is not "newly broken", it is "not previously run".
+    #
+    # But refusing the WHOLE comparison when ANY pair differs throws away the
+    # comparable majority: a glob over every wave on disk would abort on two
+    # ancient 36-seed waves and silently compute no identity delta at all for
+    # the 48-seed era -- so the regression alarm, the entire point, never runs.
+    # "Incomparable waves" and "no analysis" would render identically to
+    # whoever ran it. GROUP by seed set, analyse the largest group, and NAME
+    # what was set aside.
+    # Same principle one level down: a wave with no readable verdict cannot
+    # contribute a FIXED/NEW set, and letting it into a group would abort the
+    # whole comparison for the waves that CAN. Set it aside BY NAME first --
+    # the narrow Row-B schemas are the standing case.
+    usable, no_verdict = [], []
+    for name, seeds in waves:
+        f, _ = failing_set(seeds)
+        (usable if f is not None else no_verdict).append((name, seeds))
+    if no_verdict:
+        print("[!] %d wave(s) carry no readable %s -- set aside, NOT scored: %s"
+              % (len(no_verdict), VERDICT_FIELD,
+                 ", ".join(n for n, _ in no_verdict)))
+    if len(usable) < 2:
+        print("REFUSED: fewer than 2 waves carry a readable verdict.")
+        return 2
+    waves = usable
+
+    groups = collections.OrderedDict()
+    for name, seeds in waves:
+        groups.setdefault(frozenset(seeds), []).append((name, seeds))
+    if len(groups) > 1:
+        biggest = max(groups.values(), key=lambda g: (len(g), len(g[0][1])))
+        print("[!] %d distinct seed sets among %d waves -- comparing the "
+              "largest comparable group only." % (len(groups), len(waves)))
+        for ids, g in groups.items():
+            mark = "  <-- COMPARED" if g is biggest else "  (set aside)"
+            print("      %2d seeds x %d wave(s): %s%s"
+                  % (len(ids), len(g), ", ".join(n for n, _ in g), mark))
+        if len(biggest) < 2:
+            print("REFUSED: no seed set is shared by >= 2 waves. FIXED/NEW "
+                  "across different seed sets is meaningless -- a seed absent "
+                  "from the baseline and failing here is NOT 'newly broken', "
+                  "it is 'not previously run'.")
+            return 2
+        waves = biggest
     ref_name, ref_seeds = waves[0]
     ref_ids = set(ref_seeds)
-    for name, seeds in waves[1:]:
-        if set(seeds) != ref_ids:
-            only_a = len(ref_ids - set(seeds))
-            only_b = len(set(seeds) - ref_ids)
-            print("REFUSED: seed sets differ -- %s has %d seeds, %s has %d "
-                  "(%d only in the first, %d only in the second)."
-                  % (ref_name, len(ref_ids), name, len(seeds), only_a, only_b))
-            print("   FIXED/NEW across different seed sets is meaningless: a")
-            print("   seed absent from the baseline and failing here is NOT")
-            print("   'newly broken', it is 'not previously run'. Compare")
-            print("   waves that ran the same seeds, or compare nothing.")
-            return 2
 
     fails, order = {}, []
     for name, seeds in waves:
