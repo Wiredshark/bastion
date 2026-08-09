@@ -1,0 +1,80 @@
+
+========================================================================
+WAVE wave31_AFTER46_0b2a9987c7_FULL.json -- 48 seeds
+========================================================================
+
+== 1. REFUSAL RATES (calls - emissions, auto-discovered pairs)
+   b5_access_plan_emergency                       calls=579   emitted=78    refused=501   ( 86.5%) in 47 seeds
+   b5_access_plan_proactive_descent               NEVER CALLED (denominator 0)
+   b5_access_plan_self_rescue                     calls=71    emitted=0     refused=71    (100.0%) in 15 seeds  <<< TOTAL
+
+== 2. CONCENTRATION vs VERDICT (b5_failed_clauses)
+   base fail rate = 11/48 = 22.9%
+   b5_access_plan_emergency                       fail 11/47 =  23.4%   Fisher two-sided p = 1.0000
+   b5_access_plan_self_rescue                     fail  7/15 =  46.7%   Fisher two-sided p = 0.0219
+
+== 3. EMPTY COMPARISON GROUPS (exercised-denominator = 0)
+   b5_access_plan_self_rescue                     INSTRUMENT GAP
+
+   These have ZERO successful seeds, so 'refused' cannot be compared
+   against 'succeeded' WITHIN this caller. A concentration result
+   above is therefore UNATTRIBUTABLE -- it cannot separate cause from
+   marker. Use a sibling caller that partially succeeds as the
+   control, or declare the gap. Do NOT declare a finding.
+
+(excluded from cross-wave, INCOMPATIBLE SCENARIO SHAPE despite an identical seed set: wave27_ROWBPAIRED_f7072cd346_FULL.json, wave28_ROWBPRIME_A_7590dfa962_FULL.json, wave29_ROWBPRIME_B_7590dfa962_FULL.json)
+
+(cross-wave baselines: wave14_FULL.json, wave15_FULL.json, wave16_FULL.json, wave17_FULL.json, wave18_FULL.json, wave19_FULL.json, wave25_BASELINE_e86fe79893_FULL.json, wave26_ROWA_d5b56d1c79_FULL.json, wave30_PRESITE6_0fb7ca07b7_FULL.json -- every earlier wave with an identical seed set AND a compatible shape)
+
+========================================================================
+CROSS-WAVE IDENTITY DELTA -- 10 waves
+========================================================================
+seed set: 48 seeds, IDENTICAL across all waves (asserted)
+
+   wave14_FULL.json                               fail 14/48
+   wave15_FULL.json                               fail 16/48
+   wave16_FULL.json                               fail 14/48
+   wave17_FULL.json                               fail 14/48
+   wave18_FULL.json                               fail 12/48
+   wave19_FULL.json                               fail 12/48
+   wave25_BASELINE_e86fe79893_FULL.json           fail 11/48
+   wave26_ROWA_d5b56d1c79_FULL.json               fail 11/48
+   wave30_PRESITE6_0fb7ca07b7_FULL.json           fail 11/48
+   wave31_AFTER46_0b2a9987c7_FULL.json            fail 11/48
+
+-- wave14_FULL.json  ->  wave31_AFTER46_0b2a9987c7_FULL.json
+   FIXED      ( 4): ['51', '52', '55', '69']
+   NEW        ( 1): ['90']
+   PERSISTENT (10): ['54', '61', '62', '66', '68', '71', '78', '80', '85', '92']
+   ever-failed 17, always-failed 10, churn 7
+
+-- CLAUSE-SET DRIFT inside the 10 seed(s) failing in BOTH waves
+   [!! GAINED]  seed 71   +any_needs_materials, b15_adjacent_claimed, b15_ontop_claimed, build_placed
+   [   LOST ]  seed 61   -ch_leaf_cleared
+   (8 of 10 frozen)
+   ** A GAINED clause is a REGRESSION the fail COUNT cannot show -- the seed was already failing. **
+
+== 4. CONSTANCY TRANSITIONS (a field that stopped varying)
+   constant fields in wave31_AFTER46_0b2a9987c7_FULL.json: 26 of 65 shared (40%)
+   STARTED varying (1): ['b5_b15_ontop_claimed']
+
+[!! STOPPED VARYING] 2 field(s) varied in wave14_FULL.json and are CONSTANT in wave31_AFTER46_0b2a9987c7_FULL.json:
+      b5_ch_leaf_cleared                             now ALWAYS true
+      b5_ch_leaf_diag                                now ALWAYS null
+
+   TWO READINGS, and this tool will not choose between them:
+     (a) the instrument stopped working  -> a silent regression
+     (b) what it measured stopped happening -> a real improvement
+   The frozen VALUE is the clue: a field stuck at its passing value
+   suggests (b); one stuck at zero/null/failing suggests (a).
+   Check the producer before concluding either.
+
+[!! REGRESSION] 1 seed(s) newly failing: ['90']
+   Total moved -3 (14 -> 11) -- the count FELL and hid this.
+   A total that falls or holds steady is NOT evidence that
+   nothing broke. Only the identity delta shows that.
+
+[!! PERSISTENT] 10 seed(s) fail in EVERY wave: ['54', '61', '62', '66', '68', '71', '78', '80', '85', '92']
+   This is the standing worklist. A count cannot produce it.
+   NOTE: 'they all fail' is a property of THIS REPORT, not
+   evidence of a shared mechanism -- they may be unrelated bugs.
