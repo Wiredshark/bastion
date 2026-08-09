@@ -116,3 +116,51 @@ otherwise have called "harmless."*
 4. ★★★★★ **THEN write the after-fan's registration — a bar derived from a
    measurement rather than from my optimism.**
 5. **Fan the pair.**
+
+## ★★★★★★★★ METRIC CORRECTED **BEFORE THE RUN** — 5b FOUND A CONTAMINANT I HAD REGISTERED
+
+**5b flagged it unprompted, on landing the instrument:** *`PendingNeed::Reclaim`
+is NOT instrumented as a CREATE — it doesn't exist at the before-pin, and a
+reclaim isn't a fresh creation anyway.* ★★★ **So on the AFTER arm a reclaimed
+self-job never re-increments `created`, while its eventual `completed` still
+fires.**
+
+> ## ★★★★★ **THE RATIO `completed / created` IS THEREFORE NOT COMPARABLE ACROSS
+> THE ARMS.** *It rises when the DENOMINATOR shrinks — which is a real effect of
+> persistence, and has nothing to do with whether completion improved.*
+
+★★★★★★★ **THIS IS THE NEW-PRODUCER / DENOMINATOR LAW ARRIVING INSIDE THE
+MEASUREMENT ITSELF** — *the same law that superseded REG-2's counts, one layer
+further in.* ★ **I registered the contaminated metric; 5b caught it before a
+number existed.**
+
+### ★★★ THE CORRECTED METRIC — **ABSOLUTE COUNTS, NEVER THE RATIO**
+
+| quantity | what it answers |
+|---|---|
+| ★★★★★ **BEFORE-arm `completed` (absolute)** | ★★★ **THE DIAGNOSIS, ALONE.** *Near-zero ⇒ account (b): self-jobs never complete.* ★★ **IMMUNE to the contaminant — reclaim does not exist at the before-pin.** |
+| ★★★ **AFTER-arm `completed` (absolute)** | **if (b) held and the row fixes it, this RISES** |
+| ★★ **AFTER-arm `created` (absolute)** | ★★★★★ **should FALL** — *persistence replacing repeated fresh creates is a SEPARATE, testable prediction of the row working* |
+| ★ ~~`completed / created`~~ | ★★★★★ **DO NOT USE ACROSS ARMS.** *Within a single arm only.* |
+
+> ★★★★★★★ **THE DIAGNOSIS DOES NOT NEED THE AFTER ARM AT ALL.** *The before-arm's
+> absolute `completed` count answers (a) vs (b) by itself.* ★★★ **The after arm
+> exists to DERIVE THE BAR, not to make the diagnosis.**
+
+★★ **And 5b's own framing was half right:** *the shrinking denominator IS "the
+thing we're trying to measure"* — ★★★★★ **but it is a DIFFERENT thing from
+completion quality, and a ratio welds the two into one number that answers
+neither cleanly.** ★ **Two absolutes separate what one ratio confuses.**
+
+## ★ CHERRY-PICK: DONE, AND THE MATCH VERIFIED
+
+    bastion/baseline-pre-site6                -> 0fb7ca07b7   (before, clean)
+    bastion/baseline-pre-site6-instrumented   -> ec972cf413   (before + instrument)
+    bastion/after-sites46                     -> 0b2a9987c7   (after, clean)
+    5b9a1a9724                                              (after + instrument)
+
+★★★ **The cherry-pick applied with NO CONFLICT — which is itself information: the
+row did not touch the instrument's own sites, so the arms are cleanly
+separable.** ★★★★★ **And the applied diffs were compared line-by-line: the
+instrument's added lines are IDENTICAL on both arms.** ★ *"Auto-merging" means git
+had to merge — so the match was verified, not assumed.*
