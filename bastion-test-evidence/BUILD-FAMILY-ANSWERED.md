@@ -99,3 +99,72 @@ the instrument already specced FOR IT.**
 > ★★★★★ **I did not discover this question. I read the answer to a question this
 > lane wrote down, on the first wave that carried its instrument.** ★★★ **The
 > corpus was under-read by exactly one field.**
+
+## ★★★★★★★ THE AMNESTY QUESTION — ANSWERED TO THE EDGE OF THIS WAVE
+
+**Fable's framing, better than mine:** *`times_offered` stops at 2-3 across 300+
+starvation cycles — does the amnesty sweep never fire for these jobs (a coverage
+gap) or does it fire while something upstream caps the re-offer (a second gate)?*
+
+### ★★ A CORRECTION I NEARLY SHIPPED
+
+**I grepped `unreachable = false`, found only struct initializers, and was about
+to report *"no amnesty exists — the latch is permanent by omission."*
+★★★★★ WRONG. A full amnesty subsystem exists; my pattern didn't match its
+expression.** ★ *Caught one command later by the rule that any ABSENCE claim must
+read the producer — the same rule that has caught five other things today.*
+
+### ★★★ THE MECHANISM (`~16168-16232`) — SET-LEVEL, NOT PER-JOB
+
+```
+world_changed = ANY tracked unreachable job's face-neighbor mask changed
+grant = world_changed
+        OR quiet <= AMNESTY_STRIKE_CAP (3)
+        OR quiet >= 3 + AMNESTY_DORMANT_CYCLES (40)   // catch-all, resets quiet
+        else -> "the whole set dormant -- flags hold"
+```
+
+> ★★★★★ **`AMNESTY_STRIKE_CAP = 3` AND `times_offered = 2-3` MATCH EXACTLY.**
+> **~3 grants while `quiet <= 3`, each offer times out, then the SET goes dormant.**
+
+★★ **The latch is BY DESIGN and the design is deliberate** — *its own doc: "the
+leg-C corpus measured 350+ churn cycles against terrain that could never change
+the answer (392/425 cells honestly unreachable)."*
+
+## ★★★★★★★★ BUT THE NUMBERS DO NOT CLOSE
+
+**The catch-all fires every ~43 quiet cycles. These jobs sat at 249-323 starvation
+cycles.**
+
+> ## ★★★★★ **THERE SHOULD HAVE BEEN ~SIX CATCH-ALL ROUNDS AND SIX MORE OFFERS.
+> `times_offered` SAYS 2-3.**
+
+★★★ **A SECOND GATE holds them out, and there is a named candidate: the ROW B′
+BENCH.** *The grant loop's own comment: "A benched job
+(`benched_until_tick.is_some()`) sits THIS grant out unless its window has
+elapsed."*
+
+### ★★★★★★★ WHERE IT STOPS — THE BUILD DIAG CANNOT SEE THE BENCH
+
+| diag | carries `benched_until_tick`? |
+|---|---|
+| `b5_mine_cell_diag` | ★★★★★ **YES** *(the field Row B′ added — visible in the wave26→wave30 diff)* |
+| ★★★ **`b5_build_job_diag`** | ★★★★★★★ **NO** *(13 fields; the bench is not among them)* |
+
+> ★★ **The build diag reports `unreachable` but not the mechanism deciding whether
+> `unreachable` is ever RE-TESTED.** ★★★★★ **One field short of closing the
+> question, on the instrument built to answer it.**
+
+★ **STATED HONESTLY: amnesty exists, is set-level, and its strike cap matches the
+observed offer count. ★★★ Whether these six jobs are BENCHED is unknown — and
+that is the difference between "by design" and "by design PLUS a second gate
+nobody named."**
+
+★★★★★ **THE ASK IS ONE FIELD: emit `benched_until_tick` in `b5_build_job_diag`**
+*(already on `Job`; the mine diag already emits it; zero new machinery)*.
+★ **Filed, not built — harness code, and the travel row owns it.**
+
+> ★★★ **The night's own pattern one level up: a NEW instrument gave a real answer
+> and then hit the edge of what it can see — in a place where the SIBLING
+> instrument for the same question already sees further.** ★★ **Two diags for one
+> mechanism, built asymmetrically.**
