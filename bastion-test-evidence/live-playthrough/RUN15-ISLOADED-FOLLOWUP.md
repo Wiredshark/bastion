@@ -50,19 +50,29 @@ disjunction: this voids the arm for the `is_loaded` hypothesis specifically
 on whether sustained overrun would cause a drop. It remains a full,
 unqualified pass for the fix itself (below), which does not depend on load.
 
-## driver-12's disposition
+## driver-12's disposition — superseded, see RUN16-CONTENTION-ARM.md
 
-Same script, same budget, same footprint, current tip, healthy throughout
-— and driver-12's own raw log no longer exists (the deletion incident).
-With run-15's load precondition unmet, there is no surviving evidence that
-would let a future run distinguish "driver-12 was the `is_loaded` mechanism
-under real load" from "driver-12 was a one-off." The honest disposition:
-**driver-12 is an unreproduced, now-unreproducible one-off** — recorded as
-that rather than left as an open row implying an undiscovered bug nobody
-can act on. The `A`/`B`/`C` counters (`BASTION_NEED_LOAD_FILTER_DIAG`)
-ship regardless and stay on the live-run protocol: they are what catches
-this in seconds if it ever recurs, which is the actual durable result of
-this arc.
+**Update after the deliberate-contention arm (run-16):** the disposition
+below was written when this row's only candidate for driver-12 was the
+`is_loaded` filter, and run-15's non-vacuity void left it untested. Run-16
+tested it directly (non-vacuous this time, precondition met two
+independent ways) and **refuted** it. Run-16 also surfaced a different,
+previously unknown mechanism — the driver's own "script complete" claim
+can diverge substantially from the server's authoritative tick progress
+under contention — which is now the live candidate for driver-12's null,
+independent of `is_loaded` entirely. driver-12 is no longer best described
+as an unreproduced one-off with no named mechanism; it has a specific,
+demonstrated candidate cause, untested against driver-12 itself only
+because that run's raw log is gone. Full account: `RUN16-CONTENTION-ARM.md`.
+
+Original text, left for the record: driver-12's own raw log no longer
+exists (the deletion incident); with run-15's load precondition unmet
+there was no surviving evidence to distinguish "driver-12 was the
+`is_loaded` mechanism under real load" from "driver-12 was a one-off." The
+`A`/`B`/`C` counters (`BASTION_NEED_LOAD_FILTER_DIAG`) ship regardless and
+stay on the live-run protocol — they are what catches an `is_loaded` drop
+in seconds if it ever recurs, and remain a durable result of this arc
+independent of which candidate explains driver-12 itself.
 
 ## Result: the fix, live, at shipped (non-accelerated) rates, full duration
 

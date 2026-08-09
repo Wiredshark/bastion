@@ -153,6 +153,32 @@ non-result, not a refutation — while remaining a full, unqualified pass
 for the fix itself. See `RUN15-ISLOADED-FOLLOWUP.md` for the complete
 read and driver-12's resulting disposition.
 
+## The deliberate-contention arm — `#63` resolved, plus a new finding (run-16)
+
+Run-15's non-vacuity void motivated a follow-up: same script/budget/
+footprint/tip, but with 8 sustained CPU-bound threads deliberately
+saturating all 8 physical cores for the run's duration. Full detail:
+`RUN16-CONTENTION-ARM.md`.
+
+**Non-vacuity satisfied, two independent ways this time**: 5 `slow
+system execution` warnings (up to 875ms) and a measured ~29.3%
+wall-vs-nominal overage — both exceeding driver-12's own numbers (22
+warnings/625ms, ~11.8%). `dropped_by_is_loaded` stayed zero across all
+4,234 samples throughout. **Per the pre-registered table: the `is_loaded`
+hypothesis is REFUTED with its precondition met** — a real negative
+result, not a void one. `#63` closes on this specific mechanism.
+
+The run also surfaced something unplanned: the driver's own "script
+complete" claim and the server's authoritative tick counter diverged
+substantially under contention (the client's `Wait(n)` loop is paced by
+its own clock, not by polling confirmed server tick state) — the driver
+believed it ran the full budget while the server had only reached 85.4%
+of it. This reopens driver-12's disposition: rather than an unexplained
+one-off, driver-12's null is now also explainable by this same mechanism
+(the server simply never reaching the tick where hunger/rest cross their
+interrupts), independent of the `is_loaded` filter entirely. See
+`RUN16-CONTENTION-ARM.md` for the full account.
+
 ## Ruling (relayed from Fable/Opus)
 
 Constraint 5 is satisfied — its purpose was reachability (does the fixed
