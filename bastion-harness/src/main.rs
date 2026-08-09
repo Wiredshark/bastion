@@ -11596,18 +11596,16 @@ fn auton2_despond_resume_fixture(args: &Args) -> ExitCode {
             break;
         }
     }
-    // Opus's ruling (2026-08-08): the ONE read that settles vacuous-vs-
-    // real for `no_reroll_on_resume` before spending further cycles --
-    // does `despond_resume` (the carve-out's own side table, read
-    // directly, not the live job) actually hold an entry right after
-    // the eat that must have followed the carve-out? Populated = the
-    // carve-out ran and the no-reroll assertion is real, just its
-    // resume-observation eluded capture. Empty = the carve-out never
-    // fired and the assertion was vacuous.
-    let despond_resume_after_eat = server.bastion_despond_resume_pending(uid);
+    // AUTON-2 unification (site 4/6, 2026-08-09): the `despond_resume`
+    // side table this used to probe is gone -- the carve-out now
+    // SUSPENDS the live Despond job in place (`arb.pending_self_job`
+    // points at it, `until` never leaves `JobKind::Despond` itself), so
+    // there is no separate side-table state left to distinguish
+    // vacuous-vs-real. `bastion_despond_until` below (the live job read)
+    // is the only signal that still applies under the new design.
     if std::env::var_os("BASTION_DESPOND_DEBUG").is_some() {
         eprintln!(
-            "DESPOND-DEBUG ate={ate} sim_time_at_ate={sim_time_at_ate:?} original_until={original_until:?} despond_resume_after_eat={despond_resume_after_eat:?}"
+            "DESPOND-DEBUG ate={ate} sim_time_at_ate={sim_time_at_ate:?} original_until={original_until:?}"
         );
     }
 

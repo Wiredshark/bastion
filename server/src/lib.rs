@@ -2451,22 +2451,6 @@ impl Server {
         })
     }
 
-    /// bastion (AUTON-2 unification, Fixture 2, harness hook,
-    /// 2026-08-08): the ONE read that settles vacuous-vs-real for
-    /// `no_reroll_on_resume` -- reads `despond_resume` directly (the
-    /// carve-out's own side table), distinct from `bastion_despond_
-    /// until` which reads the live JOB. Populated = the carve-out's
-    /// insert actually ran; empty = it never fired and the resume
-    /// assertion was never under test.
-    pub fn bastion_despond_resume_pending(&self, uid: u64) -> Option<f64> {
-        use common::uid::Uid;
-        let target = Uid(std::num::NonZeroU64::new(uid)?);
-        self.state
-            .ecs()
-            .read_resource::<bastion_jobs::JobBoard>()
-            .probe_despond_resume(target)
-    }
-
     /// bastion (HIST-1, harness hook): chronicle capture vitals —
     /// `(death_entries, last_death_actor_count, theft_entries,
     /// theft_pos_ok, reports_len)`. Reports ride along so the sibling

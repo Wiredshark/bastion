@@ -188,6 +188,22 @@ pub struct Arbiter {
     /// progress bar). REPORTED display state only — the sim never reads it;
     /// written by the work tick, ridden to the client on BastionInspectInfo.
     pub activity: Option<(crate::bastion::WorkType, f32)>,
+    /// bastion (AUTON-2 unification, site 4/6, row 50, 2026-08-09): a
+    /// SUSPENDED self-job (RestAt/EatFrom/Despond) this colonist still
+    /// owns but isn't currently executing — set when a higher-priority
+    /// self-job (or a genuinely unreachable target) bumps it out of
+    /// `ActiveJob`, cleared on reclaim or staleness-discard. A POINTER
+    /// only — the job's own data (bed_pos, item, and critically Despond's
+    /// `until` deadline) never leaves `JobKind` itself; this field exists
+    /// so severity computation (`personal_urgency`'s sticky branch) can
+    /// see "I still have unfinished business" in O(1) without a board-
+    /// wide scan for `claimed_by == this uid`, which is the ONLY reason
+    /// this needs to be cached at all — `claimed_by` staying `Some(uid)`
+    /// on the suspended job (never cleared to `None`) is what actually
+    /// keeps it alive and immune to the orphan sweep; this field is
+    /// purely an index into that fact, not a second source of truth for
+    /// what the job IS.
+    pub pending_self_job: Option<crate::bastion::JobId>,
 }
 
 impl Default for Arbiter {
@@ -197,6 +213,7 @@ impl Default for Arbiter {
             committed_until: 0.0,
             last_scores: (0.0, 0.0, 0.0),
             activity: None,
+            pending_self_job: None,
         }
     }
 }

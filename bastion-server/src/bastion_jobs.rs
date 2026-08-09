@@ -47,7 +47,6 @@ use hashbrown::{HashMap, HashSet};
 use specs::{
     Entities, Join, LendJoin, Read, ReadExpect, ReadStorage, Write, WriteExpect, WriteStorage,
 };
-use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 use tracing::info;
 use vek::*;
@@ -4359,21 +4358,6 @@ pub struct JobBoard {
     /// break threshold (cleared on recovery) — the sustained-window arm
     /// of the breakdown staircase.
     mood_below_since: HashMap<Uid, f64>,
-    /// T3.53 (E3, Fable-ruled 2026-07-27): a colonist desponded once and
-    /// is mid eat/sleep carve-out — the ORIGINAL `until` from their
-    /// Despond instance, untouched by the detour (never extended, never
-    /// reset). Consulted at the top of arbitration for any colonist with
-    /// NO ActiveJob: `until` still in the future re-issues Despond
-    /// deterministically (no roll, no cooldown — an active condition is
-    /// not a new breakdown); `until` already past clears the entry.
-    /// `BTreeMap` (fleet convention, T2.5-review bar): no `HashMap`
-    /// anywhere near sim state, even though nothing iterates this map
-    /// today. Transient like every other `JobBoard` field — `JobBoard`
-    /// derives only `Default`, no `Serialize`; a save/load mid-detour or
-    /// mid-gap loses the pending resume, the same accepted bound as
-    /// every other in-flight `JobBoard` state (travel watchdog progress,
-    /// reservations, ...).
-    despond_resume: BTreeMap<Uid, f64>,
     /// bastion (AUTON-0): cumulative drive switches (REPORTED telemetry —
     /// the thrash-bound gate reads the delta over a window).
     pub drive_switches: u64,
@@ -5291,13 +5275,6 @@ impl JobBoard {
 
     pub fn probe_reservations(&self) -> usize { self.reservations.len() }
 
-    /// bastion (AUTON-2 unification, Fixture 2, harness probe,
-    /// 2026-08-08): the ONE read that settles vacuous-vs-real for the
-    /// no-reroll-on-resume assertion -- did the eat-carve-out's own
-    /// insert into `despond_resume` actually happen? Read-only.
-    pub fn probe_despond_resume(&self, uid: Uid) -> Option<f64> {
-        self.despond_resume.get(&uid).copied()
-    }
 
     pub fn remove_job(&mut self, id: JobId) -> Option<Job> {
         let job = self.jobs.remove(&id);
@@ -8307,6 +8284,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // (trailing, one producer at a time): replace `Other` with the
         // real reason at each site as it's read.
         let mut to_release: Vec<(specs::Entity, ReleaseReason)> = Vec::new();
+        // AUTON-2 unification (site 4/6, row 50, 2026-08-09): self-job
+        // (RestAt/EatFrom/Despond) travel-timeout releases SUSPEND rather
+        // than fully release — same "the board can't be restructured
+        // mid-borrow" constraint as `carve_requests`/`churn_events`, so
+        // collected here (entity, the suspended job id) and drained
+        // separately from `to_release` (which unconditionally clears
+        // `claimed_by`; suspend must NOT). See the drain site's own doc
+        // for why keeping `claimed_by` intact is the whole mechanism.
+        let mut to_suspend: Vec<(specs::Entity, JobId)> = Vec::new();
         // B5.8: carve-steps self-rescue requests gathered during upkeep
         // (from-feet, to-job, parent job id) — processed after the loop
         // (the board can't be restructured mid-borrow).
@@ -8910,13 +8896,6 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         )
                 });
             let mut switches = 0u64;
-            // T3.53 (E3, Fable-ruled 2026-07-27): deterministic Despond
-            // re-issue targets — (entity, uid, original until) collected
-            // here (mid-iteration, before board/active_jobs can take a
-            // mutable borrow) and drained right after this loop, the same
-            // deferred-creation shape the preempt_pending drain already
-            // uses further down this function.
-            let mut despond_reissues: Vec<(specs::Entity, Uid, f64)> = Vec::new();
             // AUTON-3 (row 51): personality for the urgency modulation
             // rides the same rtsim read guard the mood/preempt passes
             // use — zero new coupling — and, CRITICALLY, at the SAME
@@ -8987,27 +8966,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // rather than a guard that shortcuts. `is_labor_hold_self_
                 // job`'s own doc (above its definition) still describes the
                 // occupancy check itself — only its ROLE here changed.
-                // T3.53 (E3, Fable-ruled 2026-07-27): a colonist with NO
-                // ActiveJob (past GUARD 6, so not already self-job-held)
-                // may still be MID-DESPOND-CONDITION — the eat/sleep
-                // carve-out concluded its job but recorded `until` here.
-                // `until` still future: re-issue deterministically (no
-                // roll, no cooldown — an active condition is not a new
-                // breakdown) AND keep labor refused this exact tick by
-                // `continue`ing past Work/Flee/Idle selection below —
-                // closes the same-tick window between meal-end and
-                // re-issue. `until` already past: the condition expired
-                // while away; clear it and fall through to normal
-                // arbitration.
-                if !active_jobs.contains(entity)
-                    && let Some(&until) = board.despond_resume.get(uid)
-                {
-                    if despond_condition_still_active(until, time.0) {
-                        despond_reissues.push((entity, *uid, until));
-                    }
-                    board.despond_resume.remove(uid);
-                    continue;
-                }
+                // AUTON-2 unification (site 4/6, 2026-08-09): the OLD
+                // despond_resume-based re-issue used to live here (a
+                // colonist with no ActiveJob but a recorded `until`
+                // re-issued deterministically). Superseded: a suspended
+                // Despond job's `until` now lives inside the job itself
+                // (`board.jobs`, `arb.pending_self_job` points to it) —
+                // the need-check pass's own reclaim (gated on `Drive::
+                // Personal`, which this loop's sticky-severity scoring
+                // now reaches via `pending_self_job` too) picks it back
+                // up. Nothing to do here anymore.
                 if arbiters.get(entity).is_none() {
                     let _ = arbiters.insert(entity, Default::default());
                 }
@@ -9115,6 +9083,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             .preempt_cooldown
                             .get(uid)
                             .is_some_and(|until| time.0 < *until);
+                        // AUTON-2 unification (site 4/6, ENDURE regression
+                        // #3, 2026-08-09): a SUSPENDED self-job
+                        // (`pending_self_job`) is unfinished business, but
+                        // ONLY once cooldown clears — checking it BEFORE
+                        // `on_cooldown` (the original order) pinned
+                        // severity at 1.0 the WHOLE TIME something was
+                        // pending, cooldown or not, so `on_cooldown`'s own
+                        // branch below never got a chance to fire and the
+                        // Work-window it exists to open never opened
+                        // (`attempts_endure` stuck at 2, `endure_dug` 0,
+                        // bit-identical before and after the strike-cap
+                        // fix — because the cap was never even reached:
+                        // reclaim always won). `on_cooldown` MUST outrank
+                        // "something's pending" — the cooldown IS the
+                        // signal that says don't chase it yet. Once
+                        // cooldown lifts, falling through to the
+                        // `pending_self_job` check below still pulls
+                        // Drive back to Personal for the reclaim gate —
+                        // same "resume once free" behavior, just no
+                        // longer able to skip the cooldown window that's
+                        // supposed to gate it.
                         let severity = if on_self_job {
                             1.0
                         } else if on_cooldown {
@@ -9146,6 +9135,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // just to the pass that used to be the only
                             // thing gating on it.
                             0.0
+                        } else if arb.pending_self_job.is_some() {
+                            // AUTON-2 unification (site 4/6, 2026-08-09):
+                            // cooldown has lifted and a suspended self-job
+                            // (RestAt/EatFrom's own retry, or a Despond
+                            // waiting to resume after eating/sleeping) is
+                            // still there — pull Drive back to Personal so
+                            // the need-check pass's reclaim gate (`Drive::
+                            // Personal`) can fire, same strength as
+                            // actively holding one: a resumed attempt is
+                            // "resume after," not a fresh contest to
+                            // re-win from scratch (matches the reclaim
+                            // site's own no-roll-no-cooldown-recheck
+                            // guarantee for Despond specifically).
+                            1.0
                         } else if let Some(needs) = needs_storage.get(entity) {
                             let (consc, neur) = arb_data
                                 .as_ref()
@@ -9320,29 +9323,6 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 }
             }
             board.drive_switches += switches;
-            // T3.53 (E3, Fable-ruled 2026-07-27): deterministic Despond
-            // re-issue — same job-creation shape the preempt_pending
-            // drain uses further down (insert_despond_job + a fresh
-            // Traveling ActiveJob), just with NO roll and NO cooldown
-            // check: an active condition (recorded `until` still future)
-            // is not a new breakdown, so none of the breakdown-roll's
-            // gating applies.
-            for (entity, uid, until) in despond_reissues {
-                let feet = positions
-                    .get(entity)
-                    .map(|p| p.0.map(|v| v.floor() as i32))
-                    .unwrap_or_default();
-                let id = board.insert_despond_job(feet, uid, until);
-                let _ = active_jobs.insert(entity, comp::bastion::ActiveJob {
-                    job: id,
-                    state: comp::bastion::ActiveJobState::Traveling,
-                    best_dist: f32::MAX,
-                    stuck_time: 0.0,
-                    reset_dist: f32::MAX,
-                    soft_granted: false,
-                    stance: Vec3::unit_z(),
-                });
-            }
         }
         // ── FARM/PROD-2 (row 46): the farm pass — growth clock + the
         // state-driven job trigger, ONE bounded scan (O(Σ plot area) at
@@ -9542,6 +9522,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             Rest(Vec3<i32>),
             Eat(Uid, common::bastion::ReservationId, Vec3<i32>, &'static str),
             Despond(f64),
+            // AUTON-2 unification (site 4/6, row 50, 2026-08-09): a
+            // SUSPENDED self-job (RestAt/EatFrom) this colonist already
+            // owns — re-activate it verbatim (same job id, same target,
+            // same reservation) instead of searching for a new one.
+            // Deferred through the SAME release-then-create ordering as
+            // every other variant: creating `ActiveJob` here directly
+            // (inside the need-check pass, before `to_release` drains)
+            // would have the drain's own `active_jobs.remove` wipe it out
+            // moments later, since this entity is ALSO in `to_release`
+            // for whatever it's being preempted FROM.
+            Reclaim(JobId),
         }
         let mut preempt_pending: Vec<(specs::Entity, Uid, PendingNeed)> = Vec::new();
         // T0.5 (master build order; ledger #55): PAUSE SAFETY — this pass
@@ -9663,25 +9654,40 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         }
                         continue;
                     }
-                    // This SPECIFIC Despond JOB concludes here (its
-                    // dangling board.jobs entry is removed so it never
-                    // leaks unclaimed and unvisited — nothing else ever
-                    // revisits an orphaned job with no ActiveJob pointing
-                    // at it) — but the CONDITION survives in
-                    // `despond_resume` (the original `until`, untouched):
-                    // the top-of-arbitration re-issue site below
-                    // deterministically re-creates Despond with this SAME
-                    // deadline once the colonist is free again, no roll,
-                    // no cooldown — an active condition is not a new
-                    // breakdown. Eating genuinely PAUSES the breakdown,
-                    // never ends it; RNG (the breakdown-roll arm just
-                    // below) only ever STARTS one.
+                    // AUTON-2 unification (site 4/6, row 50, 2026-08-09):
+                    // this Despond job SUSPENDS, it does not conclude —
+                    // `job.claimed_by` and `JobKind::Despond { until }`
+                    // both stay exactly as they are in `board.jobs`; only
+                    // the ActiveJob pointer moves (to whatever RestAt/
+                    // EatFrom job the fall-through below creates). The
+                    // deadline never leaves the job to live anywhere else
+                    // — no side table, nothing to keep in sync, nothing
+                    // that can drift. `arb.pending_self_job` is a POINTER
+                    // to this job id, not a copy of its data — the
+                    // reclaim check (this pass, right before any fresh
+                    // self-job would be created) picks it back up
+                    // deterministically once nothing outranks it, same
+                    // "no roll, no cooldown, an active condition is not a
+                    // new breakdown" semantics `despond_resume` used to
+                    // provide, now for free from the job itself.
                     if let Some(aj) = active_jobs.get(entity)
-                        && let Some(common::bastion::JobKind::Despond { until }) =
-                            board.jobs.get(&aj.job).map(|j| j.kind)
+                        && matches!(
+                            board.jobs.get(&aj.job).map(|j| &j.kind),
+                            Some(common::bastion::JobKind::Despond { .. })
+                        )
                     {
-                        board.despond_resume.insert(*uid, until);
-                        board.remove_job(aj.job);
+                        let job_id = aj.job;
+                        active_jobs.remove(entity);
+                        if let Some(arb) = arbiters.get_mut(entity) {
+                            arb.activity = None;
+                            arb.pending_self_job = Some(job_id);
+                        }
+                        board.progress_watch.remove(uid);
+                        board.path_cache.remove(uid);
+                        board.last_steer.remove(uid);
+                        if let Some(agent) = agents.get_mut(entity) {
+                            agent.rtsim_controller.activity = None;
+                        }
                     }
                     // Fall through to the need-ranking section below,
                     // SKIPPING the breakdown-roll arm immediately below
@@ -9689,6 +9695,59 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // that arm's condition) — re-rolling a fresh
                     // breakdown in the SAME pass that just cleared one
                     // would be redundant.
+                }
+                // AUTON-2 unification (site 4/6, row 50, 2026-08-09): a
+                // SUSPENDED Despond job (this colonist's own — either
+                // from the carve-out just above, or a STUCK_TIMEOUT
+                // suspend) reclaims here, deterministically, no roll —
+                // BEFORE the breakdown-roll arm below gets a chance to
+                // start a fresh one. Mirrors `despond_resume`'s old
+                // re-issue exactly, just reading the job's own `until`
+                // (never copied anywhere) instead of a side table.
+                // Gated on `Drive::Personal` for the same reason RestAt/
+                // EatFrom creation is (below): the need-check pass acts
+                // on what the arbiter already decided, never ahead of it.
+                if !already_despondent
+                    && !active_jobs.contains(entity)
+                    && arbiters
+                        .get(entity)
+                        .is_some_and(|a| a.current == comp::bastion::Drive::Personal)
+                    && let Some(pending_id) =
+                        arbiters.get(entity).and_then(|a| a.pending_self_job)
+                {
+                    match board.jobs.get(&pending_id).map(|j| j.kind) {
+                        Some(common::bastion::JobKind::Despond { until }) => {
+                            if despond_condition_still_active(until, time.0) {
+                                let _ = active_jobs.insert(entity, comp::bastion::ActiveJob {
+                                    job: pending_id,
+                                    state: comp::bastion::ActiveJobState::Traveling,
+                                    best_dist: f32::MAX,
+                                    stuck_time: 0.0,
+                                    reset_dist: f32::MAX,
+                                    soft_granted: false,
+                                    stance: Vec3::unit_z(),
+                                });
+                                if let Some(arb) = arbiters.get_mut(entity) {
+                                    arb.pending_self_job = None;
+                                }
+                                continue;
+                            }
+                            // Condition lifted while suspended — this
+                            // WAS a breakdown, no longer is one. Discard,
+                            // not reclaim; the roll arm below decides
+                            // fresh from current mood, same as it always
+                            // has for a colonist with no pending state.
+                            board.remove_job(pending_id);
+                            if let Some(arb) = arbiters.get_mut(entity) {
+                                arb.pending_self_job = None;
+                            }
+                        },
+                        // Not a Despond job (RestAt/EatFrom pending, or
+                        // already gone) — this arm only reclaims Despond;
+                        // the RestAt/EatFrom reclaim sites below handle
+                        // their own kinds.
+                        _ => {},
+                    }
                 }
                 // B7-3 BREAKDOWN arm (before the need path — a break
                 // outranks a need preempt in the same pass): mood
@@ -9804,6 +9863,35 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 candidates
                     .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
                 if candidates.is_empty() {
+                    // AUTON-2 unification (site 4/6, 2026-08-09): a
+                    // SUSPENDED RestAt/EatFrom job whose need resolved
+                    // (or decayed away) WHILE suspended, without ever
+                    // getting reclaimed — the leak this discard closes:
+                    // without it, the bed/reservation it still holds
+                    // (suspend never released either) would sit claimed
+                    // forever, unreachable AND unresolvable, since
+                    // nothing else will ever ask for this exact job
+                    // again. `remove_job` frees both correctly (it
+                    // checks `slot.occupant == claimed_by`/unreserves by
+                    // id, matching how a normal completion or cancel
+                    // already does it). Despond is never discarded here
+                    // — its own reclaim/expiry check runs earlier and
+                    // separately, keyed on `until`, not on rest/hunger.
+                    if let Some(pending_id) =
+                        arbiters.get(entity).and_then(|a| a.pending_self_job)
+                        && matches!(
+                            board.jobs.get(&pending_id).map(|j| &j.kind),
+                            Some(
+                                common::bastion::JobKind::RestAt { .. }
+                                    | common::bastion::JobKind::EatFrom { .. }
+                            )
+                        )
+                    {
+                        board.remove_job(pending_id);
+                        if let Some(arb) = arbiters.get_mut(entity) {
+                            arb.pending_self_job = None;
+                        }
+                    }
                     if need_skip_diag {
                         info!(
                             colonist = %uid,
@@ -9873,7 +9961,77 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // target the nearest unreserved FOOD item (B6
                 // reservation commits WITH the pending entry — the
                 // double-spend guard).
-                if want_eat {
+                // AUTON-2 unification (site 4/6, 2026-08-09, ENDURE
+                // regression #2 found via preempt_scenario after site 4/6
+                // first landed): reclaiming an UNREACHABLE target
+                // VERBATIM, forever, is the sticky-Personal wedge again
+                // wearing a different costume — `pending_self_job` pins
+                // severity at 1.0 regardless of how many times THIS exact
+                // attempt has already failed, so without a cap it retries
+                // the SAME impossible item eternally instead of ever
+                // falling back to ENDURE. `stuck_strikes`/
+                // `PERSIST_ESCALATE_STRIKES` is the EXISTING answer to
+                // exactly this question for Haul jobs (49.2/B37); reused
+                // here rather than inventing a second threshold.
+                // `None` = no pending EatFrom at all; `Some(true)` =
+                // reclaimable; `Some(false)` = struck out, discard it.
+                let pending_eat_reclaimable: Option<bool> = arbiters
+                    .get(entity)
+                    .and_then(|a| a.pending_self_job)
+                    .and_then(|id| {
+                        board.jobs.get(&id).and_then(|j| {
+                            matches!(j.kind, common::bastion::JobKind::EatFrom { .. })
+                                .then_some(j.stuck_strikes < PERSIST_ESCALATE_STRIKES)
+                        })
+                    });
+                if want_eat && pending_eat_reclaimable == Some(true) {
+                    let pending_id = arbiters.get(entity).unwrap().pending_self_job.unwrap();
+                    // AUTON-2 unification (site 4/6, 2026-08-09): a
+                    // SUSPENDED EatFrom job of mine already exists —
+                    // reclaim it verbatim (same item, same reservation)
+                    // instead of searching again. The reservation was
+                    // never released on suspend, so there's no double-
+                    // reserve risk here.
+                    if active_jobs.contains(entity) {
+                        to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), "to_release fired (site scan)"); }
+                    }
+                    if let Some(arb) = arbiters.get_mut(entity) {
+                        arb.pending_self_job = None;
+                    }
+                    info!(colonist = %uid, job = pending_id, "bastion: need preempt — reclaiming suspended EatFrom");
+                    preempt_pending.push((entity, *uid, PendingNeed::Reclaim(pending_id)));
+                    continue;
+                } else if want_eat && pending_eat_reclaimable == Some(false) {
+                    // AUTON-2 unification (site 4/6, ENDURE regression #2,
+                    // 2026-08-09): a pending EatFrom that struck out past
+                    // the cap gets discarded — `remove_job` frees its
+                    // reservation correctly, matching a normal drop — AND
+                    // the cooldown gets set + this tick `continue`s,
+                    // exactly like a normal failed fresh search would.
+                    // WITHOUT the cooldown, the very next line's search
+                    // finds the SAME (only) target again immediately —
+                    // discard-then-instant-reclaim-of-a-fresh-copy is
+                    // still the wedge, just wearing a THIRD costume.
+                    // Cooldown is what actually opens the Work-window
+                    // ENDURE needs, via the severity computation's own
+                    // `on_cooldown` branch.
+                    if let Some(pending_id) =
+                        arbiters.get(entity).and_then(|a| a.pending_self_job)
+                    {
+                        board.remove_job(pending_id);
+                        if let Some(arb) = arbiters.get_mut(entity) {
+                            arb.pending_self_job = None;
+                        }
+                    }
+                    board
+                        .preempt_cooldown
+                        .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
+                    board.preempt_attempts += 1;
+                    if need_skip_diag {
+                        info!(colonist = %uid, "NEED-SKIP-DIAG reason=pending_self_job_struck_out");
+                    }
+                    continue;
+                } else if want_eat {
                     let feet = pos.0.map(|e| e.floor() as i32);
                     let food = (&pickup_items, &positions, &uids)
                         .join()
@@ -9942,6 +10100,54 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // No food anywhere: honest starvation endure — the
                     // meter decays to the mood floor (and the breakdown
                     // staircase above eventually takes over).
+                    continue;
+                }
+                // AUTON-2 unification (site 4/6, 2026-08-09): a
+                // SUSPENDED RestAt job of mine already exists. Reclaim it
+                // verbatim (same bed) instead of searching again ONLY
+                // while it hasn't struck out past the cap — the SAME
+                // `stuck_strikes`/`PERSIST_ESCALATE_STRIKES` answer
+                // reused from the EatFrom reclaim above (ENDURE
+                // regression #2: without the cap, an unreachable bed
+                // gets reclaimed forever, since `pending_self_job` pins
+                // severity at 1.0 regardless of how many times this
+                // exact attempt already failed). Past the cap: discard
+                // (frees the bed reservation, same as a normal drop) and
+                // fall through to a fresh search — a DIFFERENT bed if one
+                // exists, or the honest bedless-ENDURE below if not.
+                if let Some(pending_id) = arbiters.get(entity).and_then(|a| a.pending_self_job)
+                    && let Some(job) = board.jobs.get(&pending_id)
+                    && matches!(job.kind, common::bastion::JobKind::RestAt { .. })
+                {
+                    if job.stuck_strikes < PERSIST_ESCALATE_STRIKES {
+                        if active_jobs.contains(entity) {
+                            to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), "to_release fired (site scan)"); }
+                        }
+                        if let Some(arb) = arbiters.get_mut(entity) {
+                            arb.pending_self_job = None;
+                        }
+                        info!(colonist = %uid, job = pending_id, "bastion: need preempt — reclaiming suspended RestAt");
+                        preempt_pending.push((entity, *uid, PendingNeed::Reclaim(pending_id)));
+                        continue;
+                    }
+                    // ENDURE regression #2 (2026-08-09): discard alone
+                    // isn't enough — the very next lines' search would
+                    // find the SAME (only) bed again immediately and
+                    // retry with no gap, still wearing the wedge. Set
+                    // cooldown + `continue`, exactly like a normal failed
+                    // fresh search would, so the severity computation's
+                    // `on_cooldown` branch actually opens a Work-window.
+                    board.remove_job(pending_id);
+                    if let Some(arb) = arbiters.get_mut(entity) {
+                        arb.pending_self_job = None;
+                    }
+                    board
+                        .preempt_cooldown
+                        .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
+                    board.preempt_attempts += 1;
+                    if need_skip_diag {
+                        info!(colonist = %uid, "NEED-SKIP-DIAG reason=pending_self_job_struck_out");
+                    }
                     continue;
                 }
                 // A bed to target: OWN bed first (registered + free),
@@ -11901,8 +12107,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     let feet = pos.0.map(|e| e.floor() as i32);
                                     let reach = 2 + colonist.0.skills.climbing.level.min(1) as i32;
                                     churn_events.push((entity, pos.0, feet, reach));
-                                    job.claimed_by = None;
-                                    to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), "to_release fired (site scan)"); }
+                                    // AUTON-2 unification (site 4/6,
+                                    // 2026-08-09): a self-job SUSPENDS on
+                                    // travel timeout instead of fully
+                                    // releasing — `claimed_by` stays
+                                    // untouched (the need-check pass's
+                                    // reclaim, gated on `Drive::Personal`,
+                                    // is what gets it moving again; a
+                                    // DIFFERENT self-job may win in the
+                                    // meantime, exactly the T3.53 carve-out
+                                    // shape). Non-self-jobs (Designated/
+                                    // Haul/DepositRun) are unaffected —
+                                    // full release, unchanged.
+                                    if is_labor_hold_self_job(&job.kind) {
+                                        to_suspend.push((entity, active.job));
+                                    } else {
+                                        job.claimed_by = None;
+                                        to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), "to_release fired (site scan)"); }
+                                    }
                                     continue;
                                 }
                                 if is_emergency_access
@@ -12053,7 +12275,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         "TARGET-TERRAIN-DIAG: column + 8-neighbors at the job's own target cell"
                                     );
                                 }
-                                job.claimed_by = None;
+                                // AUTON-2 unification (site 4/6, 2026-08-09):
+                                // a self-job SUSPENDS here too (claimed_by
+                                // untouched, queued for the need-check
+                                // pass's reclaim) instead of releasing —
+                                // same reasoning as the staged_at_anchor
+                                // branch above. Every OTHER consequence of
+                                // this timeout (stuck_strikes, the carve/
+                                // haul-drop/churn cascade below) is
+                                // UNCHANGED for self-jobs — only the claim
+                                // itself is spared.
+                                if is_labor_hold_self_job(&job.kind) {
+                                    to_suspend.push((entity, active.job));
+                                } else {
+                                    job.claimed_by = None;
+                                }
                                 // B5.8-E: strike -- grows the remote-work
                                 // arrival tolerance (see the arrive calc).
                                 // TWO consumers read this counter (named
@@ -13367,6 +13603,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 agent.rtsim_controller.activity = None;
             }
         }
+        // AUTON-2 unification (site 4/6, row 50, 2026-08-09): the SUSPEND
+        // drain — deliberately NOT the `to_release` drain above. The
+        // entire mechanism is what this loop does NOT do: it never
+        // touches `job.claimed_by` (stays `Some(uid)`, which is what
+        // keeps the job immune to the orphan sweep, gated on `claimed_by
+        // .is_none()`) and never calls `board.remove_job` (which would
+        // drop `JobKind::Despond { until }`'s deadline with it — the
+        // exact "stash it somewhere else" failure mode this design
+        // avoids by never destroying the value's only home). Bed
+        // occupancy (RestAt) is deliberately left alone too — the bed
+        // stays reserved for this colonist while their attempt is
+        // suspended, not handed to whoever asks next.
+        for (entity, job_id) in &to_suspend {
+            active_jobs.remove(*entity);
+            if let Some(arb) = arbiters.get_mut(*entity) {
+                arb.activity = None;
+                arb.pending_self_job = Some(*job_id);
+            }
+            if let Some(u) = uids.get(*entity) {
+                board.progress_watch.remove(u);
+                board.path_cache.remove(u);
+                board.last_steer.remove(u);
+            }
+            if let Some(agent) = agents.get_mut(*entity) {
+                agent.rtsim_controller.activity = None;
+            }
+        }
         // ── CHOP-FELLING (row 51.6): advance staggered fells — ONE
         // z-band per tick, TOP-DOWN (the v1.5 "remove smoothly over time"
         // fall read; a typical tree ≈ 12 bands ≈ 0.4s at 30tps). Order is
@@ -13432,6 +13695,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .unwrap_or_default();
                     board.insert_despond_job(feet, uid, until)
                 },
+                // AUTON-2 unification (site 4/6): the job already exists,
+                // already claimed by `uid` (suspend never touched
+                // `claimed_by`) — reclaim is just re-pointing ActiveJob
+                // at it, nothing to insert.
+                PendingNeed::Reclaim(id) => id,
             };
             let _ = active_jobs.insert(entity, comp::bastion::ActiveJob {
                 job: id,
@@ -13833,12 +14101,34 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 *board.egress_verdicts.entry(uid).or_insert(0) += 1;
                 if let Some(entity) = id_maps.uid_entity(uid) {
                     if let Some(active) = active_jobs.get(entity) {
-                        if let Some(job) = board.jobs.get_mut(&active.job) {
-                            if job.claimed_by == Some(uid) {
-                                job.claimed_by = None;
+                        // AUTON-2 unification (site 4/6, 2026-08-09): this
+                        // rescue-egress release is a SEPARATE consumer of
+                        // the same churn signal the STUCK_TIMEOUT branches
+                        // feed — a self-job SUSPENDS here too (claimed_by
+                        // untouched), same reasoning, same mechanism.
+                        // Found by the settle-invariant fixture STILL
+                        // showing a violation after the STUCK_TIMEOUT
+                        // branches alone were fixed — this site is why.
+                        let self_job = board
+                            .jobs
+                            .get(&active.job)
+                            .is_some_and(|j| is_labor_hold_self_job(&j.kind));
+                        if self_job {
+                            if let Some(arb) = arbiters.get_mut(entity) {
+                                arb.pending_self_job = Some(active.job);
                             }
+                        } else if let Some(job) = board.jobs.get_mut(&active.job)
+                            && job.claimed_by == Some(uid)
+                        {
+                            job.claimed_by = None;
                         }
                         active_jobs.remove(entity);
+                        if let Some(arb) = arbiters.get_mut(entity) {
+                            arb.activity = None;
+                        }
+                        board.progress_watch.remove(&uid);
+                        board.path_cache.remove(&uid);
+                        board.last_steer.remove(&uid);
                         if let Some(agent) = agents.get_mut(entity) {
                             agent.rtsim_controller.activity = None;
                         }
@@ -17247,14 +17537,16 @@ mod tests {
         )));
     }
 
-    /// T3.53 (E3, Fable-ruled 2026-07-27): the deterministic re-issue's
-    /// own threshold — this is the (3)-fix the review flagged: a
-    /// condition still active (`until` in the future) MUST re-issue
-    /// regardless of RNG, closing the "fed colonists sometimes just
-    /// recover" hazard the ruling explicitly rejected. Cite alongside
-    /// this test: the re-issue call site (the `despond_reissues` drain)
-    /// contains no reference to `preempt_cooldown` or any `RngExt`/RNG
-    /// draw — grep-verifiable, no roll and no cooldown gate it at all.
+    /// T3.53 (E3, Fable-ruled 2026-07-27), AUTON-2 unification site 4/6
+    /// (2026-08-09): the deterministic reclaim's own threshold — this is
+    /// the (3)-fix the review flagged: a condition still active (`until`
+    /// in the future) MUST reclaim regardless of RNG, closing the "fed
+    /// colonists sometimes just recover" hazard the ruling explicitly
+    /// rejected. Cite alongside this test: the reclaim call site (the
+    /// need-check pass's Despond-reclaim block, ahead of the breakdown-
+    /// roll arm) contains no reference to `preempt_cooldown` or any
+    /// `RngExt`/RNG draw — grep-verifiable, no roll and no cooldown gate
+    /// it at all.
     #[test]
     fn despond_condition_reissues_deterministically_while_active() {
         assert!(despond_condition_still_active(100.0, 50.0), "until in the future must re-issue");
