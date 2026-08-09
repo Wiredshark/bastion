@@ -350,6 +350,104 @@ const CATALOG: &[EnvVarSiteV1] = &[
         "worldgen site-stats verbosity toggle -- resolved name behind \
          get_bool_env_var's &str-parameter indirection (see module doc)",
     ),
+    // Class-1 catalog batch (2026-08-09): 12 AUTON-2/bastion diagnostic
+    // toggles + 1 gameplay-variant override landed across several
+    // sessions without a same-commit registry row -- exactly the debt
+    // this catalog exists to prevent. Each verified individually against
+    // its actual gated block (not assumed from the "_DIAG" naming
+    // convention): every one below gates ONLY an `info!` call; any
+    // state mutation at the same site happens unconditionally outside
+    // the env-var check.
+    site(
+        "bastion-server/src/bastion_jobs.rs",
+        "BASTION_ARB_PERSONAL_DIAG",
+        Diagnostic,
+        "per-tick personal-drive arbitration snapshot (uid/severity/active job)",
+    ),
+    site(
+        "bastion-server/src/bastion_jobs.rs",
+        "BASTION_ARB_SWITCH_DIAG",
+        Diagnostic,
+        "drive-switch event snapshot, gated to a single call site",
+    ),
+    site(
+        "bastion-server/src/bastion_jobs.rs",
+        "BASTION_DECAY_JOIN_DIAG",
+        Diagnostic,
+        "decay-needs join population + effective mood-config rates, every 300 ticks",
+    ),
+    site(
+        "bastion-server/src/bastion_jobs.rs",
+        "BASTION_NEED_LOAD_FILTER_DIAG",
+        Diagnostic,
+        "is_loaded-filter A/B/C counters (pre/post-filter population, dropped count)",
+    ),
+    site(
+        "bastion-server/src/bastion_jobs.rs",
+        "BASTION_NEED_SKIP_DIAG",
+        Diagnostic,
+        "per-colonist need-check skip reason (no_food_found, preempt_cooldown_active, etc.)",
+    ),
+    site(
+        "bastion-server/src/bastion_jobs.rs",
+        "BASTION_RELEASE_DIAG",
+        Diagnostic,
+        "to_release site-scan trace (source line only, ~40 call sites, one variable)",
+    ),
+    site(
+        "bastion-server/src/bastion_jobs.rs",
+        "BASTION_ROWB_BENCH",
+        GameplayVariant,
+        "Row B amnesty-bench escalation toggle -- off = today's behavior bit-for-bit \
+         (benched_until_tick never populated); on = the escalation path is live. Not \
+         diagnostic: gates a real state write (job.benched_until_tick), read by the \
+         amnesty sweep. Paired-A/B only (--b5-rowb-paired), never a silent default-on.",
+    ),
+    site(
+        "bastion-server/src/bastion_jobs.rs",
+        "BASTION_ROWB_DIAG",
+        Diagnostic,
+        "Row B bench-set event snapshot -- gates only the info! at the write site; \
+         the write itself (job.benched_until_tick) is gated by BASTION_ROWB_BENCH above, \
+         not this variable",
+    ),
+    site(
+        "bastion-server/src/bastion_jobs.rs",
+        "BASTION_SDIST_TRACE_JOB",
+        Diagnostic,
+        "one-off per-tick surface-distance trace for a single job id \
+         (BASTION_SDIST_TRACE_JOB=<id>), gated to prevent corpus-wide unbounded logging",
+    ),
+    site(
+        "bastion-server/src/bastion_jobs.rs",
+        "BASTION_SELFJOB_COMPLETION_DIAG",
+        Diagnostic,
+        "self-job completion event snapshot (RestAt sleep-restored, etc.), 3 call sites",
+    ),
+    site(
+        "bastion-server/src/bastion_jobs.rs",
+        "BASTION_SETTLE_VIOLATION_DIAG",
+        Diagnostic,
+        "pre-sweep snapshot of labor-hold self-jobs about to be orphan-swept -- the \
+         settle_invariant_violations counter itself increments unconditionally outside \
+         this gate",
+    ),
+    site(
+        "bastion-server/src/bastion_jobs.rs",
+        "BASTION_STUCK_TERRAIN_DIAG",
+        Diagnostic,
+        "terrain-column snapshot around a stuck colonist's feet",
+    ),
+    site(
+        "common/src/bastion.rs",
+        "BASTION_AUTON2_MOOD_OVERRIDE",
+        GameplayVariant,
+        "test-only MoodConfig override, env-gated, off by default -- REPLACES the \
+         config wholesale when set (never merges/shadows the shipped asset). Not \
+         diagnostic: changes actual decay rates/tuning, not just what gets logged. \
+         Fail-loud identity-or-loud refactor for the shipped asset path itself is \
+         separately tracked design debt, not part of this registration.",
+    ),
 ];
 
 /// Lines the scanner must not treat as an unregistered literal site: the

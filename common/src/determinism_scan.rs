@@ -182,7 +182,7 @@ pub const FAMILIES: &[FamilyV1] = &[
 /// existing line (verified via `git diff --stat` showing insertions
 /// only). Landed on top of `E13` chunk 5's own +4 (`query_server`
 /// root), so the array grows 50 -> 54 -> 77.
-const INSTANT_SYSTEMTIME_BASELINE: [(&str, &str, u32); 161] = instant_systemtime_baseline();
+const INSTANT_SYSTEMTIME_BASELINE: [(&str, &str, u32); 172] = instant_systemtime_baseline();
 
 /// 3 sites at pin time, all verified: comments naming a hasher this code
 /// already avoids, zero live usage. A clean family is still worth
@@ -341,7 +341,7 @@ const RAW_ENTITY_ID_BASELINE: [(&str, &str, u32); 23] = raw_entity_id_baseline()
 // Baseline data lives in generated `const fn`s below purely to keep the
 // (very long) tuple literals out of the doc-commented declarations above.
 
-const fn instant_systemtime_baseline() -> [(&'static str, &'static str, u32); 161] {
+const fn instant_systemtime_baseline() -> [(&'static str, &'static str, u32); 172] {
     include!("determinism_scan_baseline_instant.rs")
 }
 const fn default_hasher_baseline() -> [(&'static str, &'static str, u32); 3] {
