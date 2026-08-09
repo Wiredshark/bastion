@@ -9986,7 +9986,6 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     }
                     continue;
                 }
-                let want_eat = candidates.first().is_some_and(|c| c.1 == 1);
                 if let Some(until) = board.preempt_cooldown.get(uid)
                     && time.0 < *until
                 {
@@ -10041,250 +10040,295 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     }
                     continue;
                 }
-                // B7-3: the EAT path — the most-urgent need is hunger:
-                // target the nearest unreserved FOOD item (B6
-                // reservation commits WITH the pending entry — the
-                // double-spend guard).
-                // AUTON-2 unification (site 4/6, 2026-08-09, ENDURE
-                // regression #2 found via preempt_scenario after site 4/6
-                // first landed): reclaiming an UNREACHABLE target
-                // VERBATIM, forever, is the sticky-Personal wedge again
-                // wearing a different costume — `pending_self_job` pins
-                // severity at 1.0 regardless of how many times THIS exact
-                // attempt has already failed, so without a cap it retries
-                // the SAME impossible item eternally instead of ever
-                // falling back to ENDURE. `stuck_strikes`/
-                // `PERSIST_ESCALATE_STRIKES` is the EXISTING answer to
-                // exactly this question for Haul jobs (49.2/B37); reused
-                // here rather than inventing a second threshold.
-                // `None` = no pending EatFrom at all; `Some(true)` =
-                // reclaimable; `Some(false)` = struck out, discard it.
-                let pending_eat_reclaimable: Option<bool> = arbiters
-                    .get(entity)
-                    .and_then(|a| a.pending_self_job)
-                    .and_then(|id| {
-                        board.jobs.get(&id).and_then(|j| {
-                            matches!(j.kind, common::bastion::JobKind::EatFrom { .. })
-                                .then_some(j.stuck_strikes < PERSIST_ESCALATE_STRIKES)
-                        })
-                    });
-                if want_eat && pending_eat_reclaimable == Some(true) {
-                    let pending_id = arbiters.get(entity).unwrap().pending_self_job.unwrap();
-                    // AUTON-2 unification (site 4/6, 2026-08-09): a
-                    // SUSPENDED EatFrom job of mine already exists —
-                    // reclaim it verbatim (same item, same reservation)
-                    // instead of searching again. The reservation was
-                    // never released on suspend, so there's no double-
-                    // reserve risk here.
-                    if active_jobs.contains(entity) {
-                        to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), "to_release fired (site scan)"); }
-                    }
-                    if let Some(arb) = arbiters.get_mut(entity) {
-                        arb.pending_self_job = None;
-                    }
-                    info!(colonist = %uid, job = pending_id, "bastion: need preempt — reclaiming suspended EatFrom");
-                    preempt_pending.push((entity, *uid, PendingNeed::Reclaim(pending_id)));
-                    continue;
-                } else if want_eat && pending_eat_reclaimable == Some(false) {
-                    // AUTON-2 unification (site 4/6, ENDURE regression #2,
-                    // 2026-08-09): a pending EatFrom that struck out past
-                    // the cap gets discarded — `remove_job` frees its
-                    // reservation correctly, matching a normal drop — AND
-                    // the cooldown gets set + this tick `continue`s,
-                    // exactly like a normal failed fresh search would.
-                    // WITHOUT the cooldown, the very next line's search
-                    // finds the SAME (only) target again immediately —
-                    // discard-then-instant-reclaim-of-a-fresh-copy is
-                    // still the wedge, just wearing a THIRD costume.
-                    // Cooldown is what actually opens the Work-window
-                    // ENDURE needs, via the severity computation's own
-                    // `on_cooldown` branch.
-                    if let Some(pending_id) =
-                        arbiters.get(entity).and_then(|a| a.pending_self_job)
-                    {
-                        board.remove_job(pending_id);
-                        if let Some(arb) = arbiters.get_mut(entity) {
-                            arb.pending_self_job = None;
+                // AUTON-2 STARVATION FALL-THROUGH FIX (2026-08-09,
+                // Fable-ruled DECISIONS #82): "most urgent wins" names a
+                // precedence among SERVICEABLE options, not a veto an
+                // unserviceable top need extends over everything below it
+                // — a colonist who cannot eat because no food exists must
+                // still sleep. `candidates` is already sorted
+                // most-depleted-first; this loop tries each in order and
+                // stops at the FIRST one it can actually service (reclaim
+                // or fresh-search success), falling through to the next
+                // only when the current one is a genuine dead end
+                // (struck-out-past-cap, or nothing findable). General over
+                // the two current kinds by construction — a third need
+                // joining later needs no special-casing here, only its own
+                // arm below.
+                let mut serviced = false;
+                // Per Fable's second constraint: `preempt_cooldown` is
+                // keyed by Uid ALONE (line ~4377), not by need — so it is
+                // PART of this row. A struck-out discard on candidate[0]
+                // must NOT arm it before candidate[1] gets its turn (that
+                // would silently re-introduce the starvation bug via the
+                // cooldown gate instead of the `continue`). Deferred to
+                // once every candidate has been tried and none served —
+                // preserves the EXISTING anti-wedge purpose (stop an
+                // impossible target from being rediscovered every single
+                // pass) while no longer blocking fall-through within the
+                // same pass. Fresh-search-found-nothing (no pending job at
+                // all) does NOT set this, matching the pre-fix behavior
+                // for the single-candidate case exactly (zero drift where
+                // only one need was ever a candidate).
+                let mut struck_out = false;
+                'candidates: for (_, kind) in candidates.iter().copied() {
+                    if kind == 1 {
+                        // ---- EAT candidate ----
+                        // B7-3: target the nearest unreserved FOOD item
+                        // (B6 reservation commits WITH the pending entry
+                        // — the double-spend guard).
+                        // AUTON-2 unification (site 4/6, 2026-08-09,
+                        // ENDURE regression #2 found via preempt_scenario
+                        // after site 4/6 first landed): reclaiming an
+                        // UNREACHABLE target VERBATIM, forever, is the
+                        // sticky-Personal wedge again wearing a different
+                        // costume — `pending_self_job` pins severity at
+                        // 1.0 regardless of how many times THIS exact
+                        // attempt has already failed, so without a cap it
+                        // retries the SAME impossible item eternally
+                        // instead of ever falling back to ENDURE.
+                        // `stuck_strikes`/`PERSIST_ESCALATE_STRIKES` is
+                        // the EXISTING answer to exactly this question for
+                        // Haul jobs (49.2/B37); reused here rather than
+                        // inventing a second threshold. `None` = no
+                        // pending EatFrom at all; `Some(true)` =
+                        // reclaimable; `Some(false)` = struck out,
+                        // discard it.
+                        let pending_eat_reclaimable: Option<bool> = arbiters
+                            .get(entity)
+                            .and_then(|a| a.pending_self_job)
+                            .and_then(|id| {
+                                board.jobs.get(&id).and_then(|j| {
+                                    matches!(j.kind, common::bastion::JobKind::EatFrom { .. })
+                                        .then_some(j.stuck_strikes < PERSIST_ESCALATE_STRIKES)
+                                })
+                            });
+                        if pending_eat_reclaimable == Some(true) {
+                            let pending_id = arbiters.get(entity).unwrap().pending_self_job.unwrap();
+                            // AUTON-2 unification (site 4/6, 2026-08-09): a
+                            // SUSPENDED EatFrom job of mine already exists
+                            // — reclaim it verbatim (same item, same
+                            // reservation) instead of searching again. The
+                            // reservation was never released on suspend,
+                            // so there's no double-reserve risk here.
+                            if active_jobs.contains(entity) {
+                                to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), "to_release fired (site scan)"); }
+                            }
+                            if let Some(arb) = arbiters.get_mut(entity) {
+                                arb.pending_self_job = None;
+                            }
+                            info!(colonist = %uid, job = pending_id, "bastion: need preempt — reclaiming suspended EatFrom");
+                            preempt_pending.push((entity, *uid, PendingNeed::Reclaim(pending_id)));
+                            serviced = true;
+                            break 'candidates;
+                        } else if pending_eat_reclaimable == Some(false) {
+                            // Discard the dead job (frees its reservation,
+                            // matching a normal drop) and try the next
+                            // candidate instead of `continue`ing the
+                            // colonist outright — the cooldown arms below,
+                            // once, only if nothing else in this pass
+                            // serviced either.
+                            if let Some(pending_id) =
+                                arbiters.get(entity).and_then(|a| a.pending_self_job)
+                            {
+                                board.remove_job(pending_id);
+                                if let Some(arb) = arbiters.get_mut(entity) {
+                                    arb.pending_self_job = None;
+                                }
+                            }
+                            struck_out = true;
+                            if need_skip_diag {
+                                info!(colonist = %uid, kind = "eat", "NEED-SKIP-DIAG reason=pending_self_job_struck_out");
+                            }
+                            continue 'candidates;
+                        } else {
+                            let feet = pos.0.map(|e| e.floor() as i32);
+                            let food = (&pickup_items, &positions, &uids)
+                                .join()
+                                .filter(|(pi, _, iuid)| {
+                                    pi.item()
+                                        .item_definition_id()
+                                        .itemdef_id()
+                                        .is_some_and(|d| FOOD_DEFS.contains(&d))
+                                        && !board.is_reserved(**iuid)
+                                })
+                                // T0.39 (T0-003): equal-distance ties
+                                // break on the stable item uid, not join
+                                // (entity-allocation) order.
+                                .min_by_key(|(_, ipos, iuid)| {
+                                    let c = ipos.0.map(|e| e.floor() as i32) - feet;
+                                    (
+                                        (c.x as i64).pow(2)
+                                            + (c.y as i64).pow(2)
+                                            + (c.z as i64).pow(2),
+                                        iuid.0.get(),
+                                    )
+                                })
+                                .map(|(pi, ipos, iuid)| {
+                                    // The matched def as the job's
+                                    // required_item — the B6 fetch
+                                    // contract (reservation +
+                                    // required_item travel TOGETHER: the
+                                    // fetch's `carrying` flip is derived
+                                    // from it; a reservation alone gets
+                                    // fetched-then-released as a moot
+                                    // material job).
+                                    let def = pi
+                                        .item()
+                                        .item_definition_id()
+                                        .itemdef_id()
+                                        .and_then(|d| FOOD_DEFS.iter().find(|f| **f == d).copied())
+                                        .unwrap_or(FOOD_DEFS[0]);
+                                    (*iuid, ipos.0.map(|e| e.floor() as i32), def)
+                                });
+                            if let Some((item, ipos, def)) = food {
+                                let rid = board.reserve(item);
+                                board
+                                    .preempt_cooldown
+                                    .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
+                                board.preempt_attempts += 1;
+                                if active_jobs.contains(entity) {
+                                    to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), "to_release fired (site scan)"); }
+                                }
+                                info!(
+                                    colonist = %uid,
+                                    item = %item,
+                                    // AUTON-2 diagnostics: the target's
+                                    // cell + the eater's feet — the
+                                    // carve-ascent forensics axis (a
+                                    // target ≥3 above feet routes the
+                                    // EatFrom into auto-access).
+                                    item_pos = ?ipos,
+                                    feet = ?pos.0.map(|e| e.floor() as i32),
+                                    "bastion: need preempt — hunger below interrupt"
+                                );
+                                preempt_pending.push((
+                                    entity,
+                                    *uid,
+                                    PendingNeed::Eat(item, rid, ipos, def),
+                                ));
+                                serviced = true;
+                                break 'candidates;
+                            }
+                            // No food anywhere: not a dead-end target,
+                            // there was never one to begin with — try the
+                            // next candidate, no cooldown from this need.
+                            if need_skip_diag {
+                                info!(colonist = %uid, "NEED-SKIP-DIAG reason=no_food_found");
+                            }
+                            continue 'candidates;
                         }
-                    }
-                    board
-                        .preempt_cooldown
-                        .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
-                    board.preempt_attempts += 1;
-                    if need_skip_diag {
-                        info!(colonist = %uid, "NEED-SKIP-DIAG reason=pending_self_job_struck_out");
-                    }
-                    continue;
-                } else if want_eat {
-                    let feet = pos.0.map(|e| e.floor() as i32);
-                    let food = (&pickup_items, &positions, &uids)
-                        .join()
-                        .filter(|(pi, _, iuid)| {
-                            pi.item()
-                                .item_definition_id()
-                                .itemdef_id()
-                                .is_some_and(|d| FOOD_DEFS.contains(&d))
-                                && !board.is_reserved(**iuid)
-                        })
-                        // T0.39 (T0-003): equal-distance ties break on the
-                        // stable item uid, not join (entity-allocation)
-                        // order.
-                        .min_by_key(|(_, ipos, iuid)| {
-                            let c = ipos.0.map(|e| e.floor() as i32) - feet;
-                            (
-                                (c.x as i64).pow(2)
-                                    + (c.y as i64).pow(2)
-                                    + (c.z as i64).pow(2),
-                                iuid.0.get(),
-                            )
-                        })
-                        .map(|(pi, ipos, iuid)| {
-                            // The matched def as the job's required_item —
-                            // the B6 fetch contract (reservation +
-                            // required_item travel TOGETHER: the fetch's
-                            // `carrying` flip is derived from it; a
-                            // reservation alone gets fetched-then-released
-                            // as a moot material job).
-                            let def = pi
-                                .item()
-                                .item_definition_id()
-                                .itemdef_id()
-                                .and_then(|d| FOOD_DEFS.iter().find(|f| **f == d).copied())
-                                .unwrap_or(FOOD_DEFS[0]);
-                            (*iuid, ipos.0.map(|e| e.floor() as i32), def)
+                    } else {
+                        // ---- REST candidate ----
+                        // AUTON-2 unification (site 4/6, 2026-08-09): a
+                        // SUSPENDED RestAt job of mine already exists.
+                        // Reclaim it verbatim (same bed) instead of
+                        // searching again ONLY while it hasn't struck out
+                        // past the cap — the SAME stuck_strikes/
+                        // PERSIST_ESCALATE_STRIKES answer reused from the
+                        // EatFrom reclaim above.
+                        if let Some(pending_id) = arbiters.get(entity).and_then(|a| a.pending_self_job)
+                            && let Some(job) = board.jobs.get(&pending_id)
+                            && matches!(job.kind, common::bastion::JobKind::RestAt { .. })
+                        {
+                            if job.stuck_strikes < PERSIST_ESCALATE_STRIKES {
+                                if active_jobs.contains(entity) {
+                                    to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), "to_release fired (site scan)"); }
+                                }
+                                if let Some(arb) = arbiters.get_mut(entity) {
+                                    arb.pending_self_job = None;
+                                }
+                                info!(colonist = %uid, job = pending_id, "bastion: need preempt — reclaiming suspended RestAt");
+                                preempt_pending.push((entity, *uid, PendingNeed::Reclaim(pending_id)));
+                                serviced = true;
+                                break 'candidates;
+                            }
+                            // Struck out past the cap: discard (frees the
+                            // bed reservation, same as a normal drop) and
+                            // try the next candidate — same deferred-
+                            // cooldown treatment as the eat arm above.
+                            board.remove_job(pending_id);
+                            if let Some(arb) = arbiters.get_mut(entity) {
+                                arb.pending_self_job = None;
+                            }
+                            struck_out = true;
+                            if need_skip_diag {
+                                info!(colonist = %uid, kind = "rest", "NEED-SKIP-DIAG reason=pending_self_job_struck_out");
+                            }
+                            continue 'candidates;
+                        }
+                        // A bed to target: OWN bed first (registered +
+                        // free), else the nearest unoccupied slot.
+                        let feet = pos.0.map(|e| e.floor() as i32);
+                        let own = colonist
+                            .0
+                            .owned_bed
+                            .filter(|p| board.beds.get(p).is_some_and(|s| s.occupant.is_none()));
+                        let bed = own.or_else(|| {
+                            board
+                                .beds
+                                .iter()
+                                .filter(|(_, s)| s.occupant.is_none())
+                                // T0.39 (T0-003): beds iterate a HashMap —
+                                // equal-distance ties break on the bed
+                                // coordinate, never process-seeded hash
+                                // order.
+                                .min_by_key(|(p, _)| {
+                                    let d = **p - feet;
+                                    (
+                                        (d.x as i64).pow(2) + (d.y as i64).pow(2) + (d.z as i64).pow(2),
+                                        p.x,
+                                        p.y,
+                                        p.z,
+                                    )
+                                })
+                                .map(|(p, _)| *p)
                         });
-                    if let Some((item, ipos, def)) = food {
-                        let rid = board.reserve(item);
+                        let Some(bed_pos) = bed else {
+                            // No bed anywhere: not a dead-end target,
+                            // there was never one — try the next
+                            // candidate.
+                            if need_skip_diag {
+                                info!(colonist = %uid, "NEED-SKIP-DIAG reason=no_bed_found");
+                            }
+                            continue 'candidates;
+                        };
                         board
                             .preempt_cooldown
                             .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
                         board.preempt_attempts += 1;
                         if active_jobs.contains(entity) {
+                            // Drop the work-job through THE seam (claim
+                            // freed for others, activity cleared, bed
+                            // occupancy released — conservation by reuse,
+                            // no second path to get wrong).
                             to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), "to_release fired (site scan)"); }
                         }
                         info!(
                             colonist = %uid,
-                            item = %item,
-                            // AUTON-2 diagnostics: the target's cell + the
-                            // eater's feet — the carve-ascent forensics
-                            // axis (a target ≥3 above feet routes the
-                            // EatFrom into auto-access).
-                            item_pos = ?ipos,
-                            feet = ?pos.0.map(|e| e.floor() as i32),
-                            "bastion: need preempt — hunger below interrupt"
+                            bed = ?bed_pos,
+                            "bastion: need preempt — rest below interrupt"
                         );
-                        preempt_pending.push((
-                            entity,
-                            *uid,
-                            PendingNeed::Eat(item, rid, ipos, def),
-                        ));
-                    } else if need_skip_diag {
-                        info!(colonist = %uid, "NEED-SKIP-DIAG reason=no_food_found");
+                        preempt_pending.push((entity, *uid, PendingNeed::Rest(bed_pos)));
+                        serviced = true;
+                        break 'candidates;
                     }
-                    // No food anywhere: honest starvation endure — the
-                    // meter decays to the mood floor (and the breakdown
-                    // staircase above eventually takes over).
-                    continue;
                 }
-                // AUTON-2 unification (site 4/6, 2026-08-09): a
-                // SUSPENDED RestAt job of mine already exists. Reclaim it
-                // verbatim (same bed) instead of searching again ONLY
-                // while it hasn't struck out past the cap — the SAME
-                // `stuck_strikes`/`PERSIST_ESCALATE_STRIKES` answer
-                // reused from the EatFrom reclaim above (ENDURE
-                // regression #2: without the cap, an unreachable bed
-                // gets reclaimed forever, since `pending_self_job` pins
-                // severity at 1.0 regardless of how many times this
-                // exact attempt already failed). Past the cap: discard
-                // (frees the bed reservation, same as a normal drop) and
-                // fall through to a fresh search — a DIFFERENT bed if one
-                // exists, or the honest bedless-ENDURE below if not.
-                if let Some(pending_id) = arbiters.get(entity).and_then(|a| a.pending_self_job)
-                    && let Some(job) = board.jobs.get(&pending_id)
-                    && matches!(job.kind, common::bastion::JobKind::RestAt { .. })
-                {
-                    if job.stuck_strikes < PERSIST_ESCALATE_STRIKES {
-                        if active_jobs.contains(entity) {
-                            to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), "to_release fired (site scan)"); }
-                        }
-                        if let Some(arb) = arbiters.get_mut(entity) {
-                            arb.pending_self_job = None;
-                        }
-                        info!(colonist = %uid, job = pending_id, "bastion: need preempt — reclaiming suspended RestAt");
-                        preempt_pending.push((entity, *uid, PendingNeed::Reclaim(pending_id)));
-                        continue;
-                    }
-                    // ENDURE regression #2 (2026-08-09): discard alone
-                    // isn't enough — the very next lines' search would
-                    // find the SAME (only) bed again immediately and
-                    // retry with no gap, still wearing the wedge. Set
-                    // cooldown + `continue`, exactly like a normal failed
-                    // fresh search would, so the severity computation's
-                    // `on_cooldown` branch actually opens a Work-window.
-                    board.remove_job(pending_id);
-                    if let Some(arb) = arbiters.get_mut(entity) {
-                        arb.pending_self_job = None;
-                    }
+                // Every candidate tried, none serviced: if the reason
+                // includes at least one struck-out discard, arm the
+                // anti-wedge cooldown now (once, not per-candidate) —
+                // without this, a colonist with an unreachable target
+                // would rediscover and re-strike-out the identical dead
+                // end every single pass. Pure resource absence (no food
+                // AND no bed, never any pending job at all) arms nothing,
+                // matching the pre-fix single-candidate behavior exactly:
+                // an honest ENDURE, not a penalty for a world that simply
+                // has nothing to offer yet.
+                if !serviced && struck_out {
                     board
                         .preempt_cooldown
                         .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
                     board.preempt_attempts += 1;
-                    if need_skip_diag {
-                        info!(colonist = %uid, "NEED-SKIP-DIAG reason=pending_self_job_struck_out");
-                    }
-                    continue;
                 }
-                // A bed to target: OWN bed first (registered + free),
-                // else the nearest unoccupied slot. No bed = no preempt
-                // (the need decays toward the mood floor — the honest
-                // bedless-colony ENDURE, visible via the B7-0 formula).
-                let feet = pos.0.map(|e| e.floor() as i32);
-                let own = colonist
-                    .0
-                    .owned_bed
-                    .filter(|p| board.beds.get(p).is_some_and(|s| s.occupant.is_none()));
-                let bed = own.or_else(|| {
-                    board
-                        .beds
-                        .iter()
-                        .filter(|(_, s)| s.occupant.is_none())
-                        // T0.39 (T0-003): beds iterate a HashMap — equal-
-                        // distance ties break on the bed coordinate, never
-                        // process-seeded hash order.
-                        .min_by_key(|(p, _)| {
-                            let d = **p - feet;
-                            (
-                                (d.x as i64).pow(2) + (d.y as i64).pow(2) + (d.z as i64).pow(2),
-                                p.x,
-                                p.y,
-                                p.z,
-                            )
-                        })
-                        .map(|(p, _)| *p)
-                });
-                let Some(bed_pos) = bed else {
-                    if need_skip_diag {
-                        info!(colonist = %uid, "NEED-SKIP-DIAG reason=no_bed_found");
-                    }
-                    continue;
-                };
-                board
-                    .preempt_cooldown
-                    .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
-                board.preempt_attempts += 1;
-                if active_jobs.contains(entity) {
-                    // Drop the work-job through THE seam (claim freed
-                    // for others, activity cleared, bed occupancy
-                    // released — conservation by reuse, no second path
-                    // to get wrong).
-                    to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), "to_release fired (site scan)"); }
-                }
-                info!(
-                    colonist = %uid,
-                    bed = ?bed_pos,
-                    "bastion: need preempt — rest below interrupt"
-                );
-                preempt_pending.push((entity, *uid, PendingNeed::Rest(bed_pos)));
             }
         }
 

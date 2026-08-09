@@ -497,6 +497,17 @@ struct Args {
     #[arg(long)]
     b73_scenario: bool,
 
+    /// AUTON-2 STARVATION FALL-THROUGH, the planted-failure fixture
+    /// (2026-08-09, Fable-ruled DECISIONS #82, closing the gap the
+    /// milestone live session found): a bed exists, food does NOT —
+    /// hunger (more depleted) and rest are both below interrupt.
+    /// Pre-fix, hunger's unserviceable top-candidate search silently
+    /// blocked rest from ever being tried; asserts rest gets serviced
+    /// anyway (fall-through) while hunger, genuinely unresolvable, never
+    /// restores.
+    #[arg(long)]
+    starvation_fallthrough_scenario: bool,
+
     /// AUTON-2 unification, FIXTURE 2 (2026-08-08, Opus-directed):
     /// despond-resume determinism, the REGRESSION fixture (must be
     /// GREEN on tip BEFORE the GUARD-6 build, unlike Fixture 1 which
@@ -1769,6 +1780,8 @@ fn main() -> ExitCode {
         auton2_despond_cross_attribution_fixture(&args)
     } else if args.b73_scenario {
         b73_scenario(&args)
+    } else if args.starvation_fallthrough_scenario {
+        starvation_fallthrough_scenario(&args)
     } else if args.auton2_despond_resume_fixture {
         auton2_despond_resume_fixture(&args)
     } else if args.values_scenario {
@@ -12079,6 +12092,250 @@ fn b73_scenario(args: &Args) -> ExitCode {
         && names.len() == 1;
     println!("{}", result);
     println!("B73 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
+
+    drop(server);
+    let _ = std::fs::remove_dir_all(&data_dir);
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// bastion (AUTON-2 STARVATION FALL-THROUGH, 2026-08-09, Fable-ruled
+/// DECISIONS #82): the planted-failure fixture the milestone live session's
+/// finding named -- "both needs depleted + top-need resource genuinely
+/// ABSENT ⇒ assert the second need IS attempted." A registered bed exists;
+/// no food is ever spawned anywhere in this scenario's world. Hunger is
+/// driven lower (more depleted, ranking first) than rest, both below
+/// interrupt. PRE-FIX: hunger's unserviceable fresh-search `continue`d the
+/// colonist outright every pass -- rest, despite a free bed sitting right
+/// there, never got a turn. POST-FIX: the need-check pass falls through to
+/// rest within the SAME pass. `hunger_stuck` is the fixture's own
+/// precondition check -- if it's ever false, the fixture proved nothing
+/// (hunger got serviced some other way, and rest's success would be
+/// unattributable to fall-through specifically).
+fn starvation_fallthrough_scenario(args: &Args) -> ExitCode {
+    use common::terrain::{Block, BlockKind};
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-starve-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-starve".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-starve-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    use common::vol::ReadVol;
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    // FLUSH PLATEAU, same recipe as b73's -- a bed needs level standable
+    // ground and clear headroom to be reachable.
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    // Same ±16/±12 footprint as the gz MEASUREMENT above (and as b73's own
+    // flush plateau) -- a build area narrower than the measurement
+    // footprint risks a solid-ground mismatch, isolating the platform from
+    // the surrounding real terrain and pushing colonists onto the
+    // auto-access/egress paths instead of a direct organic route.
+    for x in (cx - 16)..=(cx + 16) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 1);
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let a = names.first().cloned().unwrap_or_default();
+
+    // The ONE resource in this world: a bed. No food is EVER spawned --
+    // hunger's search must dead-end honestly, not because of a fixture
+    // bug that happens to starve it of a target too.
+    let bed = Vec3::new(cx + 2, cy, gz + 1);
+    server.bastion_register_bed(bed);
+    tick(&mut server, 5);
+
+    // Hunger LOWER (more depleted, ranks first) than rest, both below the
+    // default 0.2 interrupt -- mirrors b73's own (b) URGENCY setup exactly,
+    // just with the roles of "has a target" reversed: there food existed
+    // and no bed did; here a bed exists and no food does.
+    let attempts_before = server.bastion_preempt_attempts();
+    server.bastion_set_needs(&a, 0.10, 0.18, 1.0);
+    let mut rest_restored = false;
+    let mut hunger_ever_restored = false;
+    let mut ticks_to_rest_restored = 0u64;
+    for i in 0..900 {
+        tick(&mut server, 10);
+        let (h, r) = server
+            .bastion_colonist_needs_mood(&a)
+            .map(|v| (v.0, v.1))
+            .unwrap_or((0.0, 0.0));
+        // Precondition sentinel: hunger must never climb back toward its
+        // pre-drop value -- if it does, something (not this fixture's
+        // absent food) restored it, and the fixture's "genuinely absent"
+        // premise didn't hold this run.
+        if h > 0.20 {
+            hunger_ever_restored = true;
+        }
+        // Rest restored past its own comfort band -- the SAME threshold
+        // shape b73 uses for hunger's own restoration check (comfort 0.5 +
+        // a margin past decay/travel noise).
+        if r >= 0.45 {
+            rest_restored = true;
+            ticks_to_rest_restored = (i + 1) * 10;
+            break;
+        }
+    }
+    let attempts_after = server.bastion_preempt_attempts();
+    let hunger_stuck = !hunger_ever_restored;
+    // The fall-through's whole point: rest gets serviced WITHIN THE SAME
+    // preempt-cooldown window hunger's own dead-end search would have
+    // opened, not after waiting one out (PREEMPT_COOLDOWN_SECS = 60).
+    // 50s, not 30 -- measured travel+sleep time on the first run of this
+    // fixture was ~46s (a real colonist has to walk to the bed and sleep
+    // to the restoration threshold, not teleport there); the bound needs
+    // real margin above realistic completion time while staying
+    // meaningfully under the 60s mark that would mean a cooldown got
+    // waited out instead of fallen through within the pass.
+    let serviced_promptly = rest_restored && ticks_to_rest_restored <= (args.tps as u64) * 50;
+    let attempted_at_least_once = attempts_after > attempts_before;
+
+    let verdict: Vec<(&str, bool, Option<&str>)> = vec![
+        ("colonists_expected", names.len() == 1, None),
+        ("hunger_stuck", hunger_stuck, None),
+        ("rest_restored", rest_restored, Some("hunger_stuck")),
+        (
+            "serviced_promptly",
+            serviced_promptly,
+            Some("rest_restored"),
+        ),
+        (
+            "attempted_at_least_once",
+            attempted_at_least_once,
+            Some("hunger_stuck"),
+        ),
+    ];
+    let pass = verdict.iter().all(|(_, ok, _)| *ok);
+    let ok_of = |name: &str| {
+        verdict
+            .iter()
+            .find(|(n, _, _)| *n == name)
+            .map(|(_, ok, _)| *ok)
+            .unwrap_or(true)
+    };
+    let failed_clauses: Vec<&str> = verdict
+        .iter()
+        .filter(|(_, ok, _)| !*ok)
+        .map(|(name, _, _)| *name)
+        .collect();
+    let root_failure = verdict
+        .iter()
+        .find(|(_, ok, req)| !*ok && (*req).map_or(true, ok_of))
+        .map(|(name, _, _)| *name);
+    let verdict_map: serde_json::Map<String, serde_json::Value> = verdict
+        .iter()
+        .map(|(name, ok, _)| ((*name).to_string(), serde_json::json!(*ok)))
+        .collect();
+    let result = serde_json::json!({
+        "starvation_verdict": verdict_map,
+        "starvation_failed_clauses": failed_clauses,
+        "starvation_root_failure": root_failure,
+        "starvation_diag": {
+            "colonists": names.len(),
+            "ticks_to_rest_restored": ticks_to_rest_restored,
+            "attempts_before": attempts_before,
+            "attempts_after": attempts_after,
+        },
+    });
+    println!("{}", result);
+    println!(
+        "STARVATION FALLTHROUGH SCENARIO: {}",
+        if pass { "PASS" } else { "FAIL" }
+    );
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
