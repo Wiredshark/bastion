@@ -3838,6 +3838,20 @@ fn b5_scenario(args: &Args) -> ExitCode {
                 "needs_materials": j.needs_materials,
                 "required_item": required_item,
                 "has_reservation": has_reservation,
+                // #56 (2026-08-09, Opus-directed): without these two, a
+                // benched-not-claimed job is indistinguishable from a
+                // healthy one about to be claimed -- see
+                // `BastionJobInspect::benched_since_tick`'s own doc.
+                // Zero extra reads: plain fields off `j`, already fetched
+                // above -- same READ BUDGET property mine_cell_diag/
+                // farm_cell_diag document. `benched_since_tick` is
+                // unconditional (verified: its producer at
+                // `bastion_jobs.rs`'s `board.benched_since.entry(*id)
+                // .or_insert(tick.0)` has no BASTION_ROWB_BENCH gate);
+                // `benched_until_tick` needs `BASTION_ROWB_BENCH=1` to be
+                // non-null (its producer IS gated by `rowb_bench_enabled()`).
+                "benched_since_tick": j.benched_since_tick,
+                "benched_until_tick": j.benched_until_tick,
             }))
         })
         .collect();
@@ -3974,6 +3988,11 @@ fn b5_scenario(args: &Args) -> ExitCode {
                 "needs_materials": j.needs_materials,
                 "required_item": required_item,
                 "has_reservation": has_reservation,
+                // #56 (2026-08-09, Opus-directed) -- see ch_job_diag's
+                // identical addition above for the full rationale; same
+                // gap, same fix, same block shape.
+                "benched_since_tick": j.benched_since_tick,
+                "benched_until_tick": j.benched_until_tick,
             }))
         })
         .collect();
