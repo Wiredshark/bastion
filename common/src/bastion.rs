@@ -1083,7 +1083,35 @@ pub struct Job {
     pub pos: Vec3<i32>,
     /// Minimum skill level required (0 = anyone). Unused by v1 generation.
     pub skill_floor: u16,
+    /// bastion (AUTON-0..): who ACTIVELY holds this job right now — set
+    /// exactly when an `ActiveJob` component points at it, cleared
+    /// exactly when that stops being true (completion, cancellation,
+    /// travel-timeout release, suspension). This is the field every
+    /// pre-AUTON-2-unification consumer means by "claimed": arbiter
+    /// selection, the claim-loop, `JobAudit::claims_distinct` (which
+    /// requires each uid claim AT MOST ONE job — a genuine board-
+    /// conservation invariant, not a convention).
     pub claimed_by: Option<crate::uid::Uid>,
+    /// bastion (AUTON-2 unification, site 4/6, row 50, 2026-08-09):
+    /// OWNERSHIP-ACROSS-RELEASE — a colonist's SELF-job (RestAt/EatFrom/
+    /// Despond) that got preempted (a higher-priority self-job, an
+    /// unreachable target) but should be RECLAIMED verbatim once nothing
+    /// outranks it, rather than destroyed-and-recreated (which for
+    /// Despond specifically would lose `until`, the breakdown deadline,
+    /// or force a fresh RNG roll). Distinct from `claimed_by` on
+    /// purpose, never the same field: `claimed_by` means ACTIVELY HELD
+    /// (governs selection/audit/conservation) — a job can be
+    /// `claimed_by: None, suspended_for: Some(uid)` (suspended, still
+    /// owned, invisible to `claims_distinct`) at the same moment another
+    /// job is `claimed_by: Some(uid)` (the colonist's CURRENT active
+    /// job) without violating "one active claim per colonist." Reading
+    /// one field for the other's question is the reservation-vs-arrival
+    /// class of bug on a determinism-critical struct — don't. The orphan
+    /// sweep discriminates removal on OWNER LIVENESS via this field (a
+    /// suspended job with a live, loaded owner survives; one whose owner
+    /// died or was never loaded gets swept, same as any other orphan) —
+    /// never on `claimed_by` alone, which is `None` for both cases.
+    pub suspended_for: Option<crate::uid::Uid>,
     /// Set when a claimant repeatedly failed to reach the site; unreachable
     /// jobs are skipped by arbitration and logged.
     pub unreachable: bool,

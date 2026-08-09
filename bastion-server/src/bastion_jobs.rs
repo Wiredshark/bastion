@@ -1141,6 +1141,7 @@ fn plan_access(
             pos,
             skill_floor: 0,
             claimed_by: None,
+            suspended_for: None,
             unreachable: false,
             progress: 0.0,
             // DPA-0 (ruled default COSTED): dig-provisioned LADDER rungs
@@ -4744,6 +4745,7 @@ impl JobBoard {
                             pos,
                             skill_floor: 0,
                             claimed_by: None,
+                            suspended_for: None,
                             unreachable: false,
                             progress: 0.0,
                             // DPA-0 wood correction (ruled, LADDER only):
@@ -4831,6 +4833,7 @@ impl JobBoard {
                             pos,
                             skill_floor: 0,
                             claimed_by: None,
+                            suspended_for: None,
                             unreachable: false,
                             progress: 0.0,
                             // DPA-0 wood correction (ruled, LADDER only):
@@ -4984,6 +4987,7 @@ impl JobBoard {
             pos: base,
             skill_floor: 0,
             claimed_by: None,
+            suspended_for: None,
             unreachable: false,
             progress: 0.0,
             required_item: None,
@@ -5364,6 +5368,7 @@ impl JobBoard {
             pos,
             skill_floor: 0,
             claimed_by: Some(uid),
+            suspended_for: None,
             unreachable: false,
             progress: 0.0,
             required_item: Some(required),
@@ -5392,6 +5397,7 @@ impl JobBoard {
             pos: feet,
             skill_floor: 0,
             claimed_by: Some(uid),
+            suspended_for: None,
             unreachable: false,
             progress: 0.0,
             required_item: None,
@@ -5420,6 +5426,7 @@ impl JobBoard {
             pos: bed_pos,
             skill_floor: 0,
             claimed_by: Some(uid),
+            suspended_for: None,
             unreachable: false,
             progress: 0.0,
             required_item: None,
@@ -8453,6 +8460,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     pos,
                     skill_floor: 0,
                     claimed_by: None,
+                    suspended_for: None,
                     unreachable: false,
                     progress: 0.0,
                     required_item: Some(BUILD_MATERIAL_ITEM),
@@ -8608,6 +8616,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 pos,
                                 skill_floor: 0,
                                 claimed_by: None,
+                                suspended_for: None,
                                 unreachable: false,
                                 progress: 0.0,
                                 required_item: None,
@@ -8710,6 +8719,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         pos: cell,
                         skill_floor: 0,
                         claimed_by: None,
+                        suspended_for: None,
                         unreachable: false,
                         progress: 0.0,
                         required_item: Some(static_def),
@@ -8760,6 +8770,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             | common::bastion::JobKind::EatFrom { .. }
                             | common::bastion::JobKind::Despond { .. }
                     ) && j.claimed_by.is_none()
+                        // AUTON-2 unification (site 4/6, row 50,
+                        // 2026-08-09, Fable-ruled DECISIONS #72): OWNER
+                        // LIVENESS, not `claimed_by` alone, discriminates
+                        // removal here — `claimed_by` is `None` for BOTH
+                        // a suspended self-job (owned, waiting to
+                        // reclaim) and a genuinely orphaned one;
+                        // `suspended_for` is what tells them apart. A
+                        // suspended job whose owner is a LIVE, LOADED
+                        // entity survives the sweep (it's still coming
+                        // back for it); one whose owner died, unloaded,
+                        // or was never suspended (plain orphan, the
+                        // pre-unification case) gets collected exactly as
+                        // before. This is the ONLY code change the
+                        // settle-invariant needed -- the counter below is
+                        // untouched; its own doc already meant "the
+                        // removals about to happen," which this filter
+                        // now correctly excludes suspended-with-a-live-
+                        // owner from producing in the first place.
+                        && j.suspended_for.is_none_or(|owner| {
+                            id_maps.uid_entity(owner).is_none_or(|e| {
+                                !is_loaded(e)
+                                    || healths
+                                        .get(e)
+                                        .is_some_and(|h| h.is_dead || h.should_die())
+                            })
+                        })
                 })
                 .map(|(id, _)| *id)
                 .collect();
@@ -8777,6 +8813,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // so it's excluded to keep this exactly the fixture's
             // invariant, not a superset of it. Silent counter, not a
             // panic -- see the field's own doc for why.
+            if std::env::var_os("BASTION_SETTLE_VIOLATION_DIAG").is_some() {
+                for id in &orphans {
+                    if let Some(j) = board.jobs.get(id)
+                        && is_labor_hold_self_job(&j.kind)
+                    {
+                        info!(
+                            tick = tick.0,
+                            job = *id,
+                            kind = ?j.kind,
+                            pos = ?j.pos,
+                            claimed_by = ?j.claimed_by,
+                            suspended_for = ?j.suspended_for,
+                            "bastion SETTLE-VIOLATION-DIAG: about to sweep"
+                        );
+                    }
+                }
+            }
             board.settle_invariant_violations += orphans
                 .iter()
                 .filter(|id| {
@@ -8835,6 +8888,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         pos: drop_cell,
                         skill_floor: 0,
                         claimed_by: Some(*uid),
+                        suspended_for: None,
                         unreachable: false,
                         progress: 0.0,
                         required_item: None,
@@ -9487,6 +9541,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     pos,
                     skill_floor: 0,
                     claimed_by: None,
+                    suspended_for: None,
                     unreachable: false,
                     progress: 0.0,
                     required_item: req,
@@ -9654,19 +9709,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         }
                         continue;
                     }
-                    // AUTON-2 unification (site 4/6, row 50, 2026-08-09):
-                    // this Despond job SUSPENDS, it does not conclude —
-                    // `job.claimed_by` and `JobKind::Despond { until }`
-                    // both stay exactly as they are in `board.jobs`; only
-                    // the ActiveJob pointer moves (to whatever RestAt/
-                    // EatFrom job the fall-through below creates). The
-                    // deadline never leaves the job to live anywhere else
-                    // — no side table, nothing to keep in sync, nothing
-                    // that can drift. `arb.pending_self_job` is a POINTER
-                    // to this job id, not a copy of its data — the
-                    // reclaim check (this pass, right before any fresh
-                    // self-job would be created) picks it back up
-                    // deterministically once nothing outranks it, same
+                    // AUTON-2 unification (site 4/6, row 50, 2026-08-09,
+                    // corrected per Fable DECISIONS #72): this Despond job
+                    // SUSPENDS, it does not conclude — `JobKind::Despond
+                    // { until }` stays exactly as it is in `board.jobs`;
+                    // only `claimed_by` (no longer ACTIVELY held) and
+                    // `suspended_for` (now the OWNERSHIP-ACROSS-RELEASE
+                    // record) change, and only the ActiveJob pointer moves
+                    // (to whatever RestAt/EatFrom job the fall-through
+                    // below creates). The deadline never leaves the job to
+                    // live anywhere else — no side table, nothing to keep
+                    // in sync, nothing that can drift. `arb.pending_self_
+                    // job` is a POINTER to this job id, not a copy of its
+                    // data — the reclaim check (this pass, right before
+                    // any fresh self-job would be created) picks it back
+                    // up deterministically once nothing outranks it, same
                     // "no roll, no cooldown, an active condition is not a
                     // new breakdown" semantics `despond_resume` used to
                     // provide, now for free from the job itself.
@@ -9678,6 +9735,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     {
                         let job_id = aj.job;
                         active_jobs.remove(entity);
+                        if let Some(job) = board.jobs.get_mut(&job_id) {
+                            job.claimed_by = None;
+                            job.suspended_for = Some(*uid);
+                        }
                         if let Some(arb) = arbiters.get_mut(entity) {
                             arb.activity = None;
                             arb.pending_self_job = Some(job_id);
@@ -10383,8 +10444,35 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // colonist eventually WORKS THE BLOCK REMOTELY
                     // (mine-from-below) instead of looping forever on a
                     // spot it can't physically stand at.
-                    let arrive = (ARRIVE_DIST + (job.stuck_strikes.min(3) as f32) * 1.2)
-                        .max(if is_emergency_access { 6.25 } else { 0.0 });
+                    // AUTON-2 unification (site 4/6, Fable-ruled DECISIONS
+                    // #73, 2026-08-09): WORK KINDS ONLY. Self-jobs kept
+                    // strict `ARRIVE_DIST` (2.5) — `stuck_strikes` never
+                    // accumulated for them before site 6 (measured: 0
+                    // across 660 ticks of a real RestAt retry), so this
+                    // widening was denominator-zero, untested, and its
+                    // "mine-from-below" fiction doesn't transfer to
+                    // "sleep from 6 blocks away, standing on the ground."
+                    // Site 6 makes `stuck_strikes` accumulate for self-
+                    // jobs (the whole point — persistent identity across
+                    // retries); WITHOUT this gate, that newly-live input
+                    // would let a 3-strike RestAt job bank rest recovery
+                    // at up to 6.1 blocks (`~12440`, the Working arm's
+                    // rest-recovery has no distance check of its own) AND
+                    // keep holding the bed slot (`~12435`) the whole
+                    // time — denying it to a colonist who could actually
+                    // reach it. Self-jobs already have a DESIGNED give-up
+                    // path for an unreachable target (ENDURE, via the
+                    // strike-cap discard in the need-check pass) — this
+                    // anti-loop widening exists for a different problem
+                    // (awkward Mine/Chop terrain) and would be redundant
+                    // here even if it were safe.
+                    let arrive = (ARRIVE_DIST
+                        + if is_labor_hold_self_job(&job.kind) {
+                            0.0
+                        } else {
+                            (job.stuck_strikes.min(3) as f32) * 1.2
+                        })
+                    .max(if is_emergency_access { 6.25 } else { 0.0 });
                     let dist = pos.0.distance(target);
                     let actual_feet = pos.0.map(|value| value.floor() as i32);
                     let physics = physics_states.get(entity);
@@ -12481,7 +12569,28 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // 74, filed against the existing
                                 // plan_access wording separately, not fixed
                                 // by this row).
-                                if job.stuck_strikes >= PERSIST_ESCALATE_STRIKES
+                                // AUTON-2 unification (site 4/6, Fable-
+                                // ruled DECISIONS #73, 2026-08-09): WORK
+                                // KINDS ONLY — `blocked_regions`' unit is
+                                // DESIGNATION regions (`board.designated`,
+                                // the guard right below), and a bed or a
+                                // food item is not a designation. Without
+                                // this gate, the guard's `find(contains_
+                                // point(job.pos))` can attribute a self-
+                                // job's stuck-out to whichever painted
+                                // region happens to contain the bed/food
+                                // position — including a COMPLETED build
+                                // designation, which `~5106` never prunes
+                                // `blocked_regions` on (task #55's own
+                                // comment there: a stale entry reports
+                                // "blocked" on a designation that's
+                                // already gone). Site 6 makes
+                                // `stuck_strikes` accumulate for self-jobs
+                                // for the first time; this gate keeps that
+                                // newly-live input out of a producer built
+                                // and tuned for a different unit entirely.
+                                if !is_labor_hold_self_job(&job.kind)
+                                    && job.stuck_strikes >= PERSIST_ESCALATE_STRIKES
                                     && let Some(region) = board
                                         .designated
                                         .iter()
@@ -13603,20 +13712,31 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 agent.rtsim_controller.activity = None;
             }
         }
-        // AUTON-2 unification (site 4/6, row 50, 2026-08-09): the SUSPEND
-        // drain — deliberately NOT the `to_release` drain above. The
-        // entire mechanism is what this loop does NOT do: it never
-        // touches `job.claimed_by` (stays `Some(uid)`, which is what
-        // keeps the job immune to the orphan sweep, gated on `claimed_by
-        // .is_none()`) and never calls `board.remove_job` (which would
-        // drop `JobKind::Despond { until }`'s deadline with it — the
-        // exact "stash it somewhere else" failure mode this design
-        // avoids by never destroying the value's only home). Bed
-        // occupancy (RestAt) is deliberately left alone too — the bed
-        // stays reserved for this colonist while their attempt is
-        // suspended, not handed to whoever asks next.
+        // AUTON-2 unification (site 4/6, row 50, 2026-08-09, corrected
+        // per Fable DECISIONS #72 after the first shape — leaving
+        // `claimed_by` set — was declined for retiring `claims_distinct`,
+        // the board-conservation invariant): the SUSPEND drain —
+        // deliberately NOT the `to_release` drain above. `job.claimed_by`
+        // DOES clear here (this job is no longer ACTIVELY held — the
+        // colonist's next `ActiveJob`, if any, will claim something
+        // else); `job.suspended_for` takes over as the OWNERSHIP-ACROSS-
+        // RELEASE record instead. `board.remove_job` is still never
+        // called — that's what keeps `JobKind::Despond { until }`'s
+        // deadline alive without a side table. Bed occupancy (RestAt) is
+        // deliberately left alone too — the bed stays reserved for this
+        // colonist while their attempt is suspended, not handed to
+        // whoever asks next. The orphan sweep discriminates on OWNER
+        // LIVENESS (`suspended_for` + whether that uid is still a live,
+        // loaded entity), not on `claimed_by` alone — see the sweep's
+        // own doc.
         for (entity, job_id) in &to_suspend {
             active_jobs.remove(*entity);
+            if let Some(uid) = uids.get(*entity).copied()
+                && let Some(job) = board.jobs.get_mut(job_id)
+            {
+                job.claimed_by = None;
+                job.suspended_for = Some(uid);
+            }
             if let Some(arb) = arbiters.get_mut(*entity) {
                 arb.activity = None;
                 arb.pending_self_job = Some(*job_id);
@@ -13695,11 +13815,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .unwrap_or_default();
                     board.insert_despond_job(feet, uid, until)
                 },
-                // AUTON-2 unification (site 4/6): the job already exists,
-                // already claimed by `uid` (suspend never touched
-                // `claimed_by`) — reclaim is just re-pointing ActiveJob
-                // at it, nothing to insert.
-                PendingNeed::Reclaim(id) => id,
+                // AUTON-2 unification (site 4/6, corrected per Fable
+                // DECISIONS #72): the job already exists — reclaim
+                // re-activates it: `claimed_by` goes back to `Some(uid)`
+                // (ACTIVELY held again), `suspended_for` clears (no
+                // longer just owned-across-release). Nothing to insert.
+                PendingNeed::Reclaim(id) => {
+                    if let Some(job) = board.jobs.get_mut(&id) {
+                        job.claimed_by = Some(uid);
+                        job.suspended_for = None;
+                    }
+                    id
+                },
             };
             let _ = active_jobs.insert(entity, comp::bastion::ActiveJob {
                 job: id,
@@ -14104,23 +14231,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // AUTON-2 unification (site 4/6, 2026-08-09): this
                         // rescue-egress release is a SEPARATE consumer of
                         // the same churn signal the STUCK_TIMEOUT branches
-                        // feed — a self-job SUSPENDS here too (claimed_by
-                        // untouched), same reasoning, same mechanism.
-                        // Found by the settle-invariant fixture STILL
-                        // showing a violation after the STUCK_TIMEOUT
-                        // branches alone were fixed — this site is why.
+                        // feed — a self-job SUSPENDS here too, same
+                        // reasoning, same mechanism (claimed_by clears,
+                        // suspended_for takes over — see that field's own
+                        // doc). Found by the settle-invariant fixture
+                        // STILL showing a violation after the STUCK_
+                        // TIMEOUT branches alone were fixed — this site is
+                        // why.
                         let self_job = board
                             .jobs
                             .get(&active.job)
                             .is_some_and(|j| is_labor_hold_self_job(&j.kind));
+                        if let Some(job) = board.jobs.get_mut(&active.job)
+                            && job.claimed_by == Some(uid)
+                        {
+                            job.claimed_by = None;
+                            if self_job {
+                                job.suspended_for = Some(uid);
+                            }
+                        }
                         if self_job {
                             if let Some(arb) = arbiters.get_mut(entity) {
                                 arb.pending_self_job = Some(active.job);
                             }
-                        } else if let Some(job) = board.jobs.get_mut(&active.job)
-                            && job.claimed_by == Some(uid)
-                        {
-                            job.claimed_by = None;
                         }
                         active_jobs.remove(entity);
                         if let Some(arb) = arbiters.get_mut(entity) {
@@ -17901,6 +18034,7 @@ mod tests {
             pos,
             skill_floor: 0,
             claimed_by: None,
+            suspended_for: None,
             unreachable: false,
             progress: 0.0,
             required_item: None,

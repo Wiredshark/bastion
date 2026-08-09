@@ -3439,28 +3439,41 @@ impl Server {
     }
 
     /// bastion (AUTON-2 UNIFICATION, FIXTURE 1 "TRY-TO-ORPHAN", harness
-    /// hook, 2026-08-08): the settle invariant, `AUTON2-ACCEPTANCE-
-    /// FIXTURES.md` -- for every self-job (`is_labor_hold_self_job`:
-    /// `RestAt`/`EatFrom`/`Despond`) in `board.jobs`, either it is
-    /// claimed OR it is reachable by the arbiter's selection. Under the
-    /// PRE-unification lifecycle, self-jobs are UNCONDITIONALLY skipped
-    /// by arbiter selection (GUARD-6 site 1, `~8838`) -- "reachable by
-    /// selection" is always `false` there, so the invariant reduces
-    /// exactly to "no self-job may be unclaimed" on today's tip. Under
-    /// unification (family 1) the arbiter re-selects, so an unclaimed
-    /// self-job stops being a violation -- this hook's caller supplies
-    /// the reduction that's live at whatever tip it runs against; today
-    /// that reduction is unclaimed-implies-violation. Returns the
-    /// violating positions (empty = invariant holds). Settle-time only
-    /// (one pass over `board.jobs`), per the fixture's own budget --
-    /// never call this per-tick.
+    /// hook, 2026-08-08; corrected per Fable DECISIONS #72, 2026-08-09):
+    /// the settle invariant, `AUTON2-ACCEPTANCE-FIXTURES.md` -- for
+    /// every self-job (`is_labor_hold_self_job`: `RestAt`/`EatFrom`/
+    /// `Despond`) with `claimed_by == None`, it is EITHER suspended for
+    /// a LIVE owner (`suspended_for`, site 4/6's ownership-across-
+    /// release field) OR genuinely orphaned. `claimed_by` alone can't
+    /// tell these apart -- it's `None` for both a suspended job (owned,
+    /// waiting to reclaim) and a plain orphan; `suspended_for` is what
+    /// distinguishes them, same predicate the orphan sweep itself uses
+    /// (`bastion_jobs.rs`, the `orphans` filter). Owner liveness here
+    /// checks DEATH only (not load-state) -- this function is a READ-
+    /// ONLY diagnostic snapshot, never the removal path itself, so an
+    /// unloaded-but-alive owner reads as a harmless false-positive here
+    /// rather than a dangerous false-negative; the sweep's own removal
+    /// decision (which DOES check load-state) is the actual gate.
+    /// Returns the violating positions (empty = invariant holds).
+    /// Settle-time only (one pass over `board.jobs`), per the fixture's
+    /// own budget -- never call this per-tick.
     pub fn bastion_settle_invariant_violations(&self) -> Vec<vek::Vec3<i32>> {
-        self.state
-            .ecs()
-            .read_resource::<bastion_jobs::JobBoard>()
+        let ecs = self.state.ecs();
+        let board = ecs.read_resource::<bastion_jobs::JobBoard>();
+        let id_maps = ecs.read_resource::<common::uid::IdMaps>();
+        let healths = ecs.read_storage::<comp::Health>();
+        board
             .jobs
             .values()
-            .filter(|j| bastion_jobs::is_labor_hold_self_job(&j.kind) && j.claimed_by.is_none())
+            .filter(|j| {
+                bastion_jobs::is_labor_hold_self_job(&j.kind)
+                    && j.claimed_by.is_none()
+                    && j.suspended_for.is_none_or(|owner| {
+                        id_maps.uid_entity(owner).is_none_or(|e| {
+                            healths.get(e).is_some_and(|h| h.is_dead || h.should_die())
+                        })
+                    })
+            })
             .map(|j| j.pos)
             .collect()
     }
