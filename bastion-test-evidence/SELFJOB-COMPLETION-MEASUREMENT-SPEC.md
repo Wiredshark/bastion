@@ -49,6 +49,24 @@ different builds," which is the void-pair failure this lane keeps hitting.*
 ★ **Second dividend from the ref-pinning: the before-arm is still buildable
 because nobody's commits can move that ref.**
 
+> ## ★★★★★★★ **BINDING CONSTRAINT (Fable): THE INSTRUMENT IS THE *SAME COMMIT*
+> ON BOTH ARMS — CHERRY-PICKED, NEVER RE-IMPLEMENTED.**
+
+★★★ **This is the entire point of the shape, not a detail.** *Re-implementing the
+counters on the before-arm — "it's only two counters, I'll just add them" — would
+reintroduce the exact void pair the design exists to prevent:* ★★★★★ **two numbers
+produced by two different pieces of code, differing in ways nobody enumerated,
+compared as though they were the same measurement.**
+
+★★ **Cherry-picking makes the instrument's identity BYTE-GUARANTEED.** ★ *If the
+cherry-pick conflicts, that conflict is INFORMATION — it means the row touched
+the instrument's own sites, and the arms are not as separable as assumed. Resolve
+it explicitly and record it; never paper over it by hand-editing one arm.*
+
+★★★ **This formalizes the sibling-binary-as-free-baseline pattern into the
+acceptance flow: a sibling build is only a free baseline while the instrument in
+it is provably identical.**
+
 ## ★★★ THE INSTRUMENT — MINIMAL, AND IT ANSWERS (a) vs (b) DIRECTLY
 
 **Two counters per self-job kind, at branches the code already takes:**
