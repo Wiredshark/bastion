@@ -142,7 +142,6 @@ pub struct InventoryManipData<'a> {
     clients: ReadStorage<'a, Client>,
     orientations: ReadStorage<'a, comp::Ori>,
     agents: ReadStorage<'a, comp::Agent>,
-    bastion_piles: ReadStorage<'a, comp::bastion::BastionPile>,
     bastion_colonists: ReadStorage<'a, comp::Colonist>,
     pets: ReadStorage<'a, comp::Pet>,
     masses: ReadStorage<'a, comp::Mass>,
@@ -292,16 +291,26 @@ impl ServerEvent for InventoryManipEvent {
                         continue;
                     }
 
-                    let b55_persistent_pickup = (std::env::var_os("BASTION_B55_TRACE_DELETES")
+                    // #89 widening (Opus, ROW89-GREEN consumption-gap
+                    // finding): this trace was gated on `bastion_piles`,
+                    // so pickup of a non-bastion-pile item (every
+                    // `persistent: false` drop, including `/dropall`
+                    // food) was STRUCTURALLY INVISIBLE to it -- 79 units
+                    // left a GREEN run's world with only 5 attributable
+                    // to the bastion EatFrom path, and this gate is why
+                    // the other ~74 couldn't be traced. Same env flag,
+                    // no new density (still zero cost when unset); the
+                    // `bastion_piles` condition dropped so it fires on
+                    // ANY pickup, not just bastion piles.
+                    let b55_persistent_pickup = std::env::var_os("BASTION_B55_TRACE_DELETES")
                         .is_some()
-                        && data.bastion_piles.contains(item_entity))
-                    .then(|| {
-                        (
-                            data.items.get(item_entity).map(PickupItem::amount),
-                            data.positions.get(item_entity).copied(),
-                            data.positions.get(entity).copied(),
-                        )
-                    });
+                        .then(|| {
+                            (
+                                data.items.get(item_entity).map(PickupItem::amount),
+                                data.positions.get(item_entity).copied(),
+                                data.positions.get(entity).copied(),
+                            )
+                        });
 
                     // First, we remove the item, assuming picking it up will succeed (we do this to
                     // avoid cloning the item, as we should not call Item::clone and it
@@ -411,6 +420,44 @@ impl ServerEvent for InventoryManipEvent {
                             }
                         },
                         Ok(_) => {
+                            // #89 (Opus, ROW89-GREEN consumption-gap
+                            // finding, second correction): the trace
+                            // used to sit only in the `else` (full-
+                            // entity-deletion) arm below -- with
+                            // `split_off_one` a per-unit pickup almost
+                            // ALWAYS leaves a remainder, so that arm
+                            // fires at most once per entity (the final
+                            // pickup), attributing at most one of every
+                            // stack's takers. Hoisted above the split so
+                            // it fires on EVERY successful pickup,
+                            // partial or full, with `remaining` (read
+                            // from `reinsert_item` BEFORE the `if let`
+                            // below moves it) making each line self-
+                            // describing: who took a unit, how many were
+                            // left. Sum the takes and the gap is
+                            // attributed by name.
+                            if let Some((item_amount, item_pos, picker_pos)) = b55_persistent_pickup
+                            {
+                                tracing::warn!(
+                                    item_entity = item_entity.id(),
+                                    picker_entity = entity.id(),
+                                    item_uid = ?pickup_uid,
+                                    picker_uid = ?uid,
+                                    picker_name = ?data.stats.get(entity).map(|stats| &stats.name),
+                                    picker_colonist = ?data
+                                        .bastion_colonists
+                                        .get(entity)
+                                        .map(|colonist| colonist.0.name.as_str()),
+                                    picker_is_player = data.players.contains(entity),
+                                    picker_is_agent = data.agents.contains(entity),
+                                    picker_is_rtsim = data.rtsim_entities.contains(entity),
+                                    ?item_amount,
+                                    remaining = ?reinsert_item.as_ref().map(PickupItem::amount),
+                                    ?item_pos,
+                                    ?picker_pos,
+                                    "B5.5 item pickup"
+                                );
+                            }
                             // We succeeded in picking up the item, so we may now delete its old
                             // entity entirely.
                             if let Some(reinsert_item) = reinsert_item {
@@ -418,28 +465,6 @@ impl ServerEvent for InventoryManipEvent {
                                     .insert(item_entity, reinsert_item)
                                     .expect(ITEM_ENTITY_EXPECT_MESSAGE);
                             } else {
-                                if let Some((item_amount, item_pos, picker_pos)) =
-                                    b55_persistent_pickup
-                                {
-                                    tracing::warn!(
-                                        item_entity = item_entity.id(),
-                                        picker_entity = entity.id(),
-                                        item_uid = ?pickup_uid,
-                                        picker_uid = ?uid,
-                                        picker_name = ?data.stats.get(entity).map(|stats| &stats.name),
-                                        picker_colonist = ?data
-                                            .bastion_colonists
-                                            .get(entity)
-                                            .map(|colonist| colonist.0.name.as_str()),
-                                        picker_is_player = data.players.contains(entity),
-                                        picker_is_agent = data.agents.contains(entity),
-                                        picker_is_rtsim = data.rtsim_entities.contains(entity),
-                                        ?item_amount,
-                                        ?item_pos,
-                                        ?picker_pos,
-                                        "B5.5 persistent pile deletion attributed to inventory pickup"
-                                    );
-                                }
                                 emitters.emit(DeleteEvent(item_entity));
                             }
 
