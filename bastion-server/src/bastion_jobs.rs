@@ -5805,15 +5805,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     decay_join_count,
                     hunger_decay_per_sec = mood_cfg.hunger.decay_per_sec,
                     rest_decay_per_sec = mood_cfg.rest.decay_per_sec,
-                    // driver-12 follow-on (2026-08-09): preempt_attempts was
-                    // previously readable only via the harness-only
-                    // `server.bastion_preempt_attempts()` accessor -- folded
-                    // into this existing gated emit rather than adding a
-                    // fourth env var, since it's cheap (one field read) and
-                    // every live run already sets BASTION_DECAY_JOIN_DIAG
-                    // when this investigation's instruments matter.
                     preempt_attempts = board.preempt_attempts,
                     "bastion DECAY-JOIN-DIAG"
+                );
+            }
+            // driver-12 follow-on (2026-08-09, Opus): gating this behind
+            // BASTION_DECAY_JOIN_DIAG re-creates the exact gap the port
+            // exists to close -- driver-12 itself ran without that env var,
+            // so a gated counter would have been just as silent on it as
+            // the harness-only accessor was. ALWAYS-ON, like the boot-time
+            // effective-config emit above: one integer, same cadence as the
+            // gated block, no env var required on any live run.
+            if tick.0 % 300 == 0 {
+                info!(
+                    tick = tick.0,
+                    preempt_attempts = board.preempt_attempts,
+                    "bastion preempt attempts"
                 );
             }
             // ── RUN-0 (row 47): the energy governor — the run gait
