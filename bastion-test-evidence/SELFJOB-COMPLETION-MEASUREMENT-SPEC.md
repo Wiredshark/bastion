@@ -224,3 +224,49 @@ scenario carries self-jobs.**
 > NEEDED.** ★★ **Both outcomes were pre-registered; I registered the wrong one as
 > likely.** ★★★ *Being wrong about which branch fires, inside a frame where both
 > branches were named, is what the pre-registration is FOR.*
+
+## ★★★★★★★★ RESULT 2 — **THE DIAGNOSIS. ACCOUNT (b) CONFIRMED, WITH A NUMBER.**
+
+**`--preempt-scenario`, BEFORE arm (`ec972cf413`), seeds 49/50/51/53:**
+
+| seed | created | completed |
+|---|--:|--:|
+| 49 | 4 | **1** |
+| 50 | 6 | **1** |
+| 51 | 4 | **1** |
+| 53 | 4 | **1** |
+| ★★★ **total** | ★★★ **18** | ★★★★★ **4** |
+
+★★ **ALL EIGHTEEN ARE `RestAt`** *(no `EatFrom`, no `Despond` in this scenario)* —
+**a single-kind result, which makes it much cleaner than expected.**
+
+> ## ★★★★★★★ **14 OF 18 REST ATTEMPTS — 78% — NEVER COMPLETE ON THE PRE-ROW
+> BUILD.** ★★★ **ACCOUNT (b) CONFIRMED.**
+
+### ★★★★★ AND THE SHAPE IS STRUCTURAL, NOT A RATE
+
+**EXACTLY ONE completion per seed — on the seed that created 6 as much as on the
+three that created 4.** ★★★ **That is not "some fraction succeeds." One colonist
+per run sleeps; every other attempt fails.**
+
+★ **The completion is real** — `RestAt` completes on `rest >= comfort +
+SLEEP_MARGIN`, so that one colonist genuinely slept.
+
+## ★★★★★ AFTER-ARM PREDICTION — **REGISTERED BEFORE THE NUMBERS EXIST**
+
+**The after arm is still running as this is written.**
+
+| quantity | before | prediction if the row works |
+|---|--:|---|
+| ★★★ **completed** | **4** *(1/seed)* | ★★★★★ **RISES** — *persistence should let a retried rest finish* |
+| ★★ **created** | **18** | ★★★ **FALLS** — *re-claim replaces repeated fresh creates (5b's own effect, its own line)* |
+| ★★★★★ **the sharp one** | ★★★ **exactly 1 on EVERY seed** | ★★★★★★★ **DOES ANY SEED COMPLETE MORE THAN ONE?** *The uniformity is the tell; breaking it is the cleanest possible signal.* |
+
+> ★★★ **FALSIFIER: both unchanged (18 / 4, still 1-per-seed) ⇒ THE ROW DOES NOT
+> ADDRESS THIS FAILURE MODE.** ★★ *That would be a real negative result, not a
+> flaw in the row — persistence and completion are different problems, and this
+> measurement is the first thing able to tell them apart.*
+
+★ **THIRD OUTCOME, still registered from the original spec:** *completed rises
+AND created does not fall* ⇒ **persistence isn't the mechanism doing the work,
+and something else changed.** ★★ **A finding, not a pass.**
