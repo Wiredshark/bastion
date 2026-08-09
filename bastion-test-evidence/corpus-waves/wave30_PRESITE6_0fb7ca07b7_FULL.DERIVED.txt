@@ -47,6 +47,12 @@ seed set: 48 seeds, IDENTICAL across all waves (asserted)
    PERSISTENT (10): ['54', '61', '62', '66', '68', '71', '78', '80', '85', '92']
    ever-failed 17, always-failed 10, churn 7
 
+-- CLAUSE-SET DRIFT inside the 10 seed(s) failing in BOTH waves
+   [!! GAINED]  seed 71   +any_needs_materials, b15_adjacent_claimed, b15_ontop_claimed, build_placed
+   [   LOST ]  seed 61   -ch_leaf_cleared
+   (8 of 10 frozen)
+   ** A GAINED clause is a REGRESSION the fail COUNT cannot show -- the seed was already failing. **
+
 == 4. CONSTANCY TRANSITIONS (a field that stopped varying)
    constant fields in wave30_PRESITE6_0fb7ca07b7_FULL.json: 26 of 65 shared (40%)
    STARTED varying (1): ['b5_b15_ontop_claimed']

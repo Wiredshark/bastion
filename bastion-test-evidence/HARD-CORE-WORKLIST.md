@@ -18,11 +18,53 @@
 > ## ★★★★★ **EVERY PAIR IS ONE MECHANISM REPORTED TWICE.**
 > **Ten "failing seeds" collapse to roughly FOUR root causes.**
 
-★★ **And the pairs have a plausible causal direction worth testing before any
-build:** *`any_needs_materials` ⇒ `build_placed` fails* **(materials never arrive,
-so nothing gets placed — a HAUL problem wearing a BUILD clause)**; *`log_sum` ⇒
-`chop_cleared`* **(logs never accumulate, so the chop never clears).**
-★ **If those directions hold, the worklist is smaller still.**
+## ★★★★★★★★ THE DIRECTION CLAIM IS **DEAD** — AND IT WAS DEAD BEFORE I WROTE IT
+
+**I proposed: *"`any_needs_materials` ⇒ `build_placed` fails — materials never
+arrive, so nothing gets placed. A HAUL problem wearing a BUILD clause."***
+
+★★★ **Fable pre-killed it as the THIRD resurrection of the materials story, citing
+my own prior commits. ★ I then confirmed it independently on wave 30:**
+
+| seed class | `any_needs_materials` | `build_placed` | `stone_sum` |
+|---|---|---|---|
+| **all 40 passing** | `True` | `True` | **27** |
+| ★★★★★ **all 6 core** *(61 62 71 80 85 92)* | ★★★ **`False`** | ★★★ **`False`** | **27** *(62 80 85 92)*, 26, 5 |
+
+> ## ★★★★★★★ **THE CELL MY STORY REQUIRES — `build_placed=false` WITH
+> `needs_materials=TRUE` — IS EMPTY. ZERO OF 48.**
+
+★★★★★ **The failing seeds are `false/false`: BUILD NEVER PROGRESSED FAR ENOUGH TO
+REQUEST MATERIALS.** ★★ **`any_needs_materials=False` does not mean "materials
+missing" — it means NOTHING EVER ASKED.**
+
+★★★ **And supply is provably fine: `stone_sum=27` on four of the six core seeds —
+IDENTICAL to every passing seed.** ★ *My own banked line, from August: "build's
+failures are upstream of materials entirely."*
+
+> ★★★★★ **SO IT IS A BUILD PROBLEM, AND `any_needs_materials` IS THE CLAUSE
+> WEARING BORROWED CLOTHES. I had the direction exactly backwards.**
+
+### ★★★ WHAT THE IDENTICAL SETS ACTUALLY MEAN
+
+**The co-occurrence is real — but it is a DEFINITIONAL CONSEQUENT, not a causal
+chain.** ★★★★★ **`any_needs_materials` is downstream of `build_placed` BY
+CONSTRUCTION** *(no build progress ⇒ no material request)*, **and chop/logs is the
+same intra-subsystem coupling — logs come from chopping.**
+
+★★ **This is the dependent-pairs table rediscovered, banked 2026-08-04.** ★ **The
+family count STANDS — the core really is ~4 roots — but the collapse is
+definitional, which is a weaker and more honest claim than a causal one.**
+
+> ## ★★★★★ **MECHANICAL ANTIDOTE: "HAS THIS DIRECTION BEEN KILLED BEFORE?" IS A
+> GREP OF `DECISIONS`, AND IT BELONGS IN THE CHARACTERIZATION STEP.**
+> ★★★ **Perfect co-occurrence invites a causal story and is equally consistent
+> with one field being DEFINED in terms of the other. Check which, before
+> proposing a row.**
+
+★ **THE ONE LEAD THAT SURVIVES:** ★★★ **seed 71 has `stone_sum = 5` against
+everyone else's 27** — *a genuine outlier, on the same seed that carries the
+invisible regression.* ★★ **Recorded as a lead, NOT a direction.**
 
 ### ★ PER-SEED
 
@@ -86,11 +128,13 @@ ways: it hides the wins as well as the regressions.*
 
 ## ★★ HOW TO USE THIS
 
-1. ★★★★★ **Attack the PAIRS, not the seeds.** *One fix to the materials chain
-   plausibly moves six seeds; one to the log chain, four.*
-2. ★★★ **Test the causal direction first** *(`any_needs_materials` → `build_placed`)*
-   — **a one-read question, and it decides whether the row is a HAUL row or a
-   BUILD row.**
+1. ★★★★★ **Attack the PAIRS, not the seeds.** *One fix to the BUILD family
+   plausibly moves six seeds; one to the chop family, four.*
+2. ★★★★★★★ **The build family's row is: WHY DOES BUILD NEVER START?** *Not "why
+   don't materials arrive" — that question is answered and the answer is that
+   nothing ever asked.* ★★ **`build_placed=false` with full stone in the
+   stockpile is the whole finding, and it is upstream of every material
+   mechanism.**
 3. ★★ **The two singletons (`tl_ok` 66, `ch_mixed` 68/92) are separate and small.**
 4. ★ **Nothing here is flaky** — *frozen across nine waves is as reproducible as
    this corpus gets, which makes these the cheapest failures in the project to

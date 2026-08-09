@@ -258,6 +258,67 @@ def constancy_transitions(waves, ref_ids):
     return 1
 
 
+def clause_set_drift(waves, fails, order):
+    """The FOURTH line: what happened INSIDE seeds that failed throughout.
+
+    FIXED/NEW/PERSISTENT read the fail set's MEMBERSHIP. A seed that fails in
+    both waves is 'PERSISTENT' and invisible -- however much worse or better
+    it got. Measured 2026-08-08: seed 71 went from 2 failing clauses to 6
+    inside a window where the corpus improved 14/48 -> 12/48, and sat
+    undetected across five waves. Seed 61 durably LOST a clause over the same
+    window -- real progress, equally invisible.
+
+        A REGRESSION INSIDE AN ALREADY-FAILING SEED IS INVISIBLE TO EVERY
+        CARDINALITY CHECK. The verdict is a SET; the gate reads its COUNT.
+
+    Sibling of seed 90, which flipped pass->fail and WAS visible in the count.
+    Same event, visibility removed. Returns 2 if a clause was GAINED.
+    """
+    first_name, last_name = order[0], order[-1]
+    first_seeds = dict(waves)[first_name]
+    last_seeds = dict(waves)[last_name]
+    both = sorted(fails[first_name] & fails[last_name],
+                  key=lambda s: (0, int(s)) if str(s).isdigit() else (1, str(s)))
+    if not both:
+        return 0
+
+    def cl(seeds, s):
+        v = seeds.get(s, {}).get(VERDICT_FIELD)
+        return set(v) if isinstance(v, list) else set()
+
+    gained, lost, swapped = [], [], []
+    for s in both:
+        a, b = cl(first_seeds, s), cl(last_seeds, s)
+        add, rem = b - a, a - b
+        if add and rem:
+            swapped.append((s, sorted(rem), sorted(add)))
+        elif add:
+            gained.append((s, sorted(add)))
+        elif rem:
+            lost.append((s, sorted(rem)))
+
+    print("\n-- CLAUSE-SET DRIFT inside the %d seed(s) failing in BOTH waves"
+          % len(both))
+    if not (gained or lost or swapped):
+        print("   FROZEN: every one carries an identical clause set. "
+              "Stable, reproducible, non-flaky.")
+        return 0
+    for s, add in gained:
+        print("   [!! GAINED]  seed %-4s +%s" % (s, ", ".join(add)))
+    for s, rem in lost:
+        print("   [   LOST ]  seed %-4s -%s" % (s, ", ".join(rem)))
+    for s, rem, add in swapped:
+        print("   [ SWAPPED]  seed %-4s -%s  +%s"
+              % (s, ", ".join(rem), ", ".join(add)))
+    frozen = len(both) - len(gained) - len(lost) - len(swapped)
+    print("   (%d of %d frozen)" % (frozen, len(both)))
+    if gained:
+        print("   ** A GAINED clause is a REGRESSION the fail COUNT cannot "
+              "show -- the seed was already failing. **")
+        return 2
+    return 0
+
+
 def cross_wave(waves):
     """FIXED / NEW / PERSISTENT across waves. `waves` = [(name, seeds), ...] in
     chronological order.
@@ -356,7 +417,8 @@ def cross_wave(waves):
     print("   ever-failed %d, always-failed %d, churn %d"
           % (len(ever), len(always), len(ever) - len(always)))
 
-    rc = constancy_transitions(waves, ref_ids)
+    rc = clause_set_drift(waves, fails, order)
+    rc = constancy_transitions(waves, ref_ids) or rc
     if new:
         # Fires on IDENTITY, never on the total -- the whole point.
         delta = len(last) - len(first)
