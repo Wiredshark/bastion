@@ -8,21 +8,33 @@ Pre-registered outcome bar (three-way) and scope limits written before
 running — CPU-only proxy, not a driver-12 reproduction; kept in this
 session's scratchpad.
 
-## Non-vacuity — satisfied, two ways
+## Non-vacuity — satisfied, run-16's own number stands alone
 
 | | driver-12 | run-16 |
 |---|---|---|
 | `slow system execution` warnings | 22, up to 625ms | **5**, up to 875ms |
-| wall-vs-nominal overage | ~324s / ~11.8% | **~603s / ~29.3%** |
+| wall-vs-nominal overage | ~324s / ~11.8% (driver-derived) | **~603s / ~29.3%** (server-derived) |
 
-Overage computed strictly from server-authoritative log lines (tick field
-+ timestamp on `IS-LOADED-FILTER-DIAG`), not from the driver's own
-completion claim — see the divergence finding below for why that
-distinction matters. Independently corroborated by Opus from the OS
-process table: 8 bash processes, ~1,065s CPU each over ~1,260s wall
-(~85% duty cycle per thread), confirming the contention was real and
-sustained by a second instrument (`Get-Counter` on my side, process-table
-CPU-time on Opus's).
+**Provenance flagged, not just measured**: driver-12's overage figure was
+computed from the driver's own completion claim — exactly the measurement
+this run's own divergence finding (below) shows can be unreliable under
+contention. run-16's 29.3% comes from server-authoritative log lines
+(tick field + timestamp on `IS-LOADED-FILTER-DIAG`). The two cells are
+not directly comparable; **run-16's non-vacuity claim rests on its own
+server-derived number being large on its own terms (29.3%, 5 real
+warnings up to 875ms), not on "exceeding" driver-12's differently-sourced
+figure.** Independently corroborated by Opus from the OS process table: 8
+bash processes, ~1,065s CPU each over ~1,260s wall (~85% duty cycle per
+thread), confirming the contention was real and sustained by a second
+instrument (`Get-Counter` on my side, process-table CPU-time on Opus's).
+
+**Corollary for driver-12 itself**: any estimate of driver-12's true tick
+coverage built by scaling its driver-derived overage against run-16's
+server-derived overage mixes provenance the same way the table above
+originally did, and shouldn't be carried as a number. driver-12's actual
+tick coverage is unknown and unknowable — the one instrument that could
+have measured it directly (its own server-side tick-tagged log) is the
+one the deletion incident destroyed.
 
 Opus also disclosed a `find`-scan confound (09:11-09:14 local /
 13:11-13:14 UTC, ~3min of disk I/O) run against this same worktree during
@@ -44,6 +56,28 @@ contention.
 comparable to or exceeding driver-12's 11.8%) AND `dropped_by_is_loaded`
 stayed 0 throughout → the `is_loaded` hypothesis is REFUTED with its
 precondition MET.** A real negative result, not a void one.
+
+## Result: the fix, live, under sustained adverse contention — third independent confirmation
+
+Rest crosses at tick 54,000 (1,800 sim-sec); run-16 reached tick 61,756
+before the disconnect — 7,756 ticks of margin. **Did colonists sleep in
+that window? Yes.** First `RestAt` job at tick 54,436 (13:31:09), first
+`slept — rest restored` at 13:31:48 (job 699). **3 distinct sleep
+completions** (jobs 699, 700, 711) before the disconnect truncated the
+run. 16 `BREAKDOWN` events, 325 `RestAt` mentions, 2,416
+`preempt_cooldown` mentions, 14,095 `no_food_found` (hunger correctly
+dead-ending throughout — no food anywhere in this scenario).
+
+This is the fix's third independent live confirmation — after the 10x
+accelerated repro (script-14) and the shipped-rate clean run (run-15) —
+and the strongest condition of the three, since it ran under real,
+measured, non-vacuous sustained host contention. Only 3 of 8 colonists
+completed a sleep cycle before truncation (run-15's clean run took ~9,000
+ticks / 300 sim-sec from first `RestAt` to the 8th completion; run-16 only
+had ~7,332 ticks of window after its first `RestAt` before the disconnect
+cut it off — consistent with partial completion under a narrower window,
+not with the fix failing). Scored via `logcount.py`-style byte-level
+counting against the run-15 calibrator's method, not bare grep.
 
 ## The finding nobody was looking for: driver tick-tracking diverges from server truth under load
 
