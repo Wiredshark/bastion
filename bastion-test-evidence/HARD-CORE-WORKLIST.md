@@ -265,3 +265,45 @@ proven, and in production on one family.**
 | ★★★★★ **TRAVEL / ACCESS** | 54 61 62 71 78 80 85 92 **+ 66** | **9** |
 | ★★★ **INSTRUMENT ARTIFACT** *(closed)* | ★★★★★ **68** | **1** |
 | **open mysteries** | — | ★★★★★★★ **ZERO** |
+
+## ★★★★★★★★ SNAPSHOT-CLASS ENROLMENT (2026-08-09) — AND A CAVEAT ON THIS DOCUMENT
+
+**DECISIONS #80 ordered the wave30-born fields enrolled in holdcheck's IN-FLIGHT
+SNAPSHOT class.** ★ **Measured members, each floored on a seed where it moved
+(same binary `5b9a1a9724`, two runs):**
+
+| member | evidence |
+|---|---|
+| `b5_travel_timeout_last_positions` | ★★★ **MEASURED** *(seeds 49 and 90)* |
+| `b5_travel_timeout_min_distances` | ★★★ **MEASURED** *(seeds 49 and 90)* |
+| ★★★★★ **`b5_mine_cell_diag[*].stuck_strikes`** | ★★★ **MEASURED — `1 → 4` on seed 90, run-to-run.** *A NEW member; `claimant` and `progress` were already enrolled from #58.* |
+| `b5_self_job_reachability_probe` | ★★ **DERIVED** — *computed from `travel_timeout_last_positions` by its own producer. Labelled as derivation, not measurement.* |
+
+★★★★★ **DELIBERATELY NOT ENROLLED: `b5_mine_cell_diag[*].unreachable`.** *It moved
+in the fan on seed 54 but did NOT vary in either floor run.* ★★★ **It is also the
+MECHANISM FIELD behind the entire build/chop family — enrolling a mechanism field
+without measuring it is the exact error this class exists to prevent.**
+
+## ★★★★★★★ THE CAVEAT THIS RAISES ABOUT THE WORK ABOVE
+
+> ## ★★★★★ **`stuck_strikes` IS RUN-TO-RUN VARIABLE — AND THIS DOCUMENT'S BUILD
+> AND CHOP FAMILY FINDINGS REST ON THE SAME KIND OF QUANTITY.**
+
+**`BUILD-FAMILY-ANSWERED.md` and `CHOP-FAMILY-ANSWERED.md` characterise the hard
+core using `times_offered`, `timeouts_on_this_cell` and `starvation_cycles` —
+★★★ per-job counters accumulated over a run, exactly the shape `stuck_strikes`
+turned out to have.** ★ **I never floored them.**
+
+★★ **WHAT SURVIVES REGARDLESS:** *the STRUCTURAL facts — `unreachable` latching,
+arbitration skipping latched jobs, the second build job being healthy on every
+seed, and the planner-refused / strike-released split by `blocked_by` — are
+categorical, not counted.*
+
+★★★★★ **WHAT NEEDS A FLOOR BEFORE IT IS QUOTED AS A NUMBER:**
+*"`times_offered == timeouts_on_this_cell` on five of six"* **and the
+`starvation_cycles` range.** ★★★ **Two runs on one affected seed settles it, and
+it belongs to the travel row's opening rather than to a later surprise.**
+
+> ★ **Filed against my own strongest result of the night, before anyone builds on
+> it.** ★★★ **A delta is only evidence once the instrument is known stable — and
+> that applies to the findings I liked as much as to the bar I got wrong.**
