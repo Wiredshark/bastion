@@ -5788,8 +5788,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // true and observable.
         {
             let mood_cfg = common::bastion::MoodConfig::current();
+            // AUTON-2 STARVATION FALL-THROUGH investigation (2026-08-09,
+            // Fable's ask): the decay join yielding nothing is
+            // indistinguishable from decay at rate zero from outside this
+            // block. One counted entity + the effective rates, gated,
+            // ~10 sim-sec cadence -- cheap enough to leave standing.
+            let decay_diag = std::env::var_os("BASTION_DECAY_JOIN_DIAG").is_some();
+            let mut decay_join_count: u32 = 0;
             for (_, needs) in (&colonists, &mut needs_storage).join() {
                 comp::bastion::decay_needs(needs, dt.0, &mood_cfg);
+                decay_join_count += 1;
+            }
+            if decay_diag && tick.0 % 300 == 0 {
+                info!(
+                    tick = tick.0,
+                    decay_join_count,
+                    hunger_decay_per_sec = mood_cfg.hunger.decay_per_sec,
+                    rest_decay_per_sec = mood_cfg.rest.decay_per_sec,
+                    "bastion DECAY-JOIN-DIAG"
+                );
             }
             // ── RUN-0 (row 47): the energy governor — the run gait
             // DRAINS Energy per tick while flagged; crossing the floor

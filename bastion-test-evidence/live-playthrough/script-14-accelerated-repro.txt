@@ -1,0 +1,29 @@
+# 10x-accelerated starvation fall-through repro (2026-08-09, Opus/Fable).
+# BASTION_AUTON2_MOOD_OVERRIDE scales all three decay rates 10x, preserving
+# ordering (hunger still crosses first, still at half rest's time, still
+# 2:1) -- hunger crosses ~90s (~2700 ticks), rest ~180s (~5400 ticks).
+# Scope: tests whether the fall-through fires once both needs cross --
+# order-dependent, not rate-dependent. NOT a claim about shipped-rate
+# timing (that's script-09/driver-12's job, still unresolved). Same
+# footprint as script-09 for comparability, no food anywhere.
+note ACCELERATED REPRO -- anchoring and founding a colony
+anchor
+spawn 8
+wait 300
+note colony founded -- painting designations (no food source anywhere)
+designate mine 15208 16008 410 15214 16014 418
+designate chop 15220 16008 414 15232 16026 428
+designate stockpile 15213 16018 418 15217 16021 419
+designate farm 15198 15998 418 15204 16004 419
+designate build 15216 16030 419 15220 16034 423
+designate bed 15213 16013 419 15214 16014 420
+designate ladder 15221 16021 408 15221 16021 419
+note designations painted -- entering accelerated observation loop
+wait 2700
+note checkpoint 1 (~90s post-paint -- hunger interrupt due at 10x)
+wait 2700
+note checkpoint 2 (~180s post-paint -- rest interrupt due at 10x)
+wait 2700
+note checkpoint 3 (~270s post-paint)
+wait 2700
+note checkpoint 4 (~360s post-paint -- run complete, buffer for full sleep-cycle completion)
