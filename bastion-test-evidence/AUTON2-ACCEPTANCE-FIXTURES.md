@@ -199,6 +199,30 @@ higher-priority drive runs, and is re-claimed after.*
 > counts precisely the removals that suspension makes LEGITIMATE. The instrument
 > built to protect the design would have fired on the design.**
 
+> ### ★★★★★★★ **RETRACTED WITHIN THE HOUR — THE COUNTER WAS NEVER WRONG**
+>
+> **The increment (`8794`) is scoped to `orphans` — jobs the sweep is ABOUT TO
+> REMOVE — not to unclaimed-ness.** ★★★★★ **And suspension makes NO removal
+> legitimate; suspension means NOT removing.** *My sentence above is incoherent
+> on its own terms.*
+>
+> | build state | counter |
+> |---|---|
+> | re-claim **+** sweep-skip | ★★ **suspended jobs never enter `orphans` → holds at 0** |
+> | re-claim **without** sweep-skip | ★★★★★ **nonzero — a TRUE positive: the job really was destroyed under its colonist** |
+>
+> ★★★ **The instrument is the FREE DETECTOR for the sweep race, and needs zero
+> changes.** ★ **The field's own doc had already stated the acceptance:** *"becomes
+> a real regression guard once GUARD-6 unification lands and the count should hold
+> at 0."*
+>
+> ★★★★★ **WHAT WAS ACTUALLY WRONG WAS THE PROSE PREDICATE BELOW — and 5b built
+> the counter NARROWER than I specced it. The narrower version is the correct one.**
+> ★★ **A spec written loosely and implemented tightly leaves a defect that lives
+> ONLY in the document** — *and I then reasoned from my own document instead of
+> from the code, which is the day's law wearing its most embarrassing costume:
+> I read the SPEC as the producer.*
+
 ### ★★★ HOW IT SURVIVED REVIEW: I VALIDATED THE INVARIANT AGAINST THE OLD WORLD
 
 **Under destroy-and-recreate, *unclaimed self-job* really did mean *orphan* — the
@@ -222,6 +246,11 @@ don't accumulate.* ★★★★★ **The discriminator is OWNER LIVENESS, not `c
 sweep collects `no owner ∨ owner not alive/loaded`; skips `live owner, suspended`.**
 ★ **A colonist that dies mid-suspension must still have its job collected**, which
 a bare *"skip suspended jobs"* rule would leak forever.
+
+> ★★★★★ **THE SWEEP IS THE ONLY CODE CHANGE THIS INVARIANT NEEDS.** *The counter
+> stays exactly as built (see the retraction above); `settle_invariant_holds` at 0
+> after site 6 is a REAL acceptance bar, and a nonzero reads as the sweep race
+> before anything else.*
 
 ### ★★★★★★ THE PRECONDITION NOBODY HAD: THERE IS NO OWNERSHIP KEY
 
