@@ -202,3 +202,66 @@ its `ch_mixed` is a second, possibly independent problem.*
 question in the corpus** — *one seed, one boolean, no travel confound.* ★★ **That
 makes it the cheapest thing on this list, and the only one that does not wait on
 the travel row.**
+
+## ★★★★★★★★ SEED 68 — **CLOSED. THE PRIOR CLASSIFICATION RE-VERIFIES ON WAVE 30.**
+
+**Fable's redirect: run the trio ON MYSELF before a fresh read.** ★★★ *`c362de6b05`
+(wave25 era) had already classified 68 as a 63× cells-per-tree outlier.*
+
+### ★★★★★ THE RE-CHECK — IT HOLDS EXACTLY
+
+| | wave25 claim | wave30 |
+|---|---|---|
+| `ch_cells` / `ch_trees` | **30 / 1 → ratio 30.0** | ★★★★★ **30 / 1 → ratio 30.0** |
+| every other seed | **1891-2048 band** | ★★★ **cells/tree < 1000 on SEED 68 ALONE, across all 48** |
+
+> ★★★★★ **SEED 68 CLOSES AS AN INSTRUMENT-SCOPING ARTIFACT.** *A 30-cell
+> degenerate AABB cannot hold the trunk-and-canopy pair `ch_mixed` scans for.*
+> ★★ **Fix already in the backlog: min-box floor / precondition assert.**
+
+★ **The corroborating detail wave25 couldn't see: `ch_ground_truth_tree_present =
+True` with a witness carrying BOTH `wood_pos` and `leaves_pos` one z apart.**
+★★★ **A mixed tree demonstrably EXISTS on seed 68 — the 30-cell box simply
+doesn't contain it.**
+
+### ★★★★★★★ AND A UNIFICATION I TESTED AND KILLED
+
+**Wave 30 shows 68's witness at `ring_index 5` and 92's at `10`, both against
+`rings_tried = 4` — and the passing seeds' witnesses at ring 0.** ★★ **I
+hypothesised: *both `ch_mixed` failures have their witness OUTSIDE the rings
+scanned* — which would have UNITED the two failures the prior read SPLIT.**
+
+**Tested across all 48 before claiming it:**
+
+    (witness_ring >= rings_tried, ch_mixed):
+        (False, True): 28      (True, True): 16   <<<
+        (True, False):  2      (missing, False): 2
+
+> ## ★★★★★ **DEAD. SIXTEEN SEEDS HAVE THEIR WITNESS OUTSIDE THE SCANNED RINGS AND
+> `ch_mixed` IS STILL TRUE.** ★★★ **The prior read's *"two unrelated situations"*
+> STANDS, and my tidier story was wrong.**
+
+★ **Cost: one query. The hypothesis was attractive because it unified — which is
+exactly the property that should have made me test it first, and did.**
+
+## ★★★★★★★★ AND THE THIRD-VERDICT-STATE ROW IS CHEAPER THAN I FILED IT
+
+**Seeds 55 and 63 also carry `ch_mixed = False` — and they do NOT fail the
+clause. Their `b5_ch_oracle_class` is `precondition_unmet`** *(0 cells, 0 trees:
+no tree exists to be mixed)*.
+
+> ## ★★★★★ **THE THREE-WAY VERDICT SEED 66's ROW NEEDS ALREADY EXISTS — FOR CHOP.**
+> **`ch_oracle_class ∈ {pass, precondition_unmet}` is exactly pass / UNPROVEN.**
+
+★★★ **So the row is not *"invent a third state"* — it is *"generalize the one chop
+already has to every clause that can fail on a null input."*** ★★ **Distribution
+across wave 30: `pass` 46, `precondition_unmet` 2.** ★ **The pattern is built,
+proven, and in production on one family.**
+
+## ★★★★★★★ THE HARD CORE — **FINAL**
+
+| | seeds | |
+|---|---|---|
+| ★★★★★ **TRAVEL / ACCESS** | 54 61 62 71 78 80 85 92 **+ 66** | **9** |
+| ★★★ **INSTRUMENT ARTIFACT** *(closed)* | ★★★★★ **68** | **1** |
+| **open mysteries** | — | ★★★★★★★ **ZERO** |
