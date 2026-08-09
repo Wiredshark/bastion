@@ -4609,6 +4609,10 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // ARB-ATTEMPT-01 STEP 2 (batch item 1, 2026-08-04): captured once,
     // same reason -- (other, timed_out, completed, removed_externally).
     let release_reasons = server.bastion_release_reason_counts();
+    // #70 (ROW60-F3-CORPUS-FIELDS-PACKET): captured once, same reason --
+    // the F3 pruner's branch-dwell accumulators, the corpus's only route
+    // to this data (the wave-fan transport discards stderr).
+    let f3_prune = server.bastion_f3_prune_stats();
 
     // B5-EXIT-CODE-DISAMBIGUATION (Ben-directed, 2026-07-30): the pass gate
     // is a ~40-clause conjunction; at corpus scale a bare exit code only
@@ -4978,6 +4982,17 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_access_plan_self_rescue_starved": access_plan.6,
         "b5_access_pending_true_ticks": access_plan.7,
         "b5_live_is_access_count": access_plan.8,
+        // #70 (ROW60-F3-CORPUS-FIELDS-PACKET): the F3 pruner's branch-
+        // dwell accumulators -- see `bastion_f3_prune_stats`'s own doc.
+        // DIAGNOSTICS, not verdict terms: none of the six below may
+        // ever be added to the `clauses` vec above (review check: `grep
+        // '"b5_f3' ` over that region must return zero).
+        "b5_f3_ticks_branch_a": f3_prune.0,
+        "b5_f3_ticks_branch_b": f3_prune.1,
+        "b5_f3_ticks_branch_c": f3_prune.2,
+        "b5_f3_transitions": f3_prune.3,
+        "b5_f3_idle_peak": f3_prune.4,
+        "b5_f3_prunes_fired": f3_prune.5,
         // ARB-ATTEMPT-01 STEP 2 (batch item 1, 2026-08-04): scoped to the
         // three producers discovered firing on seeds 71/66 -- see
         // `bastion_release_reason_counts`'s own doc for the caveat on

@@ -3742,6 +3742,31 @@ impl Server {
         )
     }
 
+    /// bastion (#70, ROW60-F3-CORPUS-FIELDS-PACKET, harness hook,
+    /// 2026-08-09): the F3 stale-access-plan pruner's branch-dwell
+    /// accumulators -- the corpus's only route to this data, since the
+    /// wave-fan transport carries stdout JSON only and discards stderr,
+    /// where the live `F3-BRANCH` diagnostic writes. See
+    /// `JobBoard::b5_f3_ticks_branch_a`'s own doc for what each field
+    /// means. Flattened: `(ticks_branch_a, ticks_branch_b,
+    /// ticks_branch_c, transitions, idle_peak, prunes_fired)`. All pure
+    /// accumulators, zero-defaulted, never gated -- DIAGNOSTICS, not
+    /// verdict terms; must never enter the harness's `clauses` vec.
+    pub fn bastion_f3_prune_stats(&self) -> (u64, u64, u64, u32, f32, u32) {
+        let board = self
+            .state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>();
+        (
+            board.b5_f3_ticks_branch_a,
+            board.b5_f3_ticks_branch_b,
+            board.b5_f3_ticks_branch_c,
+            board.b5_f3_transitions,
+            board.b5_f3_idle_peak,
+            board.b5_f3_prunes_fired,
+        )
+    }
+
     /// bastion (ARB-ATTEMPT-01 step 2, batch item 1, harness hook,
     /// 2026-08-04): `to_release` outcome counts by classified reason --
     /// see `JobBoard::release_reason_counts`'s own doc for the zero-vs-

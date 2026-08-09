@@ -4130,13 +4130,36 @@ pub struct JobBoard {
     /// Not persisted; a restart mid-claim rebuilds from empty, at worst
     /// one false CLAIM burst on the next pass, never a false RELEASE.
     access_claim_state: HashMap<JobId, Uid>,
-    /// bastion (#68 amendment, Opus/#60 falsifier prereg): last-emitted
-    /// `F3PruneBranch`, for the transition-only `F3-BRANCH` diagnostic
-    /// (`access_claim_diag_enabled()`). `None` both before the first
-    /// pass and whenever the diag is off -- the diag-off case is
-    /// harmless: the block that reads this field is itself skipped
-    /// when the diag is off, so it is never compared in that state.
+    /// bastion (#68 amendment, Opus/#60 falsifier prereg): last-SEEN
+    /// `F3PruneBranch`, updated every pass regardless of any diag flag
+    /// (#70: `b5_f3_transitions` below needs this on corpus runs, which
+    /// never set `BASTION_ACCESS_CLAIM_DIAG`). Only the `F3-BRANCH` LOG
+    /// LINE stays gated on `access_claim_diag_enabled()`; the state
+    /// write and the transition count do not. `None` only before the
+    /// first pass ever runs.
     access_branch_state: Option<F3PruneBranch>,
+    /// bastion (#70, ROW60-F3-CORPUS-FIELDS-PACKET): six pure
+    /// accumulators over the F3 pruner's branch arms, exposed to the
+    /// corpus via `bastion_f3_prune_stats` -- the wave-fan transport
+    /// carries stdout JSON only (stderr, where `F3-BRANCH` writes, is
+    /// discarded on every seed), so this is the ONLY route this data
+    /// has to a wave. DIAGNOSTICS, not verdict terms: never enter the
+    /// harness's `clauses` vec (see that packet's review check).
+    /// Ticks spent in the `MaterialHeld` branch this run.
+    pub b5_f3_ticks_branch_a: u64,
+    /// Ticks spent in the `Idle` (accruing) branch this run.
+    pub b5_f3_ticks_branch_b: u64,
+    /// Ticks spent in the `ClaimedOrAbsent` branch this run.
+    pub b5_f3_ticks_branch_c: u64,
+    /// Branch changes over the run (a healthy colony changes a
+    /// handful of times; a pinned defect never changes at all).
+    pub b5_f3_transitions: u32,
+    /// Max `access_idle_secs` EVER reached, captured before any reset
+    /// -- the number the pruner's `ACCESS_STALE_SECS` threshold
+    /// actually turns on.
+    pub b5_f3_idle_peak: f32,
+    /// Times the pruner actually removed a stale plan.
+    pub b5_f3_prunes_fired: u32,
     /// bastion (B-LIVE3, mine lifecycle): designations that reached DONE
     /// (last non-access job completed). Telemetry for the harness/UI.
     pub done_count: u64,
@@ -14831,9 +14854,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             let idle_before = board.access_idle_secs;
             let branch = if access_jobs_exist && !access_claimed && material_held {
                 board.access_idle_secs = 0.0;
+                board.b5_f3_ticks_branch_a += 1;
                 F3PruneBranch::MaterialHeld
             } else if access_jobs_exist && !access_claimed {
                 board.access_idle_secs += 1.0; // this pass ≈ once per second
+                // #70: the true high-water mark, captured before any
+                // reset below can clear it -- including the reset on
+                // THIS pass, if the threshold is hit right here.
+                board.b5_f3_idle_peak = board.b5_f3_idle_peak.max(board.access_idle_secs);
                 if board.access_idle_secs >= ACCESS_STALE_SECS {
                     let before = board.jobs.len();
                     let stale: Vec<JobId> = board
@@ -14860,23 +14888,34 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         "bastion: stale access plan abandoned (F3 pruner)"
                     );
                     board.access_idle_secs = 0.0;
+                    board.b5_f3_prunes_fired += 1;
                 }
+                board.b5_f3_ticks_branch_b += 1;
                 F3PruneBranch::Idle
             } else {
                 board.access_idle_secs = 0.0;
+                board.b5_f3_ticks_branch_c += 1;
                 F3PruneBranch::ClaimedOrAbsent
             };
-            if access_claim_diag_enabled() && board.access_branch_state != Some(branch) {
-                info!(
-                    tick = tick.0,
-                    branch = ?branch,
-                    access_jobs = access_jobs_exist,
-                    claimed = access_claimed,
-                    material_held,
-                    idle_before,
-                    idle = board.access_idle_secs,
-                    "bastion F3-BRANCH"
-                );
+            // #70: transition detection and the counter it feeds are
+            // UNGATED -- a corpus run never sets
+            // BASTION_ACCESS_CLAIM_DIAG, so b5_f3_transitions must not
+            // depend on it. Only the F3-BRANCH log line itself stays
+            // behind the diag flag.
+            if board.access_branch_state != Some(branch) {
+                board.b5_f3_transitions += 1;
+                if access_claim_diag_enabled() {
+                    info!(
+                        tick = tick.0,
+                        branch = ?branch,
+                        access_jobs = access_jobs_exist,
+                        claimed = access_claimed,
+                        material_held,
+                        idle_before,
+                        idle = board.access_idle_secs,
+                        "bastion F3-BRANCH"
+                    );
+                }
                 board.access_branch_state = Some(branch);
             }
 
