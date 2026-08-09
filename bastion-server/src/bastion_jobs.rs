@@ -12783,6 +12783,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     slept = needs.rest >= cfg.rest.comfort + SLEEP_MARGIN;
                                 }
                                 if slept {
+                                    if std::env::var_os("BASTION_SELFJOB_COMPLETION_DIAG").is_some() {
+                                        info!(kind = "RestAt", "bastion SELFJOB-COMPLETED-DIAG");
+                                    }
                                     if let Some(slot) = board.beds.get_mut(&bed_pos) {
                                         slot.occupant = None;
                                     }
@@ -12867,6 +12870,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             })
                         });
                         if ate.is_some() {
+                            if std::env::var_os("BASTION_SELFJOB_COMPLETION_DIAG").is_some() {
+                                info!(kind = "EatFrom", "bastion SELFJOB-COMPLETED-DIAG");
+                            }
                             if let Some(needs) = needs_storage.get_mut(entity) {
                                 needs.hunger = (needs.hunger + FOOD_RESTORE).min(1.0);
                             }
@@ -12887,6 +12893,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // the clock passes `until`, then release back to life.
                     if let common::bastion::JobKind::Despond { until } = job.kind {
                         if time.0 >= until {
+                            if std::env::var_os("BASTION_SELFJOB_COMPLETION_DIAG").is_some() {
+                                info!(kind = "Despond", "bastion SELFJOB-COMPLETED-DIAG");
+                            }
                             info!(job = active.job, "bastion: despond lifted — resuming");
                             board.remove_job(active.job);
                             to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), "to_release fired (site scan)"); }
@@ -13827,8 +13836,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // (same tick: release-then-create, coherent by ordering).
         for (entity, uid, pending) in preempt_pending.drain(..) {
             let id = match pending {
-                PendingNeed::Rest(bed_pos) => board.insert_rest_job(bed_pos, uid),
+                PendingNeed::Rest(bed_pos) => {
+                    // AUTON-2 unification, completion instrument (Opus-
+                    // requested, 2026-08-09): log-only, env-gated,
+                    // per-kind -- SELFJOB-CREATED-DIAG marks every fresh
+                    // self-job insert, paired with SELFJOB-COMPLETED-DIAG
+                    // at each kind's own natural-completion point below.
+                    // Grep-countable, deliberately not a JobBoard counter
+                    // (no schema change, no persistence question) --
+                    // matches this file's existing diagnostic idiom.
+                    if std::env::var_os("BASTION_SELFJOB_COMPLETION_DIAG").is_some() {
+                        info!(kind = "RestAt", "bastion SELFJOB-CREATED-DIAG");
+                    }
+                    board.insert_rest_job(bed_pos, uid)
+                },
                 PendingNeed::Eat(item, rid, ipos, def) => {
+                    if std::env::var_os("BASTION_SELFJOB_COMPLETION_DIAG").is_some() {
+                        info!(kind = "EatFrom", "bastion SELFJOB-CREATED-DIAG");
+                    }
                     board.insert_eat_job(item, ipos, uid, rid, def)
                 },
                 PendingNeed::Despond(until) => {
@@ -13836,6 +13861,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .get(entity)
                         .map(|p| p.0.map(|v| v.floor() as i32))
                         .unwrap_or_default();
+                    if std::env::var_os("BASTION_SELFJOB_COMPLETION_DIAG").is_some() {
+                        info!(kind = "Despond", "bastion SELFJOB-CREATED-DIAG");
+                    }
                     board.insert_despond_job(feet, uid, until)
                 },
                 // AUTON-2 unification (site 4/6, corrected per Fable
