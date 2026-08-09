@@ -34,6 +34,10 @@ reasons are:**
 >
 > ★★★ **No job may be both unclaimable and present.**
 
+> ## ★★★★★★★ **SUPERSEDED 2026-08-08 — see §"THE INVARIANT FORBIDS THE DESIGN"
+> > at the foot of this document. The predicate above is WRONG under
+> > suspend-and-reselect and must not be built.**
+
 ★★ **This covers all 26 paths WITHOUT naming them, and survives the 27th.**
 ★ **A proof obligation over N call sites is an INVARIANT question, not a fixture
 question** — *the fixture's job is to create conditions where the invariant would
@@ -177,3 +181,78 @@ kept.**
 - **Not** the 22 unclassified `ReleaseReason::Other` sites. ★★ **Classifying them
   is its own row** — *the invariant makes the fixture independent of that work,
   which is why the conversion was worth doing.*
+
+## ★★★★★★★★ THE INVARIANT FORBIDS THE DESIGN (2026-08-08, seventh mistake)
+
+**§8 of the review checklist said *"assume the seventh is in here too."* ★ It was
+in the fixtures doc, in the item I was proudest of.**
+
+### WHAT I WROTE, AND WHY IT IS WRONG
+
+> *"No self-job may be both **unclaimed** and present."*
+
+★★★★★ **A SUSPENDED JOB IS UNCLAIMED AND PRESENT — BY DESIGN.** *That is what
+suspend-and-reselect MEANS: the job stays on the board with no claimant while a
+higher-priority drive runs, and is re-claimed after.*
+
+> ★★★★★★★ **`settle_invariant_violations` — the counter I directed 5b to add —
+> counts precisely the removals that suspension makes LEGITIMATE. The instrument
+> built to protect the design would have fired on the design.**
+
+### ★★★ HOW IT SURVIVED REVIEW: I VALIDATED THE INVARIANT AGAINST THE OLD WORLD
+
+**Under destroy-and-recreate, *unclaimed self-job* really did mean *orphan* — the
+old lifecycle had no legitimate unclaimed state.** ★★ **The predicate was TRUE
+WHEN WRITTEN and falsified by the change it was written to accept.**
+
+★ **Same shape as the day-close doc's own named pattern** *(each close true when
+written, false within the hour)* — ★★★ **an acceptance criterion inherits the
+world-model of the code it was written against, and a unification CHANGES that
+model. The fixture must be re-derived from the NEW lifecycle, never carried over.**
+
+### ★★★★★ THE CORRECTED PREDICATE
+
+> **`∀ j ∈ board.jobs where is_labor_hold_self_job(j.kind) ∧ j.claimed_by.is_none():`**
+> **`j` is SUSPENDED for a LIVE owner ∨ `j` is arbiter-reachable.**
+>
+> ★★★ **Unclaimed is no longer the violation. UNOWNED-AND-UNREACHABLE is.**
+
+★★ **And the sweep's leak guard must survive the change** — *it exists so self-jobs
+don't accumulate.* ★★★★★ **The discriminator is OWNER LIVENESS, not `claimed_by`:
+sweep collects `no owner ∨ owner not alive/loaded`; skips `live owner, suspended`.**
+★ **A colonist that dies mid-suspension must still have its job collected**, which
+a bare *"skip suspended jobs"* rule would leak forever.
+
+### ★★★★★★ THE PRECONDITION NOBODY HAD: THERE IS NO OWNERSHIP KEY
+
+**`common/src/bastion.rs:1079-1119` — `claimed_by: Option<Uid>` is the ONLY owner
+field on `Job`. Release NULLS it.** ★★★ **So *"the unclaimed job belonging to this
+uid"* is not expressible at `0fb7ca07b7`; the only thing to match on is `kind`.**
+
+> ★★★★★★★ **RE-CLAIM BY KIND ALONE MEANS ONE COLONIST INHERITS ANOTHER'S
+> BREAKDOWN DEADLINE.** *A silent cross-attribution — the [[new-producer-must-fit-
+> the-stores-unit]] failure, arriving as a MISSING key rather than a guessed one.*
+
+## ★★★★★ FIXTURE 2 — UPGRADED TO **TWO** DESPONDENT COLONISTS
+
+★★★ **With ONE despondent colonist, *"`until` is byte-identical"* PASSES on a build
+that cross-attributes** — *there is no other deadline for it to be wrong about.*
+
+**REQUIRED: two colonists despondent simultaneously with DISTINCT `until` values;
+suspend both; assert EACH resumes its OWN.** ★ **The falsifier is now free: swap
+the two on resume — the one-colonist fixture cannot see it, the two-colonist one
+must go RED.**
+
+> ★★ **Same law as the roll-count assertion twelve lines up: an outcome that could
+> arise two ways does not discriminate between them.** ★★★★★ **I applied it to the
+> RNG and missed it on the IDENTITY, in the same fixture.**
+
+## ★ PRESERVED, NOT FIXED: `until` IS ABSOLUTE AND DOES NOT PAUSE
+
+**The code says *"eating genuinely PAUSES the breakdown."* ★★★ An absolute `until`
+does not pause — a 30s suspension elapses 30s of breakdown while not despondent.**
+
+★★ **PRE-EXISTING** *(destroy-and-recreate stores `until` untouched — identical
+drift)*, ★★★★★ **so PRESERVE IT EXACTLY THIS ROW.** *Converting to a remaining-
+duration would change the quantity this fixture asserts, mid-build.* ★ **Filed as
+its own question, not a blocker.**
