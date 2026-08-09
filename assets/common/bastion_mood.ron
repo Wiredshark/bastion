@@ -1,17 +1,38 @@
-// bastion (B7-0, row 44): the needs/mood tuning
-// (common/src/bastion.rs::MoodConfig). Decay drains a meter per
-// GAME-SECOND toward 0.0 (hunger ~42 game-min full-to-empty at 0.0004);
-// a need penalizes mood only BELOW its comfort band; weights are
-// NEGATIVE (a shortfall subtracts from the base). The thought table is
-// a SEPARATE server-side asset (bastion_thoughts.ron) — its keys are
-// rtsim's ChronicleKind, which this crate layer cannot see.
+// bastion (B7-0, row 44; AUTON-2 STEP-3 RE-TUNE, row 50, 2026-08-09):
+// the needs/mood tuning (common/src/bastion.rs::MoodConfig). Decay
+// drains a meter per GAME-SECOND toward 0.0; a need penalizes mood
+// only BELOW its comfort band; weights are NEGATIVE (a shortfall
+// subtracts from the base). The thought table is a SEPARATE
+// server-side asset (bastion_thoughts.ron) — its keys are rtsim's
+// ChronicleKind, which this crate layer cannot see.
+//
+// rest/hunger's `decay_per_sec` are DAY-ALIGNED (AUTON2-SPEC.md §4):
+// at the shipped `day_cycle_coefficient` (1440/day_length, 30.0 ->
+// 48 -> 1 game day = 1800 sim-sec, verified against
+// common::consts::DAY_LENGTH_DEFAULT before applying, per the spec's
+// own instruction), 1.0 (full) to 0.2 (interrupt) is a 0.8 drop:
+// rest crosses interrupt ~1x/day  -> 0.8 / 1800 = 0.000444.../sec
+// hunger crosses interrupt ~2x/day -> 0.8 / 900  = 0.000888.../sec
+// (previously 0.0003/0.0004 -- ~1.48/1.11 days respectively, ~50%/
+// ~2.2x too slow per the spec's own measurement). This is the ONLY
+// asset this row touches -- the hard invariant checked BEFORE
+// applying (AUTON2-SPEC.md's own re-tune section): rest decay must
+// stay under BED_REST_RECOVERY_PER_SEC(0.02) x the WORST bed quality
+// (Bedroll, 0.6) = 0.012/sec ceiling. 0.000444 has ~27x headroom --
+// this re-tune does not approach the invariant, but the invariant is
+// restated here (not just in the spec doc) because of how it fails:
+// silently, the day someone adds a lower bed tier or tunes by feel.
 (
     mood_base: 0.6,
     // interrupt = the preemption threshold (B7-2): below it the need
     // drops work and self-assigns its need-job; recreation never
     // preempts (interrupt 0 — mood-only meter per the B7 ruling).
-    hunger: (decay_per_sec: 0.0004, comfort: 0.5, weight: -0.5, interrupt: 0.2),
-    rest: (decay_per_sec: 0.0003, comfort: 0.5, weight: -0.4, interrupt: 0.2),
+    hunger: (decay_per_sec: 0.000889, comfort: 0.5, weight: -0.5, interrupt: 0.2),
+    rest: (decay_per_sec: 0.000444, comfort: 0.5, weight: -0.4, interrupt: 0.2),
+    // AUTON-2 STEP-3 RE-TUNE: recreation is OUT OF SCOPE -- the spec's
+    // day-aligned targets are rest/hunger only (recreation's
+    // `interrupt: 0.0` already makes it mood-only, never preempting,
+    // a different axis the spec never names a target for). Unchanged.
     recreation: (decay_per_sec: 0.0002, comfort: 0.4, weight: -0.15, interrupt: 0.0),
     // The BREAKDOWN staircase (B7-3): mood sustained below break_minor
     // for break_sustain_secs game-seconds rolls break_chance per

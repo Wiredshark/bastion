@@ -470,6 +470,14 @@ struct Args {
     #[arg(long)]
     auton2_owner_death_fixture: bool,
 
+    /// bastion (AUTON-2 STEP-3 RE-TUNE, row 50, 2026-08-09): the FR15
+    /// paired A/B for the day-aligned decay re-tune -- run twice
+    /// (BASTION_AUTON2_MOOD_OVERRIDE set to the pre-retune values for
+    /// "before", unset for "after") and compare mine_jobs_completed /
+    /// preempt_attempts over the same fixed tick window.
+    #[arg(long)]
+    auton2_retune_economy_scenario: bool,
+
     /// bastion (AUTON-2 unification, site 4/6, Fixture 2 upgrade,
     /// Fable-ruled DECISIONS #72, 2026-08-09): the two-despondent-
     /// colonist cross-attribution test -- TWO colonists forced into
@@ -1755,6 +1763,8 @@ fn main() -> ExitCode {
         auton2_needs_probe(&args)
     } else if args.auton2_owner_death_fixture {
         auton2_owner_death_fixture(&args)
+    } else if args.auton2_retune_economy_scenario {
+        auton2_retune_economy_scenario(&args)
     } else if args.auton2_despond_cross_attribution_fixture {
         auton2_despond_cross_attribution_fixture(&args)
     } else if args.b73_scenario {
@@ -10058,6 +10068,221 @@ fn with_fixture_mood_config<R>(fixture_ron: &str, f: impl FnOnce() -> R) -> R {
 /// not touch the separate, still-open cooldown-on-attempt/interrupt-
 /// cause question (`PREEMPT-SCENARIO-COOLDOWN-DEFECT.md`), which is
 /// chased before Step 2, not here.
+/// bastion (AUTON-2 STEP-3 RE-TUNE, row 50, 2026-08-09): the FR15 paired
+/// A/B for the day-aligned decay re-tune (AUTON2-SPEC.md §7: "FR15, full
+/// strength on step 3... throughput DOWN by roughly the fed/rested
+/// fraction"). One colonist, a generously-sized mine designation (60
+/// jobs, never exhausted within the window), one bed, a standing food
+/// stockpile (10 mushrooms, replenished mid-run if it runs low) — needs
+/// decay NATURALLY (no `bastion_set_needs` force-set, unlike `preempt_
+/// scenario`'s phase 1 -- the whole point here is to actually exercise
+/// the tuning, not bypass it), for a FIXED tick budget. Reads whatever
+/// `BASTION_AUTON2_MOOD_OVERRIDE` the caller set (or didn't) — same
+/// discipline as every other AUTON-2 fixture this row built: the caller
+/// supplies "before" (old shipped values) or "after" (unset, reads the
+/// re-tuned RON) from the outside; this scenario is byte-identical
+/// either way except for what it measures.
+fn auton2_retune_economy_scenario(args: &Args) -> ExitCode {
+    use common::bastion::{DesignationKind, Region};
+    use common::terrain::{Block, BlockKind};
+    use common::vol::ReadVol;
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-retune-economy-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-retune-economy".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-retune-economy-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 16)..=(cx + 16) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 1);
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let a = names.first().cloned().unwrap_or_default();
+
+    let bed = Vec3::new(cx - 6, cy, gz + 1);
+    server.bastion_register_bed(bed);
+    // A GENEROUS mine designation -- 3x20 cells -- never exhausted within
+    // the window, so a shortfall in jobs completed reflects TIME spent
+    // on needs, not running out of work to do.
+    let mine = Region {
+        min: Vec3::new(cx + 4, cy - 10, gz),
+        max: Vec3::new(cx + 6, cy + 9, gz),
+    };
+    let mine_jobs_total = server
+        .bastion_place_designation(mine, DesignationKind::Mine)
+        .len();
+
+    const MUSHROOM: &str = "common.items.food.mushroom";
+    for i in 0..10 {
+        server.bastion_spawn_item(
+            Vec3::new(cx as f32 - 6.5, cy as f32 + i as f32 * 0.3, gz as f32 + 1.5),
+            MUSHROOM,
+            1,
+        );
+    }
+
+    let attempts_before = server.bastion_preempt_attempts();
+    let jobs_remaining_start = server.bastion_jobs_in_region(mine);
+
+    // AUTON2-SPEC.md §7: "FR15, full strength on step 3" -- run long
+    // enough to observe at LEAST one hunger cycle under the re-tuned
+    // rate (interrupt in ~900 sim-sec, ~27000 ticks) while still being
+    // long enough to be a meaningful (not degenerate) comparison under
+    // the OLD rate too (~2000 sim-sec, ~60000 ticks for a full hunger
+    // cycle) -- 45000 ticks (~1500 sim-sec, ~5/6 of a day) sits between
+    // the two, guaranteeing the NEW-rate leg completes a full cycle
+    // while the OLD-rate leg is still mid-cycle, which is itself part
+    // of the predicted shift (fewer completed cycles = less time
+    // preempted, not a run that is too short to say anything).
+    let window_ticks: u64 = std::env::var("BASTION_RETUNE_WINDOW_TICKS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(45_000);
+    // Re-stock food partway through so a long window doesn't starve out
+    // (10 items is plenty for the default window; only matters for a
+    // caller-supplied LONGER one).
+    let mut ticked = 0u64;
+    while ticked < window_ticks {
+        let chunk = 5_000.min(window_ticks - ticked);
+        tick(&mut server, chunk);
+        ticked += chunk;
+        if ticked % 15_000 == 0 {
+            for i in 0..10 {
+                server.bastion_spawn_item(
+                    Vec3::new(cx as f32 - 6.5, cy as f32 + i as f32 * 0.3, gz as f32 + 1.5),
+                    MUSHROOM,
+                    1,
+                );
+            }
+        }
+    }
+
+    let jobs_remaining_end = server.bastion_jobs_in_region(mine);
+    let mine_jobs_completed = jobs_remaining_start.saturating_sub(jobs_remaining_end);
+    let attempts_after = server.bastion_preempt_attempts();
+    let preempt_attempts = attempts_after.saturating_sub(attempts_before);
+    let (hunger_end, rest_end) = server
+        .bastion_colonist_needs_mood(&a)
+        .map(|(hunger, rest, _, _)| (hunger, rest))
+        .unwrap_or((f32::NAN, f32::NAN));
+    let mood_cfg_diag = if std::env::var_os("BASTION_AUTON2_DIAG").is_some() {
+        let cfg = common::bastion::MoodConfig::current();
+        Some((cfg.rest.decay_per_sec, cfg.hunger.decay_per_sec))
+    } else {
+        None
+    };
+
+    let result = serde_json::json!({
+        "seed": args.seed,
+        "elapsed_ms": started.elapsed().as_millis(),
+        "window_ticks": window_ticks,
+        "override_env_set": std::env::var_os("BASTION_AUTON2_MOOD_OVERRIDE").is_some(),
+        "mood_cfg_rest_decay": mood_cfg_diag.map(|(r, _)| r),
+        "mood_cfg_hunger_decay": mood_cfg_diag.map(|(_, h)| h),
+        "mine_jobs_total": mine_jobs_total,
+        "mine_jobs_completed": mine_jobs_completed,
+        "preempt_attempts": preempt_attempts,
+        "hunger_end": hunger_end,
+        "rest_end": rest_end,
+    });
+    println!("{}", serde_json::to_string(&result).expect("Value is always serializable"));
+    ExitCode::SUCCESS
+}
+
 /// bastion (AUTON-2 unification, site 4/6, Fable-ruled DECISIONS #72,
 /// 2026-08-09): the OWNER-DEATH planted-failure path — the corrected
 /// settle invariant's own new leak this row could open (a suspended
@@ -10650,11 +10875,14 @@ fn auton2_needs_probe(args: &Args) -> ExitCode {
 
     // The negative control, in-process: MoodConfig::current() read AGAIN
     // right now -- if the override env var was never set, this must
-    // match the shipped decay_per_sec exactly (0.0003/0.0004). Proves
-    // the "byte-identical when unset" half without a second invocation.
+    // match the shipped decay_per_sec exactly. Proves the "byte-identical
+    // when unset" half without a second invocation. Updated for AUTON-2
+    // STEP-3 RE-TUNE (2026-08-09, bastion_mood.ron day-aligned retune) --
+    // these constants track the SHIPPED asset, not a fixed reference; the
+    // literals below intentionally moved from 0.0003/0.0004.
     let final_cfg = common::bastion::MoodConfig::current();
     let matches_shipped_when_unset = override_active_before
-        || (final_cfg.rest.decay_per_sec == 0.0003 && final_cfg.hunger.decay_per_sec == 0.0004);
+        || (final_cfg.rest.decay_per_sec == 0.000444 && final_cfg.hunger.decay_per_sec == 0.000889);
 
     // AUTON-2 Step 1, THE COMPLETION HALF (2026-08-08, Fable-directed):
     // the probe above only proves INITIATION (the registered
@@ -22738,8 +22966,11 @@ fn needs_scenario(args: &Args) -> ExitCode {
         (Some(b), Some(a)) => {
             let secs = window as f32 / args.tps as f32;
             let expect = |v: f32, rate: f32| (v - rate * secs).max(0.0);
-            let ok = (a.0 - expect(b.0, 0.0004)).abs() < 1e-3
-                && (a.1 - expect(b.1, 0.0003)).abs() < 1e-3
+            // AUTON-2 STEP-3 RE-TUNE (2026-08-09): rate literals track the
+            // shipped bastion_mood.ron, not a fixed reference -- these two
+            // moved from 0.0004/0.0003.
+            let ok = (a.0 - expect(b.0, 0.000889)).abs() < 1e-3
+                && (a.1 - expect(b.1, 0.000444)).abs() < 1e-3
                 && (a.2 - expect(b.2, 0.0002)).abs() < 1e-3;
             (ok, a.0 < b.0 && a.1 < b.1 && a.2 < b.2)
         },
