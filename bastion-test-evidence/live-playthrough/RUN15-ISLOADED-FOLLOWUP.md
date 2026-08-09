@@ -25,9 +25,44 @@ in an early, loaded, pre-overrun window would mean the mechanism isn't
 load-linked and the row is wrong) — it survives, but the claim was never
 that it *must* be zero early; it's that it might open *later*, under
 accumulated overrun. This run reached driver-12's full tick budget and
-still never opened. That's evidence against the `is_loaded`-flapping
-hypothesis specifically on this run, not proof it can't occur — driver-12's
-own machine/session state at the time isn't reproducible.
+still never opened.
+
+## Non-vacuity check (required before scoring, per Opus's charter §3)
+
+The charter requires the loaded arm to independently show the suspected
+overrun before a zero on `dropped_by_is_loaded` means anything:
+
+| | driver-12 | run-15 |
+|---|---|---|
+| `slow system execution` warnings | 22, up to 625ms | **0** |
+| wall-vs-nominal overage | ~324s / ~11.8% (2736s wall) | **~9.8s / ~0.4%** (2426.8s wall vs 2417.0s nominal, active window tick 13→72523) |
+
+Measured (not recalled): `data.count(b'slow system execution')` on
+`server-stdout-15.log` → 0. Wall span from the first `IS-LOADED-FILTER-
+DIAG` timestamp (tick 13, 11:52:27.074881Z) to the last sample where
+`b_count` was still 8 — i.e. the script's own active window, excluding the
+post-disconnect idle tail (tick 72523, 12:32:53.899068Z) — is 2426.82s
+real against 2417.0s nominal for that many ticks (72,510 / 30).
+
+**The load precondition was not met.** Per the charter's own pre-registered
+disjunction: this voids the arm for the `is_loaded` hypothesis specifically
+— it is a clean non-result, not a refutation, and not evidence either way
+on whether sustained overrun would cause a drop. It remains a full,
+unqualified pass for the fix itself (below), which does not depend on load.
+
+## driver-12's disposition
+
+Same script, same budget, same footprint, current tip, healthy throughout
+— and driver-12's own raw log no longer exists (the deletion incident).
+With run-15's load precondition unmet, there is no surviving evidence that
+would let a future run distinguish "driver-12 was the `is_loaded` mechanism
+under real load" from "driver-12 was a one-off." The honest disposition:
+**driver-12 is an unreproduced, now-unreproducible one-off** — recorded as
+that rather than left as an open row implying an undiscovered bug nobody
+can act on. The `A`/`B`/`C` counters (`BASTION_NEED_LOAD_FILTER_DIAG`)
+ship regardless and stay on the live-run protocol: they are what catches
+this in seconds if it ever recurs, which is the actual durable result of
+this arc.
 
 ## Result: the fix, live, at shipped (non-accelerated) rates, full duration
 
@@ -46,30 +81,12 @@ reachability only at 10x acceleration).
 - `preempt_cooldown_active`: 2,640 — cooldown gating fired normally.
 - Zero food successes (structurally guaranteed, no food anywhere).
 
-## What this means for driver-12
-
-**driver-12's null does not reproduce on a matched re-run at current tip.**
-Where driver-12 logged zero preempts and zero despondency across the full
-40 minutes, run-15 — same script, same duration, same footprint — produced
-normal, healthy activity throughout: 8/8 colonists slept, thousands of
-ordinary skip-reason events, zero `is_loaded` drops. Combined with
-script-14's clean 10x pass, this is now two independent live runs post-fix
-showing no trace of driver-12's specific failure mode. driver-12 remains
-unexplained but increasingly looks like a one-off condition specific to
-that session (machine load, concurrent work, or something else not
-captured by any instrument that existed at the time) rather than a
-recurring mechanism reachable from the code alone. The `#63` row stays
-open only in the sense that "we still don't know what happened to
-driver-12 specifically" — it is not open in the sense of "the fix might
-not work," which this run answers directly: it does, at shipped rates,
-unaccelerated, full duration.
-
 ## Despondency / calibrator
 
 14 `BREAKDOWN` events fired during this run — see
-`bastion-test-evidence/calibrators/run15-calibrator.md` for the byte-level
-counts and the replacement-calibrator record (Run B's calibrator was lost
-in the driver-9..14 deletion incident).
+`bastion-test-evidence/calibrators/run15-calibrator.md` and the committed
+`run15-extract.log` for the replacement calibrator (Run B's was lost in
+the driver-9..14 deletion incident).
 
 ## Tail-end population collapse (not an `is_loaded` finding)
 

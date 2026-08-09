@@ -7,6 +7,16 @@ not an opportunistic hope. This is that task, folded into run-15 (the
 `#63` `is_loaded` follow-on live re-run) since it was a loaded run with
 `BASTION_NEED_SKIP_DIAG` on and despondency firing.
 
+**A count in a note preserves the FACT that a calibrator existed; it
+cannot calibrate anything itself.** `logcount.py` needs an actual FILE to
+prove a reader can see U+2014. The committed artifact is
+`bastion-test-evidence/calibrators/run15-extract.log` (~60 lines, 7,871
+bytes) — the first 20 matches of each of `BREAKDOWN` (em-dash),
+`no_food_found` (ASCII), and `rest below interrupt` (ASCII), extracted
+verbatim from the full run so every byte is real log content, not
+synthesized. That file is small enough to commit outright, so it survives
+independent of anything else in this directory.
+
 ## Source
 
 `bastion-test-evidence/calibrators/run15-server-stdout.log` — copied
@@ -15,8 +25,10 @@ at report time, same run that produced the `#63` read below. Kept on disk,
 not committed to git (26.5 MB, ~85x the largest previously-committed raw
 log in this tree — see the size table checked before this decision:
 prior committed `server-stdout-N.log` files range 29,532–320,893 bytes).
-Per the standing retention rule, the numbers below are what's load-bearing,
-not the file itself.
+This full copy is disposable now that `run15-extract.log` carries every
+class the calibrator needs to prove — the earlier version of this note
+treated the byte counts below as sufficient, which was wrong (a fact,
+not a function); left here for the full-population counts only.
 
 ## Counts (byte-level, `bytes.count()`, no grep/locale involved)
 

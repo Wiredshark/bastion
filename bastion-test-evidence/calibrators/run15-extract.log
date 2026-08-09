@@ -1,0 +1,42 @@
+[2m2026-08-09T12:21:31.767780Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: BREAKDOWN — despondent (mood sustained below the break threshold) [3mcolonist[0m[2m=[0m47
+[2m2026-08-09T12:21:32.767421Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: BREAKDOWN — despondent (mood sustained below the break threshold) [3mcolonist[0m[2m=[0m49
+[2m2026-08-09T12:21:33.266999Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: BREAKDOWN — despondent (mood sustained below the break threshold) [3mcolonist[0m[2m=[0m48
+[2m2026-08-09T12:21:33.767018Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: BREAKDOWN — despondent (mood sustained below the break threshold) [3mcolonist[0m[2m=[0m44
+[2m2026-08-09T12:21:34.268010Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: BREAKDOWN — despondent (mood sustained below the break threshold) [3mcolonist[0m[2m=[0m50
+[2m2026-08-09T12:21:35.266985Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: BREAKDOWN — despondent (mood sustained below the break threshold) [3mcolonist[0m[2m=[0m46
+[2m2026-08-09T12:21:35.267016Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: BREAKDOWN — despondent (mood sustained below the break threshold) [3mcolonist[0m[2m=[0m51
+[2m2026-08-09T12:22:34.886547Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: BREAKDOWN — despondent (mood sustained below the break threshold) [3mcolonist[0m[2m=[0m50
+[2m2026-08-09T12:22:35.387191Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: BREAKDOWN — despondent (mood sustained below the break threshold) [3mcolonist[0m[2m=[0m48
+[2m2026-08-09T12:22:36.387197Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: BREAKDOWN — despondent (mood sustained below the break threshold) [3mcolonist[0m[2m=[0m44
+[2m2026-08-09T12:22:36.387207Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: BREAKDOWN — despondent (mood sustained below the break threshold) [3mcolonist[0m[2m=[0m46
+[2m2026-08-09T12:22:36.886490Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: BREAKDOWN — despondent (mood sustained below the break threshold) [3mcolonist[0m[2m=[0m49
+[2m2026-08-09T12:23:39.561941Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: BREAKDOWN — despondent (mood sustained below the break threshold) [3mcolonist[0m[2m=[0m46
+[2m2026-08-09T12:24:45.195431Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: BREAKDOWN — despondent (mood sustained below the break threshold) [3mcolonist[0m[2m=[0m46
+[2m2026-08-09T12:07:06.942511Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m NEED-SKIP-DIAG reason=no_food_found [3mcolonist[0m[2m=[0m45
+[2m2026-08-09T12:07:07.442615Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m NEED-SKIP-DIAG reason=no_food_found [3mcolonist[0m[2m=[0m45
+[2m2026-08-09T12:07:07.942471Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m NEED-SKIP-DIAG reason=no_food_found [3mcolonist[0m[2m=[0m45
+[2m2026-08-09T12:07:08.443220Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m NEED-SKIP-DIAG reason=no_food_found [3mcolonist[0m[2m=[0m45
+[2m2026-08-09T12:07:08.942845Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m NEED-SKIP-DIAG reason=no_food_found [3mcolonist[0m[2m=[0m45
+[2m2026-08-09T12:07:09.442600Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m NEED-SKIP-DIAG reason=no_food_found [3mcolonist[0m[2m=[0m45
+[2m2026-08-09T12:07:09.942646Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m NEED-SKIP-DIAG reason=no_food_found [3mcolonist[0m[2m=[0m45
+[2m2026-08-09T12:07:10.443213Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m NEED-SKIP-DIAG reason=no_food_found [3mcolonist[0m[2m=[0m45
+[2m2026-08-09T12:07:10.443235Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m NEED-SKIP-DIAG reason=no_food_found [3mcolonist[0m[2m=[0m50
+[2m2026-08-09T12:07:10.942842Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m NEED-SKIP-DIAG reason=no_food_found [3mcolonist[0m[2m=[0m45
+[2m2026-08-09T12:07:10.942861Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m NEED-SKIP-DIAG reason=no_food_found [3mcolonist[0m[2m=[0m50
+[2m2026-08-09T12:07:11.442712Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m NEED-SKIP-DIAG reason=no_food_found [3mcolonist[0m[2m=[0m45
+[2m2026-08-09T12:07:11.442735Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m NEED-SKIP-DIAG reason=no_food_found [3mcolonist[0m[2m=[0m50
+[2m2026-08-09T12:07:11.943140Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m NEED-SKIP-DIAG reason=no_food_found [3mcolonist[0m[2m=[0m45
+[2m2026-08-09T12:07:11.943162Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m NEED-SKIP-DIAG reason=no_food_found [3mcolonist[0m[2m=[0m50
+[2m2026-08-09T12:07:12.442751Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m NEED-SKIP-DIAG reason=no_food_found [3mcolonist[0m[2m=[0m45
+[2m2026-08-09T12:07:12.442772Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m NEED-SKIP-DIAG reason=no_food_found [3mcolonist[0m[2m=[0m50
+[2m2026-08-09T12:07:12.943226Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m NEED-SKIP-DIAG reason=no_food_found [3mcolonist[0m[2m=[0m45
+[2m2026-08-09T12:07:12.943246Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m NEED-SKIP-DIAG reason=no_food_found [3mcolonist[0m[2m=[0m50
+[2m2026-08-09T12:07:13.442891Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m NEED-SKIP-DIAG reason=no_food_found [3mcolonist[0m[2m=[0m45
+[2m2026-08-09T12:21:29.266544Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: need preempt — rest below interrupt [3mcolonist[0m[2m=[0m45 [3mbed[0m[2m=[0mVec3 { x: 15213, y: 16013, z: 419 }
+[2m2026-08-09T12:22:32.386372Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: need preempt — rest below interrupt [3mcolonist[0m[2m=[0m47 [3mbed[0m[2m=[0mVec3 { x: 15214, y: 16014, z: 420 }
+[2m2026-08-09T12:22:35.886712Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: need preempt — rest below interrupt [3mcolonist[0m[2m=[0m51 [3mbed[0m[2m=[0mVec3 { x: 15214, y: 16014, z: 419 }
+[2m2026-08-09T12:23:35.550558Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: need preempt — rest below interrupt [3mcolonist[0m[2m=[0m50 [3mbed[0m[2m=[0mVec3 { x: 15214, y: 16014, z: 420 }
+[2m2026-08-09T12:23:36.050758Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: need preempt — rest below interrupt [3mcolonist[0m[2m=[0m48 [3mbed[0m[2m=[0mVec3 { x: 15214, y: 16014, z: 419 }
+[2m2026-08-09T12:23:37.050964Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: need preempt — rest below interrupt [3mcolonist[0m[2m=[0m44 [3mbed[0m[2m=[0mVec3 { x: 15213, y: 16014, z: 420 }
+[2m2026-08-09T12:23:37.550680Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: need preempt — rest below interrupt [3mcolonist[0m[2m=[0m49 [3mbed[0m[2m=[0mVec3 { x: 15213, y: 16013, z: 419 }
+[2m2026-08-09T12:25:45.828255Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: need preempt — rest below interrupt [3mcolonist[0m[2m=[0m46 [3mbed[0m[2m=[0mVec3 { x: 15213, y: 16013, z: 419 }

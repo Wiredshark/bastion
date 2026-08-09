@@ -115,6 +115,44 @@ dead-ends on no food, and instead of blocking the colonist for the rest of
 the run, rest gets its own turn the moment it independently crosses — no
 wedge, no cooldown block, repeatedly, across every colonist, live.
 
+## The shipped-rate arm — run-15, the strongest evidence this row has (2026-08-09)
+
+The 10x-accelerated repro above established the *mechanism* — order-
+dependent fall-through — but explicitly claimed nothing about shipped-rate
+timing. Run-15 (full detail: `RUN15-ISLOADED-FOLLOWUP.md`) closes that gap:
+`script-09-milestone.txt` verbatim, 8 colonists, no food anywhere, full
+72,300-tick / 2,410-sim-sec budget matching driver-12 exactly, current tip,
+**natural (1x, non-accelerated) decay**.
+
+- First `RestAt` job ~tick 52,036 (28.9 min) against script-09's own
+  ~30 min prediction.
+- **8/8 colonists slept** — every colonist, one full sleep cycle each,
+  completions landing 29-34 min, inside the 40.2 min budget with buffer
+  to spare.
+- 21,511 `no_food_found` (hunger correctly, permanently dead-ending — no
+  food exists in this scenario), 2,640 `preempt_cooldown_active`, zero
+  food successes (structurally guaranteed).
+
+This retires the scope caveat on constraint 5 entirely: the fix now has a
+live demonstration at shipped rates, full duration, natural decay — not
+just 10x-accelerated reachability. Two independent post-fix live runs
+(this one and the 10x repro above) now show none of driver-12's failure
+mode.
+
+Run-15 was also built to test driver-12's own follow-on hypothesis (the
+`is_loaded` filter dropping colonists under load) via the new `BASTION_
+NEED_LOAD_FILTER_DIAG` A/B/C counters. Result: `dropped_by_is_loaded`
+zero across all 4,897 samples, the full matched budget. But the arm's own
+non-vacuity check (per Opus's charter: the loaded arm must independently
+show the overrun driver-12 showed) came back negative — **zero `slow
+system execution` warnings** (driver-12: 22, up to 625ms) and **~9.8s /
+0.4% wall-vs-nominal overage** (driver-12: ~324s / ~11.8%) across the
+active 72,510-tick window. The load precondition was never met, so this
+arm is **void for the `is_loaded` hypothesis specifically** — a clean
+non-result, not a refutation — while remaining a full, unqualified pass
+for the fix itself. See `RUN15-ISLOADED-FOLLOWUP.md` for the complete
+read and driver-12's resulting disposition.
+
 ## Ruling (relayed from Fable/Opus)
 
 Constraint 5 is satisfied — its purpose was reachability (does the fixed
