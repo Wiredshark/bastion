@@ -83,10 +83,38 @@ def parse_log(path):
 
 
 def main():
-    if len(sys.argv) < 3:
+    # DECISIONS #67 (Fable-ruled): a wave used to SCORE a registration
+    # (e.g. wave32 against the REG-A..D predictions in
+    # WAVE32-PREREGISTRATION.md) must name its baseline explicitly --
+    # auto-selection picks the newest structurally-compatible wave, which
+    # is a reasonable default for exploration but not a substitute for
+    # the SPECIFIC wave a pre-registration was written against. `wave30`
+    # and `wave31` are both valid auto-picks for a wave32-shaped run, and
+    # picking the wrong one silently answers a different question than
+    # the one that was registered. `--baseline` makes the choice a
+    # command-line fact instead of a rule buried in cross-wave selection
+    # logic -- and REFUSES outright (does not fall back to auto-select)
+    # if the named wave doesn't exist, doesn't parse, or isn't actually
+    # comparable, so a typo'd --baseline can't silently degrade into an
+    # unnamed auto-pick.
+    argv = sys.argv[1:]
+    baseline_arg = None
+    if "--baseline" in argv:
+        i = argv.index("--baseline")
+        if i + 1 >= len(argv):
+            print("REFUSED: --baseline given with no value.")
+            return 2
+        baseline_arg = argv[i + 1]
+        argv = argv[:i] + argv[i + 2:]
+
+    if len(argv) < 2:
         print(__doc__)
+        print("\n    --baseline WAVE   name the SPECIFIC earlier wave to score")
+        print("                      against (registered mode). Without it,")
+        print("                      cross-wave comparison auto-selects and")
+        print("                      labels its own output EXPLORATORY.")
         return 2
-    out_path, logs = sys.argv[1], sys.argv[2:]
+    out_path, logs = argv[0], argv[1:]
 
     commits, raw = {}, {}
     for lg in logs:
@@ -196,23 +224,88 @@ def main():
         import derived
 
         this_name = re.split(r"[\\/]", out_path)[-1]
-        buf = io.StringIO()
-        with contextlib.redirect_stdout(buf):
-            drc = derived.report_wave(parsed, this_name)
-            # Cross-wave identity delta against the newest EARLIER wave whose
-            # seed set is IDENTICAL. Auto-picking a baseline is the dangerous
-            # part -- a delta against a wave that ran different seeds invents
-            # both FIXED and NEW -- so the identical-set requirement is the
-            # SELECTION rule, not just a check afterwards. The chosen baseline
-            # is NAMED in the output; an unnamed automatic comparison is a
-            # number whose meaning nobody can reconstruct later.
-            mine = set(parsed)
-            mine_keys = set()
-            for v in parsed.values():
-                if isinstance(v, dict):
-                    mine_keys |= set(v)
-            here = os.path.dirname(os.path.abspath(out_path))
-            cands, wrong_shape = [], []
+        # Cross-wave identity delta against the newest EARLIER wave whose
+        # seed set is IDENTICAL. Auto-picking a baseline is the dangerous
+        # part -- a delta against a wave that ran different seeds invents
+        # both FIXED and NEW -- so the identical-set requirement is the
+        # SELECTION rule, not just a check afterwards. The chosen baseline
+        # is NAMED in the output; an unnamed automatic comparison is a
+        # number whose meaning nobody can reconstruct later.
+        #
+        # Baseline resolution/validation runs BEFORE the stdout redirect
+        # below -- a REFUSED here must print to the REAL terminal and
+        # return immediately. Printing it into the redirected buffer and
+        # then returning before that buffer is ever flushed would bury
+        # the refusal exactly as silently as the thing this whole
+        # mechanism exists to stop (found by testing this refusal path
+        # directly, not assumed correct after writing it).
+        mine = set(parsed)
+        mine_keys = set()
+        for v in parsed.values():
+            if isinstance(v, dict):
+                mine_keys |= set(v)
+        here = os.path.dirname(os.path.abspath(out_path))
+        wrong_shape = []
+
+        if baseline_arg is not None:
+            # REGISTERED MODE (#67): the baseline is a command-line fact,
+            # not an auto-pick. Resolve permissively (literal path,
+            # relative to `here`, or a name-substring glob under `here`)
+            # but VALIDATE strictly -- any failure REFUSES the whole run
+            # rather than degrading into exploratory auto-select, so a
+            # typo'd --baseline can't silently produce an unnamed
+            # comparison.
+            candidates_on_disk = []
+            for guess in (baseline_arg, os.path.join(here, baseline_arg)):
+                if os.path.isfile(guess):
+                    candidates_on_disk.append(guess)
+            if not candidates_on_disk:
+                matches = glob.glob(os.path.join(here, "*%s*_FULL.json" % baseline_arg))
+                candidates_on_disk = matches
+            if len(candidates_on_disk) == 0:
+                print("\nREFUSED: --baseline %r matched no file (checked "
+                      "as a literal path, relative to %s, and as a "
+                      "*%s*_FULL.json glob there)." % (baseline_arg, here, baseline_arg))
+                return 2
+            if len(candidates_on_disk) > 1:
+                print("\nREFUSED: --baseline %r is ambiguous -- matched "
+                      "%d files: %s" % (baseline_arg, len(candidates_on_disk),
+                                         ", ".join(sorted(candidates_on_disk))))
+                return 2
+            bpath = candidates_on_disk[0]
+            bname = re.split(r"[\\/]", bpath)[-1]
+            try:
+                with open(bpath, encoding="utf-8") as f2:
+                    bother = json.load(f2)
+            except Exception as e:
+                print("\nREFUSED: --baseline %r (%s) did not parse as JSON: %r"
+                      % (baseline_arg, bpath, e))
+                return 2
+            if not bother:
+                print("\nREFUSED: --baseline %r (%s) is an empty wave."
+                      % (baseline_arg, bpath))
+                return 2
+            if set(bother) != mine:
+                only_mine = sorted(mine - set(bother))
+                only_base = sorted(set(bother) - mine)
+                print("\nREFUSED: --baseline %r (%s) does not share this "
+                      "wave's exact seed set. In this wave only: %s. In "
+                      "the baseline only: %s." % (baseline_arg, bpath,
+                                                   only_mine[:6], only_base[:6]))
+                return 2
+            if not _shape_compatible(bother, mine_keys):
+                print("\nREFUSED: --baseline %r (%s) has an incompatible "
+                      "scenario shape (verdict field not at top level, "
+                      "or key-set overlap below 50%%) despite an "
+                      "identical seed set." % (baseline_arg, bpath))
+                return 2
+            try:
+                bn = derived.wave_number(bname)
+            except ValueError:
+                bn = -1
+            cands = [(bn, bname, bother)]
+        else:
+            cands = []
             for p in glob.glob(os.path.join(here, "*_FULL.json")):
                 nm = re.split(r"[\\/]", p)[-1]
                 if nm == this_name:
@@ -241,6 +334,12 @@ def main():
                 cands = [c for c in cands if c[0] < mine_n]
             except ValueError:
                 cands = []
+
+        mode_tag = "REGISTERED" if baseline_arg is not None else "EXPLORATORY"
+
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            drc = derived.report_wave(parsed, this_name)
             if wrong_shape:
                 print("\n(excluded from cross-wave, INCOMPATIBLE SCENARIO "
                       "SHAPE despite an identical seed set: %s)"
@@ -255,16 +354,21 @@ def main():
                 # BY NAME and groups by seed set -- handing it one wave threw
                 # away the recovery it was built to do.
                 cands.sort(key=lambda c: c[0])
-                print("\n(cross-wave baselines: %s -- every earlier wave with "
-                      "an identical seed set AND a compatible shape)"
-                      % ", ".join(c[1] for c in cands))
+                if baseline_arg is not None:
+                    print("\n(%s baseline, explicitly given via --baseline: %s)"
+                          % (mode_tag, ", ".join(c[1] for c in cands)))
+                else:
+                    print("\n(%s cross-wave baselines: %s -- every earlier wave "
+                          "with an identical seed set AND a compatible shape, "
+                          "auto-selected because no --baseline was given)"
+                          % (mode_tag, ", ".join(c[1] for c in cands)))
                 derived.cross_wave([(c[1], c[2]) for c in cands]
                                    + [(this_name, parsed)])
             else:
-                print("\n(no cross-wave baseline: no earlier wave in %s shares "
-                      "this seed set exactly AND a compatible shape. FIXED/NEW "
-                      "are not computed -- they would be meaningless across "
-                      "differing sets.)" % here)
+                print("\n(%s: no cross-wave baseline: no earlier wave in %s "
+                      "shares this seed set exactly AND a compatible shape. "
+                      "FIXED/NEW are not computed -- they would be "
+                      "meaningless across differing sets.)" % (mode_tag, here))
         body = buf.getvalue()
         with open(derived_txt, "w", encoding="utf-8") as fh:
             fh.write(body)
