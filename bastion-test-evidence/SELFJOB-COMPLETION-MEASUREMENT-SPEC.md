@@ -164,3 +164,63 @@ row did not touch the instrument's own sites, so the arms are cleanly
 separable.** ★★★★★ **And the applied diffs were compared line-by-line: the
 instrument's added lines are IDENTICAL on both arms.** ★ *"Auto-merging" means git
 had to merge — so the match was verified, not assumed.*
+
+## ★★★★★★★★ RESULT 1 — **THE FAN SCENARIO IS INERT. MEASURED ON BOTH ARMS.**
+
+**Same instrument commit, same 14 seeds, both pins, `--b5-scenario`:**
+
+| arm | binary | logs | CREATED | COMPLETED |
+|---|---|--:|--:|--:|
+| **before** | `ec972cf413` *(attested, no `+dirty`)* | 14 | ★★★★★ **0** | ★★★★★ **0** |
+| **after** | `5b9a1a9724` *(attested, no `+dirty`)* | 14 | ★★★★★ **0** | ★★★★★ **0** |
+
+> ## ★★★★★★★ **THE ROW'S MECHANISM FIRES ZERO TIMES IN THE FAN SCENARIO, BEFORE
+> AND AFTER.**
+
+### ★★★ THE CONTROL THAT MAKES THE ZERO READABLE
+
+**A zero is only evidence once you know the instrument ran.** ★★★★★ **Matched
+control, same process, seed 71:**
+
+| diag | hits |
+|---|--:|
+| `BASTION_RELEASE_DIAG` *(known-working)* | **34** |
+| `BASTION_SELFJOB_COMPLETION_DIAG` | **0** |
+
+★★ **Env, logging and the job pipeline proven live — so the zero is the CODE
+PATH, not the plumbing.** ★ **And the instrument is independently proven to work:
+`--preempt-scenario` seed 49, same binary, CREATED 4 / COMPLETED 1.**
+
+## ★★★★★ THE BAR, FINAL — AND WHY THIS VERSION IS STRONGER
+
+> **BLANKET EXACT-MATCH OVER EVERY FAN-VISIBLE FIELD. NO CARVE-OUTS. Any movement
+> at all is a finding.**
+
+★★★ **Two forms of the same claim, and this is the strong one:**
+
+| form | argues about | cost |
+|---|---|---|
+| ★ **enumerate the absent fields** *(what I did first)* | **the INSTRUMENT** — *"the fan carries no field downstream of this mechanism"* | free, and weaker |
+| ★★★★★ **measure the mechanism's firing on BOTH arms** | **the BEHAVIOUR** — *"the mechanism does not run here, either side"* | **one env-gated run per arm** |
+
+★★ **The absent-fields argument was RIGHT. It was also the weaker version of the
+same statement, and the strong one costs almost nothing.**
+
+> ★★★★★ **STANDING FORM: before writing an exercised-denominator bar, MEASURE the
+> denominator — on both arms — rather than arguing it from the schema.**
+
+## ★ DISPOSITION OF THE CARVE-OUT MACHINERY
+
+**D5, the dispersion expected-no-movement note, and the completion-derived
+magnitude all STAND DOWN UNUSED.** ★★★ **Kept, not deleted** — *un-run machinery
+with its rationale attached is a template; deleted machinery is a future
+re-derivation.* ★ **They describe the world where the mechanism had been live in
+the fan, which remains the world every later AUTON row will be in once the
+scenario carries self-jobs.**
+
+## ★★★ THE EPISTEMIC NOTE
+
+> ★★★★★ **The measurement built to DERIVE a carve-out instead proved NONE WAS
+> NEEDED.** ★★ **Both outcomes were pre-registered; I registered the wrong one as
+> likely.** ★★★ *Being wrong about which branch fires, inside a frame where both
+> branches were named, is what the pre-registration is FOR.*
