@@ -23,6 +23,10 @@
 //!       the same terrain data a real client's renderer reads, not a
 //!       harness-only view.
 //!   note <free text>                    -- marker only, logged verbatim
+//!   cmd <name> <args...>                -- raw chat command (e.g. `cmd
+//!       give_item common.items.food.mushroom 50`, `cmd dropall`) --
+//!       requires the connecting player hold the needed admin role
+//!       (`server-cli admin add <user> admin`)
 
 use common::{
     ViewDistances,
@@ -91,6 +95,14 @@ enum ScriptCmd {
         gap: i32,
     },
     Note(String),
+    // AUTON-2 MILESTONE LIVE SESSION (2026-08-09): a generic chat-command
+    // send -- e.g. `cmd give_item common.items.food.mushroom 50` then
+    // `cmd dropall` to place food on the ground for colonists to find.
+    // Reuses `Client::send_command`, the same wire path a real player's
+    // chat bar uses; requires the connecting player to hold the needed
+    // role (`server-cli admin add <user> admin`), same as any other
+    // admin-gated command.
+    Cmd(String, Vec<String>),
 }
 
 fn parse_kind(s: &str) -> Option<DesignationKind> {
@@ -163,6 +175,10 @@ fn parse_script(path: &str) -> Vec<ScriptCmd> {
                 }
             },
             "note" => ScriptCmd::Note(rest.join(" ")),
+            "cmd" => {
+                let name = rest.first().unwrap_or_else(|| panic!("missing command name at line {lineno}")).to_string();
+                ScriptCmd::Cmd(name, rest[1..].iter().map(|s| s.to_string()).collect())
+            },
             other => panic!("unknown script verb at line {lineno}: {other}"),
         };
         cmds.push(cmd);
@@ -421,6 +437,26 @@ fn main() {
             },
             ScriptCmd::Note(text) => {
                 log.log(&format!("[note] {text}"));
+            },
+            ScriptCmd::Cmd(name, cmd_args) => {
+                log.log(&format!("sent chat command /{name} {cmd_args:?}"));
+                client.send_command(name, cmd_args);
+                // One tick round-trip so the resulting chat feedback (or
+                // error) lands in the log before the next script line.
+                match client.tick(comp::ControllerInputs::default(), clock.game_dt()) {
+                    Ok(events) => {
+                        for event in events {
+                            if let Event::Chat(m) = &event {
+                                log.log(&format!("[chat] {m:?}"));
+                            }
+                        }
+                    },
+                    Err(e) => {
+                        log.log(&format!("tick error after cmd: {e:?}"));
+                    },
+                }
+                client.cleanup();
+                clock.tick();
             },
         }
     }

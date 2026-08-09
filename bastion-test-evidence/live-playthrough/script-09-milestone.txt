@@ -1,0 +1,69 @@
+# Milestone live session: AUTON-2 unification + STEP-3 RE-TUNE, on the
+# world's own clock. Primary target: close scorecard row 6 (bed/sleep
+# use-cycle -- Run 1/2 built beds but never caught a colonist sleeping
+# in one, run too short). Secondary: watch a full hunger cycle and the
+# first rest cycle land where the re-tune's own arithmetic predicts
+# them (~15min hunger, ~30min rest at 1x realtime), and watch whether
+# recreation (never interrupting) reads as an imbalance next to rest
+# and hunger (which now both do).
+#
+# Same spawn/footprints as script-02-playthrough.txt for comparability
+# with Run 1/2's rows 1-13 (world seed is deterministic on fresh
+# VELOREN_USERDATA, so designations land identically). Extended
+# duration only -- 8 checkpoints x 9000 ticks (5 min each) = 72000
+# ticks + 300 ramp = 72300 ticks =~ 40.2 min at 30 tps / 1x realtime,
+# clearing the ~35 min floor with margin for full sleep-cycle
+# completion after the rest interrupt fires.
+note MILESTONE playthrough start -- anchoring and founding a colony
+anchor
+spawn 8
+wait 300
+note colony founded, colonists should be arriving -- painting designations
+designate mine 15208 16008 410 15214 16014 418
+designate chop 15220 16008 414 15232 16026 428
+designate stockpile 15213 16018 418 15217 16021 419
+designate farm 15198 15998 418 15204 16004 419
+designate build 15216 16030 419 15220 16034 423
+designate bed 15213 16013 419 15214 16014 420
+designate ladder 15221 16021 408 15221 16021 419
+note designations painted -- entering extended observation loop
+wait 9000
+list_designations
+inspect_cell 15210 16010 415
+inspect_cell 15213 16013 419
+note checkpoint 1 (~5 min post-paint)
+wait 9000
+list_designations
+inspect_cell 15210 16010 415
+inspect_cell 15213 16013 419
+note checkpoint 2 (~10 min post-paint)
+wait 9000
+list_designations
+inspect_cell 15210 16010 415
+inspect_cell 15213 16013 419
+note checkpoint 3 (~15 min post-paint -- first hunger interrupt due around here)
+wait 9000
+list_designations
+inspect_cell 15210 16010 415
+inspect_cell 15213 16013 419
+note checkpoint 4 (~20 min post-paint)
+wait 9000
+list_designations
+inspect_cell 15210 16010 415
+inspect_cell 15213 16013 419
+note checkpoint 5 (~25 min post-paint)
+wait 9000
+list_designations
+inspect_cell 15210 16010 415
+inspect_cell 15213 16013 419
+note checkpoint 6 (~30 min post-paint -- first rest interrupt due around here)
+wait 9000
+list_designations
+inspect_cell 15210 16010 415
+inspect_cell 15213 16013 419
+note checkpoint 7 (~35 min post-paint -- milestone floor reached)
+wait 9000
+list_designations
+inspect_cell 15210 16010 415
+inspect_cell 15213 16013 419
+note checkpoint 8 (~40 min post-paint -- run complete, buffer held for full sleep-cycle completion)
