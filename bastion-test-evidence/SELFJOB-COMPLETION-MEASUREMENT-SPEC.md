@@ -270,3 +270,63 @@ SLEEP_MARGIN`, so that one colonist genuinely slept.
 ★ **THIRD OUTCOME, still registered from the original spec:** *completed rises
 AND created does not fall* ⇒ **persistence isn't the mechanism doing the work,
 and something else changed.** ★★ **A finding, not a pass.**
+
+## ★★★★★★★★ RESULT 3 — **THE PAIR. PERSISTENCE WORKED; COMPLETION DID NOT MOVE.**
+
+| | BEFORE `ec972cf413` | AFTER `5b9a1a9724` | registered prediction | verdict |
+|---|--:|--:|---|---|
+| **created** | **18** | ★★★ **12** | **FALLS** | ★★★★★ **CONFIRMED** *(−33%)* |
+| ★★★ **completed** | **4** | ★★★ **4** | **RISES** | ★★★★★★★ **FALSIFIED — FLAT** |
+| ★★ **per-seed uniformity** | `1,1,1,1` | ★★ **`1,1,1,1`** | **breaks** | ★★★★★ **HELD** |
+
+**Per seed, after:** `49→3/1 · 50→3/1 · 51→3/1 · 53→3/1`. ★ **All `RestAt`.**
+★★ *Seed 50's creates HALVED, 6 → 3.*
+
+> ## ★★★★★★★ **THE ROW FIXED THE IDENTITY PROBLEM AND NOT THE COMPLETION PROBLEM.
+> THEY WERE DIFFERENT PROBLEMS — which is exactly why the falsifier was written.**
+
+### ★★★★★ READ IT PRECISELY — "FEWER CREATES" IS NOT "FEWER ATTEMPTS"
+
+**Reclaim is deliberately NOT counted as a create** *(5b's flag, and correct)*.
+★★★ **So `12 creates + N reclaims` = the same number of rest ATTEMPTS, and N is
+invisible.**
+
+★★ **The row converted 6 fresh creates into reclaims. It did not reduce attempts,
+and it did not make any additional attempt SUCCEED.** ★★★★★ **Completion is
+identical to the byte: 4, and still exactly one per seed.**
+
+## ★★★★★★★ AND IT INDEPENDENTLY CONFIRMS THE NIGHT'S BIGGEST FINDING
+
+**78% of rest attempts fail BEFORE and AFTER.** ★★★ **The row changed how job
+IDENTITY is managed; it changed nothing about whether a colonist gets there.**
+
+> ★★★★★ **PERSISTENCE CANNOT FIX ARRIVAL — and arrival is what the re-score
+> measured as the travel row's target** *(48% of probed timeouts are unanimous
+> path-confirmed failures, clustering at 3.3-4.3 blocks against `ARRIVE_DIST`
+> 2.5)*. ★★ **Two independent instruments, one conclusion.**
+
+## ★★★ WHAT IT MEANS FOR THE ROW — **NOT A DEFECT**
+
+★★★★★ **The row did what it was designed to do and did not claim to fix arrival.**
+★ *Its acceptance was persistence + invariant + no regression, and all three
+hold.* ★★ **A negative result on a question the row never promised to answer is
+information, not a failure.**
+
+## ★★ AND FOR THE FAN'S BAR — CORROBORATION FROM THE OTHER SIDE
+
+**Completion unchanged ⇒ no additional rest time consumed ⇒ no work displaced.**
+★★★ **Blanket exact-match was already established by the mechanism firing ZERO
+times in `--b5-scenario`; this confirms it from the completion side too.** ★ *Two
+independent reasons the bar needs no carve-out.*
+
+## ★ THE FOURTH SHAPE
+
+**I registered three outcomes. ★★★ This is a FOURTH: `created` falls while
+`completed` stays flat.** ★★★★★ **The registered falsifier was "BOTH unchanged ⇒
+the row doesn't address this" — and `created` DID change, so that branch doesn't
+fire.**
+
+> ★★ **The frame was still good enough: the three registered branches made the
+> real answer legible the moment it landed, because each named a QUANTITY and a
+> DIRECTION rather than a story.** ★★★ *A pre-registration doesn't have to
+> enumerate every outcome — it has to make the outcome READABLE.*
