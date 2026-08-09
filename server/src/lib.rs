@@ -1093,6 +1093,23 @@ impl Server {
 
         info!("Server version: {}", *common::util::DISPLAY_VERSION);
 
+        // driver-12 follow-on (2026-08-09, Opus/Fable "ports shipment"):
+        // always-on, boot-time-only -- distinct from the gated periodic
+        // BASTION_DECAY_JOIN_DIAG emit in bastion_jobs.rs. Every live run
+        // now reports which mood config actually loaded without needing a
+        // special env var, closing the "wrong-tree asset resolution"
+        // hypothesis class for good (that hypothesis took a harness-only
+        // re-derivation to rule out for driver-12; this makes it a one-line
+        // log read instead).
+        {
+            let mood_cfg = common::bastion::MoodConfig::current();
+            info!(
+                hunger_decay_per_sec = mood_cfg.hunger.decay_per_sec,
+                rest_decay_per_sec = mood_cfg.rest.decay_per_sec,
+                "bastion effective mood config"
+            );
+        }
+
         Ok(this)
     }
 

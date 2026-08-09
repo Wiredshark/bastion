@@ -5805,6 +5805,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     decay_join_count,
                     hunger_decay_per_sec = mood_cfg.hunger.decay_per_sec,
                     rest_decay_per_sec = mood_cfg.rest.decay_per_sec,
+                    // driver-12 follow-on (2026-08-09): preempt_attempts was
+                    // previously readable only via the harness-only
+                    // `server.bastion_preempt_attempts()` accessor -- folded
+                    // into this existing gated emit rather than adding a
+                    // fourth env var, since it's cheap (one field read) and
+                    // every live run already sets BASTION_DECAY_JOIN_DIAG
+                    // when this investigation's instruments matter.
+                    preempt_attempts = board.preempt_attempts,
                     "bastion DECAY-JOIN-DIAG"
                 );
             }
@@ -9663,12 +9671,39 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // ECS iteration order. The breakdown roll below is already keyed
             // by (tick, uid, episode) (T0.33), so its outcome does not depend
             // on this order; only the greedy reservations do.
+            // AUTON-2 driver-12 follow-on (2026-08-09, Opus/Fable): the
+            // `is_loaded` filter below is the one branch in this whole
+            // pass that emits NO diagnostic output at all, even with
+            // `BASTION_NEED_SKIP_DIAG` on — a colonist dropped here never
+            // enters `need_order`, never reaches any `continue`, and is
+            // invisible to every instrument this row built. `b_count`
+            // (before the filter) vs `c_count` (after) isolates exactly
+            // this gate — NOT conflated with the separate missing-
+            // component question (that's `entities`/`colonists`/`uids`/
+            // `needs_storage` itself failing to yield a row, a different
+            // fault this counter does not measure).
+            let need_join_diag = std::env::var_os("BASTION_NEED_LOAD_FILTER_DIAG").is_some();
+            let b_count = if need_join_diag {
+                (&entities, &colonists, &uids, &needs_storage).join().count()
+            } else {
+                0
+            };
             let need_order: Vec<(specs::Entity, Uid, f32)> =
                 (&entities, &colonists, &uids, &needs_storage)
                     .join()
                     .filter(|(e, _, _, _)| is_loaded(*e))
                     .map(|(e, _, u, n)| (e, *u, n.rest.min(n.hunger)))
                     .collect();
+            if need_join_diag {
+                let c_count = need_order.len();
+                info!(
+                    tick = tick.0,
+                    b_count,
+                    c_count,
+                    dropped_by_is_loaded = b_count.saturating_sub(c_count),
+                    "bastion IS-LOADED-FILTER-DIAG"
+                );
+            }
             // DET-COL-NEED-001/002 / DET-AUT-005: canonical (severity, Uid)
             // order (unit-tested in the det_* tests below).
             let need_order = canonical_need_order(need_order);
