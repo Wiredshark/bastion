@@ -709,8 +709,18 @@ mod tests {
         assert_eq!(result[0], "FOO");
     }
 
+    // DECISIONS #87 (2026-08-09): this test's own subject is a
+    // `debug_assert!` in `spawn` -- silently compiled to nothing under
+    // `debug-assertions = false` (this session's `no_overflow` profile,
+    // until this same commit). Not a silent false-pass: post-merge
+    // verify is `cargo check --all-targets`, which never RUNS tests, so
+    // nobody actually executed this suite since the assertion went
+    // inert. It failed correctly, visibly, the first time the suite was
+    // run tonight. A test whose subject IS a debug_assert! must declare
+    // the profile it requires rather than assume one.
     #[test]
     #[should_panic]
+    #[cfg(debug_assertions)]
     fn unconfigured() {
         let pool = mock_pool(4, 4, 0, 2, 1, 0);
         let mut internal = pool.internal.lock().unwrap();

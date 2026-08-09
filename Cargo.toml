@@ -82,7 +82,18 @@ debug = true
 [profile.no_overflow]
 inherits = 'dev'
 overflow-checks = false
-debug-assertions = false
+# DECISIONS #87 (2026-08-09, Fable-ruled): was false -- 76 debug_assert!
+# sites (9 in bastion_jobs.rs) were compiled out of this, the profile
+# every gate/live run actually builds from, since assertion compilation
+# defaults to following debug-assertions when unset and this pinned it
+# off explicitly. `overflow-checks` stays its own explicit line above --
+# Cargo only makes it follow debug-assertions when UNSET, so deleting
+# that line would silently re-enable overflow checks and break this
+# profile's own name-contract. See common/src/slowjob.rs's
+# #[cfg(debug_assertions)]-gated test for the discovery: a
+# #[should_panic] on a debug_assert! that had been silently compiling
+# to nothing since before this session.
+debug-assertions = true
 
 [profile.no_overflow.package."veloren-world"]
 opt-level = 3

@@ -1,0 +1,22 @@
+# Positive-control check for benched_since_tick/benched_until_tick
+# (2026-08-09, Opus-directed, DECISIONS #87 follow-on): designate a mine
+# cell deep underground with no adjacent open cell -- job_stance can never
+# find a stance, so the cell stays permanently missing from `standable`,
+# unclaimed, affordance != Untargeted -- exactly the precondition
+# board.benched_since's guard checks every cycle, no threshold delay.
+# BASTION_ROWB_BENCH=1 set at launch so benched_until_tick can also
+# populate if the escalation path is reached.
+note BENCH-CONTROL -- anchoring, spawning one colonist
+anchor
+spawn 1
+wait 300
+note surveying the deep target column before designating -- confirming solid, no cavity
+survey 15210 16010 15216 16016 260 200 1
+note designating a 1x1x1 mine cell deep, isolated, far below any dug access
+designate mine 15213 16013 220 15214 16014 221
+wait 200
+note checkpoint 1 (~7s post-designate)
+inspect_cell 15213 16013 220
+wait 600
+note checkpoint 2 (~20s post-designate, extra margin)
+inspect_cell 15213 16013 220
