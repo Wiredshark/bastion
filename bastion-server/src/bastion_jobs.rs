@@ -4160,6 +4160,24 @@ pub struct JobBoard {
     pub b5_f3_idle_peak: f32,
     /// Times the pruner actually removed a stale plan.
     pub b5_f3_prunes_fired: u32,
+    /// bastion (DECISIONS #89, ROW69-OPTION-B-PACKET): the planted-
+    /// failure feature-acceptance measure -- distinct colonist `Uid`s
+    /// that ever completed an `EatFrom` ("ate — hunger restored") this
+    /// run. Stack of N units, M hungry colonists should yield
+    /// `min(N, M)` distinct eats; before this row a single stack fed
+    /// at most one colonist regardless of N. DIAGNOSTIC under #88
+    /// (`b5_eat_completions_distinct` in the corpus report): never a
+    /// `clauses` entry.
+    pub b5_eat_completions_distinct: HashSet<Uid>,
+    /// bastion (#89): the max simultaneous LIVE reservation count ever
+    /// observed against any single item entity this run -- how
+    /// contested the most-contested stack got. Updated inside `reserve`
+    /// right after insertion (the true peak, same "capture before
+    /// anything can shrink it back down" discipline as `b5_f3_idle_peak`,
+    /// though nothing here ever un-peaks mid-run since reservations only
+    /// grow between `reserve` calls). DIAGNOSTIC under #88: never a
+    /// `clauses` entry.
+    pub b5_stack_reserved_units_max: u32,
     /// bastion (B-LIVE3, mine lifecycle): designations that reached DONE
     /// (last non-access job completed). Telemetry for the harness/UI.
     pub done_count: u64,
@@ -4496,19 +4514,30 @@ pub struct JobBoard {
     /// arbitration pass. Same lifecycle as stockpiles.
     pub activity_zones: Vec<(common::bastion::ZoneId, common::bastion::ZoneKind, Region)>,
     next_zone: common::bastion::ZoneId,
-    /// bastion (B6 JOB-CORE): the reservation table — ONE item entity
-    /// reserved by ONE job (the double-spend guard). Stock itself stays
-    /// DERIVED from physical items (D2: never a second mutable count);
-    /// this table only prevents two jobs spending one item.
+    /// bastion (B6 JOB-CORE; reformulated DECISIONS #89, Option B): the
+    /// reservation table -- ONE job holds ONE `ReservationId`, this map's
+    /// forward direction. Stock itself stays DERIVED from physical items
+    /// (D2: never a second mutable count); this table only prevents two
+    /// jobs spending the same UNIT of an item. Charter line (Fable): "a
+    /// conformance test can be green while the thing it conserves is the
+    /// wrong unit" -- the OLD law was "at most one reservation per item
+    /// entity"; the reformulated law is "sum of reserved units per item
+    /// entity <= the entity's own stack amount", and `amount == 1`
+    /// (every non-stackable) yields the old law exactly, as the
+    /// degenerate case -- see `has_capacity`.
     reservations: HashMap<common::bastion::ReservationId, Uid>,
-    /// T1.13: the reverse index of `reservations` (item `Uid` -> its
-    /// reservation id), maintained in lockstep at every mutator so
-    /// `is_reserved` is O(1) instead of the linear `.values()` scan the
-    /// table's own doc comment used to justify by "colonies are small" --
-    /// kept as a cache of `reservations`, never an independent source of
-    /// truth (the forward map's bidirectional-uniqueness invariant is
-    /// still enforced by `reserve`'s `debug_assert`).
-    reservations_by_item: HashMap<Uid, common::bastion::ReservationId>,
+    /// T1.13 (reformulated DECISIONS #89): the reverse index of
+    /// `reservations` (item `Uid` -> every LIVE reservation id against
+    /// it, never empty while the key exists -- an item with zero live
+    /// reservations has NO entry, not an empty `Vec`), maintained in
+    /// lockstep at every mutator so `is_reserved`/`reserved_count` stay
+    /// O(1)/O(k) instead of a linear `reservations.values()` scan. Kept
+    /// as a cache of `reservations`, never an independent source of
+    /// truth (the forward map's bidirectional-uniqueness invariant --
+    /// each `ReservationId` still appears in at most one item's `Vec`,
+    /// since each key of `reservations` maps to exactly one item -- is
+    /// still enforced by `reserve`'s capacity `debug_assert`).
+    reservations_by_item: HashMap<Uid, Vec<common::bastion::ReservationId>>,
     next_reservation: common::bastion::ReservationId,
     /// bastion (R10): the authoritative per-link fencing-epoch store —
     /// `link_id → current epoch` (absent = 0). Advanced ONLY at release-
@@ -5223,7 +5252,7 @@ impl JobBoard {
         });
         for rid in dead_rids {
             if let Some(item) = self.reservations.remove(&rid) {
-                self.reservations_by_item.remove(&item);
+                self.remove_one_reservation(item, rid);
             }
         }
         // CHOP-FELLING: the in-region purge above bypasses `remove_job`
@@ -5236,31 +5265,84 @@ impl JobBoard {
         released
     }
 
-    /// bastion (B6): reserve an item entity for a job. The caller stores
-    /// the id on `Job.reservation`; release goes through [`Self::remove_job`]
-    /// or [`Self::release_reservation`].
-    pub fn reserve(&mut self, item: Uid) -> common::bastion::ReservationId {
-        // T1.13 (conservation cluster): bidirectional uniqueness BY
-        // CONSTRUCTION — an item entity may be reserved by at most ONE job.
-        // Every caller already gates on `!is_reserved(item)`; asserting it
-        // here makes a forgotten check surface as a LOUD double-spend in
-        // debug/verify builds (where the floors run) instead of a silent
+    /// bastion (B6; reformulated DECISIONS #89, Option B): reserve ONE
+    /// UNIT of an item entity for a job. `amount` is the item's OWN
+    /// current total (`PickupItem::amount()`, never `PickupItem::
+    /// item().amount()` -- that method's own doc says its amount
+    /// "should *not* be used"). Whole-entity callers (the six haul/fetch
+    /// sites, gated by their own unchanged `!is_reserved` check) pass
+    /// `u32::MAX`: their external gate already guarantees zero prior
+    /// reservations, so the capacity check below is trivially satisfied
+    /// and `amount` never needs to be a real number for them. The
+    /// caller stores the id on `Job.reservation`; release goes through
+    /// [`Self::remove_job`] or [`Self::release_reservation`].
+    pub fn reserve(&mut self, item: Uid, amount: u32) -> common::bastion::ReservationId {
+        // T1.13 (conservation cluster, reformulated #89): CAPACITY BY
+        // CONSTRUCTION -- sum of reserved units against an item entity
+        // never exceeds its own `amount`. `amount == 1` (every non-
+        // stackable) makes this the OLD "at most one reservation" law
+        // exactly, as the degenerate case. Every caller already gates
+        // on its own predicate (`!is_reserved` for whole-entity,
+        // `has_capacity` for per-unit); asserting it here makes a
+        // forgotten check surface as a LOUD double-spend in debug/
+        // verify builds (where the floors run) instead of a silent
         // item dupe or a starved job. Release builds keep the fast path.
         debug_assert!(
-            !self.is_reserved(item),
-            "T1.13: double reservation of item {item:?} — bidirectional \
-             uniqueness violated (a caller skipped its is_reserved gate)"
+            self.reserved_count(item) < amount,
+            "T1.13: reservation over capacity for item {item:?} \
+             (reserved {} >= amount {amount}) -- a caller skipped its \
+             capacity gate",
+            self.reserved_count(item)
         );
         let id = self.next_reservation;
         self.next_reservation += 1;
         self.reservations.insert(id, item);
-        self.reservations_by_item.insert(item, id);
+        let live = self.reservations_by_item.entry(item).or_default();
+        live.push(id);
+        // #89 diagnostic: the peak, captured right after the push -- the
+        // true high-water mark for this item, same discipline as
+        // `b5_f3_idle_peak`.
+        self.b5_stack_reserved_units_max = self.b5_stack_reserved_units_max.max(live.len() as u32);
         id
+    }
+
+    /// bastion (#89): how many LIVE reservations currently sit against
+    /// this item entity (0 for an unreserved item -- the map has no
+    /// entry, never an empty `Vec`, per the reverse index's own doc).
+    pub fn reserved_count(&self, item: Uid) -> u32 {
+        self.reservations_by_item
+            .get(&item)
+            .map_or(0, |ids| ids.len() as u32)
+    }
+
+    /// bastion (#89, consumption sites only -- the eat path): is there
+    /// room for one more reservation against this item's CURRENT total
+    /// `amount`? Unlike `is_reserved` (ANY reservation, used by the six
+    /// whole-entity haul/fetch sites -- a hauler must not carry off a
+    /// stack while colonists are still walking to eat from it), this is
+    /// the per-unit predicate: `amount == 1` degenerates to `!is_reserved`.
+    pub fn has_capacity(&self, item: Uid, amount: u32) -> bool {
+        self.reserved_count(item) < amount
+    }
+
+    /// bastion (#89): remove exactly ONE reservation id from an item's
+    /// live set, clearing the map entry only once it empties -- shared
+    /// by all three removal mutators (`release_reservation`,
+    /// `remove_job`, the region-cancel sweep) so the "clear only when
+    /// empty" rule lives in one place, not three.
+    fn remove_one_reservation(&mut self, item: Uid, id: common::bastion::ReservationId) {
+        if let hashbrown::hash_map::Entry::Occupied(mut e) = self.reservations_by_item.entry(item)
+        {
+            e.get_mut().retain(|&rid| rid != id);
+            if e.get().is_empty() {
+                e.remove();
+            }
+        }
     }
 
     pub fn release_reservation(&mut self, id: common::bastion::ReservationId) {
         if let Some(item) = self.reservations.remove(&id) {
-            self.reservations_by_item.remove(&item);
+            self.remove_one_reservation(item, id);
         }
     }
 
@@ -5350,15 +5432,16 @@ impl JobBoard {
     /// reverse index, kept in lockstep with `reservations` at every mutator.
     pub fn is_reserved(&self, item: Uid) -> bool { self.reservations_by_item.contains_key(&item) }
 
-    /// T1.13 (conservation cluster): the reservation ledger's
-    /// bidirectional-uniqueness audit — item `Uid`s reserved by MORE THAN
-    /// ONE reservation id (empty = conserved). The forward direction (one
-    /// id → one item) is a `HashMap` key invariant for free; this checks
-    /// the REVERSE (one item → at most one id), the double-spend guard.
-    /// Non-empty means two jobs believe they own the same physical item.
-    /// Wired into the board audit at T1.16; deterministic (sorted output).
+    /// T1.13 (conservation cluster, REFORMULATED DECISIONS #89): the
+    /// reservation ledger's structural-consistency audit -- item `Uid`s
+    /// whose reverse-index entry doesn't exactly match what the forward
+    /// map says should be there (empty = conserved). NOT a "how many
+    /// reservations" business-rule check anymore (multiple per item is
+    /// legitimate under the capacity law); a genuine corruption signal
+    /// under either model. Wired into the board audit at T1.16;
+    /// deterministic (sorted output).
     pub fn reservation_conflicts(&self) -> Vec<Uid> {
-        duplicate_reservations(&self.reservations)
+        duplicate_reservations(&self.reservations, &self.reservations_by_item)
     }
 
     pub fn reserved_item(&self, id: common::bastion::ReservationId) -> Option<Uid> {
@@ -5381,7 +5464,7 @@ impl JobBoard {
             && let Some(rid) = j.reservation
             && let Some(item) = self.reservations.remove(&rid)
         {
-            self.reservations_by_item.remove(&item);
+            self.remove_one_reservation(item, rid);
         }
         // T1.19: a removed RestAt releases its creation-reserved bed (any
         // cancel/moot path), so a bed can never leak occupied by a colonist
@@ -5743,7 +5826,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         (
             ReadStorage<'a, common::rtsim::RtSimEntity>,
             ReadExpect<'a, R>,
-            ReadStorage<'a, comp::PickupItem>,
+            // #89: WRITE, not read -- `split_off_one` mutates the ground
+            // stack directly at the eat reservation site.
+            WriteStorage<'a, comp::PickupItem>,
             // ENGOPT6 divergence hunt: read-only item-ownership view for the
             // recorder's haul-item trail (the contested item's lifecycle is
             // the diverging quantity the tapes were blind to).
@@ -5786,6 +5871,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 ReadStorage<'a, crate::RepositionToFreeSpace>,
                 ReadStorage<'a, <comp::Pos as InterpolatableComponent>::InterpData>,
                 ReadStorage<'a, <comp::Vel as InterpolatableComponent>::InterpData>,
+                // #89 (vanilla-respecting split-pickup): `duplicate()`'s
+                // two asset-derived arguments, needed by
+                // `PickupItem::split_off_one` at the eat reservation
+                // site.
+                ReadExpect<'a, comp::item::AbilityMap>,
+                ReadExpect<'a, comp::item::MaterialStatManifest>,
             ),
         ),
     );
@@ -5823,7 +5914,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             (
                 rtsim_entities,
                 rtsim,
-                pickup_items,
+                mut pickup_items,
                 loot_owners_view,
                 inventory_manip_events,
                 _execution_mode,
@@ -5846,6 +5937,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     repositioning,
                     position_interpolation,
                     velocity_interpolation,
+                    ability_map,
+                    msm,
                 ),
             ),
         ): Self::SystemData,
@@ -8834,7 +8927,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     else {
                         continue;
                     };
-                    let rid = board.reserve(iuid);
+                    // #89: whole-entity haul reservation -- the unchanged
+                    // `!is_reserved` gate above already guarantees zero
+                    // prior reservations, so u32::MAX trivially satisfies
+                    // the capacity assert without needing this item's
+                    // real amount.
+                    let rid = board.reserve(iuid, u32::MAX);
                     let id = board.next_id;
                     board.next_id += 1;
                     board.jobs.insert(id, Job {
@@ -10283,7 +10381,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         .item_definition_id()
                                         .itemdef_id()
                                         .is_some_and(|d| FOOD_DEFS.contains(&d))
-                                        && !board.is_reserved(**iuid)
+                                        // #89 (per-unit consumption site):
+                                        // `has_capacity`, not `is_reserved`
+                                        // -- a stack with room for one more
+                                        // reservation is a valid candidate
+                                        // even while other colonists are
+                                        // already eating from it.
+                                        // `pi.amount()` is the WHOLE
+                                        // stack's total, never
+                                        // `pi.item().amount()` (that
+                                        // method's own doc: "should *not*
+                                        // be used").
+                                        && board.has_capacity(**iuid, pi.amount())
                                 })
                                 // T0.39 (T0-003): equal-distance ties
                                 // break on the stable item uid, not join
@@ -10312,10 +10421,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         .itemdef_id()
                                         .and_then(|d| FOOD_DEFS.iter().find(|f| **f == d).copied())
                                         .unwrap_or(FOOD_DEFS[0]);
-                                    (*iuid, ipos.0.map(|e| e.floor() as i32), def)
+                                    (*iuid, ipos.0.map(|e| e.floor() as i32), def, pi.amount())
                                 });
-                            if let Some((item, ipos, def)) = food {
-                                let rid = board.reserve(item);
+                            if let Some((item, ipos, def, amount)) = food {
+                                // #89 (vanilla-respecting split-pickup,
+                                // Fable's ruling): split off exactly ONE
+                                // unit HERE, at the same moment the
+                                // reservation is created -- not repeated
+                                // per-tick in the active-job completion
+                                // loop, where a re-emit before the first
+                                // pickup event resolves would double-
+                                // split. `emit_pickup` in the completion
+                                // loop can then safely retry every pass
+                                // against the SAME already-split single
+                                // unit until it lands in the colonist's
+                                // bag. A no-op (returns false) if the
+                                // stack is already down to all-singles --
+                                // the plain `pick_up()` handles that case
+                                // on its own, nothing to split.
+                                if let Some(item_entity) = id_maps.uid_entity(item) {
+                                    if let Some(mut pi) = pickup_items.get_mut(item_entity) {
+                                        pi.split_off_one(&ability_map, &msm);
+                                    }
+                                }
+                                let rid = board.reserve(item, amount);
                                 board
                                     .preempt_cooldown
                                     .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
@@ -10350,12 +10479,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // LIVE-EMIT (#68, port-row): candidate count
                                 // -- distinguishes "the population is
                                 // genuinely empty" from "candidates exist
-                                // but are all reserved" (run-51's food
-                                // seam). Computed only inside this already-
-                                // gated branch: zero cost when unset, and
-                                // a field on the line that already fires
-                                // rather than a new emit (per the packet's
-                                // "extend an existing line" default).
+                                // but are all AT CAPACITY" (run-51's food
+                                // seam -- ROW69-FOOD-SEAM-RESULTS.md
+                                // confirmed exactly this: a 40-stack with
+                                // zero spare capacity because it was
+                                // never per-unit before #89). Computed
+                                // only inside this already-gated branch:
+                                // zero cost when unset, and a field on
+                                // the line that already fires rather than
+                                // a new emit (per the packet's "extend an
+                                // existing line" default). `has_capacity`
+                                // matches the search filter above (#89).
                                 let candidates = (&pickup_items, &uids)
                                     .join()
                                     .filter(|(pi, iuid)| {
@@ -10363,7 +10497,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             .item_definition_id()
                                             .itemdef_id()
                                             .is_some_and(|d| FOOD_DEFS.contains(&d))
-                                            && !board.is_reserved(**iuid)
+                                            && board.has_capacity(**iuid, pi.amount())
                                     })
                                     .count();
                                 info!(
@@ -13031,25 +13165,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         continue;
                     }
                     // ── B7-3: EAT — the Haul leg-1 pickup shape (emit the
-                    // VANILLA pickup; the uid vanishing is the
-                    // confirmation, checked next tick), then consume ONE
-                    // recognized food item from the bag and restore
-                    // hunger. Item sniped pre-pickup with no food carried
-                    // = a clean moot release (the preempt cooldown holds
-                    // re-fire; the next pass re-targets). One-shot either
-                    // way — still-hungry re-fires via the need-check.
+                    // VANILLA pickup), then consume ONE recognized food
+                    // item from the bag and restore hunger.
+                    //
+                    // #89 (Fable's ruling, ROW69-OPTION-B-PACKET.md):
+                    // BAG-CONTENT is the completion signal now, checked
+                    // FIRST every pass -- NOT `uid_entity(item).is_some()`.
+                    // Split-pickup (the reservation site already called
+                    // `split_off_one` once, at reserve time) keeps the
+                    // GROUND entity alive on a partial take, so its
+                    // presence can no longer distinguish "not yet picked
+                    // up" from "someone else is still eating from this
+                    // stack" -- the old uid-vanish signal would spin
+                    // forever re-emitting a pickup that never completes
+                    // because the entity survives by design.
                     if let common::bastion::JobKind::EatFrom { item } = job.kind {
-                        if id_maps.uid_entity(item).is_some() {
-                            crate::bastion_actions::emit_pickup(
-                                &mut inv_manip_emitter,
-                                entity,
-                                item,
-                            );
-                            continue;
-                        }
-                        // Uid gone (ideally: into OUR bag). Eat one of ANY
-                        // recognized food def — covers forage-carried food
-                        // too; none aboard = moot. The decrement is the
+                        // Eat one of ANY recognized food def — covers
+                        // forage-carried food too. The decrement is the
                         // Build-material pattern (stack -1 in place, lone
                         // item removed — never the whole stack).
                         let ate = inventories.get_mut(entity).and_then(|mut inv| {
@@ -13078,13 +13210,44 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 needs.hunger = (needs.hunger + FOOD_RESTORE).min(1.0);
                             }
                             info!(job = active.job, "bastion: ate — hunger restored");
+                            // #89 diagnostic: the planted-failure measure
+                            // -- distinct colonists who ever completed an
+                            // eat, corpus-carryable via
+                            // `b5_eat_completions_distinct`. Derived fresh
+                            // from `entity` (the outer need_order loop's
+                            // own `uid` binding does not reach this deep
+                            // if-let chain) -- same pattern the sibling
+                            // RestAt branch above already uses.
+                            if let Some(u) = uids.get(entity).copied() {
+                                board.b5_eat_completions_distinct.insert(u);
+                            }
+                            // remove_job releases the food reservation (B6
+                            // machinery — THE removal path).
+                            board.remove_job(active.job);
+                            to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                        } else if id_maps.uid_entity(item).is_some() {
+                            // Bag empty, ground entity still present -- our
+                            // already-split single unit hasn't landed in
+                            // the bag yet. Retry the pickup (idempotent-
+                            // safe per `emit_pickup`'s own doc); no new
+                            // split here -- that happened once, at reserve
+                            // time, so a repeat emit before the first
+                            // resolves can't double-split. Keep the job
+                            // active, no release.
+                            crate::bastion_actions::emit_pickup(
+                                &mut inv_manip_emitter,
+                                entity,
+                                item,
+                            );
                         } else {
+                            // Bag empty AND the ground entity is gone --
+                            // genuinely sniped (someone else took the last
+                            // unit before our split, or the whole stack
+                            // despawned). Clean moot release.
                             info!(job = active.job, "bastion: food sniped — eat moot");
+                            board.remove_job(active.job);
+                            to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
                         }
-                        // remove_job releases the food reservation (B6
-                        // machinery — THE removal path).
-                        board.remove_job(active.job);
-                        to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
                         continue;
                     }
                     // ── B7-3: DESPOND — the breakdown state as a self-job
@@ -17796,7 +17959,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             })
                             .map(|(_, _, iuid)| *iuid);
                         match cand {
-                            Some(iuid) => fetch_rid = Some(board.reserve(iuid)),
+                            // #89: whole-entity fetch reservation, same
+                            // reasoning as the haul site above -- the
+                            // unchanged `!is_reserved` gate already
+                            // guarantees zero prior reservations.
+                            Some(iuid) => fetch_rid = Some(board.reserve(iuid, u32::MAX)),
                             None => continue,
                         }
                     }
@@ -17919,38 +18086,91 @@ fn toss_scatter_rng(tick: u64, pos: Vec3<i32>, domain: u64) -> rand_chacha::ChaC
     )
 }
 
-/// T1.13 (conservation cluster): item `Uid`s reserved by more than one
-/// reservation id — the reverse-direction (item → id) uniqueness audit of
-/// the reservation ledger. A pure function of the table: no state, no RNG,
+/// T1.13 (conservation cluster, REFORMULATED DECISIONS #89): item `Uid`s
+/// involved in a structural inconsistency between the two tables (empty =
+/// conserved).
+///
+/// Under the OLD at-most-one law this doubled as "reserved by more than
+/// one job", a business-rule conflict. Under the CAPACITY law (sum of
+/// reserved units <= the item's own stack amount) that is no longer a
+/// conflict on its own — a stackable food's amount decides how many
+/// reservations are legal, and this row's whole point is that MORE than
+/// one is normal. So this now checks STRUCTURAL consistency instead: a
+/// genuine corruption signal (a mutator forgot to update one side, or an
+/// id leaked under the wrong item) under EITHER model, never a false
+/// positive on a legitimately multiply-reserved stack.
+///
+/// Checks BOTH directions per id, not merely per-item set equality: an id
+/// filed under the wrong item's reverse entry can leave that item's OWN
+/// set "locally" matching its OWN forward count while the id's RIGHTFUL
+/// item is silently missing it — a per-item-only check misses exactly
+/// this class, so both the wrongly-filed-under item and the rightful
+/// item are flagged. A pure function of both tables: no state, no RNG,
 /// no wall-clock; output sorted+deduped so the verdict is deterministic.
 fn duplicate_reservations(
     reservations: &HashMap<common::bastion::ReservationId, Uid>,
+    reservations_by_item: &HashMap<Uid, Vec<common::bastion::ReservationId>>,
 ) -> Vec<Uid> {
-    let mut counts: HashMap<Uid, u32> = HashMap::new();
-    for item in reservations.values() {
-        *counts.entry(*item).or_insert(0) += 1;
+    let mut broken: HashSet<Uid> = HashSet::new();
+    // Every id filed under an item's reverse entry must have that SAME
+    // item as its forward-map owner.
+    for (item, ids) in reservations_by_item {
+        for id in ids {
+            match reservations.get(id) {
+                Some(true_item) if true_item == item => {},
+                Some(true_item) => {
+                    broken.insert(*item);
+                    broken.insert(*true_item);
+                },
+                None => {
+                    broken.insert(*item); // a stale id, no forward entry at all
+                },
+            }
+        }
     }
-    let mut dups: Vec<Uid> = counts
-        .into_iter()
-        .filter(|(_, n)| *n > 1)
-        .map(|(item, _)| item)
-        .collect();
-    dups.sort_unstable_by_key(|u| u.0.get());
-    dups
+    // Every id's forward-map owner must have that id present in its own
+    // reverse entry (catches a missing/dropped id the reverse-only walk
+    // above cannot see, since it only ever iterates ids that ARE there).
+    for (id, item) in reservations {
+        let present = reservations_by_item
+            .get(item)
+            .is_some_and(|ids| ids.contains(id));
+        if !present {
+            broken.insert(*item);
+        }
+    }
+    let mut broken: Vec<Uid> = broken.into_iter().collect();
+    broken.sort_unstable_by_key(|u| u.0.get());
+    broken
 }
 
-/// T1.13: the reverse index's bijection invariant, as a pure predicate over
-/// the two tables — `reservations_by_item` must be exactly `reservations`
-/// read backwards, same cardinality, every pair agreeing both directions.
-/// Kept separate from `JobBoard` so the four-mutator falsifier can assert
-/// it after each call without needing a probe method per field.
+/// T1.13 (REFORMULATED DECISIONS #89): the reverse index's bijection
+/// invariant, as a pure predicate over the two tables. Kept separate from
+/// `JobBoard` so the four-mutator falsifier can assert it after each call
+/// without needing a probe method per field.
+///
+/// `reservations_by_item` now maps to a `Vec` (one item can carry several
+/// LIVE reservations, up to its own stack amount), so the bijection reads:
+/// every reverse-index `Vec` is non-empty while its key exists (the "never
+/// leave an empty Vec" rule -- an item with zero live reservations has NO
+/// entry, not an empty one), the total id count across every `Vec` equals
+/// the forward map's own cardinality, every forward id appears under its
+/// item's reverse entry, and every reverse id maps back to that SAME item
+/// (also catches an id leaking under the wrong item, or under two items
+/// at once -- each id still belongs to exactly ONE item).
 fn reservation_indices_are_consistent_v1(
     forward: &HashMap<common::bastion::ReservationId, Uid>,
-    reverse: &HashMap<Uid, common::bastion::ReservationId>,
+    reverse: &HashMap<Uid, Vec<common::bastion::ReservationId>>,
 ) -> bool {
-    forward.len() == reverse.len()
-        && forward.iter().all(|(id, uid)| reverse.get(uid) == Some(id))
-        && reverse.iter().all(|(uid, id)| forward.get(id) == Some(uid))
+    let total_reverse: usize = reverse.values().map(Vec::len).sum();
+    total_reverse == forward.len()
+        && reverse.values().all(|ids| !ids.is_empty())
+        && forward
+            .iter()
+            .all(|(id, item)| reverse.get(item).is_some_and(|ids| ids.contains(id)))
+        && reverse
+            .iter()
+            .all(|(item, ids)| ids.iter().all(|id| forward.get(id) == Some(item)))
 }
 
 #[cfg(test)]
@@ -18384,22 +18604,88 @@ mod tests {
     }
 
     #[test]
-    fn t1_13_reservation_bidirectional_uniqueness() {
+    fn t1_13_reservation_structural_consistency() {
         let uid = |n: u64| Uid(NonZeroU64::new(n).unwrap());
-        // A conserved ledger: distinct ids → distinct items → no conflicts.
+        // A conserved ledger: every reverse entry exactly mirrors the
+        // forward map, INCLUDING an item legitimately holding several
+        // ids (the #89 case this check must NOT flag -- that used to be
+        // "a conflict" under the old at-most-one law and is now normal).
         let mut r: HashMap<common::bastion::ReservationId, Uid> = HashMap::new();
         r.insert(1, uid(10));
         r.insert(2, uid(20));
         r.insert(3, uid(30));
-        assert!(duplicate_reservations(&r).is_empty());
-        // A double-spend: two ids → the SAME item → that item is flagged.
-        r.insert(4, uid(20));
-        assert_eq!(duplicate_reservations(&r), vec![uid(20)]);
-        // Several conflicts come back sorted (by uid) and deduped, never
-        // once-per-extra-id.
-        r.insert(5, uid(10));
-        r.insert(6, uid(10));
-        assert_eq!(duplicate_reservations(&r), vec![uid(10), uid(20)]);
+        r.insert(4, uid(20)); // uid(20) legitimately holds ids 2 AND 4.
+        let mut rev: HashMap<Uid, Vec<common::bastion::ReservationId>> = HashMap::new();
+        rev.insert(uid(10), vec![1]);
+        rev.insert(uid(20), vec![2, 4]);
+        rev.insert(uid(30), vec![3]);
+        assert!(
+            duplicate_reservations(&r, &rev).is_empty(),
+            "a correctly-mirrored multi-reservation item must not be flagged"
+        );
+        // Corruption: the reverse side is missing id 4 for uid(20).
+        rev.insert(uid(20), vec![2]);
+        assert_eq!(duplicate_reservations(&r, &rev), vec![uid(20)]);
+        // Corruption: a stale id under the wrong item (uid(10)'s reverse
+        // entry claims id 3, which forward says belongs to uid(30)).
+        rev.insert(uid(10), vec![1, 3]);
+        assert_eq!(duplicate_reservations(&r, &rev), vec![uid(10), uid(20), uid(30)]);
+    }
+
+    /// The equivalence proof the packet requires: on the `amount == 1`
+    /// degenerate case (every non-stackable), the REFORMULATED audit must
+    /// behave BIT-IDENTICALLY to the OLD at-most-one law, proven against
+    /// a kept copy of that old law's own logic -- not merely re-derived
+    /// from the new code and compared to itself (that would only prove
+    /// `derived == COPY`, never `derived == ORIGINAL`).
+    #[test]
+    fn t1_13_new_audit_matches_legacy_on_amount_one_degenerate_case() {
+        let uid = |n: u64| Uid(NonZeroU64::new(n).unwrap());
+
+        /// The OLD `duplicate_reservations`, kept verbatim (pre-#89): item
+        /// `Uid`s reserved by more than one id, under a law that only
+        /// ever allowed at most one per item.
+        fn legacy_uniqueness_v1(
+            reservations: &HashMap<common::bastion::ReservationId, Uid>,
+        ) -> Vec<Uid> {
+            let mut counts: HashMap<Uid, u32> = HashMap::new();
+            for item in reservations.values() {
+                *counts.entry(*item).or_insert(0) += 1;
+            }
+            let mut dups: Vec<Uid> = counts
+                .into_iter()
+                .filter(|(_, n)| *n > 1)
+                .map(|(item, _)| item)
+                .collect();
+            dups.sort_unstable_by_key(|u| u.0.get());
+            dups
+        }
+
+        // Drive a real JobBoard through ONLY amount=1 reservations (the
+        // degenerate case) and compare both audits after every mutation.
+        let mut board = JobBoard::default();
+        let check = |board: &JobBoard| {
+            assert_eq!(
+                duplicate_reservations(&board.reservations, &board.reservations_by_item),
+                legacy_uniqueness_v1(&board.reservations),
+                "new audit diverged from the legacy law on the amount==1 \
+                 degenerate case -- forward={:?} reverse={:?}",
+                board.reservations,
+                board.reservations_by_item
+            );
+        };
+        check(&board); // empty ledger
+
+        let id_a = board.reserve(uid(10), 1);
+        check(&board);
+        let id_b = board.reserve(uid(20), 1);
+        check(&board);
+        board.release_reservation(id_a);
+        check(&board);
+        let _id_c = board.reserve(uid(30), 1);
+        check(&board);
+        board.release_reservation(id_b);
+        check(&board);
     }
 
     /// T1.13 four-mutator consistency falsifier: `reservations_by_item`
@@ -18443,12 +18729,15 @@ mod tests {
         let mut board = JobBoard::default();
         consistent(&board); // empty ledger is trivially consistent
 
-        // Mutator 1: `reserve`.
-        let id_a = board.reserve(uid(10));
+        // Mutator 1: `reserve`. amount=1 -- the degenerate (non-stackable)
+        // case, so this test exercises the SAME law the old at-most-one
+        // falsifier did; the capacity reformulation is covered by its own
+        // test (`t1_13_new_audit_matches_legacy_on_amount_one_degenerate_case`).
+        let id_a = board.reserve(uid(10), 1);
         consistent(&board);
         assert!(board.is_reserved(uid(10)));
 
-        let id_b = board.reserve(uid(20));
+        let id_b = board.reserve(uid(20), 1);
         consistent(&board);
 
         // Mutator 2: `release_reservation`.
@@ -18458,7 +18747,7 @@ mod tests {
         assert!(board.is_reserved(uid(20)), "the OTHER reservation must survive untouched");
 
         // Mutator 3: `remove_job`'s release path.
-        let id_c = board.reserve(uid(30));
+        let id_c = board.reserve(uid(30), 1);
         consistent(&board);
         board.jobs.insert(101, minimal_job(Vec3::new(0, 0, 0), Some(id_c)));
         board.remove_job(101);
@@ -18467,7 +18756,7 @@ mod tests {
         assert!(board.is_reserved(uid(20)), "an unrelated reservation must survive remove_job");
 
         // Mutator 4: `cancel_region`'s release path.
-        let id_d = board.reserve(uid(40));
+        let id_d = board.reserve(uid(40), 1);
         consistent(&board);
         board.jobs.insert(102, minimal_job(Vec3::new(5, 5, 5), Some(id_d)));
         let region = common::bastion::Region { min: Vec3::new(0, 0, 0), max: Vec3::new(10, 10, 10) };

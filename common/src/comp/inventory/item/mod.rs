@@ -1790,6 +1790,50 @@ impl PickupItem {
             (!self.items.is_empty()).then_some(self),
         )
     }
+
+    /// bastion (DECISIONS #89, Option B -- reservation capacity): split
+    /// ONE unit off this stack for a per-unit consumer (the eat path).
+    /// Finds the FIRST entry with `amount() >= 2` -- deliberately NOT
+    /// blindly the last entry -- so a stack that already carries a
+    /// prior split's single unit at its end (`[Stack(39), Item(1)]`)
+    /// still yields a fresh single from the real stack, not a failed
+    /// split against an unsplittable `Item(1)`. Two eaters in the same
+    /// tick therefore interleave safely in either order: each split
+    /// creates one new single, each `pick_up()` consumes one.
+    ///
+    /// Returns `false` (no mutation) if every entry is already down to
+    /// amount 1 -- the caller's existing `pick_up()` already handles
+    /// that case correctly on its own, no split needed.
+    ///
+    /// The new single is `duplicate()`d -- a fresh item id, NEVER
+    /// `Item::clone` (see that method's own warning: cloning shares the
+    /// persistent database identity `Arc`, which two independently
+    /// pickup-able units must not do) -- then pushed as the new LAST
+    /// entry, so the EXISTING, unmodified `pick_up()` pops exactly it.
+    ///
+    /// Known residual, not solved by this method: the struct-level
+    /// invariant that non-last entries stay at `max_amount()` is
+    /// unenforceable for stackables (`max_amount() == u32::MAX`) and is
+    /// deliberately not maintained here; `try_merge`'s own debug_assert
+    /// on that invariant could in principle fire if this entity is
+    /// merge-checked against a fresh drop of the same item while
+    /// already split. Narrow, pre-existing in shape (any multi-entry
+    /// stack risks it), not introduced by this method, and out of this
+    /// row's scope.
+    pub fn split_off_one(&mut self, ability_map: &AbilityMap, msm: &MaterialStatManifest) -> bool {
+        let Some(idx) = self.items.iter().position(|it| it.amount() >= 2) else {
+            return false;
+        };
+        let mut single = self.items[idx].duplicate(ability_map, msm);
+        single
+            .set_amount(1)
+            .expect("amount 1 is always <= max_amount for anything with amount() >= 2");
+        self.items[idx]
+            .decrease_amount(1)
+            .expect("just checked amount() >= 2, so decrease_amount(1) cannot underflow");
+        self.items.push(single);
+        true
+    }
 }
 
 pub fn flatten_counted_items<'a>(
@@ -2205,6 +2249,74 @@ mod tests {
             }
             drop(item)
         }
+    }
+
+    /// bastion (DECISIONS #89, ROW69-OPTION-B-PACKET): `split_off_one`'s
+    /// own ordering constraint, exercised exactly as the packet's trace
+    /// specifies -- two eaters splitting the same tick, in interleaved
+    /// order, must both succeed. A naive "always split the last entry"
+    /// implementation would find `Item(1)` unsplittable on the second
+    /// call and silently fail the second eater; this asserts the FIRST
+    /// entry with `amount() >= 2` is the one that gets found, not the
+    /// last.
+    #[test]
+    fn bastion_split_off_one_two_eaters_same_tick() {
+        let ability_map = &AbilityMap::load().read();
+        let msm = &MaterialStatManifest::load().read();
+        let mut mushroom = Item::new_from_asset_expect("common.items.food.mushroom");
+        mushroom.set_amount(40).expect("mushroom is stackable");
+        let mut stack = PickupItem::new(mushroom, ProgramTime(0.0), true);
+        assert_eq!(stack.amount(), 40);
+        assert_eq!(stack.items.len(), 1, "starts as one entry");
+
+        // Split A: [Stack(40)] -> [Stack(39), Item(1)].
+        assert!(stack.split_off_one(ability_map, msm));
+        assert_eq!(stack.amount(), 40, "splitting moves units, never creates or destroys them");
+        assert_eq!(stack.items.len(), 2);
+        assert_eq!(stack.items[0].amount(), 39);
+        assert_eq!(stack.items[1].amount(), 1);
+
+        // Split B, BEFORE either pickup: must target the real stack
+        // (index 0, amount 39), NOT the last entry (index 1, amount 1,
+        // unsplittable) -- exactly the packet's registered trap.
+        assert!(stack.split_off_one(ability_map, msm));
+        assert_eq!(stack.amount(), 40);
+        assert_eq!(stack.items.len(), 3);
+        assert_eq!(stack.items[0].amount(), 38);
+        assert_eq!(stack.items[1].amount(), 1);
+        assert_eq!(stack.items[2].amount(), 1);
+
+        // Both eaters can now pick up their own single unit, in either
+        // order, each popping the LAST entry via the existing,
+        // unmodified `pick_up()`.
+        let (picked_b, remainder) = stack.pick_up();
+        assert_eq!(picked_b.amount(), 1);
+        let mut remainder = remainder.expect("38 + 1 units remain");
+        let (picked_a, remainder) = remainder.pick_up();
+        assert_eq!(picked_a.amount(), 1);
+        let remainder = remainder.expect("38 units remain");
+        assert_eq!(remainder.amount(), 38);
+
+        // Different underlying `Arc<ItemId>` allocations -- never a
+        // shared `Item::clone` (the persistent-identity hazard
+        // `split_off_one`'s own doc warns about; `AtomicCell` doesn't
+        // implement `PartialEq`, so pointer identity is the correct
+        // check here, not value equality).
+        assert!(!std::sync::Arc::ptr_eq(&picked_a.item_id, &picked_b.item_id));
+    }
+
+    /// The no-op case: every entry already down to amount 1 -- nothing
+    /// to split, `pick_up()` already handles it correctly on its own.
+    #[test]
+    fn bastion_split_off_one_no_op_when_all_singles() {
+        let ability_map = &AbilityMap::load().read();
+        let msm = &MaterialStatManifest::load().read();
+        let mut mushroom = Item::new_from_asset_expect("common.items.food.mushroom");
+        mushroom.set_amount(1).expect("mushroom is stackable");
+        let mut stack = PickupItem::new(mushroom, ProgramTime(0.0), true);
+        assert!(!stack.split_off_one(ability_map, msm));
+        assert_eq!(stack.items.len(), 1, "no mutation on the no-op path");
+        assert_eq!(stack.amount(), 1);
     }
 
     #[test]

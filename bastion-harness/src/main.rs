@@ -4613,6 +4613,9 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // the F3 pruner's branch-dwell accumulators, the corpus's only route
     // to this data (the wave-fan transport discards stderr).
     let f3_prune = server.bastion_f3_prune_stats();
+    // #89 (ROW69-OPTION-B-PACKET): captured once, same reason -- the
+    // reservation-capacity row's feature-acceptance measures.
+    let eat_stack = server.bastion_eat_stack_stats();
 
     // B5-EXIT-CODE-DISAMBIGUATION (Ben-directed, 2026-07-30): the pass gate
     // is a ~40-clause conjunction; at corpus scale a bare exit code only
@@ -4993,6 +4996,14 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_f3_transitions": f3_prune.3,
         "b5_f3_idle_peak": f3_prune.4,
         "b5_f3_prunes_fired": f3_prune.5,
+        // #89 (ROW69-OPTION-B-PACKET): the reservation-capacity row's
+        // feature-acceptance measures -- see `bastion_eat_stack_stats`'s
+        // own doc. DIAGNOSTICS, not verdict terms: neither field may
+        // ever be added to the `clauses` vec above (review check: `grep
+        // '"b5_eat_completions_distinct\|b5_stack_reserved_units_max' `
+        // over that region must return zero).
+        "b5_eat_completions_distinct": eat_stack.0,
+        "b5_stack_reserved_units_max": eat_stack.1,
         // ARB-ATTEMPT-01 STEP 2 (batch item 1, 2026-08-04): scoped to the
         // three producers discovered firing on seeds 71/66 -- see
         // `bastion_release_reason_counts`'s own doc for the caveat on

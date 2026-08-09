@@ -3767,6 +3767,24 @@ impl Server {
         )
     }
 
+    /// bastion (DECISIONS #89, ROW69-OPTION-B-PACKET, harness hook,
+    /// 2026-08-09): the reservation-capacity row's feature-acceptance
+    /// measures. Flattened: `(eat_completions_distinct,
+    /// stack_reserved_units_max)`. See `JobBoard::
+    /// b5_eat_completions_distinct`'s own doc. Both pure accumulators,
+    /// zero-defaulted, never gated -- DIAGNOSTICS, not verdict terms;
+    /// must never enter the harness's `clauses` vec.
+    pub fn bastion_eat_stack_stats(&self) -> (u32, u32) {
+        let board = self
+            .state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>();
+        (
+            board.b5_eat_completions_distinct.len() as u32,
+            board.b5_stack_reserved_units_max,
+        )
+    }
+
     /// bastion (ARB-ATTEMPT-01 step 2, batch item 1, harness hook,
     /// 2026-08-04): `to_release` outcome counts by classified reason --
     /// see `JobBoard::release_reason_counts`'s own doc for the zero-vs-
