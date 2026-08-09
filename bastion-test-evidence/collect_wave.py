@@ -36,6 +36,33 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 SEED_RE = re.compile(r"^@@@SEED (\d+)@@@\s*$")
 
 
+def _shape_compatible(other, mine_keys):
+    """Is `other` the SAME SCENARIO as the wave being written?
+
+    Two tests, both cheap, and each catches a case the other misses:
+
+      1. Every seed carries the verdict field AT TOP LEVEL. A paired A/B wave
+         nests everything under paired_base/paired_variant/paired_delta, so
+         its verdict is one level down and it fails here. This is also what
+         makes a wave SCORABLE at all -- an unscorable baseline contributes
+         nothing but a refusal.
+      2. Top-level key sets overlap substantially (Jaccard >= 0.5). Deliberately
+         NOT equality: waves legitimately gain fields (wave26 127 leaves ->
+         wave30 132), and demanding an identical schema would reject every
+         additive window -- i.e. it would fail in the direction that looks
+         strict while making the tool useless.
+    """
+    import derived as _d
+    keys = set()
+    for v in other.values():
+        if not isinstance(v, dict) or _d.VERDICT_FIELD not in v:
+            return False
+        keys |= set(v)
+    if not keys or not mine_keys:
+        return False
+    return len(keys & mine_keys) / float(len(keys | mine_keys)) >= 0.5
+
+
 def parse_log(path):
     """-> (commit, {seed: raw_text}). Blocks run to the next marker."""
     commit, blocks, cur, buf = None, {}, None, []
@@ -180,8 +207,12 @@ def main():
             # is NAMED in the output; an unnamed automatic comparison is a
             # number whose meaning nobody can reconstruct later.
             mine = set(parsed)
+            mine_keys = set()
+            for v in parsed.values():
+                if isinstance(v, dict):
+                    mine_keys |= set(v)
             here = os.path.dirname(os.path.abspath(out_path))
-            cands = []
+            cands, wrong_shape = [], []
             for p in glob.glob(os.path.join(here, "*_FULL.json")):
                 nm = re.split(r"[\\/]", p)[-1]
                 if nm == this_name:
@@ -192,22 +223,48 @@ def main():
                         other = json.load(f2)
                 except Exception:
                     continue
-                if other and set(other) == mine:
-                    cands.append((n, nm, other))
+                if not other or set(other) != mine:
+                    continue
+                # SELECTION RULE, second half (2026-08-08): a baseline is
+                # chosen by SCENARIO SHAPE **and** seed set -- never by seed
+                # set alone, and never by recency. wave29 shares seeds 49-96
+                # with every plain wave and is a PAIRED A/B run whose keys sit
+                # under paired_base/paired_variant/paired_delta. Same seeds is
+                # not the same scenario. Excluded HERE, by name, rather than
+                # discovered downstream when its verdict lookup fails.
+                if not _shape_compatible(other, mine_keys):
+                    wrong_shape.append(nm)
+                    continue
+                cands.append((n, nm, other))
             try:
                 mine_n = derived.wave_number(this_name)
                 cands = [c for c in cands if c[0] < mine_n]
             except ValueError:
                 cands = []
+            if wrong_shape:
+                print("\n(excluded from cross-wave, INCOMPATIBLE SCENARIO "
+                      "SHAPE despite an identical seed set: %s)"
+                      % ", ".join(sorted(wrong_shape)))
             if cands:
-                base = max(cands, key=lambda c: c[0])
-                print("\n(cross-wave baseline auto-selected: %s -- newest "
-                      "earlier wave with an IDENTICAL seed set)" % base[1])
-                derived.cross_wave([(base[1], base[2]), (this_name, parsed)])
+                # Pass EVERY comparable wave, not just the newest. Recency-
+                # singular selection lost the whole analysis on wave30: it
+                # picked the newest candidate, that one turned out to be
+                # unusable, and the run reported "fewer than 2 waves carry a
+                # readable verdict" while two perfectly good baselines sat on
+                # disk. `derived.cross_wave` already sets aside unusable waves
+                # BY NAME and groups by seed set -- handing it one wave threw
+                # away the recovery it was built to do.
+                cands.sort(key=lambda c: c[0])
+                print("\n(cross-wave baselines: %s -- every earlier wave with "
+                      "an identical seed set AND a compatible shape)"
+                      % ", ".join(c[1] for c in cands))
+                derived.cross_wave([(c[1], c[2]) for c in cands]
+                                   + [(this_name, parsed)])
             else:
                 print("\n(no cross-wave baseline: no earlier wave in %s shares "
-                      "this seed set exactly. FIXED/NEW are not computed -- "
-                      "they would be meaningless across differing sets.)" % here)
+                      "this seed set exactly AND a compatible shape. FIXED/NEW "
+                      "are not computed -- they would be meaningless across "
+                      "differing sets.)" % here)
         body = buf.getvalue()
         with open(derived_txt, "w", encoding="utf-8") as fh:
             fh.write(body)
