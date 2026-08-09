@@ -142,3 +142,63 @@ ways: it hides the wins as well as the regressions.*
 
 > ★★★ **This table is the standing worklist with its full history attached, and
 > it exists because a `max()` was deleted from the collector.**
+
+## ★★★★★★★★ THE TWO SINGLETONS — RESOLVED, AND THE HARD CORE COMPRESSES TO 9+1
+
+### ★★★★★ SEED 66 (`tl_ok`) — **THE CLAUSE FAILS ON AN UNKNOWN, NOT ON A DEFECT**
+
+| field | seed 66 | passing seeds |
+|---|---|---|
+| `b5_tool_ok` | ★★★ **`null`** | `true` |
+| `b5_tool_stone` / `_steel` | ★★★ **`null`** | `1.5` / `2.0` |
+| ★★★★★ **`b5_tool_stone_measured` / `_steel_measured`** | ★★★★★ **`null`** | `1.5` / `2.0` |
+
+★★★ **REG-1 did exactly what it registered — replaced the impossible `0.0`
+sentinel with an honest `null`.** ★★★★★ **And the CLAUSE `tl_ok` still fails,
+now on "unknown" rather than on a poisoned value.**
+
+> ## ★★★★★★★ **SEED 66'S ONLY FAILING CLAUSE IS AN UNMEASURED QUANTITY. The
+> verdict asserts a tool problem the guard never established — which is the exact
+> thing REG-1's registration warned about, arriving from the other side.**
+
+★★ **The RAW fields are `null` too, so nothing was measured at all** — *not a
+derivation failure, an absence of input.* ★★★ **And seed 66 carries NINE probed
+travel timeouts** *(the re-score's largest single-seed set)*.
+
+★ **INFERENCE, stated as one:** *tools are measured from work performed; a colony
+whose colonists never arrive never uses tools; so `tl_ok` fails on absence.*
+★★★★★ **If that holds, seed 66 is a TRAVEL seed wearing a tools clause — and it
+is not a "failing" seed at all but an UNPROVEN one.**
+
+★★ **ACTIONABLE EITHER WAY:** *a clause that fails on `null` cannot distinguish
+"the tools were bad" from "we never looked."* ★★★ **Same law as `wave13`'s empty
+dict and the exit-0-empty-log: an exclusion and an absence must never render
+identically.** ★ **The fix is a third verdict state, not a different threshold.**
+
+### ★★ SEEDS 68 / 92 (`ch_mixed`) — **A CLEAN BOOLEAN, AND 68 IS THE OUTLIER**
+
+**`ch_mixed`: `false` on 68 and 92, `true` on passing seeds AND on 66.**
+★ *Consistent — 66 doesn't fail this clause.*
+
+> ★★★★★★★ **SEED 68 IS THE ONLY HARD-CORE SEED WITH NO PROBED TRAVEL TIMEOUT AT
+> ALL** *(absent from the re-score's 44-case table entirely)*, **and its ONLY
+> clause is `ch_mixed`.**
+
+★★★ **So seed 68 is the one genuinely separate failure in the hard core.**
+★★ *92 also fails `ch_mixed`, but 92 is already deep in the travel families —
+its `ch_mixed` is a second, possibly independent problem.*
+
+## ★★★★★★★★ THE HARD CORE, FINAL SHAPE
+
+| | seeds | |
+|---|---|---|
+| ★★★★★ **TRAVEL / ACCESS** | **54 61 62 71 78 80 85 92** + ★★ **66** *(via unmeasured tools)* | ★★★ **NINE OF TEN** |
+| ★★★ **genuinely separate** | ★★★★★ **68** *(`ch_mixed`, no travel timeouts)* | **ONE** |
+
+> ## ★★★★★ **NINE OF THE TEN SEEDS THAT HAVE NEVER PASSED ARE ONE SUBSYSTEM.**
+> ★★★ **The tenth is a single boolean nobody has looked at.**
+
+★ **`ch_mixed` on seed 68 is now the smallest, cleanest, most isolated open
+question in the corpus** — *one seed, one boolean, no travel confound.* ★★ **That
+makes it the cheapest thing on this list, and the only one that does not wait on
+the travel row.**
