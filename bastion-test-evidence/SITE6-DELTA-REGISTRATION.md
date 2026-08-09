@@ -170,8 +170,47 @@ re-tuning constraint arriving through a side door.**
 > asserting "reached the bed" must state WHICH tolerance it means, before and
 > after.**
 
-**Escalated to 5b for an explicit yes/no on the record. ★ Not changed by this
-row either way — an inherited behaviour change is the thing being prevented.**
+### ★★★★★★★★ C1 READ END-TO-END — IT IS REAL, AND IT ALSO **LOCKS THE BED**
+
+**I escalated this as a question, then read it instead. Four sites, every link:**
+
+| # | link | site |
+|---|---|---|
+| 1 | `stuck_strikes` accumulates | **site 6** |
+| 2 | `arrive = ARRIVE_DIST + stuck_strikes.min(3)*1.2` → **2.5 … 6.1** | `10180` |
+| 3 | `Traveling → Working` fires at that distance | same |
+| 4 | ★★★★★ **recovery applies in the Working arm with NO distance check** | **`12410`** |
+
+**`needs.rest += BED_REST_RECOVERY_PER_SEC * kind.quality() * dt`. The gates above
+it are `work_stable` (supported, not moving) and the `RestAt` match. ★★★ Nothing
+reads distance to `bed_pos`.**
+
+> ★★★★★★★ **A colonist with 3 strikes SLEEPS FROM UP TO 6.1 BLOCKS AWAY, standing
+> on the ground.**
+
+★★★★★ **AND FOUR LINES ABOVE THE RECOVERY:** `if let Some(slot) =
+board.beds.get_mut(&bed_pos) { slot.occupant = Some(u); }` — ★★★ **it TAKES the
+capacity-1 slot, denying the bed to a colonist who could actually reach it.**
+★ *And per the travel row, `occupant` is already a reservation rather than a
+presence, so nothing downstream can distinguish the two cases.*
+
+★★ **Dormant today** *(strikes never accumulate on self-jobs — the 0-across-660-
+ticks measurement is exactly why nobody has seen this)*. **Site 6 switches it on.**
+
+### ★★★ THE HANDLING — **NOT** A FIX
+
+★★★★★ **Nothing changes in site 6.** *A pre-existing mechanism meets a newly-live
+input; inventing a bed-specific tolerance mid-build is the same error as the
+"third anti-thrash mechanism" I made on the hysteresis.*
+
+| | |
+|---|---|
+| ★★★★★ **(a) RECOMMENDED — ship it, measure it** | *one assertion in the rest fixture: the colonist's distance to `bed_pos` at the tick recovery first applies. Records the real number instead of the worst case.* |
+| ★ **(b) exempt self-jobs from tolerance growth** | ★★ **a mid-build change to Ben's anti-loop invariant, on a mechanism not yet measured. Not recommended.** |
+
+**Escalated to 5b and to Fable in parallel; the gameplay call may be Ben's.**
+★ **Neither answer blocks the build — (a) is one assertion, (b) is a later row.**
+★★★ **The goal is that it lands CHOSEN rather than inherited.**
 
 ## ★★★★★★★ D5 — `b5_blocked_regions_count_*` **MAY RISE, AND A RISE IS EXPECTED**
 
