@@ -233,6 +233,63 @@ as the enumeration of what legitimately moves — and I keep publishing the bar
 before finishing the enumeration.* ★ **Registered BEFORE the fan runs, which is
 the only thing that makes it a prediction rather than an excuse.**
 
+### ★★★★★★★★ D5 **WITHDRAWN** — I REGISTERED A DEFECT AS EXPECTED BEHAVIOUR
+
+**Fable held C3 on the store's-unit question** *(a bed is not a designation
+region; `blocked_regions`' unit IS designation regions; the haul producer was
+rejected for this exact mismatch)*. ★ **The read, four facts:**
+
+| # | fact | site |
+|---|---|---|
+| 1 | ★★ **the producer IS reachable for self-jobs** — standalone `if`, and the increment's comment says **"Kind-agnostic and survives re-claim"** | `12248`, `12074` |
+| 2 | **guard is `designated.iter().find(\|r\| r.contains_point(job.pos))`; for `RestAt`, `job.pos == bed_pos`** | `12250`, `5443` |
+| 3 | ★★★★★ **`designated` is pruned ONLY on explicit CANCELLATION** *(exact AABB subtraction)* — **a COMPLETED designation stays forever** | `5106` |
+| 4 | ★★★ **so a bed inside a once-painted build region still matches** | — |
+
+**TWO BRANCHES, BOTH BAD:** ★★ *bed outside any painted region* → `None` → **nothing
+recorded, D5 vacuous**; ★★★★★ *bed inside a painted, possibly long-COMPLETED build
+region* → **the entry is attributed to THAT region — a finished designation
+reported "blocked" because a colonist couldn't reach a bed inside it.**
+
+> ## ★★★★★ **THE GUARD ASKS "WHICH PAINTED REGION HAPPENS TO CONTAIN THIS POINT."
+> A COINCIDENCE TEST, NOT AN OWNERSHIP TEST.**
+
+★★★★★★★ **And the codebase already named this class** — task #55's comment under
+`5106`: *"leaving the stale entry would report 'blocked' on a designation the
+player already erased."* ★ **Same objection, four hundred lines apart, handled for
+cancellation and unhandled for self-jobs.**
+
+**RECOMMENDED: gate `route_exhausted` to WORK KINDS at `12248`** *(matches C1's
+shape — per-kind gate at the consumer, named-case comment)*. ★★ **The self-job
+visibility gap files as its own row: *"colonists repeatedly fail to reach a bed"*
+is a real thing a player should hear, and `blocked_regions` is the wrong store to
+say it in.**
+
+### ★★★★★ WHAT THIS DOES TO THE BAR — AND TO ME
+
+**With that gate, self-jobs never feed `blocked_regions`, so
+`b5_blocked_regions_count_*` RETURNS TO EXACT MATCH and the carve-out
+disappears.**
+
+> ★★★★★★★ **I REGISTERED D5 AS AN EXPECTED MOVER FOR A CHAIN THAT SHOULD NOT
+> EXIST.** *The carve-out was correct about the mechanism and wrong about whether
+> the mechanism was legitimate.*
+
+★★★ **A pre-registered delta can LAUNDER A DEFECT INTO "EXPECTED BEHAVIOUR."**
+★★ *Pre-registration is what makes a mover honest — but only after the prior
+question:* ★★★★★ ***should this move at all?*** ★ **I registered the carve-out
+instead of asking whether the chain was correct — the same move as publishing the
+bar before finishing the enumeration, one level up.**
+
+> ★★★★★ **BEFORE REGISTERING AN EXPECTED DELTA, ASK WHETHER THE PRODUCING CHAIN
+> IS ITSELF CORRECT. A registration EXPLAINS a mover; it must never EXCUSE one.**
+
+★ **C1 is ruled the same way** *(Fable, #73: NO for self-jobs — beds and meals keep
+strict `2.5`)*, **so C1's consequences are withdrawn too.** ★★★ **C2 applies as
+designed.** ★★ **Net: the exact-match bar is restored WHOLE, with no carve-outs —
+which is what it should have been once both chains were read rather than
+registered.**
+
 ## ★ SEQUENCING
 
 1. ★★★★★ **Capture the pre-site-6 `settle_invariant_holds` reading** *(in flight —
