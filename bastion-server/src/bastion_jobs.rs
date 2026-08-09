@@ -14806,36 +14806,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // material hold (branch A, resets unconditionally and by
             // design for as long as the hold lasts), or no access jobs
             // at all -- and the CLAIM/RELEASE emit above only separates
-            // the first two. This is a pure read of the SAME three
-            // inputs the untouched if/else below branches on (no
-            // re-derivation, so it cannot drift from what actually
-            // happened); a pinned defect reads as a branch that never
-            // changes, a healthy colony changes branch a handful of
-            // times, and no line at all reads VOID (diag was off), not
-            // "no pathology."
-            if access_claim_diag_enabled() {
-                let branch = if access_jobs_exist && !access_claimed && material_held {
-                    F3PruneBranch::MaterialHeld
-                } else if access_jobs_exist && !access_claimed {
-                    F3PruneBranch::Idle
-                } else {
-                    F3PruneBranch::ClaimedOrAbsent
-                };
-                if board.access_branch_state != Some(branch) {
-                    info!(
-                        tick = tick.0,
-                        branch = ?branch,
-                        access_jobs = access_jobs_exist,
-                        claimed = access_claimed,
-                        material_held,
-                        idle = board.access_idle_secs,
-                        "bastion F3-BRANCH"
-                    );
-                    board.access_branch_state = Some(branch);
-                }
-            }
-            if access_jobs_exist && !access_claimed && material_held {
+            // the first two. Opus's own re-review (2026-08-09): an
+            // earlier draft classified this with a SECOND, independent
+            // copy of the condition structure twenty lines away from
+            // the real one below -- inputs matching is not the same
+            // guarantee as the classification being a PRODUCT of the
+            // real branch taken, and a future edit to one chain without
+            // the other would make the diag misreport a confident wrong
+            // letter instead of going silent. Fixed by assigning
+            // `branch` from inside each arm of the one real chain, so
+            // divergence is structurally impossible rather than
+            // promised by a comment. Enum computed unconditionally
+            // (free); the emit and the state write stay gated.
+            let branch = if access_jobs_exist && !access_claimed && material_held {
                 board.access_idle_secs = 0.0;
+                F3PruneBranch::MaterialHeld
             } else if access_jobs_exist && !access_claimed {
                 board.access_idle_secs += 1.0; // this pass ≈ once per second
                 if board.access_idle_secs >= ACCESS_STALE_SECS {
@@ -14865,8 +14850,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     );
                     board.access_idle_secs = 0.0;
                 }
+                F3PruneBranch::Idle
             } else {
                 board.access_idle_secs = 0.0;
+                F3PruneBranch::ClaimedOrAbsent
+            };
+            if access_claim_diag_enabled() && board.access_branch_state != Some(branch) {
+                info!(
+                    tick = tick.0,
+                    branch = ?branch,
+                    access_jobs = access_jobs_exist,
+                    claimed = access_claimed,
+                    material_held,
+                    idle = board.access_idle_secs,
+                    "bastion F3-BRANCH"
+                );
+                board.access_branch_state = Some(branch);
             }
 
             // T0.38: stable order in all modes (was harness-only).
