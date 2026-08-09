@@ -829,6 +829,23 @@ pub fn is_labor_hold_self_job(kind: &common::bastion::JobKind) -> bool {
     )
 }
 
+/// bastion (AUTON-2 unification, site 4/6, row 50, 2026-08-09,
+/// Fable-ruled DECISIONS #72): the settle invariant's own predicate,
+/// extracted PURE so it's directly unit-testable (the orphan sweep's
+/// own filter calls this with `owner_alive` already resolved against
+/// live ECS state — `id_maps`/`is_loaded`/`Health`, none of which
+/// belong in a pure function). OWNER LIVENESS, not `claimed_by` alone,
+/// discriminates a genuine violation from a live suspend: `claimed_by`
+/// is `None` for BOTH a suspended self-job (owned, waiting to
+/// reclaim — `suspended_for: Some(uid)`) and a genuinely orphaned one
+/// (`suspended_for: None`, the pre-unification case); `owner_alive`
+/// is what breaks the remaining tie for the suspended case. Assumes
+/// the caller has already confirmed `is_labor_hold_self_job` and
+/// `claimed_by.is_none()` — this only answers the owner-liveness half.
+pub fn settle_invariant_violation(suspended_for: Option<Uid>, owner_alive: bool) -> bool {
+    suspended_for.is_none_or(|_owner| !owner_alive)
+}
+
 /// T3.53 (E3, Fable-ruled 2026-07-27): the eat/sleep carve-out's own
 /// decision — same `NeedTuning.interrupt` threshold non-Despond
 /// colonists use (E3 ruling #5(b), no new knob), extracted as a pure
@@ -8791,14 +8808,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // removals about to happen," which this filter
                         // now correctly excludes suspended-with-a-live-
                         // owner from producing in the first place.
-                        && j.suspended_for.is_none_or(|owner| {
-                            id_maps.uid_entity(owner).is_none_or(|e| {
-                                !is_loaded(e)
-                                    || healths
-                                        .get(e)
-                                        .is_some_and(|h| h.is_dead || h.should_die())
-                            })
-                        })
+                        && {
+                            let owner_alive = j.suspended_for.is_some_and(|owner| {
+                                id_maps.uid_entity(owner).is_some_and(|e| {
+                                    is_loaded(e)
+                                        && !healths
+                                            .get(e)
+                                            .is_some_and(|h| h.is_dead || h.should_die())
+                                })
+                            });
+                            settle_invariant_violation(j.suspended_for, owner_alive)
+                        }
                 })
                 .map(|(id, _)| *id)
                 .collect();
@@ -17671,6 +17691,37 @@ mod tests {
         assert!(!is_labor_hold_self_job(&JobKind::Designated(
             common::bastion::DesignationKind::Mine
         )));
+    }
+
+    /// AUTON-2 unification, site 5 (row 50, 2026-08-09): the settle
+    /// invariant's own predicate, rewritten against what sites 1-4/6
+    /// actually produce — GUARD-6's old arbiter-bypass unit test
+    /// (`is_labor_hold_self_job` alone, unchanged and still covered
+    /// above) is no longer the row's own claim; `settle_invariant_
+    /// violation` is, since it's the exact rule the orphan sweep and
+    /// the harness's live snapshot BOTH now delegate to (site 5's own
+    /// "test what 1-4 actually do," not a re-derivation of intent).
+    /// Four cases, matching the predicate's own doc: a plain orphan
+    /// (never suspended) is ALWAYS a violation regardless of
+    /// `owner_alive` (the parameter shouldn't even matter here — both
+    /// values assert the same outcome, proving that); a suspended job
+    /// is a violation iff its owner ISN'T alive.
+    #[test]
+    fn settle_invariant_violation_distinguishes_orphan_from_live_suspend() {
+        // Never suspended (`suspended_for: None`) -- a plain orphan,
+        // the pre-unification case. Always a violation, independent of
+        // `owner_alive` -- there's no owner to be alive OR dead for.
+        assert!(settle_invariant_violation(None, true));
+        assert!(settle_invariant_violation(None, false));
+
+        let owner = Uid(NonZeroU64::new(7).unwrap());
+        // Suspended for a LIVE owner: NOT a violation -- this is the
+        // whole point of the field, the state that used to read as a
+        // false positive before this row.
+        assert!(!settle_invariant_violation(Some(owner), true));
+        // Suspended for a dead/gone owner: IS a violation -- the
+        // owner-death leak #72 required the sweep to still close.
+        assert!(settle_invariant_violation(Some(owner), false));
     }
 
     /// T3.53 (E3, Fable-ruled 2026-07-27), AUTON-2 unification site 4/6

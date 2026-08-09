@@ -3529,11 +3529,18 @@ impl Server {
             .filter(|j| {
                 bastion_jobs::is_labor_hold_self_job(&j.kind)
                     && j.claimed_by.is_none()
-                    && j.suspended_for.is_none_or(|owner| {
-                        id_maps.uid_entity(owner).is_none_or(|e| {
-                            healths.get(e).is_some_and(|h| h.is_dead || h.should_die())
-                        })
-                    })
+                    && {
+                        // Death-only owner_alive here (no load-state check)
+                        // -- see this function's own doc for why; the
+                        // TIE-BREAK logic itself is shared with the orphan
+                        // sweep via the same pure predicate.
+                        let owner_alive = j.suspended_for.is_some_and(|owner| {
+                            id_maps.uid_entity(owner).is_some_and(|e| {
+                                !healths.get(e).is_some_and(|h| h.is_dead || h.should_die())
+                            })
+                        });
+                        bastion_jobs::settle_invariant_violation(j.suspended_for, owner_alive)
+                    }
             })
             .map(|j| j.pos)
             .collect()
