@@ -168,3 +168,57 @@ nobody named."**
 > and then hit the edge of what it can see — in a place where the SIBLING
 > instrument for the same question already sees further.** ★★ **Two diags for one
 > mechanism, built asymmetrically.**
+
+## ★★★★★★★★ `blocked_by == pos` — READ, AND MY OWN FRAMING WAS WRONG
+
+**I wrote *"the blocking cell IS the target cell"* as though it were a paradox.
+★★★ It isn't. The field's own doc (`common/src/comp/bastion.rs:~601`):**
+
+> *"`Some(cell)` when this job's pos falls inside a designation the auto-access
+> planner **gave up on** — names the specific cell that blocked the **WHOLE
+> designation**, so inspecting ANY job in a blocked volume answers 'blocked by X'
+> rather than only the one cell whose own carve attempt failed. **`None` if this
+> job's designation isn't blocked (including if `unreachable` is true for some
+> OTHER reason, e.g. a stuck-strike release rather than a planner refusal).**"*
+
+★★★★★ **So `blocked_by` is a DESIGNATION-LEVEL fact projected onto every job in
+the volume, and `blocked_by == pos` means: ★★★ THIS JOB'S OWN CELL IS THE ONE THE
+PLANNER NAMED AS BLOCKING ITS ENTIRE DESIGNATION.**
+
+## ★★★★★ AND IT SPLITS THE FAMILY IN TWO — BY MECHANISM, NOT BY DEGREE
+
+| seeds | `blocked_by` | what produced `unreachable` |
+|---|---|---|
+| ★★★ **62 · 80 · 85 · 92** | **`== pos`** | ★★★★★ **AUTO-ACCESS PLANNER REFUSAL** — *the planner examined the designation and named this cell as the obstruction* |
+| ★★★ **61 · 71** | **`null`** | ★★★★★ **STUCK-STRIKE RELEASE** — *the planner never gave up; colonists simply kept failing to arrive* |
+
+> ★★★★★★★ **TWO DIFFERENT MECHANISMS WEARING ONE CLAUSE, and the field's own doc
+> names the distinction explicitly.** ★★ **The build family is not one root cause
+> — it is two, 4 seeds and 2 seeds.**
+
+### ★★★ AND THE SPLIT ALIGNS WITH THE CLAUSE FAMILIES
+
+**61 and 71 are exactly the two build-family seeds that ALSO fail
+`mine_cleared`/`mine_blocks_mined`.** ★★★★★ **The strike-released pair are the
+mine-family pair.** ★★ **The planner-refused four are not.**
+
+★ **Noted, not narrated: an alignment across two independently-derived splits is
+worth a look, and it is not yet evidence of a shared cause.**
+
+## ★★ WHAT THIS DOES TO THE ROW
+
+1. ★★★★★ **The two sub-families need different questions.** *Planner refusal =
+   "why did auto-access give up on this cell?" Strike release = "why can't
+   colonists arrive?" — the second is the travel row proper; the first is the
+   access planner.*
+2. ★★★ **Seed 80 remains the live specimen** *(planner-refused, latch not yet
+   closed, `starvation_cycles: 99`)*.
+3. ★★ **And the self-rescue co-occurrence now has a SHARPER population:** *self-
+   rescue exists to carve access after a planner refusal — so the four
+   planner-refused seeds are its natural population, not all six.* ★ **Still a
+   co-occurrence, still undeclared, but now correctly scoped.**
+
+> ★★★★★ **THE LESSON ON MYSELF: I read `blocked_by == pos` as a paradox and filed
+> it as "the concrete next read." The field's DOC answered it in two sentences.**
+> ★★★ **I reached for the interesting interpretation before reading the cheap
+> one — the same move as the haul-direction story, four hours later.**
