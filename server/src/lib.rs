@@ -3694,8 +3694,21 @@ impl Server {
     /// live_is_access_count)`. All zero-defaulted, never `None` -- a
     /// scenario that never exercises access-planning at all reads as
     /// all-zero, not absent, so a corpus-wide zero must be checked
-    /// against whether `is_access` jobs existed at all (the last field)
-    /// before reading it as "the mechanism never fires."
+    /// against whether `is_access` jobs EVER existed before reading it
+    /// as "the mechanism never fires."
+    ///
+    /// CORRECTION (2026-08-09, Opus, caught auditing #60's falsifier):
+    /// that existence check is field `.7` (`access_pending_true_ticks`,
+    /// an ACCUMULATOR -- incremented every tick any `is_access` job was
+    /// on the board, never reset), NOT the last field `.8`
+    /// (`live_is_access_count`, a SNAPSHOT -- `board.jobs` at the moment
+    /// of THIS read only). On wave32's 48 seeds, `.8 > 0` undercounted
+    /// `.7 > 0` 14-to-34: 20 seeds ran access-planning for real but had
+    /// no `is_access` job left on the board at the specific tick the
+    /// harness happened to sample. `ever` is not `now` -- use `.7` to
+    /// ask whether access-planning ever ran; `.8` only answers whether
+    /// it is running AT THIS INSTANT (a different, also legitimate,
+    /// question -- not this one).
     ///
     /// NOT a duplicate of `bastion_cascade_probe`'s `access_emissions_max`
     /// (Opus's catch, 2026-08-04): that field is a PER-MEMBER MAXIMUM
