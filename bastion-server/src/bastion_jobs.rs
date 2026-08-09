@@ -9249,11 +9249,54 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // (gating this whole block via `time.0 >=
                         // committed_until`) still rate-limits how often
                         // this can fire, so sub-tick chatter is unaffected.
-                        // Every OTHER transition (Work<->Flee<->Idle, and
-                        // entry INTO Personal, which still requires `p` to
-                        // clear `w + ARB_HYSTERESIS`) keeps the original
-                        // symmetric anti-thrash margin unchanged.
+                        //
+                        // AUTON-2 unification (Opus-ruled, 2026-08-09,
+                        // reversing an earlier "accept the timing shift"
+                        // ruling once measured): entry INTO Personal ALSO
+                        // bypasses the margin, for a DIFFERENT reason than
+                        // the relinquish case above — not "no contest to
+                        // protect" but the design's own §3: "`ARB_COMMIT_
+                        // SECS` covers anti-thrash between selections; the
+                        // sleep's own margin covers the need boundary — do
+                        // not add a third mechanism." The hysteresis margin
+                        // on entry WAS a third mechanism, silently
+                        // rescaling the personality-staggered interrupt
+                        // threshold (`stagger_interrupt`, already the
+                        // designed anti-thrash guard for this exact
+                        // boundary) by `0.15/(0.95-w)` — an amount that
+                        // varies with the colonist's Wealth-value roll for
+                        // no designed reason. Measured via
+                        // BASTION_ARB_SWITCH_DIAG before landing this: at
+                        // the modulated-urgencies-documented w ceiling
+                        // (0.6), the margin pushed the EFFECTIVE entry
+                        // point into the 1-2+ minute range at this
+                        // scenario's default (unaccelerated) decay rate —
+                        // "a just-crossed need should not abandon work
+                        // mid-swing" (§4) meant seconds, not minutes; a
+                        // colonist that crosses its interrupt and works
+                        // another two minutes has had its interrupt MOVED,
+                        // not deferred. Verified safe against the specific
+                        // flicker risk this removal opens (self-job
+                        // releases → no bed → immediate re-entry with no
+                        // margin to stop it): every observed release this
+                        // session showed `on_cooldown=true, severity=0.0`
+                        // at the FIRST post-release tick (BASTION_ARB_
+                        // PERSONAL_DIAG), and it's structural, not
+                        // incidental — `STUCK_TIMEOUT` (10s) is always well
+                        // under `PREEMPT_COOLDOWN_SECS` (60s), so the
+                        // cooldown set at a self-job's CREATION is
+                        // guaranteed still active when THAT SAME attempt
+                        // times out and releases. Entry into Personal is
+                        // still gated by the discrete, personality-
+                        // staggered interrupt threshold itself (`p > w`
+                        // above, i.e. `severity > 0`) — that threshold IS
+                        // the anti-thrash guard for this boundary, per
+                        // §3; it doesn't need a second one layered on top.
+                        // Work<->Flee<->Idle keeps the original symmetric
+                        // margin unchanged — this bypass is Personal-
+                        // specific on both edges now (entry and exit).
                         let switch_ok = arb.current == comp::bastion::Drive::Personal
+                            || next == comp::bastion::Drive::Personal
                             || score_of(next) > score_of(arb.current) + ARB_HYSTERESIS;
                         if switch_ok {
                             if std::env::var_os("BASTION_ARB_SWITCH_DIAG").is_some() {
