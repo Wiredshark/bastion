@@ -9256,6 +9256,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         let switch_ok = arb.current == comp::bastion::Drive::Personal
                             || score_of(next) > score_of(arb.current) + ARB_HYSTERESIS;
                         if switch_ok {
+                            if std::env::var_os("BASTION_ARB_SWITCH_DIAG").is_some() {
+                                info!(
+                                    tick = tick.0,
+                                    uid = uids.get(entity).map(|u| u.0.get()),
+                                    from = ?arb.current,
+                                    to = ?next,
+                                    w,
+                                    f,
+                                    i,
+                                    p,
+                                    "bastion ARB-SWITCH-DIAG"
+                                );
+                            }
                             arb.current = next;
                             arb.committed_until = time.0 + ARB_COMMIT_SECS;
                             switches += 1;
