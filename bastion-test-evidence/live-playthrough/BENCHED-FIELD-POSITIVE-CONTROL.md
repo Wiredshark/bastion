@@ -64,6 +64,36 @@ silence. **`#56`'s original question: 6-of-6 now stands on measurement**
 ("the second build job is healthy on every seed"), not 4-of-6 measured
 plus 2 consistent-but-unproven.
 
-`benched_until_tick` remains unproven by this control (silence, not a
-finding) — it would need a fixture that gets a job claimed and stuck
-repeatedly rather than never-reachable, a different setup than this one.
+## Scorecard, precisely
+
+**`benched_since_tick` is calibrated** — known-positive established above.
+**`benched_until_tick` remains UNCALIBRATED.** Its null in this control is
+explained (its gate needs `stuck_strikes >= PERSIST_ESCALATE_STRIKES` from
+prior claim-and-stuck attempts, a population this deliberately-
+unreachable fixture couldn't produce) but not demonstrated — that
+explanation is mechanistic reasoning, not a positive observation. It
+needs a different fixture: a job that IS reachable, gets claimed, and
+strikes out repeatedly (the opposite geometry from this one) — cheap
+whenever a fixture already produces stuck-and-claimed jobs, not worth a
+dedicated session on its own.
+
+## Residual opened by this result
+
+A job can be benched (`benched_since_tick` non-null) AND independently
+flagged `unreachable: true` at the same time — this control produced one.
+That reopens a question for the build family's ORIGINAL finding: the six
+first build jobs are latched `unreachable: true` (read as latched-by-
+timeout). It's now open whether some are ALSO benched — a second gate on
+top of the latch. Only seeds 80/92's first jobs have been read for
+`benched_since_tick` since the port landed (both null, alongside their
+own second jobs); seeds 61/62/71/85's first-job figures predate the port
+and haven't been re-read.
+
+**Resolved, same session.** Ran `--corpus b5-scenario --corpus-seeds
+61,62,71,85` on the calibrated fields: all four first-jobs (`claimant:
+None, unreachable: true`, matching the earlier pre-port reading) show
+`benched_since_tick: None`. Combined with 80/92's own first-job reads,
+**all 6 named seeds' first build jobs are now confirmed NOT benched, on
+calibrated measurement.** The "second gate" question is answered: the
+latch is latched-by-timeout only — no additional benching gate underneath
+it on any of the six seeds this row has ever cited.
