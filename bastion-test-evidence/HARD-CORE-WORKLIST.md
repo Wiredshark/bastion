@@ -307,3 +307,44 @@ it belongs to the travel row's opening rather than to a later surprise.**
 > ★ **Filed against my own strongest result of the night, before anyone builds on
 > it.** ★★★ **A delta is only evidence once the instrument is known stable — and
 > that applies to the findings I liked as much as to the bar I got wrong.**
+
+## ★★★★★★★★ CAVEAT CLOSED — **THE COUNTERS ARE STABLE, AND THE REASON UNIFIES THE CLASS**
+
+**Seed 85, same binary `5b9a1a9724` *(stamps verified equal)*, two runs, comparing
+`times_offered · timeouts_on_this_cell · starvation_cycles · unreachable ·
+cycles_since_last_claim` across `b5_build_job_diag` (2 entries) and
+`b5_ch_job_diag` (1 entry):**
+
+> ## ★★★★★ **ZERO DIFFERENCES. THE BUILD AND CHOP FAMILY NUMBERS STAND AS
+> QUOTED.**
+
+★★★ **So *"`times_offered == timeouts_on_this_cell` on five of six"* and the
+`starvation_cycles` ranges are stable measurements, not per-run accumulators.**
+
+## ★★★★★★★ AND THE INTERESTING PART — WHY THESE ARE STABLE WHILE `stuck_strikes` IS NOT
+
+**Both are per-job counters accumulated over a run. One varies, one doesn't.**
+★★★ **The discriminator is not the FIELD — it is whether the job was STILL IN
+FLIGHT when the snapshot was taken.**
+
+| job | state at snapshot | counters |
+|---|---|---|
+| **seed 90's mine cell** | ★★★ **LIVE** — *claimant present, `progress 0.87` mid-swing* | ★★★★★ **VARY** *(claimant, progress, `stuck_strikes 1→4`)* |
+| **seed 85's build cell** | ★★★ **LATCHED** — *`unreachable: true`, `starvation_cycles 285`, amnesty dormant* | ★★★★★ **STABLE** |
+
+> ## ★★★★★★★ **A LATCHED OR DORMANT JOB STOPPED CHANGING HUNDREDS OF CYCLES
+> BEFORE THE SNAPSHOT. A LIVE JOB IS BEING PHOTOGRAPHED MID-STRIDE.**
+
+★★★★★ **THE IN-FLIGHT SNAPSHOT CLASS IS ABOUT THE JOB'S STATE, NOT THE FIELD'S
+NAME** — *and that is why the hard core's numbers are trustworthy: every one of
+those jobs is latched and starved, frozen long before measurement.*
+
+★★ **It also predicts the class correctly going forward:** *the same field is
+snapshot-natured on a live job and stable on a dead one.* ★ **A membership list
+keyed on field names will therefore always be an approximation — a useful one,
+but the real predicate is liveness.**
+
+★★★ **Stated at its strength: ONE seed, ONE comparison, plus a mechanism that
+explains both observations and predicts the split. Not a law yet — a strong
+candidate with its own next test named** *(floor a LIVE build job — e.g. seed
+80's, the one specimen whose latch has not closed — and it should VARY).*
