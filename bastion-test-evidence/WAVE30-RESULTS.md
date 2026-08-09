@@ -138,3 +138,67 @@ exactly the opposite of what I concluded.**
 ★ **Cost: zero.** ★★★ *The original P1 was right, the wave confirms it, and the
 inversion never reached a build or a ruling — because the pre-registration was
 written down where the data could contradict it.*
+
+## ★★★★★★★★ P3 **RETRACTED** — `b5_self_job_reachability_probe` DOES NOT MEASURE SELF-JOBS
+
+**MEASURED, matched control, one run** *(seed 71, `--b5-scenario`, both env-gated
+diags on, same binary)*:
+
+| diag | hits |
+|---|--:|
+| `BASTION_RELEASE_DIAG` *(known-working control)* | ★★★★★ **34** |
+| `BASTION_SELFJOB_COMPLETION_DIAG` | ★★★★★ **0** |
+
+★★★ **Env propagation works, logging works, the job pipeline runs. ★★★★★ THE
+SELF-JOB CREATION SITES NEVER EXECUTE IN `--b5-scenario` — zero across all 14
+seeds.** ★ **The instrument is fine: `--preempt-scenario` seed 49, same binary,
+CREATED 4 / COMPLETED 1.**
+
+### ★★★★★ WHY THE CLAIM WAS WRONG
+
+**The field's producer, quoted verbatim in my own report hours earlier:**
+
+> *"subtracts `mine_cell_diag`'s own positions … whatever's left is every
+> non-mine **(i.e. self-job, in this scenario)** position that ever timed out."*
+
+★★★★★ **THE FIELD IS "NON-MINE TIMEOUT POSITIONS." The parenthetical is the
+author's ASSUMPTION — refuted by this same night's work, which showed BUILD and
+CHOP jobs timing out constantly in this scenario.**
+
+> ## ★★★★★★★ **"14/48 SEEDS EXERCISE SELF-JOBS" WAS ACTUALLY "14/48 SEEDS HAVE
+> NON-MINE TIMEOUTS" — THE BUILD AND CHOP FAMILIES, CHARACTERIZED IN THIS SAME
+> DOCUMENT SET.**
+
+★★★ **I read the producer, quoted its exact words, and still took the NAME.**
+★★★★★ **A PARENTHETICAL DID THE WORK A NAME CANNOT.** ★★ *Eighth costume of the
+day's law, and the costliest: an entire two-arm measurement was designed on it.*
+
+## ★★★ WHAT CHANGES — AND MOST OF IT IS GOOD
+
+- ★★★★★ **P3's falsifier A is CONFIRMED: the unification is INERT in
+  `--b5-scenario`.**
+- ★★★ **The "suspicious null" was never a null.** *No mechanism ran, so nothing
+  could move. There is no defect hiding here.*
+- ★★★★★★★ **THE FAN'S BAR IS BLANKET EXACT-MATCH WITH NO CARVE-OUTS** — *the
+  concern that it would indict a correct row evaporates, because the row's
+  mechanism cannot touch this scenario at all.*
+- ★★ **The completion question moves to `preempt_scenario`**, where self-jobs
+  exist. **First number, before-arm seed 49: 4 created, 1 completed.**
+
+## ★ WHAT SURVIVES UNCHANGED
+
+★★★★★ **Everything else in this document.** *The 6-of-114 movers and their
+assignments, the identical fail-set MEMBERSHIP across 49 commits, REG-1's exact
+delta, REG-3/4's zero-violation renames, and REG-2's denominator finding — none
+of them depended on P3.*
+
+## ★★★★★ WHAT CAUGHT IT
+
+**The zero-guard written INTO the extractor before any data existed:**
+*"BOTH ZERO — the instrument did not fire. That is 'measured nothing', NOT
+'nothing happened'. Do not read a diagnosis out of it."*
+
+★★★ **It fired on its first use, against its own author's measurement, and
+stopped a zero from being read as evidence for account (a).** ★ **One matched
+control then diagnosed it.** ★★ **Cost: two builds and a 14-seed run. No
+conclusion reached the bar.**
