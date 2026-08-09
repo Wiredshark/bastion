@@ -99,9 +99,44 @@ count-over-jobs field is downstream of that.**
 > direction that is not derived is a story, and it would launder the re-baseline
 > into a "registered" change.**
 
-★★ **The correct handling: run the fan, DIFF IT, and explain every mover against
-D1–D4.** ★ **A mover that D1–D4 do not explain is the finding** — *that is what a
-re-baseline is FOR, and why it must not be disguised as a window item.*
+## ★★★★★★★★ CORRECTION (same session): **D1–D4 ARE NOT FAN-VISIBLE.**
+
+**I wrote above that the handling is *"run the fan, diff it, explain every mover
+against D1–D4."* ★★★ I then enumerated what the fan can actually see. Leaf counts
+in `wave29_ROWBPRIME_B_7590dfa962_FULL.json`:**
+
+    bed 0 · sleep 0 · eat 0 · hunger 0 · despond 0 · mood 0
+    preempt 0 · orphan 0 · sweep 0 · stuck 0 · settle_invariant 0
+
+★★ **The 27 `job` leaves are all WORK-job counts** *(`b5_build_ok_jobs`,
+`b5_chop_jobs`, `b5_mine_jobs_remaining`, `b5_slope_jobs_total`, …)* — **none is a
+lifecycle or claim-identity field.** ★ *A tree-wide grep confirms `settle_invariant`
+appears in exactly one file in `bastion-test-evidence/`: this fixture doc. Never
+in a wave.*
+
+> ## ★★★★★ **THE FAN CANNOT SEE A SINGLE ONE OF D1–D4.**
+> ★★★ **Same blindness that made this corpus structurally unable to see the
+> AUTON-2 defect** — *and Fable already ruled the consequence for that case.*
+
+### ★★★ SO THE FAN'S ROLE IS **HARMLESSNESS**, AND THE BAR IS **EXACT-MATCH-OR-BUST**
+
+| instrument | proves |
+|---|---|
+| ★★ **the 48-seed fan** | **site 6 did not disturb the work economy.** *Nothing else. It is a blind instrument, which makes it a PERFECT harmlessness gate.* |
+| ★★★★★ **instrumented `preempt_scenario` runs + the two fixtures** | **the whole of D1–D4.** *The mechanism proof lives here entirely.* |
+
+★★★★★★★ **AND THE BLINDNESS CUTS THE RIGHT WAY: because no fan field is
+downstream of need-drive behaviour by design, ANY movement in the 27 work-job
+fields is unexplained-by-construction — and therefore a finding, not noise.**
+
+★ **That is a stronger gate than a diff-and-explain, not a weaker one.** ★★ **It
+also retires my refusal-to-predict above: the honest prediction for every
+fan-visible field is EXACT MATCH, and I am registering that as the bar.**
+
+> ★★ **What survives from the section above:** *site 6 still fails the window
+> ticket, and D2/D3's before-values were measured AD HOC (job 33, 660 ticks), not
+> in any wave — so their after-checks must be run in the SAME instrumented style,
+> never inferred from a fan that carries neither field.*
 
 ## ★ SEQUENCING
 
