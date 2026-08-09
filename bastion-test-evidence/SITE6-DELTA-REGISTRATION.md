@@ -138,6 +138,62 @@ fan-visible field is EXACT MATCH, and I am registering that as the bar.**
 > in any wave — so their after-checks must be run in the SAME instrumented style,
 > never inferred from a fan that carries neither field.*
 
+## ★★★★★★★★ SECOND CORRECTION: `stuck_strikes` IS AN **INPUT**, AND SITE 6 WAKES THREE DORMANT CONSUMERS
+
+**I registered `stuck_strikes` as an OBSERVABLE (D2). ★★★ It is also an INPUT to
+three mechanisms — and for SELF-JOBS all three are dormant TODAY precisely
+because it never accumulates past 0.**
+
+| # | consumer | site | what site 6 wakes |
+|---|---|---|---|
+| **C1** | ★★★★★ **arrival tolerance** `ARRIVE_DIST + stuck_strikes.min(3)*1.2` | `10180` | ★★★★★★★ **bed/food arrival widens 2.5 → up to 6.1 blocks.** *`12064`: growth is "unconditional on kind."* |
+| **C2** | `PERSIST_ESCALATE_STRIKES` escalation arm | `12096` | a path self-jobs have never reached |
+| **C3** | ★★★ `route_exhausted` → `blocked_regions` | `12249` | ★★★★★ **FAN-VISIBLE — see D5** |
+
+★ **`PERSIST_ESCALATE_STRIKES = 3` (`1610`); its doc names the shared consumers.**
+★★ **`12214`'s comment says the gate is *"kind-agnostic, survives re-claim"* —
+written in anticipation of exactly this change.**
+
+### ★★★★★ C1 IS A GAMEPLAY CHANGE NOBODY SPECCED
+
+**A colonist that strikes out three times on a bed then counts as ARRIVED from
+6.1 blocks away — and receives rest recovery without being at the bed.**
+
+★★ **It may be entirely correct** *(the designed bounded remote-work reach, Ben's
+anti-loop invariant)* — ★★★★★ **but it was tuned for Mine/Chop targets on awkward
+blocks and has never once applied to a bed.** ★ **This is the FR15 stuck-economy
+re-tuning constraint arriving through a side door.**
+
+> ★★★ **AND IT COLLIDES WITH THE TRAVEL ROW:** *`bastion_bed_slot.occupant` is a
+> RESERVATION, so an arrival assertion must use the `ActiveJobState` transition or
+> the arrive-tolerance DISTANCE — and C1 changes that distance.* ★★ **Any fixture
+> asserting "reached the bed" must state WHICH tolerance it means, before and
+> after.**
+
+**Escalated to 5b for an explicit yes/no on the record. ★ Not changed by this
+row either way — an inherited behaviour change is the thing being prevented.**
+
+## ★★★★★★★ D5 — `b5_blocked_regions_count_*` **MAY RISE, AND A RISE IS EXPECTED**
+
+**This BREAKS the exact-match-or-bust bar I registered one section above.**
+
+> ★★★ **`b5_blocked_regions_count_at_settle` / `_at_end` are fan-visible, and site
+> 6 feeds them by a real chain:**
+> **re-claim → strikes accumulate → `>= PERSIST_ESCALATE_STRIKES` → a
+> `route_exhausted` entry → the count rises.**
+
+| | |
+|---|---|
+| ★★ **`b5_blocked_regions_count_*`** | **MAY RISE. A rise is EXPECTED, not a regression.** |
+| ★ **every other fan-visible field** | ★★★ **exact match still holds** |
+| **falsifier** | ★★ **a rise with `source != "route_exhausted"`**, or a rise on seeds where `stuck_strikes` never reached 3 |
+
+★★★★★ **THIRD TIME TODAY the "unexplained mover ⇒ finding" bar has needed a
+carve-out I had not derived.** *A blanket exact-match bar is worth exactly as much
+as the enumeration of what legitimately moves — and I keep publishing the bar
+before finishing the enumeration.* ★ **Registered BEFORE the fan runs, which is
+the only thing that makes it a prediction rather than an excuse.**
+
 ## ★ SEQUENCING
 
 1. ★★★★★ **Capture the pre-site-6 `settle_invariant_holds` reading** *(in flight —
