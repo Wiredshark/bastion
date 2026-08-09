@@ -20,6 +20,30 @@ claim-identity, or need field.**
 > ## ★★★★★ **THE COLONY-SIM CORPUS CANNOT SEE THE NEED SUBSYSTEM AT ALL.**
 > **Not "sees it poorly." Zero fields.**
 
+### ★★★ AMENDED SAME EVENING — ONE FIELD ARRIVES IN WAVE 30, AND IT IS NOT A NEED FIELD
+
+**`self_job_reachability_probe` lands in the pre-site-6 baseline** *(commit
+`a2745d5a7d`, post-dating `wave26`; verified absent from both `wave26` and
+`wave29`, whose only "self" keys are `b5_access_plan_self_rescue_*`)*.
+
+★★★★★ **So wave 30 is the first wave in this corpus carrying ANY self-job-specific
+field — by a change directed this morning, which I had not connected to the
+baseline until reading `b5_scenario` tonight.**
+
+> ★★ **BUT IT DOES NOT WEAKEN THE MEASUREMENT ABOVE.** *It reports self-job TRAVEL
+> FAILURE — which positions timed out — and says nothing about rest, hunger, mood,
+> drive selection, or job identity.* ★★★★★ **N1-N6 are all still needed, unchanged.**
+
+★★★ **What it DOES give is an EXPOSURE POPULATION** *(which seeds demonstrably
+run self-jobs)*, **which is why it matters out of proportion to its size:**
+★ *it converts every future need-drive claim from a 48-seed dilution into a
+conditioned comparison.* ★★ *`WIP-STATE.md`'s own lesson — the 48-seed aggregate
+diluted the last result ~4:1 and hid it.*
+
+★ **And its author named its failure mode: the first version mislabeled completed
+mine cells as self-jobs** *(seed 90, 6 entries, all inside the mine designation)*.
+★★★ **Verify entries fall OUTSIDE the mine region before trusting the population.**
+
 ★★★ **This has now cost twice: the fan was structurally unable to see the AUTON-2
 defect, and it is unable to see all four of site 6's predictions
 (`SITE6-DELTA-REGISTRATION.md` D1-D4).**

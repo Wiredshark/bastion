@@ -1,0 +1,31 @@
+
+========================================================================
+WAVE wave30_PRESITE6_0fb7ca07b7_FULL.json -- 48 seeds
+========================================================================
+
+== 1. REFUSAL RATES (calls - emissions, auto-discovered pairs)
+   b5_access_plan_emergency                       calls=579   emitted=78    refused=501   ( 86.5%) in 47 seeds
+   b5_access_plan_proactive_descent               NEVER CALLED (denominator 0)
+   b5_access_plan_self_rescue                     calls=71    emitted=0     refused=71    (100.0%) in 15 seeds  <<< TOTAL
+
+== 2. CONCENTRATION vs VERDICT (b5_failed_clauses)
+   base fail rate = 11/48 = 22.9%
+   b5_access_plan_emergency                       fail 11/47 =  23.4%   Fisher two-sided p = 1.0000
+   b5_access_plan_self_rescue                     fail  7/15 =  46.7%   Fisher two-sided p = 0.0219
+
+== 3. EMPTY COMPARISON GROUPS (exercised-denominator = 0)
+   b5_access_plan_self_rescue                     INSTRUMENT GAP
+
+   These have ZERO successful seeds, so 'refused' cannot be compared
+   against 'succeeded' WITHIN this caller. A concentration result
+   above is therefore UNATTRIBUTABLE -- it cannot separate cause from
+   marker. Use a sibling caller that partially succeeds as the
+   control, or declare the gap. Do NOT declare a finding.
+
+(cross-wave baseline auto-selected: wave29_ROWBPRIME_B_7590dfa962_FULL.json -- newest earlier wave with an IDENTICAL seed set)
+
+========================================================================
+CROSS-WAVE IDENTITY DELTA -- 2 waves
+========================================================================
+[!] 1 wave(s) carry no readable b5_failed_clauses -- set aside, NOT scored: wave29_ROWBPRIME_B_7590dfa962_FULL.json
+REFUSED: fewer than 2 waves carry a readable verdict.
