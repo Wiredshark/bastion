@@ -290,6 +290,58 @@ designed.** ★★ **Net: the exact-match bar is restored WHOLE, with no carve-o
 which is what it should have been once both chains were read rather than
 registered.**
 
+## ★★★★★★★ RULED (#73, #74) — AND THE GROUND AGAINST MY OWN RECOMMENDATION
+
+**Both gates approved, identical shape: per-kind at the consumer, named-case
+comment. ★ `12248` cites the store's unit.**
+
+### ★★★★★ WHY MY SHIP-AND-MEASURE WAS WRONG — THE DENOMINATOR-ZERO ARGUMENT
+
+**I framed gating as *"a mid-build change to Ben's anti-loop invariant."*
+★★★ Inverted, by this week's own laws.**
+
+> ★★★★★★★ **The tolerance's TEXT is "unconditional on kind." Its BEHAVIOUR for
+> self-jobs has NEVER ONCE BEEN EXERCISED** *(strikes measured 0 across every
+> self-job, ever — the dormant-consumer fact from my own C1 table)*.
+> ★★★ **Self-jobs are DENOMINATOR-ZERO for that invariant.**
+
+★★ **So the gate PRESERVES measured behaviour for every population that has any:**
+*work kinds keep their tuned tolerance untouched; self-jobs keep the strict `2.5`
+they have always actually had.* ★★★★★ **SHIPPING IT would have been the change** —
+*site 6 awakening a textually-unconditional formula onto a population it was never
+tuned for is exactly the inherited-not-chosen extension being declined.*
+
+★ **And my "no third mechanism mid-build" analogy did not hold: a gate ADDS no
+mechanism.** ★★ *It scopes an existing one to the population it was tuned against
+— this codebase's own best pattern.*
+
+> ★★★★★ **THE LESSON: "STATUS QUO" IS A CLAIM ABOUT THE EXERCISED POPULATION, NOT
+> ABOUT THE TEXT.** *A formula that reads unconditional but has run on one
+> population has a status quo of ONE population. I read the text and called
+> preserving it a change.* ★★ **Sibling of the site-vs-firing inversion: static
+> scope and dynamic scope are different populations, again.**
+
+★★★ **My measurement survives the ruling and is ADOPTED into it:** *the rest
+fixture asserts `distance-to-bed at first recovery ≤ ARRIVE_DIST` for self-jobs —
+the gate PROVEN by assertion, not merely constructed, and the named door if remote
+rest is ever wanted.*
+
+★★★★★ **And the slot-denial finding became the ruling's strongest ground:**
+*ship-and-measure would have shipped a known fiction violation with a possible
+bed denial-of-service and measured the damage.*
+
+## ★ THE TWO ROWS THAT FALL OUT
+
+- ★★ **SELF-JOB VISIBILITY GAP** — *"colonists keep failing to reach a bed" is a
+  real thing a player should hear; `blocked_regions` is the wrong store to say it
+  in.* **Its own row.**
+- ★★★ **#47: separate ENTRY from NOTIFICATION** — *fix-trap pre-named: widening the
+  dedup to `(region, source)` is the WRONG fix.*
+
+> ★★★★★ **They compose: one emitter, a growing customer list. The row that builds
+> the emitter serves both** — *and #47 schedules right after the unification,
+> because site 6 amplifies the suppression it fixes.*
+
 ## ★ SEQUENCING
 
 1. ★★★★★ **Capture the pre-site-6 `settle_invariant_holds` reading** *(in flight —
