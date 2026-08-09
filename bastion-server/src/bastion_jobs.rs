@@ -14818,6 +14818,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // divergence is structurally impossible rather than
             // promised by a comment. Enum computed unconditionally
             // (free); the emit and the state write stay gated.
+            //
+            // Opus's own re-review: the post-chain `access_idle_secs`
+            // read below is USELESS at a transition -- every reset arm
+            // (A and C) zeroes it before the emit ever sees it, and
+            // inside a sustained B run there is no transition at all to
+            // emit on. `idle_before` captures the value BEFORE this
+            // pass's mutation, so a B->A or B->C transition line reports
+            // the PEAK B actually reached -- the number the pruner's
+            // 20-second threshold turns on -- instead of the post-reset
+            // zero that peak collapses to.
+            let idle_before = board.access_idle_secs;
             let branch = if access_jobs_exist && !access_claimed && material_held {
                 board.access_idle_secs = 0.0;
                 F3PruneBranch::MaterialHeld
@@ -14862,6 +14873,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     access_jobs = access_jobs_exist,
                     claimed = access_claimed,
                     material_held,
+                    idle_before,
                     idle = board.access_idle_secs,
                     "bastion F3-BRANCH"
                 );
