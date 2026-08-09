@@ -1741,6 +1741,45 @@ impl Server {
         false
     }
 
+    /// bastion (AUTON-2 unification, site 4/6, Fixture 2 cross-
+    /// attribution test, harness hook, 2026-08-09): a PRE-CLAIMED
+    /// Despond job at a chosen `until` (the `bastion_assign_rest`
+    /// pattern, `insert_despond_job` instead of `insert_rest_job`) --
+    /// bypasses the mood-driven breakdown roll entirely, so a
+    /// determinism-by-construction test can put TWO colonists into
+    /// distinct, KNOWN breakdown deadlines without depending on RNG
+    /// timing to line them up.
+    pub fn bastion_force_despond(&mut self, name: &str, until: f64) -> bool {
+        use specs::Join;
+        let ecs = self.state.ecs();
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let uids = ecs.read_storage::<common::uid::Uid>();
+        let positions = ecs.read_storage::<comp::Pos>();
+        let mut active_jobs = ecs.write_storage::<comp::bastion::ActiveJob>();
+        let mut board = ecs.write_resource::<bastion_jobs::JobBoard>();
+        for (e, c, uid, pos) in (&entities, &colonists, &uids, &positions).join() {
+            if c.0.name == name {
+                if active_jobs.contains(e) {
+                    return false;
+                }
+                let feet = pos.0.map(|v| v.floor() as i32);
+                let id = board.insert_despond_job(feet, *uid, until);
+                let _ = active_jobs.insert(e, comp::bastion::ActiveJob {
+                    job: id,
+                    state: comp::bastion::ActiveJobState::Traveling,
+                    best_dist: f32::MAX,
+                    stuck_time: 0.0,
+                    reset_dist: f32::MAX,
+                    soft_granted: false,
+                    stance: Vec3::unit_z(),
+                });
+                return true;
+            }
+        }
+        false
+    }
+
     /// bastion (B7-1, harness hook): a bed slot's (owner, occupant) as
     /// raw uid u64s, `None` if no bed there.
     pub fn bastion_bed_slot(&self, pos: Vec3<i32>) -> Option<(Option<u64>, Option<u64>)> {
@@ -2445,6 +2484,28 @@ impl Server {
         let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
         board.jobs.values().find_map(|j| match j.kind {
             common::bastion::JobKind::Despond { until } if j.claimed_by == Some(target) => {
+                Some(until)
+            },
+            _ => None,
+        })
+    }
+
+    /// bastion (AUTON-2 unification, site 4/6, Fixture 2 cross-
+    /// attribution test, harness hook, 2026-08-09): `uid`'s Despond
+    /// deadline whether ACTIVELY held OR SUSPENDED (`suspended_for`) --
+    /// distinct from `bastion_despond_until` above, which only sees the
+    /// active case. Reads by uid EXPLICITLY (never "nearest" or "any"),
+    /// which is the whole property a cross-attribution test needs to
+    /// see hold: colonist A's query can never surface colonist B's job,
+    /// because nothing here scans without matching the specific uid.
+    pub fn bastion_despond_until_any(&self, uid: u64) -> Option<f64> {
+        use common::uid::Uid;
+        let target = Uid(std::num::NonZeroU64::new(uid)?);
+        let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
+        board.jobs.values().find_map(|j| match j.kind {
+            common::bastion::JobKind::Despond { until }
+                if j.claimed_by == Some(target) || j.suspended_for == Some(target) =>
+            {
                 Some(until)
             },
             _ => None,

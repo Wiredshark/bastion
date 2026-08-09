@@ -470,6 +470,16 @@ struct Args {
     #[arg(long)]
     auton2_owner_death_fixture: bool,
 
+    /// bastion (AUTON-2 unification, site 4/6, Fixture 2 upgrade,
+    /// Fable-ruled DECISIONS #72, 2026-08-09): the two-despondent-
+    /// colonist cross-attribution test -- TWO colonists forced into
+    /// distinct known breakdown deadlines, preempted into EatFrom by
+    /// the same real hunger pipeline, each read back by its OWN uid at
+    /// every checkpoint. Proves the ownership field can't cross-
+    /// attribute where a one-colonist test structurally cannot.
+    #[arg(long)]
+    auton2_despond_cross_attribution_fixture: bool,
+
     /// bastion (B7-3, row 44): the EAT job + the BREAKDOWN staircase —
     /// hunger preempts for a pre-claimed EatFrom (exactly one food item
     /// consumed, B6-reserved); with two needs below the interrupt the
@@ -1745,6 +1755,8 @@ fn main() -> ExitCode {
         auton2_needs_probe(&args)
     } else if args.auton2_owner_death_fixture {
         auton2_owner_death_fixture(&args)
+    } else if args.auton2_despond_cross_attribution_fixture {
+        auton2_despond_cross_attribution_fixture(&args)
     } else if args.b73_scenario {
         b73_scenario(&args)
     } else if args.auton2_despond_resume_fixture {
@@ -10243,6 +10255,223 @@ fn auton2_owner_death_fixture(args: &Args) -> ExitCode {
         && violations_before_death == 0
         && violations_right_after_death > 0
         && violations_after_sweep == 0
+    {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// bastion (AUTON-2 unification, site 4/6, Fixture 2 upgrade, Fable-
+/// ruled DECISIONS #72, 2026-08-09): the CROSS-ATTRIBUTION test — the
+/// original single-colonist Fixture 2 (`auton2_despond_resume_fixture`,
+/// closed inconclusive against the NOW-DELETED `despond_resume`
+/// mechanism) could not distinguish "kept its own deadline" from "took
+/// the other colonist's," because with one despondent colonist there IS
+/// no other. TWO colonists, force-desponded (`bastion_force_despond`,
+/// bypassing the mood-roll for a fully deterministic setup) with
+/// DISTINCT deadlines, both preempted into EatFrom by the SAME real
+/// hunger-interrupt pipeline every other fixture this row exercises —
+/// each one's SUSPENDED deadline (`bastion_despond_until_any`, which
+/// sees active OR suspended) must still read its OWN original value,
+/// never the other's, at every checkpoint.
+fn auton2_despond_cross_attribution_fixture(args: &Args) -> ExitCode {
+    use common::terrain::{Block, BlockKind};
+    use common::vol::ReadVol;
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-despond-cross-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-despond-cross".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-despond-cross-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 16)..=(cx + 16) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 2);
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let (a, b) = (
+        names.first().cloned().unwrap_or_default(),
+        names.get(1).cloned().unwrap_or_default(),
+    );
+
+    // DISTINCT deadlines, chosen far enough apart that a swap is
+    // unmistakable in the output, not just theoretically detectable.
+    const UNTIL_A: f64 = 100.0;
+    const UNTIL_B: f64 = 250.0;
+    let forced_a = server.bastion_force_despond(&a, UNTIL_A);
+    let forced_b = server.bastion_force_despond(&b, UNTIL_B);
+    let uid_a = server.bastion_colonist_uid(&a);
+    let uid_b = server.bastion_colonist_uid(&b);
+
+    // Read back IMMEDIATELY, before anything moves — the construction-
+    // time check: two distinct jobs already exist correctly keyed, not
+    // one colliding.
+    let readback_a_initial = uid_a.and_then(|u| server.bastion_despond_until_any(u));
+    let readback_b_initial = uid_b.and_then(|u| server.bastion_despond_until_any(u));
+
+    // Food for both -- two items so neither waits on a reservation
+    // conflict with the other (unrelated to the deadline question,
+    // just keeps the fixture from stalling on scarcity).
+    const MUSHROOM: &str = "common.items.food.mushroom";
+    server.bastion_spawn_item(
+        Vec3::new(cx as f32 - 6.5, cy as f32 + 0.5, gz as f32 + 1.5),
+        MUSHROOM,
+        1,
+    );
+    server.bastion_spawn_item(
+        Vec3::new(cx as f32 - 6.5, cy as f32 - 0.5, gz as f32 + 1.5),
+        MUSHROOM,
+        1,
+    );
+
+    // Real hunger interrupt for BOTH -- the SAME pipeline every other
+    // fixture in this row exercises, not a hand-built shortcut for the
+    // suspend half.
+    server.bastion_set_needs(&a, 0.1, 1.0, 1.0);
+    server.bastion_set_needs(&b, 0.1, 1.0, 1.0);
+
+    let mut both_suspended = false;
+    let mut ticks_to_both_suspended: Option<u64> = None;
+    for i in 0..3600u64 {
+        tick(&mut server, 1);
+        let a_active = uid_a.is_some_and(|u| server.bastion_despond_until(u).is_some());
+        let b_active = uid_b.is_some_and(|u| server.bastion_despond_until(u).is_some());
+        if !a_active && !b_active && !both_suspended {
+            // Both dropped out of ACTIVE Despond -- either suspended
+            // (into EatFrom) or the condition lifted; the readback
+            // below is what actually confirms which.
+            both_suspended = true;
+            ticks_to_both_suspended = Some(i);
+            break;
+        }
+    }
+
+    let readback_a_after = uid_a.and_then(|u| server.bastion_despond_until_any(u));
+    let readback_b_after = uid_b.and_then(|u| server.bastion_despond_until_any(u));
+
+    let result = serde_json::json!({
+        "seed": args.seed,
+        "elapsed_ms": started.elapsed().as_millis(),
+        "forced_a": forced_a,
+        "forced_b": forced_b,
+        "readback_a_initial": readback_a_initial,
+        "readback_b_initial": readback_b_initial,
+        "both_suspended": both_suspended,
+        "ticks_to_both_suspended": ticks_to_both_suspended,
+        "readback_a_after": readback_a_after,
+        "readback_b_after": readback_b_after,
+        // The whole test in one field: each colonist's deadline must
+        // match its OWN original value at EVERY checkpoint, both
+        // initial and after the suspend cycle -- a swap would show up
+        // as a==UNTIL_B or b==UNTIL_A anywhere in this chain.
+        "no_cross_attribution": forced_a
+            && forced_b
+            && readback_a_initial == Some(UNTIL_A)
+            && readback_b_initial == Some(UNTIL_B)
+            && readback_a_after == Some(UNTIL_A)
+            && readback_b_after == Some(UNTIL_B),
+    });
+    println!("{}", serde_json::to_string(&result).expect("Value is always serializable"));
+    if forced_a
+        && forced_b
+        && readback_a_initial == Some(UNTIL_A)
+        && readback_b_initial == Some(UNTIL_B)
+        && readback_a_after == Some(UNTIL_A)
+        && readback_b_after == Some(UNTIL_B)
     {
         ExitCode::SUCCESS
     } else {
