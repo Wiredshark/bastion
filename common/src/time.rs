@@ -63,7 +63,7 @@ pub enum Season {
 pub const DEFAULT_DAYS_IN_YEAR: f64 = 160.0;
 
 /// bastion (SEASON-0): the RON-tunable season/year configuration.
-#[derive(Debug, Copy, Clone, Deserialize)]
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
 pub struct SeasonConfig {
     pub days_in_year: f64,
 }
@@ -194,6 +194,24 @@ mod bastion_season2_tests {
         // The uniform free-fn surface agrees with the originals.
         assert_eq!(season(year * 0.3, days), Season::at(year * 0.3, days));
         assert_eq!(season(year * 0.3, days), Season::Summer);
+    }
+
+    /// #62 (2026-08-09): `SeasonConfig::default()`'s in-sync today only
+    /// because `impl Default` derives from `DEFAULT_DAYS_IN_YEAR`, the
+    /// same constant checked at the RON site conceptually -- but nothing
+    /// enforces `assets/common/season_config.ron`'s own `days_in_year`
+    /// literal staying equal to that constant if someone retunes the
+    /// asset directly. Guards the latent case, same shape as
+    /// `bastion_mood_config_matches_shipped_asset`: loads the real
+    /// shipped asset, fails loudly (not gracefully) on a load error so
+    /// this can't pass vacuously by comparing Default() to itself.
+    #[test]
+    fn bastion_season_config_matches_shipped_asset() {
+        use crate::assets::AssetExt;
+        let shipped = *SeasonConfig::load("common.season_config")
+            .expect("load assets/common/season_config.ron")
+            .read();
+        assert_eq!(shipped, SeasonConfig::default());
     }
 }
 

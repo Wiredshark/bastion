@@ -908,12 +908,18 @@ mod bastion_b70_tests {
         // A big negative thought clamps at 0, a big positive at 1.
         assert_eq!(mood_formula(&cfg, &starved, -5.0), 0.0);
         assert_eq!(mood_formula(&cfg, &full, 5.0), 1.0);
-        // Decay: exact rate × time, saturating at 0.
+        // Decay: exact rate × time, saturating at 0. Computed from cfg's
+        // own fields, not a hardcoded literal -- #62 (2026-08-09): this
+        // assert was previously pinned to the pre-retune rates (0.04,
+        // 0.03 = the old 0.0004/0.0003 defaults × 100), exactly the
+        // stale-literal trap the retune already hit twice in the harness
+        // fixtures. Deriving the expected value from cfg.*.decay_per_sec
+        // means a future default change can't silently desync this test.
         let mut n = Needs::default();
         decay_needs(&mut n, 100.0, &cfg);
-        assert!((n.hunger - (1.0 - 0.04)).abs() < 1e-6);
-        assert!((n.rest - (1.0 - 0.03)).abs() < 1e-6);
-        assert!((n.recreation - (1.0 - 0.02)).abs() < 1e-6);
+        assert!((n.hunger - (1.0 - cfg.hunger.decay_per_sec * 100.0)).abs() < 1e-6);
+        assert!((n.rest - (1.0 - cfg.rest.decay_per_sec * 100.0)).abs() < 1e-6);
+        assert!((n.recreation - (1.0 - cfg.recreation.decay_per_sec * 100.0)).abs() < 1e-6);
         decay_needs(&mut n, 1.0e9, &cfg);
         assert_eq!((n.hunger, n.rest, n.recreation), (0.0, 0.0, 0.0));
         // Thought decay: full at age 0, half at half-life, zero past.
@@ -1140,6 +1146,7 @@ mod bastion_b70_tests {
             committed_until: 0.0,
             last_scores: (0.1, 0.2, 0.3),
             activity: Some((crate::bastion::WorkType::Mine, 0.5)),
+            pending_self_job: None,
         };
 
         // Designated job, self-claimed: self_job_* absent, active_job_*
@@ -1187,6 +1194,7 @@ mod bastion_b70_tests {
             committed_until: 0.0,
             last_scores: (0.4, 0.4, 0.4),
             activity: None,
+            pending_self_job: None,
         };
         let travel = ActiveJob {
             job: 1,

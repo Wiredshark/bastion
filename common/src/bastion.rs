@@ -761,7 +761,7 @@ impl DesignationKind {
 /// bastion (B7-0, row 44): one survival need's tuning — decay drains the
 /// meter per game-second toward 0.0; the need penalizes mood only BELOW
 /// its comfort band; `weight` is NEGATIVE (a shortfall subtracts).
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize)]
 pub struct NeedTuning {
     pub decay_per_sec: f32,
     pub comfort: f32,
@@ -806,7 +806,7 @@ impl SimSecs {
 /// server-side asset, and [`crate::comp::bastion::mood_formula`] takes
 /// the summed thought term as a plain input (the formula is
 /// layering-agnostic by construction).
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize)]
 pub struct MoodConfig {
     pub mood_base: f32,
     pub hunger: NeedTuning,
@@ -838,13 +838,19 @@ impl Default for MoodConfig {
         Self {
             mood_base: 0.6,
             hunger: NeedTuning {
-                decay_per_sec: 0.0004,
+                // AUTON-2 STEP-3 RE-TUNE (2026-08-08): matches the shipped
+                // asset (assets/common/bastion_mood.ron). Was 0.0004 --
+                // kept in sync by bastion_mood_config_matches_shipped_asset
+                // (this file's test module) so a future retune that edits
+                // the RON without touching this copy goes red immediately.
+                decay_per_sec: 0.000889,
                 comfort: 0.5,
                 weight: -0.5,
                 interrupt: 0.2,
             },
             rest: NeedTuning {
-                decay_per_sec: 0.0003,
+                // Was 0.0003 -- see the hunger field's comment above.
+                decay_per_sec: 0.000444,
                 comfort: 0.5,
                 weight: -0.4,
                 interrupt: 0.2,
@@ -1683,6 +1689,27 @@ mod tests {
         let text = ron::to_string(&needs).expect("encode");
         let back: BTreeMap<Need, f32> = ron::from_str(&text).expect("decode");
         assert_eq!(needs.into_iter().collect::<BTreeMap<_, _>>(), back);
+    }
+
+    /// #62 (2026-08-09, Fable/Opus-directed): `MoodConfig::default()` is a
+    /// COPY of the shipped RON's values, not a shared source of truth --
+    /// the identity-or-loud law's "fresh copy" risk named explicitly. A
+    /// retune that edits `assets/common/bastion_mood.ron` without also
+    /// touching this file's `impl Default` leaves an asset-load failure
+    /// silently reverting to the STALE compiled rates. This test converts
+    /// that risk from vigilance into a red suite: it loads the real
+    /// shipped asset (failing loudly, not gracefully, if the load itself
+    /// fails -- `MoodConfig::current()`'s `unwrap_or_default()` would make
+    /// this test vacuous, comparing Default() to itself on any load
+    /// failure) and asserts full structural equality against Default().
+    #[test]
+    fn bastion_mood_config_matches_shipped_asset() {
+        use crate::assets::AssetExt;
+        let shipped = MoodConfig::load("common.bastion_mood")
+            .expect("load assets/common/bastion_mood.ron")
+            .read()
+            .clone();
+        assert_eq!(shipped, MoodConfig::default());
     }
 
     #[test]
