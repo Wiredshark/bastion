@@ -10263,6 +10263,11 @@ fn auton2_needs_probe(args: &Args) -> ExitCode {
     // read back post-removal above) rather than an invented threshold,
     // so "restored" means what the mechanism itself means by it.
     const RESTORE_THRESHOLD: f32 = 0.6;
+    // AUTON-2 unification (site 4/6 C1, 2026-08-09): matched to
+    // `bastion_server::ARRIVE_DIST` exactly (2.5, both shipped
+    // constants) -- see the field's own JSON-output comment for why
+    // this is re-derived rather than imported.
+    const SELF_JOB_ARRIVE_DIST: f32 = 2.5;
     // CORRECTION (2026-08-08, same day, after BASTION_SDIST_TRACE_JOB):
     // `bastion_bed_slot`'s occupant is set at RestAt job CREATION
     // (`insert_rest_job`'s own comment: "reserve the bed at CREATION,
@@ -10281,6 +10286,17 @@ fn auton2_needs_probe(args: &Args) -> ExitCode {
     let mut rest_at_restore: Option<f32> = None;
     let mut ticks_to_bed_released: Option<u64> = None;
     let mut occupancy_interruptions: u32 = 0;
+    // AUTON-2 unification (site 4/6 C1, Fable DECISIONS #73, 2026-08-09):
+    // the assertion that PROVES the arrival-tolerance gate rather than
+    // just constructing it -- the tick rest recovery FIRST applies (the
+    // first genuine tick-over-tick rest increase, not the restore
+    // threshold below), the colonist's distance to `bed_pos` must be
+    // `<= ARRIVE_DIST` (2.5). If self-jobs ever regained the widened
+    // tolerance, this is the assertion that would catch a self-job
+    // banking rest recovery from range.
+    let mut prev_rest_for_recovery_check: Option<f32> = None;
+    let mut recovery_start_distance: Option<f32> = None;
+    let mut ticks_to_recovery_start: Option<u64> = None;
     let mut settle_invariant_violation_tick: Option<u64> = None;
     let mut settle_invariant_violation_pos: Option<Vec3<i32>> = None;
     if natural_interrupt_reached && override_active_before {
@@ -10384,6 +10400,25 @@ fn auton2_needs_probe(args: &Args) -> ExitCode {
                 ticks_to_rest_restored = Some(i);
                 rest_at_restore = Some(rest);
             }
+            // AUTON-2 unification (site 4/6 C1 assertion, 2026-08-09):
+            // the first genuine tick-over-tick rest INCREASE is recovery
+            // actually applying (the Working arm's `needs.rest +=
+            // BED_REST_RECOVERY_PER_SEC * ...`) -- distinct from
+            // `RESTORE_THRESHOLD`, which is the much LATER completion
+            // bar. Captured once, before the restore-threshold branch
+            // above can make it moot for a fast sleeper.
+            if ticks_to_recovery_start.is_none()
+                && let (Some(prev), Some(now)) = (prev_rest_for_recovery_check, rest_now)
+                && now > prev
+            {
+                ticks_to_recovery_start = Some(i);
+                recovery_start_distance = server
+                    .bastion_colonist_states_full()
+                    .into_iter()
+                    .find(|(u, ..)| Some(*u) == uid)
+                    .map(|(_, _, p, _)| p.distance(bed.map(|v| v as f32) + Vec3::new(0.5, 0.5, 0.0)));
+            }
+            prev_rest_for_recovery_check = rest_now;
             // Named and counted, not hidden: a stuck-watchdog release
             // before restoration completes (see budget comment above) is
             // a real, specified retry path -- track it explicitly rather
@@ -10557,6 +10592,18 @@ fn auton2_needs_probe(args: &Args) -> ExitCode {
         "settle_invariant_violation_tick": settle_invariant_violation_tick,
         "settle_invariant_violation_pos": settle_invariant_violation_pos.map(|p| [p.x, p.y, p.z]),
         "settle_invariant_holds": settle_invariant_violation_tick.is_none(),
+        // AUTON-2 unification (site 4/6 C1 assertion, Fable DECISIONS
+        // #73, 2026-08-09): PROVES the arrival-tolerance gate stayed
+        // strict for self-jobs rather than merely constructing it.
+        // `SELF_JOB_ARRIVE_DIST` matches `bastion_server::ARRIVE_DIST`
+        // exactly (2.5, both shipped constants) -- a re-derived copy on
+        // the harness side, same discipline `RESTORE_THRESHOLD` above
+        // already uses, since the harness has no direct crate
+        // dependency on bastion-server to import the real one.
+        "ticks_to_recovery_start": ticks_to_recovery_start,
+        "recovery_start_distance": recovery_start_distance,
+        "recovery_within_arrive_dist": recovery_start_distance
+            .map(|d| d <= SELF_JOB_ARRIVE_DIST),
     });
     println!("{}", serde_json::to_string(&result).expect("Value is always serializable"));
     if matches_shipped_when_unset && completion_ok {

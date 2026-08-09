@@ -1578,7 +1578,10 @@ fn tightdig_measure(
 pub const ARBITRATION_INTERVAL: u64 = crate::SIM_TPS / 2;
 /// A colonist counts as arrived within this 3D distance of the job's
 /// stand-at target (`block + (0.5, 0.5, 1.0)`).
-const ARRIVE_DIST: f32 = 2.5;
+// AUTON-2 unification (site 4/6 C1, 2026-08-09): widened pub -- the
+// rest-fixture's own C1 assertion (harness-side) needs the SAME
+// constant to check against, not a re-derived copy that could drift.
+pub const ARRIVE_DIST: f32 = 2.5;
 /// Travel watchdog: release + mark unreachable after this long without
 /// progress (seconds). `pub` so scenario harnesses can size their sampling
 /// windows against it (see `bastion-harness`'s B4 scenario).
