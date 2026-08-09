@@ -460,6 +460,16 @@ struct Args {
     #[arg(long)]
     auton2_needs_probe: bool,
 
+    /// bastion (AUTON-2 unification, site 4/6, Fable-ruled DECISIONS
+    /// #72, 2026-08-09): the owner-death planted-failure path -- a
+    /// colonist's self-job suspends (via a genuine STUCK_TIMEOUT on an
+    /// unreachable bed), the colonist dies while it's suspended, and
+    /// the settle invariant must read clean once the sweep has had a
+    /// chance to reap it -- the leak this row's owner-liveness
+    /// discrimination exists to close.
+    #[arg(long)]
+    auton2_owner_death_fixture: bool,
+
     /// bastion (B7-3, row 44): the EAT job + the BREAKDOWN staircase —
     /// hunger preempts for a pre-claimed EatFrom (exactly one food item
     /// consumed, B6-reserved); with two needs below the interrupt the
@@ -1733,6 +1743,8 @@ fn main() -> ExitCode {
         preempt_scenario(&args)
     } else if args.auton2_needs_probe {
         auton2_needs_probe(&args)
+    } else if args.auton2_owner_death_fixture {
+        auton2_owner_death_fixture(&args)
     } else if args.b73_scenario {
         b73_scenario(&args)
     } else if args.auton2_despond_resume_fixture {
@@ -10034,6 +10046,210 @@ fn with_fixture_mood_config<R>(fixture_ron: &str, f: impl FnOnce() -> R) -> R {
 /// not touch the separate, still-open cooldown-on-attempt/interrupt-
 /// cause question (`PREEMPT-SCENARIO-COOLDOWN-DEFECT.md`), which is
 /// chased before Step 2, not here.
+/// bastion (AUTON-2 unification, site 4/6, Fable-ruled DECISIONS #72,
+/// 2026-08-09): the OWNER-DEATH planted-failure path — the corrected
+/// settle invariant's own new leak this row could open (a suspended
+/// self-job's owner dying while suspended) and its own gate (owner
+/// liveness) must close. Setup mirrors `preempt_scenario`'s Phase 2 (an
+/// UNREACHABLE floating bed forces a genuine `STUCK_TIMEOUT` suspend,
+/// not a contrived one) — once suspended (`ActiveJob` clears after
+/// having held one, `has_active` false-after-true), the colonist is
+/// killed and the sweep gets a full cadence-plus-margin to run.
+/// `planted_case_proven` — both `suspended_detected` AND `killed` must
+/// hold for this run to have exercised the path under test at all; an
+/// unsuspended or unkilled run proves nothing.
+fn auton2_owner_death_fixture(args: &Args) -> ExitCode {
+    use common::terrain::{Block, BlockKind};
+    use common::vol::ReadVol;
+    use vek::{Rgb, Vec2, Vec3};
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-owner-death-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-owner-death".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-owner-death-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let site_wpos: Vec2<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| s.wpos.map(|e| e as f32))
+            .unwrap_or_else(|| Vec2::new(16384.0, 16384.0))
+    };
+    server.bastion_force_load_area(site_wpos, 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = site_wpos.x as i32;
+    let cy = site_wpos.y as i32;
+    let gz = (-16..=16)
+        .step_by(8)
+        .flat_map(|dx| (-12..=12).step_by(8).map(move |dy| (dx, dy)))
+        .filter_map(|(dx, dy)| ground_z(&server, cx + dx, cy + dy))
+        .max()
+        .expect("no ground around site center");
+    let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+    let air = Block::empty();
+    for x in (cx - 16)..=(cx + 16) {
+        for y in (cy - 12)..=(cy + 12) {
+            for z in (gz - 6)..=gz {
+                server.state_mut().set_block(Vec3::new(x, y, z), rock);
+            }
+            for z in (gz + 1)..=(gz + 8) {
+                server.state_mut().set_block(Vec3::new(x, y, z), air);
+            }
+        }
+    }
+    tick(&mut server, 2);
+
+    server.bastion_spawn_colony(Vec3::new(site_wpos.x, site_wpos.y, gz as f32 + 2.0), 1);
+    tick(&mut server, 30);
+    let names = server.bastion_rename_colonists_unique();
+    let a = names.first().cloned().unwrap_or_default();
+
+    // The UNREACHABLE floating bed (`preempt_scenario`'s own `sky_bed`
+    // shape) — guarantees a genuine STUCK_TIMEOUT suspend, not a
+    // contrived one.
+    let sky_bed = Vec3::new(cx, cy, gz + 6);
+    server.state_mut().set_block(sky_bed - Vec3::unit_z(), rock);
+    server.bastion_register_bed(sky_bed);
+    let _ = server.bastion_assign_bed_owner(&a, sky_bed);
+
+    server.bastion_set_needs(&a, 1.0, 0.15, 1.0);
+
+    let uid = server.bastion_colonist_uid(&a);
+    let mut ever_active = false;
+    let mut suspended_detected = false;
+    let mut ticks_to_suspend: Option<u64> = None;
+    for i in 0..3600u64 {
+        tick(&mut server, 1);
+        let has_active = server
+            .bastion_colonist_states_full()
+            .into_iter()
+            .find(|(u, ..)| Some(*u) == uid)
+            .is_some_and(|(_, _, _, job)| job.is_some());
+        if has_active {
+            ever_active = true;
+        } else if ever_active && !suspended_detected {
+            suspended_detected = true;
+            ticks_to_suspend = Some(i);
+        }
+        if suspended_detected {
+            break;
+        }
+    }
+
+    let violations_before_death = server.bastion_settle_invariant_violations().len();
+
+    // Kill the colonist WHILE their self-job is suspended — the leak
+    // this row's owner-liveness discrimination exists to close.
+    let killed = server.bastion_kill_colonist(&a);
+    tick(&mut server, 1);
+    // Read BEFORE the sweep gets a chance to run — this is what proves
+    // death is actually detected as a violation (not that the count was
+    // always 0 for some unrelated reason): a suspended job's owner
+    // dying must show up here, THEN clear once swept below.
+    let violations_right_after_death = server.bastion_settle_invariant_violations().len();
+
+    // Give the sweep a full cadence-plus-margin to run
+    // (`ARBITRATION_INTERVAL` is ~15 ticks at 30 tps; 60 is generous).
+    tick(&mut server, 60);
+    let violations_after_sweep = server.bastion_settle_invariant_violations().len();
+
+    let result = serde_json::json!({
+        "seed": args.seed,
+        "elapsed_ms": started.elapsed().as_millis(),
+        "suspended_detected": suspended_detected,
+        "ticks_to_suspend": ticks_to_suspend,
+        "killed": killed,
+        "violations_before_death": violations_before_death,
+        "violations_right_after_death": violations_right_after_death,
+        "violations_after_sweep": violations_after_sweep,
+        // The full proof: 0 while alive-and-suspended (suspend itself
+        // doesn't leak), >0 the instant the owner dies (death IS
+        // detected as a violation, not silently absorbed), 0 again once
+        // the sweep runs (the leak actually closes, not just gets
+        // flagged forever).
+        "planted_case_proven": suspended_detected
+            && killed
+            && violations_before_death == 0
+            && violations_right_after_death > 0,
+        "swept_clean": violations_after_sweep == 0,
+    });
+    println!("{}", serde_json::to_string(&result).expect("Value is always serializable"));
+    if suspended_detected
+        && killed
+        && violations_before_death == 0
+        && violations_right_after_death > 0
+        && violations_after_sweep == 0
+    {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
 fn auton2_needs_probe(args: &Args) -> ExitCode {
     use common::bastion::{DesignationKind, Region};
     use common::terrain::{Block, BlockKind};
