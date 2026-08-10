@@ -3974,6 +3974,18 @@ pub struct BlockedRegionInfo {
 /// replaced one call site at a time as each is read, never inferred.
 /// Report-only; never gates `pass`, no world writes, same contract as
 /// task #59's counters.
+/// bastion (entity event log, ROW-ENTITY-EVENT-LOG, Opus's catch
+/// 2026-08-10): deliberately NOT `Serialize`/`Deserialize` here. `JobBoard`
+/// is documented runtime-only (not serialized, not recorder-sampled), and
+/// this enum is actively growing (`TargetChanged` added 2026-08-04 as a
+/// 4th producer; the mover investigation may add a 5th) -- deriving serde
+/// on the live gameplay type would freeze a still-discovered enum into a
+/// save-format schema the moment stage 3's promoted-entity persistence
+/// lands, turning every future variant add/rename into a save migration.
+/// The event log serializes through `bastion_entity_event_log
+/// ::ReleaseReasonV1` instead, an explicit versioned wire copy with its own
+/// `From<ReleaseReason>` -- adding a variant here stays a one-line map
+/// entry there, not a migration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ReleaseReason {
     /// Step-1 placeholder -- the true reason at this call site hasn't
