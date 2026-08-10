@@ -1,0 +1,74 @@
+
+========================================================================
+WAVE wave33_F3STALL_07ba0cc17b_FULL.json -- 48 seeds
+========================================================================
+
+== 1. REFUSAL RATES (calls - emissions, auto-discovered pairs)
+   b5_access_plan_emergency                       calls=569   emitted=68    refused=501   ( 88.0%) in 46 seeds
+   b5_access_plan_proactive_descent               NEVER CALLED (denominator 0)
+   b5_access_plan_self_rescue                     calls=78    emitted=0     refused=78    (100.0%) in 18 seeds  <<< TOTAL
+
+== 2. CONCENTRATION vs VERDICT (b5_failed_clauses)
+   base fail rate = 12/48 = 25.0%
+   b5_access_plan_emergency                       fail 11/46 =  23.9%   Fisher two-sided p = 0.4415
+   b5_access_plan_self_rescue                     fail 10/18 =  55.6%   Fisher two-sided p = 0.0003
+
+== 3. EMPTY COMPARISON GROUPS (exercised-denominator = 0)
+   b5_access_plan_self_rescue                     INSTRUMENT GAP
+
+   These have ZERO successful seeds, so 'refused' cannot be compared
+   against 'succeeded' WITHIN this caller. A concentration result
+   above is therefore UNATTRIBUTABLE -- it cannot separate cause from
+   marker. Use a sibling caller that partially succeeds as the
+   control, or declare the gap. Do NOT declare a finding.
+
+(REGISTERED baseline, explicitly given via --baseline: wave32_RETUNE_156a2eceb4_FULL.json)
+
+========================================================================
+CROSS-WAVE IDENTITY DELTA -- 2 waves
+========================================================================
+seed set: 48 seeds, IDENTICAL across all waves (asserted)
+
+   wave32_RETUNE_156a2eceb4_FULL.json             fail 11/48
+   wave33_F3STALL_07ba0cc17b_FULL.json            fail 12/48
+
+-- wave32_RETUNE_156a2eceb4_FULL.json  ->  wave33_F3STALL_07ba0cc17b_FULL.json
+   FIXED      ( 4): ['61', '78', '85', '90']
+   NEW        ( 5): ['50', '51', '52', '69', '76']
+   PERSISTENT ( 7): ['54', '62', '66', '68', '71', '80', '92']
+   ever-failed 16, always-failed 7, churn 9
+
+-- CLAUSE-SET DRIFT inside the 7 seed(s) failing in BOTH waves
+   [!! GAINED]  seed 54   +b15_ontop_claimed, ch_leaf_cleared
+   [ SWAPPED]  seed 66   -tl_ok  +build_placed, stone_sum_lower
+   [ SWAPPED]  seed 71   -b15_adjacent_claimed, b15_ontop_claimed  +chop_cleared, log_sum
+   (4 of 7 frozen)
+   ** A GAINED clause is a REGRESSION the fail COUNT cannot show -- the seed was already failing. **
+
+== 4. CONSTANCY TRANSITIONS (a field that stopped varying)
+   constant fields in wave33_F3STALL_07ba0cc17b_FULL.json: 41 of 98 shared (42%)
+   STARTED varying (2): ['b5_ch_leaf_cleared', 'b5_ch_leaf_diag']
+
+[!! STOPPED VARYING] 5 field(s) varied in wave32_RETUNE_156a2eceb4_FULL.json and are CONSTANT in wave33_F3STALL_07ba0cc17b_FULL.json:
+      b5_tool_ok                                     now ALWAYS true
+      b5_tool_steel                                  now ALWAYS 2.0
+      b5_tool_steel_measured                         now ALWAYS 2.0
+      b5_tool_stone                                  now ALWAYS 1.5
+      b5_tool_stone_measured                         now ALWAYS 1.5
+
+   TWO READINGS, and this tool will not choose between them:
+     (a) the instrument stopped working  -> a silent regression
+     (b) what it measured stopped happening -> a real improvement
+   The frozen VALUE is the clue: a field stuck at its passing value
+   suggests (b); one stuck at zero/null/failing suggests (a).
+   Check the producer before concluding either.
+
+[!! REGRESSION] 5 seed(s) newly failing: ['50', '51', '52', '69', '76']
+   Total moved +1 (11 -> 12) -- the count rose.
+   A total that falls or holds steady is NOT evidence that
+   nothing broke. Only the identity delta shows that.
+
+[!! PERSISTENT] 7 seed(s) fail in EVERY wave: ['54', '62', '66', '68', '71', '80', '92']
+   This is the standing worklist. A count cannot produce it.
+   NOTE: 'they all fail' is a property of THIS REPORT, not
+   evidence of a shared mechanism -- they may be unrelated bugs.
