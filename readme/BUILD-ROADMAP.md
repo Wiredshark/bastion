@@ -52,6 +52,8 @@ Format: append changelog at bottom; statuses edited in place. Newest ruling wins
 35 Injuries & medicine · 36 Death that matters ·
 37 LLM-player harness v2 · 38 RL-tuning groundwork · 39 Performance row (sub-threshold tick degradation) · 40 Colony scale 16–32.
 **SETTLEMENT PLAN LAYER (#102)** slots as its own arc in this band, before 31: plot grammar reuse, district zoning, cost-driven form, desire-line roads, layout-quality corpus metrics.
+KNOWN INHERITANCE (charter line, Opus 08-10): today's `stockpiles: Vec<(ZoneId, Region)>` painted-bounding-box zones ARE the raw-position model — the arc's FIRST MIGRATION TARGET, not a green field. Item 16 is stockpile-adjacent and carries the plot rider pre-spec.
 
 ## Changelog
+- 2026-08-10 (2): Opus's #102 in-flight audit folded in — nothing exposed; item 16 flagged pre-spec; settlement arc's known inheritance (Region zones) chartered.
 - 2026-08-10: Created (rows #93–#102 folded in). Items 1 done, 3 landed-pending-score, 6 in acceptance, 7 blocked-with-coordinate; settlement layer added with immediate rider; thievery moved to 34's family; entity log designed.
