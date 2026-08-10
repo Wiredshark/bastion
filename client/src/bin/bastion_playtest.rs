@@ -6,7 +6,15 @@
 //! instead of everything being fixed up front.
 //!
 //! Script grammar (one command per line, `#` comments, blank lines skipped):
-//!   wait <ticks>
+//!   wait <ticks>                        -- ITEM 5: waits on the server-
+//!       tracking `Time` resource (sim seconds = ticks / NOMINAL_TPS), not
+//!       a raw client tick count -- the two clocks can drift under load.
+//!       Bounded two ways, logged under DIFFERENT diagnoses: a wall-clock
+//!       stall check (no sim advance in `WAIT_STALL_WALL_SECS`, fires
+//!       regardless of `n` -- distinguishes a stopped server from a slow
+//!       one) and a spin count underneath it as a cheap absolute ceiling.
+//!       Either firing makes the wait VOID, not short. Every wait logs
+//!       both the requested ticks and the sim-time span actually covered.
 //!   anchor                              -- terrain anchor at current pos
 //!   spawn <count>                       -- found colony at current pos
 //!   designate <kind> <x0> <y0> <z0> <x1> <y1> <z1>
@@ -33,6 +41,7 @@ use common::{
     bastion::{DesignationKind, Region},
     clock::Clock,
     comp::{self, bastion::BastionInspectTarget, body::humanoid::Body},
+    resources::Time,
     terrain::TerrainGrid,
     vol::ReadVol,
 };
@@ -41,7 +50,7 @@ use std::{
     fs,
     io::Write,
     sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tokio::runtime::Runtime;
 use tracing::warn;
@@ -49,6 +58,24 @@ use vek::Vec3;
 use veloren_client::{Client, ClientType, Event, WorldExt, addr::ConnectionArgs};
 
 const TPS: u64 = 30;
+// ITEM 5 (ROW-WAIT-SERVER-AUTHORITATIVE-PACKET): `Wait(n)` waits on the
+// server-tracking `Time` resource, not the client's own tick loop counter --
+// those are different clocks, free to drift under load.
+const NOMINAL_TPS: f64 = TPS as f64;
+// Opus's catch (2026-08-10): a SPIN count cannot distinguish "server
+// running slow" from "server clock stopped" -- both just make it spin
+// longer, and at n=20 per tick a single 9000-tick checkpoint wait would
+// spin for ~100 minutes before ever declaring VOID, long after the run's
+// own budget is blown. The bound that actually detects a STOPPED clock is
+// on WALL-CLOCK time since the sim clock last advanced at all, independent
+// of `n` -- a slow server still advances and never trips this; a stopped
+// one trips in exactly `WAIT_STALL_WALL_SECS`, whether `n` is 300 or
+// 90,000. `WAIT_SPIN_CAP_MULTIPLIER` stays as a belt-and-braces absolute
+// ceiling underneath it (cheap, catches whatever the progress check
+// somehow misses) -- but it should essentially never be the one that
+// actually fires.
+const WAIT_STALL_WALL_SECS: f64 = 30.0;
+const WAIT_SPIN_CAP_MULTIPLIER: u64 = 20;
 
 fn ts() -> u128 {
     SystemTime::now()
@@ -308,6 +335,15 @@ fn main() {
             .map(|p| p.0)
     }
 
+    // ITEM 5: the server-tracking `Time` resource -- hard-resynced if the
+    // client falls more than 5s behind, otherwise tweaked at ~1%/tick
+    // (client/src/lib.rs's own dt_adjustment). Reachable today with no
+    // protocol change; this is a read of state the client already
+    // maintains, not a new signal.
+    fn server_time(client: &Client) -> f64 {
+        client.state().ecs().read_resource::<Time>().0
+    }
+
     // Let terrain load a moment before reading position / painting.
     for _ in 0..(TPS * 2) {
         let _ = client.tick(comp::ControllerInputs::default(), clock.game_dt());
@@ -324,7 +360,38 @@ fn main() {
     for cmd in script {
         match cmd {
             ScriptCmd::Wait(n) => {
-                for _ in 0..n {
+                // ITEM 5 (ROW-WAIT-SERVER-AUTHORITATIVE-PACKET): wait on
+                // the server-tracking `Time` resource, not a raw client
+                // tick count -- the two clocks are free to drift under
+                // load, which is the root of every timing confusion the
+                // food arc hit. Two independent failsafes, logged under
+                // DIFFERENT diagnoses (Opus's catch: collapsing them
+                // loses whether the server died or our rate model is
+                // wrong) -- a wall-clock stall bound (did sim time
+                // advance AT ALL recently) that fires in
+                // `WAIT_STALL_WALL_SECS` regardless of `n`, and a spin
+                // count underneath it as a cheap absolute ceiling.
+                let start = server_time(&client);
+                let target = start + (n as f64) / NOMINAL_TPS;
+                let spin_cap = n.saturating_mul(WAIT_SPIN_CAP_MULTIPLIER).max(1);
+                let mut spins = 0u64;
+                let mut last_sim_time = start;
+                let mut last_advance_wall = Instant::now();
+                #[derive(Debug)]
+                enum WaitVoidReason {
+                    ClockStopped,
+                    SpinCeiling,
+                }
+                let mut void_reason: Option<WaitVoidReason> = None;
+                while server_time(&client) < target {
+                    if spins >= spin_cap {
+                        void_reason = Some(WaitVoidReason::SpinCeiling);
+                        break;
+                    }
+                    if last_advance_wall.elapsed().as_secs_f64() > WAIT_STALL_WALL_SECS {
+                        void_reason = Some(WaitVoidReason::ClockStopped);
+                        break;
+                    }
                     match client.tick(comp::ControllerInputs::default(), clock.game_dt()) {
                         Ok(events) => {
                             for event in events {
@@ -339,11 +406,28 @@ fn main() {
                     }
                     client.cleanup();
                     clock.tick();
+                    spins += 1;
+                    let now_sim = server_time(&client);
+                    if now_sim > last_sim_time {
+                        last_sim_time = now_sim;
+                        last_advance_wall = Instant::now();
+                    }
                 }
                 if let Some(p) = own_pos(&client) {
                     current_pos = p;
                 }
-                log.log(&format!("waited {n} ticks; pos now {current_pos:?}"));
+                let end = server_time(&client);
+                match void_reason {
+                    Some(WaitVoidReason::ClockStopped) => log.log(&format!(
+                        "VOID: server clock stopped (no sim advance in {WAIT_STALL_WALL_SECS}s) -- wait {n} ticks (target sim {start:.2}..{target:.2}), stuck at sim {end:.2} after {spins} spins; pos now {current_pos:?}"
+                    )),
+                    Some(WaitVoidReason::SpinCeiling) => log.log(&format!(
+                        "VOID: absolute spin ceiling ({spin_cap}) hit -- wait {n} ticks (target sim {start:.2}..{target:.2}) reached only sim {end:.2}; rate model likely wrong, not a dead server; pos now {current_pos:?}"
+                    )),
+                    None => log.log(&format!(
+                        "waited {n} ticks -> sim {start:.2}..{end:.2} in {spins} client spins; pos now {current_pos:?}"
+                    )),
+                }
             },
             ScriptCmd::Anchor => {
                 client.bastion_set_terrain_anchor(Some(current_pos));
