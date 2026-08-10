@@ -120,6 +120,61 @@ default thresholds by design. **`stalled_final` now exists**: nonzero in **6/48*
 max **91.0** — i.e. 6 seeds were **still stalling at run end**. The calibration
 remains arm 2's job.
 
+## ★ SPECIMEN-SEED FIELD DIFF — **THE MOVERS' MECHANISM IS ACCESS-PLAN, NOT ITEM 6**
+
+*Architect-directed, free, from data already on disk: diff the FULL records of
+one build-family and one mine-family specimen and let the clause-adjacent fields
+name the candidates before anything runs.*
+
+### SEED 51 (mine family) — 22 scalar fields moved wave32→wave33
+
+**The failure is exactly ONE BLOCK:**
+
+    b5_mine_blocks_mined      27 -> 26        b5_mine_jobs_remaining   0 -> 1
+    b5_stone_sum              27 -> 26        b5_mine_cleared       True -> False
+
+**And the access plan collapsed around it:**
+
+    b5_live_is_access_count            37 -> 0     <- ZERO access jobs
+    b5_access_pending_true_ticks     4459 -> 1470
+    b5_access_plan_emergency_calls     23 -> 14
+    b5_blocked_regions_count_at_settle  0 -> 1     <- a region went blocked
+    b5_timeouts_on_never_completed_jobs 0 -> 2
+
+### SEED 50 (build family) — 14 moved, access plan moved the OTHER way
+
+    b5_any_needs_materials   True -> False    b5_build_placed  True -> False
+    b5_live_is_access_count    15 -> 27       <- MORE, not zero
+    b5_access_pending_true_ticks 7879 -> 9049
+    b5_access_plan_emergency_calls  3 -> 12   <- 4x
+
+> ## **BOTH SPECIMENS MOVE HARD ON ACCESS-PLAN FIELDS, IN OPPOSITE DIRECTIONS —
+> one to zero access jobs, one to nearly double.** *That is the signature of a
+> changed access-planning regime, not of a material-protection gate.*
+
+**Candidate mechanisms therefore live in the wave32→wave33 access-plan work** —
+#70's F3 accumulators, #68's F3-BRANCH port, item 2's stall sweep, and the B17
+DPA sweep fix that routed pruning through `remove_job`. **Item 6 is not a
+candidate on this evidence**: its own fields are inert (§6) and nothing in the
+specimen diff touches material protection.
+
+★ **This is a candidate set, not a conclusion.** The next step is to bisect
+within the access-plan commits, not to run another fan.
+
+### ★★ FREE BONUS — **DETERMINISM HELD ACROSS A ZONE AND MACHINE CHANGE**
+
+wave34 ran in `us-east1-b` on different physical instances from wave33's
+`us-central1-a`. **Across all 48 seeds, every scalar field is IDENTICAL between
+wave33 and wave34-base except two:** `b5_build_stamp` (expected — different
+commit) and `b5_soak_avg_tick_ms` (wall-clock timing).
+
+> **The harness is bit-reproducible across zones, hosts, and machine instances.**
+> *That was assumed by the determinism-by-construction programme and is now
+> measured, for free, as a side effect of an infrastructure failure forcing the
+> region change.* **It also retroactively licenses the machine-type fallback
+> (8 × `e2-standard-4`) that was held as a changed variable — on this evidence it
+> is free.**
+
 ## STANDING
 
 - **Batch is inert on clause outcomes** — measured, 0/0/0 across 48 seeds.
