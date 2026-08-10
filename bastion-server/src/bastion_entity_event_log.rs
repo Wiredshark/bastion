@@ -1,9 +1,9 @@
 //! The entity event log (DECISIONS #99, `ROW-ENTITY-EVENT-LOG-PACKET`).
 //!
-//! **Stage 1: the stream, the per-entity ring, the promotion flag.** Gated
+//! **Stage 1: the stream, the per-entity ring, the retention flag.** Gated
 //! behind stage 1's paired determinism-floor gate going green (attested,
 //! 2026-08-10, `dda63e376`): **stage 2 ground-phase producers have landed**
-//! -- `record_pickup_verdict` (`server/src/events/inventory_manip.rs`,
+//! -- `record_pickup_event` (`server/src/events/inventory_manip.rs`,
 //! `ItemEventKind::PickedUp` on the two state-changing verdicts only) and
 //! the `to_release` drain choke point (`bastion_jobs.rs:14281`,
 //! `ColonistEventKind::Released`, Measure 0's producer). Item scope is
@@ -14,8 +14,17 @@
 //! `PickupItem`, is re-minted fresh on every re-drop, and is read nowhere
 //! in the tree today), so there is no subject to key an in-inventory event
 //! against until that identity gap closes (routed to Fable as its own row).
-//! Persistence (stage 3 -- save/load across the promotion boundary) is
+//! Persistence (stage 3 -- save/load across the retention boundary) is
 //! still deliberately NOT part of this module.
+//!
+//! **Naming (Opus's ruling, 2026-08-10, packet `55cdeb003c`):** this
+//! mechanism was originally called "promotion." Renamed to RETENTION before
+//! stage 3 opens -- `comp::bastion::BastionColonist`'s own doc already uses
+//! "promoted" for an unrelated fact (an rtsim `Npc` going from simulated-
+//! but-unloaded to a loaded ECS entity), and a reader who knows that usage
+//! would confidently misread "colonist promoted" here as a load event.
+//! "Retained" names the MECHANISM (kept vs. ring-evicted), not a judgement
+//! about the entity, so it can't drift back into the collision.
 //!
 //! Disabled unless `BASTION_ENTITY_EVENT_LOG` is set: no init, no
 //! allocation beyond the (empty) process-global slot, no ECS mutation, no
@@ -50,7 +59,7 @@ const DEFAULT_RING_SIZE: usize = 64;
 /// serialized, not recorder-sampled) and this enum is actively growing
 /// (`TargetChanged` added 2026-08-04 as a 4th producer). Deriving serde on
 /// the LIVE gameplay enum directly would freeze a still-discovered type
-/// into a save-format schema the moment stage 3's promoted-entity
+/// into a save-format schema the moment stage 3's retained-entity
 /// persistence lands -- every future variant add/rename would become a
 /// save migration on a type whose whole history has been "edit it when the
 /// job board needs a new reason." This copy decouples the wire format:
@@ -239,25 +248,27 @@ impl EntityRing {
     }
 }
 
-/// Stage 1's promotion mechanism: a flag plus a move from ring to
-/// permanent storage (design #99 §3, "Promotion is one-way and cheap").
-/// Stage 1 builds the STORAGE branch and the API to trigger it; stage 2/3
-/// wire the actual promotion TRIGGERS (colonist named, item
-/// crafted/gifted/player-touched, ...) and cross-restart persistence. An
-/// entity here with `promoted == true` has its full history in
-/// `permanent`, unbounded, and no longer touches its (now-empty) ring.
+/// Stage 1's retention mechanism: a flag plus a move from ring to
+/// permanent storage (design #99 §3, "Promotion is one-way and cheap" --
+/// the design's original vocabulary; the MECHANISM is unchanged, only its
+/// name here, per the rename above). Stage 1 builds the STORAGE branch and
+/// the API to trigger it; stage 2/3 wire the actual retention TRIGGERS
+/// (colonist named, item crafted/gifted/player-touched, ...) and
+/// cross-restart persistence. An entity here with `retained == true` has
+/// its full history in `permanent`, unbounded, and no longer touches its
+/// (now-empty) ring.
 #[derive(Debug, Default)]
 struct EntityStore {
     rings: HashMap<Uid, EntityRing>,
     permanent: HashMap<Uid, Vec<EntityEvent>>,
     /// Value = whether this entity's ring had ALREADY truncated at the
-    /// moment it promoted (Opus's catch, 2026-08-10): promoting an
-    /// entity mid-truncation must carry that fact forward, or a promoted
+    /// moment it was retained (Opus's catch, 2026-08-10): retaining an
+    /// entity mid-truncation must carry that fact forward, or a retained
     /// entity -- exactly the one whose history someone will trust --
     /// silently claims complete history it doesn't have. The permanent
-    /// store itself never truncates once promoted; this records only the
-    /// pre-promotion gap, if any.
-    promoted: HashMap<Uid, bool>,
+    /// store itself never truncates once retained; this records only the
+    /// pre-retention gap, if any.
+    retained: HashMap<Uid, bool>,
     ring_size: usize,
 }
 
@@ -268,7 +279,7 @@ impl EntityStore {
 
     fn record(&mut self, event: EntityEvent) {
         let subject = event.subject;
-        if self.promoted.contains_key(&subject) {
+        if self.retained.contains_key(&subject) {
             self.permanent.entry(subject).or_default().push(event);
         } else {
             self.rings
@@ -280,10 +291,10 @@ impl EntityStore {
 
     /// One-way: move this entity's ring contents into permanent storage
     /// and mark it so all future events for this uid go straight there,
-    /// unbounded. Idempotent -- promoting an already-promoted entity is a
+    /// unbounded. Idempotent -- retaining an already-retained entity is a
     /// no-op past the first call.
-    fn promote(&mut self, subject: Uid) {
-        if self.promoted.contains_key(&subject) {
+    fn retain(&mut self, subject: Uid) {
+        if self.retained.contains_key(&subject) {
             return;
         }
         let had_gap = if let Some(ring) = self.rings.remove(&subject) {
@@ -296,14 +307,14 @@ impl EntityStore {
         } else {
             false
         };
-        self.promoted.insert(subject, had_gap);
+        self.retained.insert(subject, had_gap);
     }
 
-    fn is_promoted(&self, subject: Uid) -> bool { self.promoted.contains_key(&subject) }
+    fn is_retained(&self, subject: Uid) -> bool { self.retained.contains_key(&subject) }
 
     /// All recorded events for `subject`, in tick order, from whichever
-    /// store currently holds them (ring for unpromoted, permanent for
-    /// promoted -- transparent to the caller). This is the Voonoo query's
+    /// store currently holds them (ring for un-retained, permanent for
+    /// retained -- transparent to the caller). This is the Voonoo query's
     /// underlying read: `events_for(uid).filter(|e| e.actor.is_some())`
     /// answers "every actor that touched it, in order" directly, since
     /// both stores are already tick-ordered by construction (append-only).
@@ -318,12 +329,12 @@ impl EntityStore {
     }
 
     /// True if `subject` has EVER dropped an event to make room for a
-    /// newer one -- either its live (unpromoted) ring right now, or the
-    /// gap it carried across promotion. A promoted entity's own permanent
-    /// store never truncates again once promoted; this is the pre-
-    /// promotion history, not an ongoing one.
+    /// newer one -- either its live (un-retained) ring right now, or the
+    /// gap it carried across retention. A retained entity's own permanent
+    /// store never truncates again once retained; this is the pre-
+    /// retention history, not an ongoing one.
     fn truncated(&self, subject: Uid) -> bool {
-        if let Some(&had_gap) = self.promoted.get(&subject) {
+        if let Some(&had_gap) = self.retained.get(&subject) {
             had_gap
         } else {
             self.rings.get(&subject).is_some_and(|ring| ring.truncated)
@@ -399,16 +410,16 @@ pub fn record_event(tick: u64, subject: Uid, kind: EventKind, actor: Option<Uid>
     });
 }
 
-/// Stage 1's promotion trigger surface. Stage 2/3 call this from the real
+/// Stage 1's retention trigger surface. Stage 2/3 call this from the real
 /// trigger sites (colonist named, item crafted/gifted/player-touched, ...);
 /// stage 1 exposes it so those sites have something to call and so this
 /// module's own tests can exercise the ring->permanent move without
 /// inventing a second mechanism later.
-pub fn promote(subject: Uid) {
+pub fn retain(subject: Uid) {
     if !enabled() {
         return;
     }
-    with_store(|store| store.promote(subject));
+    with_store(|store| store.retain(subject));
 }
 
 /// The Voonoo query (measure 1): every recorded event for `subject`, in
@@ -444,14 +455,14 @@ pub fn truncated(subject: Uid) -> bool {
         .unwrap_or(false)
 }
 
-pub fn is_promoted(subject: Uid) -> bool {
+pub fn is_retained(subject: Uid) -> bool {
     if !enabled() {
         return false;
     }
     slot()
         .lock()
         .ok()
-        .and_then(|guard| guard.as_ref().map(|store| store.is_promoted(subject)))
+        .and_then(|guard| guard.as_ref().map(|store| store.is_retained(subject)))
         .unwrap_or(false)
 }
 
@@ -574,10 +585,10 @@ mod tests {
         );
     }
 
-    /// Promotion: one-way, moves ring contents to permanent, and all
+    /// Retention: one-way, moves ring contents to permanent, and all
     /// FUTURE events for that uid go straight to permanent (unbounded).
     #[test]
-    fn promotion_moves_ring_to_permanent_and_stops_bounding_future_events() {
+    fn retention_moves_ring_to_permanent_and_stops_bounding_future_events() {
         let mut store = EntityStore::new(2);
         let subject = uid(3);
         for i in 0..2u64 {
@@ -589,9 +600,9 @@ mod tests {
                 actor: None,
             });
         }
-        assert!(!store.is_promoted(subject));
-        store.promote(subject);
-        assert!(store.is_promoted(subject));
+        assert!(!store.is_retained(subject));
+        store.retain(subject);
+        assert!(store.is_retained(subject));
         // Past the old ring cap: proves permanent storage is unbounded,
         // not just a bigger ring.
         for i in 2..10u64 {
@@ -607,24 +618,24 @@ mod tests {
         assert_eq!(
             ticks,
             (0..10).collect::<Vec<_>>(),
-            "promoted history is complete, ring-era events included, unbounded past the cap"
+            "retained history is complete, ring-era events included, unbounded past the cap"
         );
         assert!(
             !store.truncated(subject),
-            "a promoted entity's ring is gone; nothing left there to be truncated"
+            "a retained entity's ring is gone; nothing left there to be truncated"
         );
     }
 
-    /// Opus's addition to the planted set (2026-08-10): promoting an
+    /// Opus's addition to the planted set (2026-08-10): retaining an
     /// entity WHILE its ring is mid-truncation must carry that gap
-    /// forward. A promoted entity is exactly the one whose history someone
-    /// will trust -- if promotion silently cleared the flag, it would
+    /// forward. A retained entity is exactly the one whose history someone
+    /// will trust -- if retention silently cleared the flag, it would
     /// claim complete history it doesn't have.
     #[test]
-    fn promoting_a_ring_that_already_truncated_carries_the_gap_forward() {
+    fn retaining_a_ring_that_already_truncated_carries_the_gap_forward() {
         let mut store = EntityStore::new(2);
         let subject = uid(11);
-        // Overflow the ring BEFORE promoting -- ticks 0,1,2 pushed into a
+        // Overflow the ring BEFORE retaining -- ticks 0,1,2 pushed into a
         // cap-2 ring truncates tick 0.
         for i in 0..3u64 {
             store.record(EntityEvent {
@@ -635,15 +646,15 @@ mod tests {
                 actor: None,
             });
         }
-        assert!(store.truncated(subject), "sanity: the ring did truncate before promotion");
-        store.promote(subject);
+        assert!(store.truncated(subject), "sanity: the ring did truncate before retention");
+        store.retain(subject);
         assert!(
             store.truncated(subject),
-            "promotion must carry the pre-existing gap forward, not silently clear it"
+            "retention must carry the pre-existing gap forward, not silently clear it"
         );
-        // And a NEW entity promoted with a clean (never-truncated) ring
+        // And a NEW entity retained with a clean (never-truncated) ring
         // must read as NOT truncated -- the flag is per-entity fact, not a
-        // side effect of promotion itself.
+        // side effect of retention itself.
         let clean = uid(12);
         store.record(EntityEvent {
             schema: SCHEMA.to_owned(),
@@ -652,17 +663,17 @@ mod tests {
             kind: EventKind::Item(ItemEventKind::Created),
             actor: None,
         });
-        store.promote(clean);
+        store.retain(clean);
         assert!(
             !store.truncated(clean),
-            "promotion itself must not manufacture a truncation that never happened"
+            "retention itself must not manufacture a truncation that never happened"
         );
     }
 
-    /// Promoting an already-promoted entity is a no-op, not a double-move
+    /// Retaining an already-retained entity is a no-op, not a double-move
     /// or a data loss.
     #[test]
-    fn promoting_twice_is_idempotent() {
+    fn retaining_twice_is_idempotent() {
         let mut store = EntityStore::new(4);
         let subject = uid(9);
         store.record(EntityEvent {
@@ -672,7 +683,7 @@ mod tests {
             kind: EventKind::Item(ItemEventKind::Created),
             actor: None,
         });
-        store.promote(subject);
+        store.retain(subject);
         store.record(EntityEvent {
             schema: SCHEMA.to_owned(),
             tick: 2,
@@ -680,7 +691,7 @@ mod tests {
             kind: EventKind::Item(ItemEventKind::Created),
             actor: None,
         });
-        store.promote(subject); // second call: must not clear or duplicate
+        store.retain(subject); // second call: must not clear or duplicate
         assert_eq!(store.events_for(subject).len(), 2);
     }
 
@@ -730,7 +741,7 @@ mod tests {
 
     /// The floor-gate self-attestation arithmetic, tested directly against
     /// a constructed store (bypassing the env-gated wrapper, same reason as
-    /// every other test in this module): a ring's events and a promoted
+    /// every other test in this module): a ring's events and a retained
     /// entity's permanent events both count, and an empty store counts as
     /// zero -- the "zero producers" case the floor gate actually runs
     /// against, distinct from "never initialized."
@@ -755,7 +766,7 @@ mod tests {
             actor: None,
         });
         assert_eq!(store.event_count(), 2, "counts across distinct entities' rings");
-        store.promote(a);
+        store.retain(a);
         store.record(EntityEvent {
             schema: SCHEMA.to_owned(),
             tick: 3,
@@ -766,7 +777,7 @@ mod tests {
         assert_eq!(
             store.event_count(),
             3,
-            "a promoted entity's permanent events count too, not just live rings"
+            "a retained entity's permanent events count too, not just live rings"
         );
     }
 
