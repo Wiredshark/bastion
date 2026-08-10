@@ -76,19 +76,30 @@ event_emitters! {
     }
 }
 /// ENGOPT6 hunt round 4: pickup-verdict trail, ORIGINALLY the
-/// flight-recorder's job. Entity-event-log stage 2 (ground-phase producers,
-/// 2026-08-10, Opus's ruling): the flight-recorder note write is deleted in
-/// favour of a real `ItemEventKind::PickedUp` event, not left beside it --
-/// "two logs of one fact" is exactly what this row exists to stop. Only the
-/// two STATE-CHANGING verdicts (`"partial"`, `"accepted"`) produce an event;
-/// every refusal verdict (`entity-missing`, `out-of-range`, `loot-owned`,
-/// `bastion-pile-protected`, `ambient-loot-disabled`, `comp-taken`,
-/// `inventory-full`) is a non-event for the item -- nothing happened to it,
-/// so it stays exactly where it already lived: item 6's witness counters at
-/// each call site, never here. `item`/`picker` are `Uid`s, not references
-/// into live ECS state, so this is a safe post-mutation call regardless of
-/// when the caller's own entity deletion actually lands.
-fn record_pickup_verdict(tick: u64, picker: Uid, item: Uid, verdict: &str, _extra: String) {
+/// flight-recorder's job -- that hunt closed clean three weeks before this
+/// rewrite (`8607510c94`/`997c4d5459`, 2026-07-20: root cause found and
+/// fixed at `781a553eb7`, end-proof GREEN on byte-identical tapes, tagged;
+/// no reopening since), so deleting its instrument here is not an
+/// in-progress investigation losing its trail.
+///
+/// Entity-event-log stage 2 (ground-phase producers, 2026-08-10, Opus's
+/// ruling): the flight-recorder note write is deleted in favour of a real
+/// `ItemEventKind::PickedUp` event, not left beside it -- "two logs of one
+/// fact" is exactly what this row exists to stop. Renamed from
+/// `record_pickup_verdict`: only 2 of the 9 verdicts this is called with
+/// now produce anything here -- the two STATE-CHANGING ones (`"partial"`,
+/// `"accepted"`). Every refusal verdict (`entity-missing`, `out-of-range`,
+/// `loot-owned`, `bastion-pile-protected`, `ambient-loot-disabled`,
+/// `comp-taken`, `inventory-full`) is a non-event for the item -- nothing
+/// happened to it, so it is recorded elsewhere, not forgotten: item 6's
+/// witness counters at each call site (run-total aggregates by reason, not
+/// a per-event trail -- a real loss of granularity for refusals relative to
+/// the old flight-recorder note, accepted per Opus's ruling since the
+/// closed ENGOPT6 hunt was the only thing that needed it). `item`/`picker`
+/// are `Uid`s, not references into live ECS state, so this is a safe
+/// post-mutation call regardless of when the caller's own entity deletion
+/// actually lands.
+fn record_pickup_event(tick: u64, picker: Uid, item: Uid, verdict: &str) {
     if matches!(verdict, "partial" | "accepted") {
         bastion_server::bastion_entity_event_log::record_event(
             tick,
@@ -231,13 +242,7 @@ impl ServerEvent for InventoryManipEvent {
                         // of the world from the first pickup
                         // attempt was processed.
                         debug!("Failed to get entity for item Uid: {}", pickup_uid);
-                        record_pickup_verdict(
-                            data.tick.0,
-                            *uid,
-                            pickup_uid,
-                            "entity-missing",
-                            String::new(),
-                        );
+                        record_pickup_event(data.tick.0, *uid, pickup_uid, "entity-missing");
                         continue;
                     };
                     let entity_cylinder = get_cylinder(entity);
@@ -248,13 +253,7 @@ impl ServerEvent for InventoryManipEvent {
                             ?entity_cylinder,
                             "Failed to pick up item as not within range, Uid: {}", pickup_uid
                         );
-                        record_pickup_verdict(
-                            data.tick.0,
-                            *uid,
-                            pickup_uid,
-                            "out-of-range",
-                            String::new(),
-                        );
+                        record_pickup_event(data.tick.0, *uid, pickup_uid, "out-of-range");
                         continue;
                     }
 
@@ -290,13 +289,7 @@ impl ServerEvent for InventoryManipEvent {
                         });
 
                     if !ownership_check_passed {
-                        record_pickup_verdict(
-                            data.tick.0,
-                            *uid,
-                            pickup_uid,
-                            "loot-owned",
-                            String::new(),
-                        );
+                        record_pickup_event(data.tick.0, *uid, pickup_uid, "loot-owned");
                         // ROW-ITEM6-WITNESS-PACKET B1: counter beside the
                         // existing decision, same site, no new gate. Split
                         // by picker class (Opus's amendment) so a refusal
@@ -328,13 +321,7 @@ impl ServerEvent for InventoryManipEvent {
                     if data.bastion_piles.contains(item_entity)
                         && data.bastion_colonists.get(entity).is_none()
                     {
-                        record_pickup_verdict(
-                            data.tick.0,
-                            *uid,
-                            pickup_uid,
-                            "bastion-pile-protected",
-                            String::new(),
-                        );
+                        record_pickup_event(data.tick.0, *uid, pickup_uid, "bastion-pile-protected");
                         // ROW-ITEM6-WITNESS-PACKET B1: flat (not split by
                         // picker class -- see the field's own doc for why
                         // a split here would be 0 by construction).
@@ -359,13 +346,7 @@ impl ServerEvent for InventoryManipEvent {
                     if data.rtsim_entities.contains(entity)
                         && data.bastion_colonists.get(entity).is_none()
                     {
-                        record_pickup_verdict(
-                            data.tick.0,
-                            *uid,
-                            pickup_uid,
-                            "ambient-loot-disabled",
-                            String::new(),
-                        );
+                        record_pickup_event(data.tick.0, *uid, pickup_uid, "ambient-loot-disabled");
                         // ROW-ITEM6-WITNESS-PACKET B1: flat count, plus
                         // the TIMING-RACE witness (Opus's ruling
                         // 2026-08-10, replacing the withdrawn `_colonist`
@@ -419,13 +400,7 @@ impl ServerEvent for InventoryManipEvent {
                             "Failed to delete item component for entity, Uid: {}",
                             pickup_uid
                         );
-                        record_pickup_verdict(
-                            data.tick.0,
-                            *uid,
-                            pickup_uid,
-                            "comp-taken",
-                            String::new(),
-                        );
+                        record_pickup_event(data.tick.0, *uid, pickup_uid, "comp-taken");
                         continue;
                     };
 
@@ -434,7 +409,6 @@ impl ServerEvent for InventoryManipEvent {
                                                               its PickupItem component.";
 
                     let (item, reinsert_item) = item.pick_up();
-                    let reinsert_item_present = reinsert_item.is_some();
 
                     let mut item_msg = item.frontend_item(&data.ability_map, &data.msm);
 
@@ -490,22 +464,10 @@ impl ServerEvent for InventoryManipEvent {
                                         &data.msm,
                                     );
                                 }
-                                record_pickup_verdict(
-                                    data.tick.0,
-                                    *uid,
-                                    pickup_uid,
-                                    "partial",
-                                    format!("free_slots={}", inventory.free_slots()),
-                                );
+                                record_pickup_event(data.tick.0, *uid, pickup_uid, "partial");
                                 InventoryUpdateEvent::Collected(item_msg)
                             } else {
-                                record_pickup_verdict(
-                                    data.tick.0,
-                                    *uid,
-                                    pickup_uid,
-                                    "inventory-full",
-                                    format!("free_slots={}", inventory.free_slots()),
-                                );
+                                record_pickup_event(data.tick.0, *uid, pickup_uid, "inventory-full");
                                 InventoryUpdateEvent::EntityCollectFailed {
                                     entity: pickup_uid,
                                     reason: CollectFailedReason::InventoryFull,
@@ -575,17 +537,7 @@ impl ServerEvent for InventoryManipEvent {
                                     &data.msm,
                                 );
                             }
-                            record_pickup_verdict(
-                                data.tick.0,
-                                *uid,
-                                pickup_uid,
-                                "accepted",
-                                format!(
-                                    "free_slots={}; reinserted={}",
-                                    inventory.free_slots(),
-                                    reinsert_item_present
-                                ),
-                            );
+                            record_pickup_event(data.tick.0, *uid, pickup_uid, "accepted");
                             // ROW-ITEM6-WITNESS-PACKET B2: the pair that
                             // makes the row falsifiable -- only counted for
                             // a BastionPile (item_entity's component data
