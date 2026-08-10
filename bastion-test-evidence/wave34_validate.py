@@ -69,6 +69,23 @@ def check(path, findings):
     if doc is None:
         print(f"REFUSED {path}: neither whole file nor first line is JSON")
         return False
+
+    # PAIRED-RECORD GUARD (wave34, caught the hard way).
+    # `flat()` merges nested containers into one namespace, and a paired record's
+    # two arms share EVERY field name -- so flattening one silently yields a
+    # PHANTOM record made of whichever arm was walked last. wave34 reported a
+    # confident 48/48 that way, and it passed only because the two arms happened
+    # to be identical. A validator that silently merges two runs is worse than
+    # one that refuses: it launders an ambiguity into a number.
+    if isinstance(doc, dict):
+        arms = [k for k in doc if k.startswith("paired_") and isinstance(doc[k], dict)]
+        if arms:
+            print(f"REFUSED {path}: PAIRED record ({', '.join(sorted(arms))}).")
+            print("        Flattening would merge arms that share every field name")
+            print("        and validate a record belonging to NEITHER run.")
+            print("        Lift ONE arm to top level and validate it by name.")
+            return False
+
     d = flat(doc)
 
     missing = [k for k, _ in NEW_FIELDS + CARRIED if k not in d]

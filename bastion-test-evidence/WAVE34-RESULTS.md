@@ -103,6 +103,33 @@ entire pile-pickup subsystem is inert in this scenario**, so the zero is not
 > scenario, not a different instrument — and B2's member/non-member pair is what
 > proved that, which is precisely why a refusal count alone was never enough.
 
+### ★★ PREMISE-CHECK RESOLVED (5b, at source) — **IT IS STRUCTURAL, NOT A SCENARIO CHOICE**
+
+**Zero occurrences of `create_item_drop` or `dropall` anywhere in
+`bastion-harness/src/main.rs`, across all ~40 scenario functions.**
+
+> ## **NO HARNESS SCENARIO PROVISIONS ANY ITEM DROP AT ALL — persistent or loose.**
+> *Not "no scenario drives colonists to a pile." **No scenario ever creates a
+> pile, or any pickup-able item, in the first place.***
+
+★★★ **So the corpus fan STRUCTURALLY CANNOT exercise item 6**, at any seed count,
+under any existing scenario. **This was never a re-run question and no number of
+fans would have found it** — the premise-check answered in one read what a second
+48-seed fan would have reproduced as another six zeros.
+
+**Disposition (architect-ruled, premise now answered "no"): the nine fields stay
+as DORMANT SENTINELS** — they cost nothing, and they self-report the day any
+scenario engages the subsystem in-corpus. **A bespoke ambient-NPC fixture is NOT
+built on spec**; the det-fixture feasibility taxonomy gates that and this is its
+first clause failing.
+
+**Item 6's verification therefore rests on its LIVE acceptance, which stands on
+its own evidence** (5b, script-12 driver, not the harness): colonists ate from a
+persistent pile repeatedly across a 25-minute run while it survived untouched by
+ambient pickers, against an equivalent loose drop taken by an ambient NPC in
+**37 s** pre-fix. **That was always item 6's real arena.** What the corpus lacks
+is not confidence in the mechanism but a fan-visible witness of it.
+
 ### What this does and does not license about item 6 and the movers
 
 **It does NOT clear or implicate item 6 for the movers.** A tempting reading —
