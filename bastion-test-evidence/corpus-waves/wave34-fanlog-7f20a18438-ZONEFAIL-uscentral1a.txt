@@ -1,0 +1,9 @@
+[pool] 4 x e2-standard-8 (32 vCPU), 12 seeds each = 48 total. Ceiling $25 / 90m. Launching...
+[guard] 1m | ~$0.014 (actual VM-time) | 2 VMs up | ceiling $25 / 90m
+[guard] 3m | ~$0.028 (actual VM-time) | 2 VMs up | ceiling $25 / 90m
+[guard] 4m | ~$0.049 (actual VM-time) | 3 VMs up | ceiling $25 / 90m
+=== POOL DONE in 352s | ~$0.049 burned (actual VM-time) | 0/48 seeds across 4 VMs (4 create-fails) ===
+/tmp/bastion-pool/bastion-pool-0.log:CREATE_FAIL :: (gcloud.compute.instances.create) Could not fetch resource:
+/tmp/bastion-pool/bastion-pool-1.log:CREATE_FAIL :: (gcloud.compute.instances.create) Could not fetch resource:
+/tmp/bastion-pool/bastion-pool-2.log:CREATE_FAIL :: (gcloud.compute.instances.create) Could not fetch resource:
+/tmp/bastion-pool/bastion-pool-3.log:CREATE_FAIL :: (gcloud.compute.instances.create) Could not fetch resource:
