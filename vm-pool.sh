@@ -14,6 +14,12 @@ GCLOUD="/c/Program Files (x86)/Google/Cloud SDK/google-cloud-sdk/bin/gcloud.cmd"
 ZONE="${ZONE:-us-central1-a}"; IMAGE=bastion-golden; KEY="$HOME/.ssh/id_ed25519"; SSHKEYS_FILE="C:/Users/q/.ssh/bastion-sshkeys.txt"
 BRANCH="${BRANCH:-bastion/builder}"   # every VM lands on this branch's remote tip; override e.g. BRANCH=codex/boot-cache
 N="$1"; MACHINE="$2"; SPV="$3"; FIRST="$4"; ARGS="$5"; MAX_USD="${6:-5}"; MAX_MIN="${7:-30}"
+# 8th arg: literal env assignments prefixed to the REMOTE harness invocation, e.g.
+# ENVPREFIX="BASTION_ACCESS_STALL_SECS=9999". Nothing else crosses the ssh boundary —
+# BRANCH is consumed by the LOCAL shell for the git reset, and there is no
+# SendEnv/AcceptEnv — so before this existed, `FOO=1 bash vm-pool.sh ...` ran every
+# seed at the DEFAULT and "no effect observed" was indistinguishable from "never set".
+ENVPREFIX="${8:-}"
 VCPU_PER=$(echo "$MACHINE" | sed 's/.*-//'); TOTAL_VCPU=$((N * VCPU_PER)); RATE=0.035  # $/vCPU-hr, conservative
 OUT=/tmp/bastion-pool; mkdir -p "$OUT"; rm -f "$OUT"/*.log "$OUT"/TRIPPED 2>/dev/null || true
 
@@ -39,7 +45,7 @@ run_one() {
     GH=\$(./target/verify/bastion-harness --print-git-hash 2>/dev/null); RH=\$(git rev-parse --short=10 HEAD)
     [ -z \"\$GH\" ] || [ \"\${GH%%+*}\" = \"\$RH\" ] || { echo \"BINARY_STALE: built \$GH != checkout \$RH\"; exit 5; }  # sha-part only (+dirty = LFS noise, code clean via reset --hard)
     for s in \$(seq $base $((base + SPV - 1))); do
-      ./target/verify/bastion-harness $ARGS --seed \$s --data-dir /tmp/mf-\$s >/tmp/mf-\$s.json 2>/dev/null &
+      $ENVPREFIX ./target/verify/bastion-harness $ARGS --seed \$s --data-dir /tmp/mf-\$s >/tmp/mf-\$s.json 2>/dev/null &
     done; wait
     echo DONE=\$(ls /tmp/mf-*.json 2>/dev/null | wc -l)
     for s in \$(seq $base $((base + SPV - 1))); do echo \"@@@SEED \$s@@@\"; cat /tmp/mf-\$s.json 2>/dev/null; done"  # stream results back — they die with the VM otherwise
@@ -63,7 +69,30 @@ guard() {
   done
 }
 
-echo "[pool] $N x $MACHINE ($TOTAL_VCPU vCPU), $SPV seeds each = $((N*SPV)) total. Ceiling \$$MAX_USD / ${MAX_MIN}m. Launching..."
+# ZONE CAPACITY PROBE. Retrying a capacity-exhausted zone is futile BY
+# CONSTRUCTION, so run_one's create-retry cannot help: measured 2026-08-10,
+# e2-standard-8 was ZONE_RESOURCE_POOL_EXHAUSTED in us-central1-a/-b/-c/-f and
+# available in us-east1-b. Two dead fans (~14 min) discovered by trial what one
+# minute of probing answers. Set ZONES="z1 z2 ..." to enable fallback.
+ZONES="${ZONES:-$ZONE}"
+if [ "$(echo "$ZONES" | wc -w)" -gt 1 ] || [ "${ZONE_PROBE:-0}" = 1 ]; then
+  picked=""
+  for z in $ZONES; do
+    probe="vmpool-probe-$$-$(echo "$z" | tr -cd 'a-z0-9')"
+    if "$GCLOUD" compute instances create "$probe" --zone="$z" --machine-type="$MACHINE" \
+         --no-address --image-family=debian-12 --image-project=debian-cloud >/dev/null 2>&1; then
+      "$GCLOUD" compute instances delete "$probe" --zone="$z" -q >/dev/null 2>&1  # BY NAME — never a wildcard on shared infra
+      picked="$z"; echo "[pool] zone probe: $z AVAILABLE for $MACHINE"; break
+    fi
+    echo "[pool] zone probe: $z unavailable for $MACHINE"
+  done
+  [ -n "$picked" ] || { echo "=== NO CANDIDATE ZONE HAS $MACHINE CAPACITY ($ZONES) ==="; exit 44; }
+  ZONE="$picked"
+fi
+# The banner records the EFFECTIVE config, so a fan's own log reconstructs how it
+# was run. A wave whose invocation cannot be recovered afterwards is a void wave —
+# learned by reconstructing wave33's from an adjacent doc and getting it wrong.
+echo "[pool] $N x $MACHINE ($TOTAL_VCPU vCPU), $SPV seeds each = $((N*SPV)) total. Ceiling \$$MAX_USD / ${MAX_MIN}m. Zone $ZONE. Branch $BRANCH. Args: $ARGS. Env: ${ENVPREFIX:-<none>}. Launching..."
 start=$(date +%s)
 guard "$start" & GUARD_PID=$!
 # STAGGER creates — GCP rate-limits parallel instantiations from ONE machine-image ("too frequent
@@ -81,3 +110,15 @@ if [ -f "$OUT/TRIPPED" ]; then
 fi
 echo "=== POOL DONE in $((end-start))s | ~\$$cost burned (actual VM-time) | $total/$((N*SPV)) seeds across $N VMs ($fails create-fails) ==="
 grep -H 'DONE=\|CREATE_FAIL\|COMMIT=' "$OUT"/*.log 2>/dev/null | head -40 || true
+# ACCEPTANCE IS A COUNT, NEVER AN EXIT CODE.
+# Until this gate existed the script's last statement was the grep above — which
+# MATCHES 'CREATE_FAIL', so it SUCCEEDED, so a run that produced 0/48 seeds exited
+# 0. An inverted check: the more comprehensively the run failed, the more certainly
+# it exited clean. (Two consecutive zone-exhausted fans reported FAN_EXIT=0 that
+# way; the tell was the 352s duration, not the status.)
+# A partial wave fails too — 36/48 is a biased subset, not a small wave.
+if [ "$total" -lt "$((N*SPV))" ]; then
+  echo "=== POOL INCOMPLETE: $total/$((N*SPV)) seeds produced. NOT A VALID WAVE. ==="
+  exit 43   # distinct from 42 (ceiling cutoff), so a caller can tell the two apart
+fi
+exit 0
