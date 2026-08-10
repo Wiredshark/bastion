@@ -146,13 +146,53 @@ expression is not ready.**
 
 | # | measure | PASS expression | FAIL expression |
 |---|---|---|---|
+| **0** | ★ **THE MOVER PREDICTION — the pilot's FIRST REAL CUSTOMER** (see below) | orphaned-claim releases **cluster in tick near removal events** on mover seeds | they spread **uniformly** → the claim-overlap hypothesis dies clean |
 | 1 | **The Voonoo query** — given a drop's uid, return every actor that touched it, in order | query returns ≥1 event with a non-`None` `actor`, ordered by tick, naming the ambient picker | returns empty, or returns events with `actor == None` where an actor existed |
 | 2 | **Provenance render** — one item's history as a sentence | a projection renders end-to-end with no parser over free text | rendering requires parsing a string field |
 | 3 | **Determinism floor** | paired run, fingerprint identical | any fingerprint divergence |
 | 4 | **Volume** | bytes/sim-hour **reported** at the default ring size | unreported — *an unmeasured retention policy IS the 1 GB failure mode* |
 
-★ **Measure 1 is the row's reason for existing.** That question cost two runs and
-an instrument build; it must become **one query over a run's stream**.
+★ **Measure 1 is the row's original reason for existing.** That question cost two
+runs and an instrument build; it must become **one query over a run's stream**.
+
+### ★★ MEASURE 0 — **PROMOTED: THE PILOT ARRIVES WITH A CUSTOMER ALREADY WAITING**
+
+**`Released{job, reason, tick, actor}` is REQUIRED in the colonist vocabulary**
+(architect-ruled), because a real open investigation is already blocked on it.
+
+**The case.** `b5_release_removed_externally` is the only surviving mechanism
+candidate for the wave32→wave33 movers — concentrated **5/6 on movers vs 10/42
+elsewhere**, and it survived a permutation test (**2000 random 6-seed subsets;
+1957 showed no such field; p = 0.021**), so the concentration is not a
+multiple-comparisons artefact.
+
+**But reading its producer (`bastion_jobs.rs:10887`) changed what it means:**
+
+```rust
+let Some(job) = board.jobs.get_mut(&active.job) else {
+    // Cancelled out from under the colonist → re-idle.
+    to_release.push((entity, ReleaseReason::RemovedExternally));
+```
+
+**It is a SITE SCAN over active claims — an observer-assigned ORPHAN DETECTOR, not
+a removal-path witness.** None of the 20+ `remove_job` callers assigns this
+reason. **So the counter measures a COMPOSITION: a removal AND a live claimant at
+the same moment.** *That is why it concentrates on movers while raw access-plan
+counts churn corpus-wide.*
+
+> ## **THE PREDICTION, AND WHY THE PILOT IS THE ONLY THING THAT CAN DECIDE IT:**
+> *if this is claim-OVERLAP (colonists who no longer sit hold claims over
+> different intervals — same removals, different overlap), the orphanings should
+> **cluster in tick near removal events**. If they spread uniformly, it dies.*
+>
+> ★★★ **`release_removed_externally` IS A RUN-TOTAL. There is no per-event
+> timestamp anywhere in the corpus.** *The question is undecidable at any seed
+> count, by any fan, with the instruments that exist.*
+
+★ **This is the non-vacuity question asked AT REGISTRATION and answered NO** —
+which is what converts *"run another fan"* into *"the instrument this programme
+already designed is the only thing that can answer it."* **A pilot whose first
+customer arrived before the pilot did.**
 
 ### Named failure modes, each with a planted test that must go red BY NAME
 
