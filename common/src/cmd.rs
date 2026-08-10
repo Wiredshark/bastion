@@ -652,7 +652,12 @@ impl ServerChatCommand {
                 Some(Admin),
             ),
             ServerChatCommand::DropAll => cmd(
-                vec![],
+                // #97 (ROW-ITEM6-PROVISIONING-PACKET): optional trailing
+                // bool, default false -- plain `/dropall` stays
+                // byte-for-byte unchanged (loose drops, fair game);
+                // `/dropall true` provisions a protected, persistent
+                // pile via the SAME spawn path.
+                vec![Boolean("persistent", "false".to_string(), Optional)],
                 Content::localized("command-dropall-desc"),
                 Some(Moderator),
             ),

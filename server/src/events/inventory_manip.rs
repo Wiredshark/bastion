@@ -143,6 +143,13 @@ pub struct InventoryManipData<'a> {
     orientations: ReadStorage<'a, comp::Ori>,
     agents: ReadStorage<'a, comp::Agent>,
     bastion_colonists: ReadStorage<'a, comp::Colonist>,
+    // #97 (ROW-ITEM6-PROVISIONING-PACKET): protects a provisioned
+    // (`persistent: true`) stockpile drop from ambient/non-colony
+    // pickup. `bastion_piles` had been removed as unused after #89's
+    // trace widening; re-added because this row gives it a real
+    // consumer again.
+    bastion_piles: ReadStorage<'a, comp::bastion::BastionPile>,
+    bastion_board: ReadExpect<'a, bastion_server::bastion_jobs::JobBoard>,
     pets: ReadStorage<'a, comp::Pet>,
     masses: ReadStorage<'a, comp::Mass>,
     #[cfg(feature = "worldgen")]
@@ -286,6 +293,36 @@ impl ServerEvent for InventoryManipEvent {
                             uid.0.get(),
                             pickup_uid.0.get(),
                             "loot-owned",
+                            String::new(),
+                        );
+                        continue;
+                    }
+
+                    // #97 (ROW-ITEM6-PROVISIONING-PACKET, Fable's ruled
+                    // lean: "protect stockpiles, loose drops stay fair
+                    // game"): a provisioned (`persistent: true`)
+                    // BastionPile sitting inside a colony's stockpile
+                    // region may only be picked up by a member of that
+                    // colony. Membership alone is a sound ownership
+                    // predicate here -- DECISIONS #96 enumerated every
+                    // `BastionPile` attach site exhaustively and found
+                    // exactly one, all bastion-controlled; no vanilla
+                    // path can create one. Loose (`persistent: false`)
+                    // drops are untouched -- this only fires when BOTH
+                    // conditions hold.
+                    if data.bastion_piles.contains(item_entity)
+                        && data.bastion_colonists.get(entity).is_none()
+                        && let Some(item_pos) = data.positions.get(item_entity)
+                        && data
+                            .bastion_board
+                            .stockpile_at(item_pos.0.map(|e| e.floor() as i32))
+                            .is_some()
+                    {
+                        record_pickup_verdict(
+                            data.tick.0,
+                            uid.0.get(),
+                            pickup_uid.0.get(),
+                            "stockpile-protected",
                             String::new(),
                         );
                         continue;

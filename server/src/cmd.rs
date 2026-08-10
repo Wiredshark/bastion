@@ -570,10 +570,19 @@ fn handle_drop_all(
     server: &mut Server,
     _client: EcsEntity,
     target: EcsEntity,
-    _args: Vec<String>,
+    args: Vec<String>,
     _action: &ServerChatCommand,
 ) -> CmdResult<()> {
     let pos = position(server, target, "target")?;
+    // #97 (ROW-ITEM6-PROVISIONING-PACKET): an optional trailing bool,
+    // defaulting to false so plain `/dropall` is byte-for-byte
+    // unchanged (the packet's own regression clause: "loose /dropall
+    // behaviour unchanged, fair game"). `persistent: true` uses the
+    // SAME spawn path with the ONE flag that already switches both the
+    // despawn timer and the BastionPile marker (state_ext.rs:385/390) --
+    // no new spawn mechanism, matching #96's exhaustive attach-site
+    // enumeration (still exactly one site).
+    let persistent = parse_cmd_args!(args, bool).unwrap_or(false);
 
     let mut items = Vec::new();
     if let Some(mut inventory) = server
@@ -607,7 +616,7 @@ fn handle_drop_all(
             comp::Vel(vel),
             comp::PickupItem::new(item, ProgramTime(server.state.get_program_time()), true),
             None,
-            false,
+            persistent,
         );
     }
 
