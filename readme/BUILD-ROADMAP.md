@@ -30,8 +30,8 @@ Format: append changelog at bottom; statuses edited in place. Newest ruling wins
 ## ARC 1.5 — Infrastructure (runs alongside)
 - **Entity event log** (#99/#100): designed (DESIGN-ENTITY-EVENT-LOG.md, premise-checked chassis, per-entity rings, promotion persistence). BUILDS when arc-1 wave clears. Acceptance: the Voonoo query = one query.
 - Reasoning dossiers (#98): FOOD pilot written; travel dossier at item 3's close; dossier per arc-close is ritual.
-- Self-terminating run harness (#73 — server+driver teardown); collect_wave --baseline DONE (#67).
-- Farming writeup (5b, owed); .engine-integration-wt target scoped cleanup (5b, owed).
+- Self-terminating run harness (#73 — server+driver teardown); collect_wave --baseline DONE (#67). Graduation note (Fable, 2026-08-10): when #73 lands, `stale_binary_preflight.sh` (scratch tooling, 5b) becomes its FIRST STEP, invoked by the run script itself rather than remembered by whoever launches a run — a tool someone must remember to run is a habit wearing a filename; wired into the runner it becomes law.
+- Farming writeup (5b, DONE 2026-08-10): FARM-SOW-PHANTOM-RETIRE-FINDING.md + addendum -- root cause is a seed-supply chicken-and-egg deadlock (structural, code-verified), not the phantom-retire mechanism the original body centered on (that's real but incidental, a disconnect-triggered chunk-unload sweep). .engine-integration-wt target scoped cleanup (5b, DONE 2026-08-10): target/debug/incremental removed (54G, confirmed 2-days stale), target/no_overflow untouched.
 
 ## ARC 2 — Legibility (9–12)
 9 Colonist inspector HUD · 10 Colony dashboard · 11 Recreation/idle life · 12 Chronicle UI (becomes the entity-log's player view).
@@ -56,6 +56,7 @@ Format: append changelog at bottom; statuses edited in place. Newest ruling wins
 KNOWN INHERITANCE (charter line, Opus 08-10): today's `stockpiles: Vec<(ZoneId, Region)>` painted-bounding-box zones ARE the raw-position model — the arc's FIRST MIGRATION TARGET, not a green field. Item 16 is stockpile-adjacent and carries the plot rider pre-spec.
 
 ## Changelog
+- 2026-08-10 (4): 5b closed both owed items (farming writeup; 54G stale incremental cleanup — E: +54GB) and placed the #73 preflight-graduation note; item 5 in build.
 - 2026-08-10 (3): Item 7 re-rooted — seed-supply deadlock (structural); phantom-retire demoted to end-of-run sweep noise (refuted at source + 1.1ms timing window); two independent fixes chartered.
 - 2026-08-10 (2): Opus's #102 in-flight audit folded in — nothing exposed; item 16 flagged pre-spec; settlement arc's known inheritance (Region zones) chartered.
 - 2026-08-10: Created (rows #93–#102 folded in). Items 1 done, 3 landed-pending-score, 6 in acceptance, 7 blocked-with-coordinate; settlement layer added with immediate rider; thievery moved to 34's family; entity log designed.
