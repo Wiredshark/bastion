@@ -19,8 +19,9 @@ pub mod bastion_arena;
 #[cfg(feature = "worldgen")]
 pub use bastion_server::bastion_assets;
 pub use bastion_server::{
-    bastion_actions, bastion_chop, bastion_flat_arena, bastion_flight_recorder, bastion_jobs,
-    bastion_mood, bastion_path, bastion_piles, bastion_traversal, bastion_traversal_tooling,
+    bastion_actions, bastion_chop, bastion_entity_event_log, bastion_flat_arena,
+    bastion_flight_recorder, bastion_jobs, bastion_mood, bastion_path, bastion_piles,
+    bastion_traversal, bastion_traversal_tooling,
 };
 pub mod bootstrap_freshness_minter;
 mod character_creator;
@@ -3795,6 +3796,18 @@ impl Server {
     /// b5_eat_completions_distinct`'s own doc. Both pure accumulators,
     /// zero-defaulted, never gated -- DIAGNOSTICS, not verdict terms;
     /// must never enter the harness's `clauses` vec.
+    /// bastion (entity-event-log stage-1 floor gate, self-attestation field,
+    /// Opus's catch, 2026-08-10): a paired determinism-floor run with the
+    /// chassis enabled but zero producers wired changes no other
+    /// gameplay-visible field, so the two arms are otherwise
+    /// indistinguishable from "the env var never reached the harness."
+    /// `event_count`'s `Option` return renders as absent in one arm and
+    /// present (even at `0`) in the other -- presence is the witness the
+    /// number can't yet provide. Not gated on ECS state (the log is a
+    /// process-global, not a board resource); pure passthrough, DIAGNOSTIC
+    /// only, must never enter the harness's `clauses` vec.
+    pub fn bastion_eelog_event_count(&self) -> Option<u64> { bastion_entity_event_log::event_count() }
+
     pub fn bastion_eat_stack_stats(&self) -> (u32, u32) {
         let board = self
             .state

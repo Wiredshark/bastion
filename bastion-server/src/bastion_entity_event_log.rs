@@ -320,6 +320,16 @@ impl EntityStore {
             self.rings.get(&subject).is_some_and(|ring| ring.truncated)
         }
     }
+
+    /// Total events currently held, ring + permanent, across every entity.
+    /// Pure summation, split out from `event_count()` so the arithmetic is
+    /// unit-testable directly against a constructed store, the same pattern
+    /// every other method on this type already uses.
+    fn event_count(&self) -> u64 {
+        let rings: usize = self.rings.values().map(|r| r.events.len()).sum();
+        let permanent: usize = self.permanent.values().map(|v| v.len()).sum();
+        (rings + permanent) as u64
+    }
 }
 
 static LOG: OnceLock<Mutex<Option<EntityStore>>> = OnceLock::new();
@@ -440,6 +450,30 @@ pub fn is_promoted(subject: Uid) -> bool {
 /// same shape as `bastion_flight_recorder::global_slot_initialized`.
 #[doc(hidden)]
 pub fn global_slot_initialized() -> bool { LOG.get().is_some() }
+
+/// The floor-gate self-attestation field (Opus's catch, 2026-08-10): a
+/// paired determinism-floor run with the chassis enabled but zero producers
+/// wired changes no gameplay-visible field by construction, so a bare `u64`
+/// count would read `0` in BOTH the env-unset and env-set arms and prove
+/// nothing about whether `BASTION_ENTITY_EVENT_LOG` actually reached the
+/// harness process. `Option` makes presence itself the witness: `None`
+/// (disabled -- the field renders absent/null in the harness's JSON) vs.
+/// `Some(0)` (enabled, zero producers -- present with a real, if currently
+/// zero, value) are distinguishable even though the *number* doesn't yet
+/// differ. Becomes genuinely informative, not just self-attesting, the
+/// moment stage 2 wires a real producer and the count leaves zero.
+pub fn event_count() -> Option<u64> {
+    if !enabled() {
+        return None;
+    }
+    Some(
+        slot()
+            .lock()
+            .ok()
+            .and_then(|guard| guard.as_ref().map(EntityStore::event_count))
+            .unwrap_or(0),
+    )
+}
 
 #[cfg(test)]
 mod tests {
@@ -683,6 +717,65 @@ mod tests {
             .filter_map(|e| e.actor)
             .collect();
         assert_eq!(actors, vec![picker_a, picker_a, picker_b]);
+    }
+
+    /// The floor-gate self-attestation arithmetic, tested directly against
+    /// a constructed store (bypassing the env-gated wrapper, same reason as
+    /// every other test in this module): a ring's events and a promoted
+    /// entity's permanent events both count, and an empty store counts as
+    /// zero -- the "zero producers" case the floor gate actually runs
+    /// against, distinct from "never initialized."
+    #[test]
+    fn event_count_sums_rings_and_permanent_across_every_entity() {
+        let mut store = EntityStore::new(4);
+        assert_eq!(store.event_count(), 0, "an empty store counts as zero, not absent");
+        let a = uid(1);
+        let b = uid(2);
+        store.record(EntityEvent {
+            schema: SCHEMA.to_owned(),
+            tick: 1,
+            subject: a,
+            kind: EventKind::Item(ItemEventKind::Created),
+            actor: None,
+        });
+        store.record(EntityEvent {
+            schema: SCHEMA.to_owned(),
+            tick: 2,
+            subject: b,
+            kind: EventKind::Item(ItemEventKind::Created),
+            actor: None,
+        });
+        assert_eq!(store.event_count(), 2, "counts across distinct entities' rings");
+        store.promote(a);
+        store.record(EntityEvent {
+            schema: SCHEMA.to_owned(),
+            tick: 3,
+            subject: a,
+            kind: EventKind::Item(ItemEventKind::Dropped),
+            actor: None,
+        });
+        assert_eq!(
+            store.event_count(),
+            3,
+            "a promoted entity's permanent events count too, not just live rings"
+        );
+    }
+
+    /// The self-attestation shape itself (Opus's catch, 2026-08-10): when
+    /// disabled, `event_count()` must return `None` -- absent, not `Some(0)`
+    /// -- so a paired floor run can tell "the env var never arrived" apart
+    /// from "it arrived and zero events were produced," which a bare `u64`
+    /// defaulting to zero could never distinguish.
+    #[test]
+    fn event_count_is_none_when_disabled_not_some_zero() {
+        if std::env::var_os("BASTION_ENTITY_EVENT_LOG").is_some() {
+            return; // Environment-contaminated test run; skip rather than false-fail.
+        }
+        assert_eq!(
+            event_count(),
+            None,
+            "disabled must render as absent, not a zero count that looks like a real reading"
+        );
     }
 
     /// Disabled emission must be free: no I/O, no ECS mutation (n/a at

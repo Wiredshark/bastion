@@ -4625,6 +4625,13 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // considers run end -- see the accessor's own doc for why the timing
     // of THIS call (not the refusal itself) is what makes it a real test.
     let item6_ambient_recheck = server.bastion_item6_ambient_refusal_recheck();
+    // Entity-event-log stage-1 floor gate, self-attestation field (Opus's
+    // catch, 2026-08-10): captured once, same reason -- see
+    // `bastion_eelog_event_count`'s own doc for why `Option` (absent vs.
+    // present, not a bare zero-defaulted count) is what lets a paired floor
+    // run tell "the env var never arrived" apart from "it arrived and
+    // produced zero events."
+    let eelog_event_count = server.bastion_eelog_event_count();
 
     // B5-EXIT-CODE-DISAMBIGUATION (Ben-directed, 2026-07-30): the pass gate
     // is a ~40-clause conjunction; at corpus scale a bare exit code only
@@ -5023,6 +5030,12 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_pile_pickup_by_member": item6_witness.5,
         "b5_pile_pickup_by_nonmember": item6_witness.6,
         "b5_pickup_refused_ambient_later_colonist": item6_ambient_recheck.1,
+        // Entity-event-log stage-1 floor gate, self-attestation field --
+        // see `bastion_eelog_event_count`'s own doc. DIAGNOSTIC only, must
+        // never enter the `clauses` vec above. `null` in the env-unset arm,
+        // a present number (0 with zero producers wired) in the env-set arm
+        // -- presence, not the value, is what the floor gate reads.
+        "b5_eelog_event_count": eelog_event_count,
         // ARB-ATTEMPT-01 STEP 2 (batch item 1, 2026-08-04): scoped to the
         // three producers discovered firing on seeds 71/66 -- see
         // `bastion_release_reason_counts`'s own doc for the caveat on
