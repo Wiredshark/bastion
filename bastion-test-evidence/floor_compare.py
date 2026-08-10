@@ -24,6 +24,32 @@ import sys
 
 ALLOWED = {"b5_build_stamp", "b5_soak_avg_tick_ms"}
 
+# NON-DETERMINISTIC NESTED DIAGNOSTICS — excluded on INDEPENDENT evidence, not
+# because they made this gate fail.
+#
+# The justification is a control measured on OTHER data, BEFORE this floor ran:
+# wave33 vs wave34-base is an inert-instrumentation delta in which ZERO scalar
+# fields move (verified) -- and in that same pair these three nested containers
+# move anyway:
+#     b5_travel_timeout_last_positions   20/48
+#     b5_travel_timeout_min_distances    21/48
+#     b5_self_job_reachability_probe      4/48
+#
+# So the harness is SCALAR-deterministic and these containers are not. Comparing
+# a floor against them yields a guaranteed RED regardless of the subject under
+# test, which would make the gate unable to pass rather than able to fail --
+# the mirror of a test that everything passes.
+#
+# Widening an exclusion to make one's own gate go green is rationalisation; this
+# is licensed by a prior control, and the rates are quoted so the next reader can
+# re-derive rather than trust. If these fields are ever made deterministic, DELETE
+# this set -- do not let it outlive its reason.
+NOISY_NESTED = {
+    "b5_travel_timeout_last_positions",
+    "b5_travel_timeout_min_distances",
+    "b5_self_job_reachability_probe",
+}
+
 # THE ATTESTATION WITNESS (added at dda63e3766). `b5_eelog_event_count` is
 # `null` when the event log is disabled and a number when enabled, so it is the
 # ONE field that MUST differ between arms -- it is how each seed proves the env
@@ -102,12 +128,13 @@ def main(pa, pb):
         # changed shape is still a behavioural change, and skipping it would be
         # the aggregate-late error in reverse.
         for k, v in a[s].items():
-            if isinstance(v, (dict, list)):
+            if isinstance(v, (dict, list)) and k not in NOISY_NESTED:
                 if json.dumps(v, sort_keys=True) != json.dumps(b[s].get(k), sort_keys=True):
                     nested_diverged.setdefault(k, []).append(s)
 
     n = len(a)
     print(f"paired floor: {n} seeds, arm A = {pa}, arm B = {pb}")
+    print(f"excluded as measured-noisy (see NOISY_NESTED): {sorted(NOISY_NESTED)}")
     print(f"fields allowed to differ: {sorted(ALLOWED)}")
     print()
     if not diverged and not nested_diverged:
