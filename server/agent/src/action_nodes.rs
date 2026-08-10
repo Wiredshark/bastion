@@ -617,6 +617,20 @@ impl AgentData<'_> {
             match agent.rtsim_controller.activity {
                 Some(NpcActivity::Goto(travel_to, speed_factor)) => {
                     self.dismount_uncontrollable(controller, read_data);
+                    // DECISIONS #94 (Option A): a `Goto` issued to a
+                    // sitting NPC is silently inert -- `move_dir` cannot
+                    // move a seated character, and the ONLY other
+                    // `ControlAction::Stand` in this whole tree lives
+                    // under `NpcActivity::Talk`. Idle wandering's own
+                    // `IDLE_SIT_RATE` roll can seat any agent (including
+                    // one under a bastion `Goto`, since the ActiveJob
+                    // gate at `rtsim/tick.rs` protects `activity` from
+                    // being overwritten, not the separate `actions`
+                    // channel `Sit` arrives on) with nothing downstream
+                    // to stand it back up. Fixed at the class, not the
+                    // caller: every `Goto` consumer, bastion or vanilla,
+                    // now stands before moving.
+                    controller.push_action(ControlAction::Stand);
 
                     agent.bearing = Vec2::zero();
 
