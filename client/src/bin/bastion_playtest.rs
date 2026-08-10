@@ -9,12 +9,13 @@
 //!   wait <ticks>                        -- ITEM 5: waits on the server-
 //!       tracking `Time` resource (sim seconds = ticks / NOMINAL_TPS), not
 //!       a raw client tick count -- the two clocks can drift under load.
-//!       Bounded two ways, logged under DIFFERENT diagnoses: a wall-clock
-//!       stall check (no sim advance in `WAIT_STALL_WALL_SECS`, fires
-//!       regardless of `n` -- distinguishes a stopped server from a slow
-//!       one) and a spin count underneath it as a cheap absolute ceiling.
-//!       Either firing makes the wait VOID, not short. Every wait logs
-//!       both the requested ticks and the sim-time span actually covered.
+//!       Bounded two ways, logged under DIFFERENT diagnoses: consecutive
+//!       `client.tick()` errors (the engine's own `ServerTimeout`
+//!       liveness check -- `Time` itself cannot detect a dead server, it
+//!       advances locally every tick regardless) and a spin count
+//!       underneath as a cheap absolute ceiling. Either firing makes the
+//!       wait VOID, not short. Every wait logs both the requested ticks
+//!       and the sim-time span actually covered.
 //!   anchor                              -- terrain anchor at current pos
 //!   spawn <count>                       -- found colony at current pos
 //!   designate <kind> <x0> <y0> <z0> <x1> <y1> <z1>
@@ -50,7 +51,7 @@ use std::{
     fs,
     io::Write,
     sync::Arc,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::runtime::Runtime;
 use tracing::warn;
@@ -62,19 +63,16 @@ const TPS: u64 = 30;
 // server-tracking `Time` resource, not the client's own tick loop counter --
 // those are different clocks, free to drift under load.
 const NOMINAL_TPS: f64 = TPS as f64;
-// Opus's catch (2026-08-10): a SPIN count cannot distinguish "server
-// running slow" from "server clock stopped" -- both just make it spin
-// longer, and at n=20 per tick a single 9000-tick checkpoint wait would
-// spin for ~100 minutes before ever declaring VOID, long after the run's
-// own budget is blown. The bound that actually detects a STOPPED clock is
-// on WALL-CLOCK time since the sim clock last advanced at all, independent
-// of `n` -- a slow server still advances and never trips this; a stopped
-// one trips in exactly `WAIT_STALL_WALL_SECS`, whether `n` is 300 or
-// 90,000. `WAIT_SPIN_CAP_MULTIPLIER` stays as a belt-and-braces absolute
-// ceiling underneath it (cheap, catches whatever the progress check
-// somehow misses) -- but it should essentially never be the one that
-// actually fires.
-const WAIT_STALL_WALL_SECS: f64 = 30.0;
+// Liveness signal, corrected 2026-08-10 (Opus's catch, verified against
+// the client's own Time-advancement code before landing): `Time` cannot
+// detect a stopped server -- it advances locally every tick regardless of
+// server responsiveness (`State::tick`, `common/state/src/state.rs`), the
+// server only steers it toward its own value. The real signal is
+// `client.tick()` returning `Err(Error::ServerTimeout)` -- the engine's
+// own `client_timeout`-based liveness check, not one invented here.
+// Consecutive tick errors (not a lone one, which could be transient) trip
+// VOID; `WAIT_SPIN_CAP_MULTIPLIER` stays underneath as a cheap absolute
+// ceiling for whatever this somehow misses.
 const WAIT_SPIN_CAP_MULTIPLIER: u64 = 20;
 
 fn ts() -> u128 {
@@ -364,22 +362,42 @@ fn main() {
                 // the server-tracking `Time` resource, not a raw client
                 // tick count -- the two clocks are free to drift under
                 // load, which is the root of every timing confusion the
-                // food arc hit. Two independent failsafes, logged under
-                // DIFFERENT diagnoses (Opus's catch: collapsing them
-                // loses whether the server died or our rate model is
-                // wrong) -- a wall-clock stall bound (did sim time
-                // advance AT ALL recently) that fires in
-                // `WAIT_STALL_WALL_SECS` regardless of `n`, and a spin
-                // count underneath it as a cheap absolute ceiling.
+                // food arc hit.
+                //
+                // Opus's catch (2026-08-10), verified before landing:
+                // `Time` cannot be used as a liveness signal -- both the
+                // regular tick path (`State::tick`,
+                // `common/state/src/state.rs`, `write_resource::<Time>().0
+                // += scaled_dt` every tick) and the harness-only
+                // `tick_network` path advance `Time` LOCALLY every tick,
+                // unconditionally; the server only STEERS it (hard resync
+                // past 5s divergence, ~1% tween otherwise) via
+                // `TimeOfDay`. A dead server's `Time` keeps moving at the
+                // local rate with nothing behind it -- a "no sim advance"
+                // check would never fire against the exact condition it
+                // exists to catch, and would certify a void run as clean.
+                //
+                // The real liveness signal: `client.tick()` itself already
+                // returns `Err(Error::ServerTimeout)` when the engine's own
+                // `client_timeout` elapses with no server messages
+                // (client/src/lib.rs, `handle_messages` -> the
+                // `msg_count == 0` timeout check) -- a signal already
+                // computed for us, not one we invent. Consecutive tick
+                // errors (not a single one, which could be transient) trip
+                // VOID; the spin count stays underneath as a cheap
+                // absolute ceiling, logged under its own distinct reason
+                // so "server died" and "rate model is wrong" never
+                // collapse into one diagnosis.
+                const CONSECUTIVE_TICK_ERROR_LIMIT: u32 = 3;
                 let start = server_time(&client);
                 let target = start + (n as f64) / NOMINAL_TPS;
                 let spin_cap = n.saturating_mul(WAIT_SPIN_CAP_MULTIPLIER).max(1);
                 let mut spins = 0u64;
-                let mut last_sim_time = start;
-                let mut last_advance_wall = Instant::now();
+                let mut consecutive_tick_errors = 0u32;
+                let mut last_tick_error: Option<String> = None;
                 #[derive(Debug)]
                 enum WaitVoidReason {
-                    ClockStopped,
+                    ServerUnresponsive,
                     SpinCeiling,
                 }
                 let mut void_reason: Option<WaitVoidReason> = None;
@@ -388,12 +406,9 @@ fn main() {
                         void_reason = Some(WaitVoidReason::SpinCeiling);
                         break;
                     }
-                    if last_advance_wall.elapsed().as_secs_f64() > WAIT_STALL_WALL_SECS {
-                        void_reason = Some(WaitVoidReason::ClockStopped);
-                        break;
-                    }
                     match client.tick(comp::ControllerInputs::default(), clock.game_dt()) {
                         Ok(events) => {
+                            consecutive_tick_errors = 0;
                             for event in events {
                                 if let Event::Chat(m) = &event {
                                     log.log(&format!("[chat] {m:?}"));
@@ -402,24 +417,26 @@ fn main() {
                         },
                         Err(e) => {
                             log.log(&format!("tick error during wait: {e:?}"));
+                            last_tick_error = Some(format!("{e:?}"));
+                            consecutive_tick_errors += 1;
+                            if consecutive_tick_errors >= CONSECUTIVE_TICK_ERROR_LIMIT {
+                                void_reason = Some(WaitVoidReason::ServerUnresponsive);
+                                break;
+                            }
                         },
                     }
                     client.cleanup();
                     clock.tick();
                     spins += 1;
-                    let now_sim = server_time(&client);
-                    if now_sim > last_sim_time {
-                        last_sim_time = now_sim;
-                        last_advance_wall = Instant::now();
-                    }
                 }
                 if let Some(p) = own_pos(&client) {
                     current_pos = p;
                 }
                 let end = server_time(&client);
                 match void_reason {
-                    Some(WaitVoidReason::ClockStopped) => log.log(&format!(
-                        "VOID: server clock stopped (no sim advance in {WAIT_STALL_WALL_SECS}s) -- wait {n} ticks (target sim {start:.2}..{target:.2}), stuck at sim {end:.2} after {spins} spins; pos now {current_pos:?}"
+                    Some(WaitVoidReason::ServerUnresponsive) => log.log(&format!(
+                        "VOID: server unresponsive ({consecutive_tick_errors} consecutive tick errors, last: {}) -- wait {n} ticks (target sim {start:.2}..{target:.2}), stuck at sim {end:.2} after {spins} spins; pos now {current_pos:?}",
+                        last_tick_error.unwrap_or_default()
                     )),
                     Some(WaitVoidReason::SpinCeiling) => log.log(&format!(
                         "VOID: absolute spin ceiling ({spin_cap}) hit -- wait {n} ticks (target sim {start:.2}..{target:.2}) reached only sim {end:.2}; rate model likely wrong, not a dead server; pos now {current_pos:?}"
