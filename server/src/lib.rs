@@ -1110,6 +1110,18 @@ impl Server {
             );
         }
 
+        // ROW-ITEM6-WITNESS-PACKET part A1 (Opus's second flag,
+        // 2026-08-10): forced here, unconditionally, at boot -- the
+        // OnceLock-cached accessors otherwise only log on FIRST use inside
+        // the F3 pass, which in practice fires in every run that reaches
+        // arbitration but is not GUARANTEED to on every code path. A run
+        // whose effective config can't be reconstructed after the fact is
+        // a void run for calibration purposes; forcing the read (and the
+        // log) here makes the line unconditional, same reasoning as the
+        // mood-config log immediately above.
+        let _ = bastion_jobs::access_stale_secs();
+        let _ = bastion_jobs::access_stall_secs();
+
         Ok(this)
     }
 
@@ -3750,12 +3762,16 @@ impl Server {
     /// `JobBoard::b5_f3_ticks_branch_a`'s own doc for what each field
     /// means. Flattened: `(ticks_branch_a, ticks_branch_b,
     /// ticks_branch_c, transitions, idle_peak, prunes_fired,
-    /// stalled_peak)`. All pure accumulators, zero-defaulted, never
-    /// gated -- DIAGNOSTICS, not verdict terms; must never enter the
+    /// stalled_peak, stalled_final)`. All pure accumulators, zero-defaulted,
+    /// never gated -- DIAGNOSTICS, not verdict terms; must never enter the
     /// harness's `clauses` vec. `stalled_peak` added for ITEM 2 (Opus's
     /// catch, 2026-08-10): without it the fan cannot set
-    /// `ACCESS_STALL_SECS` from measured seeds at all.
-    pub fn bastion_f3_prune_stats(&self) -> (u64, u64, u64, u32, f32, u32, f32) {
+    /// `ACCESS_STALL_SECS` from measured seeds at all. `stalled_final`
+    /// added the same day (Opus's second catch, WAVE33-RESULTS.md): the
+    /// peak alone can't distinguish "stalled then recovered" from "still
+    /// stalling when the run ended" -- this is `access_stalled_secs`'s
+    /// value at whatever moment this is called, which resolves that.
+    pub fn bastion_f3_prune_stats(&self) -> (u64, u64, u64, u32, f32, u32, f32, f32) {
         let board = self
             .state
             .ecs()
@@ -3768,6 +3784,7 @@ impl Server {
             board.b5_f3_idle_peak,
             board.b5_f3_prunes_fired,
             board.b5_f3_stalled_peak,
+            board.access_stalled_secs,
         )
     }
 
@@ -3787,6 +3804,79 @@ impl Server {
             board.b5_eat_completions_distinct.len() as u32,
             board.b5_stack_reserved_units_max,
         )
+    }
+
+    /// bastion (ROW-ITEM6-WITNESS-PACKET, harness hook, 2026-08-10): the
+    /// item-6 pickup-refusal witness -- board accumulators, not
+    /// flight-recorder events, so a corpus fan (stdout JSON only) can
+    /// finally see item 6 at all. Flattened: `(refused_pile_protected,
+    /// refused_ambient_disabled, refused_ambient_uids_distinct,
+    /// refused_loot_owned_colonist, refused_loot_owned_ambient,
+    /// pile_pickup_by_member, pile_pickup_by_nonmember)`. The first two are
+    /// FLAT (Opus's ruling: a colonist/ambient split on either would read
+    /// 0 by construction of the branch that guards it -- see `JobBoard::
+    /// b5_pickup_refused_pile_protected`'s own doc). `refused_loot_owned_*`
+    /// stays split (real signal there). `refused_ambient_uids_distinct` is
+    /// the count half of the timing-race witness -- see
+    /// `bastion_item6_ambient_refusal_recheck` for the other half, which
+    /// needs a separate call (it does a live storage read, not a stored
+    /// counter). All pure accumulators, zero-defaulted, never gated --
+    /// DIAGNOSTICS, not verdict terms; must never enter the harness's
+    /// `clauses` vec.
+    pub fn bastion_item6_witness_stats(&self) -> (u32, u32, u32, u32, u32, u32, u32) {
+        let board = self
+            .state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>();
+        (
+            board.b5_pickup_refused_pile_protected,
+            board.b5_pickup_refused_ambient_disabled,
+            board.b5_pickup_refused_ambient_uids.len() as u32,
+            board.b5_pickup_refused_loot_owned_colonist,
+            board.b5_pickup_refused_loot_owned_ambient,
+            board.b5_pile_pickup_by_member,
+            board.b5_pile_pickup_by_nonmember,
+        )
+    }
+
+    /// bastion (ROW-ITEM6-WITNESS-PACKET, timing-race witness, ruling
+    /// 2026-08-10): the deferred half of the `ambient-loot-disabled`
+    /// check that replaced Opus's withdrawn same-instant `_colonist`
+    /// split. `board.b5_pickup_refused_ambient_uids` records every
+    /// picker `Uid` refused as ambient, with the TICK of its first
+    /// refusal; THIS accessor cross-references those uids against
+    /// colonist status NOW, at call time -- a genuinely different instant
+    /// than the branch predicate that recorded them, which is what makes
+    /// "was this uid a colonist later" a real question instead of a
+    /// tautology (a same-instant re-read of the same component the
+    /// branch already gated on cannot vary, see the withdrawn design's
+    /// own doc). Flattened: `(distinct_uids, later_colonist)`.
+    /// `later_colonist > 0` means a picker refused as ambient is a
+    /// colonist by the time this is called -- for a scenario where
+    /// colony membership is fixed at startup (no mid-run recruitment),
+    /// that is decisive evidence of the membership-timing race Fable's
+    /// wave33-mover hypothesis predicted; if membership CAN change
+    /// mid-run, cross-check the recorded tick against when membership
+    /// changed before concluding a race (recruitment produces the same
+    /// signature with a large delta; a race produces a small one).
+    /// Call once, at whatever point the caller considers "later" (a
+    /// corpus fan calls this at run end).
+    pub fn bastion_item6_ambient_refusal_recheck(&self) -> (u32, u32) {
+        let ecs = self.state.ecs();
+        let board = ecs.read_resource::<bastion_jobs::JobBoard>();
+        let id_maps = ecs.read_resource::<common::uid::IdMaps>();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let distinct = board.b5_pickup_refused_ambient_uids.len() as u32;
+        let later_colonist = board
+            .b5_pickup_refused_ambient_uids
+            .keys()
+            .filter(|uid| {
+                id_maps
+                    .uid_entity(**uid)
+                    .is_some_and(|e| colonists.contains(e))
+            })
+            .count() as u32;
+        (distinct, later_colonist)
     }
 
     /// bastion (ARB-ATTEMPT-01 step 2, batch item 1, harness hook,

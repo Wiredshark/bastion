@@ -149,6 +149,11 @@ pub struct InventoryManipData<'a> {
     // removed as unused after #89's trace widening; re-added because
     // this row gives it a real consumer again.
     bastion_piles: ReadStorage<'a, comp::bastion::BastionPile>,
+    // ROW-ITEM6-WITNESS-PACKET part B: board accumulators for the item-6
+    // pickup-refusal witness. `bastion_board` had been removed (superseded
+    // stockpile-region lookup, #96); re-added as WriteExpect because this
+    // row's counters need to mutate the board, not just read it.
+    bastion_board: specs::WriteExpect<'a, bastion_server::bastion_jobs::JobBoard>,
     pets: ReadStorage<'a, comp::Pet>,
     masses: ReadStorage<'a, comp::Mass>,
     #[cfg(feature = "worldgen")]
@@ -294,6 +299,16 @@ impl ServerEvent for InventoryManipEvent {
                             "loot-owned",
                             String::new(),
                         );
+                        // ROW-ITEM6-WITNESS-PACKET B1: counter beside the
+                        // existing decision, same site, no new gate. Split
+                        // by picker class (Opus's amendment) so a refusal
+                        // aimed at a colonist reads differently from one
+                        // aimed at an ambient NPC.
+                        if data.bastion_colonists.get(entity).is_some() {
+                            data.bastion_board.b5_pickup_refused_loot_owned_colonist += 1;
+                        } else {
+                            data.bastion_board.b5_pickup_refused_loot_owned_ambient += 1;
+                        }
                         continue;
                     }
 
@@ -322,6 +337,10 @@ impl ServerEvent for InventoryManipEvent {
                             "bastion-pile-protected",
                             String::new(),
                         );
+                        // ROW-ITEM6-WITNESS-PACKET B1: flat (not split by
+                        // picker class -- see the field's own doc for why
+                        // a split here would be 0 by construction).
+                        data.bastion_board.b5_pickup_refused_pile_protected += 1;
                         continue;
                     }
 
@@ -349,6 +368,21 @@ impl ServerEvent for InventoryManipEvent {
                             "ambient-loot-disabled",
                             String::new(),
                         );
+                        // ROW-ITEM6-WITNESS-PACKET B1: flat count, plus
+                        // the TIMING-RACE witness (Opus's ruling
+                        // 2026-08-10, replacing the withdrawn `_colonist`
+                        // split): record this picker's uid and the tick
+                        // of its FIRST refusal here. Checked against
+                        // colonist status LATER, at a different instant
+                        // than this branch's own predicate -- see
+                        // `bastion_item6_ambient_refusal_recheck`'s doc
+                        // for why that timing difference is what makes
+                        // this a real test instead of a tautology.
+                        data.bastion_board.b5_pickup_refused_ambient_disabled += 1;
+                        data.bastion_board
+                            .b5_pickup_refused_ambient_uids
+                            .entry(*uid)
+                            .or_insert(data.tick.0);
                         continue;
                     }
 
@@ -554,6 +588,20 @@ impl ServerEvent for InventoryManipEvent {
                                     reinsert_item_present
                                 ),
                             );
+                            // ROW-ITEM6-WITNESS-PACKET B2: the pair that
+                            // makes the row falsifiable -- only counted for
+                            // a BastionPile (item_entity's component data
+                            // is still intact here; the DeleteEvent just
+                            // emitted above hasn't been applied yet), split
+                            // on colony membership. by_nonmember must be
+                            // exactly 0 under #96/#97's protection.
+                            if data.bastion_piles.contains(item_entity) {
+                                if data.bastion_colonists.get(entity).is_some() {
+                                    data.bastion_board.b5_pile_pickup_by_member += 1;
+                                } else {
+                                    data.bastion_board.b5_pile_pickup_by_nonmember += 1;
+                                }
+                            }
                             InventoryUpdateEvent::Collected(item_msg)
                         },
                     };

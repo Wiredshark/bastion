@@ -4616,6 +4616,15 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // #89 (ROW69-OPTION-B-PACKET): captured once, same reason -- the
     // reservation-capacity row's feature-acceptance measures.
     let eat_stack = server.bastion_eat_stack_stats();
+    // ROW-ITEM6-WITNESS-PACKET: captured once, same reason -- item 6's
+    // pickup-refusal witness, board accumulators so the fan (stdout JSON
+    // only) can see it at all.
+    let item6_witness = server.bastion_item6_witness_stats();
+    // ROW-ITEM6-WITNESS-PACKET, timing-race witness (ruling 2026-08-10):
+    // deferred cross-reference, called here at what this harness
+    // considers run end -- see the accessor's own doc for why the timing
+    // of THIS call (not the refusal itself) is what makes it a real test.
+    let item6_ambient_recheck = server.bastion_item6_ambient_refusal_recheck();
 
     // B5-EXIT-CODE-DISAMBIGUATION (Ben-directed, 2026-07-30): the pass gate
     // is a ~40-clause conjunction; at corpus scale a bare exit code only
@@ -4997,6 +5006,7 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_f3_idle_peak": f3_prune.4,
         "b5_f3_prunes_fired": f3_prune.5,
         "b5_f3_stalled_peak": f3_prune.6,
+        "b5_f3_stalled_final": f3_prune.7,
         // #89 (ROW69-OPTION-B-PACKET): the reservation-capacity row's
         // feature-acceptance measures -- see `bastion_eat_stack_stats`'s
         // own doc. DIAGNOSTICS, not verdict terms: neither field may
@@ -5005,6 +5015,14 @@ fn b5_scenario(args: &Args) -> ExitCode {
         // over that region must return zero).
         "b5_eat_completions_distinct": eat_stack.0,
         "b5_stack_reserved_units_max": eat_stack.1,
+        "b5_pickup_refused_pile_protected": item6_witness.0,
+        "b5_pickup_refused_ambient_disabled": item6_witness.1,
+        "b5_pickup_refused_ambient_uids_distinct": item6_witness.2,
+        "b5_pickup_refused_loot_owned_colonist": item6_witness.3,
+        "b5_pickup_refused_loot_owned_ambient": item6_witness.4,
+        "b5_pile_pickup_by_member": item6_witness.5,
+        "b5_pile_pickup_by_nonmember": item6_witness.6,
+        "b5_pickup_refused_ambient_later_colonist": item6_ambient_recheck.1,
         // ARB-ATTEMPT-01 STEP 2 (batch item 1, 2026-08-04): scoped to the
         // three producers discovered firing on seeds 71/66 -- see
         // `bastion_release_reason_counts`'s own doc for the caveat on

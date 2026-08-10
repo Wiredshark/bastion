@@ -1480,6 +1480,68 @@ pub fn access_claim_diag_enabled() -> bool {
     *ACCESS_CLAIM_DIAG.get_or_init(|| std::env::var_os("BASTION_ACCESS_CLAIM_DIAG").is_some())
 }
 
+/// bastion (ITEM 2, ROW-ITEM6-WITNESS-PACKET part A1): shared parse for the
+/// two F3 threshold overrides. UNSET -> the default, logged as such. SET
+/// and parses -> that value, logged as such. **SET and does NOT parse ->
+/// REFUSE (panic), never a silent fallback to the default** -- a silent
+/// fallback in the arm meant to RAISE a threshold would run at the old
+/// value and produce a confidently wrong calibration; failing loud here is
+/// strictly cheaper than a corpus fan that looks valid and isn't. The
+/// effective value is logged UNCONDITIONALLY (not only when overridden) --
+/// per the fallback-must-be-an-identity law, a defaulted config must be
+/// distinguishable from a set one in the log, not merely in the value.
+fn env_threshold_secs_or_refuse(var: &'static str, default: f32) -> f32 {
+    let value = parse_threshold_secs_or_refuse(var, std::env::var(var).ok(), default);
+    let source = if std::env::var_os(var).is_some() { "env" } else { "default" };
+    info!(value, source, var, "bastion F3 pruner: effective threshold");
+    value
+}
+
+/// The pure decision behind [`env_threshold_secs_or_refuse`], factored out
+/// so the refuse-on-malformed behavior is unit-testable without touching a
+/// real (process-global, test-shared) environment variable or the
+/// `OnceLock` cache above it. `raw` is what `std::env::var(var).ok()` would
+/// have returned.
+fn parse_threshold_secs_or_refuse(var: &'static str, raw: Option<String>, default: f32) -> f32 {
+    match raw {
+        None => default,
+        Some(raw) => raw.parse::<f32>().unwrap_or_else(|_| {
+            panic!(
+                "bastion: {var} is set but not a valid f32 (\"{raw}\") -- \
+                 refusing rather than silently defaulting to {default}, per \
+                 ROW-ITEM6-WITNESS-PACKET part A1"
+            )
+        }),
+    }
+}
+
+/// bastion (F3 pruner, B6): `ACCESS_STALE_SECS`, env-tunable
+/// (`BASTION_ACCESS_STALE_SECS`, seconds, parsed as f32) so an A/B doesn't
+/// cost a rebuild per arm -- same override discipline as every other
+/// `BASTION_*` read in this file. Read once (`OnceLock`).
+pub fn access_stale_secs() -> f32 {
+    static V: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+    *V.get_or_init(|| env_threshold_secs_or_refuse("BASTION_ACCESS_STALE_SECS", 20.0))
+}
+
+/// bastion (ITEM 2, ROW-ITEM2-STALL-COUNTER-PACKET): `ACCESS_STALL_SECS`,
+/// env-tunable (`BASTION_ACCESS_STALL_SECS`, seconds, parsed as f32).
+/// PROVISIONAL default (120.0) -- Opus's finding (WAVE33-RESULTS.md,
+/// 2026-08-10): `b5_f3_stalled_peak` is right-censored by this exact
+/// constant (the sweep resets `access_stalled_secs` to 0 the instant it
+/// reaches the threshold, so a stalled-past-threshold job's TRUE dwell is
+/// never observed, only "at least this much"), so no fan at the CURRENT
+/// value could ever calibrate it -- more seeds cannot fix a censored
+/// measurement. This override exists so a fan can run at a deliberately
+/// RAISED value and finally see the real distribution; the observed
+/// non-pruned high-water mark from wave 33 is 119.0 (one second under the
+/// default), which is why the honest move is to raise this, never lower
+/// it, pending that measurement.
+pub fn access_stall_secs() -> f32 {
+    static V: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+    *V.get_or_init(|| env_threshold_secs_or_refuse("BASTION_ACCESS_STALL_SECS", 120.0))
+}
+
 /// bastion (#68 amendment, Opus/#60 falsifier prereg): the three reset
 /// paths of the F3 stale-access-plan pruner (see the pruner's own doc
 /// comment at its `if`/`else if`/`else` chain) -- `access_idle_secs ==
@@ -4165,7 +4227,16 @@ pub struct JobBoard {
     /// never by any-movement (Fable's B6 constraint: a sub-block-wobble
     /// reset here would rebuild the bug this row exists to kill, one
     /// layer up).
-    access_stalled_secs: f32,
+    ///
+    /// `pub` (Opus's finding, WAVE33-RESULTS.md, 2026-08-10): the PEAK
+    /// alone (`b5_f3_stalled_peak`) cannot distinguish "stalled N seconds
+    /// then recovered" from "still stalling when the run ended" -- same
+    /// peak value, opposite meanings, and wave 33's seed 59 is exactly
+    /// this ambiguity (`stalled_peak = 119.0`, no prune, unresolved). This
+    /// CURRENT value, read at whatever moment the harness snapshots it
+    /// (typically run end), is the disambiguator: near the peak means
+    /// still stalling; near zero means recovered.
+    pub access_stalled_secs: f32,
     /// bastion (ITEM 2): last-seen `progress` per currently-claimed
     /// access `JobId`, the per-job counterpart of `stuck_job_progress`
     /// (that one is per-colonist, for the teleport watchdog; this one is
@@ -4245,6 +4316,68 @@ pub struct JobBoard {
     /// grow between `reserve` calls). DIAGNOSTIC under #88: never a
     /// `clauses` entry.
     pub b5_stack_reserved_units_max: u32,
+    /// bastion (ROW-ITEM6-WITNESS-PACKET part B1, Fable-named, 2026-08-10):
+    /// item-6 pickup-refusal witness -- one counter PER VERDICT REASON,
+    /// incremented at the same `record_pickup_verdict` call sites in
+    /// `server/src/events/inventory_manip.rs` that already compute the
+    /// verdict (a counter beside an existing decision point, not a new
+    /// one). DELIBERATELY separate, never summed into a total: which LAYER
+    /// refused is the entire diagnostic value a combined `refusals_total`
+    /// would erase. Board accumulators, not flight-recorder events -- the
+    /// proven #70 pattern; the flight recorder is gated off in a corpus
+    /// fan and carries free-text notes a fan can't tally, which is why
+    /// item 6 was invisible to wave33 at all despite the refusals being
+    /// real and logged.
+    ///
+    /// FLAT, not split by picker class (Opus proposed a colonist/ambient
+    /// split here, then withdrew it after my catch, `f12abbd333` ->
+    /// ruling 2026-08-10): both this reason's and
+    /// `ambient-loot-disabled`'s refusal `if` already require
+    /// `bastion_colonists.get(entity).is_none()` to enter the branch, so a
+    /// `_colonist` counter placed inside either one reads the SAME
+    /// component the gate just tested, at the SAME instant -- 0 by
+    /// construction, not evidence of anything. A counter inside a branch
+    /// cannot vary on a predicate that branch has already fixed. See
+    /// `b5_pickup_refused_ambient_uids` below for the timing-race check
+    /// this became instead.
+    pub b5_pickup_refused_pile_protected: u32,
+    /// B1: `"ambient-loot-disabled"` -- #97's global ambient-loot gate's
+    /// server-side belt-and-suspenders layer. FLAT for the same reason as
+    /// `b5_pickup_refused_pile_protected` above.
+    pub b5_pickup_refused_ambient_disabled: u32,
+    /// B1: `"ambient-loot-disabled"`, THE TIMING-RACE WITNESS (replaces
+    /// the withdrawn `_colonist` split, ruling 2026-08-10): every distinct
+    /// picker `Uid` refused under this reason, mapped to the TICK of its
+    /// first refusal. Unlike a same-instant counter, this is checked at a
+    /// DIFFERENT time than the branch predicate -- see
+    /// `bastion_item6_ambient_refusal_recheck`'s own doc for the deferred
+    /// read this enables, which is what makes "was this uid a colonist
+    /// LATER" a real, non-tautological question.
+    pub b5_pickup_refused_ambient_uids: HashMap<Uid, u64>,
+    /// B1: `"loot-owned"`, colonist picker -- KEPT split (Opus's ruling:
+    /// this one is real signal, unlike the other two). `loot_owner
+    /// .can_pickup` goes through groups/alignments/stats/players and never
+    /// touches `bastion_colonists`, so a colonist genuinely CAN be refused
+    /// here for an unrelated reason -- this branch's predicate does not
+    /// fix the value the way the other two do.
+    pub b5_pickup_refused_loot_owned_colonist: u32,
+    /// B1: `"loot-owned"`, non-colonist picker. See
+    /// `b5_pickup_refused_loot_owned_colonist`'s doc.
+    pub b5_pickup_refused_loot_owned_ambient: u32,
+    /// bastion (ROW-ITEM6-WITNESS-PACKET part B2, Fable-named): the pair
+    /// that makes the row FALSIFIABLE -- a refusal count alone cannot
+    /// distinguish "protection working" from "nobody ever tried to take a
+    /// pile." Incremented at the `"accepted"` verdict site, only when the
+    /// picked-up item is a `BastionPile`, split on whether the picker is a
+    /// colony member. Expected shape under membership-only protection:
+    /// `by_member` can be any value, `by_nonmember` must be EXACTLY 0 --
+    /// see the acceptance framework's invariant.
+    pub b5_pile_pickup_by_member: u32,
+    /// B2: a non-member successfully took from a `BastionPile`. **Must be
+    /// 0 in every seed** under #96/#97's protection -- a nonzero value here
+    /// is the protection leaking, not a diagnostic curiosity. See
+    /// `b5_pile_pickup_by_member`'s doc.
+    pub b5_pile_pickup_by_nonmember: u32,
     /// bastion (B-LIVE3, mine lifecycle): designations that reached DONE
     /// (last non-access job completed). Telemetry for the harness/UI.
     pub done_count: u64,
@@ -15029,15 +15162,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // leftovers after the crew exited another way). Any claim
             // resets the clock; already-built rungs/steps stay (they're
             // real structure); the plan can re-emit fresh if still needed.
-            const ACCESS_STALE_SECS: f32 = 20.0;
-            // ITEM 2 (ROW-ITEM2-STALL-COUNTER-PACKET): PROVISIONAL. Opus's
-            // explicit instruction -- do not pick this from the 12-minute
-            // (job=703) specimen, that is n=1 calibration evidence, not a
-            // threshold. Must exceed a realistic worst-case access-job work
-            // leg; set from #70's corpus fields across 48 seeds, not from
-            // this constant's current value. Anything using this value
+            let access_stale_secs = access_stale_secs();
+            // ITEM 2 (ROW-ITEM2-STALL-COUNTER-PACKET): PROVISIONAL, now
+            // env-tunable (`access_stall_secs()`'s own doc) -- Opus's
+            // finding (2026-08-10): the fixed value right-censors its own
+            // calibration data, so overriding it is how a fan ever
+            // measures the real distribution. Anything using the default
             // before that fan lands is reading a placeholder.
-            const ACCESS_STALL_SECS: f32 = 120.0;
+            let access_stall_secs = access_stall_secs();
             let access_jobs_exist = board.jobs.values().any(|j| j.is_access);
             let access_claimed = board
                 .jobs
@@ -15100,7 +15232,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // reset below can clear it -- including the reset on
                 // THIS pass, if the threshold is hit right here.
                 board.b5_f3_idle_peak = board.b5_f3_idle_peak.max(board.access_idle_secs);
-                if board.access_idle_secs >= ACCESS_STALE_SECS {
+                if board.access_idle_secs >= access_stale_secs {
                     let before = board.jobs.len();
                     let stale: Vec<JobId> = board
                         .jobs
@@ -15172,7 +15304,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // it -- same discipline as `b5_f3_idle_peak` above.
                     board.b5_f3_stalled_peak =
                         board.b5_f3_stalled_peak.max(board.access_stalled_secs);
-                    if board.access_stalled_secs >= ACCESS_STALL_SECS {
+                    if board.access_stalled_secs >= access_stall_secs {
                         let before = board.jobs.len();
                         let stale: Vec<JobId> = board
                             .jobs
@@ -18410,6 +18542,43 @@ mod tests {
         let last: HashMap<common::bastion::JobId, f32> = HashMap::new();
         let claimed_access: [(common::bastion::JobId, f32); 0] = [];
         assert!(!any_claimed_access_progressed(&claimed_access, &last));
+    }
+
+    /// ROW-ITEM6-WITNESS-PACKET part A1: unset env -> the default.
+    #[test]
+    fn threshold_secs_unset_uses_default() {
+        assert_eq!(
+            parse_threshold_secs_or_refuse("BASTION_ACCESS_STALL_SECS", None, 120.0),
+            120.0
+        );
+    }
+
+    /// A1: set and valid -> that value, not the default.
+    #[test]
+    fn threshold_secs_valid_override_wins() {
+        assert_eq!(
+            parse_threshold_secs_or_refuse(
+                "BASTION_ACCESS_STALL_SECS",
+                Some("45.5".to_string()),
+                120.0
+            ),
+            45.5
+        );
+    }
+
+    /// A1: THE PLANTED FAILURE, by name -- "malformed env value silently
+    /// defaults." `BASTION_ACCESS_STALL_SECS=banana` must REFUSE (panic),
+    /// never quietly run at the default. If this test ever needs to become
+    /// `assert_eq!(.., 120.0)` to pass, the refuse-on-malformed contract
+    /// has been silently removed.
+    #[test]
+    #[should_panic(expected = "not a valid f32")]
+    fn threshold_secs_malformed_value_refuses_not_defaults() {
+        parse_threshold_secs_or_refuse(
+            "BASTION_ACCESS_STALL_SECS",
+            Some("banana".to_string()),
+            120.0,
+        );
     }
 
     /// T3.52 (E3, Fable-ruled 2026-07-27): entering Flee transitions

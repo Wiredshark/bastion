@@ -299,6 +299,14 @@ const CATALOG: &[EnvVarSiteV1] = &[
     ),
     site(
         "bastion-server/src/bastion_jobs.rs",
+        "BASTION_ACCESS_CLAIM_DIAG",
+        Diagnostic,
+        "F3-BRANCH / CLAIM-RELEASE event-driven diagnostic toggle -- pre-existing \
+         gap found and closed while adding ROW-ITEM6-WITNESS-PACKET's own two \
+         vars, unrelated to that row otherwise (this variable predates it)",
+    ),
+    site(
+        "bastion-server/src/bastion_jobs.rs",
         "BASTION_TIGHTDIG",
         GameplayVariant,
         "the FR15-TIGHTDIG alternate stuck-economy metric -- a real gameplay \
@@ -448,6 +456,24 @@ const CATALOG: &[EnvVarSiteV1] = &[
          Fail-loud identity-or-loud refactor for the shipped asset path itself is \
          separately tracked design debt, not part of this registration.",
     ),
+    site(
+        "bastion-server/src/bastion_jobs.rs",
+        "BASTION_ACCESS_STALE_SECS",
+        GameplayVariant,
+        "F3 pruner's idle-plan threshold (default 20.0s) -- ITEM 2's threshold-\
+         unblock row, 2026-08-10. Not diagnostic: changes when an abandoned \
+         access plan actually gets removed. Malformed value REFUSES rather than \
+         silently defaulting -- see access_stale_secs()'s own doc.",
+    ),
+    site(
+        "bastion-server/src/bastion_jobs.rs",
+        "BASTION_ACCESS_STALL_SECS",
+        GameplayVariant,
+        "F3 pruner's claimed-no-progress threshold (default 120.0s, PROVISIONAL \
+         pending #70 corpus fan). Not diagnostic: changes when a stalled-but-\
+         claimed access plan actually gets removed. Malformed value REFUSES \
+         rather than silently defaulting -- see access_stall_secs()'s own doc.",
+    ),
 ];
 
 /// Lines the scanner must not treat as an unregistered literal site: the
@@ -470,6 +496,15 @@ const MANUALLY_VERIFIED_INDIRECTED: &[(&str, &str)] = &[
     ("bastion-server/src/bastion_flight_recorder.rs", "BASTION_FLIGHT_RECORDER_MAX_SAMPLES"),
     ("bastion-server/src/bastion_flight_recorder.rs", "BASTION_FLIGHT_RECORDER_MAX_EVENTS"),
     ("world/src/site/genstat.rs", "SITE_GENERATION_STATS_VERBOSE"),
+    // ROW-ITEM6-WITNESS-PACKET part A1: `access_stale_secs()`/
+    // `access_stall_secs()` both route their actual `std::env::var(var)`
+    // call through the shared `env_threshold_secs_or_refuse(var, ..)`
+    // helper, so the literal name only appears at the CALLER (as an
+    // argument), never on the same line as `env::var(` itself -- same
+    // indirection shape as the flight-recorder entries above, verified by
+    // reading the source, not by the scanner.
+    ("bastion-server/src/bastion_jobs.rs", "BASTION_ACCESS_STALE_SECS"),
+    ("bastion-server/src/bastion_jobs.rs", "BASTION_ACCESS_STALL_SECS"),
 ];
 
 /// Re-scans the given directories (each some `<crate>/src`) right now for
