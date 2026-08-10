@@ -1,0 +1,46 @@
+# ITEM 6 acceptance leg (2026-08-10), post #96/#97 correction
+# (commit cbfb8ae977).
+#
+# Deliberately designates NO stockpile region at all -- the strongest
+# form of DECISIONS #101's discriminating case (a persistent pile
+# placed outside any stockpile region). If protection held only via
+# the rejected `stockpile_at(pos).is_some()` conjunction, EVERY
+# colonist pickup in this run would read as a refusal; #96/#97's
+# membership-only + global-gate design has no such dependency.
+#
+# Reads directly off inventory_manip.rs's B5.5/record_pickup_verdict
+# trace: `verdict=accepted, picker_colonist=Some(..)` proves colonists
+# still eat the protected pile via their own EatFrom job; the ABSENCE
+# of any `picker_is_rtsim=true, picker_colonist=None` accepted entry
+# for the whole run, across ANY item (not just the pile), is #97's
+# proof -- the AI-side gate makes the attempt structurally impossible
+# rather than logging a refusal, so zero-attempts is the expected
+# positive result, not a null result.
+#
+# Requires the connecting player hold the `admin` role (give_item/
+# dropall are admin-gated): `server-cli admin add <user> admin`
+# against the SAME VELOREN_USERDATA before boot.
+note ITEM6 #96/#97 acceptance -- zero stockpiles designated this run, on purpose
+anchor
+spawn 6
+wait 300
+note colony founded -- no stockpile designated; painting only work/rest so colonists are alive and hungry
+designate mine 15208 16008 410 15214 16014 418
+designate chop 15220 16008 414 15232 16026 428
+designate bed 15213 16013 419 15214 16014 420
+note provisioning a PERSISTENT pile via /dropall true -- outside any stockpile region (there is none)
+cmd give_item common.items.food.mushroom 60
+cmd dropall true
+wait 9000
+list_designations
+inspect_cell 15210 16010 415
+note checkpoint 1 (~5 min post-provision)
+wait 9000
+list_designations
+note checkpoint 2 (~10 min post-provision -- first hunger interrupt due around here)
+wait 9000
+note checkpoint 3 (~15 min post-provision)
+wait 9000
+note checkpoint 4 (~20 min post-provision -- milestone floor territory)
+wait 9000
+note checkpoint 5 (~25 min post-provision -- run complete)

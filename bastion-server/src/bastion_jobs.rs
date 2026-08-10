@@ -1504,6 +1504,29 @@ impl std::fmt::Debug for F3PruneBranch {
     }
 }
 
+/// bastion (ITEM 2, ROW-ITEM2-STALL-COUNTER-PACKET): whether ANY
+/// currently-claimed access job earned a reset this F3 pass — a net
+/// `progress` increase since `last_progress`'s snapshot of it, the same
+/// earned-reset predicate `stuck_job_progress` already applies for the
+/// teleport watchdog (Fable's B6 constraint: claim-holding alone, or any
+/// sub-block movement short of a real `progress` advance, must never
+/// count — that is the wobble bug this row exists to not rebuild).
+/// `claimed_access` is this pass's `(JobId, progress)` snapshot;
+/// `last_progress` is the PRIOR pass's. A job absent from `last_progress`
+/// (freshly claimed, or the map was empty) does not itself earn a reset
+/// — there is nothing to compare against yet, so it falls through to
+/// "no progress observed" for this one pass, exactly like a genuinely
+/// stalled job would; it gets its baseline this pass and a real chance
+/// to prove progress on the next one.
+pub(crate) fn any_claimed_access_progressed(
+    claimed_access: &[(common::bastion::JobId, f32)],
+    last_progress: &HashMap<common::bastion::JobId, f32>,
+) -> bool {
+    claimed_access
+        .iter()
+        .any(|(id, progress)| last_progress.get(id).is_some_and(|&last| *progress > last))
+}
+
 /// bastion (FR15-TIGHTDIG): the progress WINDOW length (seconds) — the
 /// displacement verdict is judged once per window; STUCK_TIMEOUT (10s)
 /// therefore allows ~5 consecutive no-progress verdicts before the
@@ -4123,6 +4146,28 @@ pub struct JobBoard {
     /// crew found another way out — would otherwise freeze one-plan-at-a-
     /// time colony-wide forever AND sit flagged unreachable on the board.
     access_idle_secs: f32,
+    /// bastion (ITEM 2, ROW-ITEM2-STALL-COUNTER-PACKET / ROW60-FIX-
+    /// PROPOSAL option 2): consecutive seconds branch C (a claimed access
+    /// job exists) has held with NO claimed access job making net
+    /// progress. `access_idle_secs` only ever sees an UNCLAIMED plan — a
+    /// colonist that claims an access job and then stalls (measured
+    /// specimen: `job=703`, 22,080 ticks / ~12 min, `CLAIM` to `RELEASE`)
+    /// resets that clock unconditionally and keeps the whole plan alive
+    /// forever. Reset is EARNED by a same-job `progress` increase via
+    /// `access_job_progress` below, same net-progress-with-hysteresis
+    /// discipline as `stuck_job_progress` — never by claim-holding alone,
+    /// never by any-movement (Fable's B6 constraint: a sub-block-wobble
+    /// reset here would rebuild the bug this row exists to kill, one
+    /// layer up).
+    access_stalled_secs: f32,
+    /// bastion (ITEM 2): last-seen `progress` per currently-claimed
+    /// access `JobId`, the per-job counterpart of `stuck_job_progress`
+    /// (that one is per-colonist, for the teleport watchdog; this one is
+    /// per-job, for the F3 stall counter above — different cadence,
+    /// same earned-reset pattern). Stale entries for released/removed
+    /// jobs are harmless (never read once the job is gone; bounded by
+    /// live job count).
+    access_job_progress: HashMap<common::bastion::JobId, f32>,
     /// bastion (#68, port row): last-known claimant per LIVE access job,
     /// diffed each pass against current state to emit CLAIM/RELEASE
     /// events (`access_claim_diag_enabled()`). Maintained only while the
@@ -14963,6 +15008,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // resets the clock; already-built rungs/steps stay (they're
             // real structure); the plan can re-emit fresh if still needed.
             const ACCESS_STALE_SECS: f32 = 20.0;
+            // ITEM 2 (ROW-ITEM2-STALL-COUNTER-PACKET): PROVISIONAL. Opus's
+            // explicit instruction -- do not pick this from the 12-minute
+            // (job=703) specimen, that is n=1 calibration evidence, not a
+            // threshold. Must exceed a realistic worst-case access-job work
+            // leg; set from #70's corpus fields across 48 seeds, not from
+            // this constant's current value. Anything using this value
+            // before that fan lands is reading a placeholder.
+            const ACCESS_STALL_SECS: f32 = 120.0;
             let access_jobs_exist = board.jobs.values().any(|j| j.is_access);
             let access_claimed = board
                 .jobs
@@ -15057,6 +15110,60 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 F3PruneBranch::Idle
             } else {
                 board.access_idle_secs = 0.0;
+                // ITEM 2 (ROW-ITEM2-STALL-COUNTER-PACKET, option 2
+                // ratified): the fix instinct that was aimed at the wrong
+                // branch -- "no progress" is a property of a CLAIMED job,
+                // so it lives here, not on the B/C boundary. Collect
+                // (job, progress) for every currently-claimed access job
+                // first (avoids mutating `access_job_progress` while
+                // `board.jobs` is borrowed, same collect-then-mutate shape
+                // as branch B's own `stale` sweep above), then earn a
+                // reset per job exactly like `stuck_job_progress` does for
+                // the teleport watchdog: a net progress increase since the
+                // last F3 pass resets that job's baseline; holding a claim
+                // with an unchanged `progress` does not.
+                let claimed_access: Vec<(common::bastion::JobId, f32)> = board
+                    .jobs
+                    .iter()
+                    .filter(|(_, j)| j.is_access && j.claimed_by.is_some())
+                    .map(|(id, j)| (*id, j.progress))
+                    .collect();
+                let any_progress =
+                    any_claimed_access_progressed(&claimed_access, &board.access_job_progress);
+                for (id, progress) in &claimed_access {
+                    board.access_job_progress.insert(*id, *progress);
+                }
+                if access_claimed && !any_progress {
+                    board.access_stalled_secs += 1.0; // this pass ≈ once per second
+                    if board.access_stalled_secs >= ACCESS_STALL_SECS {
+                        let before = board.jobs.len();
+                        let stale: Vec<JobId> = board
+                            .jobs
+                            .iter()
+                            .filter_map(|(id, job)| {
+                                (job.is_access && !board.emergency_access_jobs.contains_key(id))
+                                    .then_some(*id)
+                            })
+                            .collect();
+                        for id in stale {
+                            // Same single removal path as branch B's sweep
+                            // -- never a raw `jobs.remove` here either, for
+                            // the same reservation-leak reason.
+                            board.remove_job(id);
+                            if let Some(owner) = board.emergency_access_jobs.remove(&id) {
+                                board.emergency_cleanup_pending.insert(owner);
+                            }
+                        }
+                        info!(
+                            pruned = before - board.jobs.len(),
+                            "bastion: stalled access plan abandoned (F3 pruner, claimed-no-progress)"
+                        );
+                        board.access_stalled_secs = 0.0;
+                        board.b5_f3_prunes_fired += 1;
+                    }
+                } else {
+                    board.access_stalled_secs = 0.0; // EARNED reset
+                }
                 board.b5_f3_ticks_branch_c += 1;
                 F3PruneBranch::ClaimedOrAbsent
             };
@@ -15076,6 +15183,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         material_held,
                         idle_before,
                         idle = board.access_idle_secs,
+                        stalled = board.access_stalled_secs,
                         "bastion F3-BRANCH"
                     );
                 }
@@ -18177,6 +18285,95 @@ fn reservation_indices_are_consistent_v1(
 mod tests {
     use super::*;
     use std::num::NonZeroU64;
+
+    /// ITEM 2 (ROW-ITEM2-STALL-COUNTER-PACKET): planted RED-first --
+    /// today's branch C resets `access_idle_secs` unconditionally on any
+    /// claim, so a claimed job whose `progress` never moves between two
+    /// F3 passes must NOT read as earning a reset. This is the failure
+    /// the row exists to fix; it must fail before the branch-C rewrite
+    /// and pass after.
+    #[test]
+    fn access_stall_no_reset_when_claimed_progress_unchanged() {
+        let last: HashMap<common::bastion::JobId, f32> = [(703u64, 5.0)].into_iter().collect();
+        let claimed_access = [(703u64, 5.0)]; // same progress as last pass
+        assert!(
+            !any_claimed_access_progressed(&claimed_access, &last),
+            "no progress increase -- must not earn a reset"
+        );
+    }
+
+    /// ITEM 2: a same-job progress INCREASE earns the reset -- the
+    /// positive case the counter exists to distinguish from the RED
+    /// above.
+    #[test]
+    fn access_stall_earns_reset_on_progress_increase() {
+        let last: HashMap<common::bastion::JobId, f32> = [(703u64, 5.0)].into_iter().collect();
+        let claimed_access = [(703u64, 5.5)];
+        assert!(
+            any_claimed_access_progressed(&claimed_access, &last),
+            "a real progress advance must earn a reset"
+        );
+    }
+
+    /// ITEM 2: THE ANTI-REGRESSION THAT MATTERS MOST (Opus's framing --
+    /// this is the one that would catch an any-movement implementation
+    /// hiding behind a passing RED). A claimed job making steady net
+    /// progress across many consecutive passes must earn a reset on
+    /// EVERY pass, however long the job runs -- it must never
+    /// accidentally read as stalled just because the increments are
+    /// small, matching Fable's B6 constraint (net progress with
+    /// hysteresis, not any-movement, and definitely not claim-holding
+    /// alone).
+    #[test]
+    fn access_stall_progressing_job_never_reads_as_stalled_across_many_passes() {
+        let mut last: HashMap<common::bastion::JobId, f32> = HashMap::new();
+        last.insert(703, 0.0);
+        for pass in 1..=200 {
+            let progress = pass as f32 * 0.01; // small but strictly increasing
+            let claimed_access = [(703u64, progress)];
+            assert!(
+                any_claimed_access_progressed(&claimed_access, &last),
+                "pass {pass}: steady net progress must earn a reset, every pass"
+            );
+            last.insert(703, progress);
+        }
+    }
+
+    /// ITEM 2: the aggregate reads TRUE if ANY claimed access job
+    /// progressed, even while a sibling job on the same board is
+    /// genuinely stalled -- branch C's fix unsticks the whole plan on
+    /// real activity anywhere in it, matching branch B's own
+    /// whole-plan-prune shape.
+    #[test]
+    fn access_stall_any_progress_among_multiple_claimed_jobs_earns_reset() {
+        let last: HashMap<common::bastion::JobId, f32> =
+            [(1u64, 2.0), (2u64, 9.0)].into_iter().collect();
+        let claimed_access = [(1u64, 2.0), (2u64, 9.5)]; // job 2 advanced, job 1 didn't
+        assert!(any_claimed_access_progressed(&claimed_access, &last));
+    }
+
+    /// ITEM 2: a job with no PRIOR snapshot (freshly claimed, or the
+    /// map was empty) has nothing to compare against yet -- it does not
+    /// itself earn a reset on the pass it first appears. It gets its
+    /// baseline this pass and a real chance to prove progress next
+    /// pass, same as a genuinely-just-claimed job should.
+    #[test]
+    fn access_stall_freshly_seen_job_does_not_earn_reset_on_first_pass() {
+        let last: HashMap<common::bastion::JobId, f32> = HashMap::new();
+        let claimed_access = [(703u64, 0.0)];
+        assert!(!any_claimed_access_progressed(&claimed_access, &last));
+    }
+
+    /// ITEM 2: no claimed access jobs at all -- vacuous, must not read
+    /// as progress (branch C's "Absent" sub-case; the caller's own
+    /// `access_claimed` guard is the real gate for this, but the pure
+    /// function must not misreport on an empty input either).
+    #[test]
+    fn access_stall_no_claimed_jobs_is_not_progress() {
+        let last: HashMap<common::bastion::JobId, f32> = HashMap::new();
+        let claimed_access: [(common::bastion::JobId, f32); 0] = [];
+        assert!(!any_claimed_access_progressed(&claimed_access, &last));
+    }
 
     /// T3.52 (E3, Fable-ruled 2026-07-27): entering Flee transitions
     /// Drive, full stop — the extracted function's signature cannot even
