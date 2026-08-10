@@ -135,23 +135,57 @@ One counter per verdict reason, **kept separate — never summed into a total**:
 > pickup time** — and the `is_loaded` saga established that entity↔npc state
 > timing is exactly where such predicates wobble.
 >
-> **Therefore each reason counter is split by whether the PICKER is a colonist:**
+> ### ★ CORRECTED — **THE FIRST VERSION OF THIS AMENDMENT WAS UNFALSIFIABLE** (5b's catch, verified at source)
 >
-> | | colonist picker | non-colonist picker |
-> |---|---|---|
-> | `bastion-pile-protected` | `..._pile_protected_colonist` | `..._pile_protected_ambient` |
-> | `ambient-loot-disabled` | **`..._ambient_disabled_colonist`** ← *the prediction's discriminator* | `..._ambient_disabled_ambient` |
-> | `loot-owned` | `..._loot_owned_colonist` | `..._loot_owned_ambient` |
+> **The split as first written could not work for two of the three reasons.**
+> Verified at `inventory_manip.rs` @ `07ba0cc17b`:
 >
-> **`b5_pickup_refused_ambient_disabled_colonist > 0` confirms the prediction and
-> localises the bug to the membership predicate. `== 0` kills it clean**, and the
-> mover signature then needs a different producer. **Either way the fan decides
-> it** — which is the whole point of registering it before the data exists.
+> - **`:315-316`** — `bastion_piles.contains(item_entity) && bastion_colonists.get(entity).is_none()`
+> - **`:342-343`** — `rtsim_entities.contains(entity) && bastion_colonists.get(entity).is_none()`
 >
-> *Without the split, a nonzero `ambient-loot-disabled` count is ambiguous
-> between "the gate is correctly refusing ambient NPCs" (working as designed) and
-> "the gate is refusing colonists" (the bug) — the two readings that matter most,
-> collapsed into one number.* **Aggregate late.**
+> **Both branches carry `is_none()` as an ENTRY CONDITION.** A `_colonist` counter
+> inside either reads the same component the gate just tested, at the same
+> instant, and is **0 BY CONSTRUCTION**. The claim that `== 0` "kills the
+> prediction clean" was **false** — it is 0 whether the race is real or not.
+> **Not a weak test: a non-test.**
+>
+> ### THE CORRECTED DESIGN
+>
+> | reason | split? |
+> |---|---|
+> | `bastion-pile-protected` | **NO** — flat counter. Predicate fixes the value. |
+> | `ambient-loot-disabled` | **NO** — flat counter. Same reason. |
+> | `loot-owned` | **YES** — `..._loot_owned_colonist` / `..._loot_owned_ambient`. Its predicate (`loot_owner.can_pickup`, via groups/alignments/stats/players) **never touches `bastion_colonists`**, so a colonist genuinely can be refused here. Real signal. |
+>
+> **The timing prediction is tested by a DEFERRED READ, correlated by uid:**
+>
+> - at refusal under `ambient-loot-disabled`, record the **picker's uid** (and tick if free)
+> - **at run end**, check which of those uids are colonists *then*
+> - emit `b5_pickup_refused_ambient_uids` and **`b5_pickup_refused_ambient_later_colonist`**
+>
+> ★★★ **Why this works where the split did not: THE SECOND READ HAPPENS AT A
+> DIFFERENT TIME FROM THE BRANCH PREDICATE.** *The tautology came from reading the
+> same component in the same instant; a deferred read is not constrained by the
+> branch that recorded the uid.* **`later_colonist > 0` means an entity refused as
+> ambient turned out to be a colonist — the late-component race. `== 0` genuinely
+> kills it.**
+>
+> **CONFOUND TO CLOSE, and it decides how decisive this is:** if colonists can be
+> **recruited mid-run**, a uid may legitimately be ambient at refusal and a
+> colonist at run end with no race. **If they are seeded at startup and membership
+> never changes, the confound vanishes and `later_colonist > 0` is decisive
+> alone.** Establish which and state it in the commit message; if mid-run
+> recruitment is possible, record the refusal tick and read the delta — a small
+> gap is a race, a large one is recruitment.
+>
+> ### ★ THE LAW THIS BROKE, STRENGTHENED
+>
+> > **Writing both branches as field expressions is NECESSARY AND NOT SUFFICIENT.
+> > VERIFY THE FIELD CAN ACTUALLY TAKE BOTH VALUES WHERE IT IS PLACED.**
+>
+> **A field expression that is constant by construction has ONE branch, however
+> many you write.** *A counter inside a branch cannot vary on a predicate that
+> branch has already fixed.* — see [[a-registered-prediction-is-a-requirement-on-the-instrument]].
 
 > **Separate counters, not a total, and not a bool.** A summed
 > `refusals_total` answers "did anything refuse" and no adjacent question — and
