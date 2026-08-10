@@ -631,6 +631,21 @@ impl AgentData<'_> {
                     // caller: every `Goto` consumer, bastion or vanilla,
                     // now stands before moving.
                     controller.push_action(ControlAction::Stand);
+                    // #94 acceptance instrument (Opus, Fable co-signed):
+                    // the defect this fixes is RNG-gated (IDLE_SIT_RATE),
+                    // so "zero ULTIMATE FAIL-SAFE teleports" alone can't
+                    // distinguish "fixed" from "never exercised" on any
+                    // one run. Witness the fix's own precondition --
+                    // ungated, permanent, self-accounting: if a future
+                    // refactor breaks the Stand push above, this count
+                    // silently drops to zero while fail-safes climb,
+                    // which is diagnostic on its own.
+                    if matches!(self.char_state, CharacterState::Sit) {
+                        tracing::info!(
+                            uid = self.uid.0.get(),
+                            "bastion GOTO-STAND-RESCUE"
+                        );
+                    }
 
                     agent.bearing = Vec2::zero();
 
