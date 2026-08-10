@@ -24,6 +24,23 @@ own rule is explicit:
 
 > ## **THEREFORE: the witness counters and the event stream MUST BE RECONCILED, NEVER STACKED.**
 
+### ★ AMENDMENT (Fable, after stage 2) — **"DELETED IN FAVOUR OF A PRODUCER" REQUIRES A GRANULARITY ACCOUNTING**
+
+**The rule as I first wrote it was too coarse and it cost a silent downgrade.**
+Stage 2 deleted a **nine-verdict per-event** flight-recorder trail; two verdicts
+became event-stream records (**an upgrade** — structured, with tick and actor)
+and seven became **run-total aggregate counters** (**a downgrade** — no tick, no
+picker, no per-event detail).
+
+> **A replacement must MATCH OR EXCEED the deleted trail's granularity PER FACT —
+> or the delta is named at deletion time.** *"Two verdicts upgraded, seven
+> demoted to aggregate" would have been one honest sentence.*
+
+★ **The deletion here was still licensed** (its hunt closed and was tagged
+2026-07-20, traced and spot-checked). **The gap was that nothing forced the
+accounting to be stated** — and an unstated downgrade is indistinguishable from
+an oversight six months later.
+
 **The reconciliation, decided here so it is not rediscovered at the boundary:**
 
 - **The counters STAY.** They are cheap aggregates, they are what a corpus fan
