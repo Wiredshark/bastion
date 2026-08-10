@@ -14281,8 +14281,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         for (entity, release_reason) in &to_release {
             *board.release_reason_counts.entry(*release_reason).or_insert(0) += 1;
             if let Some(active) = active_jobs.get(*entity) {
+                let job_id = active.job;
+                // Entity-event-log stage 2, Measure 0's producer (Opus's
+                // catch, 2026-08-10): captured HERE, before `job.claimed_by
+                // = None` below -- the drain loop is also where that field
+                // gets nulled, so emitting after the mutation (or after the
+                // whole loop, re-querying board state that's by then
+                // already cleared) would produce a `Released` event with
+                // nothing identifying WHOSE claim it was, answering neither
+                // of this event's two named customers (mover-clustering's
+                // orphaned-claim question; seed 69's stall-prune
+                // hypothesis). `uids.get` may miss if the entity is mid-
+                // teardown -- skip rather than emit a subject-less event.
+                if let Some(subject) = uids.get(*entity).copied() {
+                    crate::bastion_entity_event_log::record_event(
+                        tick.0,
+                        subject,
+                        crate::bastion_entity_event_log::EventKind::Colonist(
+                            crate::bastion_entity_event_log::ColonistEventKind::Released {
+                                job: job_id,
+                                reason: (*release_reason).into(),
+                            },
+                        ),
+                        None,
+                    );
+                }
                 // If the job still exists and is still claimed by us, free it.
-                if let Some(job) = board.jobs.get_mut(&active.job)
+                if let Some(job) = board.jobs.get_mut(&job_id)
                     && job.claimed_by == uids.get(*entity).copied()
                     && !job.unreachable
                 {

@@ -1,12 +1,21 @@
 //! The entity event log (DECISIONS #99, `ROW-ENTITY-EVENT-LOG-PACKET`).
 //!
-//! **Stage 1 only: the stream, the per-entity ring, the promotion flag.**
-//! Producers (stage 2 -- converting `record_pickup_verdict` and friends)
-//! and persistence (stage 3 -- save/load across the promotion boundary) are
-//! deliberately NOT part of this module. Per the packet's own staging
-//! discipline, they land only once stage 1's paired determinism-floor gate
-//! is green; nothing here calls into them and nothing outside this module
-//! calls `record_event` yet.
+//! **Stage 1: the stream, the per-entity ring, the promotion flag.** Gated
+//! behind stage 1's paired determinism-floor gate going green (attested,
+//! 2026-08-10, `dda63e376`): **stage 2 ground-phase producers have landed**
+//! -- `record_pickup_verdict` (`server/src/events/inventory_manip.rs`,
+//! `ItemEventKind::PickedUp` on the two state-changing verdicts only) and
+//! the `to_release` drain choke point (`bastion_jobs.rs:14281`,
+//! `ColonistEventKind::Released`, Measure 0's producer). Item scope is
+//! GROUND-PHASE ONLY (`Created`/`Dropped`/`PickedUp`/`Reserved`/
+//! `Released`/`Despawned`) -- `Consumed`/`Split`/`Merged` are deliberately
+//! NOT wired: neither `Uid` nor `PickupItem`'s `ItemInstanceId` survives an
+//! item's pickup (traced 2026-08-10; `ItemInstanceId` lives only on
+//! `PickupItem`, is re-minted fresh on every re-drop, and is read nowhere
+//! in the tree today), so there is no subject to key an in-inventory event
+//! against until that identity gap closes (routed to Fable as its own row).
+//! Persistence (stage 3 -- save/load across the promotion boundary) is
+//! still deliberately NOT part of this module.
 //!
 //! Disabled unless `BASTION_ENTITY_EVENT_LOG` is set: no init, no
 //! allocation beyond the (empty) process-global slot, no ECS mutation, no

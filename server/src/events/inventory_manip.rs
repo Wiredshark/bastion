@@ -75,30 +75,28 @@ event_emitters! {
         stance: ChangeStanceEvent,
     }
 }
-/// ENGOPT6 hunt round 4: pickup-verdict trail. The round-3 tape pair showed
-/// the contested item's `PickupItem` comp vanishing at tick 3947 in one run
-/// only (the synchronous comp-take of a successful pickup, deletion deferred
-/// to maintain), with every recorded quantity byte-equal before — the
-/// discriminating state therefore lives in THIS arm's verdict path (range /
-/// ownership / inventory space / event order). One event per pickup attempt;
-/// a tick with a verdict in one run and NO event in the other indicts the
-/// EMIT side upstream instead.
-fn record_pickup_verdict(tick: u64, picker: u64, item: u64, verdict: &str, extra: String) {
-    if bastion_server::bastion_flight_recorder::enabled() {
-        bastion_server::bastion_flight_recorder::record_writer(
-            bastion_server::bastion_flight_recorder::WriterEvent {
-                schema: "bastion.flight-recorder.event/v1".into(),
-                tick,
-                uid: picker,
-                observation_sequence: 310,
-                snapshot_stage: "pickup-verdict".into(),
-                dispatcher_dependency_proven: false,
-                writer: "inventory_manip_pickup".into(),
-                move_dir: [0.0; 2],
-                move_z: 0.0,
-                target: None,
-                note: format!("item={item}; verdict={verdict}; {extra}"),
-            },
+/// ENGOPT6 hunt round 4: pickup-verdict trail, ORIGINALLY the
+/// flight-recorder's job. Entity-event-log stage 2 (ground-phase producers,
+/// 2026-08-10, Opus's ruling): the flight-recorder note write is deleted in
+/// favour of a real `ItemEventKind::PickedUp` event, not left beside it --
+/// "two logs of one fact" is exactly what this row exists to stop. Only the
+/// two STATE-CHANGING verdicts (`"partial"`, `"accepted"`) produce an event;
+/// every refusal verdict (`entity-missing`, `out-of-range`, `loot-owned`,
+/// `bastion-pile-protected`, `ambient-loot-disabled`, `comp-taken`,
+/// `inventory-full`) is a non-event for the item -- nothing happened to it,
+/// so it stays exactly where it already lived: item 6's witness counters at
+/// each call site, never here. `item`/`picker` are `Uid`s, not references
+/// into live ECS state, so this is a safe post-mutation call regardless of
+/// when the caller's own entity deletion actually lands.
+fn record_pickup_verdict(tick: u64, picker: Uid, item: Uid, verdict: &str, _extra: String) {
+    if matches!(verdict, "partial" | "accepted") {
+        bastion_server::bastion_entity_event_log::record_event(
+            tick,
+            item,
+            bastion_server::bastion_entity_event_log::EventKind::Item(
+                bastion_server::bastion_entity_event_log::ItemEventKind::PickedUp,
+            ),
+            Some(picker),
         );
     }
 }
@@ -235,8 +233,8 @@ impl ServerEvent for InventoryManipEvent {
                         debug!("Failed to get entity for item Uid: {}", pickup_uid);
                         record_pickup_verdict(
                             data.tick.0,
-                            uid.0.get(),
-                            pickup_uid.0.get(),
+                            *uid,
+                            pickup_uid,
                             "entity-missing",
                             String::new(),
                         );
@@ -252,8 +250,8 @@ impl ServerEvent for InventoryManipEvent {
                         );
                         record_pickup_verdict(
                             data.tick.0,
-                            uid.0.get(),
-                            pickup_uid.0.get(),
+                            *uid,
+                            pickup_uid,
                             "out-of-range",
                             String::new(),
                         );
@@ -294,8 +292,8 @@ impl ServerEvent for InventoryManipEvent {
                     if !ownership_check_passed {
                         record_pickup_verdict(
                             data.tick.0,
-                            uid.0.get(),
-                            pickup_uid.0.get(),
+                            *uid,
+                            pickup_uid,
                             "loot-owned",
                             String::new(),
                         );
@@ -332,8 +330,8 @@ impl ServerEvent for InventoryManipEvent {
                     {
                         record_pickup_verdict(
                             data.tick.0,
-                            uid.0.get(),
-                            pickup_uid.0.get(),
+                            *uid,
+                            pickup_uid,
                             "bastion-pile-protected",
                             String::new(),
                         );
@@ -363,8 +361,8 @@ impl ServerEvent for InventoryManipEvent {
                     {
                         record_pickup_verdict(
                             data.tick.0,
-                            uid.0.get(),
-                            pickup_uid.0.get(),
+                            *uid,
+                            pickup_uid,
                             "ambient-loot-disabled",
                             String::new(),
                         );
@@ -423,8 +421,8 @@ impl ServerEvent for InventoryManipEvent {
                         );
                         record_pickup_verdict(
                             data.tick.0,
-                            uid.0.get(),
-                            pickup_uid.0.get(),
+                            *uid,
+                            pickup_uid,
                             "comp-taken",
                             String::new(),
                         );
@@ -494,8 +492,8 @@ impl ServerEvent for InventoryManipEvent {
                                 }
                                 record_pickup_verdict(
                                     data.tick.0,
-                                    uid.0.get(),
-                                    pickup_uid.0.get(),
+                                    *uid,
+                                    pickup_uid,
                                     "partial",
                                     format!("free_slots={}", inventory.free_slots()),
                                 );
@@ -503,8 +501,8 @@ impl ServerEvent for InventoryManipEvent {
                             } else {
                                 record_pickup_verdict(
                                     data.tick.0,
-                                    uid.0.get(),
-                                    pickup_uid.0.get(),
+                                    *uid,
+                                    pickup_uid,
                                     "inventory-full",
                                     format!("free_slots={}", inventory.free_slots()),
                                 );
@@ -579,8 +577,8 @@ impl ServerEvent for InventoryManipEvent {
                             }
                             record_pickup_verdict(
                                 data.tick.0,
-                                uid.0.get(),
-                                pickup_uid.0.get(),
+                                *uid,
+                                pickup_uid,
                                 "accepted",
                                 format!(
                                     "free_slots={}; reinserted={}",
