@@ -122,7 +122,32 @@ the NPC.** The subject is the pile; the refused NPC is the `actor`.
 
 ---
 
-## STAGE 3 — PROMOTION + PERSISTENCE
+## ★ VOCABULARY RULING — **"PROMOTED" IS TAKEN. THIS CONCEPT IS "RETAINED".**
+
+**5b found the collision in read-only prep, before it reached a doc.**
+`BastionColonist`'s own comment (`common/src/bastion.rs:1441`) already uses it:
+
+> *"…mirrored into the ECS `comp::Colonist` when the NPC is **promoted** to a
+> loaded entity."*
+
+**That is rtsim's established meaning — simulated-but-unloaded → live ECS
+entity.** The event log's concept is a *different axis entirely*: ring →
+unbounded permanent store. **A stage-3 log line reading "colonist promoted" would
+be read as the wrong one by anyone who knows rtsim.**
+
+> ## **RULING: the event-log concept is RETAINED / RETENTION. "Promotion" stays
+> rtsim's, unqualified.** *`retained: bool`, `retain(uid)`, the "retained set".*
+
+★ **Chosen because it describes the MECHANISM (kept, versus ring-evicted) rather
+than a status**, so it cannot drift back into meaning "became important" — which
+is the sense that collides. **The design's prose about significance is unchanged;
+only the term for the mechanism moves.**
+
+★★ **Rename before stage 3 opens.** *A term is cheap to change while it lives in
+one packet and expensive once it is in five docs, a field name, and a log line —
+and this one would have been actively misleading, not merely ambiguous.*
+
+## STAGE 3 — RETENTION + PERSISTENCE
 
 **Promotion is one-way and cheap: a flag plus a move from ring to permanent.** An
 entity promotes on acquiring significance — a colonist is named; an item is
