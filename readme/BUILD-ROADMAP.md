@@ -12,6 +12,7 @@ Format: append changelog at bottom; statuses edited in place. Newest ruling wins
 - **Diagnostics never verdict terms** (#70 pattern); **event-driven emits only** (diag-density budget).
 - **Instrument + registry row land in the same commit**; **asset tuning touches compiled default same commit**.
 - **Ruling acknowledged = packet edited, one operation** (#101). **Claims are not artifacts.**
+- **A WITHDRAWAL is a ledger event too**: retraction and roadmap/packet edit are ONE operation — withdrawing has no natural trigger, which is exactly why stale entries outlive dead claims.
 - **Every bar names its window AND its arena (who else can act)** (#95); success signature in every observable.
 
 ## ARC 1 — Close the survival loop (items 1–8)
@@ -23,7 +24,7 @@ Format: append changelog at bottom; statuses edited in place. Newest ruling wins
 | 4 | Egress planner (verdicts-without-plans) | PARKED — likely symptom of 3; re-scores on own signature post-3; VOID-on-zero recorded |
 | 5 | Server-authoritative test timing (Wait(n)) | PACKETED (ROW-WAIT), builds after 2 |
 | 6 | Protected persistent provisioning + stockpile eating | **BUILT** cbfb8ae977 (membership-only + #97 two-layer gate); acceptance run IN FLIGHT (script-12, field-pile case decisive) |
-| 7 | Farm-to-table self-sufficiency | **BLOCKED by located bug**: sow never fires — farm jobs created z=415 under z=418-419 surface; two code reads queued (job-Z producer; shared-origin check vs arrival math) |
+| 7 | Farm-to-table self-sufficiency | **ROOT CAUSE CLOSED (deductive), one read open**: farm SOW jobs are phantom-retired by a TERRAIN READ FAILURE at the crop cell, misreported as designation-mismatch. `terrain.get(pos).ok().is_some_and(job_still_wanted)` (bastion_jobs ~8575) collapses read-failure into predicate-false; `Designated(Farm)` returns true UNCONDITIONALLY (~1408 arm), so the ONLY retirement path is the read failing. Data: 48/48 sow=true created→retired, zero claimed; 48/48 sow=false claimed+arrived, zero retired; `sown`=0 in 40,983 lines; cpos=gpos+1 confirmed per column (the failing read is one block ABOVE tilled ground). OPEN: why terrain.get fails at a readable cell (air is a valid block) — that tension is the argument FOR the fix. FIX SHAPE: split the two false cases — a read failure must not report as designation-mismatch, and probably must not retire. Filed: FARM-SOW-PHANTOM-RETIRE-FINDING.md (5b). Earlier z-415 candidate WITHDRAWN (refuted — Z follows terrain; gradient opposite); shared-origin question VOID with it. |
 | 8 | Multi-day endurance run (TIER-1 AUTONOMY GATE) | waits on 2,3,6,7 — the "colony runs itself" milestone; Ben gets observer seat |
 
 ## ARC 1.5 — Infrastructure (runs alongside)
