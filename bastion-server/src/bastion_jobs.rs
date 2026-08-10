@@ -1518,6 +1518,12 @@ impl std::fmt::Debug for F3PruneBranch {
 /// "no progress observed" for this one pass, exactly like a genuinely
 /// stalled job would; it gets its baseline this pass and a real chance
 /// to prove progress on the next one.
+///
+/// DELIBERATELY board-level, not per-job: one progressing claimed
+/// access job resets `access_stalled_secs` for ALL of them, matching
+/// branch B's own whole-plan-prune shape (the plan is alive if any part
+/// of it is advancing). Correct for a whole-plan prune; would be wrong
+/// the moment anyone builds PER-JOB pruning on top of this.
 pub(crate) fn any_claimed_access_progressed(
     claimed_access: &[(common::bastion::JobId, f32)],
     last_progress: &HashMap<common::bastion::JobId, f32>,
@@ -4164,9 +4170,16 @@ pub struct JobBoard {
     /// access `JobId`, the per-job counterpart of `stuck_job_progress`
     /// (that one is per-colonist, for the teleport watchdog; this one is
     /// per-job, for the F3 stall counter above — different cadence,
-    /// same earned-reset pattern). Stale entries for released/removed
-    /// jobs are harmless (never read once the job is gone; bounded by
-    /// live job count).
+    /// same earned-reset pattern). `JobId`s are never reused
+    /// (monotonic), so nothing here is self-correcting: `remove_job`
+    /// does not touch this map, so an insert-only implementation grows
+    /// with every access job EVER claimed across a run, not the number
+    /// alive (Opus's catch — the entries themselves are never read once
+    /// stale, but that is not the same claim as bounded). Pruned to the
+    /// live claimed set every F3 pass instead (`retain`, right after the
+    /// insert loop below) — small per entry, but "small × forever" is
+    /// exactly the shape a multi-day item-8 endurance run would surface
+    /// and a short run never will.
     access_job_progress: HashMap<common::bastion::JobId, f32>,
     /// bastion (#68, port row): last-known claimant per LIVE access job,
     /// diffed each pass against current state to emit CLAIM/RELEASE
@@ -15133,6 +15146,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 for (id, progress) in &claimed_access {
                     board.access_job_progress.insert(*id, *progress);
                 }
+                // Opus's catch: `JobId`s are never reused, so an
+                // insert-only map grows with every access job EVER
+                // claimed, not the number alive -- `remove_job` doesn't
+                // touch it. Pruned to exactly this pass's claimed set
+                // every pass instead of on removal, so it never needs a
+                // second removal path to stay in sync with `board.jobs`.
+                board
+                    .access_job_progress
+                    .retain(|id, _| claimed_access.iter().any(|(c, _)| c == id));
                 if access_claimed && !any_progress {
                     board.access_stalled_secs += 1.0; // this pass ≈ once per second
                     if board.access_stalled_secs >= ACCESS_STALL_SECS {
