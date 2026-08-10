@@ -121,6 +121,38 @@ One counter per verdict reason, **kept separate — never summed into a total**:
 | `b5_pickup_refused_ambient_disabled` | `ambient-loot-disabled` |
 | `b5_pickup_refused_loot_owned` | `loot-owned` |
 
+> ## AMENDMENT (Fable's registered prediction, `1795ca2738` follow-up) — **BREAK EACH REASON DOWN BY PICKER CLASS**
+>
+> **A flat per-reason counter cannot test the prediction that has been registered
+> against this fan, so the flat design is insufficient as written.**
+>
+> **THE REGISTERED PREDICTION, recorded here PRE-DATA, candidate-not-claim:**
+> *if `ambient-loot-disabled` refusals fire on **colonist** pickers, the five
+> movers are explained and the gate has a membership/timing bug.* Mechanism
+> sketch, for the record only: the belt-and-suspenders predicate
+> (`rtsim_entities.contains(entity) && bastion_colonists.get(..).is_none()`)
+> depends on the `Colonist` component being present on the loaded entity **at
+> pickup time** — and the `is_loaded` saga established that entity↔npc state
+> timing is exactly where such predicates wobble.
+>
+> **Therefore each reason counter is split by whether the PICKER is a colonist:**
+>
+> | | colonist picker | non-colonist picker |
+> |---|---|---|
+> | `bastion-pile-protected` | `..._pile_protected_colonist` | `..._pile_protected_ambient` |
+> | `ambient-loot-disabled` | **`..._ambient_disabled_colonist`** ← *the prediction's discriminator* | `..._ambient_disabled_ambient` |
+> | `loot-owned` | `..._loot_owned_colonist` | `..._loot_owned_ambient` |
+>
+> **`b5_pickup_refused_ambient_disabled_colonist > 0` confirms the prediction and
+> localises the bug to the membership predicate. `== 0` kills it clean**, and the
+> mover signature then needs a different producer. **Either way the fan decides
+> it** — which is the whole point of registering it before the data exists.
+>
+> *Without the split, a nonzero `ambient-loot-disabled` count is ambiguous
+> between "the gate is correctly refusing ambient NPCs" (working as designed) and
+> "the gate is refusing colonists" (the bug) — the two readings that matter most,
+> collapsed into one number.* **Aggregate late.**
+
 > **Separate counters, not a total, and not a bool.** A summed
 > `refusals_total` answers "did anything refuse" and no adjacent question — and
 > the adjacent question (*which layer refused*) is the entire diagnostic value.
