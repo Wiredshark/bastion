@@ -16,7 +16,7 @@ use common::{
     slowjob::SlowJobPool,
     terrain::CoordinateConversions,
     trade::{Good, SiteInformation},
-    uid::IdMaps,
+    uid::{IdMaps, Uid},
     util::Dir,
     weather::WeatherGrid,
 };
@@ -628,6 +628,11 @@ impl<'a> System<'a> for Sys {
             // construction already inserts for `CharacterUpdater`/
             // `CharacterLoader`, read here rather than a new resource.
             ReadExpect<'a, Arc<RwLock<DatabaseSettings>>>,
+            // Entity-event-log stage 3 (colonist retention, 2026-08-10,
+            // Opus's ruling -- retain every colonist, no significance
+            // criterion at this population): needed only at the
+            // freshly-promoted-colonist site below, not the wider system.
+            ReadStorage<'a, Uid>,
         ),
     );
 
@@ -672,6 +677,7 @@ impl<'a> System<'a> for Sys {
                 bastion_traversal_ownerships,
                 mut job_board,
                 database_settings,
+                uids,
             ),
         ): Self::SystemData,
     ) {
@@ -933,6 +939,20 @@ impl<'a> System<'a> for Sys {
                             && !colonists.contains(entity)
                         {
                             let _ = colonists.insert(entity, comp::Colonist(colonist.clone()));
+                            // Entity-event-log stage 3 (2026-08-10, Opus's
+                            // ruling): retain every colonist -- no
+                            // significance criterion at this population (a
+                            // colony's `count` is single digits, not the
+                            // thousands-scale item/ambient-NPC problem
+                            // retention exists to solve). This exact guard
+                            // (`!colonists.contains(entity)` above) already
+                            // fires exactly once per colonist's true first
+                            // promote, so `retain()`'s own idempotence is a
+                            // belt-and-braces guard, not the thing doing the
+                            // work here.
+                            if let Some(uid) = uids.get(entity).copied() {
+                                bastion_server::bastion_entity_event_log::retain(uid);
+                            }
                             let _ = player_colony.insert(entity, comp::PlayerColony);
                             let _ = bastion_needs.insert(
                                 entity,
