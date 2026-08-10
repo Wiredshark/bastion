@@ -56,6 +56,7 @@ Format: append changelog at bottom; statuses edited in place. Newest ruling wins
 KNOWN INHERITANCE (charter line, Opus 08-10): today's `stockpiles: Vec<(ZoneId, Region)>` painted-bounding-box zones ARE the raw-position model — the arc's FIRST MIGRATION TARGET, not a green field. Item 16 is stockpile-adjacent and carries the plot rider pre-spec.
 
 ## Changelog
+- 2026-08-10 (8): Wave34 arm 1 RUNNING (defaults, pin 7f20a184, witness+stalled_final landed, checker rehearsed pre-data). TWO-ARM ruling: arm 1 = movers/witness/prediction (instrument-only delta); arm 2 = raised BASTION_ACCESS_STALL_SECS on the same pin for the uncensored calibration — corrects the one-fan conflation of landing-vs-answering.
 - 2026-08-10 (7): Wave33 addendum — seed-66 tool refusal resolved (REG-1 vindicated on its own named specimen); build signature widened to ≥3 seeds via clause-SWAP; item-6 witness ranked first in batch; colonist-refusal prediction registered for the witness fan.
 - 2026-08-10 (6): Item 5 DONE (A/B pass, a35a98aaf7) — driver timing is server-authoritative; the under-run class that voided driver-12 is closed.
 - 2026-08-10 (5): Wave33 folded — #38 closed, branch A/option-3 retired by corpus, ACCESS_STALL_SECS provisional (self-censoring instrument), item-6 corpus witness + threshold row approved as one batch/one fan; 5 movers (11→12) PARKED-tracked pending the witness fan (bundle diff refused attribution).
