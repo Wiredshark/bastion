@@ -1,0 +1,12 @@
+# ITEM 5 acceptance leg (2026-08-10): planted A/B for Wait(n)'s
+# server-authoritative behavior. Same script run twice against the same
+# long-lived server -- once unthrottled, once with a heavy concurrent
+# cargo build competing for CPU. Per ROW-WAIT-SERVER-AUTHORITATIVE-PACKET's
+# own acceptance: same script should reach the same SIM time both times,
+# with a different client-spin count (unthrottled ~= n spins; throttled >
+# n spins as the client's own local Time advancement gets corrected back
+# toward a server that's falling behind).
+note ITEM5 wait A/B leg
+anchor
+wait 600
+note leg complete
