@@ -134,6 +134,20 @@ Two clean signatures:
 Seeds **51 and 52 had zero branch-B dwell and fired no prune** — the F3 pruner
 did nothing on them, so item 2 cannot explain 3 of the 5 movers.
 
+**AND THE BUILD SIGNATURE IS WIDER THAN THE MOVER LIST SHOWS.** Seed 66 — a
+PERSISTENT failer, so invisible in the newly-failing count — **swapped** its
+clause set: it lost `tl_ok` (the tool refusal, now resolved) and **gained
+`build_placed`, `stone_sum_lower`.** That is the *same* build/material family as
+seeds 50 and 69. So the build signature spans **at least 3 seeds (50, 66, 69)**,
+and one of them was hidden inside a seed that "already failed."
+
+> This is precisely the case `collect_wave.py` warns about: **"a GAINED clause is
+> a REGRESSION the fail COUNT cannot show — the seed was already failing."** The
+> count moved 11→12; the actual clause-level movement is larger, and it
+> **strengthens the case that something in this range affects build material
+> flow** — which is exactly what item 6's protection gate governs and what the
+> corpus cannot see (gap 1).
+
 **The strongest untested candidate is item 6's protection/ambient-loot gate**,
 which directly governs whether colonists may take materials and would gate
 `any_needs_materials`, `build_placed`, and mining alike. **It could not be
@@ -149,11 +163,23 @@ tested:** see the instrument gap below.
 2. **`b5_stack_reserved_units_max` is 0 across all 48 seeds.** #89's reservation
    capacity field never moves in this scenario — a dead field in this corpus.
 3. **`stalled_peak` has no `final` sibling** (see above).
-4. **Constancy transition, cause unread:** 5 fields stopped varying —
-   `b5_tool_ok` (now always `true`), `b5_tool_steel`/`_measured` (2.0),
-   `b5_tool_stone`/`_measured` (1.5). All frozen at *passing* values, which
-   suggests a real improvement rather than a dead instrument, **but the producer
-   has not been read and this is recorded as UNREAD, not as a pass.**
+4. **Constancy transition — READ AND CLOSED: reading (b), a real improvement.**
+   5 fields stopped varying (`b5_tool_ok` now always `true`,
+   `b5_tool_steel`/`_measured` 2.0, `b5_tool_stone`/`_measured` 1.5).
+
+   Producer read at `bastion-harness/src/main.rs:4550-4586` (`07ba0cc17b`).
+   **My first hypothesis was wrong and the data refuted it:** I expected the
+   wave32 variance to be REG-1's old `.unwrap_or(0.0)` sentinel. There were
+   **zero `0.0` values in wave32** — REG-1 had already landed by `156a2eceb4`.
+
+   The actual variance was **one seed, 66**, whose tool lookup honestly
+   **refused** (`None` on all three fields → failed clause `tl_ok`). In wave33
+   it **succeeds** (1.5 / 2.0 / `true`). All 48 seeds now measure; **zero nulls,
+   zero absents.** Nothing was lost — a refusal resolved.
+
+   *Seed 66 is the very specimen REG-1's comment names ("survived every presence
+   check silently (seed 66)"), so the `Option` conversion did exactly its job:
+   the failure was visible as a refusal rather than as a plausible number.*
 
 ## STANDING
 
