@@ -1420,6 +1420,15 @@ impl AgentData<'_> {
                 Some((entity, None))
             }
         };
+        // DECISIONS #97 (Ben, ROW-ITEM6-PROVISIONING-PACKET): ambient
+        // rtsim NPCs do not loot ANY world item drop this era. A plain
+        // function (not inlined as `if false`) so the detailed
+        // wants-pickup/loot-owner logic it guards below stays reachable
+        // to the compiler and isn't lint-flagged as dead code. Flipping
+        // this to `true` (or wiring it to a real per-NPC trait later)
+        // is the future thievery feature's first line.
+        fn ambient_item_looting_enabled() -> bool { false }
+
         let is_valid_target = |entity: EcsEntity| match read_data.bodies.get(entity) {
             Some(Body::Item(item)) => {
                 // Bastion colonists must not opportunistically auto-loot
@@ -1432,6 +1441,17 @@ impl AgentData<'_> {
                 // `ActiveJob`-only gate would miss the very colonist who
                 // just finished the job.
                 if read_data.colonists.contains(*self.entity) {
+                    return None;
+                }
+                // DECISIONS #97 (Ben, ROW-ITEM6-PROVISIONING-PACKET):
+                // ambient rtsim NPCs do not loot ANY world item drops
+                // this era -- distinct from the colonist exclusion
+                // above (which is about a colonist's OWN work drops
+                // specifically). Thievery becomes a designed feature
+                // later; lifting this gate is its first line, which is
+                // why the detailed wants-pickup/loot-owner logic below
+                // stays intact rather than being deleted.
+                if !ambient_item_looting_enabled() {
                     return None;
                 }
                 if !matches!(item, body::item::Body::Thrown(_)) {

@@ -143,13 +143,12 @@ pub struct InventoryManipData<'a> {
     orientations: ReadStorage<'a, comp::Ori>,
     agents: ReadStorage<'a, comp::Agent>,
     bastion_colonists: ReadStorage<'a, comp::Colonist>,
-    // #97 (ROW-ITEM6-PROVISIONING-PACKET): protects a provisioned
-    // (`persistent: true`) stockpile drop from ambient/non-colony
-    // pickup. `bastion_piles` had been removed as unused after #89's
-    // trace widening; re-added because this row gives it a real
-    // consumer again.
+    // #96 (ROW-ITEM6-PROVISIONING-PACKET): protects a provisioned
+    // (`persistent: true`) BastionPile from ambient/non-colony pickup,
+    // membership alone (no region term). `bastion_piles` had been
+    // removed as unused after #89's trace widening; re-added because
+    // this row gives it a real consumer again.
     bastion_piles: ReadStorage<'a, comp::bastion::BastionPile>,
-    bastion_board: ReadExpect<'a, bastion_server::bastion_jobs::JobBoard>,
     pets: ReadStorage<'a, comp::Pet>,
     masses: ReadStorage<'a, comp::Mass>,
     #[cfg(feature = "worldgen")]
@@ -298,31 +297,56 @@ impl ServerEvent for InventoryManipEvent {
                         continue;
                     }
 
-                    // #97 (ROW-ITEM6-PROVISIONING-PACKET, Fable's ruled
-                    // lean: "protect stockpiles, loose drops stay fair
-                    // game"): a provisioned (`persistent: true`)
-                    // BastionPile sitting inside a colony's stockpile
-                    // region may only be picked up by a member of that
-                    // colony. Membership alone is a sound ownership
-                    // predicate here -- DECISIONS #96 enumerated every
-                    // `BastionPile` attach site exhaustively and found
-                    // exactly one, all bastion-controlled; no vanilla
-                    // path can create one. Loose (`persistent: false`)
-                    // drops are untouched -- this only fires when BOTH
-                    // conditions hold.
+                    // #96 (ROW-ITEM6-PROVISIONING-PACKET, superseding
+                    // ruling): a provisioned (`persistent: true`)
+                    // BastionPile may only be picked up by a member of
+                    // that colony. Keyed on `BastionPile` MEMBERSHIP
+                    // ALONE, not a stockpile-region conjunction -- the
+                    // pile component IS the colony's deliberate
+                    // provisioning primitive, so membership is the
+                    // ownership fact itself; a region term would make
+                    // protection flicker with zone edits and adds a
+                    // region lookup to the hot vanilla pickup path.
+                    // DECISIONS #96 enumerated every `BastionPile`
+                    // attach site exhaustively and found exactly one,
+                    // all bastion-controlled -- no vanilla path can
+                    // create one. Loose (`persistent: false`) drops are
+                    // untouched.
                     if data.bastion_piles.contains(item_entity)
                         && data.bastion_colonists.get(entity).is_none()
-                        && let Some(item_pos) = data.positions.get(item_entity)
-                        && data
-                            .bastion_board
-                            .stockpile_at(item_pos.0.map(|e| e.floor() as i32))
-                            .is_some()
                     {
                         record_pickup_verdict(
                             data.tick.0,
                             uid.0.get(),
                             pickup_uid.0.get(),
-                            "stockpile-protected",
+                            "bastion-pile-protected",
+                            String::new(),
+                        );
+                        continue;
+                    }
+
+                    // #97 (Ben, ROW-ITEM6-PROVISIONING-PACKET): ambient
+                    // rtsim NPCs do not loot ANY world item drops at all
+                    // this era -- not just protected BastionPiles (the
+                    // #96 check above). The primary gate is AI-side
+                    // (`action_nodes::is_valid_target`'s `Body::Item` arm
+                    // never lets an ambient NPC choose Pickup), so this
+                    // is the server-authoritative belt-and-suspenders
+                    // check: any other path that still enqueues a
+                    // pickup for a non-colonist rtsim entity is refused
+                    // here too, counted under its own reason so a
+                    // regression in the AI gate would show up in the
+                    // trace rather than silently falling through.
+                    // Thievery becomes a designed feature later;
+                    // lifting this gate is its first line.
+                    if data.rtsim_entities.contains(entity)
+                        && data.bastion_colonists.get(entity).is_none()
+                    {
+                        record_pickup_verdict(
+                            data.tick.0,
+                            uid.0.get(),
+                            pickup_uid.0.get(),
+                            "ambient-loot-disabled",
                             String::new(),
                         );
                         continue;
