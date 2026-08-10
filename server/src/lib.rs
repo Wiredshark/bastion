@@ -3749,10 +3749,13 @@ impl Server {
     /// where the live `F3-BRANCH` diagnostic writes. See
     /// `JobBoard::b5_f3_ticks_branch_a`'s own doc for what each field
     /// means. Flattened: `(ticks_branch_a, ticks_branch_b,
-    /// ticks_branch_c, transitions, idle_peak, prunes_fired)`. All pure
-    /// accumulators, zero-defaulted, never gated -- DIAGNOSTICS, not
-    /// verdict terms; must never enter the harness's `clauses` vec.
-    pub fn bastion_f3_prune_stats(&self) -> (u64, u64, u64, u32, f32, u32) {
+    /// ticks_branch_c, transitions, idle_peak, prunes_fired,
+    /// stalled_peak)`. All pure accumulators, zero-defaulted, never
+    /// gated -- DIAGNOSTICS, not verdict terms; must never enter the
+    /// harness's `clauses` vec. `stalled_peak` added for ITEM 2 (Opus's
+    /// catch, 2026-08-10): without it the fan cannot set
+    /// `ACCESS_STALL_SECS` from measured seeds at all.
+    pub fn bastion_f3_prune_stats(&self) -> (u64, u64, u64, u32, f32, u32, f32) {
         let board = self
             .state
             .ecs()
@@ -3764,6 +3767,7 @@ impl Server {
             board.b5_f3_transitions,
             board.b5_f3_idle_peak,
             board.b5_f3_prunes_fired,
+            board.b5_f3_stalled_peak,
         )
     }
 

@@ -4216,6 +4216,15 @@ pub struct JobBoard {
     /// -- the number the pruner's `ACCESS_STALE_SECS` threshold
     /// actually turns on.
     pub b5_f3_idle_peak: f32,
+    /// bastion (ITEM 2, ROW-ITEM2-STALL-COUNTER-PACKET, Opus's catch
+    /// 2026-08-10): `access_stalled_secs`'s sibling to `b5_f3_idle_peak`
+    /// above -- same capture-before-any-reset discipline, same reason.
+    /// Without this the wave-fan corpus (stdout JSON only, stderr where
+    /// the live `F3-BRANCH` diag writes is discarded) has no route to
+    /// this data at all, and `ACCESS_STALL_SECS` could never be set from
+    /// measured seeds -- only from the single job=703 specimen it was
+    /// explicitly ruled NOT to be calibrated from.
+    pub b5_f3_stalled_peak: f32,
     /// Times the pruner actually removed a stale plan.
     pub b5_f3_prunes_fired: u32,
     /// bastion (DECISIONS #89, ROW69-OPTION-B-PACKET): the planted-
@@ -15157,6 +15166,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     .retain(|id, _| claimed_access.iter().any(|(c, _)| c == id));
                 if access_claimed && !any_progress {
                     board.access_stalled_secs += 1.0; // this pass ≈ once per second
+                    // #70/ITEM 2: the true high-water mark, captured
+                    // before any reset below (including one on THIS
+                    // pass, if threshold is hit right here) can clear
+                    // it -- same discipline as `b5_f3_idle_peak` above.
+                    board.b5_f3_stalled_peak =
+                        board.b5_f3_stalled_peak.max(board.access_stalled_secs);
                     if board.access_stalled_secs >= ACCESS_STALL_SECS {
                         let before = board.jobs.len();
                         let stale: Vec<JobId> = board

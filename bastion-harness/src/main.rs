@@ -4996,6 +4996,7 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_f3_transitions": f3_prune.3,
         "b5_f3_idle_peak": f3_prune.4,
         "b5_f3_prunes_fired": f3_prune.5,
+        "b5_f3_stalled_peak": f3_prune.6,
         // #89 (ROW69-OPTION-B-PACKET): the reservation-capacity row's
         // feature-acceptance measures -- see `bastion_eat_stack_stats`'s
         // own doc. DIAGNOSTICS, not verdict terms: neither field may
