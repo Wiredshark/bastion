@@ -39,11 +39,61 @@ claimed."** *It ran itself, live, for two and a half hours.*
 
 ---
 
+## 1b · ★★★★★★ THE MECHANISM — **A 3-BEAT CYCLE, ONE COLONIST, ONE REQUEST**
+
+    20:45:27.210  job completed job=319037 kind=Designated(Mine) pos=(15211,16044,425)
+    20:45:27.548  emergency route exhausted with invalid exit; member released
+    20:45:27.548  emergency access restored (REQ-0040) owner=80 cells=1
+    20:45:42.390  job completed job=319941 kind=Designated(Mine) pos=(15211,16044,425)
+    20:45:42.743  emergency route exhausted with invalid exit; member released
+    20:45:42.743  emergency access restored (REQ-0040) owner=80 cells=1
+                  ... every ~15s, for 2.5 hours
+
+> ## **`owner=80` — ONE colonist. `REQ-0040` — the SAME request. `cells=1`. THE
+> EGRESS PLANNER RE-ISSUES AN IDENTICAL ONE-CELL FIX FOREVER AGAINST AN EXIT IT HAS
+> ITSELF JUST DECLARED INVALID.**
+
+★★★★★ **These are `is_emergency_access` completions** — *which is why the run shows no
+drops, no XP and no cave-in for 361 mine completions.* **The emergency arm skips all
+three** (`bastion_jobs.rs`, the `!is_emergency_access` guards around
+`MINE_DROP_ITEM`, `grant_xp` and `floating_chunk`) — *but `info!("bastion: job
+completed")` is emitted **unconditionally**, which is why the health metric counted
+phantom work as production.*
+
+### THE TWO SEPARABLE DEFECTS
+
+1. ★★★★ **THE BLOCK NEVER LEAVES.** *`still_valid` requires `b.is_filled()` at
+   completion (`DesignationKind::Mine => terrain.get(job.pos).ok().is_some_and(|b|
+   b.is_filled())`), and it passed **281 consecutive times on one cell**.* **Either
+   `block_change.set` never lands or the block returns** — *and the corroborating
+   fact is that `bastion: job moot — target block changed under it; dropped` fires
+   **ZERO times in 945K lines**: no mine job in the entire run ever found its target
+   already gone.*
+2. ★★★★★ **THE EGRESS REQUEST HAS NO TERMINATION.** *`route exhausted with INVALID
+   EXIT` is a self-diagnosed dead end, and the planner's response is to re-issue the
+   same one-cell job.* **A lifecycle that cannot end** — *the same requirement class
+   as the orphan sweep's.*
+
+★★★ **Defect 2 is sufficient on its own**: *even with the block removed correctly, an
+invalid exit re-planned identically forever is an infinite loop.* **Both need
+clearing — [[each-sufficient-blocker-must-be-cleared]].**
+
+---
+
 ## 2 · WHAT IT OVERTURNS
 
 **1 — THE COLONY WAS NEVER PARALYSED.** ★★★★ *This kills churn-starvation as the
 farm's cause: if the 468K-cycle sweep were consuming colony capacity, non-farm work
 would fall too. It rose — because the work was a phantom.*
+
+> ⚠ **PRECISION CORRECTION, against my own first report:** *I wrote "the entire
+> labour force was captured by phantom work," and that is MORE than the data
+> supports.* ★★★ **What is established: the COMPLETION CHANNEL is 100% this loop,
+> and its owner is a SINGLE colonist (`owner=80`).** *Meanwhile `colonist arrived at
+> job site` fires 400 · 533 · 479 — **other colonists keep arriving at job sites and
+> completing nothing**.* **That is a second, unexplained fact, not a restatement of
+> this one** — *whether the rest of the labour force is trapped, idle, or failing at
+> a different seam is UNREAD, and it is the next question.*
 
 **2 — ★★★★★ `job completed` IS A COUNT A BROKEN SYSTEM RELIABLY PRODUCES.** *It is
 the colony's own health metric and it pointed UP while the colony starved to death.*
