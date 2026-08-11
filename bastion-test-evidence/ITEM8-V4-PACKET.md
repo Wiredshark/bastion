@@ -345,6 +345,42 @@ expired cannot distinguish "expiry works" from "expiry never triggered."*
 
 ---
 
+## 6b · ★★★★★★ **v5's F1 IS REWRITTEN — "COMPLETIONS > 0" IS SATISFIABLE BY A DEAD COLONY**
+
+**v4 scored 59 farm completions and starved to death.** *v3 scored 59 and starved to
+death.* ★★★★ **IDENTICAL: 19 tilled · 20 sown · 20 harvested, in two runs with
+DIFFERENT fatal mechanisms.**
+
+> ## **v5's F1: GENERATION-2 COMPLETIONS > 0 — SOWS CONTINUING PAST THE FIRST SEED
+> WAVE.** *(Fable, registered pre-v5.)*
+
+★★★ **The old wording cannot distinguish "the loop works" from "the colony spent its
+founding stock and stopped."** *That is the count-vs-mechanism error at the BAR
+level — a number a broken system reliably produces.* **Generation-2 is the
+zero-window equivalent: it fails for the impostor and passes only for the mechanism.**
+
+★★ **Adopted independently of the hypothesis below** — *it is correct whatever bounded
+the first wave.*
+
+### ⚠ REGISTERED CANDIDATE — **THE SEED BOUND** *(unresolved; read named)*
+
+**Something bounded both runs at exactly 20 sows.** *A seed-supply limit is
+prior-art-plausible rather than a fresh guess: **item 7's own root cause was a SEED
+BOOTSTRAP DEADLOCK** — "there is no possible source for the first seed."*
+
+★★★★ **If it holds, BOTH famines are SECOND-GENERATION failures**: *wave one
+completes on founding stock, the harvest returns seeds, and then v3's stuck claims
+and v4's churn each kill wave two by their own mechanism.* **Which would mean routes
+2 and 3 are correct fixes for real defects that were never what stopped the farm —
+exactly what F1's identity is saying.**
+
+**THE READ, NAMED AND NOT YET RUN:** *founding seed count at sow-time, and the 28
+unengaged SOW jobs' fetch state* — ★★ **from the SAVE (`userdata`, preserved
+untouched in both captures), NOT from the log.** *A grep for `seed|required_item|
+fetch` over v4's part-000 returned zero, and **that zero is not evidence** — those
+are guessed names, farm job lines carry only `sow=`/`affordance=`, and board and
+inventory state were never logged at all.* **This is a harness read.**
+
 ## 7b · ★★★★ CHURN POST-MORTEM — **REGISTERED MID-RUN, BEFORE SCORING**
 
 *Written from the T+70 heartbeat, before teardown and before any log read. The
