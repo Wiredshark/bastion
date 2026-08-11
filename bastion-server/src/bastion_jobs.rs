@@ -3819,6 +3819,20 @@ pub struct FailsafeTeleportEvent {
     pub climb_free_active: bool,
     pub organic_destination: Option<Vec3<i32>>,
     pub head_clear: bool,
+    /// #85: SNAPSHOT, read live at emit time (never cached) -- whether the
+    /// entity's OWN chunk (`feet`'s, not the 0..=8-radius `dest` scan's) is
+    /// loaded. `dest = Some` only proves SOME cell within 8 blocks was
+    /// readable, not that THIS entity's chunk is -- this field is the only
+    /// thing that separates those two facts. Producer:
+    /// `terrain.contains_key(terrain.pos_key(feet))` at the emit site.
+    pub in_loaded_chunk: bool,
+    /// #85 gate 2: SNAPSHOT, read live at emit time. `phys::Sys` carries
+    /// `!&read.is_riders, !&read.is_volume_riders` on both its gravity and
+    /// collision joins -- a rider gets neither, so terrain can be perfectly
+    /// readable and the entity still never falls. Producer:
+    /// `Is<Rider>` or `Is<VolumeRider>` present on the entity, at the emit
+    /// site.
+    pub is_rider: bool,
     pub on_ground: bool,
     pub on_wall: bool,
     pub character_state: Option<String>,
@@ -17190,10 +17204,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .get(uid)
                         .copied()
                         .or_else(|| surface_egress_dest(&terrain, feet));
+                    // #85 fail-closed fix: an UNREADABLE cell used to render
+                    // identically to a CLEAR one (`.unwrap_or(true)`) --
+                    // matching the two immediate neighbours' own
+                    // `terrain.get(p).is_ok_and(...)` pattern
+                    // (`surface_teleport_dest`/`surface_egress_dest`'s
+                    // `open` closures, both fail-closed already). Diagnostic
+                    // -only today, so this was misleading readers, not the
+                    // machine -- fixed anyway since it's the same file.
                     let head_clear = terrain
                         .get(feet + Vec3::unit_z() * 2)
-                        .map(|block| !block.is_solid())
-                        .unwrap_or(true);
+                        .is_ok_and(|block| !block.is_solid());
+                    // #85 gate 1, the deciding bool: `dest` (used above) only
+                    // proves SOME cell within an 0..=8 radius was readable --
+                    // never that THIS entity's own chunk is loaded. Read at
+                    // this exact emit, not cached (a stale read here is the
+                    // defect class the field exists to catch).
+                    let in_loaded_chunk = terrain.contains_key(terrain.pos_key(feet));
+                    // #85 gate 2: `phys::Sys` carries `!&is_riders,
+                    // !&is_volume_riders` on both its gravity and collision
+                    // joins -- a rider gets neither, so terrain can be
+                    // perfectly readable and the entity still never falls.
+                    let is_rider = entity.is_some_and(|entity| {
+                        mount_riders.contains(entity) || volume_riders.contains(entity)
+                    });
                     let on_ground = entity
                         .and_then(|entity| physics_states.get(entity))
                         .is_some_and(|physics| physics.on_ground.is_some());
@@ -17231,6 +17265,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         climb_free_active,
                         ?organic_destination,
                         head_clear,
+                        in_loaded_chunk,
+                        is_rider,
                         on_ground,
                         on_wall,
                         ?character_state,
@@ -17258,6 +17294,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         climb_free_active,
                         organic_destination,
                         head_clear,
+                        in_loaded_chunk,
+                        is_rider,
                         on_ground,
                         on_wall,
                         character_state,
