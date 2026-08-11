@@ -14514,9 +14514,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         }
                         if acted {
                             colonist.0.skills.grant_xp(job.work, COMPLETION_XP);
-                        }
-                        if let Some(u) = uids.get(entity) {
-                            watch_wipe(&mut board.stuck_watch, u, "job-completed");
+                            // ROW-COMPLETION-SIGNAL-SPLIT.md / ROW-
+                            // INDESTRUCTIBLE-MINE-CELL.md (Opus's second
+                            // find): the XP grant was already gated on
+                            // `acted`; this watchdog reset was not -- same
+                            // disease, one arm over (the Farm/self-job
+                            // completion arm, not the generic Mine/Chop/
+                            // Build one gated earlier). A foreign/moot
+                            // completion (the `_ => {}` arm above) must not
+                            // read as "real work" to the safety net either.
+                            if let Some(u) = uids.get(entity) {
+                                watch_wipe(&mut board.stuck_watch, u, "job-completed");
+                            }
                         }
                         board.remove_job(active.job);
                         to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
