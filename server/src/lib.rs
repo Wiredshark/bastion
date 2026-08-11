@@ -1109,6 +1109,24 @@ impl Server {
                 rest_decay_per_sec = mood_cfg.rest.decay_per_sec,
                 "bastion effective mood config"
             );
+            // Item 8 (endurance run) pre-flight, Opus's ruling: "effective
+            // config is EMITTED, not inferred -- needs rates, thresholds."
+            // The line above had the decay rates but never the interrupt
+            // thresholds those rates are measured against -- without both,
+            // a run's own crossing times can't be read from its log at
+            // all, only guessed at from the RON default (per-colonist
+            // stagger further adjusts this base value; this is the
+            // baseline the packet asks be named from live config, not
+            // memory).
+            info!(
+                hunger_interrupt = mood_cfg.hunger.interrupt,
+                hunger_comfort = mood_cfg.hunger.comfort,
+                rest_interrupt = mood_cfg.rest.interrupt,
+                rest_comfort = mood_cfg.rest.comfort,
+                recreation_interrupt = mood_cfg.recreation.interrupt,
+                recreation_comfort = mood_cfg.recreation.comfort,
+                "bastion effective mood config: need interrupt/comfort thresholds"
+            );
         }
 
         // ROW-ITEM6-WITNESS-PACKET part A1 (Opus's second flag,
