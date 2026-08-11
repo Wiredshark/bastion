@@ -60,6 +60,42 @@ three** (`bastion_jobs.rs`, the `!is_emergency_access` guards around
 completed")` is emitted **unconditionally**, which is why the health metric counted
 phantom work as production.*
 
+### ★★★★★★ DEFECT 1's MECHANISM READ — **NARROWED TO ONE FACT, THEN STOPPED**
+
+**Read, cited, at `5d0dc72b9a`:**
+
+- **`completion_block(Designated(Mine))` → `Some(Block::empty())`** *(`bastion_actions.rs`)*.
+  **Air. The write is issued.**
+- **`block_change.set(job.pos, new_block)` runs BEFORE every `!is_emergency_access`
+  guard** — *so the emergency arm does not skip it.*
+- ★★★★ **"emergency access restored (REQ-0040)" is a ROUTE TEARDOWN, not a terrain
+  restore** — *it retains/removes `emergency_approach_corridors`,
+  `emergency_route_sequences`, `emergency_partial_route_entries` and retires traversal
+  tasks.* **It never touches a block.**
+- **`bastion: job moot` fires ZERO times in 945K lines** — *so the cell NEVER read air
+  at a later completion.*
+
+> ## **THEREFORE: THE BLOCK IS FILLED AT EVERY ONE OF THE 281 COMPLETIONS. AN
+> `is_filled()` PRE-CHECK AND AN AIR WRITE, ALTERNATING, 281 TIMES — SO THE WRITE IS
+> NOT STICKING.**
+
+★★★ **WHY it doesn't stick is NOT in this capture, and I am not proposing a third
+mechanism for it** — [[stop-proposing-and-instrument]].
+
+### ★★★★★★ THE INSTRUMENT IS ALREADY IN SCOPE — **a one-word change**
+
+**The completion arm ALREADY computes the pre-removal block kind:**
+
+    let completed_kind = terrain.get(job.pos).ok().map(|b| b.kind());
+
+*It is captured for Chop's drop branch and **never logged**.* ★★★★★ **Adding
+`completed_kind` to the `job completed` emit costs one field and zero new reads —
+and it decides this outright:** *a constant `Rock` across 281 completions says the
+write never landed; anything else names what is re-filling the cell.*
+
+**BUILD ITEM: a THIRD log field, free, alongside `kind`-on-arrival and the
+material-stall emit.**
+
 ### THE TWO SEPARABLE DEFECTS
 
 1. ★★★★ **THE BLOCK NEVER LEAVES.** *`still_valid` requires `b.is_filled()` at
