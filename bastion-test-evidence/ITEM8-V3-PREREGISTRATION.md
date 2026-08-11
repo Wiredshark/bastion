@@ -7,9 +7,11 @@ verification sequence (fresh userdata dir, `BASTION_ENTITY_EVENT_LOG=1`,
 demotions before ending the launch turn, driver disconnects into the scored
 window). Nothing about the launch mechanics changes for v3 — only the pin.
 
-**Fix pin this run launches against:** `5509dc95c3` (fill in the exact tip at
-launch time if further commits land before then — check `git rev-parse HEAD`
-fresh, never carried from memory, per standing rule).
+**Fix pin this run launches against:** `517cb50f6d` — read fresh via
+`git rev-parse HEAD` at launch time (per standing rule, never carried from
+memory), confirmed identical to the tip Opus cleared as GREEN (`468fe8f07c`
+plus the two post-review closures: exclusivity placement verification and
+this doc's own rate-condition/health-signal text).
 
 ## THE EXPECTED-DELTA TABLE (Fable's ask, point 1)
 
@@ -85,22 +87,27 @@ fired > 0` and the assert stays silent but no farm-drop merge traffic is
 independently confirmed in the log, treat the merge half as UNPROVEN for
 that run, not assumed exercised.
 
-★★★ **The rate condition (Opus's refinement to gate item 3 — written here,
-not only in his review, so it travels with the number): the evidential
-weight of "2.5 hours with no crash" is entirely borrowed from v2's fuse
-length — v2 hit the crash at tick 45000, ~23.6 minutes of wall time in.**
-A silent v3 is evidence the fix held **only if `split_off_one` is firing at
-a rate comparable to what v2's own farm/haul/eat cycling implies** (v2 had
-no `b5_split_off_one_fired` counter — it predates this pin — so the
-comparison is to v3's own sustained rate across the scored window, not an
-exact number carried over from v2). **A silent run whose `b5_split_off_one_
-fired` count is high early and then collapses, or stays near zero for
-extended stretches, is not a pass** — it is an unexercised run for that
-stretch, VOID on the claim for the window it covers, and the trigger
-population (why did splits stop) gets investigated before the result is
-read as "the fix held." **A number whose evidential weight depends on a
-second number must state the dependency where the number is read** —
-recorded here so a future green cannot be read without it.
+★★★ **The rate condition — CORRECTED (Opus's own catch on his own gate
+item): the first version of this paragraph asked for a comparison to
+"v2's split rate," which cannot be obtained — `b5_split_off_one_fired`
+did not exist until the commit that fixed this crash, so v2 has no split
+rate to compare against, and never can.** Replaced with an internal
+consistency check, available entirely from this run's own data, no
+external baseline required:
+
+> **`b5_split_off_one_fired` must be commensurate with the run's own
+> `EatFrom` completions.** Every eat against a pile holding more than one
+> unit takes the `Some` path, so splits should track (eats minus
+> last-unit eats) closely. **Splits near zero while eats are healthy
+> (measure 2's own `"bastion: ate — hunger restored"` counts, per-cycle)
+> means something suppressed the split path** — that is VOID on the fix
+> claim, not a pass, and it is checkable from measure 2's own counts
+> without any external baseline. **A run whose `b5_split_off_one_fired`
+> count is high early and then collapses, or stays near zero for extended
+> stretches while eats keep occurring, is not a pass** — it is an
+> unexercised or degraded run for that stretch, and the trigger population
+> (why did splits stop while eats didn't) gets investigated before the
+> result is read as "the fix held."
 
 ## OPTIONAL HEALTH SIGNAL (Opus's addendum, folded in — cheap, not a gate item)
 
@@ -115,5 +122,7 @@ in its own right, uncaught by anything else in the current bar.
 
 ## Status
 
-Awaiting Opus's commit review on `5509dc95c3` (folds in the witness-
-restoration follow-up to `e14795700e`). No relaunch until cleared.
+**GREEN — Opus cleared `468fe8f07c` and the two post-review closures at
+`517cb50f6d`.** All four original gate items plus both refinements (rate
+condition corrected to an internal check, exclusivity placement verified
+structurally) are closed. v3 launching on this pin.
