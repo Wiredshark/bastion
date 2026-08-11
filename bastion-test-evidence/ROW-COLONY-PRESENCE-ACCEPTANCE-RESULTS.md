@@ -115,3 +115,15 @@ completeness over every preemption-adjacent event, and re-scoping it to
 include reclaims or exclude struck-outs is a design call for whoever next
 needs it to answer a specific question, not a correctness defect to patch
 here.
+
+**★ The 8 silent struck-out arms are a mute channel, worth naming as its
+own hazard (Fable's addition):** every other increment site pairs its
+`preempt_attempts` bump with a named log line in the same block, so the
+counter's movement is auditable from the log alone for those three
+sources — but the struck-out arm increments with nothing printed. A
+future reader who diffs `preempt_attempts` against grepped log lines and
+finds a residual has no way to attribute it to *this* source without
+already knowing this addendum exists; the log undercounts this producer
+by construction, not by omission of a case anyone forgot to add. Anyone
+next touching this counter or building a reconciliation check on it
+should know that gap going in.
