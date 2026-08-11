@@ -85,6 +85,34 @@ fired > 0` and the assert stays silent but no farm-drop merge traffic is
 independently confirmed in the log, treat the merge half as UNPROVEN for
 that run, not assumed exercised.
 
+★★★ **The rate condition (Opus's refinement to gate item 3 — written here,
+not only in his review, so it travels with the number): the evidential
+weight of "2.5 hours with no crash" is entirely borrowed from v2's fuse
+length — v2 hit the crash at tick 45000, ~23.6 minutes of wall time in.**
+A silent v3 is evidence the fix held **only if `split_off_one` is firing at
+a rate comparable to what v2's own farm/haul/eat cycling implies** (v2 had
+no `b5_split_off_one_fired` counter — it predates this pin — so the
+comparison is to v3's own sustained rate across the scored window, not an
+exact number carried over from v2). **A silent run whose `b5_split_off_one_
+fired` count is high early and then collapses, or stays near zero for
+extended stretches, is not a pass** — it is an unexercised run for that
+stretch, VOID on the claim for the window it covers, and the trigger
+population (why did splits stop) gets investigated before the result is
+read as "the fix held." **A number whose evidential weight depends on a
+second number must state the dependency where the number is read** —
+recorded here so a future green cannot be read without it.
+
+## OPTIONAL HEALTH SIGNAL (Opus's addendum, folded in — cheap, not a gate item)
+
+v2's crash arrived at tick 45000 in ~23.6 min wall (1416s): **45000 / 1416 s
+≈ 31.8 ticks/s, empirically measured on this exact run mode and scenario**
+— not the ~9× headless divergence noted elsewhere for a different run mode.
+If the server's target TPS is ~30, this confirms the stated 1:1 ratio this
+run's ~2.5-hour estimate (5 cycles × ~30 min) depends on. **Free secondary
+signal for v3**: if ticks-per-wall-second drops materially below ~31.8
+during the run, the server is degrading under load — an endurance finding
+in its own right, uncaught by anything else in the current bar.
+
 ## Status
 
 Awaiting Opus's commit review on `5509dc95c3` (folds in the witness-
