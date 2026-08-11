@@ -2158,6 +2158,7 @@ mod tests {
             "ClientDisconnectWithoutPersistenceEvent",
             "CommandEvent",
             "CreateAuraEntityEvent",
+            "CreateColonyPresenceEvent",
             "CreateItemDropEvent",
             "CreateNpcEvent",
             "CreateNpcGroupEvent",
@@ -2255,7 +2256,7 @@ mod tests {
     /// endpoint (T0.13's three-buffer machinery, deferred with networking).
     #[test]
     fn t0_24_serial_tail_delivery_order_is_frozen() {
-        const SERIAL_TAIL_CALLS: usize = 30;
+        const SERIAL_TAIL_CALLS: usize = 31;
         let src = repo_text("server/src/events/mod.rs");
         let body = src
             .split("fn handle_all_serial_events")
