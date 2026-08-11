@@ -118,6 +118,29 @@ the mechanism.**
 | ★★★ **F8 (NEW)** | **`job completed` fires ONLY for completions with a world-effect** |
 | **S1** | sentinel: log-only |
 
+### ★★★★★ LAUNCH-TIME AMENDMENTS — **registered PRE-DATA, 2026-08-11**
+
+*The builder added F9 and F10 in the launch record. Both are reviewed here and one is
+demoted, before any data exists.*
+
+**F9 — `emergency_access_completions`, "expected nonzero, benign" → ⛔ DEMOTED TO A
+MEASURE.**
+
+> ## **NO OBSERVATION WAS NAMED THAT WOULD MAKE IT RED. A BAR THAT CANNOT FAIL IS NOT
+> A BAR.**
+
+★★★★★★ *Tonight's lesson arriving at the bar tier: four instrument vacuities were
+caught, and the fifth walked in as an acceptance criterion.* **Entry 7's head question
+applies to bars exactly as to instruments.** *Reported, never scored — unless someone
+registers a bound, at which point it becomes a bar again.*
+
+**F10 — mine-cell repeat-completion → ✅ KEPT, BOUND TO F7's THRESHOLD.**
+
+*"A handful is normal, hundreds is defect 1 recurring" carries no registered number,
+and at hour 2.5 "a handful" is negotiable.* ★★★ **F10 inherits F7's bar: no single
+position >10% of completions.** **v4 would have failed it at 98.6% (143/145) — the
+threshold is calibrated by a real specimen, not a guess.**
+
 **F7 and F8 exist because v4 passed nothing and still looked busy.** *143 of 145
 late-run completions at one cell; 361 completions with zero drops, zero XP, zero
 cave-ins.*
