@@ -72,12 +72,23 @@ straightforward follow-up, not a new finding.
 ## Item 4 rider: fail-safe observation
 
 80 `GOTO-STAND-RESCUE` events fired across the run (03:17:27–03:19:30),
-26 distinct uids. Raw counts only — not re-scored against item 4's
-egress-verdicts-vs-plans signature here; that interpretation belongs to
-whoever owns item 4's re-score, and the population question Opus flagged
-(live colony + possibly non-colonist entities sharing the same uid space vs
-the acceptance fan's harness-scenario population) is still open. Logged as
-an observation rider, not a verdict.
+26 distinct uids — the sit-witness, a different mechanism from item 4's
+own target. Raw counts only, and not the number item 4 actually scores on;
+see the specimen below for that.
+
+**Item 4's actual population is `ULTIMATE FAIL-SAFE` (the teleport), not
+`GOTO-STAND-RESCUE` (the sit witness) — corrected after Fable's clarifying
+question named the right string.** This run produced exactly one:
+
+    2026-08-11T03:20:10.029196Z  WARN bastion_server::bastion_jobs: bastion: ULTIMATE FAIL-SAFE — teleporting stuck colonist to ground (organic egress tiers failed) uid=166 name="Peri of the Vale" feet=Vec3 { x: 15229, y: 16014, z: 421 } d=Vec3 { x: 15229, y: 16014, z: 426 } secs=60.0 active_job=None active_job_state=None active_job_kind=None active_job_is_access=None egress_verdicts=11 egress_plans_emitted=0 egress_no_route=10 climb_free_active=true organic_destination=Some(Vec3 { x: 15220, y: 16016, z: 421 }) head_clear=true on_ground=false on_wall=false character_state=Some("Idle(Data { is_sneaking: false, time_entered: Time(0.0), footwear: Some(Normal) })") velocity=Vec3 { x: -0.7894322, y: 0.1296022, z: 0.0 } access_jobs_pending=0 terminal_cause="egress_no_route_then_climb_free_expired"
+
+    Run: script-13b-farmseed-confirm.txt (`bastion-test-evidence/live-playthrough/server-stdout-farmseed.log`)
+    Window: the full confirm run, ~230s (connect ~03:17:15 -- disconnect ~03:19:30)
+    Count: 1 of 1 -- exactly one ULTIMATE FAIL-SAFE fired, this is it in full
+
+`egress_verdicts=11, egress_plans_emitted=0` is item 4's own signature
+(verdicts issued without a plan ever emitted) on the specimen directly.
+Nonzero population, one case -- Opus's to score, not re-scored here.
 
 ## Permanent fix, not yet built
 
@@ -141,8 +152,12 @@ FIRST sow) is the natural next confirm, not built here.
 ## Item 4 rider (this run)
 
 373 `GOTO-STAND-RESCUE` events, 37 distinct uids, 03:27:18-03:35:29 (the
-full ~490s window). Same caveat as the first run: raw counts only, no
-re-score attempted here.
+full ~490s window) -- the sit witness, not item 4's own population; huge
+live load on the sit fix, but not this row's number.
+
+`ULTIMATE FAIL-SAFE` (item 4's actual target): **0** in this run's ~490s
+window. Combined with the confirm run's 1: item 4 scores on a 1-case
+population, and the specimen above is the whole population.
 
 ## Additional evidence
 
