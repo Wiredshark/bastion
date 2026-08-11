@@ -3808,6 +3808,33 @@ impl Server {
     /// only, must never enter the harness's `clauses` vec.
     pub fn bastion_eelog_event_count(&self) -> Option<u64> { bastion_entity_event_log::event_count() }
 
+    /// bastion (entity-event-log Measure 0 export, Opus's request,
+    /// 2026-08-10): "the aggregate-late law landing on the instrument
+    /// built to escape it" -- `bastion_eelog_event_count` is a run-total
+    /// and cannot answer either of the pilot's two registered customers
+    /// (Measure 0's cluster-vs-uniform question over ticks; seed 69's
+    /// per-event queue-position detail), so this crosses entities
+    /// deliberately and exports per-event data instead. Flattened for the
+    /// harness's JSON: `(tick, subject_uid, job_id, reason_debug,
+    /// queue_position)`. `cap` bounds the list (density budget -- this is
+    /// per-event data crossing into the corpus, not a per-tick emission);
+    /// the paired `truncated` bool must be surfaced beside it, same
+    /// self-accounting law as the ring's own flag -- a silently-capped
+    /// list must never render identically to a complete one. Not gated on
+    /// ECS state; pure passthrough, DIAGNOSTIC only, must never enter the
+    /// harness's `clauses` vec.
+    pub fn bastion_eelog_released_events(
+        &self,
+        cap: usize,
+    ) -> (Vec<(u64, u64, u64, String, Option<usize>)>, bool) {
+        let (records, truncated) = bastion_entity_event_log::released_events(cap);
+        let flattened = records
+            .into_iter()
+            .map(|r| (r.tick, r.subject.0.get(), r.job, format!("{:?}", r.reason), r.queue_position))
+            .collect();
+        (flattened, truncated)
+    }
+
     pub fn bastion_eat_stack_stats(&self) -> (u32, u32) {
         let board = self
             .state

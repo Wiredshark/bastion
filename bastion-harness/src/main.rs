@@ -4632,6 +4632,27 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // run tell "the env var never arrived" apart from "it arrived and
     // produced zero events."
     let eelog_event_count = server.bastion_eelog_event_count();
+    // Entity-event-log Measure 0 export (Opus's request, 2026-08-10): a
+    // run-total count cannot answer either registered customer (cluster-
+    // vs-uniform over ticks; seed 69's per-event queue position) -- see
+    // `bastion_eelog_released_events`'s own doc. Capped: per-event data
+    // crossing into the corpus JSON needs a bound, same density-budget
+    // discipline as every other diag row here.
+    const EELOG_RELEASED_EVENTS_CAP: usize = 256;
+    let (eelog_released_events_raw, eelog_released_events_truncated) =
+        server.bastion_eelog_released_events(EELOG_RELEASED_EVENTS_CAP);
+    let eelog_released_events: Vec<serde_json::Value> = eelog_released_events_raw
+        .into_iter()
+        .map(|(tick, subject_uid, job, reason, queue_position)| {
+            serde_json::json!({
+                "tick": tick,
+                "subject_uid": subject_uid,
+                "job": job,
+                "reason": reason,
+                "queue_position": queue_position,
+            })
+        })
+        .collect();
 
     // B5-EXIT-CODE-DISAMBIGUATION (Ben-directed, 2026-07-30): the pass gate
     // is a ~40-clause conjunction; at corpus scale a bare exit code only
@@ -5036,6 +5057,14 @@ fn b5_scenario(args: &Args) -> ExitCode {
         // a present number (0 with zero producers wired) in the env-set arm
         // -- presence, not the value, is what the floor gate reads.
         "b5_eelog_event_count": eelog_event_count,
+        // Measure 0 export (Opus's request, 2026-08-10): per-event data --
+        // see `bastion_eelog_released_events`'s own doc for why the bare
+        // count above can't answer either registered customer. DIAGNOSTIC
+        // only, must never enter the `clauses` vec above. Capped at
+        // EELOG_RELEASED_EVENTS_CAP; `_truncated` MUST be read alongside
+        // it -- a capped list must never be mistaken for a complete one.
+        "b5_eelog_released_events": eelog_released_events,
+        "b5_eelog_released_events_truncated": eelog_released_events_truncated,
         // ARB-ATTEMPT-01 STEP 2 (batch item 1, 2026-08-04): scoped to the
         // three producers discovered firing on seeds 71/66 -- see
         // `bastion_release_reason_counts`'s own doc for the caveat on

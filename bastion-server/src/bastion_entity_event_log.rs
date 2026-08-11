@@ -158,8 +158,18 @@ pub enum ColonistEventKind {
     /// versioned wire copy (see that enum's own doc for why a direct
     /// derive on the live gameplay type was wrong), constructed via
     /// `.into()` at the real producer site (stage 2), not a second
-    /// definition of the same closed set.
-    Released { job: common::bastion::JobId, reason: ReleaseReasonV1 },
+    /// definition of the same closed set. `queue_position` (Opus's
+    /// request, 2026-08-10, seed 69's customer): whether the released
+    /// entity was a member of an active traversal-queue link at the
+    /// moment of release, and at what position (0 = head) -- a genuine
+    /// `Option`, not a defaulted 0, since most `Released` events are never
+    /// queue members at all; absence must not read as "queued at the
+    /// front."
+    Released {
+        job: common::bastion::JobId,
+        reason: ReleaseReasonV1,
+        queue_position: Option<usize>,
+    },
     Preempted { need: NeedKind },
     Teleported { cause: TeleportCause },
     NeedCrossed { need: NeedKind, dir: CrossDirection },
@@ -350,6 +360,64 @@ impl EntityStore {
         let permanent: usize = self.permanent.values().map(|v| v.len()).sum();
         (rings + permanent) as u64
     }
+
+    /// Every `ColonistEventKind::Released` event across EVERY entity (ring
+    /// and retained alike), tick-ordered, capped at `cap` most-recent
+    /// (oldest-out, matching the ring's own eviction policy for
+    /// consistency) -- Opus's request, 2026-08-10, "the aggregate-late law
+    /// landing on the instrument built to escape it": a run-total count
+    /// answers neither of the pilot's two registered customers (Measure
+    /// 0's cluster-vs-uniform question over ticks; seed 69's per-event
+    /// queue-position detail), so this crosses subjects deliberately --
+    /// unlike `events_for`, which is intentionally per-entity. Returns
+    /// `(records, truncated)`; `truncated` is true when the true count
+    /// exceeds `cap`, so a capped list can never render identically to a
+    /// complete one -- the same self-accounting law the per-entity ring
+    /// already carries, applied here.
+    fn released_records(&self, cap: usize) -> (Vec<ReleasedRecord>, bool) {
+        let mut all: Vec<ReleasedRecord> = Vec::new();
+        let mut collect = |subject: Uid, event: &EntityEvent| {
+            if let EventKind::Colonist(ColonistEventKind::Released { job, reason, queue_position }) =
+                &event.kind
+            {
+                all.push(ReleasedRecord {
+                    subject,
+                    tick: event.tick,
+                    job: *job,
+                    reason: *reason,
+                    queue_position: *queue_position,
+                });
+            }
+        };
+        for (&subject, ring) in &self.rings {
+            for event in &ring.events {
+                collect(subject, event);
+            }
+        }
+        for (&subject, events) in &self.permanent {
+            for event in events {
+                collect(subject, event);
+            }
+        }
+        all.sort_by_key(|r| r.tick);
+        let truncated = all.len() > cap;
+        if truncated {
+            let start = all.len() - cap;
+            all = all.split_off(start);
+        }
+        (all, truncated)
+    }
+}
+
+/// One `ColonistEventKind::Released` event, flattened for cross-entity
+/// export -- see [`EntityStore::released_records`].
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ReleasedRecord {
+    pub subject: Uid,
+    pub tick: u64,
+    pub job: common::bastion::JobId,
+    pub reason: ReleaseReasonV1,
+    pub queue_position: Option<usize>,
 }
 
 static LOG: OnceLock<Mutex<Option<EntityStore>>> = OnceLock::new();
@@ -420,6 +488,25 @@ pub fn retain(subject: Uid) {
         return;
     }
     with_store(|store| store.retain(subject));
+}
+
+/// Cross-entity export for the pilot's two registered customers -- see
+/// [`EntityStore::released_records`] for why this differs deliberately
+/// from `events_for` (per-entity) and `event_count` (a bare total,
+/// which "the aggregate-late law landing on the instrument built to
+/// escape it" -- Opus, 2026-08-10 -- correctly named as unable to
+/// answer either customer). `cap` bounds the returned list; the `bool`
+/// is true when the true count exceeded it (truncated, oldest dropped
+/// first, matching every other truncation flag in this module).
+pub fn released_events(cap: usize) -> (Vec<ReleasedRecord>, bool) {
+    if !enabled() {
+        return (Vec::new(), false);
+    }
+    slot()
+        .lock()
+        .ok()
+        .and_then(|guard| guard.as_ref().map(|store| store.released_records(cap)))
+        .unwrap_or((Vec::new(), false))
 }
 
 /// The Voonoo query (measure 1): every recorded event for `subject`, in
@@ -693,6 +780,78 @@ mod tests {
         });
         store.retain(subject); // second call: must not clear or duplicate
         assert_eq!(store.events_for(subject).len(), 2);
+    }
+
+    fn released_event(tick: u64, subject: Uid, job: u64, queue_position: Option<usize>) -> EntityEvent {
+        EntityEvent {
+            schema: SCHEMA.to_owned(),
+            tick,
+            subject,
+            kind: EventKind::Colonist(ColonistEventKind::Released {
+                job,
+                reason: ReleaseReasonV1::TimedOut,
+                queue_position,
+            }),
+            actor: None,
+        }
+    }
+
+    /// `released_records` (Opus's request, 2026-08-10): crosses entities
+    /// deliberately, unlike `events_for` -- a `Released` from a live ring
+    /// AND one from a retained (permanent) entity both appear, merged and
+    /// tick-ordered, with non-`Released` events excluded and every field
+    /// (job/reason/queue_position, including the `None` case) carried
+    /// through unchanged.
+    #[test]
+    fn released_records_crosses_entities_tick_ordered_with_fields_intact() {
+        let mut store = EntityStore::new(8);
+        let colonist_a = uid(1);
+        let colonist_b = uid(2);
+        store.retain(colonist_b);
+        // Out of tick order on purpose -- the query must sort, not trust
+        // insertion order.
+        store.record(released_event(20, colonist_a, 501, Some(3)));
+        store.record(released_event(10, colonist_b, 502, None));
+        // A non-Released event must not leak into the export.
+        store.record(EntityEvent {
+            schema: SCHEMA.to_owned(),
+            tick: 15,
+            subject: colonist_a,
+            kind: EventKind::Colonist(ColonistEventKind::Claimed { job: 503 }),
+            actor: None,
+        });
+        let (records, truncated) = store.released_records(10);
+        assert!(!truncated);
+        assert_eq!(records.len(), 2, "only the two Released events, not the Claimed one");
+        assert_eq!(records[0].subject, colonist_b, "tick-ordered: 10 before 20");
+        assert_eq!(records[0].tick, 10);
+        assert_eq!(records[0].job, 502);
+        assert_eq!(records[0].queue_position, None, "not every Released event is a queue member");
+        assert_eq!(records[1].subject, colonist_a);
+        assert_eq!(records[1].tick, 20);
+        assert_eq!(records[1].job, 501);
+        assert_eq!(records[1].queue_position, Some(3));
+    }
+
+    /// The cap must behave exactly like the per-entity ring's own policy:
+    /// oldest-out, with the truncation flag set -- a silently-capped list
+    /// is the same censoring trap the ring already guards against, in a
+    /// new place.
+    #[test]
+    fn released_records_caps_oldest_out_and_flags_truncation() {
+        let mut store = EntityStore::new(16);
+        let subject = uid(1);
+        for tick in 0..5u64 {
+            store.record(released_event(tick, subject, tick, None));
+        }
+        let (records, truncated) = store.released_records(3);
+        assert!(truncated, "5 recorded, capped at 3 -- must report truncation");
+        let ticks: Vec<u64> = records.iter().map(|r| r.tick).collect();
+        assert_eq!(ticks, vec![2, 3, 4], "oldest-out: keeps the most RECENT, drops the earliest");
+
+        let (records_uncapped, not_truncated) = store.released_records(5);
+        assert!(!not_truncated, "cap exactly equal to the true count is not truncation");
+        assert_eq!(records_uncapped.len(), 5);
     }
 
     /// The Voonoo query itself, end to end: given a drop's uid, every

@@ -1576,6 +1576,18 @@ pub fn access_stall_secs() -> f32 {
     })
 }
 
+/// Entity-event-log Measure-0 instrument, seed 69's field (Opus's request,
+/// 2026-08-10): whether `uid` is a member of ANY active traversal-queue
+/// link right now, and at what position (0 = head). A genuine `Option`,
+/// not a defaulted 0 -- a `Released` event fires for entities well beyond
+/// the ladder-queue mechanism, so absence here means "not queued," not
+/// "queued at the front." Cheap at colony scale: at most a handful of
+/// active links, scanned once per `Released` event (event-driven, not
+/// per-tick).
+pub(crate) fn queue_position_for(board: &JobBoard, uid: common::uid::Uid) -> Option<usize> {
+    board.traversal_links.values().find_map(|link| link.position(uid))
+}
+
 /// bastion (#68 amendment, Opus/#60 falsifier prereg): the three reset
 /// paths of the F3 stale-access-plan pruner (see the pruner's own doc
 /// comment at its `if`/`else if`/`else` chain) -- `access_idle_secs ==
@@ -14336,6 +14348,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // hypothesis). `uids.get` may miss if the entity is mid-
                 // teardown -- skip rather than emit a subject-less event.
                 if let Some(subject) = uids.get(*entity).copied() {
+                    // Seed 69's field (Opus's request, 2026-08-10): read
+                    // BEFORE the mutations below for the same reason --
+                    // `dequeue`/link teardown on release would otherwise
+                    // make this entity un-findable in `traversal_links` by
+                    // the time anyone asked.
+                    let queue_position = queue_position_for(&*board, subject);
                     crate::bastion_entity_event_log::record_event(
                         tick.0,
                         subject,
@@ -14343,6 +14361,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             crate::bastion_entity_event_log::ColonistEventKind::Released {
                                 job: job_id,
                                 reason: (*release_reason).into(),
+                                queue_position,
                             },
                         ),
                         None,
