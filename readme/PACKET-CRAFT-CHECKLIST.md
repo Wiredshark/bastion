@@ -208,6 +208,39 @@ builder ASKED whether the toggle was moot there, and flagged it rather than assu
 **A gate item nobody can satisfy is a finding about the gate — and a doubt raised by
 the person running the test is the cheapest review signal that exists.**
 
+### ★★★★★★ SECOND CLAUSE — **THE FLAG CAN BE READ AND THE SUBJECT STILL GONE**
+
+**Paid the SAME EVENING, by the replacement's replacement.**
+
+*The third instrument ran the same binary at the same `clock.tick()` call site — it
+**passed the clause above**. It reached its determinism through three env vars:*
+
+    BASTION_FLAT_ARENA + force_load_area  ->  deletes background chunk GENERATION
+    BASTION_DETERMINISTIC                 ->  deletes PARALLEL execution (its own comment)
+    BASTION_AUTOFOUND_COLONY              ->  pins promotion to a fixed data.tick
+
+> ## **THE THREE VARS THAT MADE THE RUN DETERMINISTIC WERE PRECISELY THE THREE THAT
+> DELETED THE WALL-COUPLING UNDER TEST.** *Promotion tick becomes constant BY
+> CONSTRUCTION — an N-run distribution there is flat by design, not by measurement.*
+
+★★★ **The tell was in the smoke test: promotion in 1.4 s, against 14–22 REAL SECONDS
+live. The instrument had not sped the mechanism up — it had removed it.**
+
+**MECHANICAL, both clauses together:**
+
+1. **confirm the path under test READS the variable**, and
+2. ★★★★ **confirm the path under test STILL CONTAINS THE MECHANISM the variable acts
+   on.**
+
+### ★★★★★ THE GENERAL FORM — **worth more than the instance**
+
+> **DETERMINISM AND WALL-COUPLING ARE MUTUALLY EXCLUSIVE OBSERVABLES.**
+
+*The controls that make a test trustworthy — serial execution, pinned ticks,
+pre-loaded terrain — are the same controls that erase every wall-clock race.* ★★★
+**So a wall-coupled question can only be answered on the NOISY path, and only
+DISTRIBUTIONALLY. There, determinism is not a prerequisite — it is disqualifying.**
+
 ## MAINTENANCE
 
 **This file is the single source.** *Any lane's private notes on packet craft should
