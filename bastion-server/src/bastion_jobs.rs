@@ -3833,6 +3833,19 @@ pub struct FailsafeTeleportEvent {
     /// `Is<Rider>` or `Is<VolumeRider>` present on the entity, at the emit
     /// site.
     pub is_rider: bool,
+    /// #85 (Fable's amendment): the physics-join membership witness, SPLIT
+    /// into its four component bits rather than one AND -- if the AND came
+    /// back false, the next question is which component is missing, and an
+    /// AND cannot be decomposed after the fact (the split costs the same
+    /// four reads). `body` in particular is REQUIRED for gravity but
+    /// `.maybe()` for collision in `phys::Sys` -- these two joins do not
+    /// filter identically, so the split distinguishes "outside gravity's
+    /// join but inside collision's" from "outside both", which an AND
+    /// renders identically. SNAPSHOT, read live at emit time.
+    pub has_collider: bool,
+    pub has_mass: bool,
+    pub has_density: bool,
+    pub has_body: bool,
     pub on_ground: bool,
     pub on_wall: bool,
     pub character_state: Option<String>,
@@ -6174,6 +6187,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // Veloren's authoritative CharacterState::Climb movement path.
             WriteStorage<'a, comp::Controller>,
             ReadStorage<'a, comp::Body>,
+            // #85 (Fable's amendment, 2026-08-11): the fail-safe's physics-
+            // join membership witness, split into its four component bits
+            // rather than one AND -- see the emit site's own doc for why
+            // an AND cannot be decomposed after the fact.
+            ReadStorage<'a, comp::Mass>,
+            ReadStorage<'a, comp::Density>,
             (
                 ReadStorage<'a, common::link::Is<common::tether::Follower>>,
                 ReadStorage<'a, common::link::Is<common::tether::Leader>>,
@@ -6240,6 +6259,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 scales,
                 mut controllers,
                 bodies,
+                masses,
+                densities,
                 (
                     tether_followers,
                     tether_leaders,
@@ -17228,6 +17249,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let is_rider = entity.is_some_and(|entity| {
                         mount_riders.contains(entity) || volume_riders.contains(entity)
                     });
+                    // #85 (Fable's amendment): four separate reads, not one
+                    // AND -- see the struct field's own doc for why.
+                    let has_collider = entity.is_some_and(|entity| colliders.contains(entity));
+                    let has_mass = entity.is_some_and(|entity| masses.contains(entity));
+                    let has_density = entity.is_some_and(|entity| densities.contains(entity));
+                    let has_body = entity.is_some_and(|entity| bodies.contains(entity));
                     let on_ground = entity
                         .and_then(|entity| physics_states.get(entity))
                         .is_some_and(|physics| physics.on_ground.is_some());
@@ -17267,6 +17294,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         head_clear,
                         in_loaded_chunk,
                         is_rider,
+                        has_collider,
+                        has_mass,
+                        has_density,
+                        has_body,
                         on_ground,
                         on_wall,
                         ?character_state,
@@ -17296,6 +17327,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         head_clear,
                         in_loaded_chunk,
                         is_rider,
+                        has_collider,
+                        has_mass,
+                        has_density,
+                        has_body,
                         on_ground,
                         on_wall,
                         character_state,
