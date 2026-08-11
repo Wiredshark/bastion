@@ -83,6 +83,25 @@ this entity is merge-checked against a fresh drop of the same item while
 already split … out of this row's scope."* **The comment predicted this
 exact crash and deferred it, correctly scoped at the time, now due.**
 
+**The `idx == last` / single-entry case, checked explicitly:** `decrease_
+amount(1)` mutates `self.items[idx]` in place, wherever `idx` sits (0,
+`len()-1`, or between). `self.items.push(single)` then unconditionally
+appends one entry AFTER whatever the vec's current length is — so
+`items[idx]` is never the new last index for ANY value of `idx`, including
+a single-entry stack (`idx == 0 == len()-1` before the call). **The
+violation is unconditional whenever `split_off_one` returns `true` — no
+edge case escapes it.**
+
+**Vanilla's own `try_merge`, for contrast, maintains the invariant by
+construction:** it always pops-and-re-pushes the potentially-partial item
+LAST (`self.items.push(self_last)`, then the remainder if any). A
+multi-entry stack built by ordinary merges has full non-last entries by
+construction. `split_off_one` is the only mutator in this codebase that
+creates a partial NON-last entry — its own doc comment's defence ("pre-
+existing in shape, not introduced by this method") does not survive that
+comparison; it is introduced by this method in effect, even if the
+*general* risk shape (any multi-entry stack) predates it.
+
 **Why "not related to bastion" (this doc's original classification) was
 wrong:** it was reasoned from `try_merge`'s CALL site (never called from
 `bastion_jobs.rs` — true, but irrelevant) instead of the CONSTRUCTION site
