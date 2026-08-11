@@ -78,3 +78,40 @@ need-preemption goes permanently inert, invisible only because a client was
 always present) is fixed: a founded colony now ticks its own needs, feeds
 itself, and stays `Loaded` with zero client connected. **Item 8's endurance
 run is unblocked and can be relaunched against this pin.**
+
+## ADDENDUM — the "40 vs 32" gap in measure 3, read (Fable's ask, parallel-fill
+during item 8 v3): not a double-count and not a miss, two loosely-named
+populations that were never the same set
+
+**Re-grepped `server-stdout-colony-presence-acceptance-v3.log` directly rather
+than trusting the summary numbers above.** The "40" cited in measure 3 is
+itself two different messages counted together: 24 `"need preempt — hunger
+below interrupt"` lines (`bastion_jobs.rs` ~10917-10927, a fresh preempt —
+this site increments `board.preempt_attempts` in the same block, no
+divergence possible there) **plus** 16 `"need preempt — reclaiming suspended
+EatFrom"` lines (~10811, a *different* code path — resuming an already-
+pending job, not a fresh preempt — which does **not** touch
+`preempt_attempts` at all). Separately, `preempt_attempts` itself (0→32) is
+the union of four increment sites, not one: the 24 hunger-preempts above,
+0 rest-preempts (`"rest below interrupt"`, ~11062 — none fired this leg), 0
+breakdown-preempts (`"BREAKDOWN — despondent"`, ~10535 — none fired), **plus
+8 struck-out anti-wedge cooldown arms (~11079-11084) that increment the
+counter with no named log line at all** — a colonist that exhausted every
+candidate (no food, no bed) and armed its cooldown so it doesn't re-strike
+the same dead end every tick. **The two numbers therefore share an overlap
+of exactly 24 (the fresh hunger-preempts) and diverge on both sides**: "40"
+over-counts relative to `preempt_attempts` by including 16 reclaim events
+the counter was never designed to see; "32" over-counts relative to the
+named-line total by including 8 silent struck-out arms neither log line
+names. **Not a bug** — nothing is double-counted (each of the four
+increment sites fires from a disjoint code branch) and nothing that should
+increment the counter fails to — but `preempt_attempts` is not, and was
+never meant to be, "count of `need preempt` log lines"; the label invites
+that reading and the doc above (measure 3's row) states both numbers side
+by side without saying they measure different sets. Left as a naming note,
+not a fix: the counter's own doc comment (`bastion_jobs.rs` ~4841-4843)
+already scopes it as "preempt attempts fired (telemetry)" without claiming
+completeness over every preemption-adjacent event, and re-scoping it to
+include reclaims or exclude struck-outs is a design call for whoever next
+needs it to answer a specific question, not a correctness defect to patch
+here.
