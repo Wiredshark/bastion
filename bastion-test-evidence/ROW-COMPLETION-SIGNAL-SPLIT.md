@@ -39,6 +39,39 @@ member.**
 | **6** | cave-in `floating_chunk` | ✅ pre-existing gate |
 | **7** | ⚠ **`done_regions` — designation AABB retirement** | **UNREAD.** *Can a phantom completion retire a designation outline with undone work left? Flagged, not asserted.* |
 | **8** | `to_release` / `remove_job` / `emergency_access_jobs.remove` | ✅ correct for BOTH kinds — *this is genuinely the "job ended" consumer* |
+| **9** | ★★★ `watch_wipe(…, "job-completed")` *(self-job / foreign-moot arm)* | ⛔ **STILL UNGATED — found on the landed commit.** *`grant_xp` beside it is gated on `acted`; the wipe is not.* |
+| **10** | `watch_wipe(…, "arrived-head")` · `"arrived-working"` | ✅ gated on `!emergency_access_jobs.contains_key` |
+| **11** | ★★★★ `watch_wipe(…, "route-exhausted-replan")` | ✅ **SAFE ONLY BECAUSE REPLANS ARE NOW BOUNDED** — see §1b |
+
+### ★★★★★★ SITE 9 IS THE ORIGINAL DEFECT, VERBATIM, ONE ARM OVER
+
+    if acted { colonist.0.skills.grant_xp(job.work, COMPLETION_XP); }
+    if let Some(u) = uids.get(entity) {
+        watch_wipe(&mut board.stuck_watch, u, "job-completed");   // no `acted`
+    }
+
+> ## **THE CONSEQUENCE IS CONDITIONAL. THE SIGNAL IS UNCONDITIONAL.** *The same shape
+> as the emit that started this row, in a different arm, surviving a fix pass aimed at
+> exactly this disease.*
+
+★★★ **Found only because the enumeration was written down. That is the row's whole
+argument in one instance.**
+
+### ★★★★★★ 1b · THE WATCHDOG WAS RESET *TWICE* PER CYCLE — **and the bound is what re-arms it**
+
+**`watch_wipe(…, "route-exhausted-replan")` gives a FRESH CLOCK on every replan.** *Its
+comment states the assumption:* **"On exhaustion (above) the watch keeps its accrual
+and the net fires within its window instead."**
+
+**Pre-fix, replans were effectively unbounded** *(the exhaustion result was computed and
+ignored)*. **So the 3-beat loop reset the stuck clock twice per ~15 s beat — once by
+the phantom completion, once by the replan — against a 60 s threshold.**
+
+> ## **DEFECT 2's FIX DOES NOT MERELY STOP THE LOOP. IT RESTORES THE BOUNDED-REPLAN
+> CONDITION THE WATCHDOG WAS DESIGNED AGAINST — IT RE-ARMS THE FAILSAFE.**
+
+★★★★ *The strongest property in the cluster, and neither reviewer nor builder credited
+it until the enumeration reached site 11.*
 
 ★★ *`board.plans_completed` is a different signal (plans, not jobs) — not implicated.*
 
