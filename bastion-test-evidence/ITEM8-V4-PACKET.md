@@ -162,7 +162,60 @@ vs SOW-42% split (SOW churns through the high-preemption famine window; TILL and
 HARVEST front-load early) — **named as consistent, NOT traced to a specific job's
 history.***
 
-### 1c · ROUTE 3 — THE SWEEP EXTENSION
+### ⛔★★★★★★ 1c′ · ROUTE 3 AS BUILT **CHURNS** — CORRECTED FOR v5 (2026-08-11, mid-v4)
+
+**v4's early check: `designated_sweep_reaps = 186` in 15 minutes, against v3's 87 farm
+jobs created in 2.5 hours. Farm silent from minute 3. Confirmed from CODE, no log.**
+
+    :18197   *cycles_since_last_claim.entry(pos).or_insert(0) += 1;   // ticks EVERY cycle
+    :19071   cycles_since_last_claim.insert(pos, 0);                  // resets ONLY on CLAIM
+    :18261   designated_sweep_should_reap(..., get(&j.pos), reap_threshold_cycles)
+
+> ## **THE GATE MEASURES THE *POSITION'S* TIME SINCE ITS LAST CLAIM — NOT THE
+> *JOB'S* AGE. A newly created job at a position unclaimed for one gate-period is
+> BORN PAST THE GATE and reaped on sight; the cell frees, a replacement is
+> generated, the counter is still high, and it is reaped again.**
+
+★★★ **THE CONSTANT IS INNOCENT.** *`access_stall_secs() / (ARBITRATION_INTERVAL /
+SIM_TPS)` is seconds ÷ seconds-per-cycle — units correct, derived from the live
+function, ~930 s worth.* **Nothing could age 930 s inside a 15-minute window, and
+nothing did: the jobs did not age, they INHERITED an age.** *Not a #103 threshold
+problem — **a correct threshold applied to the wrong quantity**.*
+
+#### THE v5 FIX — **intent, not a new constant**
+
+1. ★★★ **The job carries its OWN created-at cycle**; the sweep reads the job's age,
+   never the position's claim recency.
+2. ★★★★ **PLANTED TEST, and it is the one that would have caught this:**
+   **A FRESH JOB AT A STALE POSITION MUST NOT BE REAPABLE.** *Red before, green
+   after.*
+3. **Keep `cycles_since_last_claim` for what it actually names** — *starvation
+   telemetry keyed by position (TASK #59's purpose). It is not wrong; it was
+   misused.*
+
+#### ★★★★★ THE REVIEW LESSON — **why this passed my gate**
+
+**I verified: the test exists · the predicate is extracted pure · the constant
+reads the live function · the flagged deviation's reasoning holds. All four true.**
+
+> ## **I NEVER ASKED WHAT THE AGE ARGUMENT MEASURES. A PURE PREDICATE'S TEST PROVES
+> THE PREDICATE, NOT ITS INPUTS.**
+
+★★★ **`designated_sweep_should_reap(claimed, is_designated, age, threshold)` is
+correct and its unit test passes.** *The defect is entirely in what is passed as
+`age` — and the field's own name carried the answer: **"cycles_since_last_claim" is
+not job age**, and I read it as job age anyway.*
+
+★★ **STANDING ADDITION TO REVIEW PRACTICE:** *when a predicate takes a quantity as
+an argument, **the quantity's provenance needs the same check the threshold's got.***
+**Ask of every argument: what produces this, and does its name describe what I think
+it describes?**
+
+★ **And the failure-mode table's gap:** *route 3's table never contained "reaps young
+jobs", because the enumeration assumed age meant age.* **A planted test is only
+written for a failure mode someone named.**
+
+### 1c · ~~ROUTE 3 — THE SWEEP EXTENSION~~ *(original, superseded by 1c′)*
 
 **The orphan sweep covers only `DepositRun | RestAt | EatFrom | Despond` **and**
 requires `claimed_by.is_none()`.** *`Designated` is outside its kind list.*
