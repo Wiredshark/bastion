@@ -1,0 +1,18 @@
+[1786451425454] === bastion_playtest starting: server=localhost username=bastion_llm_player script=bastion-test-evidence/live-playthrough/script-18-colony-presence-acceptance-v2.txt ===
+[1786451425454] parsed 9 script commands
+[1786451429567] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/a2d459eb-066c-4b93-b6b9-70d616c51cf9), name: "Veloren Server", git_hash: 4221203457, git_timestamp: 1786449880, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1786451429700] requested character join id=CharacterId(2)
+[1786451429701] in-game. entity=Entity(0, Generation(1))
+[1786451431760] player pos at script start: Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1786451431760] [note] DIAG -- ROW-COLONY-PRESENCE acceptance v2, DECISIONS #106
+[1786451431760] sent BastionCameraAnchor at Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1786451431760] sent chat command /give_item ["common.items.food.mushroom", "40"]
+[1786451431793] sent chat command /dropall []
+[1786451431827] sent BastionSpawnColony pos=Vec3 { x: 15216.5, y: 16016.5, z: 419.0 } count=8
+[1786451431827] sent BastionPlaceDesignation kind=Bed region=Region { min: Vec3 { x: 15213, y: 16013, z: 419 }, max: Vec3 { x: 15214, y: 16014, z: 420 } }
+[1786451432562] [chat] GenericChatMsg { chat_type: CommandInfo, content: Localized { key: "command-give-inventory-success", seed: 14443, args: {"item": Content(Plain("common.items.food.mushroom")), "total": Nat(40)} } }
+[1786451432595] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786451441760] waited 300 ticks -> sim 25.58..35.61 in 295 client spins; pos now Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1786451441760] designations (rev=1): [(Region { min: Vec3 { x: 15213, y: 16013, z: 419 }, max: Vec3 { x: 15214, y: 16014, z: 420 } }, Bed, None)]
+[1786451441760] [note] founding + provisioning + bed designated -- driver disconnecting now, zero client from here
+[1786451441760] === script complete, disconnecting ===

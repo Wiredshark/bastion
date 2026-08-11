@@ -1,0 +1,23 @@
+# ROW-COLONY-PRESENCE acceptance leg v2 (DECISIONS #106). v1
+# (script-17) cleanly demonstrated measures 1/2/4 (Loaded sustained,
+# needs ticking, zero client connections after disconnect) but never
+# satisfied measure 3 (preemption fires) -- a bare founding with no bed
+# and no food means hunger's candidate search finds nothing to
+# preempt INTO once it crosses interrupt (a known, separate food/bed-
+# search behavior, not a colony-presence defect: it correctly tried and
+# correctly found nothing). This leg provisions food (same mechanism as
+# script-10) and designates a bed BEFORE disconnecting, so preemption
+# has a real target once hunger crosses ~15 sim-min in.
+#
+# Requires the connecting player hold the `admin` role (give_item/
+# dropall are admin-gated): `server-cli admin add <user> admin` against
+# the SAME VELOREN_USERDATA before boot.
+note DIAG -- ROW-COLONY-PRESENCE acceptance v2, DECISIONS #106
+anchor
+cmd give_item common.items.food.mushroom 40
+cmd dropall
+spawn 8
+designate bed 15213 16013 419 15214 16014 420
+wait 300
+list_designations
+note founding + provisioning + bed designated -- driver disconnecting now, zero client from here

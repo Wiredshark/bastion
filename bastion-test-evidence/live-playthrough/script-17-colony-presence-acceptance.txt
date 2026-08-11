@@ -1,0 +1,15 @@
+# ROW-COLONY-PRESENCE acceptance leg (DECISIONS #106,
+# ROW-COLONY-PRESENCE-PACKET.md). Founds the colony, then disconnects as
+# fast as possible -- the packet's own measure 4 requires ZERO client
+# connections across the whole scored window, and the earlier this
+# driver leaves the sooner every later sample is unambiguously
+# unattended. `anchor` is sent only because BastionSpawnColony's own
+# validation gate requires `bastion_terrain_anchor` to be set -- it is
+# NOT what keeps the colony loaded afterward (that's the whole point of
+# this row; the anchor mechanism is client-side only and does nothing
+# once this driver disconnects).
+note DIAG -- ROW-COLONY-PRESENCE acceptance, DECISIONS #106, zero-client-after-founding leg
+anchor
+spawn 8
+wait 60
+note driver disconnecting now -- acceptance measures 1-3 read from the server's own COLONY-PRESENCE-ACCEPTANCE-DIAG log from here; measure 4 is this disconnect itself

@@ -1,0 +1,22 @@
+# ROW-COLONY-PRESENCE acceptance leg v3 (DECISIONS #106). v2
+# (script-18) fixed measure 3's target-availability gap but tripped a
+# second one: `cmd dropall` with no trailing arg defaults to
+# `persistent: false` (`server/src/cmd.rs` handle_drop_all, #97's own
+# regression clause -- plain `/dropall` unchanged, despawn timer
+# included), so the provisioned food despawned (~5min window) long
+# before hunger crossed its ~15 sim-min interrupt. This leg uses
+# `cmd dropall true`, the SAME persistent mechanism #105/item 6 use
+# elsewhere in this arc, so the food is still there when hunger needs
+# it.
+#
+# Requires the connecting player hold the `admin` role against the SAME
+# VELOREN_USERDATA before boot.
+note DIAG -- ROW-COLONY-PRESENCE acceptance v3, DECISIONS #106
+anchor
+cmd give_item common.items.food.mushroom 40
+cmd dropall true
+spawn 8
+designate bed 15213 16013 419 15214 16014 420
+wait 300
+list_designations
+note founding + PERSISTENT provisioning + bed designated -- driver disconnecting now, zero client from here
