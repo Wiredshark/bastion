@@ -174,6 +174,40 @@ until the proof re-passes**.* **Never silent continuation** — *an equivalence 
 is a claim with an expiry date, and the trigger is what stops it decaying into an
 assumption.*
 
+## 7 · ★★★★★★ A REPLACEMENT TEST INHERITS THE FULL VACUITY CHECK — *2026-08-11*
+
+> ## **WHEN A TEST FAILS AND IS REDESIGNED, THE REPLACEMENT GETS THE SAME SCRUTINY AS
+> THE ORIGINAL — STARTING WITH: CAN IT FAIL?**
+
+★★★★ **A rescue plan arrives with momentum.** *The original design has just been
+discredited, the reviewer is relieved something is still runnable, and the replacement
+gets waved through on the strength of the diagnosis that produced it.*
+
+**COST — the equivalence proof, caught at review:**
+
+*The live-process fingerprint A/B was correctly refuted by its own control (two
+SAME-PACING runs diverged identically — the instrument had no noise floor). The
+proposed replacement was to re-run it through the deterministic harness with
+`BASTION_UNCAPPED_TPS` toggled.*
+
+    BASTION_UNCAPPED_TPS -> appears in EXACTLY ONE PLACE in the tree
+                            server-cli/src/main.rs:465
+    bastion-harness      -> a SEPARATE BINARY; never reads it
+
+★★★★★★ **The replacement would have run the same code twice and passed by
+construction — certifying compressed mode for the entire test programme on a
+comparison that could not fail.**
+
+**MECHANICAL:** *before adopting a redesign, name the observation that would make it
+go RED.* **If the new instrument's variable is an env var, a flag, or a mode, GREP FOR
+ITS CONSUMERS AND CONFIRM THE PATH UNDER TEST IS AMONG THEM** — *a mode that is moot
+in the harness is not a weaker test, it is no test.*
+
+★★★ **RELATED, and the reason this is a separate entry rather than a note on 5:** *the
+builder ASKED whether the toggle was moot there, and flagged it rather than assuming.*
+**A gate item nobody can satisfy is a finding about the gate — and a doubt raised by
+the person running the test is the cheapest review signal that exists.**
+
 ## MAINTENANCE
 
 **This file is the single source.** *Any lane's private notes on packet craft should
