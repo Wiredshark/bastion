@@ -61,6 +61,13 @@ event_emitters! {
         set_battle_mode: event::SetBattleModeEvent,
         // bastion (B3): god-anchor invulnerability buff add/remove
         buff: event::BuffEvent,
+        // bastion (#105, DECISIONS-FOR-BEN: FOUNDING SEED STOCK): the LIVE
+        // BastionSpawnColony path -- Server::bastion_spawn_colony's own
+        // seed-stock call never reaches this system; live colony founding
+        // calls `rtsim.bastion_spawn_colony` directly (see the call site
+        // below), so the founding drop has to be emitted from here too,
+        // not just the Server-level wrapper the harness goes through.
+        create_item_drop: event::CreateItemDropEvent,
     }
 }
 
@@ -811,6 +818,8 @@ impl<'a> System<'a> for Sys {
         (
             WriteStorage<'a, common::comp::BastionGodAnchor>,
             Read<'a, common::resources::Time>,
+            // #105: PickupItem::new needs this for the founding seed drop.
+            ReadExpect<'a, common::resources::ProgramTime>,
             specs::WriteExpect<'a, crate::rtsim::RtSim>,
             Write<'a, crate::bastion_jobs::JobBoard>,
             // CHOP redesign (FR10): the tree oracle — read-only Arc, safe
@@ -871,6 +880,7 @@ impl<'a> System<'a> for Sys {
             (
                 mut god_anchors,
                 time,
+                program_time,
                 mut rtsim,
                 mut job_board,
                 world,
@@ -1277,6 +1287,30 @@ impl<'a> System<'a> for Sys {
                 if let &mut Some((pos, count)) = bastion_spawn_update {
                     // bastion (B3): spawn the starting band (validated above).
                     rtsim.bastion_spawn_colony(pos, count);
+                    // #105 (DECISIONS-FOR-BEN, FOUNDING SEED STOCK): a
+                    // persistent loose drop, same mechanism as a player's
+                    // own `/dropall true` (item 6's own instrument) --
+                    // eligible for the B6 haul-to-stockpile pipeline the
+                    // moment a stockpile is designated nearby. Live-path
+                    // twin of `Server::bastion_found_colony_seed_stock`;
+                    // this is the entry point that actually fires for a
+                    // real in-game founding (caught live-first: the
+                    // Server-level wrapper alone tested green against the
+                    // harness while staying inert here -- the acceptance
+                    // run's honest 0-sown result is what caught it).
+                    if let Ok(mut item) =
+                        common::comp::Item::new_from_asset(crate::bastion_jobs::FARM_SEED_ITEM)
+                    {
+                        let _ = item.set_amount(crate::bastion_jobs::FOUNDING_SEED_STOCK);
+                        post_emitters.emit(event::CreateItemDropEvent {
+                            pos: common::comp::Pos(pos),
+                            vel: common::comp::Vel(Vec3::zero()),
+                            ori: common::comp::Ori::default(),
+                            item: common::comp::PickupItem::new(item, *program_time, true),
+                            loot_owner: None,
+                            persistent: true,
+                        });
+                    }
                 }
                 // bastion (UI-4): answer inspector requests — read-only
                 // payload assembly at request cadence (~1Hz per open
