@@ -1,11 +1,45 @@
 # ITEM 8 v4 packet — the two mandatory reads (completion predicate + watchdog
 budget), done before any design or build
 
-**Note first: `bastion-test-evidence/ITEM8-V4-PACKET.md` is not present in
-this worktree or on the shared remote (`bastion-origin/bastion/wip-batch-
-verify` fetched and checked) — proceeding from Opus's message content
-directly, which specified both reads in enough detail to act on. Flagging
-in case the packet lives somewhere I don't have visibility into.**
+**Note first: `bastion-test-evidence/ITEM8-V4-PACKET.md` was not present
+in this worktree or on the shared remote when this doc was written — it
+lived in Opus's worktree only, never committed. Confirmed by Opus after
+the fact; a corrected, pushed version follows separately.**
+
+## ★★★★★ RECONCILIATION (Fable's ask, closed with Opus directly) — both
+counts were right, reading different producers
+
+**Opus's "0 of 87 completed" and this doc's "59 of 87 completed" both
+survive reconciliation — they measure different log producers, not the
+same fact twice.** Opus's number came from `"bastion: job completed"`
+(`bastion_jobs.rs:14533`, the generic `still_valid`-path completion
+line): **confirmed by direct grep, that line fires 41 times in v3's log
+— 39 `Designated(Mine)`, 2 `Designated(Bed)`, ZERO `Designated(Farm)`.**
+Farm structurally never reaches that line — its own completion arm
+(`14131-14235`, this doc's Read 1) `continue`s immediately with its own
+distinct log lines (`tilled`/`sown`/`harvested`) before the generic site
+is ever reached (same reason `Gather`'s own arm at `14236` doesn't reach
+it either). **Opus's zero is a true zero for that specific channel; it
+is not evidence Farm's completion path is broken** — a different,
+correct completion mechanism simply doesn't share that log line.
+
+**Opus independently confirmed with a second, decisive piece of
+evidence: cell recycling.** 87 farm jobs distribute across cells as
+32 cells with exactly 1 job (never recycled), 10 cells with 3 jobs
+(one full TILL→SOW→HARVEST cycle), 5 cells with 5 jobs (a second cycle)
+— `32×1 + 10×3 + 5×5 = 87`, exact. **A cell cannot get its second job
+until the first one LEAVES the board — so 15 cells cycling through
+3-5 jobs each is independent proof the completion path removes jobs and
+lets cells recycle, which only happens on a real completion.** This
+matches the 59-count exactly and rules out any alternate explanation
+(e.g. jobs vanishing through the earlier-described "moot release" arm)
+for the bulk of them.
+
+**Standing conclusion, now confirmed from two independent directions:
+the Farm completion path works. The defect is specifically the 28
+never-engaged SOW claims. Route 1 (completion-seam fix) is retracted —
+nothing there to fix. Route 2 (claim expiry, this doc's mechanism
+finding) is promoted from guard to primary fix.**
 
 ## READ 1 — THE FARM COMPLETION PREDICATE, AND A CORRECTION TO "0 OF 87"
 
