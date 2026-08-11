@@ -1791,39 +1791,58 @@ impl PickupItem {
         )
     }
 
-    /// bastion (DECISIONS #89, Option B -- reservation capacity): split
-    /// ONE unit off this stack for a per-unit consumer (the eat path).
+    /// bastion (DECISIONS #89, Option B -- reservation capacity; FIXED
+    /// 2026-08-11 per ITEM8-CRASH-FINDING.md): split ONE unit off this
+    /// stack for a per-unit consumer (the eat path), returned to the
+    /// caller as a value -- **never pushed into `self.items`**.
+    ///
+    /// The struct's own documented invariant ("any item that is not the
+    /// last one must have an amount equal to its `max_amount()`") is
+    /// unenforceable for stackables by CONSTRUCTION: `max_amount() ==
+    /// u32::MAX` for a stackable (`Item::max_amount`), so a decremented
+    /// stackable entry can never equal it. No ORDERING of a decremented
+    /// entry and a fresh single ever satisfies the invariant -- reordering
+    /// is not available as a fix, only never letting `self.items` grow
+    /// past one entry is. This method's post-condition, proven by
+    /// `split_off_one_never_grows_the_stack` below: `self.items.len()` is
+    /// unchanged by every call, `Some` or `None`.
+    ///
+    /// **This used to push the split single as a new LAST entry** (so the
+    /// existing, unmodified `pick_up()` would pop exactly it) -- creating
+    /// `[Stack(39), Item(1)]`, a shape `try_merge`'s own debug_assert
+    /// polices and this shape permanently violates. That comment named
+    /// the exact failure ("`try_merge`'s own debug_assert on that
+    /// invariant could in principle fire if this entity is merge-checked
+    /// against a fresh drop of the same item while already split") and
+    /// scoped it out of #89's own row; it detonated during item 8's
+    /// endurance run (tick 45000, ~23.6 min in, ITEM8-CRASH-FINDING.md) —
+    /// a scoped-out failure mode is a scheduled crash unless it's
+    /// tracked, and a doc comment cannot page anyone when its own stated
+    /// precondition becomes true.
+    ///
     /// Finds the FIRST entry with `amount() >= 2` -- deliberately NOT
-    /// blindly the last entry -- so a stack that already carries a
-    /// prior split's single unit at its end (`[Stack(39), Item(1)]`)
-    /// still yields a fresh single from the real stack, not a failed
-    /// split against an unsplittable `Item(1)`. Two eaters in the same
-    /// tick therefore interleave safely in either order: each split
-    /// creates one new single, each `pick_up()` consumes one.
+    /// blindly the last entry, matching the original reasoning: a caller
+    /// that calls this twice in the same tick (two eaters) must find the
+    /// real stack both times, not an already-split single. Since neither
+    /// call ever grows `self.items`, both calls simply decrement the SAME
+    /// single entry in sequence -- interleaving is free, not earned by
+    /// index selection alone.
     ///
-    /// Returns `false` (no mutation) if every entry is already down to
-    /// amount 1 -- the caller's existing `pick_up()` already handles
-    /// that case correctly on its own, no split needed.
+    /// Returns `None` (no mutation) if every entry is already down to
+    /// amount 1 -- the caller's existing `pick_up()` already handles that
+    /// case correctly on its own (consuming the whole remaining entity),
+    /// no split needed.
     ///
-    /// The new single is `duplicate()`d -- a fresh item id, NEVER
+    /// The returned single is `duplicate()`d -- a fresh item id, NEVER
     /// `Item::clone` (see that method's own warning: cloning shares the
     /// persistent database identity `Arc`, which two independently
-    /// pickup-able units must not do) -- then pushed as the new LAST
-    /// entry, so the EXISTING, unmodified `pick_up()` pops exactly it.
-    ///
-    /// Known residual, not solved by this method: the struct-level
-    /// invariant that non-last entries stay at `max_amount()` is
-    /// unenforceable for stackables (`max_amount() == u32::MAX`) and is
-    /// deliberately not maintained here; `try_merge`'s own debug_assert
-    /// on that invariant could in principle fire if this entity is
-    /// merge-checked against a fresh drop of the same item while
-    /// already split. Narrow, pre-existing in shape (any multi-entry
-    /// stack risks it), not introduced by this method, and out of this
-    /// row's scope.
-    pub fn split_off_one(&mut self, ability_map: &AbilityMap, msm: &MaterialStatManifest) -> bool {
-        let Some(idx) = self.items.iter().position(|it| it.amount() >= 2) else {
-            return false;
-        };
+    /// pickup-able units must not do).
+    pub fn split_off_one(
+        &mut self,
+        ability_map: &AbilityMap,
+        msm: &MaterialStatManifest,
+    ) -> Option<Item> {
+        let idx = self.items.iter().position(|it| it.amount() >= 2)?;
         let mut single = self.items[idx].duplicate(ability_map, msm);
         single
             .set_amount(1)
@@ -1831,8 +1850,7 @@ impl PickupItem {
         self.items[idx]
             .decrease_amount(1)
             .expect("just checked amount() >= 2, so decrease_amount(1) cannot underflow");
-        self.items.push(single);
-        true
+        Some(single)
     }
 }
 
@@ -2251,14 +2269,14 @@ mod tests {
         }
     }
 
-    /// bastion (DECISIONS #89, ROW69-OPTION-B-PACKET): `split_off_one`'s
-    /// own ordering constraint, exercised exactly as the packet's trace
-    /// specifies -- two eaters splitting the same tick, in interleaved
-    /// order, must both succeed. A naive "always split the last entry"
-    /// implementation would find `Item(1)` unsplittable on the second
-    /// call and silently fail the second eater; this asserts the FIRST
-    /// entry with `amount() >= 2` is the one that gets found, not the
-    /// last.
+    /// bastion (DECISIONS #89, ROW69-OPTION-B-PACKET; REWRITTEN 2026-08-11
+    /// per ITEM8-CRASH-FINDING.md): `split_off_one`'s ordering guarantee
+    /// for two eaters in the same tick, re-proven against the FIXED
+    /// (never-grows-`items`) implementation. The original version of this
+    /// test asserted `items.len()` growing to 2 then 3 as EXPECTED,
+    /// CORRECT behavior -- that was the shape that crashed live. Same
+    /// scenario, corrected expectation: both splits decrement the SAME
+    /// single entry in sequence; `items.len()` never leaves 1.
     #[test]
     fn bastion_split_off_one_two_eaters_same_tick() {
         let ability_map = &AbilityMap::load().read();
@@ -2269,33 +2287,24 @@ mod tests {
         assert_eq!(stack.amount(), 40);
         assert_eq!(stack.items.len(), 1, "starts as one entry");
 
-        // Split A: [Stack(40)] -> [Stack(39), Item(1)].
-        assert!(stack.split_off_one(ability_map, msm));
-        assert_eq!(stack.amount(), 40, "splitting moves units, never creates or destroys them");
-        assert_eq!(stack.items.len(), 2);
-        assert_eq!(stack.items[0].amount(), 39);
-        assert_eq!(stack.items[1].amount(), 1);
-
-        // Split B, BEFORE either pickup: must target the real stack
-        // (index 0, amount 39), NOT the last entry (index 1, amount 1,
-        // unsplittable) -- exactly the packet's registered trap.
-        assert!(stack.split_off_one(ability_map, msm));
-        assert_eq!(stack.amount(), 40);
-        assert_eq!(stack.items.len(), 3);
-        assert_eq!(stack.items[0].amount(), 38);
-        assert_eq!(stack.items[1].amount(), 1);
-        assert_eq!(stack.items[2].amount(), 1);
-
-        // Both eaters can now pick up their own single unit, in either
-        // order, each popping the LAST entry via the existing,
-        // unmodified `pick_up()`.
-        let (picked_b, remainder) = stack.pick_up();
-        assert_eq!(picked_b.amount(), 1);
-        let mut remainder = remainder.expect("38 + 1 units remain");
-        let (picked_a, remainder) = remainder.pick_up();
+        // Split A: decrements the sole entry, returns the single as a
+        // VALUE -- never pushed into `items`.
+        let picked_a = stack
+            .split_off_one(ability_map, msm)
+            .expect("40 >= 2, must split");
         assert_eq!(picked_a.amount(), 1);
-        let remainder = remainder.expect("38 units remain");
-        assert_eq!(remainder.amount(), 38);
+        assert_eq!(stack.amount(), 39, "the returned single is no longer counted in the stack");
+        assert_eq!(stack.items.len(), 1, "split_off_one must never grow items -- this is its post-condition");
+
+        // Split B, same tick, same entity: must still find the real
+        // stack (now at 39) and decrement it again -- the interleaving
+        // guarantee holds without ever growing `items`.
+        let picked_b = stack
+            .split_off_one(ability_map, msm)
+            .expect("39 >= 2, must split");
+        assert_eq!(picked_b.amount(), 1);
+        assert_eq!(stack.amount(), 38);
+        assert_eq!(stack.items.len(), 1);
 
         // Different underlying `Arc<ItemId>` allocations -- never a
         // shared `Item::clone` (the persistent-identity hazard
@@ -2303,6 +2312,13 @@ mod tests {
         // implement `PartialEq`, so pointer identity is the correct
         // check here, not value equality).
         assert!(!std::sync::Arc::ptr_eq(&picked_a.item_id, &picked_b.item_id));
+
+        // The stack itself is still a normal, single-entry PickupItem --
+        // pick_up() consumes the whole remainder exactly as it always
+        // has, untouched by any of this.
+        let (picked_rest, remainder) = stack.pick_up();
+        assert_eq!(picked_rest.amount(), 38);
+        assert!(remainder.is_none(), "the entity is now empty");
     }
 
     /// The no-op case: every entry already down to amount 1 -- nothing
@@ -2314,9 +2330,59 @@ mod tests {
         let mut mushroom = Item::new_from_asset_expect("common.items.food.mushroom");
         mushroom.set_amount(1).expect("mushroom is stackable");
         let mut stack = PickupItem::new(mushroom, ProgramTime(0.0), true);
-        assert!(!stack.split_off_one(ability_map, msm));
+        assert!(stack.split_off_one(ability_map, msm).is_none());
         assert_eq!(stack.items.len(), 1, "no mutation on the no-op path");
         assert_eq!(stack.amount(), 1);
+    }
+
+    /// ITEM8-CRASH-FINDING.md: the planted reproduction. `split_off_one`'s
+    /// ORIGINAL implementation pushed the split single as a new LAST
+    /// entry, constructing `[Stack(39), Item(1)]` -- a shape whose FIRST
+    /// entry (a decremented stackable, `max_amount() == u32::MAX`) can
+    /// never satisfy `try_merge`'s "non-last entries must be at
+    /// `max_amount()`" invariant. That shape, merge-checked against a
+    /// fresh drop of the same item, is exactly what crashed item 8's
+    /// endurance run at tick 45000. This test constructs the scenario
+    /// directly and merge-checks it: RED against the pre-fix
+    /// implementation (the debug_assert in `try_merge` fires), GREEN
+    /// against the fix (the shape is now unconstructable via the public
+    /// API, so nothing to merge-check panics).
+    #[test]
+    fn split_off_one_never_grows_the_stack_even_under_repeated_splits_then_merge() {
+        let ability_map = &AbilityMap::load().read();
+        let msm = &MaterialStatManifest::load().read();
+        let mut mushroom = Item::new_from_asset_expect("common.items.food.mushroom");
+        mushroom.set_amount(40).expect("mushroom is stackable");
+        let mut stack = PickupItem::new(mushroom, ProgramTime(0.0), true);
+
+        // Split repeatedly -- the exact "already split once, split again"
+        // sequence the original comment flagged as the trap. Every call
+        // must leave `items.len() == 1`.
+        for expected_amount in (1..=39).rev() {
+            let single = stack.split_off_one(ability_map, msm);
+            assert!(single.is_some(), "40 units means 39 possible splits before exhaustion");
+            assert_eq!(
+                stack.items.len(),
+                1,
+                "invariant post-condition: items never grows, at any split depth"
+            );
+            assert_eq!(stack.amount(), expected_amount);
+        }
+
+        // The would-be-violating merge, exercised for real: a fresh drop
+        // of the same item, merge-checked against the already-split
+        // entity. This is the EXACT operation that panicked live. Must
+        // not panic.
+        let fresh_drop = PickupItem::new(
+            Item::new_from_asset_expect("common.items.food.mushroom"),
+            ProgramTime(0.0),
+            true,
+        );
+        stack
+            .try_merge(fresh_drop)
+            .expect("same item, both should_merge=true, must be mergeable");
+        assert_eq!(stack.items.len(), 1, "merging two single-entry stackables stays single-entry");
+        assert_eq!(stack.amount(), 2, "1 remaining unit + the fresh drop's 1 unit");
     }
 
     #[test]

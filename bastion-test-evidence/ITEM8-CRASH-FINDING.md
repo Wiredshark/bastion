@@ -51,6 +51,27 @@ would silently corrupt through instead of panic on.
 capacity)**, added to enable the eat path to split one unit off a stack for
 a single consumer. It is the producer.
 
+★ **Precision note (Opus's read, folded in so no later reader hunts a diff
+that doesn't exist): `PickupItem::pick_up` is UNMODIFIED.** #89 *added*
+`split_off_one`; it never touched `pick_up`. `split_off_one` pushed the
+split single as the new LAST entry specifically so the existing, untouched
+`pick_up()` would pop exactly it. The producer of the violating state is
+`split_off_one` alone.
+
+★★ **And the invariant itself has been VACUOUS for the entire life of this
+codebase until #89 (Opus's read, independently confirmed against the same
+two facts this doc already cites):** work `try_merge`'s two cases —
+non-stackable, `max_amount() == 1` and `amount()` is always 1, so the
+invariant is trivially true; stackable, `max_amount() == u32::MAX`, so
+`try_merge` only ever pushes a second entry on overflow past `u32::MAX`,
+which never happens in practice, so the merge never produces a second
+entry either. **Vanilla `PickupItem`s are effectively always single-entry.
+The "items before the last" iterator has always been empty; the assert has
+been passing trivially, never exercised, for as long as the type has
+existed. `split_off_one` is what gave it its first population with any
+content to check at all** — not a violation of an established, working
+check, but the check's first real test.
+
 **Mechanism, traced end to end:**
 
 1. `PickupItem::max_amount()`-adjacent fact (`Item::max_amount`, line 908):
@@ -147,19 +168,72 @@ defect independent of this arc's work.
     bastion-test-evidence/live-playthrough/server-stderr-item8-endurance-v2.log  (228 bytes, the panic)
     bastion-test-evidence/ITEM8-LAUNCH-RECORD-V2.md                              (the launch this crashed from)
 
-## Status — awaiting Opus's first-line review
+## THE FIX — DIRECTION 1 (Fable's ruling: the eat path stops creating
+## multi-entry stackable `PickupItem`s; the vanilla invariant is NOT
+## redefined), awaiting Opus's commit review
 
-- **Root cause found and cited above** (`split_off_one`, the entry's own
-  predicting comment, the mechanism traced step by step).
-- **NO FIX has been written or landed.** Per Fable's explicit ruling: route
-  to Opus, he owns first-line review, no fix until reviewed.
-- **No relaunch attempted.** Per the arc's own law ("if it dies at cycle 3,
-  that is a RESULT, not a failed run"), this crash IS the result for this
-  launch. Item 8's endurance run restarts only on a pinned fix, once one
-  lands and is reviewed.
-- **A candidate fix direction exists but is deliberately not written here**
-  (this doc reports the finding, not the remedy) — plausible shapes include
-  changing the invariant check to be stackable-aware (compare against the
-  entry's *effective* full state rather than literal `u32::MAX`), or
-  restructuring `split_off_one` to preserve last-entry-only-partial by
-  construction. Opus's call, not pre-empted here.
+**`split_off_one` no longer mutates `self.items` at all.** Signature
+changed `-> bool` to `-> Option<Item>`: it still finds the first entry with
+`amount() >= 2` and decrements it in place, but returns the duplicated
+single as a VALUE instead of pushing it into the Vec. **Post-condition,
+proven by test, not asserted by comment: `self.items.len()` is unchanged by
+every call, `Some` or `None`.** The struct's documented invariant now holds
+unconditionally, for every stackable `PickupItem`, always — not "usually,"
+not "unless merge-checked."
+
+**The one call site moved from reservation time to arrival/completion
+time.** Previously: split at reservation, mutate the ground entity, let the
+async vanilla `emit_pickup` path retry-consume the pushed single from the
+bag. Now: reservation only tracks CAPACITY (`board.reserve`, already
+independent of the Vec's structure — unchanged); at arrival, the colonist's
+completion pass calls `split_off_one` directly on the ground entity, and
+consumes the returned value immediately (hunger restored in the same pass,
+no bag round-trip, no vanilla pickup event for this path). The "down to the
+last unit" case is UNCHANGED — `split_off_one` returns `None` there and the
+existing, always-correct `emit_pickup`/`pick_up()` vanilla path still
+handles it, since a single-entry `PickupItem` was never part of the
+violating shape.
+
+★ **A note on the ruled "natural shape" (born-single-entry `PickupItem`,
+Fable's suggestion) vs. what was actually built:** this fix does NOT spawn
+a new entity/`PickupItem` for the split single at all. Opus's review
+flagged the identity hazard that shape would introduce (a new Uid, and the
+reservation/`EatFrom` job system is keyed on item Uid — a spawn-then-
+reserve or reserve-then-spawn sequencing question, since entity creation is
+event-driven and the new Uid wouldn't exist in the same tick). **This
+fix sidesteps that hazard entirely rather than solving it**: since the
+split now happens at arrival and is consumed immediately as a value (never
+becoming an entity, never needing a Uid, never touched by the reservation
+or job system at all), there is no new identity for anything to be keyed
+on. The reservation and the `EatFrom` job continue to name the ORIGINAL
+pile's Uid throughout, unchanged. This is the "alternative inside direction
+1, named with reasons" Fable's ruling invited if the suggested shape didn't
+fit the call sites — the call-site shape (async vanilla-pickup ceremony
+built around a still-existing ground entity) made the immediate-consumption
+alternative both simpler and hazard-free, so it was chosen over spawning a
+second entity.
+
+**The two eaters interleave correctly without ever growing `items`:**
+sequential calls to `split_off_one` on the same entity within one tick each
+decrement the same single entry in turn — no index games needed, since
+nothing is ever pushed.
+
+**Planted test, red pre-fix / green post-fix, by name:**
+`split_off_one_never_grows_the_stack_even_under_repeated_splits_then_merge`
+(`common/src/comp/inventory/item/mod.rs`) constructs the exact scenario —
+repeated splits from a 40-stack down to exhaustion, then a merge-check
+against a fresh drop of the same item, the precise operation that panicked
+live at tick 45000. **Against the pre-fix implementation this would panic
+on the merge-check** (the debug_assert this doc opened with); against the
+fix, it passes — 3/3 tests green (`cargo test -p veloren-common --lib
+split_off_one`), including the two pre-existing tests rewritten to assert
+the corrected post-condition instead of the shape that used to crash.
+
+**`split_off_one`'s ship-time comment is rewritten** to cite this test by
+name and state the post-condition as the guarantee, replacing the old
+"known residual … out of this row's scope" language that predicted and
+then deferred the crash.
+
+**Status: pins compile clean (`cargo check` isolated, `cargo test` green
+for the changed crate), awaiting Opus's commit review before landing.** No
+relaunch until the reviewed fix is pinned.

@@ -10863,26 +10863,28 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     (*iuid, ipos.0.map(|e| e.floor() as i32), def, pi.amount())
                                 });
                             if let Some((item, ipos, def, amount)) = food {
-                                // #89 (vanilla-respecting split-pickup,
-                                // Fable's ruling): split off exactly ONE
-                                // unit HERE, at the same moment the
-                                // reservation is created -- not repeated
-                                // per-tick in the active-job completion
-                                // loop, where a re-emit before the first
-                                // pickup event resolves would double-
-                                // split. `emit_pickup` in the completion
-                                // loop can then safely retry every pass
-                                // against the SAME already-split single
-                                // unit until it lands in the colonist's
-                                // bag. A no-op (returns false) if the
-                                // stack is already down to all-singles --
-                                // the plain `pick_up()` handles that case
-                                // on its own, nothing to split.
-                                if let Some(item_entity) = id_maps.uid_entity(item) {
-                                    if let Some(mut pi) = pickup_items.get_mut(item_entity) {
-                                        pi.split_off_one(&ability_map, &msm);
-                                    }
-                                }
+                                // #89/ITEM8-CRASH-FINDING.md (2026-08-11
+                                // fix): the split used to happen HERE, at
+                                // reservation time, mutating the ground
+                                // entity's `PickupItem` to carry the split
+                                // single as a second Vec entry -- exactly
+                                // the shape that permanently violates
+                                // `try_merge`'s invariant for a stackable
+                                // (`max_amount() == u32::MAX`, so a
+                                // decremented entry can never satisfy it,
+                                // in any position). The split now happens
+                                // at ARRIVAL/completion time instead
+                                // (`split_off_one`'s call site moved to the
+                                // EatFrom completion block below), where it
+                                // returns the single as a VALUE rather than
+                                // growing the stack. Reservation here only
+                                // tracks CAPACITY (`board.reserve`,
+                                // independent of the ground entity's Vec
+                                // structure) so two colonists can still
+                                // both claim from the same pile without
+                                // over-reserving; the physical stack is
+                                // untouched until whoever arrives actually
+                                // eats.
                                 let rid = board.reserve(item, amount);
                                 board
                                     .preempt_cooldown
@@ -13611,14 +13613,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // #89 (Fable's ruling, ROW69-OPTION-B-PACKET.md):
                     // BAG-CONTENT is the completion signal now, checked
                     // FIRST every pass -- NOT `uid_entity(item).is_some()`.
-                    // Split-pickup (the reservation site already called
-                    // `split_off_one` once, at reserve time) keeps the
-                    // GROUND entity alive on a partial take, so its
-                    // presence can no longer distinguish "not yet picked
-                    // up" from "someone else is still eating from this
-                    // stack" -- the old uid-vanish signal would spin
-                    // forever re-emitting a pickup that never completes
-                    // because the entity survives by design.
+                    // Split-pickup keeps the GROUND entity alive on a
+                    // partial take, so its presence can no longer
+                    // distinguish "not yet picked up" from "someone else is
+                    // still eating from this stack" -- the old uid-vanish
+                    // signal would spin forever re-emitting a pickup that
+                    // never completes because the entity survives by
+                    // design.
+                    //
+                    // ITEM8-CRASH-FINDING.md (2026-08-11 fix): the split
+                    // now happens HERE, at arrival, not at reservation time
+                    // -- `split_off_one` returns the single as a VALUE
+                    // instead of growing the ground entity's `PickupItem`,
+                    // so the ground entity stays single-entry throughout
+                    // (the invariant `try_merge` polices never has anything
+                    // to violate). Consumed directly, no bag round-trip:
+                    // the vanilla pickup path is kept ONLY for the "down to
+                    // the last unit" case below, where `pick_up()` was
+                    // always correct and untouched by this fix.
                     if let common::bastion::JobKind::EatFrom { item } = job.kind {
                         // Eat one of ANY recognized food def — covers
                         // forage-carried food too. The decrement is the
@@ -13673,20 +13685,48 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // machinery — THE removal path).
                             board.remove_job(active.job);
                             to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
-                        } else if id_maps.uid_entity(item).is_some() {
-                            // Bag empty, ground entity still present -- our
-                            // already-split single unit hasn't landed in
-                            // the bag yet. Retry the pickup (idempotent-
-                            // safe per `emit_pickup`'s own doc); no new
-                            // split here -- that happened once, at reserve
-                            // time, so a repeat emit before the first
-                            // resolves can't double-split. Keep the job
-                            // active, no release.
-                            crate::bastion_actions::emit_pickup(
-                                &mut inv_manip_emitter,
-                                entity,
-                                item,
-                            );
+                        } else if let Some(item_entity) = id_maps.uid_entity(item) {
+                            // Bag empty, ground entity still present.
+                            // ITEM8-CRASH-FINDING.md fix: split HERE, at
+                            // arrival, consuming the returned single
+                            // directly -- never touching the bag, never
+                            // growing the ground entity's `PickupItem`.
+                            let split = pickup_items
+                                .get_mut(item_entity)
+                                .and_then(|mut pi| pi.split_off_one(&ability_map, &msm));
+                            if split.is_some() {
+                                if std::env::var_os("BASTION_SELFJOB_COMPLETION_DIAG").is_some() {
+                                    info!(kind = "EatFrom", "bastion SELFJOB-COMPLETED-DIAG");
+                                }
+                                if let Some(needs) = needs_storage.get_mut(entity) {
+                                    needs.hunger = (needs.hunger + FOOD_RESTORE).min(1.0);
+                                }
+                                let eater_uid = uids.get(entity).copied();
+                                if let Some(u) = eater_uid {
+                                    board.b5_eat_completions_distinct.insert(u);
+                                }
+                                info!(
+                                    uid = eater_uid.map(|u| u.0.get()),
+                                    job = active.job,
+                                    "bastion: ate — hunger restored"
+                                );
+                                board.remove_job(active.job);
+                                to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                            } else {
+                                // `split_off_one` returned `None`: the
+                                // stack is down to its last unit (every
+                                // entry at amount 1). That case was always
+                                // `pick_up()`'s to handle -- unchanged by
+                                // this fix, since a single-entry PickupItem
+                                // was never part of the violating shape.
+                                // Idempotent-safe per `emit_pickup`'s own
+                                // doc; keep the job active, no release.
+                                crate::bastion_actions::emit_pickup(
+                                    &mut inv_manip_emitter,
+                                    entity,
+                                    item,
+                                );
+                            }
                         } else {
                             // Bag empty AND the ground entity is gone --
                             // genuinely sniped (someone else took the last
