@@ -234,6 +234,20 @@ name and state the post-condition as the guarantee, replacing the old
 "known residual … out of this row's scope" language that predicted and
 then deferred the crash.
 
+★★★ **The delta/seam analysis Fable required (checked concretely, not
+assumed) lives in the fix's own commit messages** (`5509dc95c3` primarily,
+with `e14795700e` for the rest) **and in `bastion-test-evidence/ITEM8-V3-
+PREREGISTRATION.md`'s expected-delta table.** Short version: the "pile
+amount changes during the walk" premise doesn't hold in EITHER design
+(`PickupItem::amount()` was always total-invariant across a split); two
+real regressions WERE found by checking rather than assuming
+(`b5_pile_pickup_by_member`, the ROW-ITEM6-WITNESS-PACKET B2 falsifiability
+counter, and the entity event log's `ItemEventKind::PickedUp` — both only
+ever fired from the vanilla `InventoryManip::Pickup` handler this fix
+bypasses for the common case) and both are now restored at the new
+consumption site, entering through equivalent instrumented doors rather
+than going dark silently.
+
 **Status: pins compile clean (`cargo check` isolated, `cargo test` green
 for the changed crate), awaiting Opus's commit review before landing.** No
 relaunch until the reviewed fix is pinned.
