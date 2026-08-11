@@ -1695,6 +1695,20 @@ pub const FARM_STAGE_SECS: f64 = 6.0;
 pub const FARM_GROWTH_SOWN: u8 = 1;
 pub const FARM_GROWTH_MAX: u8 = 15;
 
+/// bastion (#105, DECISIONS-FOR-BEN: FOUNDING SEED STOCK, 2026-08-10): a
+/// colony's founding includes starting seeds -- FARM_SEED_ITEM's only
+/// other producer is a successful HARVEST, and a fresh colony with no
+/// pre-existing stock has no possible first seed (the chicken-and-egg
+/// deadlock, live-confirmed in ITEM7-SEED-BOOTSTRAP-CONFIRM.md: zero SOW
+/// jobs claim without seeds; supplying 20 broke it 1:1, 20 sown). This is
+/// a starting-judgment-call quantity, not a derived one: enough for a
+/// genuinely useful first planting (roughly one seed per founding
+/// colonist, this project's default colony size), not a guarantee of
+/// filling an arbitrary player-sized plot -- the harvest->haul->fetch
+/// cycle (also live-confirmed: 20 sown -> 20 matured -> 20 harvested)
+/// is what's meant to carry the colony past this one-time bootstrap.
+pub const FOUNDING_SEED_STOCK: u32 = 8;
+
 /// bastion (B7-2): the preempt-attempt cooldown (game-seconds) — the
 /// anti-livelock (c) guard window.
 pub const PREEMPT_COOLDOWN_SECS: f64 = 60.0;

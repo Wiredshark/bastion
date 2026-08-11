@@ -1182,10 +1182,13 @@ impl Server {
     /// by the headless harness; in-game the client message drives it).
     /// Returns the roster names.
     pub fn bastion_spawn_colony(&mut self, wpos: Vec3<f32>, count: u8) -> Vec<String> {
-        self.state
+        let names = self
+            .state
             .ecs()
             .write_resource::<rtsim::RtSim>()
-            .bastion_spawn_colony(wpos, count)
+            .bastion_spawn_colony(wpos, count);
+        self.bastion_found_colony_seed_stock(wpos);
+        names
     }
 
     /// Determinism-capture founding: seed the colony from an explicit tick
@@ -1196,10 +1199,30 @@ impl Server {
         count: u8,
         seed_tick: u64,
     ) -> Vec<String> {
-        self.state
+        let names = self
+            .state
             .ecs()
             .write_resource::<rtsim::RtSim>()
-            .bastion_spawn_colony_seeded(wpos, count, seed_tick)
+            .bastion_spawn_colony_seeded(wpos, count, seed_tick);
+        self.bastion_found_colony_seed_stock(wpos);
+        names
+    }
+
+    /// bastion (#105, DECISIONS-FOR-BEN: FOUNDING SEED STOCK): the shared
+    /// half of colony founding both spawn paths above call -- a persistent
+    /// loose drop (same mechanism as a player's own `/dropall true`, item
+    /// 6's own instrument) so it becomes eligible for the B6 haul-to-
+    /// stockpile pipeline the moment a stockpile is designated nearby.
+    /// Deliberately at the Server layer, not inside `RtSim`: RtSim has no
+    /// ECS item-drop/event-bus access, and every founding that reaches the
+    /// Server API (live or determinism-capture) should carry the same
+    /// starting stock -- one entry point, not a live-only special case.
+    fn bastion_found_colony_seed_stock(&mut self, wpos: Vec3<f32>) {
+        self.bastion_spawn_item(
+            wpos,
+            bastion_jobs::FARM_SEED_ITEM,
+            bastion_jobs::FOUNDING_SEED_STOCK,
+        );
     }
 
     /// bastion (SEASON-0, harness hook): (season-index, year_phase,
