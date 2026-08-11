@@ -448,7 +448,23 @@ fn server_loop(
 
         drop(guard);
         // Wait for the next tick.
-        clock.tick();
+        //
+        // TIME-COMPRESSION (Ben directive, ROW-TIME-COMPRESSION-EQUIVALENCE-
+        // SPEC.md): env-gated bypass of the real-time pacing sleep,
+        // smallest possible diff -- the single call site, one env check,
+        // nothing else touched. Safe because `clock`'s only consumer in
+        // this file IS this call (confirmed: no other `clock.*` access in
+        // server-cli/src/main.rs, so no diagnostic/stats state depends on
+        // it running); the AUTHORITATIVE tick duration passed to
+        // `server.tick()` above is already the declared fixed step
+        // (`Duration::from_secs_f64(1.0 / TPS as f64)`), never derived
+        // from `clock.game_dt()` -- so skipping `clock.tick()` entirely
+        // when uncapped changes ONLY wall-clock pacing, never simulation
+        // dt. `BASTION_UNCAPPED_TPS` unset = today's behavior, bit-for-
+        // bit (this `if` is the only line that exists when it's unset).
+        if std::env::var_os("BASTION_UNCAPPED_TPS").is_none() {
+            clock.tick();
+        }
         #[cfg(feature = "tracy")]
         common_base::tracy_client::frame_mark();
     }
