@@ -83,6 +83,22 @@ this entity is merge-checked against a fresh drop of the same item while
 already split … out of this row's scope."* **The comment predicted this
 exact crash and deferred it, correctly scoped at the time, now due.**
 
+★ **This is the sharpest instance this arc owns of a named-case
+sufficiency claim failing anyway** (the standing law: "a confident comment
+marks the spot nobody re-examined; name the excluded case"). The
+`split_off_one` comment did everything that law asks — it named the
+excluded case explicitly, in the method that causes it, at the moment it
+was introduced. **And it detonated anyway**, because a doc comment cannot
+page anyone when its own stated precondition becomes true; it can only be
+found by someone who happens to read that exact method before the crash,
+or — as here — by someone reading it after. **The law grows a clause from
+this: a scoped-out failure mode is a scheduled crash unless it's tracked.**
+A prediction written into a doc comment must ALSO become a ledger row or
+rider with its trigger condition named as a live, checked thing — not just
+prose sitting in the file it will eventually break, where nothing re-
+examines it until the crash itself forces the read. This finding is that
+re-examination, ~arriving on schedule.
+
 **The `idx == last` / single-entry case, checked explicitly:** `decrease_
 amount(1)` mutates `self.items[idx]` in place, wherever `idx` sits (0,
 `len()-1`, or between). `self.items.push(single)` then unconditionally
