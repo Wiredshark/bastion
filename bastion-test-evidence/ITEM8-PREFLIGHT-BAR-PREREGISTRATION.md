@@ -171,12 +171,31 @@ that is read and reported BEFORE any distribution is computed from it** — per
 the standing "instrument changes what it sees" / "field cannot calibrate its
 own bound" rules.
 
-## 5 · WHAT REMAINS BEFORE LAUNCH
+## 5 · THE LIVENESS PROTOCOL (Opus's pre-flight requirement)
+
+**Releasing event:** the driver script (`script-15-item8-endurance.txt`) ends
+after founding + designating + a 3-checkpoint confirm window (~60s), then the
+process exits — dropping the client connection. That exit is the release into
+the scored unattended window; the server keeps running alone from there.
+
+**Producer-alive ping:** the food-stock sampler (`"bastion food stock sample"`,
+`0e58e08a1c`) is unconditional and tick-driven — no reachability, no client, no
+colonist-state dependency. It cannot go silent unless the server process itself
+has died. **Ping interval: ~20–25 minutes wall** (well inside one ~30-min
+cycle) — read the server log's tail, confirm (a) the process is still alive,
+(b) the most recent sample's `tick` value is strictly greater than the prior
+check's, (c) the byte count has grown. Three consecutive identical ticks across
+checks is treated as "the run died at cycle N" — **which the packet's own
+words make a RESULT, not a failed run** ("if it dies at cycle 3, that is a
+RESULT, not a failed run").
+
+## 6 · WHAT REMAINS BEFORE LAUNCH
 
 - Colony size confirmed at 8 (founding default) from the scored run's own boot.
-- Endurance driver script: found, designate, then **disconnect** for the scored
-  unattended window (a connected driver is a client, per the ruling — presence
-  is a variable).
-- Liveness protocol: name a releasing event + producer-alive ping interval
-  (Opus's ask) before launch, not during.
-- Fresh binary rebuild against `cad8d9e1a6` before launch.
+- ~~Endurance driver script~~ — done: `script-15-item8-endurance.txt`.
+- ~~Liveness protocol~~ — done, §5 above.
+- Fresh binary rebuild against `cad8d9e1a6`/`d73f4d7ebb` before launch.
+- `BastionSpawnColony` itself is gated only on `bastion_terrain_anchor` +
+  count bounds, not admin (checked `server/src/sys/msg/in_game.rs`) — this
+  script needs no `server-cli admin add` step, since it uses neither
+  `give_item` nor `dropall` (the scenario explicitly forbids both).

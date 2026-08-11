@@ -1,0 +1,40 @@
+# ITEM 8 (ENDURANCE RUN) -- the founding-and-disconnect leg.
+#
+# This driver's ONLY job is to found the colony, paint the three
+# designations the scenario needs, confirm they registered, then END --
+# the process exiting drops the client connection cleanly, which is
+# required: the scored window is UNATTENDED (Fable's ruling -- a
+# connected client changes loaded-agent state, an observer is a
+# variable). Everything after this script ends is server-only; the
+# scoring window is measured from the SERVER's own log, never from a
+# reconnected client.
+#
+# NO give_item, NO dropall -- the whole point of this run (packet #1
+# SCENARIO): founding stock only, no provisioning. #105's
+# FOUNDING_SEED_STOCK=8 is the colony's entire food-producing capital
+# from here on.
+#
+# Same verified z=418-420 world coordinates as script-10/13b/13c/14
+# (world persists per userdata dir; JobBoard/farm/bed state does not).
+# Stockpile/farm footprints match script-14 exactly (proven self-
+# sustaining there); bed footprint matches script-10 exactly (proven
+# rest interrupt/service there, ~30min post-paint).
+note BOOT STAMP: commit d73f4d7ebb3d43fa42cd46c07c1491afb8d975d5, branch bastion/wip-batch-verify -- CONFIRM against actual boot log before trusting this line
+note ITEM 8 ENDURANCE -- founding-only leg, no provisioning, driver disconnects after designation confirm
+anchor
+spawn 8
+wait 300
+note checkpoint 0 (~10s) -- colony founded; founding seed drop should be on the ground near the colony (fixed live path, #105)
+designate stockpile 15214 16012 418 15218 16017 419
+designate farm 15209 16012 418 15213 16017 419
+designate bed 15213 16013 419 15214 16014 420
+wait 300
+list_designations
+note checkpoint 1 (~20s) -- designations registered; till should be starting on the farm plot
+wait 600
+list_designations
+note checkpoint 2 (~40s) -- till should be complete, sow jobs open, founding stock should be getting hauled with zero give_item
+wait 600
+list_designations
+note checkpoint 3 (~60s) -- first-wave sow claims should be underway off the founding stock alone (matches script-14's timing)
+note driver disconnecting now -- scored unattended window begins at server-side tick recorded in this run's boot log plus the tick this note fires at; liveness checked via the server's own "bastion food stock sample" heartbeat (unconditional, tick%300) from here on, no client reconnect until the celebration run after the gate passes
