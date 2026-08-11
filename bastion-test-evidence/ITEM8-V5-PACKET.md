@@ -32,6 +32,34 @@ and for the first time the bar can tell those apart.*
 | **2** | **THE MINE FIX** — defect 2 (egress requests terminate) landed, with its planted test green **and its control arm green** | *the actual thing under test* |
 | **3** | ★★★★ **THE THREE LOG FIELDS** — `kind` on arrival · an emit on the material-stall path (`kind` + `pos` + `required_item`) · `completed_kind` on completion | *without these v5 reproduces v4's blind spot at full wall-clock cost* |
 | **4** | **RUN MODE DECLARED** — real time, impossibility named (§2) | *checklist entry 6* |
+| **5** | ★★★★★ **`BASTION_EGRESS_DIAG=1`** — the `watch_wipe` reason trace | *§1b: the discriminator was OFF for all of v4* |
+| **6** | ★★★★★★ **THE `watch_wipe` GATE** — the completion wipe carries the same world-effect predicate as the `job completed` emit | *§1b: otherwise the log is honest and the backstop stays disarmed* |
+
+### ★★★★★★ 1b · THE PHANTOM COMPLETIONS DISARMED THE RESCUE BACKSTOP
+
+**Cited by symbol in `bastion_jobs.rs`:**
+
+    watch_wipe(&mut board.stuck_watch, u, "job-completed")
+    const STUCK_TELEPORT_SECS: f32 = 60.0;
+
+**owner=80 completed a job every ~15 seconds for 2.5 hours.**
+
+> ## **EVERY PHANTOM COMPLETION WIPED THE STUCK CLOCK. IT NEVER REACHED 20 OF THE 60
+> SECONDS IT NEEDED. THE TELEPORT COULD NOT FIRE — NOT ONCE.**
+
+★★★★★ **So the named consumer for an unrescued colonist EXISTS and is structurally
+defeated by this exact defect class.** *Arrive → complete → wipe → repeat. To the
+watchdog, the trapped colonist looked like the most productive member of the colony.*
+
+**THE SAME FALSE SIGNAL HAD THREE VICTIMS:** *the health metric, the safety net, and —
+because `watch_wipe` only emits under `BASTION_EGRESS_DIAG` — the investigation
+itself.* ★★★ **"stuck_watch wiped" appears nowhere in v4's 945K lines. That absence
+was an EXCLUSION, not a finding.**
+
+★★★★★★ **And the shim's own doc comment describes this case in advance:** *"when a
+colonist who should backstop never does, the wipe-reason trace is the discriminator
+(the F5 pit-B investigation: 200s below grade, no teleport, no way to see why)."*
+**It happened again, for 2.5 hours, and the discriminator was switched off.**
 
 ★★ **Precondition 3 is not a nicety.** *v4's deciding read did not exist in its own
 capture: the arrival line carried no `kind`, the stall path emitted nothing at all, and
