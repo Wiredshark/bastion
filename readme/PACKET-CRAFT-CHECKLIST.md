@@ -131,6 +131,49 @@ never in scope. The build exited 0. Only common/client crates ever compiled.*
    care about is among them. *A scoped `-p`/`--bin` filter exits 0 while silently
    excluding the binary that matters.*
 
+## 6 · RUN MODE — **FAST UNLESS AN IMPOSSIBILITY IS NAMED** *(Ben, standing law 2026-08-11)*
+
+> ## **EVERY TEST RUNS COMPRESSED. A REAL-TIME RUN MUST NAME ITS IMPOSSIBILITY IN
+> THE PACKET.**
+
+**The only three that count:**
+
+1. **HUMAN-IN-THE-LOOP** — *someone is watching; perceived pacing is not in the
+   fingerprint, so real time matters exactly when a person does.*
+2. ★★ **A PROVEN WALL-COUPLED SUBSYSTEM** — **and "proven" means proven.** *The
+   equivalence spec's hunt list is what proves it; **a suspicion of wall-coupling is
+   not an impossibility, it is an unread***.
+3. **THE EQUIVALENCE REFERENCE ARM ITSELF** — *the real-time half of the A/B cannot
+   be compressed without circularity.*
+
+★★★★ **TRADITION IS NOT AN IMPOSSIBILITY.** *"This has always run at real time" names
+a habit, not a constraint — and it is the specific phrase this entry exists to
+refuse.*
+
+**COST — the admission rule, paid twice before the law existed:**
+
+- ★★ **An entire evidence class was ruled out on wall-clock grounds alone.** *N=10
+  repetition against the intermittent crash was declared unaffordable at a day per
+  run; at ~20 minutes it is an hour's work.* **We did not decide the evidence was
+  unnecessary — we decided it was too slow, and then reasoned as though it were
+  unnecessary.**
+- **Two endurance runs spent ~5 hours establishing what compressed runs would have
+  established in ~40 minutes** — *and one of them was void on a stale binary, which
+  cost the full wall clock for zero evidence.*
+
+### ★★★ WHAT THE LAW COSTS, STATED HONESTLY
+
+**It makes the equivalence proof load-bearing for the entire test programme.**
+*Every scored result afterwards inherits it.* ★★★★ **Which is why that proof's
+PLANTED FAILURE is not optional** — *a comparison that has never been shown able to
+fail certifies nothing, and here it would certify everything.*
+
+★★ **And the revalidation trigger is a standing GATE, not a reminder:** *a change to
+the shell (tick loop, IO, scheduling, anything wall-adjacent) **pauses fast runs
+until the proof re-passes**.* **Never silent continuation** — *an equivalence proof
+is a claim with an expiry date, and the trigger is what stops it decaying into an
+assumption.*
+
 ## MAINTENANCE
 
 **This file is the single source.** *Any lane's private notes on packet craft should
