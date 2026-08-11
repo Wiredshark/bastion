@@ -1,0 +1,49 @@
+# #105 acceptance leg (DECISIONS-FOR-BEN row 105, FOUNDING SEED STOCK):
+# proves the full sow->harvest->RESEED cycle closes with ZERO manual
+# /give_item -- the founding colony itself carries the starting seeds
+# (FOUNDING_SEED_STOCK=8, dropped persistent at the founding position by
+# bastion_found_colony_seed_stock, same live path `spawn` below drives).
+#
+# Design, per Fable's ratification: wait clocked from FIRST HARVEST, not
+# first sow -- the earlier confirm run's harvest leg proved growth/harvest
+# works (20/20/20) but never observed a second sow wave because its
+# extended wait was clocked from first SOW, leaving too little margin
+# after the first harvest actually landed for a second haul+sow+grow+
+# harvest cycle to complete. This script gives that margin explicitly:
+# modest waits through the proven first-wave timing (till ~40s, first
+# harvest observed around ~90-150s after first sow in prior runs), then a
+# LONG wait after that point specifically for the second wave.
+#
+# Same verified z=418 coordinates as script-13b/13c (world/terrain
+# persists per userdata dir; JobBoard/farm state does not).
+note BOOT STAMP: commit 593bd66afe3a634ad1f1615189b5edc81f5cfb57, branch bastion/wip-batch-verify
+note #105 acceptance leg -- no give_item this run; founding seed stock is the only source
+anchor
+spawn 8
+wait 300
+designate stockpile 15214 16012 418 15218 16017 419
+designate farm 15209 16012 418 15213 16017 419
+wait 300
+list_designations
+note checkpoint 1 (~10s) -- designations registered; founding seed drop should already be on the ground near the colony
+wait 900
+list_designations
+note checkpoint 2 (~40s) -- till should be complete, sow jobs open; watching for the founding stock to get hauled and claimed with NO give_item this time
+wait 1800
+list_designations
+note checkpoint 3 (~100s) -- first-wave sow claims should be underway or complete off the founding stock alone
+wait 2700
+list_designations
+note checkpoint 4 (~190s) -- first crop MATURE / harvest expected around here per the prior run's timing
+wait 3600
+list_designations
+note checkpoint 5 (~310s) -- past first harvest; watching for the SECOND sow wave (harvest-yielded seeds hauled and claimed)
+wait 3600
+list_designations
+note checkpoint 6 (~430s) -- second wave should be sown by now if the loop is self-sustaining
+wait 3600
+list_designations
+note checkpoint 7 (~550s) -- second wave should be maturing/harvesting if the loop closes fully
+wait 3600
+list_designations
+note checkpoint 8 (~670s) -- run complete
