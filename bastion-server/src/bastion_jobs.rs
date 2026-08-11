@@ -3809,6 +3809,11 @@ pub struct FailsafeTeleportEvent {
     pub active_job_kind: Option<String>,
     pub active_job_is_access: Option<bool>,
     pub egress_verdicts: u64,
+    /// item 4b split (Fable's ruling, 2026-08-11): the two unrelated
+    /// producers `egress_verdicts` unions -- see `JobBoard`'s own fields
+    /// for the full rationale.
+    pub egress_verdicts_churn: u64,
+    pub egress_verdicts_scan_ok: u64,
     pub egress_plans_emitted: u64,
     pub egress_no_route: u64,
     pub climb_free_active: bool,
@@ -4181,6 +4186,18 @@ pub struct JobBoard {
     /// into the next egress pass, which owns one-plan-at-a-time gating.
     egress_pending: Vec<(Uid, Vec3<i32>, Vec3<i32>)>,
     egress_verdicts: HashMap<Uid, u64>,
+    /// bastion (item 4b split, Fable's ruling 2026-08-11): `egress_verdicts`
+    /// above unions two unrelated producers -- the churn detector's fire (at
+    /// most one per pass, an emergency-annulus verdict) and the periodic
+    /// `egress_scan` pass's own verdict (below-grade watch resolving to
+    /// walkable/rim ground). Additive, not a replacement: `egress_verdicts`
+    /// keeps its existing role in `terminal_cause`'s classification
+    /// unchanged; these two split counters exist so a stuck-colonist
+    /// specimen's ULTIMATE FAIL-SAFE line can distinguish "this colonist's
+    /// verdicts were mostly churn-fires" from "mostly scan passes" without
+    /// re-deriving it per incident.
+    egress_verdicts_churn: HashMap<Uid, u64>,
+    egress_verdicts_scan_ok: HashMap<Uid, u64>,
     egress_plans_emitted: HashMap<Uid, u64>,
     egress_no_route: HashMap<Uid, u64>,
     /// Stable non-destructive surface target for an active jobless egress
@@ -14953,6 +14970,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             board.egress_pending.clear();
             if let Some((uid, from, to)) = churn_fire {
                 *board.egress_verdicts.entry(uid).or_insert(0) += 1;
+                *board.egress_verdicts_churn.entry(uid).or_insert(0) += 1;
                 if let Some(entity) = id_maps.uid_entity(uid) {
                     if let Some(active) = active_jobs.get(entity) {
                         // AUTON-2 unification (site 4/6, 2026-08-09): this
@@ -15126,6 +15144,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     if below_grade {
                         watch.2 = true;
                         *board.egress_verdicts.entry(*uid).or_insert(0) += 1;
+                        *board.egress_verdicts_scan_ok.entry(*uid).or_insert(0) += 1;
                         if let Some(target) = organic_dest {
                             board.egress_targets.insert(*uid, target);
                             // M2: MIN-merge, never reset-up — the no-route
@@ -15164,6 +15183,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     if below_grade {
                         watch.2 = true;
                         *board.egress_verdicts.entry(*uid).or_insert(0) += 1;
+                        *board.egress_verdicts_scan_ok.entry(*uid).or_insert(0) += 1;
                         if let Some(target) = organic_dest {
                             board.egress_targets.insert(*uid, target);
                             // M2: MIN-merge, never reset-up — the no-route
@@ -15199,6 +15219,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 };
                 watch.2 = true;
                 *board.egress_verdicts.entry(*uid).or_insert(0) += 1;
+                *board.egress_verdicts_scan_ok.entry(*uid).or_insert(0) += 1;
                 if let Some(target) = organic_dest {
                     board.egress_targets.insert(*uid, target);
                     // M2: MIN-merge (see the twin sites above) — no reset-up.
@@ -17039,6 +17060,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .and_then(|active| board.jobs.get(&active.job))
                         .map(|job| job.is_access);
                     let egress_verdicts = board.egress_verdicts.get(uid).copied().unwrap_or(0);
+                    let egress_verdicts_churn =
+                        board.egress_verdicts_churn.get(uid).copied().unwrap_or(0);
+                    let egress_verdicts_scan_ok =
+                        board.egress_verdicts_scan_ok.get(uid).copied().unwrap_or(0);
                     let egress_plans_emitted =
                         board.egress_plans_emitted.get(uid).copied().unwrap_or(0);
                     let egress_no_route = board.egress_no_route.get(uid).copied().unwrap_or(0);
@@ -17083,6 +17108,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         ?active_job_kind,
                         ?active_job_is_access,
                         egress_verdicts,
+                        egress_verdicts_churn,
+                        egress_verdicts_scan_ok,
                         egress_plans_emitted,
                         egress_no_route,
                         climb_free_active,
@@ -17108,6 +17135,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         active_job_kind,
                         active_job_is_access,
                         egress_verdicts,
+                        egress_verdicts_churn,
+                        egress_verdicts_scan_ok,
                         egress_plans_emitted,
                         egress_no_route,
                         climb_free_active,
