@@ -1,0 +1,46 @@
+# Item 7 cheap confirm (FARM-SOW-PHANTOM-RETIRE-FINDING.md addendum), phase
+# 2 -- run AFTER phase 1's survey (script-13a) established real ground
+# truth for THIS world's userdata (a fresh userdata dir means fresh
+# worldgen; script-08's Aug-04 coordinates were for a different world
+# instance and were caught as stale before being trusted here). Verified
+# flat z=418 block from the survey, split into two adjacent 5x6 regions
+# near the player's actual spawn (15216.5, 16016.5): farm at x209-213, and
+# a stockpile right beside it at x214-218 (both y012-017, z418), close
+# enough for the player to walk between un-scripted movement isn't needed
+# for the drop's chunk to be the same loaded/reachable area.
+#
+# Hypothesis under test: FARM_SEED_ITEM's only producer anywhere in the
+# crate is a successful HARVEST; a HARVEST needs a mature crop; a mature
+# crop needs a prior SOW; SOW needs the material-haul to deliver a
+# stockpiled seed. A fresh colony has no possible first seed -- so SOW
+# jobs should sit open and unclaimed until seeds are manually granted and
+# hauled into the stockpile, at which point a colonist should claim SOW.
+#
+# Riders: (a) item 4's re-score watches this same log for any fail-safe /
+# GOTO-STAND-RESCUE events; (b) this note line is the run's boot-time
+# commit stamp, per the live-log code-stamp protocol (bfcb4c5835).
+note BOOT STAMP: commit 8488b65f497e835426a523f9177890a35538ef8e, branch bastion/wip-batch-verify
+note farm seed-bootstrap confirm (item 7), phase 2 -- surveyed coordinates from script-13a, same world/userdata
+anchor
+spawn 8
+wait 300
+designate stockpile 15214 16012 418 15218 16017 419
+designate farm 15209 16012 418 15213 16017 419
+wait 300
+list_designations
+note checkpoint 1 (~10s) -- designations registered against verified-flat ground
+wait 900
+list_designations
+note checkpoint 2 (~40s) -- till should be complete, sow jobs open and (per the deadlock hypothesis) unclaimed with no seeds available
+cmd give_item common.items.bastion.wheat_seeds 20
+cmd dropall true
+note seeds given (20x common.items.bastion.wheat_seeds) and dropped persistent at the player's current position -- watching for a haul job to move them into the stockpile, then a sow claim
+wait 900
+list_designations
+note checkpoint 3 (~70s) -- haul-to-stockpile should be done; watching for sow claim
+wait 1800
+list_designations
+note checkpoint 4 (~130s) -- sow should be claimed and possibly complete if the deadlock theory is correct and the pipeline reached the seeds
+wait 2700
+list_designations
+note checkpoint 5 (~220s) -- run complete

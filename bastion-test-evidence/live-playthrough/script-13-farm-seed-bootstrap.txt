@@ -1,0 +1,38 @@
+# Item 7 cheap confirm (FARM-SOW-PHANTOM-RETIRE-FINDING.md addendum): the
+# chicken-and-egg seed deadlock -- FARM_SEED_ITEM's only producer is a
+# successful HARVEST, a HARVEST needs a mature crop, a mature crop needs a
+# prior SOW, and SOW needs the material-haul to deliver a stockpiled seed.
+# On a fresh colony with no seed grant, there is no possible first seed.
+# This run breaks the deadlock manually (/give_item + persistent dropall
+# into a designated stockpile, so the B6 haul-then-fetch pipeline is
+# exercised exactly as a real harvest output would be) and watches whether
+# SOW then claims and completes -- the decisive live confirmation the
+# addendum names as still owed. Riders: (a) item 4's re-score watches for
+# any fail-safe/GOTO-STAND-RESCUE events in this same log; (b) this note
+# line is the run's boot-time commit stamp, per the live-log code-stamp
+# protocol (bfcb4c5835) -- the artifact must name its producing code.
+note BOOT STAMP: commit 8488b65f497e835426a523f9177890a35538ef8e, branch bastion/wip-batch-verify
+note farm seed-bootstrap confirm (item 7) starting -- known-good farm plot from script-08 (z=415), stockpile added alongside for the haul pipeline
+anchor
+spawn 8
+wait 300
+designate stockpile 15195 15990 415 15210 15997 416
+designate farm 15198 15998 415 15204 15999 416
+wait 300
+list_designations
+note checkpoint 1 (~10s) -- designations registered
+wait 900
+list_designations
+note checkpoint 2 (~40s) -- till should be complete, sow jobs open and (per the deadlock hypothesis) unclaimed with no seeds available
+cmd give_item common.items.bastion.wheat_seeds 20
+cmd dropall true
+note seeds given (20x common.items.bastion.wheat_seeds) and dropped persistent at the player's current position -- watching for a haul job to move them into the stockpile, then a sow claim
+wait 900
+list_designations
+note checkpoint 3 (~70s) -- haul-to-stockpile should be done by now if the drop landed reachable; watching for sow claim
+wait 1800
+list_designations
+note checkpoint 4 (~130s) -- sow should be claimed and possibly complete if the deadlock theory is correct and the pipeline reached the seeds
+wait 2700
+list_designations
+note checkpoint 5 (~220s) -- run complete

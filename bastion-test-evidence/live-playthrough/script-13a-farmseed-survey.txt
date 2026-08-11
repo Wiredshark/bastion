@@ -1,0 +1,13 @@
+# Phase 1 of the item-7 seed-bootstrap confirm: survey the real spawn
+# area BEFORE designating anything. The first attempt at this run reused
+# script-08's coordinates (from a DIFFERENT, Aug-04 world/userdata) against
+# a FRESH world -- a fresh userdata dir means fresh worldgen, so an old
+# run's "known good" coordinates are not evidence about this world at all.
+# Caught before wasting the confirm window; this phase gets real ground
+# truth instead of reusing a stale assumption.
+note BOOT STAMP: commit 8488b65f497e835426a523f9177890a35538ef8e, branch bastion/wip-batch-verify
+note phase 1 (survey only) -- finding real flat ground near this world's actual spawn point
+anchor
+wait 60
+survey 15205 16005 15230 16030 440 400 0
+note survey complete
