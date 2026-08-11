@@ -1524,22 +1524,56 @@ pub fn access_stale_secs() -> f32 {
     *V.get_or_init(|| env_threshold_secs_or_refuse("BASTION_ACCESS_STALE_SECS", 20.0))
 }
 
-/// bastion (ITEM 2, ROW-ITEM2-STALL-COUNTER-PACKET): `ACCESS_STALL_SECS`,
+/// bastion (#103, DECISIONS-FOR-BEN row 103, 2026-08-10): the emergency
+/// ladder-queue's LAWFUL wait budget, in seconds -- a queued waiter at
+/// position N gets `QUEUE_WAIT_BASE_SECS + QUEUE_WAIT_PER_TURN_SECS *
+/// min(N, QUEUE_WAIT_MAX_POSITION)` seconds of suppressed stuck-watch
+/// before the stuck machinery is allowed to engage (the traversal-queue
+/// site below, `QUEUE_WAIT_BASE_TICKS`/`QUEUE_WAIT_PER_TURN_TICKS`, derives
+/// its tick-scaled constants FROM these -- single source, not two literals
+/// that happen to agree today). `access_stall_secs()` derives its own
+/// default from these same three constants: the producer hunt (row 103)
+/// found the original 120.0 default was pruning colonists still inside
+/// this lawful wait, not stalled ones -- a threshold below the maximum
+/// lawful budget cannot tell "stuck" from "correctly waiting its turn."
+pub(crate) const QUEUE_WAIT_BASE_SECS: u32 = 120;
+pub(crate) const QUEUE_WAIT_PER_TURN_SECS: u32 = 90;
+pub(crate) const QUEUE_WAIT_MAX_POSITION: u32 = 8;
+
+/// bastion (ITEM 2, ROW-ITEM2-STALL-COUNTER-PACKET; re-scoped by #103,
+/// DECISIONS-FOR-BEN row 103, 2026-08-10): `ACCESS_STALL_SECS`,
 /// env-tunable (`BASTION_ACCESS_STALL_SECS`, seconds, parsed as f32).
-/// PROVISIONAL default (120.0) -- Opus's finding (WAVE33-RESULTS.md,
-/// 2026-08-10): `b5_f3_stalled_peak` is right-censored by this exact
-/// constant (the sweep resets `access_stalled_secs` to 0 the instant it
-/// reaches the threshold, so a stalled-past-threshold job's TRUE dwell is
-/// never observed, only "at least this much"), so no fan at the CURRENT
-/// value could ever calibrate it -- more seeds cannot fix a censored
-/// measurement. This override exists so a fan can run at a deliberately
-/// RAISED value and finally see the real distribution; the observed
-/// non-pruned high-water mark from wave 33 is 119.0 (one second under the
-/// default), which is why the honest move is to raise this, never lower
-/// it, pending that measurement.
+///
+/// The default is DERIVED, not a separate literal (row 103's ruling: "two
+/// constants that must maintain a relationship are one expression, so a
+/// future queue-budget tune cannot silently re-collide") -- the maximum
+/// lawful queue-wait budget (`QUEUE_WAIT_BASE_SECS + QUEUE_WAIT_PER_TURN_SECS
+/// * QUEUE_WAIT_MAX_POSITION` = 840s today) plus one further
+/// `QUEUE_WAIT_PER_TURN_SECS` unit as an explicit margin (no bare number:
+/// the margin is itself expressed in the same constant the budget is built
+/// from), giving 930s today. A prior 120.0 default was calibrating against
+/// this upstream bound rather than measuring genuine stalls (row 103: "A
+/// FIELD CANNOT CALIBRATE A BOUND IMPOSED UPSTREAM OF IT"); the F3 pruner
+/// is now a beyond-lawful-maximum backstop expected to rarely fire, not a
+/// tuned threshold -- the stall INSTRUMENTATION (`stalled_peak`/
+/// `stalled_final`) is what carries this row's actual measurement value.
+/// The pure derivation behind [`access_stall_secs`]'s default, factored
+/// out so a test can assert the actual formula rather than a re-derived
+/// copy of it -- the same reason [`parse_threshold_secs_or_refuse`] is
+/// split from [`env_threshold_secs_or_refuse`].
+const fn derived_access_stall_default_secs() -> f32 {
+    (QUEUE_WAIT_BASE_SECS + QUEUE_WAIT_PER_TURN_SECS * QUEUE_WAIT_MAX_POSITION
+        + QUEUE_WAIT_PER_TURN_SECS) as f32
+}
+
 pub fn access_stall_secs() -> f32 {
     static V: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
-    *V.get_or_init(|| env_threshold_secs_or_refuse("BASTION_ACCESS_STALL_SECS", 120.0))
+    *V.get_or_init(|| {
+        env_threshold_secs_or_refuse(
+            "BASTION_ACCESS_STALL_SECS",
+            derived_access_stall_default_secs(),
+        )
+    })
 }
 
 /// bastion (#68 amendment, Opus/#60 falsifier prereg): the three reset
@@ -6639,8 +6673,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .get(&owner.0.get())
                         .and_then(|link| link.position(*uid))
                 {
-                    const QUEUE_WAIT_BASE_TICKS: u32 = 120 * crate::SIM_TPS as u32;
-                    const QUEUE_WAIT_PER_TURN_TICKS: u32 = 90 * crate::SIM_TPS as u32;
+                    // #103 (DECISIONS-FOR-BEN row 103): these tick-scaled
+                    // constants derive FROM the module-level second-based
+                    // ones `access_stall_secs()` also reads -- single
+                    // source, so a future budget tune can't silently
+                    // re-collide with the pruner's own derived threshold.
+                    const QUEUE_WAIT_BASE_TICKS: u32 =
+                        QUEUE_WAIT_BASE_SECS * crate::SIM_TPS as u32;
+                    const QUEUE_WAIT_PER_TURN_TICKS: u32 =
+                        QUEUE_WAIT_PER_TURN_SECS * crate::SIM_TPS as u32;
                     // TEST-ONLY budget override (the M3-D shrunken-budget
                     // arm; never set by live binaries). Read ONCE — the
                     // B55 per-tick env-read lesson.
@@ -6652,7 +6693,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         });
                     let budget = QUEUE_WAIT_BUDGET_OVERRIDE.unwrap_or(
                         QUEUE_WAIT_BASE_TICKS.saturating_add(
-                            QUEUE_WAIT_PER_TURN_TICKS.saturating_mul(position.min(8) as u32),
+                            QUEUE_WAIT_PER_TURN_TICKS
+                                .saturating_mul(position.min(QUEUE_WAIT_MAX_POSITION as usize) as u32),
                         ),
                     );
                     let wait = board
@@ -18615,6 +18657,26 @@ mod tests {
             "BASTION_ACCESS_STALL_SECS",
             Some("banana".to_string()),
             120.0,
+        );
+    }
+
+    /// #103 (DECISIONS-FOR-BEN row 103): the pruner's default must exceed
+    /// the maximum LAWFUL queue-wait budget, or it prunes colonists still
+    /// inside a correctly-waiting turn -- that was the original bug the
+    /// row exists to fix. Calls the REAL derivation function (not a
+    /// re-derived copy of the formula), so a future edit to the formula
+    /// itself is what this test actually exercises.
+    #[test]
+    fn queue_wait_max_lawful_budget_stays_under_the_pruner_default() {
+        let max_lawful_budget_secs =
+            (QUEUE_WAIT_BASE_SECS + QUEUE_WAIT_PER_TURN_SECS * QUEUE_WAIT_MAX_POSITION) as f32;
+        assert_eq!(max_lawful_budget_secs, 840.0, "sanity: today's known lawful maximum");
+        let derived_default_secs = derived_access_stall_default_secs();
+        assert_eq!(derived_default_secs, 930.0, "sanity: today's known derived default");
+        assert!(
+            derived_default_secs > max_lawful_budget_secs,
+            "the pruner default must exceed the maximum lawful wait, or it prunes a \
+             correctly-waiting colonist -- exactly the bug row 103 found"
         );
     }
 
