@@ -1141,6 +1141,19 @@ impl Server {
         let _ = bastion_jobs::access_stale_secs();
         let _ = bastion_jobs::access_stall_secs();
 
+        // ITEM8-V4 (checklist entry 5, "effective config emitted, not
+        // inferred"): F6's threshold is DERIVED (from access_stall_secs,
+        // not itself env-tunable), so it doesn't go through
+        // env_threshold_secs_or_refuse's own unconditional log -- emitted
+        // here instead, same "at boot, unconditionally" discipline as
+        // the mood config above, so a killed server's log still carries
+        // the value a future reader would otherwise have to recompute.
+        info!(
+            generic_claim_leak_secs = bastion_jobs::generic_claim_leak_secs(),
+            colony_terminal_zero_streak_samples = bastion_jobs::COLONY_TERMINAL_ZERO_STREAK_SAMPLES,
+            "bastion effective ITEM8-V4 config (F6 backstop threshold, sentinel S1 streak)"
+        );
+
         Ok(this)
     }
 

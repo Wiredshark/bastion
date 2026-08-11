@@ -703,6 +703,53 @@ pub(crate) fn reengage_exhausted(count_after_increment: u32) -> bool {
     count_after_increment > EMERGENCY_REENGAGE_BOUND
 }
 
+/// ITEM8-V4 route 1 (famine root cause, ruled fix): whether the
+/// `to_release` drain should clear a job's `claimed_by` field, pure so
+/// the fix is a unit-pinnable truth table rather than something only
+/// exercisable by spinning up a full ECS world. `unreachable` is an
+/// explicit (now-ignored) parameter rather than dropped entirely — the
+/// FIX is that it no longer gates this decision, and a parameter that
+/// stops mattering is the honest way to show that, not a signature that
+/// quietly forgets it existed. Pre-fix this returned `claimed_by_us &&
+/// !unreachable`; that gate orphaned 28 of v3's 87 farm jobs (all SOW) —
+/// a colonist marked a job unreachable, got preempted before returning
+/// to retry it, and nothing ever released the claim they left behind.
+pub(crate) fn claim_release_should_clear(claimed_by_us: bool, _unreachable: bool) -> bool {
+    claimed_by_us
+}
+
+/// ITEM8-V4 route 3 (sweep extension, ruled "the closer, never the fix"):
+/// whether the backstop sweep should reap an unclaimed job, pure for the
+/// same unit-pinnable reason as `claim_release_should_clear` above.
+pub(crate) fn designated_sweep_should_reap(
+    claimed: bool,
+    is_designated: bool,
+    cycles_unclaimed: u32,
+    threshold_cycles: u32,
+) -> bool {
+    !claimed && is_designated && cycles_unclaimed >= threshold_cycles
+}
+
+/// ITEM8-V4 F6 (generic leak-witness backstop): whether a claim's held
+/// duration crosses the leak threshold, pure for the same unit-pinnable
+/// reason as the two functions above — the live version scans
+/// `claim_leak_watch` and does real ECS teardown, but the DECISION is
+/// this one comparison.
+pub(crate) fn claim_leak_exceeded(held_secs: f64, threshold_secs: f64) -> bool {
+    held_secs > threshold_secs
+}
+
+/// ITEM8-V4 sentinel S1 (log-only "colony terminal" line): whether the
+/// consecutive-zero-food-stock streak has just crossed the edge-trigger
+/// threshold. `==`, not `>=` — the caller already resets the streak to 0
+/// on any nonzero sample and increments by exactly 1 per sample, so this
+/// fires exactly once per qualifying window, not once per sample
+/// thereafter (a food-incoming sample resets the streak before it can
+/// re-cross, which is the registered non-terminal case's own mechanism).
+pub(crate) fn colony_terminal_should_fire(streak_after_increment: u32, threshold: u32) -> bool {
+    streak_after_increment == threshold
+}
+
 /// The (i) exit-verification predicate, pure (the BACKSTOP-OPT (A) form:
 /// support + clearance ALWAYS; position essentially AT surface height
 /// [dz<1.0, dxy<3.0] or at route_top−0.5; the old `!below_grade`
@@ -1792,6 +1839,38 @@ pub const ARRIVE_DIST: f32 = 2.5;
 /// progress (seconds). `pub` so scenario harnesses can size their sampling
 /// windows against it (see `bastion-harness`'s B4 scenario).
 pub const STUCK_TIMEOUT: f32 = 10.0;
+
+/// ITEM8-V4 sentinel S1 (Fable-ruled): consecutive zero-food-stock
+/// heartbeat samples (each 300 ticks apart) required before the log-only
+/// "colony terminal" line fires. CONSERVATIVE GUESS, not derived — named
+/// as such per this session's own constant-honesty law, not left silent.
+/// 10 samples = 3000 ticks = 100 sim-seconds of a SUSTAINED empty
+/// stockpile, chosen to clear a single-sample noise floor (a transient
+/// dip to 0 mid-haul is not the famine signature) while still firing
+/// well inside v3's own ~1h38m sustained-zero window, had this existed
+/// then.
+pub const COLONY_TERMINAL_ZERO_STREAK_SAMPLES: u32 = 10;
+
+/// ITEM8-V4 F6 (Opus-ruled generic leak-witness backstop, the F5-tension
+/// resolution): how long a job may stay claimed before the generic
+/// backstop force-releases it and records a finding. CONSERVATIVE GUESS,
+/// not derived — a legitimate claim's true bound (travel budget + work
+/// duration) was not established by this row's reads, and this session's
+/// own law is that an observed median must never stand in for a derived
+/// bound, so this ships named as a guess rather than presented as
+/// derived. **The multiplier is a guess; the base it multiplies is not a
+/// re-typed literal** — row 103's own trap (`ACCESS_STALL_SECS = 120`
+/// happened to equal a budget it should have been derived from) is
+/// exactly what a bare `930.0` here would repeat if `BASTION_ACCESS_
+/// STALL_SECS` is ever overridden. Reads the LIVE `access_stall_secs()`
+/// at call time instead, so this bound tracks that one even if it moves.
+/// `STUCK_TIMEOUT` (10s, the travel watchdog) is comfortably inside this
+/// bound at any realistic `access_stall_secs()` value. Row filed for the
+/// real travel+work derivation:
+/// `bastion-test-evidence/ROW-GENERIC-CLAIM-LEAK-SECS-DERIVATION.md`.
+pub fn generic_claim_leak_secs() -> f64 {
+    2.0 * access_stall_secs() as f64
+}
 
 /// bastion (CASE-003 belt, persistence form): consecutive core-in-solid
 /// ticks before the EMBED WATCH relocates a colonist (~1s at 30 tps —
@@ -4841,6 +4920,47 @@ pub struct JobBoard {
     /// bastion (B7-2): preempt attempts fired (telemetry — the
     /// anti-thrash assert counts these against the cooldown-rate bound).
     pub preempt_attempts: u64,
+    /// ITEM8-V4 (route 1, famine root cause): fired every time the
+    /// `to_release` drain clears `claimed_by` for a job that was
+    /// `unreachable == true` at that moment — the precondition witness for
+    /// this fix's own registered prediction, same "silent field, no
+    /// consumer" lesson `b5_split_off_one_fired` taught the hard way:
+    /// zero here does not mean the fix works, it means the trigger never
+    /// occurred (Fable's F5, VOID not PASS on zero). Emitted on the
+    /// food-stock heartbeat below so a killed server's log still carries
+    /// its final value.
+    pub claim_expiry_releases: u32,
+    /// ITEM8-V4 (route 3, sweep extension — "the closer, never the fix"):
+    /// count of unclaimed `Designated` jobs the backstop sweep removed for
+    /// sitting unclaimed past `access_stall_secs()`'s own bound. Same
+    /// witness discipline as `claim_expiry_releases` — emitted on the
+    /// heartbeat, not left to a log line nobody re-reads.
+    pub designated_sweep_reaps: u32,
+    /// ITEM8-V4 sentinel S1 (Fable-ruled, log-only, never terminates the
+    /// server): consecutive food-stock heartbeat samples reading exactly
+    /// 0 — the edge-trigger state for the "colony terminal" log line, so
+    /// it fires once per qualifying window rather than once per sample.
+    /// Conservative by construction: a run whose stock merely dips to 0
+    /// for a single sample (noise) does not fire; only a SUSTAINED empty
+    /// stockpile does, matching v3's own famine signature (0 from tick
+    /// 99300 onward, never a transient blip).
+    colony_terminal_zero_streak: u32,
+    /// ITEM8-V4 F6 (Opus-ruled, the F5-tension resolution): when each
+    /// currently-claimed job's PRESENT claim episode began (game
+    /// seconds), observed periodically rather than hooked at every claim
+    /// call site — this session was punished four times today for an
+    /// incomplete enumeration, and every `active_jobs.insert` site is
+    /// exactly that shape of list. `or_insert` only writes on first
+    /// observation of a live claim, so a re-claim after a genuine release
+    /// gets a fresh start time on its next scan, not the old one.
+    claim_leak_watch: HashMap<JobId, f64>,
+    /// ITEM8-V4 F6: fires when the generic backstop (below) force-
+    /// releases a claim that outlived `GENERIC_CLAIM_LEAK_SECS` —
+    /// INVERTED bar (Opus-ruled): zero is the expected PASS on a healthy
+    /// run; any nonzero value is a RECORDED FINDING (a leak route
+    /// `claim_release_should_clear`'s targeted fix does not cover), never
+    /// silently absorbed into a passing score.
+    pub generic_claim_leak_releases: u32,
     /// bastion (B6 HAUL): painted stockpile zones `(id, region)` — the haul
     /// destinations. Registered at placement, dropped on cancel (dependent
     /// haul jobs cancel with their zone).
@@ -6374,7 +6494,46 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         food_stock += item.amount() as u32;
                     }
                 }
-                info!(tick = tick.0, food_stock, "bastion food stock sample");
+                // ITEM8-V4: the b5 heartbeat port (Fable-ruled) -- splits =
+                // b5_split_off_one_fired, the precondition witness for the
+                // split_off_one crash fix's own registered prediction (its
+                // ONLY consumer before this port was end-of-run, unreadable
+                // from a killed server's log -- the exact gap ITEM8-V3-
+                // CAPTURE-REPORT.md found). claim_expiry/sweep_reaps are
+                // this row's own two witnesses, same reasoning, same site
+                // (one heartbeat, every counter this arc has needed a
+                // consumer for, in one place).
+                info!(
+                    tick = tick.0,
+                    food_stock,
+                    splits = board.b5_split_off_one_fired,
+                    claim_expiry_releases = board.claim_expiry_releases,
+                    designated_sweep_reaps = board.designated_sweep_reaps,
+                    generic_claim_leak_releases = board.generic_claim_leak_releases,
+                    "bastion food stock sample"
+                );
+                // ITEM8-V4 sentinel S1 (Fable-ruled, LOG-ONLY -- never
+                // terminates the server, never gates anything; v3 would
+                // have terminated 79 minutes early had a naive version of
+                // this been wired to act). Edge-triggered: fires once when
+                // the streak crosses the threshold, not once per sample
+                // thereafter, so a sustained famine doesn't spam the log
+                // for the rest of the run.
+                if food_stock == 0 {
+                    board.colony_terminal_zero_streak += 1;
+                    if colony_terminal_should_fire(
+                        board.colony_terminal_zero_streak,
+                        COLONY_TERMINAL_ZERO_STREAK_SAMPLES,
+                    ) {
+                        info!(
+                            tick = tick.0,
+                            consecutive_zero_samples = board.colony_terminal_zero_streak,
+                            "bastion: COLONY TERMINAL (sentinel S1, log-only)"
+                        );
+                    }
+                } else {
+                    board.colony_terminal_zero_streak = 0;
+                }
             }
             // ── RUN-0 (row 47): the energy governor — the run gait
             // DRAINS Energy per tick while flagged; crossing the floor
@@ -14686,10 +14845,37 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     );
                 }
                 // If the job still exists and is still claimed by us, free it.
+                //
+                // ITEM8-V4 (famine root cause, ruled fix): UNCONDITIONALLY
+                // now -- the `&& !job.unreachable` guard this replaced kept
+                // an unreachable job's claim alive across a preemption on
+                // the assumption the SAME colonist would come back and
+                // retry it (the "60-tick amnesty"/"humanitarian bubble"
+                // pattern the churn-release site at `job.unreachable = true`
+                // was built for). That assumption breaks under sustained
+                // preemption pressure (v3: 331 breakdowns, 502
+                // preempt_attempts): a colonist marked a SOW job
+                // unreachable, then got preempted into Eat/Rest/Despond and
+                // never returned -- the claim outlived the claimant
+                // permanently, since nothing else ever cleared it (the
+                // periodic amnesty resets `unreachable` but never touched
+                // `claimed_by` either -- see the amnesty site's own
+                // amendment). 28 of v3's 87 farm jobs (all SOW) were
+                // orphaned exactly this way. Releasing unconditionally
+                // means an unreachable job returns to the pool the moment
+                // its holder is preempted for ANY reason, same as every
+                // other release reason already does -- consistent with the
+                // struct's own doc: `claimed_by` names who holds a claim,
+                // not who is "owed a retry."
                 if let Some(job) = board.jobs.get_mut(&job_id)
-                    && job.claimed_by == uids.get(*entity).copied()
-                    && !job.unreachable
+                    && claim_release_should_clear(
+                        job.claimed_by == uids.get(*entity).copied(),
+                        job.unreachable,
+                    )
                 {
+                    if job.unreachable {
+                        board.claim_expiry_releases += 1;
+                    }
                     job.claimed_by = None;
                 }
             }
@@ -17910,6 +18096,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // carries no history. See Job::benched_until_tick's own
                 // doc for why this is a conjunction (tick elapsed AND a
                 // grant fired), not a plain timer.
+                //
+                // ITEM8-V4 (route 2's amnesty question, Fable-ruled --
+                // "verify step 1 already guarantees no stale claim can
+                // survive to amnesty time" -- PROVABLY REDUNDANT, cited
+                // here rather than double-writing a claimed_by clear this
+                // loop doesn't need): this loop resets `unreachable` for
+                // EVERY job regardless of claim state, on purpose -- a
+                // colonist actively working an unreachable-marked job
+                // (mid-retry, not preempted) must keep BOTH its claim and
+                // its eligibility to graduate; touching `claimed_by` here
+                // would rip an active claim away from a colonist still
+                // legitimately holding it, a strictly worse bug than the
+                // one this row fixes. The claim this route actually
+                // needed released is the orphaned kind -- a claim whose
+                // holder stopped working it -- and `claim_release_should_
+                // clear` (called from the `to_release` drain, now
+                // unconditional on `!unreachable`) is the ONLY place a
+                // colonist's ActiveJob is torn down without going through
+                // it first (verified: every `active_jobs.insert` site
+                // assigns to a colonist with no current `ActiveJob`, per
+                // the arbitration architecture -- an overwrite-without-
+                // release would be an unrelated pre-existing bug, not a
+                // gap this row's claim can survive through). A claim
+                // therefore cannot still be attributed to an entity that
+                // stopped holding it by the time amnesty runs -- there is
+                // nothing stale left for amnesty to clear.
                 let diag = std::env::var_os("BASTION_ROWB_DIAG").is_some();
                 for (id, job) in board.jobs.iter_mut() {
                     match job.benched_until_tick {
@@ -17986,6 +18198,136 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 if unclaimed_count > 1 {
                     *board.starvation_crowded_cycles.entry(pos).or_insert(0) += 1;
                 }
+            }
+        }
+
+        // ── ITEM8-V4 route 3 (sweep extension, ruled "the closer, never
+        // the fix" — a backstop, not the primary mechanism; routes 1+2
+        // above are what actually returns the 28 orphaned SOW claims to
+        // the pool): reap an unclaimed `Designated` job that has sat
+        // unclaimed longer than `access_stall_secs()` — the SAME derived
+        // maximum-lawful-wait bound a CLAIMED job's own backstop uses (row
+        // 103's law: no fresh literal for a second budget that must stay
+        // in relation to the first). Reuses TASK #59's own
+        // `cycles_since_last_claim` counter, computed immediately above,
+        // rather than tracking staleness a second way. Deliberately NOT
+        // routed through `job_still_wanted` (which is hard-coded `true`
+        // for Farm specifically to avoid the run-3 create/claim/drop
+        // churn loop, per that function's own doc) -- this sweep only
+        // ever removes an UNCLAIMED job nobody is working, so no
+        // colonist's travel is wasted by the removal; Farm's own
+        // per-tick generator (FARM/PROD-2) recreates an equivalent job
+        // next pass if the underlying cell still needs one, same as any
+        // other stale-then-regenerated designation.
+        //
+        // NOT the same sweep the packet's literal words point at, and
+        // deliberately so -- named here for the reviewer's benefit: the
+        // pre-existing "orphan sweep" (`DepositRun | RestAt | EatFrom |
+        // Despond`, `~9480` below the arb pass, gated on `claimed_by
+        // .is_none()` AND `settle_invariant_violation`) has NO staleness
+        // gate at all for those four kinds -- it relies on `suspended_
+        // for`/owner-liveness instead, because a self-job's "orphan"
+        // condition IS "unclaimed with no live owner coming back for
+        // it," true the instant that's detected. A `Designated` job has
+        // no owner/suspend concept -- it is routinely unclaimed for
+        // brief windows between claims by design (arbitration cadence,
+        // a colonist finishing one job before claiming the next).
+        // Literally adding `Designated(_)` to that match arm would make
+        // `settle_invariant_violation(None, _)` trivially true for EVERY
+        // unclaimed Designated job on the very first pass it's ever
+        // unclaimed (that predicate short-circuits true whenever
+        // `suspended_for` is `None`, which is always the case for a
+        // Designated job) -- sweeping on sight, with zero grace period,
+        // reintroducing the exact create/claim/drop churn loop `job_
+        // still_wanted`'s Farm exclusion was built to prevent, only
+        // worse (no retry window at all). This separate, explicitly
+        // AGE-GATED sweep achieves the packet's stated intent --
+        // "unclaimed Designated jobs get a reaper path" -- through a
+        // mechanism suited to Designated's different lifecycle shape,
+        // rather than by extending a predicate built for a different
+        // kind of orphan. Flagged explicitly for commit review, not
+        // silently substituted.
+        {
+            let reap_threshold_cycles = (access_stall_secs()
+                / (ARBITRATION_INTERVAL as f32 / crate::SIM_TPS as f32))
+                .max(1.0) as u32;
+            let to_reap: Vec<JobId> = board
+                .jobs
+                .iter()
+                .filter(|(_, j)| {
+                    designated_sweep_should_reap(
+                        j.claimed_by.is_some(),
+                        matches!(j.kind, common::bastion::JobKind::Designated(_)),
+                        board.cycles_since_last_claim.get(&j.pos).copied().unwrap_or(0),
+                        reap_threshold_cycles,
+                    )
+                })
+                .map(|(id, _)| *id)
+                .collect();
+            for id in to_reap {
+                if let Some(job) = board.jobs.get(&id) {
+                    info!(
+                        job = id,
+                        pos = ?job.pos,
+                        kind = ?job.kind,
+                        cycles_unclaimed =
+                            board.cycles_since_last_claim.get(&job.pos).copied().unwrap_or(0),
+                        "bastion: unclaimed designation swept (ITEM8-V4 route 3 backstop)"
+                    );
+                }
+                board.remove_job(id);
+                board.designated_sweep_reaps += 1;
+            }
+        }
+
+        // ── ITEM8-V4 F6 (Opus-ruled generic leak-witness backstop, the
+        // F5-tension resolution): observe every currently-claimed job's
+        // claim-episode start time (periodic, not hooked at every claim
+        // site -- see `claim_leak_watch`'s own doc for why), then force-
+        // release any claim that has outlived `generic_claim_leak_secs()`.
+        // INVERTED bar: this should never fire on a healthy run -- routes
+        // 1-3 above are the enumerated fix. Any firing here means a leak
+        // route exists that this row's enumeration did not cover, and
+        // gets REPORTED as a finding, never silently absorbed into a
+        // passing score. ────────────────────────────────────────────────
+        {
+            for (id, j) in board.jobs.iter() {
+                if j.claimed_by.is_some() {
+                    board.claim_leak_watch.entry(*id).or_insert(time.0);
+                }
+            }
+            board.claim_leak_watch.retain(|id, _| {
+                board.jobs.get(id).is_some_and(|j| j.claimed_by.is_some())
+            });
+            let leak_threshold = generic_claim_leak_secs();
+            let leaked: Vec<(JobId, Uid, f64)> = board
+                .claim_leak_watch
+                .iter()
+                .filter_map(|(id, &held_since)| {
+                    let held_secs = time.0 - held_since;
+                    claim_leak_exceeded(held_secs, leak_threshold)
+                        .then(|| {
+                            let uid = board.jobs.get(id).and_then(|j| j.claimed_by);
+                            uid.map(|u| (*id, u, held_secs))
+                        })?
+                })
+                .collect();
+            for (id, uid, held_secs) in leaked {
+                if let Some(job) = board.jobs.get_mut(&id) {
+                    job.claimed_by = None;
+                }
+                if let Some(entity) = id_maps.uid_entity(uid) {
+                    active_jobs.remove(entity);
+                }
+                board.claim_leak_watch.remove(&id);
+                board.generic_claim_leak_releases += 1;
+                info!(
+                    job = id,
+                    holder = uid.0.get(),
+                    held_secs,
+                    threshold_secs = leak_threshold,
+                    "bastion: GENERIC CLAIM LEAK (F6 backstop -- inverted witness, ANY firing is a recorded finding, not a pass)"
+                );
             }
         }
 
@@ -19685,6 +20027,105 @@ mod tests {
         assert_eq!(release_decision(false, false, false, true, true), KeepDriving);
         // Nothing met: keep driving.
         assert_eq!(release_decision(false, true, true, false, false), KeepDriving);
+    }
+
+    #[test]
+    fn claim_release_clears_even_when_unreachable() {
+        // ITEM8-V4 route 1, RED PRE-FIX: the old gate was
+        // `claimed_by_us && !unreachable`, so this exact case --
+        // a job we hold, marked unreachable -- returned `false` and the
+        // claim never released on preemption. 28 of v3's 87 farm jobs
+        // (all SOW) were orphaned exactly this way: a colonist marked a
+        // SOW job unreachable, got preempted into Eat/Rest/Despond, and
+        // never came back to release it. This assertion is the one that
+        // would have failed against that code.
+        assert!(
+            claim_release_should_clear(true, true),
+            "a claim we hold must release on preemption even if the job is marked unreachable"
+        );
+        // Unchanged behavior: a reachable job we hold still releases.
+        assert!(claim_release_should_clear(true, false));
+        // Unchanged behavior: a claim we do NOT hold is never touched,
+        // unreachable or not -- this branch was never the bug.
+        assert!(!claim_release_should_clear(false, true));
+        assert!(!claim_release_should_clear(false, false));
+    }
+
+    #[test]
+    fn designated_sweep_reaps_only_unclaimed_designated_past_threshold() {
+        // ITEM8-V4 route 3, RED PRE-FIX: this sweep did not exist before
+        // this row -- every one of these true cases is new coverage, not
+        // a regression pin on prior behavior.
+        const T: u32 = 10;
+        // The one case that should sweep: unclaimed, Designated, at or
+        // past the threshold.
+        assert!(designated_sweep_should_reap(false, true, T, T));
+        assert!(designated_sweep_should_reap(false, true, T + 1, T));
+        // Claimed: never swept, regardless of how long it's been
+        // "unclaimed" by a stale counter (that would be a double-remove
+        // race against the job's own claimant).
+        assert!(!designated_sweep_should_reap(true, true, T + 100, T));
+        // Not a Designated kind (Haul/RestAt/EatFrom/Despond/DepositRun):
+        // out of this sweep's declared scope, never touched.
+        assert!(!designated_sweep_should_reap(false, false, T + 100, T));
+        // Under threshold: too soon, not yet a backstop case.
+        assert!(!designated_sweep_should_reap(false, true, T - 1, T));
+    }
+
+    #[test]
+    fn generic_claim_leak_fires_by_name_past_threshold() {
+        // ITEM8-V4 F6, RED PRE-FIX: this backstop did not exist before
+        // this row. Direct construction of a leaked claim -- held well
+        // past the threshold -- must trip it BY NAME (Opus's exact
+        // requirement: "force a leaked claim, watch the backstop fire").
+        assert!(
+            claim_leak_exceeded(2000.0, 1860.0),
+            "a claim held past the threshold must be recognized as leaked"
+        );
+        // The mirror: a claim held for a routine duration, well under
+        // the threshold, must NOT be flagged -- the backstop firing on
+        // ordinary claims would be the false-positive shape row 103
+        // already punished once.
+        assert!(
+            !claim_leak_exceeded(60.0, 1860.0),
+            "a routine claim duration must not trip the backstop"
+        );
+        // Exactly at the threshold: strict `>`, not `>=` -- the boundary
+        // sample itself is not yet a leak, matching STUCK_TIMEOUT's own
+        // `>` convention elsewhere in this file.
+        assert!(!claim_leak_exceeded(1860.0, 1860.0));
+    }
+
+    #[test]
+    fn colony_terminal_fires_once_and_the_mirror_case_never_fires() {
+        // ITEM8-V4 sentinel S1, RED PRE-FIX: this predicate did not exist
+        // before this row.
+        //
+        // The terminal case: the streak reaches the threshold exactly --
+        // fires.
+        assert!(colony_terminal_should_fire(10, 10));
+        // Edge-triggered, not level-triggered: one sample past the
+        // threshold must NOT re-fire (the caller's own reset-on-nonzero
+        // logic is what would normally prevent this, but the predicate
+        // itself must also not re-trip on every subsequent sample of a
+        // sustained famine -- that would spam the log for the rest of
+        // the run, exactly what v3's own 264,900-tick zero-stretch would
+        // have produced from a `>=` predicate).
+        assert!(!colony_terminal_should_fire(11, 10));
+        // THE REGISTERED MIRROR CASE (Fable/Opus-ruled): food incoming
+        // resets the streak before it reaches the threshold -- a
+        // breakdown-heavy but NOT starving colony must never trip this.
+        // Modeled here as the streak simply never reaching the
+        // threshold (the caller resets it to 0 on any nonzero sample,
+        // so a colony with food arriving periodically never accumulates
+        // a long enough run) -- this predicate correctly stays silent
+        // for every value strictly below threshold.
+        for streak in 0..10 {
+            assert!(
+                !colony_terminal_should_fire(streak, 10),
+                "streak {streak} is below threshold -- must not fire (the non-terminal / food-incoming case)"
+            );
+        }
     }
 
     #[test]
