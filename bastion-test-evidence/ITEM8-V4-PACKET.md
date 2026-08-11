@@ -345,6 +345,53 @@ expired cannot distinguish "expiry works" from "expiry never triggered."*
 
 ---
 
+## 7b · ★★★★ CHURN POST-MORTEM — **REGISTERED MID-RUN, BEFORE SCORING**
+
+*Written from the T+70 heartbeat, before teardown and before any log read. The
+mechanism is already confirmed from code (§1c′); this registers its **SHAPE** so the
+numbers meet a prediction.*
+
+    T+15 min ....... 186 reaps          =    12.4 / min
+    T+70 min ....... 184,527 reaps      = 3,352.0 / min over the last 55
+    acceleration ... ~270x   (linear from the early rate predicts ~868)
+
+> ## **IT DID NOT GROW. IT IGNITED.**
+
+### THE PREDICTED MECHANISM — **the churn is FAMINE-COUPLED**
+
+**The gate reads a POSITION's time-since-last-claim.** *Early, colonists are actively
+claiming, so most positions sit under the threshold and only a few stale cells churn.*
+
+> **AS FAMINE STOPS COLONISTS CLAIMING → MORE POSITIONS CROSS THE THRESHOLD → MORE
+> JOBS BORN PAST THE GATE → MORE DESTROYED BEFORE ANYONE CAN CLAIM THEM → FEWER
+> CLAIMS. The loop feeds itself.**
+
+★★★ **This resurrects the SPIRAL RIDER that died with preempt-abandonment.** *The
+shape was right; the engine was wrong.* **A self-amplifying famine exists — it
+belongs to the sweep, not to preemption.**
+
+### DISCRIMINATING READ *(registered now, so 184,527 meets a prediction)*
+
+    reaps per window  PLOTTED AGAINST  claims per window
+    -> FAMINE-COUPLED : reap rate rises as claim rate falls, inversely, across the run
+    -> PURE RUNAWAY   : reap rate rises independently of claims — coupling story WRONG
+
+★★ **If the inverse correlation holds, v5's fix acquires its falsifier: v5's reap
+count must stay FLAT as the colony's claim rate varies.** *A fix that merely reduces
+the number is not the same as a fix that decouples it.*
+
+### THE TWO CLEAN RESULTS ALONGSIDE
+
+- ★★★ **SENTINEL: 3 firings, log-only — the SECOND calibration case, in data.**
+  *Read when they landed against all-breakdown timing.* **Two independent famines is
+  where a threshold stops being a guess.**
+- ★★ **F6 ZERO across 70 minutes of pathological churn.** *The leak witness stayed
+  silent while a different subsystem raged —* **a witness that stays quiet during
+  someone else's catastrophe has demonstrated SPECIFICITY, not just reachability.**
+
+★ *`claim_expiry_releases = 2` and `splits = 0` are both consistent with a colony
+that has almost no functioning economy left to leak or split.*
+
 ## 8 · READ-LIST
 
 **Kept during scoring, per the raw-commit condition** — *patterns run, fields whose
