@@ -107,6 +107,15 @@ impl From<ReleaseReason> for ReleaseReasonV1 {
 pub enum ItemEventKind {
     Created,
     Dropped,
+    /// The item left the pile into the actor's possession. TWO producers by
+    /// design, same meaning on both: the vanilla `InventoryManip::Pickup`
+    /// handler (`server/src/events/inventory_manip.rs`'s
+    /// `record_pickup_event`, `"partial"`/`"accepted"` verdicts) and the
+    /// eat path's direct consumption (`bastion_jobs.rs`'s `EatFrom`
+    /// completion, ITEM8-CRASH-FINDING.md's fix) -- a consumer reading this
+    /// event answers "did this pile lose a unit to this actor," never
+    /// "which code path moved it." Subject = the pile's own uid on both
+    /// paths (never a synthetic per-pickup entity); actor = the recipient.
     PickedUp,
     Reserved,
     /// PROVISIONAL vocabulary (Opus's catch, 2026-08-10): an earlier draft
