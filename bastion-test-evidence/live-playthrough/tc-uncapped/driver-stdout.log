@@ -1,0 +1,60 @@
+=== bastion_playtest starting: server=localhost username=bastion_llm_player script=bastion-test-evidence/live-playthrough/script-15-item8-endurance.txt ===
+parsed 19 script commands
+[init] ConnectionEstablish
+[init] WatingForServerVersion
+[init] Authentication
+[init] LoadingInitData
+[init] StartingClient
+connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/46fb3523-2550-438a-addc-c59a342b7267), name: "Veloren Server", git_hash: 1857167636, git_timestamp: 1786486950, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+requested character join id=CharacterId(2)
+in-game. entity=Entity(0, Generation(1))
+player pos at script start: Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[note] BOOT STAMP: commit d73f4d7ebb3d43fa42cd46c07c1491afb8d975d5, branch bastion/wip-batch-verify -- CONFIRM against actual boot log before trusting this line
+[note] ITEM 8 ENDURANCE -- founding-only leg, no provisioning, driver disconnects after designation confirm
+sent BastionCameraAnchor at Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+sent BastionSpawnColony pos=Vec3 { x: 15216.5, y: 16016.5, z: 419.0 } count=8
+[chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+waited 300 ticks -> sim 70.77..80.80 in 88 client spins; pos now Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[note] checkpoint 0 (~10s) -- colony founded; founding seed drop should be on the ground near the colony (fixed live path, #105)
+sent BastionPlaceDesignation kind=Stockpile region=Region { min: Vec3 { x: 15214, y: 16012, z: 418 }, max: Vec3 { x: 15218, y: 16017, z: 419 } }
+sent BastionPlaceDesignation kind=Farm region=Region { min: Vec3 { x: 15209, y: 16012, z: 418 }, max: Vec3 { x: 15213, y: 16017, z: 419 } }
+sent BastionPlaceDesignation kind=Bed region=Region { min: Vec3 { x: 15213, y: 16013, z: 419 }, max: Vec3 { x: 15214, y: 16014, z: 420 } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-site", seed: 15826, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-villager_adventurous", seed: 29388, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(13)), content: Localized { key: "npc-speech-tell_monster", seed: 27900, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 11905, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 7593, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 46691, args: {} })} } }
+[chat] GenericChatMsg { chat_type: NpcSay(Uid(90)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-tell_monster", seed: 51814, args: {"body": Content(Localized { key: "noun-wendigo", seed: 43143, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 15534, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 22783, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-tell_site", seed: 40170, args: {"site": Content(Plain("Greabrien Glider Course")), "dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 34181, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 46381, args: {} })} } }
+waited 300 ticks -> sim 80.80..90.80 in 80 client spins; pos now Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+designations (rev=3): [(Region { min: Vec3 { x: 15214, y: 16012, z: 418 }, max: Vec3 { x: 15218, y: 16017, z: 419 } }, Stockpile, None), (Region { min: Vec3 { x: 15209, y: 16012, z: 418 }, max: Vec3 { x: 15213, y: 16017, z: 419 } }, Farm, None), (Region { min: Vec3 { x: 15213, y: 16013, z: 419 }, max: Vec3 { x: 15214, y: 16014, z: 420 } }, Bed, None)]
+[note] checkpoint 1 (~20s) -- designations registered; till should be starting on the farm plot
+[chat] GenericChatMsg { chat_type: Npc(Uid(11)), content: Localized { key: "npc-speech-tell_site", seed: 44561, args: {"dir": Content(Localized { key: "npc-speech-dir_east", seed: 47940, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_very_far", seed: 402, args: {} }), "site": Content(Plain("Pinton"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(14)), content: Localized { key: "npc-speech-villager_worried", seed: 52380, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-tell_monster", seed: 58115, args: {"body": Content(Localized { key: "noun-wendigo", seed: 8006, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 4930, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 3196, args: {} })} } }
+waited 600 ticks -> sim 90.80..110.83 in 176 client spins; pos now Vec3 { x: 15216.748, y: 16016.396, z: 419.0 }
+designations (rev=3): [(Region { min: Vec3 { x: 15214, y: 16012, z: 418 }, max: Vec3 { x: 15218, y: 16017, z: 419 } }, Stockpile, None), (Region { min: Vec3 { x: 15209, y: 16012, z: 418 }, max: Vec3 { x: 15213, y: 16017, z: 419 } }, Farm, None), (Region { min: Vec3 { x: 15213, y: 16013, z: 419 }, max: Vec3 { x: 15214, y: 16014, z: 420 } }, Bed, None)]
+[note] checkpoint 2 (~40s) -- till should be complete, sow jobs open, founding stock should be getting hauled with zero give_item
+[chat] GenericChatMsg { chat_type: Npc(Uid(3)), content: Localized { key: "npc-speech-tell_site", seed: 48005, args: {"site": Content(Plain("Pinton")), "dist": Content(Localized { key: "npc-speech-dist_very_far", seed: 44444, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 6315, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-villager_introverted", seed: 21972, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(2)), content: Localized { key: "npc-speech-tell_monster", seed: 8760, args: {"dir": Content(Localized { key: "npc-speech-dir_north", seed: 31729, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 49314, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 37220, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(86)), content: Localized { key: "npc-speech-villager", seed: 47130, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-tell_site", seed: 21682, args: {"dist": Content(Localized { key: "npc-speech-dist_very_far", seed: 52639, args: {} }), "site": Content(Plain("Pinton")), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 59271, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(90)), content: Localized { key: "npc-speech-tell_monster", seed: 31581, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 45561, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 28782, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 6996, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(13)), content: Localized { key: "npc-speech-villager_conscientious", seed: 10730, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-villager_conscientious", seed: 37334, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(88)), content: Localized { key: "npc-speech-tell_monster", seed: 6191, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 10726, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 10647, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 49520, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(91)), content: Localized { key: "npc-speech-tell_site", seed: 38251, args: {"site": Content(Plain("Greabrien Glider Course")), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 1762, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 32615, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(90)), content: Localized { key: "npc-speech-tell_monster", seed: 41425, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 38108, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 20421, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 42554, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(90)), content: Localized { key: "npc-speech-villager", seed: 61874, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(13)), content: Localized { key: "npc-speech-menacing", seed: 29455, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(93)), content: Localized { key: "npc-speech-tell_monster", seed: 15813, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 52549, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 7576, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 21663, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(11)), content: Localized { key: "npc-speech-tell_site", seed: 59852, args: {"dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 64285, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 878, args: {} }), "site": Content(Plain("Greabrien Glider Course"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-menacing", seed: 34295, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(3)), content: Localized { key: "npc-speech-menacing", seed: 48617, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-menacing", seed: 26765, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-menacing", seed: 1685, args: {} } }
+waited 600 ticks -> sim 110.83..130.84 in 177 client spins; pos now Vec3 { x: 15216.876, y: 16016.81, z: 419.0 }
+designations (rev=3): [(Region { min: Vec3 { x: 15214, y: 16012, z: 418 }, max: Vec3 { x: 15218, y: 16017, z: 419 } }, Stockpile, None), (Region { min: Vec3 { x: 15209, y: 16012, z: 418 }, max: Vec3 { x: 15213, y: 16017, z: 419 } }, Farm, None), (Region { min: Vec3 { x: 15213, y: 16013, z: 419 }, max: Vec3 { x: 15214, y: 16014, z: 420 } }, Bed, None)]
+[note] checkpoint 3 (~60s) -- first-wave sow claims should be underway off the founding stock alone (matches script-14's timing)
+[note] driver disconnecting now -- scored unattended window begins at server-side tick recorded in this run's boot log plus the tick this note fires at; liveness checked via the server's own "bastion food stock sample" heartbeat (unconditional, tick%300) from here on, no client reconnect until the celebration run after the gate passes
+=== script complete, disconnecting ===

@@ -1,0 +1,44 @@
+[1786488586469] === bastion_playtest starting: server=localhost username=bastion_llm_player script=bastion-test-evidence/live-playthrough/script-15-item8-endurance.txt ===
+[1786488586470] parsed 19 script commands
+[1786488590426] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/ea841349-1e22-4276-8e2e-7d9b3865ea1b), name: "Veloren Server", git_hash: 1857167636, git_timestamp: 1786486950, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1786488590559] requested character join id=CharacterId(2)
+[1786488590560] in-game. entity=Entity(0, Generation(1))
+[1786488592632] player pos at script start: Vec3 { x: 15216.5, y: 16015.711, z: 419.0 }
+[1786488592636] [note] BOOT STAMP: commit d73f4d7ebb3d43fa42cd46c07c1491afb8d975d5, branch bastion/wip-batch-verify -- CONFIRM against actual boot log before trusting this line
+[1786488592636] [note] ITEM 8 ENDURANCE -- founding-only leg, no provisioning, driver disconnects after designation confirm
+[1786488592636] sent BastionCameraAnchor at Vec3 { x: 15216.5, y: 16015.711, z: 419.0 }
+[1786488592636] sent BastionSpawnColony pos=Vec3 { x: 15216.5, y: 16015.711, z: 419.0 } count=8
+[1786488592701] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786488602559] waited 300 ticks -> sim 2.20..12.22 in 297 client spins; pos now Vec3 { x: 15216.376, y: 16015.696, z: 419.0 }
+[1786488602559] [note] checkpoint 0 (~10s) -- colony founded; founding seed drop should be on the ground near the colony (fixed live path, #105)
+[1786488602559] sent BastionPlaceDesignation kind=Stockpile region=Region { min: Vec3 { x: 15214, y: 16012, z: 418 }, max: Vec3 { x: 15218, y: 16017, z: 419 } }
+[1786488602559] sent BastionPlaceDesignation kind=Farm region=Region { min: Vec3 { x: 15209, y: 16012, z: 418 }, max: Vec3 { x: 15213, y: 16017, z: 419 } }
+[1786488602559] sent BastionPlaceDesignation kind=Bed region=Region { min: Vec3 { x: 15213, y: 16013, z: 419 }, max: Vec3 { x: 15214, y: 16014, z: 420 } }
+[1786488610895] [chat] GenericChatMsg { chat_type: NpcSay(Uid(83)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1786488612493] waited 300 ticks -> sim 12.22..22.26 in 298 client spins; pos now Vec3 { x: 15216.392, y: 16015.887, z: 419.0 }
+[1786488612493] designations (rev=3): [(Region { min: Vec3 { x: 15214, y: 16012, z: 418 }, max: Vec3 { x: 15218, y: 16017, z: 419 } }, Stockpile, None), (Region { min: Vec3 { x: 15209, y: 16012, z: 418 }, max: Vec3 { x: 15213, y: 16017, z: 419 } }, Farm, None), (Region { min: Vec3 { x: 15213, y: 16013, z: 419 }, max: Vec3 { x: 15214, y: 16014, z: 420 } }, Bed, None)]
+[1786488612493] [note] checkpoint 1 (~20s) -- designations registered; till should be starting on the farm plot
+[1786488612562] [chat] GenericChatMsg { chat_type: Npc(Uid(21)), content: Localized { key: "npc-speech-tell_site", seed: 14754, args: {"site": Content(Plain("Nzitaka")), "dir": Content(Localized { key: "npc-speech-dir_west", seed: 4540, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 54053, args: {} })} } }
+[1786488614195] [chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-tell_site", seed: 29219, args: {"dir": Content(Localized { key: "npc-speech-dir_east", seed: 44095, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_very_far", seed: 54817, args: {} }), "site": Content(Plain("Pinton"))} } }
+[1786488618562] [chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-villager_busybody", seed: 4181, args: {} } }
+[1786488620196] [chat] GenericChatMsg { chat_type: Npc(Uid(21)), content: Localized { key: "npc-speech-site", seed: 4272, args: {"site": Content(Plain("Strach"))} } }
+[1786488622729] [chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-tell_site", seed: 48405, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 31890, args: {} }), "site": Content(Plain("Himore")), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 54166, args: {} })} } }
+[1786488624363] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-site", seed: 18206, args: {"site": Content(Plain("Strach"))} } }
+[1786488626363] [chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-villager_stable", seed: 54651, args: {} } }
+[1786488628731] [chat] GenericChatMsg { chat_type: Npc(Uid(90)), content: Localized { key: "npc-speech-site", seed: 39360, args: {"site": Content(Plain("Strach"))} } }
+[1786488630364] [chat] GenericChatMsg { chat_type: Npc(Uid(87)), content: Localized { key: "npc-speech-tell_monster", seed: 62158, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 37530, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 11529, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 27686, args: {} })} } }
+[1786488632295] waited 600 ticks -> sim 22.26..42.26 in 594 client spins; pos now Vec3 { x: 15216.482, y: 16015.81, z: 419.0 }
+[1786488632295] designations (rev=3): [(Region { min: Vec3 { x: 15214, y: 16012, z: 418 }, max: Vec3 { x: 15218, y: 16017, z: 419 } }, Stockpile, None), (Region { min: Vec3 { x: 15209, y: 16012, z: 418 }, max: Vec3 { x: 15213, y: 16017, z: 419 } }, Farm, None), (Region { min: Vec3 { x: 15213, y: 16013, z: 419 }, max: Vec3 { x: 15214, y: 16014, z: 420 } }, Bed, None)]
+[1786488632295] [note] checkpoint 2 (~40s) -- till should be complete, sow jobs open, founding stock should be getting hauled with zero give_item
+[1786488636364] [chat] GenericChatMsg { chat_type: Npc(Uid(89)), content: Localized { key: "npc-speech-site", seed: 25137, args: {"site": Content(Plain("Strach"))} } }
+[1786488637997] [chat] GenericChatMsg { chat_type: Npc(Uid(83)), content: Localized { key: "npc-speech-tell_monster", seed: 11194, args: {"body": Content(Localized { key: "noun-wendigo", seed: 35870, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 64896, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 52597, args: {} })} } }
+[1786488638098] [chat] GenericChatMsg { chat_type: Npc(Uid(21)), content: Localized { key: "npc-speech-site", seed: 59673, args: {"site": Content(Plain("Strach"))} } }
+[1786488639731] [chat] GenericChatMsg { chat_type: Npc(Uid(6)), content: Localized { key: "npc-speech-villager_adventurous", seed: 56921, args: {} } }
+[1786488642431] [chat] GenericChatMsg { chat_type: Npc(Uid(88)), content: Localized { key: "npc-speech-tell_monster", seed: 62467, args: {"body": Content(Localized { key: "noun-wendigo", seed: 24275, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 61202, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 24590, args: {} })} } }
+[1786488642798] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-villager_conscientious", seed: 1909, args: {} } }
+[1786488645398] [chat] GenericChatMsg { chat_type: NpcSay(Uid(83)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1786488652130] waited 600 ticks -> sim 42.26..62.29 in 595 client spins; pos now Vec3 { x: 15216.594, y: 16015.633, z: 419.0 }
+[1786488652130] designations (rev=3): [(Region { min: Vec3 { x: 15214, y: 16012, z: 418 }, max: Vec3 { x: 15218, y: 16017, z: 419 } }, Stockpile, None), (Region { min: Vec3 { x: 15209, y: 16012, z: 418 }, max: Vec3 { x: 15213, y: 16017, z: 419 } }, Farm, None), (Region { min: Vec3 { x: 15213, y: 16013, z: 419 }, max: Vec3 { x: 15214, y: 16014, z: 420 } }, Bed, None)]
+[1786488652130] [note] checkpoint 3 (~60s) -- first-wave sow claims should be underway off the founding stock alone (matches script-14's timing)
+[1786488652130] [note] driver disconnecting now -- scored unattended window begins at server-side tick recorded in this run's boot log plus the tick this note fires at; liveness checked via the server's own "bastion food stock sample" heartbeat (unconditional, tick%300) from here on, no client reconnect until the celebration run after the gate passes
+[1786488652130] === script complete, disconnecting ===
