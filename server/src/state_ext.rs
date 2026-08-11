@@ -132,6 +132,17 @@ pub trait StateExt {
         world: &std::sync::Arc<world::World>,
         index: &world::IndexOwned,
     ) -> EcsEntityBuilder<'_>;
+    /// bastion (ROW-COLONY-PRESENCE, DECISIONS #106): mints the server-owned
+    /// presence that keeps a founded colony's footprint loaded with no
+    /// client attached -- see the impl for the full rationale.
+    #[cfg(feature = "worldgen")]
+    fn create_colony_presence(
+        &mut self,
+        pos: comp::Pos,
+        view_distance: u32,
+        world: &std::sync::Arc<world::World>,
+        index: &world::IndexOwned,
+    ) -> EcsEntityBuilder<'_>;
     /// Creates a teleporter entity, which allows players to teleport to the
     /// `target` position. You might want to require the teleporting entity
     /// to not have agro for teleporting.
@@ -639,6 +650,63 @@ impl StateExt for State {
                     entity: view_distance,
                 },
                 PresenceKind::Spectator,
+            ))
+    }
+
+    /// bastion (ROW-COLONY-PRESENCE, DECISIONS #106): mints the server-owned
+    /// presence that keeps a founded colony's footprint loaded with no
+    /// client attached. Deliberately mirrors [`Self::create_persister`]
+    /// (same chunk-request-then-bare-presence-entity shape) rather than
+    /// inventing a second pattern for "a load-center with no client" --
+    /// the only difference that matters is `PresenceKind::Colony` in place
+    /// of `Spectator`, which `sync_me()` already treats as never-synced.
+    #[cfg(feature = "worldgen")]
+    fn create_colony_presence(
+        &mut self,
+        pos: comp::Pos,
+        view_distance: u32,
+        world: &std::sync::Arc<world::World>,
+        index: &world::IndexOwned,
+    ) -> EcsEntityBuilder<'_> {
+        use common::{terrain::TerrainChunkSize, vol::RectVolSize};
+        use std::sync::Arc;
+        {
+            let ecs = self.ecs();
+            let slow_jobs = ecs.write_resource::<SlowJobPool>();
+            let rtsim = ecs.read_resource::<RtSim>();
+            let mut chunk_generator =
+                ecs.write_resource::<crate::chunk_generator::ChunkGenerator>();
+            let chunk_pos = self.terrain().pos_key(pos.0.map(|e| e as i32));
+            (-(view_distance as i32)..view_distance as i32 + 1)
+                .flat_map(|x| {
+                    (-(view_distance as i32)..view_distance as i32 + 1)
+                        .map(move |y| Vec2::new(x, y))
+                })
+                .map(|offset| offset + chunk_pos)
+                .filter(|chunk_key| {
+                    pos.0.xy().map(|e| e as f64).distance(
+                        chunk_key.map(|e| e as f64 + 0.5) * TerrainChunkSize::RECT_SIZE.map(|e| e as f64),
+                    ) < (view_distance as f64 - 1.0 + 2.5 * 2.0_f64.sqrt())
+                        * TerrainChunkSize::RECT_SIZE.x as f64
+                })
+                .for_each(|chunk_key| {
+                    let time = (
+                        *ecs.read_resource::<TimeOfDay>(),
+                        (*ecs.read_resource::<Calendar>()).clone(),
+                    );
+                    chunk_generator.generate_chunk(None, chunk_key, &slow_jobs, Arc::clone(world), &rtsim, index.clone(), time);
+                });
+        }
+
+        self.ecs_mut()
+            .create_entity_synced()
+            .with(pos)
+            .with(Presence::new(
+                ViewDistances {
+                    terrain: view_distance,
+                    entity: view_distance,
+                },
+                PresenceKind::Colony,
             ))
     }
 

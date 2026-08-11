@@ -68,6 +68,12 @@ event_emitters! {
         // below), so the founding drop has to be emitted from here too,
         // not just the Server-level wrapper the harness goes through.
         create_item_drop: event::CreateItemDropEvent,
+        // bastion (ROW-COLONY-PRESENCE, DECISIONS #106): same live-path
+        // reasoning as `create_item_drop` right above -- the Server-level
+        // founding wrapper (`bastion_found_colony_presence`) never runs
+        // for a live client founding, which calls `rtsim.
+        // bastion_spawn_colony` directly from inside this system.
+        create_colony_presence: event::CreateColonyPresenceEvent,
     }
 }
 
@@ -1324,6 +1330,13 @@ impl<'a> System<'a> for Sys {
                             persistent: true,
                         });
                     }
+                    // bastion (ROW-COLONY-PRESENCE, DECISIONS #106): the
+                    // live-path twin of `Server::bastion_found_colony_
+                    // presence` above -- same disjoint-producer shape as
+                    // the seed-stock drop right above it.
+                    post_emitters.emit(event::CreateColonyPresenceEvent {
+                        pos: common::comp::Pos(pos),
+                    });
                 }
                 // bastion (UI-4): answer inspector requests — read-only
                 // payload assembly at request cadence (~1Hz per open

@@ -139,7 +139,13 @@ impl<'a> System<'a> for Sys {
                                     map_marker.cloned(),
                                 ))
                             },
-                            PresenceKind::Spectator | PresenceKind::Possessor => None,
+                            // bastion (ROW-COLONY-PRESENCE): unreachable in
+                            // practice (this join also requires
+                            // `player_skill_set`/`player_inventories`, which
+                            // a colony presence never has), kept exhaustive.
+                            PresenceKind::Spectator
+                            | PresenceKind::Possessor
+                            | PresenceKind::Colony => None,
                         },
                     ),
             );

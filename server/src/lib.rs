@@ -1206,6 +1206,7 @@ impl Server {
             .write_resource::<rtsim::RtSim>()
             .bastion_spawn_colony(wpos, count);
         self.bastion_found_colony_seed_stock(wpos);
+        self.bastion_found_colony_presence(wpos);
         names
     }
 
@@ -1223,6 +1224,7 @@ impl Server {
             .write_resource::<rtsim::RtSim>()
             .bastion_spawn_colony_seeded(wpos, count, seed_tick);
         self.bastion_found_colony_seed_stock(wpos);
+        self.bastion_found_colony_presence(wpos);
         names
     }
 
@@ -1255,6 +1257,44 @@ impl Server {
             bastion_jobs::FARM_SEED_ITEM,
             bastion_jobs::FOUNDING_SEED_STOCK,
         );
+    }
+
+    /// bastion (ROW-COLONY-PRESENCE, DECISIONS #106): mints the
+    /// server-owned `PresenceKind::Colony` that keeps founded colonists in
+    /// `SimulationMode::Loaded` with no client connected -- the finding
+    /// item 8's endurance run surfaced (colonists demoted to `Simulated`
+    /// ~20s after every founding to date, invisible only because every
+    /// prior live leg happened to have a client present the whole time).
+    ///
+    /// View distance = 1 chunk (a 3x3 chunk block, 96x96 blocks centered on
+    /// the founding position): every designation this arc has ever painted
+    /// (stockpile/farm/bed, each a handful of blocks) sits well inside a
+    /// single 32-block chunk of the founding point, so radius 1 already
+    /// carries comfortable margin for haul paths beyond the plots
+    /// themselves. Kept at the SMALLEST nonzero radius deliberately -- the
+    /// packet's own debt note: held chunks per colony are bounded for one
+    /// colony but grow UNBOUNDED across many, and item 40 (multi-colony)
+    /// is where that cost gets revisited, not here.
+    ///
+    /// Same "two producers by design" shape as
+    /// `bastion_found_colony_seed_stock` above, called from the same two
+    /// call sites for the same reason (the live `BastionSpawnColony`
+    /// message bypasses this method entirely) -- see that method's doc.
+    pub(crate) fn bastion_found_colony_presence(&mut self, wpos: Vec3<f32>) {
+        #[cfg(feature = "worldgen")]
+        {
+            const COLONY_PRESENCE_VIEW_DISTANCE: u32 = 1;
+            self.state
+                .create_colony_presence(
+                    comp::Pos(wpos),
+                    COLONY_PRESENCE_VIEW_DISTANCE,
+                    &self.world,
+                    &self.index,
+                )
+                .build();
+        }
+        #[cfg(not(feature = "worldgen"))]
+        let _ = wpos;
     }
 
     /// bastion (SEASON-0, harness hook): (season-index, year_phase,

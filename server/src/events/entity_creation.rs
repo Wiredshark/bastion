@@ -17,8 +17,8 @@ use common::{
     },
     consts::MAX_CAMPFIRE_RANGE,
     event::{
-        ArcingEvent, CreateAuraEntityEvent, CreateItemDropEvent, CreateNpcEvent,
-        CreateNpcGroupEvent, CreateObjectEvent, CreatePoolEvent, CreateShipEvent,
+        ArcingEvent, CreateAuraEntityEvent, CreateColonyPresenceEvent, CreateItemDropEvent,
+        CreateNpcEvent, CreateNpcGroupEvent, CreateObjectEvent, CreatePoolEvent, CreateShipEvent,
         CreateSpecialEntityEvent, EventBus, InitializeCharacterEvent, InitializeSpectatorEvent,
         NpcBuilder, ShockwaveEvent, ShootEvent, SummonBeamPillarsEvent, ThrowEvent,
         UpdateCharacterDataEvent,
@@ -630,6 +630,15 @@ pub fn handle_create_item_drop(server: &mut Server, ev: CreateItemDropEvent) {
         ev.loot_owner,
         ev.persistent,
     );
+}
+
+/// bastion (ROW-COLONY-PRESENCE, DECISIONS #106): mints the colony's
+/// server-owned presence via `Server::bastion_found_colony_presence` --
+/// the same method the harness/Rust-API founding paths already call
+/// directly (they have `&mut Server` themselves and don't need the event
+/// hop); this is the live `BastionSpawnColony` path's only route to it.
+pub fn handle_create_colony_presence(server: &mut Server, ev: CreateColonyPresenceEvent) {
+    server.bastion_found_colony_presence(ev.pos.0);
 }
 
 pub fn handle_create_object(

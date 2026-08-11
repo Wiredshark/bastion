@@ -3897,7 +3897,10 @@ pub fn transform_entity(
                         return Err(TransformEntityError::EntityIsPlayer);
                     },
                     Some(PresenceKind::Possessor | PresenceKind::Character(_)) => {},
-                    None => break 'persist,
+                    // bastion (ROW-COLONY-PRESENCE): a colony presence has
+                    // no client and is never a `transform_entity` target --
+                    // treat it like `None`, nothing to disable.
+                    Some(PresenceKind::Colony) | None => break 'persist,
                 }
 
                 // Run persistence once before disabling it

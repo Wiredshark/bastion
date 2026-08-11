@@ -55,6 +55,20 @@ pub enum PresenceKind {
     LoadingCharacter(CharacterId),
     Character(CharacterId),
     Possessor,
+    /// bastion (ROW-COLONY-PRESENCE, DECISIONS #106): a server-owned
+    /// presence with no connected client and no `CharacterId` -- every
+    /// other variant maps to a human session, this one is minted at colony
+    /// founding and dropped at disband. Its sole job is to hold the
+    /// colony's footprint in the SAME terrain-loading join every player
+    /// presence goes through (`server/src/sys/terrain.rs`'s
+    /// `(entities, presences, positions, clients.mask().maybe())` join
+    /// treats a presence with no `Client` component as a client-less
+    /// load-center, not a special case), which is what keeps founded
+    /// colonists in `SimulationMode::Loaded` without anyone connected --
+    /// the finding this row exists to fix: colonists demoted to
+    /// `Simulated` ~20s after every founding to date, invisible only
+    /// because a client always happened to be present.
+    Colony,
 }
 
 impl PresenceKind {
@@ -78,7 +92,7 @@ impl PresenceKind {
     /// (as an independent component it could use NullStorage).
     pub fn sync_me(&self) -> bool {
         match self {
-            Self::Spectator | Self::LoadingCharacter(_) => false,
+            Self::Spectator | Self::LoadingCharacter(_) | Self::Colony => false,
             Self::Character(_) | Self::Possessor => true,
         }
     }

@@ -3816,6 +3816,10 @@ impl Client {
                             PresenceKind::LoadingCharacter(_) => PresenceKind::Possessor,
                             PresenceKind::Character(_) => PresenceKind::Possessor,
                             PresenceKind::Possessor => PresenceKind::Possessor,
+                            // bastion (ROW-COLONY-PRESENCE): a colony
+                            // presence has no `Client`, so no client ever
+                            // runs this code for one -- kept exhaustive.
+                            PresenceKind::Colony => PresenceKind::Possessor,
                         });
                     }
                     // Clear pending trade

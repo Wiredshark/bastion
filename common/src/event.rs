@@ -213,6 +213,19 @@ pub struct CreateItemDropEvent {
     pub persistent: bool,
 }
 
+/// bastion (ROW-COLONY-PRESENCE, DECISIONS #106): requests the
+/// server-owned `PresenceKind::Colony` presence that keeps a founded
+/// colony's footprint `SimulationMode::Loaded` with no client attached.
+/// An event, not a direct call, because the live `BastionSpawnColony`
+/// founding path runs entirely inside a `specs::System` (`server/src/sys/
+/// msg/in_game.rs`) with no `&mut State`/`&mut Server` access -- the
+/// entity-creation + chunk-request work this needs (`Server::
+/// bastion_found_colony_presence`) can only run in the serial event-drain
+/// phase, which does have full `&mut Server`.
+pub struct CreateColonyPresenceEvent {
+    pub pos: Pos,
+}
+
 pub struct CreateObjectEvent {
     pub pos: Pos,
     pub vel: Vel,
