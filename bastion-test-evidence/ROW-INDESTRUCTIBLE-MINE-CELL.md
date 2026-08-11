@@ -110,6 +110,54 @@ THE FARM.** *Predicted from F1's identity with v3, before this read existed.*
 
 ---
 
+## 2b · ★★★★★ THE ARRIVALS THAT COMPLETE NOTHING — **READ, and a candidate marked as such**
+
+**Part-002, 479 arrivals over 188 distinct sites — but FIVE sites absorb 285 of them:**
+
+    157  (15211, 16044, 425)     <- the trap cell; completes (falsely)
+     40  (15211, 16044, 423)     <- SAME COLUMN, two down; ZERO completions
+     39  (15217, 15984, 416)     <- zero completions
+     35  (15246, 16016, 418)     <- zero completions
+     14  (15229, 15999, 425)     <- zero completions
+
+★★★★ **Repeat arrival at a site that never completes is the same disease at a
+different z** — *a colonist walks there, "works", is released, re-claims, and walks
+back, forever.*
+
+### ★★★ TWO FACTS FROM THE CODE — **READ, cited**
+
+1. **The material-stall path is SILENT.** *In the completion arm, `if let Some(required)
+   = job.required_item` → on `taken.is_none()` it sets `job.progress = 0.0;
+   job.needs_materials = true;` and releases — **with no `info!` of any kind**.*
+   ★★★★ **A colonist can loop arrive→stall→release forever and emit nothing but the
+   arrival.** *That is exactly task #61's "progress 0.0, claimed."*
+2. **Emergency-access mine completions SUPPRESS THE DROP** (`!is_emergency_access &&
+   … Some(DesignationKind::Mine) => Some(MINE_DROP_ITEM)`).
+
+### ⚠ CANDIDATE — **INFERRED, NOT READ. Marked so it cannot harden into a story.**
+
+> *IF the stalled sites are Build/Ladder jobs, the loop closes on itself: the
+> emergency-access mine yields NO stone → the ladder that would build the egress
+> stalls on materials, silently → the exit stays invalid → the planner re-issues the
+> mine → which again yields nothing.* **The one path that could supply the material is
+> the same path that suppresses the drop.**
+
+★★★★★ **THE DECIDING READ DOES NOT EXIST IN THIS LOG.** *The arrival line carries only
+`job` and `pos` — **no `kind`** (verified against a sample line, not assumed), and
+there is no generic job-creation line. **The job kind at `(15211,16044,423)` is not
+recoverable from this capture.***
+
+**So this is an INSTRUMENT REQUIREMENT, not an analysis step** —
+[[enumerate-what-the-instrument-can-see]]:
+
+- **emit `kind` on the arrival line**
+- **emit on the material-stall path** *(a stall that logs nothing cannot be counted)*
+
+★★ **Both are one-line additions and both must land before v5**, *or v5 reproduces this
+exact blind spot.*
+
+---
+
 ## 3 · ⚠ TWO METHOD DEFECTS THIS READ EXPOSED — **both silent, both zero-shaped**
 
 1. ★★★★ **A WRONG PATH AND AN EMPTY FILE RENDER IDENTICALLY.** *The first search ran
