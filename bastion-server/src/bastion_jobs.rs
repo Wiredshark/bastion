@@ -6154,6 +6154,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // #89: WRITE, not read -- `split_off_one` mutates the ground
             // stack directly at the eat reservation site.
             WriteStorage<'a, comp::PickupItem>,
+            // ITEM8-CRASH-FINDING.md fix (2026-08-11): the split-and-eat
+            // path now consumes directly, bypassing the vanilla
+            // InventoryManip::Pickup handler entirely -- which was the
+            // ONLY place `b5_pile_pickup_by_member` incremented
+            // (ROW-ITEM6-WITNESS-PACKET B2, the falsifiability pair).
+            // Needed here so the direct-consumption site can enter through
+            // an equivalent instrumented door instead of silently
+            // undercounting.
+            ReadStorage<'a, comp::bastion::BastionPile>,
             // ENGOPT6 divergence hunt: read-only item-ownership view for the
             // recorder's haul-item trail (the contested item's lifecycle is
             // the diverging quantity the tapes were blind to).
@@ -6246,6 +6255,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 rtsim_entities,
                 rtsim,
                 mut pickup_items,
+                bastion_piles,
                 loot_owners_view,
                 inventory_manip_events,
                 _execution_mode,
@@ -13704,6 +13714,42 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 let eater_uid = uids.get(entity).copied();
                                 if let Some(u) = eater_uid {
                                     board.b5_eat_completions_distinct.insert(u);
+                                }
+                                // ITEM8-CRASH-FINDING.md fix, seam check
+                                // (Fable's ask): this consumption bypasses
+                                // the vanilla InventoryManip::Pickup handler
+                                // entirely -- the ONLY place
+                                // `b5_pile_pickup_by_member` used to
+                                // increment (ROW-ITEM6-WITNESS-PACKET B2).
+                                // Enter through the equivalent instrumented
+                                // door here: `entity` is always a colonist
+                                // in this branch (the EatFrom completion
+                                // loop is colonist-only by construction), so
+                                // this is exactly the "member" case that
+                                // door recorded -- no split needed on picker
+                                // class the way the vanilla site does.
+                                if bastion_piles.contains(item_entity) {
+                                    board.b5_pile_pickup_by_member += 1;
+                                }
+                                // ITEM8-CRASH-FINDING.md fix, second seam:
+                                // the vanilla path's "accepted"/"partial"
+                                // verdicts also fed the entity event log
+                                // (`ItemEventKind::PickedUp`,
+                                // server/src/events/inventory_manip.rs's
+                                // `record_pickup_event`) -- gone too, for
+                                // the same reason. Subject = the pile's own
+                                // uid (the OLD site's `item_entity`/
+                                // `pickup_uid` was the same ground entity,
+                                // never a synthetic one), actor = the eater.
+                                if let Some(u) = eater_uid {
+                                    crate::bastion_entity_event_log::record_event(
+                                        tick.0,
+                                        item,
+                                        crate::bastion_entity_event_log::EventKind::Item(
+                                            crate::bastion_entity_event_log::ItemEventKind::PickedUp,
+                                        ),
+                                        Some(u),
+                                    );
                                 }
                                 info!(
                                     uid = eater_uid.map(|u| u.0.get()),
