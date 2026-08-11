@@ -4396,6 +4396,15 @@ pub struct JobBoard {
     /// (`b5_eat_completions_distinct` in the corpus report): never a
     /// `clauses` entry.
     pub b5_eat_completions_distinct: HashSet<Uid>,
+    /// Item 8 pre-flight: last-observed "rest below its interrupt
+    /// threshold" state per colonist, the edge-detector state for the
+    /// `NeedCrossed{Rest, _}` entity-event producer (need-order loop,
+    /// candidates computation). Missing entry reads as `false` (not in
+    /// band) -- correct default: a fresh colonist's first sub-threshold
+    /// observation must still fire `Into` honestly.
+    need_interrupt_rest: HashMap<Uid, bool>,
+    /// Sibling of `need_interrupt_rest` for hunger.
+    need_interrupt_hunger: HashMap<Uid, bool>,
     /// bastion (#89): the max simultaneous LIVE reservation count ever
     /// observed against any single item entity this run -- how
     /// contested the most-contested stack got. Updated inside `reserve`
@@ -10483,25 +10492,73 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .is(common::rtsim::PersonalityTrait::Neurotic),
                         )
                     });
+                let rest_th = comp::bastion::stagger_interrupt(
+                    mood_cfg.rest.interrupt,
+                    &colonist.0.values,
+                    consc,
+                    neur,
+                );
+                let hunger_th = comp::bastion::stagger_interrupt(
+                    mood_cfg.hunger.interrupt,
+                    &colonist.0.values,
+                    consc,
+                    neur,
+                );
+                // Item 8 pre-flight (measure 1's revised contingency +
+                // measure 5): the dormant `NeedCrossed` vocabulary
+                // (design #99, never wired) is this bar's disambiguator
+                // for "in the interrupt band" as a TREND rather than a
+                // per-pass snapshot -- fire on the EDGE (stored prior
+                // state -> now), never on level alone, so a colonist that
+                // spends many passes below threshold produces exactly two
+                // events (Into, OutOf), not one per pass. Absent prior
+                // state reads as "was not in band" (correct for a fresh
+                // colonist: Into fires honestly on first sub-threshold
+                // observation instead of being silently missed).
+                let rest_in = needs.rest < rest_th;
+                let was_rest_in = board.need_interrupt_rest.insert(*uid, rest_in).unwrap_or(false);
+                if rest_in != was_rest_in {
+                    crate::bastion_entity_event_log::record_event(
+                        tick.0,
+                        *uid,
+                        crate::bastion_entity_event_log::EventKind::Colonist(
+                            crate::bastion_entity_event_log::ColonistEventKind::NeedCrossed {
+                                need: crate::bastion_entity_event_log::NeedKind::Rest,
+                                dir: if rest_in {
+                                    crate::bastion_entity_event_log::CrossDirection::Into
+                                } else {
+                                    crate::bastion_entity_event_log::CrossDirection::OutOf
+                                },
+                            },
+                        ),
+                        None,
+                    );
+                }
+                let hunger_in = needs.hunger < hunger_th;
+                let was_hunger_in =
+                    board.need_interrupt_hunger.insert(*uid, hunger_in).unwrap_or(false);
+                if hunger_in != was_hunger_in {
+                    crate::bastion_entity_event_log::record_event(
+                        tick.0,
+                        *uid,
+                        crate::bastion_entity_event_log::EventKind::Colonist(
+                            crate::bastion_entity_event_log::ColonistEventKind::NeedCrossed {
+                                need: crate::bastion_entity_event_log::NeedKind::Hunger,
+                                dir: if hunger_in {
+                                    crate::bastion_entity_event_log::CrossDirection::Into
+                                } else {
+                                    crate::bastion_entity_event_log::CrossDirection::OutOf
+                                },
+                            },
+                        ),
+                        None,
+                    );
+                }
                 let mut candidates: Vec<(f32, u8)> = Vec::new();
-                if needs.rest
-                    < comp::bastion::stagger_interrupt(
-                        mood_cfg.rest.interrupt,
-                        &colonist.0.values,
-                        consc,
-                        neur,
-                    )
-                {
+                if rest_in {
                     candidates.push((needs.rest, 0));
                 }
-                if needs.hunger
-                    < comp::bastion::stagger_interrupt(
-                        mood_cfg.hunger.interrupt,
-                        &colonist.0.values,
-                        consc,
-                        neur,
-                    )
-                {
+                if hunger_in {
                     candidates.push((needs.hunger, 1));
                 }
                 candidates
