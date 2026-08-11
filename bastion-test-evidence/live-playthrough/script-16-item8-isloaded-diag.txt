@@ -1,0 +1,19 @@
+# DIAGNOSTIC ONLY -- not an item 8 acceptance leg. Tests the hypothesis
+# that disconnecting the driver (required for item 8's unattended scored
+# window) demotes founding colonists out of rtsim SimulationMode::Loaded,
+# which silently gates the ENTIRE need-preemption loop via is_loaded()
+# (bastion_jobs.rs:10211) -- explaining item 8's real run showing
+# preempt_attempts=0 after 55 sim-minutes despite unconditional needs
+# decay that should have crossed the interrupt threshold ~15-30 sim-min
+# in. Short and throwaway: found, wait briefly connected (colonists
+# should be Loaded here), disconnect, then the SERVER SIDE log (read
+# separately, with BASTION_NEED_LOAD_FILTER_DIAG=1 and
+# BASTION_DECAY_JOIN_DIAG=1 set at boot) is checked for
+# dropped_by_is_loaded and decay_join_count immediately after.
+note DIAG -- is_loaded hypothesis test for item 8, not a scored leg
+anchor
+spawn 8
+wait 300
+note connected checkpoint -- colonists should read is_loaded=true here (b_count==c_count expected)
+wait 300
+note disconnecting now -- watch dropped_by_is_loaded on the NEXT diag line after this

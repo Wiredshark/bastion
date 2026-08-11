@@ -1,0 +1,23 @@
+=== bastion_playtest starting: server=localhost username=bastion_llm_player script=bastion-test-evidence/live-playthrough/script-16-item8-isloaded-diag.txt ===
+parsed 7 script commands
+[init] ConnectionEstablish
+[init] WatingForServerVersion
+[init] Authentication
+[init] LoadingInitData
+[init] StartingClient
+connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/7f054525-7028-4044-b4fa-e96a99e70129), name: "Veloren Server", git_hash: 2151495846, git_timestamp: 1786429520, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+requested character join id=CharacterId(2)
+in-game. entity=Entity(0, Generation(1))
+player pos at script start: Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[note] DIAG -- is_loaded hypothesis test for item 8, not a scored leg
+sent BastionCameraAnchor at Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+sent BastionSpawnColony pos=Vec3 { x: 15216.5, y: 16016.5, z: 419.0 } count=8
+[chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+waited 300 ticks -> sim 25.49..35.51 in 297 client spins; pos now Vec3 { x: 15216.518, y: 16016.568, z: 419.0 }
+[note] connected checkpoint -- colonists should read is_loaded=true here (b_count==c_count expected)
+[chat] GenericChatMsg { chat_type: Npc(Uid(22)), content: Localized { key: "npc-speech-site", seed: 20245, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(3)), content: Localized { key: "npc-speech-site", seed: 21921, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-villager_conscientious", seed: 9560, args: {} } }
+waited 300 ticks -> sim 35.51..45.51 in 297 client spins; pos now Vec3 { x: 15216.755, y: 16016.59, z: 419.0 }
+[note] disconnecting now -- watch dropped_by_is_loaded on the NEXT diag line after this
+=== script complete, disconnecting ===
