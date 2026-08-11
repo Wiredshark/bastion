@@ -10205,6 +10205,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             } else {
                 0
             };
+            // ROW-COLONY-PRESENCE acceptance (DECISIONS #106): the
+            // packet's own measures 1+2 in one pass -- per-colonist
+            // `is_loaded` state AND the actual need values, so "still
+            // Loaded" can never be mistaken for "needs are ticking" (the
+            // packet's named silent-pass risk). Reuses the SAME
+            // (entities, colonists, uids, needs_storage) join
+            // `need_join_diag` above already pays for -- no second join.
+            if std::env::var_os("BASTION_COLONY_PRESENCE_ACCEPTANCE_DIAG").is_some() {
+                for (e, _, u, n) in (&entities, &colonists, &uids, &needs_storage).join() {
+                    info!(
+                        tick = tick.0,
+                        uid = u.0.get(),
+                        loaded = is_loaded(e),
+                        hunger = n.hunger,
+                        rest = n.rest,
+                        "bastion COLONY-PRESENCE-ACCEPTANCE-DIAG"
+                    );
+                }
+            }
             let need_order: Vec<(specs::Entity, Uid, f32)> =
                 (&entities, &colonists, &uids, &needs_storage)
                     .join()
