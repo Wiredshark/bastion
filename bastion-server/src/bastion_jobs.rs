@@ -721,13 +721,21 @@ pub(crate) fn claim_release_should_clear(claimed_by_us: bool, _unreachable: bool
 /// ITEM8-V4 route 3 (sweep extension, ruled "the closer, never the fix"):
 /// whether the backstop sweep should reap an unclaimed job, pure for the
 /// same unit-pinnable reason as `claim_release_should_clear` above.
+/// `unclaimed_secs` is the JOB'S OWN unclaimed duration (from
+/// `unclaimed_watch`, first-observed-unclaimed time), NOT a position's
+/// claim-recency history -- v4's live run found the position-keyed
+/// version reaps a freshly-created job on sight if it happens to sit at
+/// a position that was unclaimed for a long stretch before, since the
+/// POSITION's history has nothing to do with how long THIS job has
+/// existed. Seconds, not cycles: the caller now compares directly
+/// against `access_stall_secs()`, no cycle-conversion arithmetic needed.
 pub(crate) fn designated_sweep_should_reap(
     claimed: bool,
     is_designated: bool,
-    cycles_unclaimed: u32,
-    threshold_cycles: u32,
+    unclaimed_secs: f64,
+    threshold_secs: f64,
 ) -> bool {
-    !claimed && is_designated && cycles_unclaimed >= threshold_cycles
+    !claimed && is_designated && unclaimed_secs >= threshold_secs
 }
 
 /// ITEM8-V4 F6 (generic leak-witness backstop): whether a claim's held
@@ -4954,6 +4962,17 @@ pub struct JobBoard {
     /// observation of a live claim, so a re-claim after a genuine release
     /// gets a fresh start time on its next scan, not the old one.
     claim_leak_watch: HashMap<JobId, f64>,
+    /// ITEM8-V4 route 3 v2 (v4-live-finding fix): when each currently-
+    /// UNCLAIMED job's present unclaimed episode began (game seconds),
+    /// observed periodically -- same technique and same reason as
+    /// `claim_leak_watch` above, inverted polarity. Replaces the first
+    /// version's use of `cycles_since_last_claim` (position-keyed, so a
+    /// freshly-created job at a historically-stale position was born
+    /// already past the reap threshold -- v4's live 186-reap churn
+    /// finding). `or_insert` only writes on first observation of THIS
+    /// job being unclaimed, so a job that was claimed then released gets
+    /// a fresh clock, not the position's history.
+    unclaimed_watch: HashMap<JobId, f64>,
     /// ITEM8-V4 F6: fires when the generic backstop (below) force-
     /// releases a claim that outlived `GENERIC_CLAIM_LEAK_SECS` —
     /// INVERTED bar (Opus-ruled): zero is the expected PASS on a healthy
@@ -18208,17 +18227,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // unclaimed longer than `access_stall_secs()` — the SAME derived
         // maximum-lawful-wait bound a CLAIMED job's own backstop uses (row
         // 103's law: no fresh literal for a second budget that must stay
-        // in relation to the first). Reuses TASK #59's own
-        // `cycles_since_last_claim` counter, computed immediately above,
-        // rather than tracking staleness a second way. Deliberately NOT
-        // routed through `job_still_wanted` (which is hard-coded `true`
-        // for Farm specifically to avoid the run-3 create/claim/drop
-        // churn loop, per that function's own doc) -- this sweep only
-        // ever removes an UNCLAIMED job nobody is working, so no
-        // colonist's travel is wasted by the removal; Farm's own
-        // per-tick generator (FARM/PROD-2) recreates an equivalent job
-        // next pass if the underlying cell still needs one, same as any
-        // other stale-then-regenerated designation.
+        // in relation to the first). Deliberately NOT routed through
+        // `job_still_wanted` (which is hard-coded `true` for Farm
+        // specifically to avoid the run-3 create/claim/drop churn loop,
+        // per that function's own doc) -- this sweep only ever removes an
+        // UNCLAIMED job nobody is working, so no colonist's travel is
+        // wasted by the removal; Farm's own per-tick generator
+        // (FARM/PROD-2) recreates an equivalent job next pass if the
+        // underlying cell still needs one, same as any other
+        // stale-then-regenerated designation.
         //
         // NOT the same sweep the packet's literal words point at, and
         // deliberately so -- named here for the reviewer's benefit: the
@@ -18247,34 +18264,77 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // rather than by extending a predicate built for a different
         // kind of orphan. Flagged explicitly for commit review, not
         // silently substituted.
+        //
+        // ★★★★★ v4 LIVE FINDING, FIXED HERE (Fable's diagnosis, confirmed
+        // from code): the FIRST version of this sweep used
+        // `cycles_since_last_claim`, keyed by POSITION, tracking how
+        // long that POSITION has gone unclaimed -- not how long THIS JOB
+        // has been unclaimed. A freshly-created job at a position that
+        // was previously unclaimed for a long stretch (e.g. right after
+        // this very sweep reaped whatever sat there before) is BORN
+        // already past the threshold and gets reaped on sight; the cell
+        // frees, Farm's generator recreates an equivalent job there next
+        // pass, which is ALSO born stale by the same position history,
+        // and reaps again -- v4's live run hit this 186 times against
+        // 87 total v3 job creations. **Fixed by tracking per-JOB
+        // unclaimed duration instead of per-POSITION claim recency** --
+        // `unclaimed_watch` observes every unclaimed job periodically
+        // (same technique as F6's `claim_leak_watch` above: no call site
+        // to hook, so no enumeration to get wrong) and only starts a
+        // job's clock the first time IT is seen unclaimed, giving a
+        // freshly-created job the full threshold's grace period. This is
+        // slightly stronger than the literal "stamp created_at on the
+        // job" fix Fable proposed: it also correctly resets for a job
+        // that was claimed, worked, and later released back to unclaimed
+        // (using per-job creation time alone would over-count the
+        // claimed/working interval as if it were unclaimed time) --
+        // costs nothing extra to build with the periodic-observation
+        // pattern already in hand, so built that way rather than the
+        // narrower literal ask. Flagged, not silently substituted.
         {
-            let reap_threshold_cycles = (access_stall_secs()
-                / (ARBITRATION_INTERVAL as f32 / crate::SIM_TPS as f32))
-                .max(1.0) as u32;
+            for (id, j) in board.jobs.iter() {
+                if j.claimed_by.is_none() {
+                    board.unclaimed_watch.entry(*id).or_insert(time.0);
+                }
+            }
+            board.unclaimed_watch.retain(|id, _| {
+                board.jobs.get(id).is_some_and(|j| j.claimed_by.is_none())
+            });
+            let reap_threshold_secs = access_stall_secs() as f64;
             let to_reap: Vec<JobId> = board
                 .jobs
                 .iter()
-                .filter(|(_, j)| {
+                .filter(|(id, j)| {
+                    let unclaimed_secs = board
+                        .unclaimed_watch
+                        .get(*id)
+                        .map(|&since| time.0 - since)
+                        .unwrap_or(0.0);
                     designated_sweep_should_reap(
                         j.claimed_by.is_some(),
                         matches!(j.kind, common::bastion::JobKind::Designated(_)),
-                        board.cycles_since_last_claim.get(&j.pos).copied().unwrap_or(0),
-                        reap_threshold_cycles,
+                        unclaimed_secs,
+                        reap_threshold_secs,
                     )
                 })
                 .map(|(id, _)| *id)
                 .collect();
             for id in to_reap {
                 if let Some(job) = board.jobs.get(&id) {
+                    let unclaimed_secs = board
+                        .unclaimed_watch
+                        .get(&id)
+                        .map(|&since| time.0 - since)
+                        .unwrap_or(0.0);
                     info!(
                         job = id,
                         pos = ?job.pos,
                         kind = ?job.kind,
-                        cycles_unclaimed =
-                            board.cycles_since_last_claim.get(&job.pos).copied().unwrap_or(0),
+                        unclaimed_secs,
                         "bastion: unclaimed designation swept (ITEM8-V4 route 3 backstop)"
                     );
                 }
+                board.unclaimed_watch.remove(&id);
                 board.remove_job(id);
                 board.designated_sweep_reaps += 1;
             }
@@ -20056,20 +20116,53 @@ mod tests {
         // ITEM8-V4 route 3, RED PRE-FIX: this sweep did not exist before
         // this row -- every one of these true cases is new coverage, not
         // a regression pin on prior behavior.
-        const T: u32 = 10;
+        const T: f64 = 10.0;
         // The one case that should sweep: unclaimed, Designated, at or
         // past the threshold.
         assert!(designated_sweep_should_reap(false, true, T, T));
-        assert!(designated_sweep_should_reap(false, true, T + 1, T));
+        assert!(designated_sweep_should_reap(false, true, T + 1.0, T));
         // Claimed: never swept, regardless of how long it's been
         // "unclaimed" by a stale counter (that would be a double-remove
         // race against the job's own claimant).
-        assert!(!designated_sweep_should_reap(true, true, T + 100, T));
+        assert!(!designated_sweep_should_reap(true, true, T + 100.0, T));
         // Not a Designated kind (Haul/RestAt/EatFrom/Despond/DepositRun):
         // out of this sweep's declared scope, never touched.
-        assert!(!designated_sweep_should_reap(false, false, T + 100, T));
+        assert!(!designated_sweep_should_reap(false, false, T + 100.0, T));
         // Under threshold: too soon, not yet a backstop case.
-        assert!(!designated_sweep_should_reap(false, true, T - 1, T));
+        assert!(!designated_sweep_should_reap(false, true, T - 1.0, T));
+    }
+
+    #[test]
+    fn sweep_never_reaps_a_freshly_unclaimed_job_regardless_of_position_history() {
+        // ITEM8-V4 route 3 v2, THE TEST THAT WOULD HAVE CAUGHT v4's LIVE
+        // FINDING PRE-LAUNCH (Fable's exact ask, filed with that comment):
+        // a job's OWN unclaimed duration is 0.0 the instant it's first
+        // observed unclaimed, no matter how long some earlier job at the
+        // SAME position sat unclaimed before it. The predicate takes
+        // `unclaimed_secs` directly -- it has no way to see position
+        // history at all, which is the fix: the position-keyed counter
+        // (`cycles_since_last_claim`) that caused the 186-reap churn is
+        // no longer consulted by this predicate or its caller.
+        const T: f64 = 10.0;
+        assert!(
+            !designated_sweep_should_reap(false, true, 0.0, T),
+            "a job observed unclaimed for the first time this pass (0.0s) must not be reapable, \
+             even if a prior job at its position was stale for a long time -- that history \
+             belongs to the position, not to this job"
+        );
+        // A job one arbitration pass old (well under any real threshold)
+        // is still safely inside its grace period.
+        assert!(!designated_sweep_should_reap(false, true, 0.5, T));
+    }
+
+    #[test]
+    fn sweep_still_reaps_a_genuinely_old_unclaimed_job() {
+        // ITEM8-V4 route 3 v2: the original intent, preserved by the
+        // fix -- a job that has been unclaimed, by ITS OWN clock, for
+        // longer than the threshold is still a legitimate backstop case.
+        const T: f64 = 10.0;
+        assert!(designated_sweep_should_reap(false, true, T, T));
+        assert!(designated_sweep_should_reap(false, true, 3600.0, T));
     }
 
     #[test]
