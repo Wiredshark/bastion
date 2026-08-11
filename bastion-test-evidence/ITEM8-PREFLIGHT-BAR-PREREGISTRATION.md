@@ -60,33 +60,65 @@ pre-crossing window is checked first, before any pass/fail scoring below.
 
 ## 3 · THE SIX MEASURES
 
-### Measure 1 (REVISED per the packet's own amendment — no death path exists)
+### Measure 1 (REPLACED — Opus's ruling, superseding this doc's earlier draft)
 
 Grepped fresh for this doc: zero hunger/hunger-need-to-Health/death coupling
 anywhere in `bastion-server`, `common`, or `server`. Confirmed still true at
-time of writing. **Operative wording (Fable's amendment, not the original bar
-row):**
+time of writing — "no deaths" against an engine with no death path cannot go
+red, so it is not a check (Opus's vacuity ruling).
 
-> No colonist's need stays in the interrupt band across a full cycle without a
-> satisfying `NeedCrossed{OutOf}`.
+★ **Correction to this doc's own earlier draft:** an earlier revision of this
+section used the `NeedCrossed{OutOf}` interrupt-band framing as measure 1's
+replacement. **Opus explicitly ruled against that** in favor of a better
+analogue found mid-thread: `mood_below_since` / the existing despondency
+breakdown, "the engine's own notion of a colonist going under" rather than an
+inference about needs. **Operative measure 1:**
 
-- **Witness:** entity event log, `ColonistEventKind::NeedCrossed{need, dir}`
-  records (subject `Uid`, `tick`).
-- **PASS expression:** every `Into` record for a given `(uid, need)` has a
-  matching `OutOf` for the same `(uid, need)` within one cycle-length (≈1802
-  sim-sec) of ticks.
-- **FAIL expression (concrete):** exists at least one `(uid, need)` `Into`
-  record with no `OutOf` for that same pair within one cycle-length — either a
-  late `OutOf` beyond the window, or none before run end.
-- **VOID:** zero `NeedCrossed` records exist for the whole run despite the
-  food-stock sampler (an independent, unconditional producer) having fired —
-  this is the "zero from a dead counter" trap this arc has hit three times
-  already; a truly empty needs-crossing log with a live sampler means the
-  producer is dead, not that no colonist ever got hungry.
-- **This branch is stated as a finding about the sim in the results, not a
-  footnote** — with no death path, item 8 asks "does the colony stay
-  RECOVERABLE," not "does it survive," per the packet's own honesty
-  requirement.
+> Despondency events per cycle: FLAT OR FALLING = pass, RISING ACROSS CYCLES =
+> fail — the same trend shape as measure 4, for the same reason (the failure
+> this run exists to catch is cumulative, not a single bad moment).
+
+- **Witness:** the EXISTING `"bastion: BREAKDOWN — despondent (mood sustained
+  below the break threshold)"` log line (`bastion_jobs.rs:10462`), already
+  `uid`-tagged (`colonist = %uid`) — **no new producer**, per the same
+  reuse-over-invent law this arc keeps re-applying.
+- **PASS expression:** despondency-event count per cycle window is flat or
+  falling across N.
+- **FAIL expression:** despondency-event count rises cycle-over-cycle.
+- **Reachability — the vacuity check applied to the REPLACEMENT too** (Opus's
+  own instruction: "apply the vacuity check to the replacement, don't repeat
+  the mistake one message later"). **Confirmed empirically, not just from the
+  mood formula**, by grepping this arc's own prior live-run logs for
+  `BREAKDOWN`:
+
+      server-stdout-16.log (script-09-milestone.txt, NO food provisioning
+        -- the closest prior analogue to item 8's founding-stock-only
+        scenario)                                          16 BREAKDOWN events
+      server-stdout-51.log (script-10-milestone-food.txt, provisioned)  13
+      server-stdout-15.log (continuous-supply variant)                  14
+
+  **Despondency is reachable, and fires MORE under the less-provisioned
+  scenario** (16 vs 13–14) — consistent with need pressure (not food-search
+  specifically) driving it. Measure 1 is not vacuous; the ZERO-WINDOW fallback
+  is not needed.
+- **VOID:** zero `BREAKDOWN` lines across the whole run despite mood-tracking
+  being unconditional and this exact scenario shape reliably producing
+  double-digit counts in every prior comparable run — would mean the log
+  pipe itself is dead, not that the colony never stressed.
+- **The mood formula, for the record** (`mood_formula`,
+  `common/src/comp/bastion.rs:273`): `mood = clamp(mood_base(0.6) +
+  hunger.weight(-0.5)·shortfall(hunger,0.5) + rest.weight(-0.4)·
+  shortfall(rest,0.5) + recreation.weight(-0.15)·shortfall(recreation,0.4) +
+  thought_sum, 0, 1)`, `break_minor = 0.25`. Worst-case BOTH hunger and rest
+  sitting exactly at their 0.2 interrupt thresholds simultaneously yields
+  mood ≈ 0.33 before any `thought_sum` contribution — margin is thin enough
+  that real travel/queue delay past the interrupt edge (not just the
+  instantaneous crossing) plausibly closes it, matching the empirical counts
+  above.
+- **Scenario fact for the results, not a bar row:** *"No deaths occurred.
+  Starvation does not reduce Health anywhere in this codebase — hunger feeds
+  mood only. This is a fact about the sim, not evidence of colony health, and
+  the endurance question is therefore RECOVERABILITY, not survival."*
 
 ### Measure 2 — every colonist eats every cycle
 
@@ -97,9 +129,9 @@ row):**
 - **FAIL expression:** any cycle window (post-zero-window) with distinct-eater
   count < 8.
 - **VOID:** zero `ate` lines logged across the entire run despite hunger
-  crossing `Into` at least once (per measure 1's own witness) — dead instrument,
-  not a starving-but-unfed colony (that would be measure-1/5 territory with a
-  live instrument).
+  crossing `Into` at least once (per measure 5's `NeedCrossed` witness) — dead
+  instrument, not a starving-but-unfed colony (that would be measure 5's own
+  territory with a live instrument).
 
 ### Measure 3 — every colonist sleeps every cycle
 
@@ -129,18 +161,20 @@ Same shape as measure 2, over `"bastion: slept — rest restored"` lines
 "idle-with-unmet-need" has no separate witness of its own — building one (a
 new "is this colonist currently pursuing any job" classifier keyed against
 need state) would be a second producer for data the `NeedCrossed` edge-detector
-already carries. **This measure reuses measure 1's same witness with the same
-window**, on the reasoning that a colonist actively being served (walking to a
-bed, queued at a stove) crosses back `OutOf` inside the window in every run
-observed so far this arc; a crossing that *doesn't* resolve inside one cycle is
-this project's operational definition of "idle," not merely "slow." If this
-interpretation is wrong it will show up as measures 1 and 5 always agreeing
-100% of the time in the results — which itself is the falsifiable prediction
-this framing makes.
+already carries (`cad8d9e1a6`; ratified by Opus for measures 2/3's
+per-cycle distinctness, and reused here on the same reasoning). A colonist
+actively being served (walking to a bed, queued at a stove) crosses back
+`OutOf` inside the window in every run observed so far this arc; a crossing
+that *doesn't* resolve inside one cycle is this project's operational
+definition of "idle," not merely "slow." **Unlike measure 1 (now the
+despondency trend, above), this measure's witness is need-crossing duration
+directly** — the two measures are no longer the same instrument, so no
+agreement prediction between them applies; this is a standalone reading of
+`NeedCrossed`, not a reuse of measure 1's data.
 
-- **Witness:** same `NeedCrossed` records as measure 1.
-- **FAIL expression:** identical to measure 1's FAIL — any `(uid, need)` `Into`
-  with no `OutOf` inside one cycle-length.
+- **Witness:** `NeedCrossed{need, dir}` records (`cad8d9e1a6`).
+- **FAIL expression:** any `(uid, need)` `Into` with no matching `OutOf`
+  inside one cycle-length.
 - **Secondary corroborating signal (not the primary witness):**
   `board.b5_f3_stalled_peak` / `access_stalled_secs` — the B6 access-economy
   stall counter. This measures a DIFFERENT population (claimed access jobs
