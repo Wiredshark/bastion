@@ -24,6 +24,20 @@ caught it. Fixed at `593bd66afe`: the founding drop now emits from the
 same system, same call site as `rtsim.bastion_spawn_colony` itself, so the
 two can no longer drift apart.
 
+**Two producers by design, not a double-fire risk.** The Server-level
+wrapper (`bastion_found_colony_seed_stock`, `ab51e57949`) and the
+live-path emission at the `in_game.rs` call site above are disjoint by
+construction: a founding reaches exactly one of the two. The live
+`BastionSpawnColony` client message is handled entirely inside that
+system and never calls `Server::bastion_spawn_colony`/`_seeded`; every
+other caller of THOSE methods (the harness's ~60 scenario call sites,
+`bastion_arena.rs`'s "fixture" staging spawn -- a live but non-client-
+message admin path, any determinism-capture code) is a direct Rust call
+that never routes through the client-message system. One founding call,
+one path, one producer -- documented at both sites in the code so the
+next reader who greps two emit sites for the same drop doesn't have to
+re-derive it.
+
 ## The re-run: the loop is not just closed, it's self-sustaining
 
 Same script (`script-14-founding-stock-acceptance.txt`), same verified

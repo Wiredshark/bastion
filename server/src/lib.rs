@@ -1217,6 +1217,20 @@ impl Server {
     /// ECS item-drop/event-bus access, and every founding that reaches the
     /// Server API (live or determinism-capture) should carry the same
     /// starting stock -- one entry point, not a live-only special case.
+    ///
+    /// TWO PRODUCERS BY DESIGN, NOT A DOUBLE-FIRE RISK: this one, and the
+    /// twin at `sys/msg/in_game.rs`'s `rtsim.bastion_spawn_colony` call
+    /// site (the live `BastionSpawnColony` client-message path, which
+    /// bypasses this method entirely -- see that call site's own doc for
+    /// why the fix originally missed it). The two entry points are
+    /// disjoint by construction: a live client founding is handled
+    /// entirely inside that system and never reaches `Server::
+    /// bastion_spawn_colony`/`_seeded`; every OTHER caller of THIS method
+    /// -- the harness's ~60 scenario call sites, `bastion_arena.rs`'s
+    /// "fixture" staging spawn (a live but non-client-message admin path),
+    /// determinism-capture code -- is a direct Rust call that never goes
+    /// through the client-message system at all. One founding call, one
+    /// path, one producer -- grep both sites before assuming otherwise.
     fn bastion_found_colony_seed_stock(&mut self, wpos: Vec3<f32>) {
         self.bastion_spawn_item(
             wpos,

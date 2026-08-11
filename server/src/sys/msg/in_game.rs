@@ -1298,6 +1298,19 @@ impl<'a> System<'a> for Sys {
                     // Server-level wrapper alone tested green against the
                     // harness while staying inert here -- the acceptance
                     // run's honest 0-sown result is what caught it).
+                    //
+                    // NOT a double-fire with the Server-level twin: a
+                    // founding reaches exactly one of the two entry points,
+                    // never both. This one fires ONLY from the live
+                    // `ClientGeneral::BastionSpawnColony` message, handled
+                    // entirely inside this system -- it never calls
+                    // `Server::bastion_spawn_colony`/`_seeded`. Every other
+                    // caller of THOSE (the harness's ~60 scenario sites,
+                    // `bastion_arena.rs`'s "fixture" staging spawn, any
+                    // determinism-capture code) is a direct Rust call that
+                    // never routes through this client-message system. See
+                    // the Server-level twin's own doc for the full
+                    // caller enumeration.
                     if let Ok(mut item) =
                         common::comp::Item::new_from_asset(crate::bastion_jobs::FARM_SEED_ITEM)
                     {
