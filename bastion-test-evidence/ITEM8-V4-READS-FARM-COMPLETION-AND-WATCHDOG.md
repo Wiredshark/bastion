@@ -181,5 +181,22 @@ path is) and hand the job back to the pool in a state candidate search
 will actually pick up — the SAME `claimed_by.is_none()` filter this read
 flagged but did not trace.
 
+## ★★★★ THE PROPAGATED CORRECTION — Opus's "57 stuck-claimed" was also
+wrong, for the same reason
+
+Opus's original stuck-set was computed as `claimed − (completed ∪
+released)`, using the generic `"job completed"` line as the completed
+set. Since Farm never emits that line, **every one of the 59 genuinely-
+completed Farm jobs got counted as "still stuck"** — that is exactly
+where his "57 arrived-and-worked, 0 completed" figure came from: a set
+that was mostly completed jobs, misclassified as claimed-and-abandoned.
+**The real stuck count is 28, all SOW** (confirmed above from two
+independent directions). This matters beyond bookkeeping: the fix's
+target population changes shape from "jobs that were worked but never
+registered" (57, Opus's original framing) to "jobs that were claimed and
+never reached at all" (28, this doc's reading) — which is precisely what
+the `!job.unreachable` claim-release gap above predicts, not a broader
+completion-registration failure.
+
 **Reads complete. No design or build performed — holding for the
 packet/ruling per Opus's instruction.**
