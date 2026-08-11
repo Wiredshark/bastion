@@ -110,6 +110,14 @@ pub enum DigestDomainIdV1 {
     /// `ReplayBundle` (21): a shrink record CITES seeds/signatures, it
     /// does not embed a replayable run.
     FailureSeedRecord = 22,
+    /// ROW-TIME-COMPRESSION-EQUIVALENCE-SPEC.md (Ben directive, engine
+    /// lane, next free ID after `FailureSeedRecord`): the per-tick
+    /// simulation-state fingerprint the compressed-vs-real-time
+    /// equivalence proof compares. A distinct domain from every other
+    /// registered root -- this digests a live tick's JobBoard/colonist
+    /// state slice, not a build artifact or a replay record, and must
+    /// never collide with either class even if their bytes ever did.
+    TimeCompressionFingerprint = 23,
 }
 
 impl DigestDomainIdV1 {
@@ -149,10 +157,11 @@ impl DigestDomainIdV1 {
             Self::PluginResolvedGraph => "bastion/plugin-resolved-graph/v1",
             Self::ReplayBundle => "bastion/replay-bundle/v1",
             Self::FailureSeedRecord => "bastion/failure-seed-record/v1",
+            Self::TimeCompressionFingerprint => "bastion/time-compression-fingerprint/v1",
         }
     }
 
-    pub const ALL: [DigestDomainIdV1; 29] = [
+    pub const ALL: [DigestDomainIdV1; 30] = [
         Self::BootstrapManifest,
         Self::SaveUniverseManifest,
         Self::PluginActivationPlan,
@@ -176,6 +185,7 @@ impl DigestDomainIdV1 {
         // Engine lane (21-39), from bastion/engine2.
         Self::ReplayBundle,
         Self::FailureSeedRecord,
+        Self::TimeCompressionFingerprint,
         // APEX lane (40-99).
         Self::CheckpointStreamTranscript,
         Self::CheckpointGlobalTranscript,
@@ -304,7 +314,7 @@ mod tests {
             FreshBuilderProfile, FreshBuilderRun, FreshRebuildPair, FreshRebuildCanaryCampaign,
             PluginArchive, PluginCandidateSet, PluginResolvedGraph,
         ];
-        let engine = [ReplayBundle, FailureSeedRecord];
+        let engine = [ReplayBundle, FailureSeedRecord, TimeCompressionFingerprint];
         let apex = [
             CheckpointStreamTranscript, CheckpointGlobalTranscript, CheckpointDescriptor,
             CommandDescriptor,

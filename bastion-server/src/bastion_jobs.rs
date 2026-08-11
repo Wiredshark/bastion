@@ -48,7 +48,7 @@ use specs::{
     Entities, Join, LendJoin, Read, ReadExpect, ReadStorage, Write, WriteExpect, WriteStorage,
 };
 use std::hash::{Hash, Hasher};
-use tracing::info;
+use tracing::{error, info};
 use vek::*;
 
 /// B5: seconds of work at skill level 0 to complete a job; higher skill
@@ -756,6 +756,35 @@ pub(crate) fn claim_leak_exceeded(held_secs: f64, threshold_secs: f64) -> bool {
 /// re-cross, which is the registered non-terminal case's own mechanism).
 pub(crate) fn colony_terminal_should_fire(streak_after_increment: u32, threshold: u32) -> bool {
     streak_after_increment == threshold
+}
+
+/// TIME-COMPRESSION fingerprint (Ben directive,
+/// ROW-TIME-COMPRESSION-EQUIVALENCE-SPEC.md §0): a stable, cheap bucket
+/// label for a job's kind. `Zone(_)`'s inner `ZoneKind` is deliberately
+/// collapsed into one `"Designated:Zone"` bucket — coarser than the full
+/// type, and named here as an explicit coverage exclusion rather than
+/// silently dropped (the fingerprint's own §0-required coverage
+/// disclosure lives at its call site, this is the piece specific to job
+/// kinds).
+pub(crate) fn job_kind_label(kind: &common::bastion::JobKind) -> &'static str {
+    match kind {
+        common::bastion::JobKind::Designated(d) => match d {
+            DesignationKind::Mine => "Designated:Mine",
+            DesignationKind::Chop => "Designated:Chop",
+            DesignationKind::Build => "Designated:Build",
+            DesignationKind::Stockpile => "Designated:Stockpile",
+            DesignationKind::Ladder => "Designated:Ladder",
+            DesignationKind::Zone(_) => "Designated:Zone",
+            DesignationKind::Gather => "Designated:Gather",
+            DesignationKind::Bed => "Designated:Bed",
+            DesignationKind::Farm => "Designated:Farm",
+        },
+        common::bastion::JobKind::Haul { .. } => "Haul",
+        common::bastion::JobKind::DepositRun { .. } => "DepositRun",
+        common::bastion::JobKind::RestAt { .. } => "RestAt",
+        common::bastion::JobKind::EatFrom { .. } => "EatFrom",
+        common::bastion::JobKind::Despond { .. } => "Despond",
+    }
 }
 
 /// The (i) exit-verification predicate, pure (the BACKSTOP-OPT (A) form:
@@ -18157,6 +18186,115 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         None => job.unreachable = false,
                     }
                 }
+            }
+        }
+
+        // ── TIME-COMPRESSION fingerprint (Ben directive,
+        // ROW-TIME-COMPRESSION-EQUIVALENCE-SPEC.md §0): LIVE HOOK reading
+        // ECS state directly, never log-derived -- today proved a log-
+        // derived fingerprint would miss exactly the state that matters
+        // (the b5_* counters, the entity event log, farm completions all
+        // have producer/consumer gaps a generic log scrape can't see).
+        // Placed BEFORE the ARBITRATION_INTERVAL gate above so it runs
+        // EVERY tick, not just every arbitration pass -- resolution is
+        // the proof's own resolution (§0), and the smallest detectable
+        // divergence this hook can prove is exactly one tick, matching
+        // the spec's named target. OFF by default (`BASTION_FINGERPRINT`
+        // unset): a per-tick hash is not free, and no run in this arc
+        // besides the dedicated equivalence-proof short pair needs it.
+        //
+        // COVERAGE, named explicitly (§0: "coverage AND resolution, same
+        // section"):
+        //   INCLUDED: JobBoard's own scalar witness counters
+        //     (preempt_attempts, drive_switches, b5_split_off_one_fired,
+        //     claim_expiry_releases, designated_sweep_reaps,
+        //     generic_claim_leak_releases); per-job-kind population
+        //     counts (total + claimed, via `job_kind_label`, `Zone(_)`'s
+        //     inner `ZoneKind` collapsed to one bucket -- see that
+        //     function's own doc); every colonist's (hunger, rest) pair
+        //     keyed by Uid.
+        //   EXCLUDED, not silently omitted: full terrain/voxel state,
+        //     entity positions/velocities, rtsim world state, inventory
+        //     contents beyond job-claim bookkeeping already covered
+        //     above. This fingerprint proves the FAMINE-FIX ARC'S OWN
+        //     TICK-LOOP LOGIC is wall-clock-independent -- not full-world
+        //     byte-identity, which is a different, heavier proof this
+        //     row does not attempt.
+        // Deterministic iteration order (BTreeMap / sorted Vec, never a
+        // HashMap's hash-order) so the fingerprint itself never becomes
+        // a false-divergence source across two otherwise-identical runs.
+        if std::env::var_os("BASTION_FINGERPRINT").is_some() {
+            // Domain-separated digest, not a generic Hasher: DefaultHasher
+            // (SipHash) is version-unstable across toolchains/std releases,
+            // which would make a "compressed run vs real-time run" compare
+            // meaningless the moment either side rebuilds against a
+            // different std. `digest_canonical_bytes_v1` is the engine's
+            // own frozen, tested preimage framing (see
+            // `common/src/apex/digest/protocol.rs`), reused here rather
+            // than routed through `ManifestEncodeV1` -- this payload is a
+            // one-shot per-tick byte sequence, not a persisted/replayed
+            // manifest type.
+            let mut payload: Vec<u8> = Vec::new();
+            payload.extend_from_slice(&board.preempt_attempts.to_be_bytes());
+            payload.extend_from_slice(&board.drive_switches.to_be_bytes());
+            payload.extend_from_slice(&board.b5_split_off_one_fired.to_be_bytes());
+            payload.extend_from_slice(&board.claim_expiry_releases.to_be_bytes());
+            payload.extend_from_slice(&board.designated_sweep_reaps.to_be_bytes());
+            payload.extend_from_slice(&board.generic_claim_leak_releases.to_be_bytes());
+
+            let mut kind_counts: std::collections::BTreeMap<&'static str, (u32, u32)> =
+                Default::default();
+            for job in board.jobs.values() {
+                let entry = kind_counts.entry(job_kind_label(&job.kind)).or_insert((0, 0));
+                entry.0 += 1;
+                if job.claimed_by.is_some() {
+                    entry.1 += 1;
+                }
+            }
+            // Length-prefixed: a category with zero live jobs still
+            // contributes its (0, 0) pair via the BTreeMap's fixed key
+            // set only if a job of that kind ever existed this tick --
+            // absent kinds simply don't appear, same "typed empty root,
+            // never absent" property the digest primitives themselves
+            // guarantee at the framing level (empty payload still frames
+            // and hashes, it never becomes a no-op).
+            payload.extend_from_slice(&(kind_counts.len() as u32).to_be_bytes());
+            for (label, (total, claimed)) in &kind_counts {
+                payload.extend_from_slice(&(label.len() as u16).to_be_bytes());
+                payload.extend_from_slice(label.as_bytes());
+                payload.extend_from_slice(&total.to_be_bytes());
+                payload.extend_from_slice(&claimed.to_be_bytes());
+            }
+
+            let mut needs_sorted: Vec<(u64, u32, u32)> = (&colonists, &uids, &needs_storage)
+                .join()
+                .map(|(_, uid, needs)| {
+                    (uid.0.get(), needs.hunger.to_bits(), needs.rest.to_bits())
+                })
+                .collect();
+            needs_sorted.sort_unstable_by_key(|&(u, _, _)| u);
+            payload.extend_from_slice(&(needs_sorted.len() as u32).to_be_bytes());
+            for (u, h, r) in &needs_sorted {
+                payload.extend_from_slice(&u.to_be_bytes());
+                payload.extend_from_slice(&h.to_be_bytes());
+                payload.extend_from_slice(&r.to_be_bytes());
+            }
+
+            match common::apex::digest::digest_canonical_bytes_v1(
+                common::apex::digest::DigestDomainIdV1::TimeCompressionFingerprint,
+                &payload,
+                1 << 20,
+            ) {
+                Ok(digest) => info!(
+                    tick = tick.0,
+                    fingerprint = %digest.bytes.to_human_v1(),
+                    "bastion TIME-COMPRESSION fingerprint"
+                ),
+                Err(e) => error!(
+                    tick = tick.0,
+                    ?e,
+                    "bastion TIME-COMPRESSION fingerprint: payload digest failed (state grew past the 1 MiB per-tick bound -- fingerprint skipped this tick, equivalence proof for this run is VOID)"
+                ),
             }
         }
 
