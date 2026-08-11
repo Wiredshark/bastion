@@ -56,6 +56,27 @@ Format: append changelog at bottom; statuses edited in place. Newest ruling wins
 **SETTLEMENT PLAN LAYER (#102)** slots as its own arc in this band, before 31: plot grammar reuse, district zoning, cost-driven form, desire-line roads, layout-quality corpus metrics.
 KNOWN INHERITANCE (charter line, Opus 08-10): today's `stockpiles: Vec<(ZoneId, Region)>` painted-bounding-box zones ARE the raw-position model — the arc's FIRST MIGRATION TARGET, not a green field. Item 16 is stockpile-adjacent and carries the plot rider pre-spec.
 
+## CHARTERED ROWS & PARKED QUESTIONS (the board beyond the numbered 40)
+**Ben (2026-08-11): "I feel like we have more items than just 40" — correct; this section makes them countable.**
+Open investigation/engineering rows:
+- **4b** Grounded verdicts-without-plans (specimen uid=81; union counter split SHIPPED; scores from endurance/travel data)
+- **#85** The suspension (a LOADED colonist that doesn't fall; lead: climb_free's x/y-only velocity writes; + the teleport-UP oddity attached)
+- **uid=109 dispatch question** (fail-safe with zero egress consultation, mutex absent — chartered-on-second-specimen)
+- **Mover mystery** — PARKED, 3 wake conditions (concentration real at p=0.021, storyless; stream exists for the next registered idea)
+- **Multi-writer counter audit** (fill-sized; two union counters have each cost an investigation)
+- **ItemInstanceId identity row** (identity survives pickup, notable-items-only per ruling; unblocks entity-log item retention)
+- **Queue-position capture fix** (capture before the queue entry clears — seed-69's missing witness)
+- **#73 self-terminating run harness** (server+driver teardown; stale-binary preflight graduates into it)
+- **Farming fix 2** — task #57 sweep splits read-failure from mismatch (reporting honesty; no longer causal)
+- **Colony Mind arc (#107)** — two-drive pilot (Sustain/Grow); design in progress, Architect-pattern spine; metrics rider ACTIVE
+- **Needs-in-rtsim** (the (b) row — chartered at the multi-colony horizon)
+- **Thievery** (designed feature, band 34 — gate lift is line one, chronicle wiring pre-built)
+- **Founding kit** generalization (band 21-40)
+- **External prior-art verification** (marked recalls to check before load-bearing use)
+- **Ben's observed celebration session** (after the endurance gate passes)
+Done-but-worth-counting process artifacts: live-leg commit stamps (protocol), dormant witness sentinels (item 6), dossier-per-arc ritual, the heartbeat loop.
+**Honest count: ~40 numbered features + ~15 live chartered rows + parked questions with named wake conditions ≈ a 60-item board.** The 40 are the destination; the chartered rows are the road maintaining itself. Both tracked here; neither hidden.
+
 ## Changelog
 - 2026-08-11 (5): COLONY PRESENCE LANDED (7b00cce894 + acceptance diagnostic fb9a740110) — server-owned presence keeps founded colonies Loaded with no client; acceptance run next, then the endurance gate re-runs. BEN DESIGN THREAD: the Colony Mind (ant-model: colonists=ants+job-board stigmergy today; a colony-level drive arbiter — Sustain/Grow/Defend/Expand — weighting the generators as the future executive layer; god-interface + RL substrate) — pending Ben's go to charter beside the settlement arc, with a cheap now-rider: colony-level metrics (food-days, housing ratio, threat pressure) accumulate as diagnostics so the mind is born with senses.
 - 2026-08-11 (4): Item 4 RE-SCOPED — the suspended case's closure stands (uid=166, n=1 limit honored); ITEM 4b opens on the GROUNDED case (uid=81: valid start, no mutex, destination computed, 6 verdicts, 0 plans, ZERO no_route — the original suspicion in purest form); first step = the verdict-enum producer read; files in the travel row's orbit. uid=109 = genuinely-new dispatch question (mutex absent), chartered-on-second-specimen. Fourth failure mode added to item 8's table (verdicts>0 ∧ plans=0, grounded). Endurance launch proceeding.
