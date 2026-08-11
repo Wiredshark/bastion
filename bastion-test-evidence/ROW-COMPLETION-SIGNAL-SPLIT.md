@@ -101,6 +101,35 @@ everything else should fire for one.*
 
 ---
 
+## 2b · ★★★★★★ THE SAFETY CHAIN CLOSES — **verified end to end at `4d9180252f`**
+
+**The open question was: a terminated egress request stops the loop, but what rescues
+the still-trapped colonist?** *Traced by symbol:*
+
+| # | link | source |
+|---|---|---|
+| **1** | **replans bounded at 6** | *defect 2's fix* |
+| **2** | **exhaustion → released + STICKY bar** | `emergency_reengage_exhausted` — *"barred from ALL new route ownership/membership until delivered"* |
+| **3** | **egress cannot help them — BY DESIGN** | *the bar is the point* |
+| **4** | **∴ the only rescue is the stuck-teleport net** | `STUCK_TELEPORT_SECS = 60.0` |
+| **5** | ★★★★★ **the net can now ACCRUE** | *all four completion wipes gated **and** `"route-exhausted-replan"` stops wiping once bounded* |
+| **6** | **teleport fires** | |
+| **7** | **surface → `emergency_reengage_exhausted.remove(uid)`** | *"colonist is safe on the surface; a stale counter would wrongly deny the hold to a future legitimate recovery"* |
+
+> ## **LINK 5 WAS BROKEN, AND THAT MADE LINKS 2–7 UNREACHABLE. EVERY OTHER LINK WAS
+> ALREADY BUILT AND HAD NEVER ONCE BEEN ABLE TO RUN.**
+
+★★★★★★ **v4's colonist looped for 2.5 hours inside a system that contained a complete,
+correct rescue path the entire time.** *The work was not adding a failsafe — it was
+RECONNECTING one.*
+
+⚠ **VERIFIED BY CODE READ, NOT OBSERVED.** *`BASTION_EGRESS_DIAG` in v5 is the
+observation: the wipe-reason trace and the teleport are what to grep.* ★★★ **A chain
+that reads correct and has never been seen to run is exactly the shape that just cost
+2.5 hours** — [[gate-must-test-live-path]].
+
+---
+
 ## 3 · THE WORK
 
 1. **Split the emission at the origin** — *a job ending produces `JobEnded` always, and
