@@ -110,10 +110,37 @@ must say so**, or a green gets read as "the colony sim works."
 ★ **And a FAIL here is the most valuable result the arc can produce**, because it
 is the first failure mode that short runs structurally cannot see.
 
-## OPEN FOR RULING
+## RULED (Fable) — **ALL THREE CLOSED BEFORE LAUNCH**
 
-1. **N** — how many complete cycles? *My lean: enough that measure 4 has ≥3
-   steady-state points, so N ≥ 5.*
-2. **Colony size** — founding stock's default, or larger to stress the farm loop?
-3. **Interrupt policy** — does Ben's observation pause the clock, and does an
-   interrupted run still score?
+**1 · N = 5 IS THE SCORED BAR; the run is DESIGNED to continue to 7 if healthy.**
+*Cycles 6–7 are bonus trend data and never goalposts — **the score registers at 5
+before launch**, so extra cycles strengthen measure 4's shape at zero marginal
+design cost and cannot become a moved target.* **≈2.5 wall-hours at 1:1** —
+overnight-able under the liveness protocol (releasing events + producer-alive
+pings).
+
+**2 · COLONY SIZE = THE FOUNDING DEFAULT.** *The gate certifies the **shipped
+founding experience**, with **one** variable: duration.* ★ **A larger colony
+stressing the farm loop would change POPULATION and DURATION together against
+every baseline we own** — the matched-control law. **It is a separate later arm
+(roadmap item 40's territory) and gets its own leg there.**
+
+**3 · THE SCORED RUN IS UNATTENDED — and the reason is mechanical, not purist.**
+
+> ## ★★★ **A CLIENT CONNECTING CHANGES LOADED-AGENT STATE.** *The `is_loaded` arc
+> established that presence is not neutral — chunk loading, agent promotion, the
+> whole surface. **An observer is a variable.***
+
+**So the gate's clock never pauses for want of a watcher, the parser is the
+scorer, and an observer joining mid-run converts it to an OBSERVED ARM — a fresh
+run scores.**
+
+★★ **Ben gets a DEDICATED OBSERVED SESSION as its own event: the milestone-v2
+celebration run, after the gate passes.** *That splits the two consumers cleanly
+— **the gate is for the parser; the show is for Ben** — and stops one run trying
+to be legible live and rigorous simultaneously, which is what §5's rules exist to
+prevent.*
+
+★ *This retires my open question 3 rather than answering it: I asked whether
+observation pauses the clock; the right answer was that observation changes the
+measurement, so it doesn't belong in the scored run at all.*
