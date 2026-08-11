@@ -114,9 +114,51 @@ is no walkable start node. And it was not idle-refusing —
 > alternatives both assume — the answer may live there, and neither option can
 > reach it.*
 
-**Open question, chartered:** does `climb_free` expiry leave entities without
-ground or wall contact? **Plus:** the fail-safe logged *"teleporting to ground"*
-while `d.z` was **five blocks above** `feet.z`.
+### ★★ THE RESIDUAL IS THREE CLASSES, NOT ONE — measured across three specimens
+
+    uid=166   on_ground=FALSE   11 verdicts, 0 plans, 10 no_route   "egress_no_route_then_climb_free_expired"
+    uid=109   on_ground=true     0 verdicts                          "below_grade_watch_without_egress_verdict"
+    uid=81    on_ground=true     6 verdicts, 0 plans,  0 no_route    "egress_plan_or_climb_free_failed"
+
+★★★ **Only uid=166 is suspended.** *uid=109 got NO verdict at all — the opposite
+failure from 166's eleven; one planner said "no route" repeatedly, the other was
+never consulted (`access_jobs_pending=0`, so the known access-mutex chain is NOT
+the cause). uid=81 has six verdicts, none of them route failures, on the ground,
+with a destination computed — **item 4's original suspicion in its purest form**,
+which re-opened that row as **4b**.*
+
+> **Post-sit-fix the residual is STILL multi-mechanism. "Not one thing" is the
+> dossier's organizing lesson arriving a second time, one level down.**
+
+### THE `climb_free` MECHANISM — **READ, AND IT SPLIT THE QUESTION IN TWO**
+
+    :6651   climb_free_until = max(climb_free_until, time.0 + 45.0)
+    :6835   climb_free_now   = climb_free_until > time.0
+    :8062   if climb_free { vel.0.x = drive.x; vel.0.y = drive.y; }    // Z NEVER WRITTEN
+
+**A colonist under `climb_free` is DRIVEN horizontally by direct velocity writes
+every tick, with z untouched. The grant lapses on a 45-second CLOCK regardless of
+where the colonist is.** ★ *uid=166's `velocity = (-0.79, 0.13, 0.0)` — horizontal
+residue, z exactly zero — is the fingerprint of a velocity-driven entity whose
+driver was removed off-surface.*
+
+**Two questions, and only one is answered:**
+
+1. **Why is it not being driven?** ★ **ANSWERED** — the grant expired.
+2. **Why is it not FALLING?** ★★★ **OPEN — and this is the actual suspension.**
+   *Leading candidate: a colonist flipped to `SimulationMode::Simulated` may not
+   have physics run at all, which would make this the simulated-mode freeze seen
+   from the physics side. Discriminator: uid=166's mode at the fail-safe.*
+
+> ## ★★★★ **DESIGN OBSERVATION (Fable), INDEPENDENT OF HOW #85 RESOLVES:**
+> **A CLOCK-EXPIRING, POSITION-BLIND MOVEMENT GRANT IS A SMELL ON ITS OWN.**
+> *A driver that lapses mid-air by timer rather than ending on SURFACE-ARRIVAL
+> will strand its passenger under any physics regime.* **Whatever the suspension
+> turns out to be, the grant's end condition probably belongs to arrival, not the
+> clock.**
+
+**Also unresolved:** the fail-safe logged *"teleporting to ground"* while `d.z`
+was **five blocks above** `feet.z`.
 
 ---
 
