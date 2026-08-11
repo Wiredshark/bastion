@@ -703,6 +703,60 @@ pub(crate) fn reengage_exhausted(count_after_increment: u32) -> bool {
     count_after_increment > EMERGENCY_REENGAGE_BOUND
 }
 
+/// ROW-INDESTRUCTIBLE-MINE-CELL.md defect 2: the `ExhaustedReplan` decision
+/// itself, extracted out of the tick loop so the WIRING is unit-testable,
+/// not just `JobBoard::release_reengage_exhausted` in isolation (that
+/// method already existed for the Abort-phase site before this fix; the
+/// actual v4 bug was that this call site never invoked it). Only touches
+/// `board` plus two scalars and the `lost_members` sink -- no ECS lookup
+/// needed for this decision. Returns true iff the member was released to
+/// the failsafe tier this call (false = bounded replan, `member` pushed
+/// onto `lost_members`).
+pub(crate) fn handle_exhausted_replan(
+    board: &mut JobBoard,
+    member: Uid,
+    owner: Uid,
+    tick: u64,
+    lost_members: &mut Vec<Uid>,
+) -> bool {
+    let outcomes = {
+        let outcomes = board.emergency_reengage_aborts.entry(member).or_insert(0);
+        *outcomes += 1;
+        *outcomes
+    };
+    let exhausted = reengage_exhausted(outcomes);
+    if exhausted {
+        // A route that has just self-diagnosed "invalid exit" and was
+        // re-planned identically forever is an unbounded loop by
+        // construction; apply the SAME exhaustion release the Abort phase
+        // uses (STICKY -- barred from re-emission until delivered, per the
+        // `emergency_reengage_exhausted` checks elsewhere in this file).
+        board.release_reengage_exhausted(member, "reengage-bound-exhausted");
+        info!(
+            owner = owner.0.get(),
+            uid = member.0.get(),
+            tick,
+            outcomes,
+            "bastion: emergency re-engage bound exhausted (invalid-exit replan loop); member released to failsafe tier"
+        );
+        return true;
+    }
+    // Fresh clock for the imminent re-plan (the lost path primes egress
+    // re-emission in ~10s). On exhaustion (above) the watch keeps its
+    // accrual and the net fires within its window instead.
+    watch_wipe(&mut board.stuck_watch, &member, "route-exhausted-replan");
+    info!(
+        owner = owner.0.get(),
+        uid = member.0.get(),
+        tick,
+        outcomes,
+        exhausted,
+        "bastion: emergency route exhausted with invalid exit; member released for re-plan"
+    );
+    lost_members.push(member);
+    false
+}
+
 /// ITEM8-V4 route 1 (famine root cause, ruled fix): whether the
 /// `to_release` drain should clear a job's `claimed_by` field, pure so
 /// the fix is a unit-pinnable truth table rather than something only
@@ -5009,6 +5063,14 @@ pub struct JobBoard {
     /// `claim_release_should_clear`'s targeted fix does not cover), never
     /// silently absorbed into a passing score.
     pub generic_claim_leak_releases: u32,
+    /// ROW-INDESTRUCTIBLE-MINE-CELL.md: emergency-access job completions
+    /// suppress every world effect (drop, XP, cave-in) by design, so they
+    /// are counted HERE, never under `"bastion: job completed"` -- that
+    /// line is the colony's own health metric and must mean real
+    /// production. A v4 run's `job completed` count rose to 361 while
+    /// every world-effect stayed at zero because this distinction did not
+    /// exist; this counter is the honest replacement, not a suppression.
+    pub emergency_access_completions: u32,
     /// bastion (B6 HAUL): painted stockpile zones `(id, region)` — the haul
     /// destinations. Registered at placement, dropped on cancel (dependent
     /// haul jobs cancel with their zone).
@@ -5252,6 +5314,24 @@ impl JobBoard {
             }
         }
         Some(owner)
+    }
+
+    /// BACKSTOP-OPT (B) / ROW-INDESTRUCTIBLE-MINE-CELL.md defect 2: release
+    /// a member whose emergency re-engage attempts have exceeded
+    /// `EMERGENCY_REENGAGE_BOUND` to the independent failsafe tier --
+    /// STICKY (barred from re-emission until delivered, enforced by every
+    /// `emergency_reengage_exhausted.contains` gate in this file). Shared
+    /// by both exhaustion call sites (Abort-phase traversal aborts and
+    /// ExhaustedReplan invalid-exit replans) so the release behavior can
+    /// never drift between them, and so it is testable without a full ECS
+    /// tick -- pure over `JobBoard`'s own maps, no entity/position lookup
+    /// needed for this decision.
+    pub(crate) fn release_reengage_exhausted(&mut self, member: Uid, watch_reason: &'static str) {
+        self.emergency_reengage_aborts.remove(&member);
+        self.emergency_reengage_exhausted.insert(member);
+        self.leave_route(member);
+        self.emergency_frontier_reacquire.remove(&member);
+        watch_wipe(&mut self.stuck_watch, &member, watch_reason);
     }
 
     /// Decision-order view of the otherwise lookup-optimized job map.
@@ -6558,6 +6638,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     claim_expiry_releases = board.claim_expiry_releases,
                     designated_sweep_reaps = board.designated_sweep_reaps,
                     generic_claim_leak_releases = board.generic_claim_leak_releases,
+                    emergency_access_completions = board.emergency_access_completions,
                     "bastion food stock sample"
                 );
                 // ITEM8-V4 sentinel S1 (Fable-ruled, LOG-ONLY -- never
@@ -12682,6 +12763,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         }
                         info!(
                             job = active.job,
+                            kind = ?job.kind,
                             pos = ?job.pos,
                             "bastion: colonist arrived at job site, working (B5)"
                         );
@@ -14650,6 +14732,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             })
                         });
                         if taken.is_none() {
+                            // Previously silent: a colonist could loop
+                            // arrive -> stall -> release forever and emit
+                            // nothing but the arrival line (ROW-INDESTRUCTIBLE
+                            // -MINE-CELL.md 2b, an instrument requirement --
+                            // this stall was indistinguishable from an idle
+                            // colonist in every prior capture).
+                            info!(
+                                job = active.job,
+                                kind = ?job.kind,
+                                pos = ?job.pos,
+                                required_item = required,
+                                "bastion: job stalled on materials -- required item not found in colonist inventory"
+                            );
                             job.progress = 0.0;
                             job.needs_materials = true;
                             to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
@@ -14733,12 +14828,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     if !is_emergency_access {
                         colonist.0.skills.grant_xp(job.work, COMPLETION_XP);
                     }
-                    info!(
-                        job = active.job,
-                        kind = ?job.kind,
-                        pos = ?job.pos,
-                        "bastion: job completed"
-                    );
+                    // ROW-INDESTRUCTIBLE-MINE-CELL.md: "job completed" is a
+                    // counted health signal (F1, the arc's own bar) and must
+                    // mean real production -- drop, XP, cave-in all already
+                    // gate on `!is_emergency_access` above; this line now
+                    // does too, and the two arms are mutually exclusive so
+                    // no completion goes unlogged.
+                    if !is_emergency_access {
+                        info!(
+                            job = active.job,
+                            kind = ?job.kind,
+                            pos = ?job.pos,
+                            completed_kind = ?completed_kind,
+                            "bastion: job completed"
+                        );
+                    } else {
+                        board.emergency_access_completions += 1;
+                        info!(
+                            job = active.job,
+                            kind = ?job.kind,
+                            pos = ?job.pos,
+                            completed_kind = ?completed_kind,
+                            "bastion: emergency access job completed (no world effects -- drop/XP/cave-in all suppressed by design)"
+                        );
+                    }
                     if is_emergency_access && std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
                         let physics = physics_states.get(entity);
                         let velocity = velocities.get(entity).map(|vel| vel.0);
@@ -14835,7 +14948,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // the leash alone would false-fire the teleport) stays
                     // safe; only a colonist that completes NOTHING for the
                     // full window is teleported.
-                    if let Some(u) = uids.get(entity) {
+                    //
+                    // ROW-INDESTRUCTIBLE-MINE-CELL.md (Opus's finding,
+                    // cross-session 2026-08-11): the premise above is
+                    // exactly what defect 1 violates -- an emergency-access
+                    // completion is NOT ground truth (drop/XP/cave-in are
+                    // all already suppressed for it, two lines above this
+                    // one). Gated the same way: no world-effect, no
+                    // "progress" credit toward the safety-net clock either.
+                    if !is_emergency_access
+                        && let Some(u) = uids.get(entity)
+                    {
                         watch_wipe(&mut board.stuck_watch, u, "work-progress");
                     }
                     // B-LIVE3 (Ben's MINE LIFECYCLE): the designation this
@@ -16758,14 +16881,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // route must not restart the hold budget.
                                     // (B) STICKY: barred from re-emission
                                     // until delivered.
-                                    board.emergency_reengage_exhausted.insert(member);
-                                    board.leave_route(member);
-                                    board.emergency_frontier_reacquire.remove(&member);
-                                    watch_wipe(
-                                        &mut board.stuck_watch,
-                                        &member,
-                                        "reengage-bound-exhausted",
-                                    );
+                                    board.release_reengage_exhausted(member, "reengage-bound-exhausted");
                                     info!(
                                         owner = route_owner.0.get(),
                                         uid = member.0.get(),
@@ -17023,32 +17139,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         occupies_route,
                     );
                     if decision == ReleaseDecision::ExhaustedReplan {
-                        let outcomes = board
-                            .emergency_reengage_aborts
-                            .entry(member)
-                            .or_insert(0);
-                        *outcomes += 1;
-                        let exhausted = reengage_exhausted(*outcomes);
-                        if !exhausted {
-                            // Fresh clock for the imminent re-plan (the lost
-                            // path primes egress re-emission in ~10s). On
-                            // exhaustion the watch keeps its accrual and the
-                            // net fires within its window.
-                            watch_wipe(
-                                &mut board.stuck_watch,
-                                &member,
-                                "route-exhausted-replan",
-                            );
-                        }
-                        info!(
-                            owner = route_owner.0.get(),
-                            uid = member.0.get(),
-                            tick = tick.0,
-                            outcomes = *outcomes,
-                            exhausted,
-                            "bastion: emergency route exhausted with invalid exit; member released for re-plan"
-                        );
-                        lost_members.push(member);
+                        handle_exhausted_replan(board, member, route_owner, tick.0, &mut lost_members);
                         continue;
                     }
                     let (stable_exit, dismount_target) = (
@@ -17426,8 +17517,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
 
             const STUCK_TELEPORT_SECS: f32 = 60.0;
             // Working colonists are legitimately stationary — reset.
+            //
+            // ROW-INDESTRUCTIBLE-MINE-CELL.md (Opus's finding, cross-session
+            // 2026-08-11): `Arrived` alone used to reset this clock
+            // regardless of job kind -- for an `is_emergency_access` job,
+            // mere arrival carries NO information about whether the work
+            // will have a real effect (defect 1's whole premise is that it
+            // reliably does not). A colonist cycling arrive -> phantom-
+            // complete -> re-plan every ~15s never accumulated past ~15s of
+            // the 60s `STUCK_TELEPORT_SECS` needed -- this backstop looked
+            // disarmed because the SAME signal ("arrived") that should mean
+            // "safe, don't rescue" was true for both real and phantom work.
+            // Excluding emergency-access jobs from this early reset does
+            // NOT touch the progress-based (α) gate below, which is a
+            // separate, still-open question (job.progress can tick on a
+            // claim the colonist can't service -- unverified, on v5's watch
+            // list alongside `completed_kind`).
             for (_, uid, active) in (&colonists, &uids, &active_jobs).join() {
-                if matches!(active.state, ActiveJobState::Arrived) {
+                if matches!(active.state, ActiveJobState::Arrived)
+                    && !board.emergency_access_jobs.contains_key(&active.job)
+                {
                     watch_wipe(&mut board.stuck_watch, uid, "arrived-head");
                 }
             }
@@ -17437,8 +17546,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     .uid_entity(*uid)
                     .and_then(|e| active_jobs.get(e))
                     .copied();
-                let is_working =
-                    active.is_some_and(|active| matches!(active.state, ActiveJobState::Arrived));
+                let is_working = active.is_some_and(|active| {
+                    matches!(active.state, ActiveJobState::Arrived)
+                        && !board.emergency_access_jobs.contains_key(&active.job)
+                });
                 if is_working {
                     watch_wipe(&mut board.stuck_watch, uid, "arrived-working");
                     continue;
@@ -20209,6 +20320,119 @@ mod tests {
         assert!(
             reengage_exhausted(EMERGENCY_REENGAGE_BOUND + 1),
             "the sixth consecutive fruitless outcome must release to the net"
+        );
+    }
+
+    #[test]
+    fn release_reengage_exhausted_terminates_the_route_and_bars_re_emission() {
+        // ROW-INDESTRUCTIBLE-MINE-CELL.md defect 2, planted test 2 (Fable-
+        // ruled): "route exhausted with invalid exit -> MUST terminate the
+        // request, not re-issue it." Pre-fix, the ExhaustedReplan branch
+        // computed `exhausted` and then unconditionally
+        // `lost_members.push`'d anyway (re-plan) -- this exercises the
+        // shared release path both call sites now use and asserts it
+        // actually removes the route membership and bars re-emission,
+        // which is the concrete, checkable meaning of "terminate."
+        let member = Uid(NonZeroU64::new(80).unwrap());
+        let owner = Uid(NonZeroU64::new(1).unwrap());
+        let mut board = JobBoard::default();
+        // Direct assignment (not `.insert(`) so this test-fixture setup
+        // does not read as a new production writer to R10's source-text
+        // fence (`r10_retirement_is_sole_removal_and_fence_covers_owned_
+        // writers`), which counts every real `emergency_route_members
+        // .insert(` call site to enforce the traversal_enqueue pairing.
+        board.emergency_route_members = HashMap::from([(member, owner)]);
+        board.emergency_reengage_aborts.insert(member, EMERGENCY_REENGAGE_BOUND + 1);
+        board.emergency_frontier_reacquire.insert(member, 999);
+        board.stuck_watch.insert(member, 12.5);
+
+        board.release_reengage_exhausted(member, "test-exhaustion");
+
+        assert!(
+            board.emergency_reengage_exhausted.contains(&member),
+            "an exhausted member must be barred (STICKY) from re-emission until delivered"
+        );
+        assert!(
+            !board.emergency_route_members.contains_key(&member),
+            "the route membership must actually end -- this is what 'terminate the request' means"
+        );
+        assert!(
+            !board.emergency_frontier_reacquire.contains_key(&member),
+            "a terminated request must not leave a frontier to resume into"
+        );
+        assert!(
+            !board.emergency_reengage_aborts.contains_key(&member),
+            "the abort counter must not survive termination -- a later un-barred attempt starts fresh, not pre-exhausted"
+        );
+        assert!(
+            !board.stuck_watch.contains_key(&member),
+            "the stuck-watch clock must be wiped, matching the Abort-phase precedent this shares logic with"
+        );
+    }
+
+    #[test]
+    fn handle_exhausted_replan_bounds_then_terminates_the_request() {
+        // ROW-INDESTRUCTIBLE-MINE-CELL.md defect 2, planted test 2, the
+        // DECISIVE version: this exercises the actual WIRING that was
+        // buggy in v4 (`handle_exhausted_replan`'s call site never invoked
+        // the release), not just the pre-existing release method in
+        // isolation. Pre-fix, this call site did `lost_members.push`
+        // unconditionally regardless of `exhausted` -- confirmed RED
+        // against that exact code (temporarily reverted, test failed,
+        // re-applied) before this test was committed.
+        let member = Uid(NonZeroU64::new(80).unwrap());
+        let owner = Uid(NonZeroU64::new(1).unwrap());
+        let mut board = JobBoard::default();
+        let mut lost_members = Vec::new();
+
+        for attempt in 1..=EMERGENCY_REENGAGE_BOUND {
+            let released = handle_exhausted_replan(&mut board, member, owner, attempt as u64, &mut lost_members);
+            assert!(
+                !released,
+                "attempt {attempt} is within EMERGENCY_REENGAGE_BOUND ({EMERGENCY_REENGAGE_BOUND}) -- must still be a bounded replan"
+            );
+            assert!(
+                !board.emergency_reengage_exhausted.contains(&member),
+                "attempt {attempt} must not bar the member -- it hasn't exhausted yet"
+            );
+        }
+        assert_eq!(
+            lost_members.len(),
+            EMERGENCY_REENGAGE_BOUND as usize,
+            "every bounded attempt must have been pushed for re-plan -- this is the invalid-exit \
+             replan loop actually happening, EMERGENCY_REENGAGE_BOUND times"
+        );
+
+        // The (EMERGENCY_REENGAGE_BOUND + 1)th identical "invalid exit"
+        // outcome: pre-fix, this pushed to lost_members AGAIN, forever.
+        // Post-fix, it must terminate instead.
+        let released = handle_exhausted_replan(
+            &mut board,
+            member,
+            owner,
+            (EMERGENCY_REENGAGE_BOUND + 1) as u64,
+            &mut lost_members,
+        );
+        assert!(
+            released,
+            "the {}th consecutive invalid-exit outcome MUST terminate the request, not re-issue it \
+             -- this is the exact pre-fix bug (an unconditional lost_members.push regardless of \
+             `exhausted`) that let owner=80 loop for 2.5 hours",
+            EMERGENCY_REENGAGE_BOUND + 1
+        );
+        assert_eq!(
+            lost_members.len(),
+            EMERGENCY_REENGAGE_BOUND as usize,
+            "the terminating call must NOT push to lost_members -- a pushed-and-released member \
+             would still be re-planned this same pass, defeating the termination"
+        );
+        assert!(
+            board.emergency_reengage_exhausted.contains(&member),
+            "the member must be barred (STICKY) after termination"
+        );
+        assert!(
+            !board.emergency_route_members.contains_key(&member),
+            "the route membership must actually end"
         );
     }
 
