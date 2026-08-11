@@ -53,6 +53,37 @@ colony that is one cycle from collapse.*
 | 5 | **No permanent stall** | no colonist idle-with-unmet-need for > one cycle | any does |
 | 6 | **Fail-safe rate does not climb** | teleports per cycle flat or falling | rising across cycles |
 
+> ## ★★★ **AMENDMENT — I WROTE THIS BAR WITHOUT VERIFYING ITS INSTRUMENTS EXIST.**
+> **5b's pre-flight found that four of the six measures had no witness**, which is
+> the law I banked one day earlier — *a registered measure is a requirement on the
+> instrument* — **applied to Measure 0's prediction and never once asked of my own
+> six rows.**
+>
+> | measure | what existed | resolution |
+> |---|---|---|
+> | 1 · no deaths | ★★ **death path possibly not implemented** | **if absent, REPLACED by a falsifiable proxy — see below. NOT left green.** |
+> | 2 · eats/cycle | `b5_eat_completions_distinct` is a **run-TOTAL** — answers "ever," not "this cycle" | wire `ColonistEventKind::NeedCrossed{need, dir}` |
+> | 3 · sleeps/cycle | **no sleep tracking of any kind** | same producer |
+> | 4 · food trend | no sampleable accessor (inspector sums for UI only) | reuse the inspector's backing sum — **never a second producer** |
+>
+> ★ **`NeedCrossed` was in the pilot's vocabulary from design and never wired.**
+> *Its first customer is this bar — the third dormant vocabulary entry this arc to
+> find its use rather than be invented fresh.*
+>
+> ### ★★ MEASURE 1's CONTINGENCY — **A CHECK THAT CANNOT GO RED IS NOT A CHECK**
+>
+> **If starvation death is not implemented, "no deaths" is VACUOUS** — the fourth
+> instance of that defect in two days. **It is then replaced, not deleted:**
+>
+> > **"No colonist's need stays in the interrupt band across a full cycle without
+> > a satisfying `NeedCrossed{OutOf}`."**
+>
+> *That measures the APPROACH to failure instead of a terminal state the engine
+> cannot produce.* ★★★ **And it changes the row's meaning honestly: with no death
+> path, item 8 cannot ask "does the colony SURVIVE" — it asks "does the colony
+> stay RECOVERABLE."** **Which branch fired gets stated in the results as a
+> finding about the sim, not a footnote.**
+
 ★★ **Measure 4 is the one that only duration can test**, and it is the row's real
 question: *consumption is continuous, harvest is periodic, and a colony can look
 healthy for two cycles while the buffer drains.* **Cycle 2 is the baseline, not
