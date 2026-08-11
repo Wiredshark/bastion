@@ -6280,6 +6280,37 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     "bastion preempt attempts"
                 );
             }
+            // Item 8 pre-flight (endurance run, measure 4 -- "food stock
+            // does not trend down"): a run-total accumulator cannot answer
+            // a TREND question (§3's own law -- every measure is a trend
+            // across cycles, never an end-state snapshot), and the only
+            // existing stockpile-content read (`resolve_cell_inspect`) is
+            // a per-cell, on-demand inspector query, not a periodic
+            // sample -- unusable for an UNATTENDED run with no client to
+            // ask it. ALWAYS-ON, same cadence and no-env-var-required
+            // reasoning as `preempt_attempts` above: a run whose own
+            // trend can't be reconstructed from its log is void for this
+            // measure by construction. Sums FOOD_DEFS-matching pickup
+            // items across every stockpile region -- the same population
+            // EatFrom actually draws from, not "every item in a pile."
+            if tick.0 % 300 == 0 {
+                use specs::Join;
+                let mut food_stock: u32 = 0;
+                for (item, pos) in (&pickup_items, &positions).join() {
+                    let item_def_id = item.item().item_definition_id();
+                    let Some(def) = item_def_id.itemdef_id() else {
+                        continue;
+                    };
+                    if !FOOD_DEFS.contains(&def) {
+                        continue;
+                    }
+                    let cell = pos.0.map(|e| e.floor() as i32);
+                    if board.stockpile_at(cell).is_some() {
+                        food_stock += item.amount() as u32;
+                    }
+                }
+                info!(tick = tick.0, food_stock, "bastion food stock sample");
+            }
             // ── RUN-0 (row 47): the energy governor — the run gait
             // DRAINS Energy per tick while flagged; crossing the floor
             // FORCES the drop back to walk (resource-governed; vanilla's
@@ -13434,6 +13465,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         ));
                                     }
                                     info!(
+                                        uid = u.0.get(),
                                         job = active.job,
                                         pos = ?bed_pos,
                                         owned = (owner == Some(u)),
@@ -13506,7 +13538,6 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             if let Some(needs) = needs_storage.get_mut(entity) {
                                 needs.hunger = (needs.hunger + FOOD_RESTORE).min(1.0);
                             }
-                            info!(job = active.job, "bastion: ate — hunger restored");
                             // #89 diagnostic: the planted-failure measure
                             // -- distinct colonists who ever completed an
                             // eat, corpus-carryable via
@@ -13514,10 +13545,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // from `entity` (the outer need_order loop's
                             // own `uid` binding does not reach this deep
                             // if-let chain) -- same pattern the sibling
-                            // RestAt branch above already uses.
-                            if let Some(u) = uids.get(entity).copied() {
+                            // RestAt branch above already uses. Read once,
+                            // before the log line too (item 8 pre-flight:
+                            // measure 2 needs to know WHICH colonist ate,
+                            // not just that an eat happened).
+                            let eater_uid = uids.get(entity).copied();
+                            if let Some(u) = eater_uid {
                                 board.b5_eat_completions_distinct.insert(u);
                             }
+                            info!(
+                                uid = eater_uid.map(|u| u.0.get()),
+                                job = active.job,
+                                "bastion: ate — hunger restored"
+                            );
                             // remove_job releases the food reservation (B6
                             // machinery — THE removal path).
                             board.remove_job(active.job);
