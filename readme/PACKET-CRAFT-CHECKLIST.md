@@ -174,10 +174,16 @@ until the proof re-passes**.* **Never silent continuation** — *an equivalence 
 is a claim with an expiry date, and the trigger is what stops it decaying into an
 assumption.*
 
-## 7 · ★★★★★★ A REPLACEMENT TEST INHERITS THE FULL VACUITY CHECK — *2026-08-11*
+## 7 · ★★★★★★ THE VACUITY CHECK — *2026-08-11; four instances in one evening*
 
-> ## **WHEN A TEST FAILS AND IS REDESIGNED, THE REPLACEMENT GETS THE SAME SCRUTINY AS
-> THE ORIGINAL — STARTING WITH: CAN IT FAIL?**
+> ## **WHAT WOULD MAKE THIS GO THE OTHER WAY, AND IS THAT THE AXIS I CLAIM?**
+
+★★★★★ **THE QUESTION IS THE CHECK. The clauses below are its case law, not a
+substitute for asking it** — *every disguise in the table passed the previous
+instance's clause.*
+
+**Applies to every instrument, and FIRST to a replacement one: when a test fails and
+is redesigned, the replacement inherits the full check.**
 
 ★★★★ **A rescue plan arrives with momentum.** *The original design has just been
 discredited, the reviewer is relieved something is still runnable, and the replacement
@@ -240,6 +246,47 @@ live. The instrument had not sped the mechanism up — it had removed it.**
 pre-loaded terrain — are the same controls that erase every wall-clock race.* ★★★
 **So a wall-coupled question can only be answered on the NOISY path, and only
 DISTRIBUTIONALLY. There, determinism is not a prerequisite — it is disqualifying.**
+
+### ★★★★★★ FOURTH CLAUSE — **A FALSIFIER NEEDS ITS OWN CONTROL**
+
+**Paid the same evening, by the PLANTED FAILURE — the artifact whose entire job is to
+fail.**
+
+*The plant mixed a raw `SystemTime::now()` read into the fingerprint payload.* ★★★★★
+**Apply the head question: it would have gone RED BETWEEN TWO CAPPED RUNS.** *A raw
+timestamp differs between any two runs, same pacing or not — so it proved "the digest
+notices different bytes," which nobody doubted, and nothing about sensitivity to
+PACING, which was the whole claim.*
+
+> ## **RED ALONE PROVES THE INSTRUMENT NOTICES *SOMETHING*. A PLANT THAT REDDENS
+> EVERYTHING IS EXACTLY AS VACUOUS AS A TEST THAT REDDENS NOTHING.**
+
+**MECHANICAL — every planted failure runs TWO arms and needs BOTH:**
+
+    on the claimed axis      -> MUST GO RED     (the plant is detectable there)
+    on a matched control     -> MUST STAY GREEN (it isn't just run-to-run noise)
+
+★★★ *This is the matched-control law arriving at the planted-test tier* —
+**and it belongs in permanent law rather than in one evening's notes because we trust
+a falsifier PRECISELY BECAUSE IT FAILS, which makes an untested falsifier the last
+place anyone thinks to look.**
+
+---
+
+### ★★★★★ THE FOUR COSTUMES — *one evening, one programme, four disguises*
+
+**Recorded together so the next one is recognised as a FAMILY MEMBER, not a novelty.**
+
+| # | disguise | what killed it |
+|---|---|---|
+| **1** | **an instrument with NO NOISE FLOOR** — live fingerprint A/B | *its own matched control: two SAME-PACING runs diverged 100%* |
+| **2** | **a variable THE PATH NEVER READS** — harness toggle | *grep for consumers: one call site, different binary* |
+| **3** | **a path that reads it but HAS DELETED THE MECHANISM** — flat arena | *the tell in its own smoke test: 1.4 s vs 14–22 s live* |
+| **4** | **a falsifier that FIRES ON EVERYTHING** — `now()` in the payload | *the head question: would it redden two capped runs?* |
+
+★★★★★★ **EVERY ONE PASSED THE PREVIOUS INSTANCE'S CLAUSE.** *That is why the head of
+this entry is a QUESTION and not a list — the clauses are where the family has been
+seen, never the boundary of where it lives.*
 
 ## MAINTENANCE
 
