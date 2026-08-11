@@ -40,14 +40,32 @@ was never touched:
 4. **Stale pidfile (PID that doesn't exist)** — exit 0, "already dead"
    no-op, pidfile removed.
 
-## WHAT IS NOT TESTED, NAMED HONESTLY
+## UPDATE — first live exercise against a real server, 2026-08-11 (post-v3)
 
-**Never run against an actual `veloren-server-cli` process** — per the
-explicit constraint on this fill item. The SIGTERM→poll→SIGKILL escalation
-path (line ~55 of the script, the 10-second-then-SIGKILL branch) is
-therefore unexercised against a process that has real teardown work to do
-(flushing the DB, closing sockets) rather than a bare `sleep`. Whether 10
-seconds is enough for a real server's graceful shutdown, and whether
-SIGKILL mid-save-flush is safe, are both open — untested by design, not
-assumed safe. Worth a v4-scoped dry run against a killed-and-verified
-server once this run lands, not before.
+**Approved and run: the gate-0 rebuild verification boot doubled as the
+sacrificial dry run.** Freshly rebuilt `veloren-server-cli.exe` (pin
+`5845b680`) booted in a disposable userdata dir
+(`userdata-gate0-sacrificial/`, never scored, deleted after), PID
+captured via `echo $! > sacrificial-gate0.pid` per the documented
+convention, killed via `reap-server.sh sacrificial-gate0.pid`:
+
+    reap-server: pid 1953 is alive, sending SIGTERM
+    reap-server: pid 1953 exited cleanly after SIGTERM
+
+**Graceful SIGTERM was sufficient — the SIGKILL escalation path still
+was not exercised** (nothing to escalate to; the process exited within
+the poll window on its own). The DB-flush/socket-close question this
+section originally posed is now answered for the plain-SIGTERM case: a
+real server with real shutdown work still exits cleanly on SIGTERM
+within the existing ~10s poll window. **What remains genuinely untested:
+a server killed mid-save (e.g. SIGTERM sent during an active DB write)
+and the SIGKILL escalation branch itself** — neither was exercised here
+since this sacrificial boot was brief and idle. Left open, not assumed
+safe, same discipline as before.
+
+## WHAT WAS NOT TESTED (original list, partially superseded above)
+
+The SIGTERM→poll→SIGKILL escalation path (line ~55 of the script, the
+10-second-then-SIGKILL branch) remains unexercised — no process in either
+test round needed escalation. Whether SIGKILL mid-save-flush is safe is
+still open.
