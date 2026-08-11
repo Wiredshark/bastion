@@ -83,11 +83,97 @@ for the `Time` resource.**
 
 ---
 
-## 3 · THE VALIDATION PROTOCOL
+## 3 · ⛔ **THE FINGERPRINT PROTOCOL IS RETIRED — REFUTED BY ITS OWN FIRST TRIAL**
+
+**REVISED 2026-08-11, on 5b's A/B (binaries at `6eb22114`, gate-0 verified).**
+
+### THE ORIGINAL, NOW VOID
 
     same seed · same scenario · same binary · one arm CAPPED, one UNCAPPED
     -> fingerprints compared TICK-FOR-TICK
     -> PASS requires bit-identity at every sampled tick
+
+**Capped vs uncapped diverged 100%.** ★★★★★ **So did CAPPED vs CAPPED-CONTROL — a second
+capped leg, nothing else changed.** *Promotion-completion tick **624** vs **192** at
+identical pacing.*
+
+> ## **TWO SAME-PACING LIVE PROCESSES DIVERGE EXACTLY AS CAPPED-VS-UNCAPPED DID. THE
+> INSTRUMENT HAS NO NOISE FLOOR, SO IT CAN NEVER ANSWER THIS QUESTION.**
+
+**Cause, read not guessed:** *colonist promotion `Simulated`→`Loaded` gates on
+`chunk_states.0.get(chunk).is_some_and(|c| c.is_some())` — **two sites**,
+`server/src/rtsim/tick.rs` `:858` and `:913` — i.e. on **real background chunk
+generation**, bounded by wall time and thread scheduling, independent of pacing.*
+
+### ⛔ AND THE PROPOSED HARNESS REDESIGN IS REFUSED — **it would certify vacuously**
+
+**`BASTION_UNCAPPED_TPS` appears in EXACTLY ONE PLACE IN THE TREE:
+`server-cli/src/main.rs:465`.** *`bastion-harness/src/main.rs` is a separate binary
+and never reads it.*
+
+★★★★★★ **Toggling it across two harness runs runs the same code twice — a guaranteed
+PASS certifying compressed mode for the entire programme.** *The §3 vacuity trap,
+arriving as a rescue plan.*
+
+---
+
+## 3b · ★★★★★★ THE EQUIVALENCE IS A **CODE PROOF**, AND WE ALREADY HAD IT
+
+**DET-CLK-006: the server feeds the sim `Duration::from_secs_f64(1.0 / TPS)` — a
+CONSTANT — never `clock.game_dt()`.**
+
+> ## **SKIPPING `clock.tick()` REMOVES THE SLEEP AND NOTHING ELSE. THE SIMULATION'S
+> PER-TICK INPUT IS UNCHANGED BY CONSTRUCTION.**
+
+★★★ *No live A/B could add to this, and none could survive its own noise floor. The
+empirical protocol was answering a question the code already closed.*
+
+---
+
+## 3c · ★★★★★★ THE REAL RESIDUAL — **RATE RELATIVE TO ASYNCHRONOUS WORK**
+
+    capped        promotion complete @ tick  624
+    capped-ctrl   promotion complete @ tick  192
+    uncapped      promotion complete @ tick 2184
+
+**Chunk generation is bounded by real seconds; the tick counter under compression is
+not.** ★★★★★ **So colonists spend far longer in `Simulated` mode when compressed.**
+
+> ## **THAT IS #85, THE UNTICKED COLONIST — ITEM 8's ENTIRE SUBJECT MATTER.
+> COMPRESSION WOULD SYSTEMATICALLY AMPLIFY THE PHENOMENON UNDER STUDY.**
+
+⚠ **AT ITS TRUE STRENGTH: n=1 uncapped against a capped spread of 192–624. A
+CANDIDATE systematic effect, not an established one.**
+
+### THE REPLACEMENT PROTOCOL
+
+    N=8 per arm, capped vs uncapped, same seed/scenario/binary
+    -> compare the DISTRIBUTION of promotion-completion tick
+    -> PASS requires uncapped's distribution inside capped's spread
+
+★★★ **Distributions, not fingerprints** — *bit-identity was never available on the live
+path, and 5b's control is what proved it.*
+
+**PLANTED FAILURE, still mandatory and now placeable:** *inject a delay into chunk-gen
+and prove the distribution comparison goes RED by name.*
+
+★★ **Cost: 8 runs × ~25 s. The compressed mode's own cheapness is what makes its
+certification affordable.**
+
+---
+
+## 3d · ★★★★★ CONSEQUENCE FOR v5 — **REAL TIME, AND THAT OBEYS BEN'S LAW**
+
+**Checklist entry 6 admits three impossibilities. Number 2 is A PROVEN WALL-COUPLED
+SUBSYSTEM — "and proven means proven; a suspicion of wall-coupling is not an
+impossibility, it is an unread."**
+
+> ## **IT IS NOW READ: measured across three legs, code-cited at two gates, and item 8
+> is the row that studies promotion.**
+
+★★★★ **v5 flies REAL TIME with its impossibility NAMED AND PROVEN — which satisfies the
+law rather than excepting it.** *Everything not promotion-coupled still goes compressed
+once §3c passes.*
 
 ★★★ **PLANTED FAILURE, mandatory:** *inject a deliberate wall-clock dependency and
 prove the comparison goes RED by name.* **Otherwise a passing A/B is indistinguishable
