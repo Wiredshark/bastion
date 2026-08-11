@@ -1,0 +1,9 @@
+V2((
+    default_locale: "en",
+    descriptions: {
+        "en": (
+            motd: "This is the best Veloren server",
+            rules: None,
+        ),
+    },
+))
