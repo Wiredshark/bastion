@@ -95,3 +95,57 @@ here — this run's job was the cheap confirm, not the permanent shape.
     bastion-test-evidence/live-playthrough/driver-farmseed-confirm.log
     bastion-test-evidence/live-playthrough/server-stdout-farmseed.log
     bastion-test-evidence/live-playthrough/userdata-farmseed/
+
+---
+
+# ADDENDUM (2026-08-11): the full cycle closes — first HARVEST in the
+# project's history
+
+Fable requested the harvest observation as the survival arc's closing leg.
+Ran a follow-up (`script-13c-farmseed-harvest.txt`) reusing the SAME
+verified z=418 coordinates and the proven till/seed/sow sequence, but with
+the post-sow wait extended to ~490s (vs. the first confirm's ~230s) purely
+to give crop growth (`FARM_GROWTH_MAX=15 * FARM_STAGE_SECS=6.0` = 90
+sim-seconds minimum) room to complete. World/terrain is confirmed to
+persist across reboots of the same `VELOREN_USERDATA` dir (identical player
+spawn position across three separate boots); `JobBoard`/farm growth state
+does not, so the till/seed/sow sequence had to be repeated from scratch.
+
+## Result: 20 sown -> 20 crop MATURE -> 20 harvested. A closed, 100% cycle.
+
+    sown pos=...      (20 total, same clean 1:1 with the 20 given seeds)
+    crop MATURE pos=...  (20 total)
+    harvested (cell returns to tilled) pos=...  (20 total)
+
+Every sown cell matured and was harvested; none stalled. This is the first
+time this project's farming system has completed a full TILL -> SOW ->
+GROW -> MATURE -> HARVEST cycle, live.
+
+## What's still open: self-sustaining reseed not observed in this window
+
+Harvest completion's own code path (`bastion_jobs.rs` ~13692-13700) emits
+`FARM_SEED_YIELD` new seed-item drops on every successful harvest -- in
+principle enough to refill the stockpile and start a SECOND sow wave
+without another manual grant. Each of the 20 harvested cells did generate
+a fresh SOW-eligible slot (`farm job created` fired 20 more `sow=true`
+jobs after the first harvest, one per re-tilled cell), but **zero of those
+second-wave SOW jobs had been claimed by the time the run ended** (`sown`
+stayed at exactly 20 for the whole run, no second wave observed) -- the
+harvest-yielded seeds' haul-to-stockpile-then-fetch pipeline either needed
+more real time than this run's remaining window gave it, or there is a
+genuine second gap in the reseed loop that has not been isolated. Named
+as an open question, not a claim either way -- a longer run (or one that
+starts its extended-wait clock from the FIRST harvest rather than from the
+FIRST sow) is the natural next confirm, not built here.
+
+## Item 4 rider (this run)
+
+373 `GOTO-STAND-RESCUE` events, 37 distinct uids, 03:27:18-03:35:29 (the
+full ~490s window). Same caveat as the first run: raw counts only, no
+re-score attempted here.
+
+## Additional evidence
+
+    bastion-test-evidence/live-playthrough/script-13c-farmseed-harvest.txt
+    bastion-test-evidence/live-playthrough/driver-farmharvest.log
+    bastion-test-evidence/live-playthrough/server-stdout-farmharvest.log

@@ -1,0 +1,44 @@
+# Item 7 harvest follow-up (Fable's request, 2026-08-10): the first
+# confirm (script-13b) proved TILL/SOW-deadlock/unblock cleanly but ended
+# with zero harvest -- 20/20 sown, 0 crop MATURE lines, despite growth
+# needing only FARM_GROWTH_MAX(15) * FARM_STAGE_SECS(6.0) = 90 SIM-seconds
+# and the earliest sows landing well before the run ended. Reusing the
+# SAME verified z=418 block (world/terrain persists per userdata dir even
+# though JobBoard/farm growth state does not -- confirmed by the identical
+# player spawn position across the prior two boots of this same userdata).
+# This run repeats the proven till/seed/sow sequence, then gives growth a
+# MUCH longer window (an extra ~10 minutes of wait) specifically to
+# observe whether crop MATURE / a Harvest job / a completed harvest ever
+# fires -- the first full farm cycle in this project's history, if it
+# lands.
+note BOOT STAMP: commit 8488b65f497e835426a523f9177890a35538ef8e, branch bastion/wip-batch-verify
+note farm seed-bootstrap confirm (item 7), harvest follow-up -- same verified coords as script-13b, extended post-sow wait
+anchor
+spawn 8
+wait 300
+designate stockpile 15214 16012 418 15218 16017 419
+designate farm 15209 16012 418 15213 16017 419
+wait 300
+list_designations
+note checkpoint 1 (~10s) -- designations registered
+wait 900
+list_designations
+note checkpoint 2 (~40s) -- till should be complete, sow jobs open unclaimed
+cmd give_item common.items.bastion.wheat_seeds 20
+cmd dropall true
+note seeds given (20x common.items.bastion.wheat_seeds) and dropped persistent
+wait 900
+list_designations
+note checkpoint 3 (~70s) -- sow claims should be starting
+wait 1800
+list_designations
+note checkpoint 4 (~130s) -- most/all 20-seed sows should be complete by now
+wait 3600
+list_designations
+note checkpoint 5 (~250s) -- earliest sows should be past the 90 sim-sec growth threshold now
+wait 3600
+list_designations
+note checkpoint 6 (~370s) -- extended growth window, watching for crop MATURE / harvest
+wait 3600
+list_designations
+note checkpoint 7 (~490s) -- run complete
