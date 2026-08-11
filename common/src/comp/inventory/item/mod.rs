@@ -1850,6 +1850,27 @@ impl PickupItem {
         self.items[idx]
             .decrease_amount(1)
             .expect("just checked amount() >= 2, so decrease_amount(1) cannot underflow");
+        // Opus's review (ITEM8-CRASH-FINDING.md fix, commit chain
+        // e14795700e/5509dc95c3): this method is invariant-safe because
+        // nothing else creates a multi-entry stackable `PickupItem` --
+        // not because THIS method independently guarantees it. Check the
+        // struct's own documented invariant directly (not just
+        // `items.len()`, in case some future caller reintroduces the
+        // shape a different way) so a violation is a loud debug-build
+        // failure the moment it appears, not a silent wait for the next
+        // merge-check to panic somewhere else.
+        debug_assert!(
+            self.items.len() <= 1
+                || self.items[..self.items.len() - 1]
+                    .iter()
+                    .all(|it| it.amount() == it.max_amount()),
+            "PickupItem's own invariant (every entry but the last must be \
+             at max_amount()) does not hold after split_off_one -- \
+             something else grew self.items past one entry for a \
+             stackable. This is the exact shape that crashed item 8's \
+             endurance run at tick 45000 (ITEM8-CRASH-FINDING.md). File a \
+             row for the new producer; do not patch around this assert."
+        );
         Some(single)
     }
 }

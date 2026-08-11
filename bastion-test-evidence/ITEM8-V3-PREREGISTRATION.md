@@ -21,7 +21,7 @@ against the source before this run, not assumed:
 | `board.has_capacity`/`reserved_count` | reservation-count bookkeeping (`reservations_by_item`), never the `PickupItem`'s own Vec | **NO** | Reservation tracking has always been structurally independent of the physical stack — checked the implementation directly (`bastion_jobs.rs:5649`), not assumed. |
 | `PickupItem::amount()` (every safe caller, incl. the candidate-search filter, item 8's own food-stock sampler) | sums ALL entries | **NO** | `amount()` was always total-invariant across a split in BOTH the old and the new design — the old design's split redistributed the SAME total across two Vec entries; the physical decrement only ever happened at the eventual consumption (async vanilla `pick_up()` in the old design, synchronous `split_off_one` in the new one), at essentially the same arrival-time moment either way. Re-derived from the code, not assumed benign. |
 | `job_still_wanted`'s Farm arm | `common::bastion::JobKind::Designated(DesignationKind::Farm) => true` | **NO** | Trivial always-true predicate — never reads `PickupItem` state of any kind. |
-| Mine-supply generator (`bastion_jobs.rs:9098`) | `.item().amount()` (the UNSAFE accessor, against its own doc warning) | **NO** | Targets `MINE_DROP_ITEM` (stone) exclusively — `split_off_one` is never called on stone piles, so this pre-existing (and unrelated) trap is untouched by this fix either way. |
+| Mine-supply generator (`bastion_jobs.rs:9119`) | `.item().amount()` (the UNSAFE accessor, against its own doc warning) | **NO** | Targets `MINE_DROP_ITEM` (stone) exclusively — `split_off_one` is never called on stone piles, so this pre-existing (and unrelated) trap is untouched by this fix either way. **Filed as its own row rather than left as a footnote**: `bastion-test-evidence/ROW-MINE-SUPPLY-ITEM-AMOUNT-TRAP.md`. |
 | `b5_pile_pickup_by_member` (ROW-ITEM6-WITNESS-PACKET B2) | only ever incremented inside the vanilla `InventoryManip::Pickup` handler's `"accepted"` branch | **YES — was a real regression, NOW FIXED** (`5509dc95c3`) | The direct-consumption path bypasses that handler entirely for the majority of eats (any pile with >1 unit remaining). Restored at the new site, gated on the same `BastionPile` membership check, since this branch is always the "member" case. |
 | entity event log `ItemEventKind::PickedUp` (item 6's pickup-attribution trail, `record_pickup_event`) | same vanilla handler, `"partial"`/`"accepted"` verdicts only | **YES — was a real regression, NOW FIXED** (`5509dc95c3`) | Same bypass. Restored: subject = the pile's own uid, actor = the eater. |
 
@@ -61,6 +61,29 @@ cycling for the full ~23 minutes it ran).
 > diagnose away — it is a finding that the fix's fix is incomplete, reported
 > the same way this crash was: root-caused before any relaunch, not
 > patched around.
+
+★★★ **Precondition witness required (Opus's amendment, the sit-trap lesson
+applied here): a silent `debug_assert` alone cannot distinguish "the fix
+held" from "the trigger never occurred."** `board.b5_split_off_one_fired`
+(incremented every time `split_off_one` returns `Some`) is the precondition
+half of the claim; the assert's silence is the consequence half. **Both
+must be read together at scoring time:**
+
+    b5_split_off_one_fired > 0  AND  debug_assert never fired  ->  PASS (fix exercised and held)
+    b5_split_off_one_fired == 0                                ->  VOID on this claim (fix not exercised, whatever else passed)
+    b5_split_off_one_fired > 0  AND  debug_assert fired         ->  the finding, reported not patched around
+
+**The merge-check half of the trigger (a split-from pile later merge-
+checked against a fresh drop) is NOT independently witnessed** — no cheap
+cross-crate hook exists between `bastion_jobs.rs`'s reservation state and
+`try_merge`'s own call sites without touching vanilla merge code this fix
+deliberately leaves alone. **This is an honest gap, named rather than
+silently assumed**: the merge half is inferred from the same farm-drop
+traffic pattern v2's log already showed (repeated same-item harvest drops
+landing near existing piles), not witnessed directly. If `b5_split_off_one_
+fired > 0` and the assert stays silent but no farm-drop merge traffic is
+independently confirmed in the log, treat the merge half as UNPROVEN for
+that run, not assumed exercised.
 
 ## Status
 

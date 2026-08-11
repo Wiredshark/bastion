@@ -4423,6 +4423,17 @@ pub struct JobBoard {
     /// (`b5_eat_completions_distinct` in the corpus report): never a
     /// `clauses` entry.
     pub b5_eat_completions_distinct: HashSet<Uid>,
+    /// ITEM8-CRASH-FINDING.md fix acceptance (Opus's ask, v3 prereg
+    /// review): the PRECONDITION witness for the planted crash test's
+    /// live trigger population. A silent `debug_assert` in `try_merge`
+    /// cannot by itself distinguish "the fix worked" from "the trigger
+    /// never occurred" (the sit-trap lesson applied to this row) --
+    /// incremented every time `split_off_one` returns `Some` (a real
+    /// split happened, i.e. a `PickupItem` briefly existed in the exact
+    /// state that used to be unmergeable). Zero across a scored window
+    /// means the run did not exercise the fix and must be read as VOID
+    /// on this specific claim, never as proof the fix held.
+    pub b5_split_off_one_fired: u32,
     /// Item 8 pre-flight: last-observed "rest below its interrupt
     /// threshold" state per colonist, the edge-detector state for the
     /// `NeedCrossed{Rest, _}` entity-event producer (need-order loop,
@@ -13701,10 +13712,49 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // arrival, consuming the returned single
                             // directly -- never touching the bag, never
                             // growing the ground entity's `PickupItem`.
+                            //
+                            // MUTUAL EXCLUSIVITY (Opus's review of
+                            // 5509dc95c3, the two-writer catch on
+                            // `b5_pile_pickup_by_member`/`ItemEventKind::
+                            // PickedUp`): `split_off_one` returning `Some`
+                            // vs `None` PARTITIONS which physical unit gets
+                            // consumed through which door, deterministically
+                            // -- never both for the same unit.
+                            //   `Some` (stack had >=2 units before this
+                            //     call): this branch below fires the NEW
+                            //     witness once, `remove_job` completes the
+                            //     job in the SAME pass -- `emit_pickup` is
+                            //     never called for this consumption at all.
+                            //   `None` (stack was already down to exactly 1
+                            //     unit): falls through to the `else` arm
+                            //     below, which still calls the ORIGINAL
+                            //     `emit_pickup` -- the vanilla
+                            //     `InventoryManip::Pickup` handler consumes
+                            //     the WHOLE (now-empty-after) entity via the
+                            //     unmodified `pick_up()`, firing the OLD
+                            //     witness once, when that event resolves.
+                            //     `split_off_one` is deterministic
+                            //     (`position(|it| it.amount() >= 2)`): a
+                            //     stack at amount 1 can never return `Some`
+                            //     on a retry, so this arm never
+                            //     double-splits and never reaches the NEW
+                            //     witness for a unit the vanilla path is
+                            //     already handling.
+                            // Each physical unit is therefore counted by
+                            // EXACTLY one door: the last unit in any pile
+                            // always goes through vanilla; every unit before
+                            // it always goes through here. No unit is ever
+                            // eligible for both.
                             let split = pickup_items
                                 .get_mut(item_entity)
                                 .and_then(|mut pi| pi.split_off_one(&ability_map, &msm));
                             if split.is_some() {
+                                // ITEM8-CRASH-FINDING.md fix acceptance:
+                                // the precondition witness -- see the
+                                // field's own doc for why a silent
+                                // debug_assert alone can't distinguish
+                                // FIXED from NOT-EXERCISED.
+                                board.b5_split_off_one_fired += 1;
                                 if std::env::var_os("BASTION_SELFJOB_COMPLETION_DIAG").is_some() {
                                     info!(kind = "EatFrom", "bastion SELFJOB-COMPLETED-DIAG");
                                 }
