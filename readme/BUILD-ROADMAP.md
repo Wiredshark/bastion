@@ -52,6 +52,7 @@ Format: append changelog at bottom; statuses edited in place. Newest ruling wins
 34 Raids scaling with wealth + **THIEVERY as designed feature** (#97 — gate lift is line one; chronicle wiring pre-built per #100) ·
 35 Injuries & medicine · 36 Death that matters ·
 37 LLM-player harness v2 · 38 RL-tuning groundwork · 39 Performance row (sub-threshold tick degradation) · 40 Colony scale 16–32.
+**THE COLONY MIND (#107, Ben direct)** slots beside the settlement arc: a colony-level drive arbiter (Sustain/Grow/Defend/Expand) weighted by board-computed colony needs (food-days, housing ratio, threat pressure, buffers), outputting WEIGHTS on the existing generators — never orders to individuals. The god-interface surface + the RL substrate. NOW-RIDER active: colony metrics accumulate as diagnostics in current work (the mind is born with senses).
 **SETTLEMENT PLAN LAYER (#102)** slots as its own arc in this band, before 31: plot grammar reuse, district zoning, cost-driven form, desire-line roads, layout-quality corpus metrics.
 KNOWN INHERITANCE (charter line, Opus 08-10): today's `stockpiles: Vec<(ZoneId, Region)>` painted-bounding-box zones ARE the raw-position model — the arc's FIRST MIGRATION TARGET, not a green field. Item 16 is stockpile-adjacent and carries the plot rider pre-spec.
 
