@@ -1,8 +1,18 @@
-# ITEM 8 ENDURANCE RUN — CRASHED at ~23.6 sim/wall-min (tick 45000), a real
-# engine panic, unrelated to the colony-presence fix or the #85 work
+# ITEM 8 ENDURANCE RUN — CRASHED at ~23.6 sim/wall-min (tick 45000): ROOT
+# CAUSED to #89's OWN `split_off_one`, not a vanilla bug
 
-**Status: reporting immediately, not waiting for the ~11:44 EDT heartbeat —
-the run already ended well before that check-in was due.**
+**Status: root-caused per Fable's ruling. NO FIX landed — routed to Opus for
+first-line review, per her explicit instruction. Not related to
+ROW-COLONY-PRESENCE or #85's fields, both cleared below.**
+
+★ **Correction to this doc's own first draft:** the section below originally
+classified this as "not related to bastion" on the strength of a grep
+showing `try_merge` is never *called* from `bastion_jobs.rs`. **That answers
+the wrong question.** Fable's catch: the caller of the assert is not the
+producer of the violating state — `read-the-producer` applies to the
+CONSTRUCTION site, not the call site. Corrected below; the original
+"not-bastion" framing is kept struck through in spirit only, replaced
+entirely by the section that follows.
 
 ## What happened
 
@@ -34,34 +44,67 @@ merge attempt, not during it.
 standing rule requires for catching invariant violations a release build
 would silently corrupt through instead of panic on.
 
-## Why this arc's endurance run specifically found it
+## ROOT CAUSE — the producer, read and cited (Fable's ruling applied)
 
-`try_merge` is not called anywhere in `bastion_jobs.rs` — it's generic
-vanilla item-pickup/merge machinery, triggered whenever a dropped item lands
-near (or gets hauled onto) an existing stack. **No prior run in this arc ran
-long enough, with a healthy sustained farm+haul+eat economy, to accumulate
-enough merge/split cycles to hit this.** In the ~23 minutes before the
-crash: `preempt_attempts` climbed 0→12, multiple `"hunger restored"`
-completions fired, `food_stock` reached and held at 54, and the haul/farm
-loop was actively cycling (`"haul delivered"`, `"job claimed"`,
-`"colonist arrived at job site"` lines throughout). **This is the arc's
-first-ever sustained, multi-generational item-stacking workload — exactly
-what a duration test is for.**
+**`PickupItem::split_off_one`** (`common/src/comp/inventory/item/mod.rs:1823`)
+— **this arc's own #89 (DECISIONS #89, Option B, per-unit reservation
+capacity)**, added to enable the eat path to split one unit off a stack for
+a single consumer. It is the producer.
 
-## Not related to this session's other work
+**Mechanism, traced end to end:**
 
-- **ROW-COLONY-PRESENCE** (`ea2cfa5192`) and its acceptance leg never
-  exercised the farm/haul economy long enough to hit repeated merges — its
-  15-minute run had `food_stock=0` throughout (no farm designated in that
-  leg, food came from a single `dropall`).
-- **#85's fields** (`5d905a247d`) are diagnostic-only additions at the
-  ULTIMATE FAIL-SAFE emit site — they read state, never mutate it, and were
-  never touched by anything running against this endurance server (isolated
-  `cargo check -p bastion-server` only, confirmed via unchanged PID/binary
-  mtime after each build).
-- **This is a genuinely new, previously-undiscovered finding** in
-  vanilla-inherited item-stacking code, surfaced purely by sustained
-  duration.
+1. `PickupItem::max_amount()`-adjacent fact (`Item::max_amount`, line 908):
+   `if self.is_stackable() { u32::MAX } else { 1 }`. **For a stackable item
+   (food, farm produce), "full amount" is `u32::MAX` — a value nothing in
+   this game ever reaches.** `item.amount() == item.max_amount()` is
+   therefore **structurally false for every stackable entry that isn't
+   exactly `u32::MAX` units**, i.e. every real one.
+2. `split_off_one` finds the first entry with `amount() >= 2` at index
+   `idx` (deliberately not always the last — its own doc explains why),
+   `decrease_amount(1)`s it in place, then **pushes the new single-unit
+   split as the new LAST entry** (`self.items.push(single)`).
+3. **After this call, `self.items[idx]` — the original, now-decremented
+   stack — is no longer the last entry.** For a stackable, its amount can
+   never equal `u32::MAX`, so it now permanently violates
+   `try_merge`'s invariant for as long as it sits at a non-last index.
+4. **The violation is dormant until this exact `PickupItem` entity is
+   merge-checked against a fresh drop of the same item type** — which is
+   exactly what a sustained, multi-generational farm/haul economy produces
+   repeatedly (harvest drops landing near existing hauled piles). 23
+   minutes of `preempt_attempts` 0→12, active `EatFrom` completions, and
+   continuous haul/farm cycling is precisely the exposure this needs.
+
+**This was already known and documented at the time #89 shipped** —
+`split_off_one`'s own doc comment (lines 1814–1822) states verbatim: *"the
+struct-level invariant that non-last entries stay at `max_amount()` is
+unenforceable for stackables … and is deliberately not maintained here;
+`try_merge`'s own debug_assert on that invariant could in principle fire if
+this entity is merge-checked against a fresh drop of the same item while
+already split … out of this row's scope."* **The comment predicted this
+exact crash and deferred it, correctly scoped at the time, now due.**
+
+**Why "not related to bastion" (this doc's original classification) was
+wrong:** it was reasoned from `try_merge`'s CALL site (never called from
+`bastion_jobs.rs` — true, but irrelevant) instead of the CONSTRUCTION site
+that put the violating state there (`split_off_one`, which is bastion's own
+#89 code, living in the common crate). The status-quo law applies exactly as
+Fable stated it: split-pickup under 23 minutes of compounding farm churn is
+code no prior run in this arc ever exercised at this depth — the
+never-before-exercised path IS the change, not a pre-existing vanilla
+defect independent of this arc's work.
+
+## Cleared — genuinely not implicated
+
+- **ROW-COLONY-PRESENCE** (`ea2cfa5192`): its acceptance leg never
+  designated a farm, so `food_stock=0` throughout that 15-minute run — no
+  split/merge cycles were exercised there at all. The mechanism this crash
+  needs (repeated `split_off_one` + a later merge against a fresh same-item
+  drop) has no surface in that leg.
+- **#85's fields** (`5d905a247d`): diagnostic-only reads at the ULTIMATE
+  FAIL-SAFE emit site, never mutate `PickupItem` state, and were built via
+  an isolated `cargo check -p bastion-server` that never touched the
+  running endurance server (confirmed by unchanged PID/binary mtime both
+  times).
 
 ## Evidence
 
@@ -69,11 +112,19 @@ what a duration test is for.**
     bastion-test-evidence/live-playthrough/server-stderr-item8-endurance-v2.log  (228 bytes, the panic)
     bastion-test-evidence/ITEM8-LAUNCH-RECORD-V2.md                              (the launch this crashed from)
 
-## Not yet done, awaiting a ruling
+## Status — awaiting Opus's first-line review
 
-- Root-causing the actual corruption site (which caller of `try_merge` or
-  its sibling split/append paths left a non-last item partial) — not yet
-  investigated, this doc is the prompt report, not the fix.
-- No relaunch attempted. Per the arc's own law ("if it dies at cycle 3, that
-  is a RESULT, not a failed run"), this crash IS the result for this launch
-  — reporting it rather than quietly relaunching a v3 without a ruling.
+- **Root cause found and cited above** (`split_off_one`, the entry's own
+  predicting comment, the mechanism traced step by step).
+- **NO FIX has been written or landed.** Per Fable's explicit ruling: route
+  to Opus, he owns first-line review, no fix until reviewed.
+- **No relaunch attempted.** Per the arc's own law ("if it dies at cycle 3,
+  that is a RESULT, not a failed run"), this crash IS the result for this
+  launch. Item 8's endurance run restarts only on a pinned fix, once one
+  lands and is reviewed.
+- **A candidate fix direction exists but is deliberately not written here**
+  (this doc reports the finding, not the remedy) — plausible shapes include
+  changing the invariant check to be stackable-aware (compare against the
+  entry's *effective* full state rather than literal `u32::MAX`), or
+  restructuring `split_off_one` to preserve last-entry-only-partial by
+  construction. Opus's call, not pre-empted here.
