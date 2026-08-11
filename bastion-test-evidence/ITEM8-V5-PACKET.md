@@ -161,13 +161,58 @@ bought:**
 
 ## 6 · KNOWN-OPEN AT LAUNCH — **declared, not discovered later**
 
-- ⚠ **DEFECT 1 IS DELIBERATELY UNFIXED.** *The block-write does not stick; `is_filled()`
-  passed 281 consecutive times and `job moot` fired zero times in 945K lines. **Held
-  for `completed_kind` to decide the mechanism rather than guessed at.*** ★★ **v5 is
-  its instrument, not its fix.**
+- ⚠ **DEFECT 1 IS DELIBERATELY UNFIXED — *STAGED, NOT PARKED*.** *The block-write does
+  not stick; `is_filled()` passed 281 consecutive times and `job moot` fired zero times
+  in 945K lines.* ★★ **v5 is its instrument, not its fix.**
+
+  > ★★★★★ **SUPERSEDES the both-sufficient-blockers ruling, accepted on its merits:
+  > fixing a mechanism whose one remaining read has not run is this arc's own
+  > anti-pattern.** *Three wrong-interval fixes taught us what building on an unread
+  > costs.* **With defect 2 wired shut the loop loses its engine, and F7/F8 plus the
+  > three log fields make v5 the instrument that reveals defect 1's true shape.**
+
+  | | |
+  |---|---|
+  | ★★★ **THE READ** | **`completed_kind` on the completion line, across N completions at one `pos`.** *Constant `Rock` ⇒ the write never landed (look at `block_change`'s apply path and chunk writability). Anything else ⇒ it names what re-fills the cell.* |
+  | ★★★ **THE FIX WINDOW** | **The row immediately after v5, informed by v5's data — not deferred indefinitely.** *Where-is-its-row applies DOUBLY to a deliberate deferral.* |
+  | **RIDER** | *joint with 5b's own flag: does `job.progress` keep advancing on a claim the colonist can no longer service after `leave_route`? Same capture, same watch.* |
 - ⚠ **DEFECT 2's FIX NEEDS A NAMED CONSUMER.** *A terminated egress request stops the
   loop but leaves the colonist trapped with nothing rescuing them.* **What observes an
   unrescued member? A terminated request with no observer is the silent-stall shape
   one row over.**
 - ⚠ **THE FIVE-SITE ARRIVAL CONCENTRATION IS UNEXPLAINED** *(285 of 479 arrivals; four
   sites with zero completions).* **`kind`-on-arrival is the read.**
+
+---
+
+## 7 · ★★★★★★ EXPECTATIONS — **STATED HONESTLY, BEFORE THE RUN**
+
+> ## **v5's PASS PROBABILITY IS GENUINELY UNCERTAIN, AND THAT IS THE CORRECT POSTURE.**
+
+**What is still broken going in, on purpose:**
+
+- **the silent-stall sites are UNFIXED** *(now instrumented)*
+- **defect 1 is UNFIXED** *(now instrumented)*
+- ★★★ **defect 2's terminated requests leave colonists UN-RESCUED** — *the ultimate
+  fail-safe is the absorber of last resort, and it is the very thing the phantom
+  completions were disarming (§1b).* **v5 shows whether it suffices.**
+
+### ★★★★★ WHY THAT IS ACCEPTABLE — **THE FAIL CASE IS DESIGNED TO BE DECISIVE**
+
+**Every known way v5 can fail now EMITS ITS NAME:**
+
+| failure | the field that names it |
+|---|---|
+| the trap recurs | **F7** + `completed_kind` |
+| a completion lies again | **F8** |
+| a colonist stalls on materials | **the stall emit** (`kind`+`pos`+`required_item`) |
+| the wrong job kind is being attempted | **`kind` on arrival** |
+| the backstop is disarmed again | **`BASTION_EGRESS_DIAG` wipe-reason trace** |
+| the farm stops at wave one again | **F1 generation-2** |
+
+> ## **A RUN THAT EITHER CLOSES ARC 1 OR NAMES ITS KILLER IN THE LOG IS A GOOD BET AT
+> 2.5 HOURS.**
+
+★★★★★★ **v4's sin was not failing. It was failing ILLEGIBLY** — *59 completions
+identical to v3, a health metric pointing up, a disarmed backstop, and not one field
+in the capture that could say why.* **v5 is built so that cannot happen twice.**
