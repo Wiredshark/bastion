@@ -41,6 +41,27 @@ never-engaged SOW claims. Route 1 (completion-seam fix) is retracted —
 nothing there to fix. Route 2 (claim expiry, this doc's mechanism
 finding) is promoted from guard to primary fix.**
 
+### THE JOINT TABLE (Fable's ask — both producers cited, exclusion
+mechanism named)
+
+| | Opus's producer | This doc's producer |
+|---|---|---|
+| **log pattern** | `"bastion: job completed"` | `"bastion: tilled"` / `"sown"` / `"harvested"` |
+| **site** | `bastion_jobs.rs:14533` (generic `still_valid`-path arm) | `bastion_jobs.rs:14143` / `14185` / `14219` (Farm's dedicated arm, `14131-14235`) |
+| **count in v3's log** | 41 total — 39 `Designated(Mine)`, 2 `Designated(Bed)`, **0 `Designated(Farm)`** | 59 total — 19 tilled, 20 sown, 20 harvested |
+| **why the counts diverge** | **Structural exclusion, not a defect**: Farm's own completion arm `continue`s immediately (same for `Gather`'s arm at `14236`) — execution never reaches line 14533 for a Farm job, by construction, on every path including a successful completion | Reads the population the generic line structurally cannot see |
+| **independent cross-check** | — | Cell-recycling arithmetic (Opus): 32 cells×1 job + 10×3 + 5×5 = 87 exact; 15 cells cycling 3-5 jobs each is only possible if the completing job actually leaves the board |
+| **what each number is evidence of** | A true zero for "does Farm share Mine/Bed's completion log line" (it doesn't, by design) | The real completion count: Farm's own path fired correctly 59/87 times |
+
+**What the reconciled numbers do to the famine narrative:** TILL and
+HARVEST both sit at 100% (19/19, 20/20) — **the farm loop half-worked**.
+The entire famine lives in SOW specifically: 42% complete (20/48), **28
+claimed-but-never-engaged**. Read 2's mechanism (claim release gated on
+`!job.unreachable`; the periodic amnesty that resets `unreachable` but
+never touches `claimed_by`) is now the leading explanation those 28 need
+to survive against, not a guard alongside a completion-path fix that
+turned out to be unnecessary.
+
 ## READ 1 — THE FARM COMPLETION PREDICATE, AND A CORRECTION TO "0 OF 87"
 
 **The predicate itself, read at `bastion_jobs.rs:14108-14235`:** a job
