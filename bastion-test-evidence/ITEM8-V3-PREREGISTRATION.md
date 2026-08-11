@@ -109,16 +109,42 @@ external baseline required:
 > (why did splits stop while eats didn't) gets investigated before the
 > result is read as "the fix held."
 
-## OPTIONAL HEALTH SIGNAL (Opus's addendum, folded in — cheap, not a gate item)
+★★ **THE DENOMINATOR (Opus's second refinement — registered as a scoring
+commitment, applies at scoring time whether or not it lands in this file
+before launch): a rate compared only to its own sustained value cannot
+detect a uniformly wrong value.** A run that splits 5 times in 2.5 hours
+is "consistent with its own sustained rate" and reads as healthy with no
+bar to check it against — the field-cannot-calibrate-its-own-bound shape,
+arriving inside the rule written to prevent exactly that reading error.
+**The fix: don't compare the rate to itself, compare it to measure 2's
+own eat count — a ratio, not a judgement:**
 
-v2's crash arrived at tick 45000 in ~23.6 min wall (1416s): **45000 / 1416 s
-≈ 31.8 ticks/s, empirically measured on this exact run mode and scenario**
-— not the ~9× headless divergence noted elsewhere for a different run mode.
-If the server's target TPS is ~30, this confirms the stated 1:1 ratio this
-run's ~2.5-hour estimate (5 cycles × ~30 min) depends on. **Free secondary
-signal for v3**: if ticks-per-wall-second drops materially below ~31.8
-during the run, the server is degrading under load — an endurance finding
-in its own right, uncaught by anything else in the current bar.
+    b5_split_off_one_fired  vs.  (measure 2's per-cycle eat count − last-unit eats)
+
+**Splits << eats means the split path was suppressed — VOID on the fix
+claim** — no external baseline required, since both numbers come from the
+same run.
+
+## OPTIONAL HEALTH SIGNAL (Opus's addendum, folded in — cheap, not a gate
+item; baseline CORRECTED after Opus read the actual constant)
+
+v2's crash arrived at tick 45000 in ~23.6 min wall (1416s): 45000 / 1416s
+≈ 31.8 ticks/s. **This figure is NOT the health-signal baseline** — Opus
+read the server's actual target, `const TPS: u64 = 30`
+(`server-cli/src/main.rs:49`), and 45000 ticks at 30 TPS is 1500s (25.0
+min), ~6% below the measured 23.6 min. **A tick loop does not run 6% fast;
+the ~23.6-minute figure was measured from a different start point than
+tick 0** (launch-to-crash vs. founding-to-crash, most likely) — an
+unstated term in its own derivation, not a real rate. **The baseline for
+v3's health signal is therefore the read constant, not the derived
+figure**:
+
+    healthy:    ~30 ticks/s (const TPS, server-cli/src/main.rs:49 — READ, not assumed)
+    degrading:  materially below 30, sustained
+
+If ticks-per-wall-second drops materially below 30 during the run, the
+server is degrading under load — an endurance finding in its own right,
+uncaught by anything else in the current bar.
 
 ## Status
 
