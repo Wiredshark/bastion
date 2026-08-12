@@ -215,6 +215,15 @@ const CATALOG: &[EnvVarSiteV1] = &[
         "the standing flat-arena testbed toggle -- a different world entirely",
     ),
     site(
+        "bastion-server/src/bastion_flat_arena.rs",
+        "BASTION_FLAT_ARENA_RESOURCED",
+        GameplayVariant,
+        "the RESOURCED flat-arena variant (FOUNDING PRESET v1, packet section 2): \
+         adds the deterministic tree cluster + stone outcrop at generation. \
+         A different world again -- a run's attestation must say whether the \
+         chop/mine work was there",
+    ),
+    site(
         "bastion-server/src/bastion_flight_recorder.rs",
         "BASTION_FLIGHT_RECORDER_DIR",
         Diagnostic,
