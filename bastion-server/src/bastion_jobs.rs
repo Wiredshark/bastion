@@ -769,6 +769,43 @@ pub(crate) fn completion_outcome(
     }
 }
 
+/// ROW-COMPLETION-SIGNAL-SPLIT.md, the cross-arm unification: the XP
+/// grant is one of the two consumers BOTH completion arms apply (the
+/// other is `reset_completion_watch`, below) -- the Farm/self-job arm
+/// (gated on its own `acted` bool, derived from a match over cell state)
+/// and the generic Mine/Chop/Build/Ladder/Bed arm (gated on
+/// `CompletionOutcome::grant_xp`). Before this each arm called
+/// `skills.grant_xp` independently; routing both through one function
+/// means a future arm's XP grant can't silently diverge in shape (wrong
+/// constant, missing gate) from this one.
+fn grant_completion_xp(
+    skills: &mut common::bastion::ColonistSkills,
+    work: common::bastion::WorkType,
+    had_effect: bool,
+) {
+    if had_effect {
+        skills.grant_xp(work, COMPLETION_XP);
+    }
+}
+
+/// The watchdog-reset half of the same unification (see
+/// `grant_completion_xp`). This is the exact consumer the Farm arm was
+/// missing entirely until `4d9180252f` added it back by hand -- routing
+/// both arms through one function is what makes that specific omission
+/// impossible to repeat in a future arm.
+fn reset_completion_watch(
+    stuck_watch: &mut HashMap<Uid, f32>,
+    uid: Option<&Uid>,
+    had_effect: bool,
+    reason: &'static str,
+) {
+    if had_effect
+        && let Some(u) = uid
+    {
+        watch_wipe(stuck_watch, u, reason);
+    }
+}
+
 /// ROW-INDESTRUCTIBLE-MINE-CELL.md defect 2: the `ExhaustedReplan` decision
 /// itself, extracted out of the tick loop so the WIRING is unit-testable,
 /// not just `JobBoard::release_reengage_exhausted` in isolation (that
@@ -14578,21 +14615,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             },
                             _ => {}, // foreign/moot — release below
                         }
-                        if acted {
-                            colonist.0.skills.grant_xp(job.work, COMPLETION_XP);
-                            // ROW-COMPLETION-SIGNAL-SPLIT.md / ROW-
-                            // INDESTRUCTIBLE-MINE-CELL.md (Opus's second
-                            // find): the XP grant was already gated on
-                            // `acted`; this watchdog reset was not -- same
-                            // disease, one arm over (the Farm/self-job
-                            // completion arm, not the generic Mine/Chop/
-                            // Build one gated earlier). A foreign/moot
-                            // completion (the `_ => {}` arm above) must not
-                            // read as "real work" to the safety net either.
-                            if let Some(u) = uids.get(entity) {
-                                watch_wipe(&mut board.stuck_watch, u, "job-completed");
-                            }
-                        }
+                        // ROW-COMPLETION-SIGNAL-SPLIT.md, cross-arm
+                        // unification: both consumers now route through
+                        // the same two functions the generic arm below
+                        // uses (`grant_completion_xp` /
+                        // `reset_completion_watch`), gated on this arm's
+                        // own `had_effect` derivation (`acted`). A
+                        // foreign/moot completion (the `_ => {}` arm
+                        // above) must not read as "real work" to either
+                        // consumer.
+                        grant_completion_xp(&mut colonist.0.skills, job.work, acted);
+                        reset_completion_watch(
+                            &mut board.stuck_watch,
+                            uids.get(entity),
+                            acted,
+                            "job-completed",
+                        );
                         board.remove_job(active.job);
                         to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
                         continue;
@@ -14895,9 +14933,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         );
                     }
 
-                    if outcome.grant_xp {
-                        colonist.0.skills.grant_xp(job.work, COMPLETION_XP);
-                    }
+                    // ROW-COMPLETION-SIGNAL-SPLIT.md, cross-arm
+                    // unification: shared with the Farm arm above via
+                    // `grant_completion_xp` (see that function's doc).
+                    grant_completion_xp(&mut colonist.0.skills, job.work, outcome.grant_xp);
                     match outcome.log_channel {
                         CompletionLogChannel::RealProduction => {
                             info!(
@@ -15024,11 +15063,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // `outcome.reset_stuck_watch` (the same origin decision
                     // as drop/XP/log) rather than re-deriving
                     // `!is_emergency_access` a third time at this site.
-                    if outcome.reset_stuck_watch
-                        && let Some(u) = uids.get(entity)
-                    {
-                        watch_wipe(&mut board.stuck_watch, u, "work-progress");
-                    }
+                    // ROW-COMPLETION-SIGNAL-SPLIT.md, cross-arm
+                    // unification: shared with the Farm arm above via
+                    // `reset_completion_watch` (see that function's doc).
+                    reset_completion_watch(
+                        &mut board.stuck_watch,
+                        uids.get(entity),
+                        outcome.reset_stuck_watch,
+                        "work-progress",
+                    );
                     // B-LIVE3 (Ben's MINE LIFECYCLE): the designation this
                     // job belonged to may just have finished — collect for
                     // the post-loop done/disperse pass (the board's job map
@@ -20605,6 +20648,50 @@ mod tests {
         assert!(!outcome.grant_xp);
         assert_eq!(outcome.log_channel, CompletionLogChannel::EmergencyAccessNoEffect);
         assert!(!outcome.reset_stuck_watch);
+    }
+
+    #[test]
+    fn grant_completion_xp_gates_on_had_effect() {
+        // ROW-COMPLETION-SIGNAL-SPLIT.md, cross-arm unification: the exact
+        // function BOTH completion arms call (the Farm/self-job arm's
+        // `acted`, the generic arm's `outcome.grant_xp`). Asserting the
+        // function directly (not a parallel description of it) means this
+        // test covers both arms' XP-grant call sites at once.
+        let mut skills = common::bastion::ColonistSkills::default();
+        grant_completion_xp(&mut skills, common::bastion::WorkType::Mine, false);
+        assert_eq!(
+            skills.mining.xp, 0.0,
+            "had_effect=false must grant no XP -- a foreign/moot or emergency-access \
+             completion is not real work"
+        );
+        grant_completion_xp(&mut skills, common::bastion::WorkType::Mine, true);
+        assert_eq!(
+            skills.mining.xp, COMPLETION_XP,
+            "had_effect=true must grant exactly COMPLETION_XP to the skill matching the work \
+             type"
+        );
+    }
+
+    #[test]
+    fn reset_completion_watch_gates_on_had_effect() {
+        // Same unification, the watchdog-reset half -- the exact consumer
+        // the Farm arm was missing entirely until 4d9180252f added it back
+        // by hand. This is the function both arms now call.
+        let uid = Uid(NonZeroU64::new(80).unwrap());
+        let mut stuck_watch: HashMap<Uid, f32> = HashMap::from([(uid, 12.5)]);
+        reset_completion_watch(&mut stuck_watch, Some(&uid), false, "test-reason");
+        assert_eq!(
+            stuck_watch.get(&uid),
+            Some(&12.5),
+            "had_effect=false must leave the watchdog accrual untouched -- a phantom \
+             completion must not read as real progress to the safety net"
+        );
+        reset_completion_watch(&mut stuck_watch, Some(&uid), true, "test-reason");
+        assert!(
+            !stuck_watch.contains_key(&uid),
+            "had_effect=true must wipe the watchdog accrual -- real work is the ground-truth \
+             progress signal"
+        );
     }
 
     #[test]
