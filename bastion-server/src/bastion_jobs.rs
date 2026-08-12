@@ -727,6 +727,14 @@ pub(crate) struct CompletionOutcome {
     pub drop_item: Option<&'static str>,
     pub grant_xp: bool,
     pub log_channel: CompletionLogChannel,
+    /// ROW-COMPLETION-SIGNAL-SPLIT.md consumer 3 (`watch_wipe(...,
+    /// "work-progress")`): found ungated late, as its OWN separately-
+    /// derived `!is_emergency_access` check at the call site -- the
+    /// exact "per-consumer predicate, silently under-enumerated" shape
+    /// the row exists to close. Folded into the origin decision here so
+    /// a future consumer reads this field instead of re-deriving the
+    /// condition a third time.
+    pub reset_stuck_watch: bool,
 }
 
 pub(crate) fn completion_outcome(
@@ -748,14 +756,16 @@ pub(crate) fn completion_outcome(
             _ => None,
         }
     };
+    let had_effect = !is_emergency_access;
     CompletionOutcome {
         drop_item,
-        grant_xp: !is_emergency_access,
-        log_channel: if is_emergency_access {
-            CompletionLogChannel::EmergencyAccessNoEffect
-        } else {
+        grant_xp: had_effect,
+        log_channel: if had_effect {
             CompletionLogChannel::RealProduction
+        } else {
+            CompletionLogChannel::EmergencyAccessNoEffect
         },
+        reset_stuck_watch: had_effect,
     }
 }
 
@@ -15006,14 +15016,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // safe; only a colonist that completes NOTHING for the
                     // full window is teleported.
                     //
-                    // ROW-INDESTRUCTIBLE-MINE-CELL.md (Opus's finding,
-                    // cross-session 2026-08-11): the premise above is
-                    // exactly what defect 1 violates -- an emergency-access
-                    // completion is NOT ground truth (drop/XP/cave-in are
-                    // all already suppressed for it, two lines above this
-                    // one). Gated the same way: no world-effect, no
-                    // "progress" credit toward the safety-net clock either.
-                    if !is_emergency_access
+                    // ROW-INDESTRUCTIBLE-MINE-CELL.md / ROW-COMPLETION-
+                    // SIGNAL-SPLIT.md: the premise above is exactly what
+                    // defect 1 violates -- an emergency-access completion
+                    // is NOT ground truth (drop/XP/cave-in are already
+                    // gated on `outcome` two lines above this one). Reads
+                    // `outcome.reset_stuck_watch` (the same origin decision
+                    // as drop/XP/log) rather than re-deriving
+                    // `!is_emergency_access` a third time at this site.
+                    if outcome.reset_stuck_watch
                         && let Some(u) = uids.get(entity)
                     {
                         watch_wipe(&mut board.stuck_watch, u, "work-progress");
@@ -15023,6 +15034,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // the post-loop done/disperse pass (the board's job map
                     // is queryable here, but colonists/positions are
                     // mid-borrow).
+                    //
+                    // ROW-COMPLETION-SIGNAL-SPLIT.md consumer 7, READ AND
+                    // PLACED (was flagged unread, not asserted): can a
+                    // phantom (emergency-access) completion retire a
+                    // designation whose real work isn't done? NO, by
+                    // construction, not by this being fixed here. Every
+                    // emergency-access job is created with `is_access:
+                    // true` (the plan-creation site, near line 1383,
+                    // unconditionally), and this predicate's `!j.is_access`
+                    // already excludes access jobs from "remaining work" --
+                    // so an access job's own presence was NEVER counted
+                    // toward a region being undone, whether it completes
+                    // (real or phantom) or not. `done_pos` only decides
+                    // WHICH regions get RE-CHECKED this tick, not what the
+                    // check concludes. A phantom completion touching a
+                    // point inside a region can only trigger a (correct,
+                    // possibly overdue) re-check driven by OTHER real
+                    // jobs' state -- it cannot itself supply a false
+                    // "nothing left" verdict.
                     for region in board.designated.iter() {
                         if region.contains_point(done_pos)
                             && !board
@@ -20508,8 +20538,10 @@ mod tests {
                 drop_item: Some(MINE_DROP_ITEM),
                 grant_xp: true,
                 log_channel: CompletionLogChannel::RealProduction,
+                reset_stuck_watch: true,
             },
-            "a real (non-emergency-access) Mine completion must drop, grant XP, and count as production"
+            "a real (non-emergency-access) Mine completion must drop, grant XP, count as \
+             production, and reset the stuck-colonist watchdog"
         );
     }
 
@@ -20523,11 +20555,16 @@ mod tests {
         assert_eq!(wood.drop_item, Some(CHOP_DROP_ITEM), "Wood must drop the chop item");
         assert!(wood.grant_xp);
         assert_eq!(wood.log_channel, CompletionLogChannel::RealProduction);
+        assert!(wood.reset_stuck_watch);
 
         let leaves = completion_outcome(false, Some(DesignationKind::Chop), Some(BlockKind::Leaves));
         assert_eq!(leaves.drop_item, None, "Leaves must clear free -- no drop");
         assert!(leaves.grant_xp, "XP is still granted even on a no-drop Leaves clear");
         assert_eq!(leaves.log_channel, CompletionLogChannel::RealProduction);
+        assert!(
+            leaves.reset_stuck_watch,
+            "a Leaves clear is still real progress -- no drop does not mean no effect"
+        );
     }
 
     #[test]
@@ -20545,8 +20582,12 @@ mod tests {
                 drop_item: None,
                 grant_xp: false,
                 log_channel: CompletionLogChannel::EmergencyAccessNoEffect,
+                reset_stuck_watch: false,
             },
-            "an emergency-access completion must suppress every world-effect and route to the honest line"
+            "an emergency-access completion must suppress every world-effect (INCLUDING the \
+             watchdog reset, ROW-COMPLETION-SIGNAL-SPLIT.md consumer 3 -- this is the exact \
+             field that was found ungated late, as a separate check at the call site) and \
+             route to the honest line"
         );
     }
 
@@ -20563,6 +20604,7 @@ mod tests {
         assert_eq!(outcome.drop_item, None);
         assert!(!outcome.grant_xp);
         assert_eq!(outcome.log_channel, CompletionLogChannel::EmergencyAccessNoEffect);
+        assert!(!outcome.reset_stuck_watch);
     }
 
     #[test]
