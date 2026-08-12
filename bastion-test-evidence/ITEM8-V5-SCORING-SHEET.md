@@ -135,6 +135,33 @@ variable, and it is named BEFORE scoring rather than discovered in review.*
 ★★ **The bars are all in the unaffected column.** *This constrains the MEASURES and the
 cross-run colour, not the verdict.*
 
+### ★★★★★★ MEASURED — **and the absolute refutes my own alarm**
+
+**Baseline corrected by the builder, and correctly: v4's byte total is contaminated by
+the churn bug (468,593 sweep-spam lines — a DEFECT artifact, not a diagnostic-density
+fact). v3 is the clean comparator.**
+
+    v3:  1,123,528 B / 154 min  ≈    7,296 B/min
+    v5: 81,571,861 B /  98 min  ≈  832,366 B/min      ->  ~114x
+
+> ## ⚠ **BUT 114× A VERY SMALL NUMBER IS STILL A SMALL NUMBER: ~14 KB/s, ~34 LINES/s.**
+
+★★★★★ **I raised this alarm on a RATIO. The absolute magnitude refutes its severity.**
+*34 lines/second of buffered stdout will not meaningfully compete with worldgen, which
+is CPU-bound, not IO-bound.*
+
+> ## **A RATIO WITHOUT ITS BASE IS A CLAIM ABOUT NOTHING** — *the same disease as a
+> count without its denominator, one layer up.*
+
+**REVISED POSITION, and it is the honest one:** *the confound is **REGISTERED, REAL, AND
+ESTIMATED SMALL** — not withdrawn (the mechanism exists and the ratio is genuine), not
+alarming (the absolute makes a material effect implausible).* ★★★ **Wall-clock
+cross-run figures still carry the note; nobody should treat it as explaining a 7× rescue
+gap.**
+
+★★ *Disk: 55 GB free; this log needs ~50–120 MB more. **Negligible.** The drive being
+95% full generally is a real but separate standing item.*
+
 ---
 
 ## 3 · THE THREE TRIANGULATING READS
