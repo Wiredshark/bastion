@@ -239,6 +239,35 @@ itself a discriminator.*
     many uids, few each      -> reading A, benign
     few uids, many each      -> reading B, the trap survived the fix
 
+### ★★★★★★ THE TIER RATIO — **a fourth read, registered T+127, and it needs no wall clock**
+
+**Raw counts, flagged by the builder without interpretation:**
+
+    emergency_access_completions:   6 ->  6 ->  6 -> 10 -> 31     (T+33/40/64/96/127)
+    ULTIMATE FAIL-SAFE firings:     2 -> 14 -> 23 -> 39 -> 51
+
+*Emergency completions accelerated **5.4×** in the last interval (0.125 → 0.68/min)
+while the fail-safe rate slightly **DECLINED** (0.50 → 0.39/min).*
+
+**THE DERIVED MEASURE — rescues per organic completion:**
+
+| | T+64 | T+96 | T+127 |
+|---|---|---|---|
+| **fail-safes ÷ emergency completions** | **3.8** | **3.9** | ★★★ **1.65** |
+
+> ## **THE RATIO HALVED. THE ORGANIC EGRESS TIER IS RESOLVING SITUATIONS THAT
+> PREVIOUSLY ESCALATED TO THE LAST RESORT.**
+
+★★★★★ **AND IT IS A RATIO OF TWO COUNTS, SO IT ESCAPES THE DIAG-DENSITY CAVEAT
+ENTIRELY** — *unlike every per-minute figure, this one does not care how fast the clock
+ran.* **Bases stated, per this arc's own lesson: 51 and 31, both healthy.**
+
+⚠ **TWO READINGS, registered:** *(a) the organic tier is taking over from the net —
+what the ratio's fall suggests; (b) both tiers are simply busier and completions happen
+to grow faster.* ★★ **The falling ratio favours (a), but a falling ratio with BOTH
+counts rising is not the same as the net standing down.** *Score at teardown with the
+final pair.*
+
 ### ★★★★★ THREE REGISTERED READS THAT TRIANGULATE ONE QUESTION
 
 **Filed together because they converge, and any two agreeing constrains the third:**
