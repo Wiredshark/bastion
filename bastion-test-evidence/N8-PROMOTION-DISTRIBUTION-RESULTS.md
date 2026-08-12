@@ -24,22 +24,51 @@ pacing) predicts.
 
 ## METHOD NOTE — a self-inflicted ordering defect, caught and fixed mid-run
 
-Legs 1-6 (capped) were NOT interleaved with uncapped as later specified —
-they ran as a consecutive same-arm block first. Opus flagged this as a
-systematic confound risk (v5's background CPU load drifts over its
-lifetime; running one arm entirely before the other could let that drift
-masquerade as the pacing effect). From leg 7 onward, capped and uncapped
-legs were interleaved.
+**CORRECTED (an earlier version of this doc said interleaving began at
+leg 7; that was wrong — a prose-summary error, not what the log shows.
+The table below is read directly from each leg's own `Server version`
+boot line, not from memory, per Opus's flag that the two reports he
+received disagreed.)**
+
+Ground truth, boot order:
+
+    00:06:16  capped-1     )  pre-interleaving: no uncapped leg exists yet
+    00:07:44  capped-2     )
+    00:13:17  capped-3     -- interleaving begins HERE
+    00:14:33  uncapped-1
+    00:15:39  capped-6     -- see note below: a STRAY background process,
+                              not part of the intended sequence
+    00:18:17  capped-4     -- retry, after a collision with that same stray
+    00:19:29  uncapped-2
+    00:20:43  capped-5
+    00:22:06  uncapped-3
+    00:23:23  capped-7
+    00:24:37  uncapped-4
+    00:25:52  capped-8
+    00:27:06  uncapped-5
+    00:28:59  uncapped-6
+    00:30:16  uncapped-7
+    00:31:31  uncapped-8
+
+**Interleaving began at leg 3** (capped-3 immediately followed by
+uncapped-1), not leg 7. Only legs 1-2 (capped) ran before any uncapped
+leg existed, and that's because interleaving hadn't been specified yet
+at that point in real time — those two legs predate the request, they
+weren't skipped past it.
 
 **Separately, and unrelated to the ordering question:** two background
 batches were accidentally launched overlapping each other (both covering
 leg numbers 3-4), causing real file/port collisions between MY OWN
 processes on the isolated port — never touching v5 (verified: same PID,
-unbroken log, both before and after every collision). Caught via a
-stray-process check, cleaned up, and every leg from that point ran
-strictly foreground, one at a time. Legs 3, 4, 5 were re-run cleanly
-after the corrupted attempts; their reported values here are from the
-clean re-runs only.
+unbroken log, both before and after every collision). The `capped-6`
+boot at 00:15:39 in the table above is that stray batch's own leg-6
+attempt, completing successfully (232) in a gap between two of my
+foreground runs — its result is kept (nothing about ITS run was
+corrupted, only legs 3/4 that directly collided with it were). Caught
+via a stray-process check after the fact, cleaned up, and every leg
+after `capped-4`'s retry ran strictly foreground, one at a time. Legs 3,
+4, 5 were re-run cleanly after the corrupted attempts; their reported
+values here are from the clean re-runs only.
 
 ## THE SANITY FLAG, REGISTERED PRE-DATA (Opus)
 
