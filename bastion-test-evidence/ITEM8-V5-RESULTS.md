@@ -23,7 +23,7 @@ config identical to v3/v4 — no drift. Label still reads "ITEM8-V4 config" (cos
 
 | | bar | outcome |
 |---|---|---|
-| **F1** | **generation-2 completions > 0** — *any `sown` later than the FIRST `harvested`* | `___` |
+| **F1** | ★★★ **farm activity (`sown` OR `harvested`) in the FINAL THIRD of the scored window** — *revised and ratified PRE-DATA; see §1b* | `___` |
 | **F2** | no immortal jobs | `___` |
 | **F3** | cells recycle *(and the reap count is not itself the defect)* | `___` |
 | **F5** | targeted release fires | `___` |
@@ -34,6 +34,35 @@ config identical to v3/v4 — no drift. Label still reads "ITEM8-V4 config" (cos
 
 ★ **F9 is a MEASURE, not a bar** *(demoted pre-data: no observation was named that
 would make it red).*
+
+---
+
+## 1b · ★★★★★★ EXHIBIT — **F1's LINEAGE, AND THE DAY'S BAR-DESIGN LESSON**
+
+*Recorded at Fable's requirement. Three wordings, two of them satisfiable by a corpse.*
+
+| # | wording | verdict against **v4**, the known-failing specimen |
+|---|---|---|
+| **1** | **completions > 0** | ⛔ **v4 scores 59. PASSES.** *A dead colony satisfies it.* |
+| **2** | **generation-2 — any `sown` after the FIRST `harvested`** | ⛔ **v4 has TWELVE such sows. PASSES.** *The SAME dead colony satisfies the replacement.* |
+| **3** | ✅ **farm activity in the FINAL THIRD of the window** | ✅ **v4 has ZERO farm events across parts 001–002. FAILS, decisively.** |
+
+> ## **A BAR MUST FAIL THE FAILING SPECIMEN.**
+
+★★★★★ **Wording 2 was written specifically to fix wording 1's defect — and reproduced
+it exactly.** *v4 did not fail to reach generation two; it reached generation THREE and
+then stopped. **The question was never "did wave two happen." It is "was the farm still
+ALIVE at the end."***
+
+★★★★★★ **THE GENERAL FORM:** *an operationalization must be tested against the known
+FAILURE before it can be trusted against the candidate* — **exactly as a planted test
+must go RED before its GREEN means anything.**
+
+> ## **A BAR IS AN INSTRUMENT. IT GETS THE SAME DISCIPLINE AS ONE.**
+
+★★★ *Caught minutes before scoring, on the last check still runnable against v4 — and
+only because the check was run at all. Wording 2 had been ratified, pinned, and was
+about to govern the arc's headline verdict.*
 
 ---
 
