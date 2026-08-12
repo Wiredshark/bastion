@@ -37,7 +37,7 @@ member.**
 | **4** | `grant_xp(job.work, COMPLETION_XP)` | ✅ pre-existing `!is_emergency_access` |
 | **5** | `emit_drop(MINE_DROP_ITEM)` | ✅ pre-existing gate |
 | **6** | cave-in `floating_chunk` | ✅ pre-existing gate |
-| **7** | ⚠ **`done_regions` — designation AABB retirement** | **UNREAD.** *Can a phantom completion retire a designation outline with undone work left? Flagged, not asserted.* |
+| **7** | ✅ **`done_regions`** | **READ AND CLOSED — see §1c.** *Not a retirement: a DISPERSAL trigger. Never fired in v4.* |
 | **8** | `to_release` / `remove_job` / `emergency_access_jobs.remove` | ✅ correct for BOTH kinds — *this is genuinely the "job ended" consumer* |
 | **9** | ★★★ `watch_wipe(…, "job-completed")` *(self-job / foreign-moot arm)* | ⛔ **STILL UNGATED — found on the landed commit.** *`grant_xp` beside it is gated on `acted`; the wipe is not.* |
 | **10** | `watch_wipe(…, "arrived-head")` · `"arrived-working"` | ✅ gated on `!emergency_access_jobs.contains_key` |
@@ -98,6 +98,44 @@ STILL under-enumerated by one site, one message later.**
 ★★★★ **The predicate belongs AT THE SIGNAL'S ORIGIN, once.** *Table row 8 shows the
 clean seam already exists conceptually: bookkeeping legitimately fires for both kinds,
 everything else should fire for one.*
+
+---
+
+## 1c · ✅ CONSUMER 7 — **READ AND CLOSED. The enumeration has no UNREAD entries left.**
+
+**I flagged `done_regions` as a possible designation-retirement path. It is not one.**
+
+**WHAT IT ACTUALLY DOES** *(`4d9180252f`)*: `board.done_count += 1`, logs
+`"bastion: MINE DONE — dispersing"`, and **ejects every colonist inside the region** —
+`climb_free_until = time + 45.0` plus a `Goto` toward the surface.
+
+**THE GUARD:** `!board.jobs.values().any(|j| !j.is_access && region.contains_point(j.pos))`
+— *fires only when NO non-access job remains in the region.*
+
+### ⚠ THE RESIDUAL RISK, NAMED
+
+> ## **THE GUARD ASKS "ARE THERE JOBS?", NOT "IS THERE UNDONE WORK?". JOBS ARE
+> TRANSIENT; DESIGNATIONS ARE DURABLE.**
+
+★★★ *In v4, jobs were created and reaped **468,000** times. If the sweep emptied a
+region's job list in one tick and an access job then completed inside it, the guard
+would pass and the colony would be **dispersed out of a mine that still had work**.*
+
+**Worst case is therefore a spurious MASS DISPERSAL plus an inflated `done_count`** —
+★★ *a fifth, minor consumer of the false signal* — **not lost player work.** *Materially
+less severe than I flagged.*
+
+### ✅ AND IT NEVER FIRED
+
+    v4 'MINE DONE'  ->  part-000: 0   part-001: 0   part-002: 0
+
+★★★★★ **A VALIDATED zero, meeting all three conditions this arc established:** *the
+path resolves (other greps on these same blobs returned data), the pattern is the
+**source literal** rather than a guess, and ANSI was stripped.* **The risk is real in
+principle and was never realised in practice.**
+
+★★★ **Consumer 7 closes without a code change.** *Recorded so the signal-split work
+places it deliberately rather than inheriting it.*
 
 ---
 
