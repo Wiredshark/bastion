@@ -107,7 +107,12 @@ impl Sys {
         position: Option<&mut Pos>,
         spectating_entity: &mut Option<Option<common::uid::Uid>>,
         bastion_anchor: &mut Option<bool>,
-        bastion_spawn: &mut Option<(Vec3<f32>, u8)>,
+        // FOUNDING PRESET v1: carries the REQUESTER as well as the site.
+        // The founding's outcome is no longer unconditional — a refusal
+        // (colony_exists / terrain) has to reach the player who asked, and
+        // the post-loop is where the board, terrain and rtsim can all be
+        // consulted at once, so the entity travels with the request.
+        bastion_spawn: &mut Option<(specs::Entity, Vec3<f32>, u8)>,
         // bastion (B4): deferred designation ops — Some(kind) = place,
         // None = cancel (the job board can't be touched in the parallel join).
         // B5.6b-2: the third field is Some(extent) for surface-relative
@@ -589,7 +594,13 @@ impl Sys {
                     && pos.map(|e| e.is_finite()).reduce_and()
                     && (1..=16).contains(&count)
                 {
-                    *bastion_spawn = Some((pos, count));
+                    *bastion_spawn = Some((entity, pos, count));
+                    // FOUNDING PRESET v1: this is now an ACKNOWLEDGEMENT,
+                    // not the outcome — the founding can still refuse
+                    // (colony_exists / terrain) in the post-loop, where the
+                    // board, terrain and rtsim are all readable. The
+                    // refusal carries its own player-visible message from
+                    // there.
                     client.send(ServerGeneral::server_msg(
                         common::comp::ChatType::CommandInfo,
                         common::comp::Content::Plain(format!(
@@ -1290,7 +1301,95 @@ impl<'a> System<'a> for Sys {
                         });
                     }
                 }
-                if let &mut Some((pos, count)) = bastion_spawn_update {
+                if let &mut Some((requester, pos, count)) = bastion_spawn_update {
+                    // ─── FOUNDING PRESET v1 (ITEM-FOUNDING-PRESET-PACKET.md)
+                    //
+                    // The player path gets the script path's kit. Order
+                    // matters and is ruled: BOUNDARY, then SITE, then
+                    // placement — a refused founding must mutate NOTHING
+                    // (no half-colony, no orphan seeds), so both refusals
+                    // are decided before the first designation is placed.
+                    use crate::bastion_founding_preset as preset;
+
+                    let origin_xy = preset::origin_xy(pos);
+                    // B1: the datum is DERIVED. `pos.z` is only the hint
+                    // that centres the resolver's window.
+                    let datum = preset::resolve_datum(&terrain, origin_xy, pos.z.floor() as i32);
+
+                    // §4, THE ONE-COLONY BOUNDARY. Reads rtsim colonist
+                    // records — the persistent half (see
+                    // `RtSim::bastion_colony_exists`). Deliberately
+                    // FIRST: "your colony already lives here" is true
+                    // regardless of what the ground looks like.
+                    let refusal = if rtsim.bastion_colony_exists() {
+                        Some((preset::FoundingRefusal::ColonyExists, None))
+                    } else {
+                        match datum {
+                            // §3.2 TERRAIN VALIDATION over every plot
+                            // column, not just the centre.
+                            Some(datum_z) => {
+                                let origin = Vec3::new(origin_xy.x, origin_xy.y, datum_z);
+                                match preset::validate_site(&terrain, origin) {
+                                    Ok(()) => None,
+                                    Err((refusal, column)) => Some((refusal, Some(column))),
+                                }
+                            },
+                            // No resolvable surface at F itself (open
+                            // water, void, unloaded chunk) is the same
+                            // refusal by the same name.
+                            None => Some((preset::FoundingRefusal::Terrain, Some(origin_xy))),
+                        }
+                    };
+
+                    if let Some((refusal, column)) = refusal {
+                        // REFUSAL IS A FIRST-CLASS OUTCOME (§3.2): its own
+                        // emit, and a player-visible message that names the
+                        // reason. Refusal-needs-refusal-aware-consumers —
+                        // the UI shows it, the log carries it, and A4/A5
+                        // read the `reason=` field by name.
+                        tracing::info!(
+                            reason = refusal.reason(),
+                            ?pos,
+                            ?column,
+                            "bastion: founding refused"
+                        );
+                        if let Some(client) = clients.get(requester) {
+                            let _ = client.send(ServerGeneral::server_msg(
+                                common::comp::ChatType::CommandError,
+                                common::comp::Content::Plain(refusal.player_message().to_string()),
+                            ));
+                        }
+                        // Nothing in the `else` runs: no colonists, no
+                        // stock, no presence. A refused founding leaves the
+                        // world exactly as it found it. (An `else`, not an
+                        // early return — the inspector drain below still
+                        // owes this client its answers this tick.)
+                    } else {
+                    let origin = Vec3::new(
+                        origin_xy.x,
+                        origin_xy.y,
+                        datum.expect("a refusal was returned above when the datum is unresolvable"),
+                    );
+
+                    // THE PRESET (§1): placed from the plot template, in
+                    // template order, through the SAME `place_designation`
+                    // the painted path uses — one placement authority, not
+                    // a founding-only copy of it.
+                    let mut placed_roles = Vec::new();
+                    let mut placed_jobs = 0usize;
+                    for (role, kind, region) in preset::preset_regions(origin) {
+                        let jobs = job_board.place_designation(&terrain, region, kind);
+                        placed_jobs += jobs.len();
+                        placed_roles.push(role);
+                        tracing::info!(
+                            role = role.name(),
+                            ?kind,
+                            ?region,
+                            jobs = jobs.len(),
+                            "bastion: founding preset plot placed"
+                        );
+                    }
+
                     // bastion (B3): spawn the starting band (validated above).
                     rtsim.bastion_spawn_colony(pos, count);
                     // #105 (DECISIONS-FOR-BEN, FOUNDING SEED STOCK): a
@@ -1334,9 +1433,38 @@ impl<'a> System<'a> for Sys {
                     // live-path twin of `Server::bastion_found_colony_
                     // presence` above -- same disjoint-producer shape as
                     // the seed-stock drop right above it.
+                    //
+                    // FOUNDING PRESET v1: this IS the promotion half of
+                    // "spawn + promote" — the server-owned colony presence
+                    // is what keeps the band in `SimulationMode::Loaded`
+                    // with no client connected.
                     post_emitters.emit(event::CreateColonyPresenceEvent {
                         pos: common::comp::Pos(pos),
                     });
+
+                    // THE LIVE WITNESS (§3.4, name-the-line law): every
+                    // §5 claim reads from this emit. `elements` carries
+                    // the ROLES placed, so A1's planted failure (a
+                    // PARTIAL preset — the farm dropped) is visible in
+                    // the witness itself rather than inferred from a
+                    // count; `complete` is the bar's own boolean.
+                    tracing::info!(
+                        preset = preset::PRESET_VERSION,
+                        ?pos,
+                        datum = origin.z,
+                        colonists = count,
+                        elements = %preset::roles_summary(&placed_roles),
+                        complete = preset::preset_is_complete(&placed_roles),
+                        jobs = placed_jobs,
+                        // The claim mask's own size AFTER placement — the
+                        // "registered rev" §5 A1 reads. Named for what it
+                        // actually is (a region count, append-on-place /
+                        // subtract-on-cancel), not dressed up as a
+                        // monotonic revision it isn't.
+                        designated_regions = job_board.designated.len(),
+                        "bastion: colony founded"
+                    );
+                    }
                 }
                 // bastion (UI-4): answer inspector requests — read-only
                 // payload assembly at request cadence (~1Hz per open

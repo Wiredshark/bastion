@@ -20,8 +20,8 @@ pub mod bastion_arena;
 pub use bastion_server::bastion_assets;
 pub use bastion_server::{
     bastion_actions, bastion_chop, bastion_entity_event_log, bastion_flat_arena,
-    bastion_flight_recorder, bastion_jobs, bastion_mood, bastion_path, bastion_piles,
-    bastion_traversal, bastion_traversal_tooling,
+    bastion_flight_recorder, bastion_founding_preset, bastion_jobs, bastion_mood, bastion_path,
+    bastion_piles, bastion_traversal, bastion_traversal_tooling,
 };
 pub mod bootstrap_freshness_minter;
 mod character_creator;

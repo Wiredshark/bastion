@@ -587,6 +587,34 @@ impl RtSim {
             .collect()
     }
 
+    /// bastion (FOUNDING PRESET v1, packet §4 + review §8 B6): does a
+    /// colony already live in this world?
+    ///
+    /// TEMPORAL SHAPE: **SNAPSHOT** (PACKET-CRAFT-CHECKLIST entry 1) — the
+    /// answer is "right now", never "ever". An extinct colony leaves no
+    /// records, so re-founding is permitted by construction; that is the
+    /// ruled behaviour, not an accident of the read.
+    ///
+    /// WHY THE RTSIM RECORDS AND NOTHING ELSE: they are the only part of a
+    /// colony that survives a server restart. The JobBoard and its
+    /// designations do NOT persist (found live restarting the celebration
+    /// world: colonists came back, the zones did not), and the colony
+    /// presence entity is not persistence-backed either. A boundary check
+    /// reading either of those would answer "no colony here" after any
+    /// restart WHILE THE FIRST COLONY'S COLONISTS ARE STILL STANDING IN
+    /// THE WORLD — and would then bless exactly the second founding whose
+    /// cross-country leash-march the one-colony boundary exists to make
+    /// impossible. The predicate has to outlive a restart because the
+    /// failure it prevents does.
+    pub fn bastion_colony_exists(&self) -> bool {
+        self.state
+            .data()
+            .npcs
+            .npcs
+            .values()
+            .any(|npc| npc.bastion_colonist.is_some())
+    }
+
     /// bastion (B-AG2, harness): how many rtsim NPCs carry each CONVERTED
     /// archetype's profession (herbalist, hunter, guard) — evidence the
     /// table applies to a real generated population, not just test keys.
