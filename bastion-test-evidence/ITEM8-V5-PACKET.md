@@ -97,6 +97,44 @@ name the impossibility; they are not yet the certification. That is the N=8 test
 
 ## 3 · ★★★★★★ THE BAR
 
+### 🛑 F1's OPERATIONALIZATION WAS BROKEN — **caught pre-data, minutes before scoring**
+
+**Registered test: *"does any `sown` post-date the FIRST `harvested`?"* — TESTED AGAINST
+v4, THE SPECIMEN IT EXISTS TO FAIL:**
+
+    18:53:55 – 18:54:21   8 sown            (wave 1)
+    18:55:40               FIRST harvested
+    18:56:01 – 18:56:21   4 sown            <- after the first harvest
+    19:10:46 – 19:12:52   8 sown            <- after the first harvest
+    19:14:27               LAST farm event of the entire run
+
+> ## **v4 HAS TWELVE SOWS AFTER ITS FIRST HARVEST. v4 PASSES THE TEST. v4 IS THE RUN
+> THAT STARVED TO DEATH.**
+
+★★★★★★ **F1 was rewritten from "completions > 0" BECAUSE that bar was satisfiable by a
+dead colony — and this operationalization is satisfiable by THE SAME DEAD COLONY.**
+
+★★★ **"Generation-2" as a concept does not separate them either: v4 reached generation
+THREE.** *It did not fail to start wave two — **it stopped**.*
+
+### ✅ THE REVISED TEST — **calibrated against BOTH specimens**
+
+    F1 PASSES iff farm activity (sown OR harvested) occurs in the FINAL THIRD
+    of the scored window.
+
+    v4:  ZERO farm events in parts 001 and 002 (the last two thirds)  -> FAILS
+    v5:  ~24.6 cycles/plot at T+127 of ~152 min                        -> on track
+
+★★★★ **The question was never "did wave two happen." It is "WAS THE FARM STILL PRODUCING
+AT THE END."** *I claimed "calibrated by a real specimen" for F7 and verified it; I did
+not verify it for F1, which is the headline bar.*
+
+⚠ **RULING PENDING (Fable).** *If the capture lands before the ruling, scoring proceeds
+on the OLD wording and reports both — a bar may not be changed after seeing its data,
+even to fix a bar that deserves fixing.*
+
+---
+
 ### F1 — **GENERATION-2 COMPLETIONS > 0** *(Fable, registered pre-run)*
 
 > ## **SOWS CONTINUING PAST THE FIRST SEED WAVE. NOT "COMPLETIONS > 0".**
