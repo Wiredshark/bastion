@@ -136,5 +136,11 @@ else:
 v5_boot_epoch=$(date -d "2026-08-11T23:55:10.897657Z" +%s 2>/dev/null || echo 0)
 now_epoch=$(date -u +%s)
 v5_offset_secs=$(( now_epoch - v5_boot_epoch ))
+v5_pid=$(cat bastion-test-evidence/live-playthrough/item8-v5-server.pid 2>/dev/null)
+if [[ -n "$v5_pid" ]] && kill -0 "$v5_pid" 2>/dev/null; then
+    v5_concurrent=true
+else
+    v5_concurrent=false
+fi
 
-echo "LEG_RESULT mode=$mode leg=$leg promotion_tick=$promo_tick v5_concurrent=true v5_offset_secs=$v5_offset_secs"
+echo "LEG_RESULT mode=$mode leg=$leg promotion_tick=$promo_tick v5_concurrent=$v5_concurrent v5_offset_secs=$v5_offset_secs"

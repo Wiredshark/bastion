@@ -84,10 +84,38 @@ not yet distinguished:
 **Planned to distinguish them:** re-run 2-3 capped legs after v5
 finishes and the box is idle again, compare against this set.
 
-**Partial answer already visible (Opus):** the earlier standalone **192**
-sits INSIDE this run's capped range (185-233); the earlier **624** does
-not. That points toward "the isolated leg is a cleaner instrument," not
-"the box was uniformly loaded" — the post-v5 clean set will confirm.
+**Partial answer that was visible mid-run (Opus):** the earlier
+standalone **192** sits INSIDE this run's capped range (185-233); the
+earlier **624** does not. Read as leaning toward "the isolated leg is a
+cleaner instrument."
+
+## THE IDLE-BOX RE-RUN — INCONCLUSIVE, reported honestly rather than
+forced into either hypothesis
+
+Run after v5's teardown (`8dd2f9463b`), box confirmed idle (no veloren
+processes running), 3 capped legs (`n8-capped-9/10/11`, same script,
+same isolated port):
+
+    idle-box:      [195, 231, 348]  mean=258.0
+    v5-concurrent: [185, 188, 192, 220, 220, 221, 232, 233]  mean=211.4
+
+**The idle-box legs are NOT tighter — they're WIDER (153-tick spread
+vs 48) and include a value (348) ABOVE the v5-concurrent set's own
+max.** This does not confirm hypothesis 1 (cleaner instrument) the way
+the mid-run partial read suggested; if anything the raw numbers lean
+the other way, though n=3 is too small to conclude that confidently
+either. **Neither hypothesis is decided by this data.** The most honest
+reading: promotion-tick has real run-to-run variance from something
+this small sample doesn't isolate (OS scheduling, disk cache state,
+CPU frequency scaling after idle) — the tight v5-concurrent set may
+itself be the less-typical sample, not the idle-box one.
+
+**One method note:** leg 9's own result line incorrectly read
+`v5_concurrent=true` (the script hardcoded that field instead of
+checking the actual PID — v5 was already torn down by then). Fixed in
+the script before legs 10/11 ran; leg 9's TICK VALUE (348) is
+unaffected by the bug (it's a real measurement, only the metadata label
+was wrong) and is kept in the set above.
 
 ## WHY THE ORDERING DEFECT DOES NOT EXPLAIN THE RESULT (Opus's argument,
 registered here)
