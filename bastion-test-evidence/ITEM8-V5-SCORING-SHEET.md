@@ -25,12 +25,38 @@ under `bastion-test-evidence/live-playthrough/…`, not `bastion-test-evidence/�
 |---|---|---|---|
 | **1** | **gate 0** | `grep 'Server version:'` | `b96830d1` |
 | **2** | **message vocabulary** | `grep -o 'bastion: [a-z_ ]*' \| sort \| uniq -c \| sort -rn` | **22 distinct** |
-| **3** | **F7/F10 position concentration** | `grep 'bastion: job completed' \| sed 's/.*kind=\([A-Za-z()]*\) pos=\(Vec3 {[^}]*}\).*/\1 @ \2/' \| sort \| uniq -c \| sort -rn` | **143/145 at one cell (98.6%)** |
+| **3** | ⛔ **F7/F10 — SEE THE CORRECTION BELOW** | ~~`grep 'bastion: job completed' …`~~ | *v4: 143/145 at one cell (98.6%)* |
 | **4** | **food curve + terminal streak** | `grep -o 'food_stock=[0-9]*' \| sort -t= -k2 -n \| uniq -c` | **peak 18; 517 consecutive zeros** |
 | **5** | **farm generation counts** | `grep -c 'bastion: tilled\|bastion: sown\|bastion: harvested'` | **19 · 20 · 20** |
 
 ★★★ **Pattern 3 is the F7 bar itself** *(>10% at any single position = FAIL)*, **and it
 is calibrated by a real specimen: v4 fails it at 98.6%.**
+
+---
+
+### 🛑 CORRECTION — **PATTERN 3 IS WRONG FOR v5, CAUGHT BEFORE TEARDOWN**
+
+**`grep -c 'bastion: job completed'` on v5 returns ZERO.** *F8's fix moved
+emergency-access completions onto their own labelled line, and farm completions were
+always on their own (`tilled`/`sown`/`harvested`).*
+
+> ## **THE GENERIC LINE NO LONGER CARRIES THE COMPLETION POPULATION. SCORING F7 OFF IT
+> WOULD DIVIDE BY A DENOMINATOR OF ZERO — OR WORSE, SCORE 100% OF A THREE-ROW SAMPLE.**
+
+★★★★★★ **THIS IS THE SINGLE-CHANNEL COMPLETION COUNT ERROR — THE SAME ONE THAT
+PRODUCED THE 0/87 MISCOUNT EARLIER IN THIS ARC.** *I made it then; my pre-written
+pattern would have made it again at teardown.* **The sheet earned its keep before the
+run ended.**
+
+**F7/F10 IS SCORED OVER THE UNION OF ALL THREE COMPLETION CHANNELS:**
+
+    1.  farm arm     'bastion: tilled' | 'bastion: sown' | 'bastion: harvested'
+    2.  emergency    'bastion: emergency access job completed'
+    3.  generic      'bastion: job completed'      (real Mine/Chop/Build)
+
+★★★ **Then group by `pos` across the union, and apply the >10% bar to that total.**
+⚠ **A new emit channel changes every count's DENOMINATOR** — *and F8 created one
+DURING the arc it is scored in.*
 
 ---
 
