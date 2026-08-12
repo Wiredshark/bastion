@@ -43,6 +43,13 @@ launch):**
 Identical to v3/v4 — no drift, expected since this arc's fixes touch
 mine-completion/egress lifecycle, not decay/leak config.
 
+**Cosmetic note (Opus, gate-0 review):** the raw log line this is read from
+still says `"bastion effective ITEM8-V4 config"` — a stale label from when
+these two thresholds were introduced, not a claim about which fix's
+config is running. Substantively correct (the thresholds are deliberately
+unchanged for v5); flagged so a future reader of the raw log doesn't
+misread the label as "v5 is running v4's code." Not changed mid-run.
+
 `Authentication is disabled` confirmed. Assets resolved:
 `E:/veloren-master/.engine-integration-wt/assets`.
 
@@ -104,12 +111,24 @@ regardless.
     F5  claim-expiry events (unreachable-gated) > 0, zero = VOID not PASS
     F6  generic leak-witness backstop: zero firings = expected PASS,
         any firing = a RECORDED FINDING, never absorbed
-    F9  emergency_access_completions: any nonzero value is EXPECTED and
-        benign (the honest counter this run introduces) — read alongside
-        real production, never confused with it
-    F10 mine-cell repeat-completion check: no single (kind, pos) pair
-        should approach v4's 138/143-per-part pattern; a handful is normal
-        terrain variance, hundreds is defect 1 recurring uncaught
+    F7  no single position accounts for >10% of completions (ITEM8-V5-
+        PACKET.md, d3c54e461b -- calibrated by v4 itself: 143/145 = 98.6%
+        at one cell would have failed this at ANY reasonable threshold)
+    F8  "job completed" fires ONLY for completions with a world-effect
+        (the metric fix landed in e60e34ec5d/4d9180252f -- this bar is
+        what SCORES it live, not just unit-tests it)
+
+**Opus's pre-data correction, registered here before any data exists**
+(entry 7's "what observation would make this go red" applied to the bar
+tier itself): my first draft of this record had F9/F10 as separate,
+uncalibrated bars duplicating F7/F8 with vaguer thresholds ("a handful is
+normal, hundreds is defect 1" has no number). Corrected:
+
+    emergency_access_completions -- a MEASURE, reported alongside real
+        production every heartbeat, NEVER scored as pass/fail. Nonzero is
+        expected and uninformative alone (it just means the exhaustion
+        bound fired at least once, which the bar's F5 already covers).
+    F10 folded into F7 -- same threshold (>10%), no separate name.
 
 ## WHAT WOULD VOID THIS RUN
 
@@ -119,9 +138,13 @@ regardless.
 - **`Server version` in this log ever fails to match `4d918025`**: cannot
   happen absent a mid-run relink, which the "one binary for the whole run"
   precondition rules out by construction.
-- **A single (kind, pos) pair repeat-completing at anywhere near v4's
-  scale**: would mean defect 1 recurred through a path the exhaustion
-  bound doesn't reach — a genuine new finding, not absorbed into F1.
+- **F7 fails (a single position accounts for >10% of completions)**: would
+  mean defect 1 recurred through a path the exhaustion bound doesn't
+  reach — a genuine new finding, not absorbed into F1. Calibrated by v4
+  itself: 143/145 = 98.6% at one cell would have failed this immediately.
+- **F8 fails (`job completed` fires for a suppressed-effect completion)**:
+  the metric fix (`e60e34ec5d`/`4d9180252f`) regressed live, not just in
+  the unit tests that already cover it.
 
 ## WHAT THIS RUN ANSWERS AS A BY-PRODUCT (no separate live capture, per Opus)
 
