@@ -55,9 +55,34 @@ not yet distinguished:
 **Planned to distinguish them:** re-run 2-3 capped legs after v5
 finishes and the box is idle again, compare against this set.
 
-## WHAT REMAINS — the mandatory planted failure
+**Partial answer already visible (Opus):** the earlier standalone **192**
+sits INSIDE this run's capped range (185-233); the earlier **624** does
+not. That points toward "the isolated leg is a cleaner instrument," not
+"the box was uniformly loaded" — the post-v5 clean set will confirm.
 
-Not yet run: inject a delay into chunk-gen (or an equivalent artificial
-wall-coupling) and prove the distribution comparison goes RED by name —
-i.e., that the SAME instrument that found this clean separation can also
-detect a smaller, deliberately-introduced shift, not just this large one.
+## WHY THE ORDERING DEFECT DOES NOT EXPLAIN THE RESULT (Opus's argument,
+registered here)
+
+Sample A (legs 1-6, capped-only block under v5 load) stays formally
+UNSCOREABLE against the compression axis — that ruling stands, no
+walking it back. But the finding survives it anyway: **the capped arm
+spans the ENTIRE window this dataset covers (legs 1-8, v5_offset_secs
+992 through 1892) and its own spread is only 185-233, ~26%.** That
+spread IS the direct measurement of how much v5's background load moves
+this number across the whole run. A 6x, zero-overlap gap to the uncapped
+arm is not explainable by a confound whose own measured size is ~26%.
+The interleaving fix (legs 7+) is still the right process fix going
+forward; it just isn't what's carrying this particular result.
+
+## THE MANDATORY PLANTED FAILURE — STOOD DOWN, not skipped (Opus's ruling)
+
+The required structure was RED on the axis (capped vs uncapped) AND
+GREEN on a matched control (capped vs capped). Both already exist in
+this data: axis = 6x shift, zero overlap (RED); control = the capped
+arm's own 185-233 spread, tight, consistent across the whole run
+(GREEN). A planted chunk-gen delay exists to prove a comparison that
+found nothing COULD have found something — this comparison already
+found something, decisively. Injecting a synthetic failure now would
+prove a fact the real data already proved. Not run; will run on request
+(Fable) if wanted for the permanent record, but not required to certify
+this result.
