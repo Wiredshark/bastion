@@ -148,8 +148,32 @@ CANDIDATE systematic effect, not an established one.**
 ### THE REPLACEMENT PROTOCOL
 
     N=8 per arm, capped vs uncapped, same seed/scenario/binary
+    -> ARMS INTERLEAVED (capped, uncapped, capped, uncapped, ...)
     -> compare the DISTRIBUTION of promotion-completion tick
     -> PASS requires uncapped's distribution inside capped's spread
+
+### ⛔ THE ARMS MUST BE INTERLEAVED — **added 2026-08-11, mid-fan**
+
+**Promotion tick is bounded by REAL CPU TIME (background chunk generation). Any
+concurrent load is therefore part of the measurement.**
+
+> ## **RUNNING THE CAPPED ARM FIRST AND THE UNCAPPED ARM SECOND, WHILE A 2.5-HOUR
+> ENDURANCE RUN SHARES THE BOX, IS A BETWEEN-ARM SYSTEMATIC — AND IT WOULD
+> MASQUERADE AS THE EFFECT UNDER TEST.**
+
+★★★★ *v5's own load drifts across its lifetime (v4's churn ramped, then saturated at
+~71,800/sample). Interleaving makes that drift **common-mode** instead of confounded
+with the axis.* **A matched control must match on SYSTEM as well as axis.**
+
+★★ **Every leg records its background condition as a FIELD** *(`v5_concurrent`, wall
+offset from the concurrent run's launch)* — **a number must carry its producer, and
+"measured while an endurance run shared the box" is provenance, not a footnote.**
+
+⚠ **OPEN, REGISTERED PRE-DATA:** *the first isolated capped legs read **233, 220**
+against earlier standalone capped runs of **624** and **192**. Setups differ (driver
+script vs isolated leg), so they may not be comparable — but a 192–624 spread
+collapsing to 220–233 needs an explanation before the distribution is scored.*
+**Discriminator: re-run two capped legs AFTER the concurrent run finishes.**
 
 ★★★ **Distributions, not fingerprints** — *bit-identity was never available on the live
 path, and 5b's control is what proved it.*
