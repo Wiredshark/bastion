@@ -362,3 +362,42 @@ doc comment that foresaw its own defect: it keeps being read as true.**
 ★★★★★ **The limit v3 named — repetitions costing a day each — is eased by PARALLELISM,
 not by compression.** *That was always the sounder half of the argument; compression
 was the part that needed proving, and it didn't prove.*
+
+---
+
+## 5 · ★★★★★★ THE REVERSAL CONDITION — **the retraction is not permanent**
+
+**Ben charter, relayed 2026-08-11: TICK-DRIVEN WORLD-LOADING.** *A per-TICK terrain
+provisioning budget, making chunk promotion tick-coupled rather than wall-bounded —
+the deterministic-worldgen concept promoted from the harness to the live server.*
+
+> ## **IT WOULD MAKE THE WALL-CLOCK DEPENDENCY CLASS EXTINCT BY CONSTRUCTION, AND
+> EVERYTHING RETRACTED IN §4 COMES BACK.**
+
+★★★★ **The acceptance test already exists and already fired:**
+
+    TONIGHT (pre-change):   capped vs uncapped -> 6x separation, ZERO overlap   [RED]
+    POST-CHANGE (required): capped vs uncapped -> OVERLAP                       [GREEN]
+
+★★★★★★ **THIS IS THE IDEAL ACCEPTANCE SHAPE, AND IT CAME FREE: the instrument
+DEMONSTRATED ITS SENSITIVITY BEFORE THE FIX EXISTED, so its silence afterwards is
+informative.** *Most planted-failure work is an attempt to manufacture exactly this
+situation artificially.* **Here the negative certification priced the bounty on its own
+removal.**
+
+### ⚠ BUT THE POST-CHANGE GREEN NEEDS ITS OWN CONTROL — **registered now**
+
+**A fix that pins promotion to a fixed tick BY CONSTRUCTION would pass N=8
+trivially.** ★★★★★ *That is the DELETED-MECHANISM vacuity — disguise #3 in the
+checklist's table — arriving in the FIX rather than in the test.*
+
+> ## **POST-CHANGE, "OVERLAP" AND "THE INSTRUMENT CAN NO LONGER SEE WALL-COUPLING" ARE
+> THE SAME OBSERVATION.**
+
+★★★ **So the post-change run needs a PLANTED wall-clock dependency, proving N=8 STILL
+SEPARATES when one is present.** *Tonight's red came free; tomorrow's green does not* —
+[[a-falsifier-needs-its-own-control]].
+
+★★ **Stated here rather than at spec time so the acceptance bar is not written as
+"overlap" alone.** *One extra leg, and it is the difference between "wall-coupling
+removed" and "wall-coupling invisible."*
