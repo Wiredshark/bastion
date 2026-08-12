@@ -1,0 +1,1290 @@
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling unicode-ident v1.0.24
+   Compiling serde_core v1.0.228
+   Compiling cfg-if v1.0.4
+   Compiling windows-link v0.2.1
+   Compiling serde v1.0.228
+   Compiling libm v0.2.16
+   Compiling getrandom v0.3.4
+   Compiling log v0.4.32
+   Compiling autocfg v1.5.1
+   Compiling crossbeam-utils v0.8.21
+   Compiling critical-section v1.2.0
+   Compiling shlex v2.0.1
+   Compiling find-msvc-tools v0.1.9
+   Compiling portable-atomic v1.13.1
+   Compiling either v1.16.0
+   Compiling allocator-api2 v0.2.21
+   Compiling windows-sys v0.61.2
+   Compiling memchr v2.8.2
+   Compiling equivalent v1.0.2
+   Compiling rayon-core v1.13.0
+   Compiling foldhash v0.2.0
+   Compiling thiserror v2.0.18
+   Compiling version_check v0.9.5
+   Compiling num-traits v0.2.19
+   Compiling pin-project-lite v0.2.17
+   Compiling zerocopy v0.8.52
+   Compiling libc v0.2.186
+   Compiling itoa v1.0.18
+   Compiling rand_core v0.10.1
+   Compiling getrandom v0.4.2
+   Compiling anyhow v1.0.102
+   Compiling heck v0.5.0
+   Compiling stable_deref_trait v1.2.1
+   Compiling jobserver v0.1.34
+   Compiling lazy_static v1.5.0
+   Compiling once_cell v1.21.4
+   Compiling crossbeam-epoch v0.9.18
+   Compiling winapi-x86_64-pc-windows-gnu v0.4.0
+   Compiling tracing-core v0.1.36
+   Compiling winapi v0.3.9
+   Compiling cc v1.2.64
+   Compiling windows_x86_64_gnu v0.52.6
+   Compiling typenum v1.20.1
+   Compiling crossbeam-deque v0.8.6
+   Compiling hashbrown v0.16.1
+   Compiling slab v0.4.12
+   Compiling crc32fast v1.5.0
+   Compiling arrayvec v0.7.6
+   Compiling zmij v1.0.21
+   Compiling bitflags v2.13.0
+   Compiling scopeguard v1.2.0
+   Compiling syn v2.0.117
+   Compiling generic-array v0.14.7
+   Compiling bytes v1.11.1
+   Compiling cfg_aliases v0.2.1
+   Compiling hashbrown v0.17.1
+   Compiling semver v1.0.28
+   Compiling rustc-hash v2.1.2
+   Compiling futures-core v0.3.32
+   Compiling windows-targets v0.52.6
+   Compiling rayon v1.12.0
+   Compiling icu_properties_data v2.2.0
+   Compiling ident_case v1.0.1
+   Compiling icu_normalizer_data v2.2.0
+   Compiling ahash v0.8.12
+   Compiling getrandom v0.2.17
+   Compiling unicode-width v0.2.2
+   Compiling syn v1.0.109
+   Compiling wasmtime-internal-core v45.0.2
+   Compiling rustversion v1.0.22
+   Compiling pkg-config v0.3.33
+   Compiling windows-result v0.4.1
+   Compiling windows_x86_64_gnu v0.53.1
+   Compiling ttf-parser v0.25.1
+   Compiling serde_json v1.0.150
+   Compiling simd-adler32 v0.3.9
+   Compiling num-integer v0.1.46
+   Compiling uuid v1.23.3
+   Compiling parking_lot_core v0.9.12
+   Compiling adler2 v2.0.1
+   Compiling cpufeatures v0.3.0
+   Compiling futures-sink v0.3.32
+   Compiling ab_glyph_rasterizer v0.1.10
+   Compiling fnv v1.0.7
+   Compiling crossbeam-channel v0.5.15
+   Compiling itertools v0.14.0
+   Compiling futures-channel v0.3.32
+   Compiling miniz_oxide v0.8.9
+   Compiling target-lexicon v0.13.5
+   Compiling windows-targets v0.53.5
+   Compiling chacha20 v0.10.0
+   Compiling lock_api v0.4.14
+   Compiling byteorder v1.5.0
+   Compiling futures-io v0.3.32
+   Compiling futures-task v0.3.32
+   Compiling thiserror v1.0.69
+   Compiling windows-sys v0.60.2
+   Compiling dirs-sys-next v0.1.2
+   Compiling litemap v0.8.2
+   Compiling siphasher v1.0.3
+   Compiling rand v0.10.1
+   Compiling indexmap v2.14.0
+   Compiling writeable v0.6.3
+   Compiling cranelift-srcgen v0.132.2
+   Compiling windows-link v0.1.3
+   Compiling directories-next v2.0.0
+   Compiling ordered-float v5.3.0
+   Compiling windows-strings v0.5.1
+   Compiling utf8_iter v1.0.4
+   Compiling aho-corasick v1.1.4
+   Compiling regex-syntax v0.8.11
+   Compiling owned_ttf_parser v0.25.1
+   Compiling leb128fmt v0.1.0
+   Compiling flate2 v1.1.9
+   Compiling windows-strings v0.4.2
+   Compiling windows-result v0.3.4
+   Compiling fdeflate v0.3.7
+   Compiling serde_derive v1.0.228
+   Compiling thiserror-impl v2.0.18
+   Compiling synstructure v0.13.2
+   Compiling zerocopy-derive v0.8.52
+   Compiling zerovec-derive v0.11.3
+   Compiling displaydoc v0.2.6
+   Compiling tracing-attributes v0.1.31
+   Compiling bytemuck_derive v1.10.2
+   Compiling windows-interface v0.59.3
+   Compiling windows-implement v0.60.2
+   Compiling ab_glyph v0.2.32
+   Compiling futures-macro v0.3.32
+   Compiling tokio-macros v2.7.0
+   Compiling thiserror-impl v1.0.69
+   Compiling zerofrom-derive v0.1.7
+   Compiling yoke-derive v0.8.2
+   Compiling cranelift-assembler-x64-meta v0.132.2
+   Compiling pulley-macros v45.0.2
+   Compiling gimli v0.33.0
+   Compiling regex-automata v0.4.14
+   Compiling futures-util v0.3.32
+   Compiling bytemuck v1.25.0
+   Compiling strum_macros v0.28.0
+   Compiling wasmtime-internal-versioned-export-macros v45.0.2
+   Compiling tracing v0.1.44
+   Compiling async-trait v0.1.89
+   Compiling bumpalo v3.20.3
+   Compiling rustc-demangle v0.1.27
+   Compiling smallvec v1.15.2
+   Compiling virtue v0.0.18
+   Compiling percent-encoding v2.3.2
+   Compiling pxfm v0.1.29
+   Compiling zerofrom v0.1.8
+   Compiling paste v1.0.15
+   Compiling typeid v1.0.3
+   Compiling cranelift-bitset v0.132.2
+   Compiling yoke v0.8.3
+   Compiling zune-core v0.5.1
+   Compiling parking_lot v0.12.5
+   Compiling cranelift-isle v0.132.2
+   Compiling bincode_derive v2.0.1
+   Compiling pulley-interpreter v45.0.2
+   Compiling cranelift-entity v0.132.2
+   Compiling form_urlencoded v1.2.2
+   Compiling zerovec v0.11.6
+   Compiling zerotrie v0.2.4
+   Compiling strum v0.28.0
+   Compiling zune-jpeg v0.5.15
+   Compiling ppv-lite86 v0.2.21
+   Compiling wasmparser v0.248.0
+   Compiling regex v1.12.4
+   Compiling windows-core v0.61.2
+   Compiling cranelift-bforest v0.132.2
+   Compiling png v0.18.1
+   Compiling rand_core v0.6.4
+   Compiling byteorder-lite v0.1.0
+   Compiling static_assertions v1.1.0
+   Compiling cranelift-codegen-shared v0.132.2
+   Compiling unty v0.0.4
+   Compiling object v0.39.1
+   Compiling minimal-lexical v0.2.1
+   Compiling tinystr v0.8.3
+   Compiling potential_utf v0.1.5
+   Compiling bincode v2.0.1
+   Compiling darling_core v0.21.3
+   Compiling icu_collections v2.2.0
+   Compiling cranelift-codegen-meta v0.132.2
+   Compiling icu_locale_core v2.2.0
+   Compiling nom v7.1.3
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling cranelift-assembler-x64 v0.132.2
+   Compiling windows-core v0.62.2
+   Compiling rustc_version v0.4.1
+   Compiling hybrid-array v0.4.12
+   Compiling approx v0.5.1
+   Compiling notify-types v2.1.0
+   Compiling filetime v0.2.29
+   Compiling mint v0.5.9
+   Compiling cpp_demangle v0.4.5
+   Compiling ahash v0.4.8
+   Compiling icu_provider v2.2.0
+   Compiling moxcms v0.8.1
+   Compiling macro_rules_attribute-proc_macro v0.1.3
+   Compiling digest v0.10.7
+   Compiling tynm v0.1.10
+   Compiling vek v0.17.2
+   Compiling tar v0.4.46
+   Compiling macro_rules_attribute v0.1.3
+   Compiling hashbrown v0.9.1
+   Compiling ron v0.12.1
+   Compiling icu_normalizer v2.2.0
+   Compiling icu_properties v2.2.0
+   Compiling darling_macro v0.21.3
+   Compiling rand_chacha v0.3.1
+   Compiling ipnet v2.12.0
+   Compiling cobs v0.3.0
+   Compiling cranelift-codegen v0.132.2
+   Compiling nougat-proc_macros v0.2.4
+   Compiling shred-derive v0.7.0
+   Compiling windows-threading v0.1.0
+   Compiling zstd-sys v2.0.16+zstd.1.5.7
+   Compiling deranged v0.5.8
+   Compiling nom v8.0.0
+   Compiling encoding_rs v0.8.35
+   Compiling idna_adapter v1.2.2
+   Compiling io-lifetimes v2.0.4
+   Compiling time-core v0.1.9
+   Compiling winnow v1.0.3
+   Compiling cpufeatures v0.2.17
+   Compiling powerfmt v0.2.0
+   Compiling idna v1.1.0
+   Compiling foldhash v0.1.5
+   Compiling atomic_refcell v0.1.14
+   Compiling sync_file v0.3.2
+   Compiling num-conv v0.2.2
+   Compiling wasm-encoder v0.248.0
+   Compiling arbitrary v1.4.2
+   Compiling hashbrown v0.15.5
+   Compiling shred v0.16.1
+   Compiling toml_parser v1.1.2+spec-1.1.0
+   Compiling sha2 v0.10.9
+   Compiling time v0.3.49
+   Compiling nougat v0.2.4
+   Compiling url v2.5.8
+   Compiling image v0.25.10
+   Compiling windows-future v0.2.1
+   Compiling darling v0.21.3
+   Compiling cranelift-control v0.132.2
+   Compiling dot_vox v5.2.0
+   Compiling rand v0.8.6
+   Compiling postcard v1.1.3
+   Compiling wavefront v0.2.3
+   Compiling crypto-common v0.2.2
+   Compiling block-buffer v0.12.1
+   Compiling windows-collections v0.2.0
+   Compiling windows-numerics v0.2.0
+   Compiling winapi-util v0.1.11
+   Compiling socket2 v0.6.4
+   Compiling mio v1.2.1
+   Compiling regalloc2 v0.15.1
+   Compiling veloren-common-base v0.18.0 (E:\veloren-master\.engine-integration-wt\common\base)
+   Compiling specs-derive v0.4.1 (https://github.com/amethyst/specs.git?rev=4e2da1df29ee840baa9b936593c45592b7c9ae27#4e2da1df)
+   Compiling phf_shared v0.12.1
+   Compiling hibitset v0.6.4
+   Compiling termcolor v1.4.1
+   Compiling same-file v1.0.6
+   Compiling ring v0.17.14
+   Compiling windows-sys v0.59.0
+   Compiling serde_spanned v1.1.1
+   Compiling walkdir v2.5.0
+   Compiling crossbeam-queue v0.3.12
+   Compiling wasmprinter v0.248.0
+   Compiling slotmap v1.1.1
+   Compiling zeroize v1.9.0
+   Compiling tokio v1.52.3
+   Compiling toml_writer v1.1.1+spec-1.1.0
+   Compiling notify v8.2.0
+   Compiling tuple_utils v0.4.0
+   Compiling wasmtime-internal-component-util v45.0.2
+   Compiling const-oid v0.10.2
+   Compiling chrono-tz v0.10.4
+   Compiling shrev v1.1.3
+   Compiling rustls-pki-types v1.14.1
+   Compiling phf v0.12.1
+   Compiling windows v0.61.3
+   Compiling digest v0.11.3
+   Compiling enumset_derive v0.15.0
+   Compiling assets_manager v0.13.9
+   Compiling specs v0.20.0 (https://github.com/amethyst/specs.git?rev=4e2da1df29ee840baa9b936593c45592b7c9ae27#4e2da1df)
+   Compiling veloren-common v0.18.0 (E:\veloren-master\.engine-integration-wt\common)
+   Compiling half v2.7.1
+   Compiling veloren-common-i18n v0.18.0 (E:\veloren-master\.engine-integration-wt\common\i18n)
+   Compiling chrono v0.4.45
+   Compiling enum-map-derive v0.17.0
+   Compiling inline_tweak_derive v4.0.0
+   Compiling serde_repr v0.1.20
+   Compiling wasmtime-environ v45.0.2
+   Compiling veloren-common-assets v0.18.0 (E:\veloren-master\.engine-integration-wt\common\assets)
+   Compiling fxhash v0.2.1
+warning: method `plugin_source_count` is never used
+   --> common\assets\src\plugin_cache.rs:340:12
+    |
+169 | impl CombinedCache {
+    | ------------------ method in this implementation
+...
+340 |     pub fn plugin_source_count(&self) -> usize {
+    |            ^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling unicode-segmentation v1.13.3
+   Compiling io-extras v0.18.4
+   Compiling zstd-safe v7.2.4
+   Compiling enumset v1.1.13
+   Compiling inline_tweak v1.2.5
+   Compiling enum-map v2.7.3
+   Compiling sha2 v0.11.0
+warning: `veloren-common-assets` (lib) generated 1 warning
+   Compiling spin_sleep v1.3.3
+   Compiling futures-executor v0.3.32
+   Compiling rand_chacha v0.10.0
+   Compiling num-derive v0.4.2
+   Compiling wasm-encoder v0.252.0
+   Compiling ittapi-sys v0.4.0
+   Compiling id-arena v2.3.0
+   Compiling roots v0.0.8
+   Compiling unicode-xid v0.2.6
+   Compiling cap-primitives v3.4.5
+   Compiling untrusted v0.9.0
+   Compiling wasmtime-internal-unwinder v45.0.2
+   Compiling futures v0.3.32
+   Compiling wit-parser v0.248.0
+   Compiling fs-set-times v0.20.3
+   Compiling winx v0.36.4
+   Compiling wasmtime-internal-fiber v45.0.2
+   Compiling thread-priority v3.0.0
+   Compiling wasmtime-internal-jit-debug v45.0.2
+   Compiling toml_datetime v0.7.5+spec-1.1.0
+   Compiling sum_type v0.2.0
+   Compiling wasmtime-internal-cache v45.0.2
+   Compiling fixedbitset v0.4.2
+   Compiling wast v252.0.0
+   Compiling rustls v0.23.40
+   Compiling leb128 v0.2.6
+   Compiling winnow v0.7.15
+   Compiling wasmtime-internal-cranelift v45.0.2
+   Compiling ambient-authority v0.0.2
+   Compiling wasmtime-internal-component-macro v45.0.2
+   Compiling fastrand v2.4.1
+   Compiling maybe-owned v0.3.4
+   Compiling tempfile v3.27.0
+   Compiling petgraph v0.6.5
+   Compiling wast v35.0.2
+   Compiling zstd v0.13.3
+   Compiling toml v0.9.12+spec-1.1.0
+   Compiling errno v0.3.14
+   Compiling wasmtime v45.0.2
+   Compiling debugid v0.8.0
+   Compiling rustls-webpki v0.103.13
+   Compiling http v1.4.2
+   Compiling rand_core v0.9.5
+   Compiling subtle v2.6.1
+   Compiling wasmtime-internal-wit-bindgen v45.0.2
+warning: unused import: `AUTHORITATIVE_SCAN_ROOTS`
+  --> common\src\determinism_scan.rs:25:38
+   |
+25 | use crate::scanner_framework::{self, AUTHORITATIVE_SCAN_ROOTS};
+   |                                      ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `rand::rng`
+  --> common\src\states\basic_ranged.rs:19:5
+   |
+19 | use rand::rng;
+   |     ^^^^^^^^^
+
+warning: unused import: `rand::rng`
+  --> common\src\states\charged_ranged.rs:14:5
+   |
+14 | use rand::rng;
+   |     ^^^^^^^^^
+
+warning: unused import: `rng`
+  --> common\src\states\rapid_ranged.rs:17:20
+   |
+17 | use rand::{RngExt, rng};
+   |                    ^^^
+
+warning: unused import: `rng`
+  --> common\src\states\sprite_summon.rs:14:20
+   |
+14 | use rand::{RngExt, rng};
+   |                    ^^^
+
+warning: unused import: `rand::rng`
+ --> common\src\states\transform.rs:4:5
+  |
+4 | use rand::rng;
+  |     ^^^^^^^^^
+
+   Compiling cap-std v3.4.5
+   Compiling khronos_api v3.1.0
+   Compiling base64 v0.22.1
+   Compiling rand_chacha v0.9.0
+   Compiling fxprof-processed-profile v0.8.1
+   Compiling witx v0.9.1
+   Compiling ittapi v0.4.0
+   Compiling http-body v1.0.1
+   Compiling wasmtime-internal-jit-icache-coherence v45.0.2
+   Compiling addr2line v0.26.1
+   Compiling num-iter v0.1.45
+   Compiling tinyvec_macros v0.1.1
+   Compiling profiling v1.0.18
+   Compiling rustix v1.1.4
+   Compiling strsim v0.11.1
+   Compiling wiggle-macro v45.0.2
+   Compiling raw-window-handle v0.6.2
+   Compiling httparse v1.10.1
+   Compiling tinyvec v1.11.0
+   Compiling rand v0.9.4
+   Compiling matchers v0.2.0
+   Compiling nu-ansi-term v0.50.3
+   Compiling darling_core v0.23.0
+   Compiling num-bigint v0.4.6
+   Compiling windows-result v0.2.0
+   Compiling tracing-log v0.2.0
+   Compiling toml_datetime v1.1.1+spec-1.1.0
+   Compiling sharded-slab v0.1.7
+   Compiling thread_local v1.1.9
+   Compiling xml-rs v0.8.28
+   Compiling cap-fs-ext v3.4.5
+   Compiling try-lock v0.2.5
+   Compiling tower-service v0.3.3
+   Compiling proc-macro-hack v0.5.20+deprecated
+   Compiling rustc-hash v1.1.0
+   Compiling num_cpus v1.17.0
+   Compiling wat v1.252.0
+   Compiling tracing-subscriber v0.3.23
+   Compiling toml v1.1.2+spec-1.1.0
+   Compiling want v0.3.1
+   Compiling windows-strings v0.1.0
+   Compiling wasm-compose v0.248.0
+   Compiling iana-time-zone v0.1.65
+   Compiling windows-implement v0.58.0
+   Compiling equator-macro v0.4.2
+   Compiling windows-interface v0.58.0
+   Compiling num-rational v0.4.2
+   Compiling generator v0.8.9
+   Compiling gl_generator v0.14.0
+   Compiling num-complex v0.4.6
+   Compiling bitflags v1.3.2
+   Compiling fixed v1.29.0
+   Compiling proc-macro-nested v0.1.7
+   Compiling radium v0.7.0
+   Compiling atomic-waker v1.1.2
+   Compiling litrs v1.0.0
+   Compiling httpdate v1.0.3
+   Compiling glutin_wgl_sys v0.6.1
+   Compiling equator v0.4.2
+   Compiling windows-core v0.58.0
+   Compiling cap-net-ext v3.4.5
+   Compiling wiggle-generate v45.0.2
+   Compiling darling_macro v0.23.0
+   Compiling cap-time-ext v3.4.5
+   Compiling hyper v1.10.1
+   Compiling num v0.4.3
+   Compiling veloren-common-ecs v0.18.0 (E:\veloren-master\.engine-integration-wt\common\ecs)
+   Compiling document-features v0.2.12
+   Compiling unic-langid-impl v0.9.6
+   Compiling quinn-udp v0.5.14
+   Compiling naga v27.0.3
+   Compiling concurrent-queue v2.5.0
+   Compiling libloading v0.8.9
+   Compiling az v1.3.0
+   Compiling vcpkg v0.2.15
+   Compiling parking v2.2.1
+   Compiling darling v0.23.0
+   Compiling ash v0.38.0+1.3.281
+   Compiling fixedbitset v0.5.7
+   Compiling object v0.37.3
+   Compiling tap v1.0.1
+   Compiling prometheus v0.14.0
+   Compiling khronos-egl v6.0.0
+   Compiling hex v0.4.3
+   Compiling bit-vec v0.8.0
+   Compiling petgraph v0.8.3
+   Compiling wyz v0.5.1
+   Compiling libsqlite3-sys v0.35.0
+   Compiling unic-langid v0.9.6
+   Compiling pp-rs v0.2.1
+   Compiling bit-set v0.8.0
+   Compiling event-listener v5.4.1
+   Compiling arr_macro_impl v0.2.1
+   Compiling windows v0.58.0
+   Compiling hyper-util v0.1.20
+   Compiling aligned-vec v0.6.4
+   Compiling rustls-platform-verifier v0.6.2
+   Compiling fastbloom v0.14.1
+   Compiling http-body-util v0.1.3
+   Compiling codespan-reporting v0.12.0
+   Compiling twox-hash v1.6.3
+   Compiling schannel v0.1.29
+   Compiling rand_xorshift v0.3.0
+   Compiling emath v0.33.3
+   Compiling culpa-macros v1.0.2
+   Compiling quinn v0.11.11
+   Compiling wgpu-hal v27.0.4
+   Compiling gpu-alloc-types v0.3.0
+   Compiling gpu-descriptor-types v0.2.0
+   Compiling spirv v0.3.0+sdk-1.3.268.0
+   Compiling timer-queue v0.1.1
+   Compiling crossbeam-utils v0.7.2
+warning: variable does not need to be mutable
+   --> common\src\feature_protocol.rs:131:9
+    |
+131 |     let mut require = |ok: bool, field: &'static str, out: &mut Vec<ProtocolViolation>| {
+    |         ----^^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling memoffset v0.5.6
+   Compiling lru-slab v0.1.2
+   Compiling divrem v1.0.0
+   Compiling arrayref v0.3.9
+   Compiling maybe-uninit v2.0.0
+   Compiling array-init v2.1.0
+   Compiling funty v2.0.0
+   Compiling sorted-vec v0.8.10
+   Compiling gimli v0.32.3
+   Compiling robust v1.2.0
+   Compiling cmov v0.5.4
+   Compiling constant_time_eq v0.4.2
+   Compiling presser v0.3.1
+   Compiling hexf-parse v0.2.1
+   Compiling blake2b_simd v1.0.4
+   Compiling quinn-proto v0.11.15
+   Compiling rustls-native-certs v0.8.4
+   Compiling delaunator v1.1.0
+   Compiling gpu-alloc v0.6.0
+   Compiling culpa v1.0.2
+   Compiling bitvec v1.0.1
+   Compiling ecolor v0.33.3
+   Compiling gpu-descriptor v0.3.2
+   Compiling noise v0.9.0
+   Compiling arr_macro v0.2.1
+   Compiling event-listener-strategy v0.5.4
+   Compiling symphonia-core v0.5.5
+   Compiling addr2line v0.25.1
+   Compiling tokio-rustls v0.26.4
+   Compiling wgpu-types v27.0.1
+   Compiling cranelift-frontend v0.132.2
+   Compiling cranelift-native v0.132.2
+   Compiling type-map v0.5.1
+   Compiling windows-sys v0.52.0
+   Compiling rmp v0.8.15
+   Compiling error-chain v0.12.4
+   Compiling crossbeam-epoch v0.8.2
+   Compiling windows-threading v0.2.1
+   Compiling semver-parser v0.7.0
+   Compiling proc-macro2 v0.4.30
+   Compiling windows_x86_64_gnu v0.48.5
+   Compiling glow v0.16.0
+   Compiling ryu v1.0.23
+   Compiling kiddo v5.3.2
+   Compiling nohash-hasher v0.2.0
+   Compiling range-alloc v0.1.5
+   Compiling renderdoc-sys v1.1.0
+   Compiling epaint_default_fonts v0.33.3
+   Compiling constant_time_eq v0.3.1
+   Compiling base64 v0.21.7
+   Compiling cfg-if v0.1.10
+   Compiling data-encoding v2.11.0
+   Compiling epaint v0.33.3
+   Compiling ar_archive_writer v0.5.2
+warning: enum `DomainIdLaneV1` is never used
+   --> common\src\apex\digest\domain.rs:207:10
+    |
+207 | pub enum DomainIdLaneV1 {
+    |          ^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `domain_id_lane_v1` is never used
+   --> common\src\apex\digest\domain.rs:214:14
+    |
+214 | pub const fn domain_id_lane_v1(id: u16) -> DomainIdLaneV1 {
+    |              ^^^^^^^^^^^^^^^^^
+
+warning: function `push_option_u32` is never used
+   --> common\src\apex\world_baseline.rs:155:4
+    |
+155 | fn push_option_u32(buf: &mut Vec<u8>, v: Option<u32>) {
+    |    ^^^^^^^^^^^^^^^
+
+warning: function `scan_family` is never used
+   --> common\src\determinism_scan.rs:368:4
+    |
+368 | fn scan_family(workspace_root: &Path, roots: &[&Path], family: &FamilyV1) -> Vec<(String, String, u32)> {
+    |    ^^^^^^^^^^^
+
+warning: fields `file` and `note` are never read
+  --> common\src\host_input_manifest.rs:65:5
+   |
+64 | struct EnvVarSiteV1 {
+   |        ------------ fields in this struct
+65 |     file: &'static str,
+   |     ^^^^
+...
+68 |     note: &'static str,
+   |     ^^^^
+
+warning: constant `MANUALLY_VERIFIED_INDIRECTED` is never used
+   --> common\src\host_input_manifest.rs:502:7
+    |
+502 | const MANUALLY_VERIFIED_INDIRECTED: &[(&str, &str)] = &[
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `SelectionSiteV1` is never constructed
+  --> common\src\selection_registry.rs:71:8
+   |
+71 | struct SelectionSiteV1 {
+   |        ^^^^^^^^^^^^^^^
+
+warning: function `site` is never used
+  --> common\src\selection_registry.rs:79:10
+   |
+79 | const fn site(
+   |          ^^^^
+
+warning: constant `CATALOG` is never used
+  --> common\src\selection_registry.rs:94:7
+   |
+94 | const CATALOG: &[SelectionSiteV1] = &[
+   |       ^^^^^^^
+
+   Compiling semver v0.9.0
+   Compiling backtrace v0.3.76
+   Compiling rust-argon2 v2.1.0
+   Compiling windows-future v0.3.2
+   Compiling rmp-serde v1.3.1
+   Compiling gpu-allocator v0.27.0
+   Compiling symphonia-metadata v0.5.5
+   Compiling veloren-network-protocol v0.6.1 (E:\veloren-master\.engine-integration-wt\network\protocol)
+   Compiling hyper-rustls v0.27.9
+warning: unused import: `HashMap`
+ --> network\protocol\src\prio.rs:9:19
+  |
+9 |     collections::{HashMap, VecDeque},
+  |                   ^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling async-channel v2.5.0
+   Compiling lz-fear v0.2.0
+   Compiling tokio-stream v0.1.18
+   Compiling auth-common v0.1.0 (https://gitlab.com/veloren/auth.git?rev=ae0e16783a9f9041951296885f082308e155db79#ae0e1678)
+   Compiling hashlink v0.10.0
+   Compiling prefix-trie v0.8.4
+   Compiling windows-collections v0.3.2
+   Compiling windows-numerics v0.3.1
+   Compiling link-cplusplus v1.0.12
+   Compiling wgpu-core v27.0.3
+warning: `veloren-network-protocol` (lib) generated 1 warning (run `cargo fix --lib -p veloren-network-protocol` to apply 1 suggestion)
+   Compiling num-bigint v0.2.6
+   Compiling ipconfig v0.3.4
+   Compiling utf8parse v0.2.2
+   Compiling take-once v0.1.3
+   Compiling error-code v3.3.2
+   Compiling unicode-xid v0.1.0
+   Compiling linked-hash-map v0.5.6
+   Compiling fallible-iterator v0.3.0
+   Compiling anymap2 v0.13.0
+   Compiling fallible-streaming-iterator v0.1.9
+   Compiling anstyle v1.0.14
+   Compiling once_cell_polyfill v1.70.2
+   Compiling veloren-network v0.3.0 (E:\veloren-master\.engine-integration-wt\network)
+   Compiling anstyle-parse v1.0.0
+   Compiling refinery-core v0.9.2
+   Compiling hickory-proto v0.26.1
+   Compiling windows v0.62.2
+   Compiling clipboard-win v5.4.1
+   Compiling rusqlite v0.37.0
+   Compiling authc v1.0.0 (https://gitlab.com/veloren/auth.git?rev=ae0e16783a9f9041951296885f082308e155db79#ae0e1678)
+   Compiling anstyle-wincon v3.0.11
+   Compiling symphonia-utils-xiph v0.5.5
+   Compiling psm v0.1.31
+   Compiling egui v0.33.3
+   Compiling rustc_version v0.2.3
+   Compiling intl-memoizer v0.5.3
+   Compiling fluent-langneg v0.13.1
+   Compiling intl_pluralrules v7.0.2
+   Compiling anstyle-query v1.1.5
+   Compiling fluent-syntax v0.12.0
+   Compiling protocol-derive v3.4.0
+   Compiling windows-registry v0.6.1
+   Compiling castaway v0.2.4
+   Compiling libmimalloc-sys v0.1.49
+   Compiling cmake v0.1.58
+   Compiling winit v0.30.13
+   Compiling wgpu v27.0.1
+   Compiling num-complex v0.2.4
+   Compiling num-rational v0.2.4
+   Compiling roxmltree v0.20.0
+   Compiling widestring v1.2.1
+   Compiling instability v0.3.12
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling self_cell v1.2.2
+   Compiling tagptr v0.2.0
+   Compiling colorchoice v1.0.5
+   Compiling syn v0.15.44
+   Compiling indoc v2.0.7
+   Compiling moka v0.12.15
+   Compiling fluent-bundle v0.16.0
+   Compiling anstream v1.0.0
+   Compiling convert_case v0.10.0
+   Compiling shaderc-sys v0.10.1
+   Compiling protocol v3.4.0
+   Compiling hickory-net v0.26.1
+   Compiling compact_str v0.9.1
+   Compiling windows-targets v0.48.5
+   Compiling quote v0.6.13
+   Compiling vek v0.14.1
+   Compiling crossbeam-deque v0.7.4
+   Compiling refinery-macros v0.9.2
+   Compiling unicode-truncate v2.0.1
+   Compiling smol_str v0.2.2
+   Compiling cursor-icon v1.2.0
+   Compiling dpi v0.1.2
+   Compiling toml v0.5.11
+   Compiling kasuari v0.4.12
+   Compiling lru v0.18.0
+   Compiling stb_truetype v0.3.1
+   Compiling stacker v0.1.24
+   Compiling ordered-float v1.1.1
+   Compiling approx v0.3.2
+   Compiling hashbrown v0.13.2
+   Compiling clap_lex v1.1.0
+   Compiling resolv-conf v0.7.6
+   Compiling cpal v0.17.3
+   Compiling fixedbitset v0.1.9
+   Compiling lazy-bytes-cast v5.0.1
+   Compiling piston-float v0.3.0
+   Compiling web-time v1.1.0
+   Compiling symlink v0.1.0
+   Compiling rusttype v0.8.3
+   Compiling hickory-resolver v0.26.1
+   Compiling schnellru v0.2.4
+   Compiling clipboard-win v3.1.1
+   Compiling petgraph v0.4.13
+   Compiling piston-viewport v0.5.0
+   Compiling ratatui-core v0.1.1
+   Compiling tracing-appender v0.2.5
+   Compiling clap_builder v4.6.0
+   Compiling winres v0.1.12
+   Compiling refinery v0.9.2
+   Compiling veloren-query-server v0.1.2 (E:\veloren-master\.engine-integration-wt\common\query_server)
+   Compiling windows-sys v0.48.0
+   Compiling wgpu-core-deps-windows-linux-android v27.0.0
+   Compiling fluent v0.17.0
+   Compiling derive_more-impl v2.1.1
+   Compiling arboard v3.6.1
+   Compiling symphonia-format-ogg v0.5.5
+   Compiling veloren-common-net v0.18.0 (E:\veloren-master\.engine-integration-wt\common\net)
+   Compiling symphonia-codec-vorbis v0.5.5
+   Compiling atomicwrites v0.4.4
+   Compiling rustls-pemfile v2.2.0
+   Compiling portpicker v0.1.0 (https://github.com/xMAC94x/portpicker-rs?rev=e04e3a61d6c1645c865b36c57877f1f8e48e0cb7#e04e3a61)
+   Compiling webbrowser v1.2.1
+   Compiling clap_derive v4.6.1
+   Compiling approx v0.4.0
+   Compiling censor v0.3.0
+   Compiling xi-unicode v0.3.0
+   Compiling dasp_sample v0.11.0
+   Compiling gilrs v0.11.2
+   Compiling humantime v2.3.0
+   Compiling veloren-common-systems v0.18.0 (E:\veloren-master\.engine-integration-wt\common\systems)
+   Compiling veloren-world v0.18.0 (E:\veloren-master\.engine-integration-wt\world)
+   Compiling drop_guard v0.3.0
+   Compiling conrod_derive v0.63.0 (https://gitlab.com/veloren/conrod.git?branch=copypasta_0.7#c7444636)
+   Compiling glyph_brush_layout v0.2.4
+   Compiling egui-winit v0.33.3
+   Compiling clap v4.6.1
+   Compiling symphonia v0.5.5
+   Compiling winreg v0.52.0
+   Compiling derive_more v2.1.1
+warning: unused import: `CalendarEvent`
+  --> world\src\apex_worldgen_vocabulary.rs:53:26
+   |
+53 |     calendar::{Calendar, CalendarEvent},
+   |                          ^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling veloren-common-frontend v0.18.0 (E:\veloren-master\.engine-integration-wt\common\frontend)
+   Compiling num v0.2.1
+   Compiling veloren-client-i18n v0.18.0 (E:\veloren-master\.engine-integration-wt\client\i18n)
+   Compiling veloren-voxygen v0.18.0 (E:\veloren-master\.engine-integration-wt\voxygen)
+   Compiling daggy v0.5.0
+   Compiling rusttype v0.7.9
+   Compiling copypasta v0.8.2
+   Compiling pistoncore-input v0.24.0
+   Compiling mimalloc v0.1.52
+   Compiling egui_plot v0.34.1
+   Compiling wiggle v45.0.2
+   Compiling wasmtime-wasi-io v45.0.2
+   Compiling glyph_brush_draw_cache v0.1.6
+   Compiling serde_with_macros v3.21.0
+   Compiling twox-hash v2.1.2
+   Compiling iced_futures v0.3.0 (https://github.com/Imberflur/iced?tag=veloren-winit-0.28#47243c25)
+   Compiling glam v0.33.1
+   Compiling crossterm_winapi v0.9.1
+   Compiling wfd v0.1.8
+   Compiling euclid v0.22.14
+   Compiling line-clipping v0.3.7
+   Compiling triple_buffer v9.0.0
+   Compiling instant v0.1.13
+   Compiling vec_map v0.8.2
+   Compiling atomic-arena v0.1.2
+   Compiling pastey v0.2.3
+   Compiling iced_core v0.4.0 (https://github.com/Imberflur/iced?tag=veloren-winit-0.28#47243c25)
+   Compiling tower-layer v0.3.3
+   Compiling rtrb v0.3.4
+   Compiling wasmtime-wasi v45.0.2
+   Compiling sync_wrapper v1.0.2
+   Compiling formatx v0.2.4
+warning: variable does not need to be mutable
+   --> world\src\sim\mod.rs:779:13
+    |
+779 |         let mut rng = ChaChaRng::from_seed(seed_expan::rng_state(seed));
+    |             ----^^^
+    |             |
+    |             help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling guillotiere v0.7.0
+   Compiling ratatui-widgets v0.3.1
+   Compiling conrod_core v0.63.0 (https://gitlab.com/veloren/conrod.git?branch=copypasta_0.7#c7444636)
+   Compiling iced_native v0.4.0 (https://github.com/Imberflur/iced?tag=veloren-winit-0.28#47243c25)
+   Compiling crossterm v0.29.0
+   Compiling glyph_brush v0.7.12
+   Compiling serde_with v3.21.0
+   Compiling native-dialog v0.9.7
+   Compiling egui-wgpu v0.33.3
+   Compiling wgpu-profiler v0.25.0
+warning: struct `PhaseEconomyEvidenceV1` is never constructed
+   --> world\src\site\economy\context.rs:205:12
+    |
+205 | pub struct PhaseEconomyEvidenceV1 {
+    |            ^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `total_phase_count_v1` is never used
+   --> world\src\site\economy\context.rs:215:8
+    |
+215 | pub fn total_phase_count_v1() -> u32 { (HISTORY_DAYS / TICK_PERIOD) as u32 }
+    |        ^^^^^^^^^^^^^^^^^^^^
+
+warning: static `ECONOMY_PHASE_EVIDENCE_MODE` is never used
+   --> world\src\site\economy\context.rs:235:8
+    |
+235 | static ECONOMY_PHASE_EVIDENCE_MODE: std::sync::atomic::AtomicBool =
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `enable_economy_phase_evidence_mode_v1` is never used
+   --> world\src\site\economy\context.rs:241:8
+    |
+241 | pub fn enable_economy_phase_evidence_mode_v1() {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `economy_phase_evidence_mode_enabled_v1` is never used
+   --> world\src\site\economy\context.rs:245:8
+    |
+245 | pub fn economy_phase_evidence_mode_enabled_v1() -> bool {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `assert_evidence_mode_gate_v1` is never used
+   --> world\src\site\economy\context.rs:262:4
+    |
+262 | fn assert_evidence_mode_gate_v1(enabled: bool, caller: &str) {
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `tick_with_phase_evidence_v1` is never used
+   --> world\src\site\economy\context.rs:276:8
+    |
+276 | pub fn tick_with_phase_evidence_v1(
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `simulate_with_phase_evidence_v1` is never used
+   --> world\src\site\economy\context.rs:302:8
+    |
+302 | pub fn simulate_with_phase_evidence_v1(index: &mut Index) -> Vec<PhaseEconomyEvidenceV1> {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+   Compiling euc v0.5.3
+   Compiling chumsky v0.13.0
+   Compiling discord-sdk v0.4.0
+   Compiling veloren-voxygen-i18n-helpers v0.18.0 (E:\veloren-master\.engine-integration-wt\voxygen\i18n-helpers)
+   Compiling window_clipboard v0.5.1
+   Compiling treeculler v0.4.0
+   Compiling mumble-link v0.2.0
+   Compiling levenshtein v1.0.5
+   Compiling mime v0.3.17
+   Compiling signal-hook v0.4.4
+   Compiling open v5.3.5
+   Compiling ratatui-macros v0.7.1
+   Compiling ratatui-crossterm v0.1.1
+   Compiling tower v0.5.3
+   Compiling axum-core v0.5.6
+   Compiling serde_urlencoded v0.7.1
+   Compiling signal-hook-registry v1.4.8
+   Compiling serde_path_to_error v0.1.20
+   Compiling matchit v0.8.4
+   Compiling ratatui v0.30.1
+   Compiling shell-words v1.1.1
+   Compiling veloren-rtsim v0.18.0 (E:\veloren-master\.engine-integration-wt\rtsim)
+   Compiling cansi v2.2.1
+   Compiling axum v0.8.9
+warning: unused import: `Time`
+  --> rtsim\src\data\npc.rs:12:17
+   |
+12 |     resources::{Time, TimeOfDay},
+   |                 ^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Time`
+ --> rtsim\src\data\quest.rs:2:17
+  |
+2 |     resources::{Time, TimeOfDay},
+  |                 ^^^^
+
+warning: unused import: `self`
+  --> rtsim\src\rule\npc_ai\archetype.rs:21:22
+   |
+21 | use common::assets::{self, AssetExt, BoxedError, FileAsset, load_ron};
+   |                      ^^^^
+
+warning: variable does not need to be mutable
+  --> rtsim\src\rule\cleanup.rs:21:17
+   |
+21 |             let mut rng = crate::tick_rng(ctx.index.seed, ctx.event.tick, 0xC1EA);
+   |                 ----^^^
+   |                 |
+   |                 help: remove this `mut`
+   |
+   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `rng`
+  --> rtsim\src\rule\cleanup.rs:21:17
+   |
+21 |             let mut rng = crate::tick_rng(ctx.index.seed, ctx.event.tick, 0xC1EA);
+   |                 ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_rng`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `serialize_rider_map_sorted` is never used
+   --> rtsim\src\data\npc.rs:564:4
+    |
+564 | fn serialize_rider_map_sorted<S: serde::Serializer>(
+    |    ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: associated function `decay_chance_pre_t0_79_fix` is never used
+   --> rtsim\src\data\sentiment.rs:193:8
+    |
+123 | impl Sentiment {
+    | -------------- associated function in this implementation
+...
+193 |     fn decay_chance_pre_t0_79_fix(value: f32, dt: f32) -> f64 {
+    |        ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+   Compiling gilrs-core v0.6.8
+   Compiling veloren-server-agent v0.18.0 (E:\veloren-master\.engine-integration-wt\server\agent)
+   Compiling kira v0.12.1
+warning: `veloren-world` (lib) generated 10 warnings (run `cargo fix --lib -p veloren-world` to apply 2 suggestions)
+warning: `veloren-rtsim` (lib) generated 7 warnings (run `cargo fix --lib -p veloren-rtsim` to apply 5 suggestions)
+   Compiling veloren-common-state v0.18.0 (E:\veloren-master\.engine-integration-wt\common\state)
+warning: `veloren-common` (lib) generated 16 warnings (run `cargo fix --lib -p veloren-common` to apply 7 suggestions)
+warning: fields `archive_ordinal`, `raw_path_bytes`, and `entry_type_byte` are never read
+   --> common\state\src\plugin\mod.rs:205:9
+    |
+204 | pub(crate) struct LegacyArchiveEntryRecordV1 {
+    |                   -------------------------- fields in this struct
+205 |     pub archive_ordinal: u32,
+    |         ^^^^^^^^^^^^^^^
+206 |     pub raw_path_bytes: Vec<u8>,
+    |         ^^^^^^^^^^^^^^
+207 |     pub decoded_path: Option<PathBuf>,
+208 |     pub entry_type_byte: u8,
+    |         ^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: fields `archive_ordinal` and `entry_type_byte` are never read
+   --> common\state\src\plugin\mod.rs:221:9
+    |
+220 |     UnsupportedEntryTypeDeferred {
+    |     ---------------------------- fields in this variant
+221 |         archive_ordinal: u32,
+    |         ^^^^^^^^^^^^^^^
+222 |         entry_type_byte: u8,
+    |         ^^^^^^^^^^^^^^^
+    |
+    = note: `PluginInspectionWarningV1` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+
+   Compiling bastion-server v0.18.0 (E:\veloren-master\.engine-integration-wt\bastion-server)
+   Compiling veloren-client v0.18.0 (E:\veloren-master\.engine-integration-wt\client)
+   Compiling veloren-voxygen-anim v0.18.0 (E:\veloren-master\.engine-integration-wt\voxygen\anim)
+warning: unused import: `BTreeMap`
+  --> client\src\lib.rs:90:19
+   |
+90 |     collections::{BTreeMap, VecDeque},
+   |                   ^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `self`
+  --> bastion-server\src\bastion_mood.rs:14:22
+   |
+14 | use common::assets::{self, AssetExt, BoxedError, FileAsset, load_ron};
+   |                      ^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling veloren-voxygen-egui v0.18.0 (E:\veloren-master\.engine-integration-wt\voxygen\egui)
+warning: variable does not need to be mutable
+     --> bastion-server\src\bastion_jobs.rs:15453:32
+      |
+15453 |             while let Some((_, mut pos, mut vel, uid)) = embed_iter.next() {
+      |                                ----^^^
+      |                                |
+      |                                help: remove this `mut`
+      |
+      = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+     --> bastion-server\src\bastion_jobs.rs:15453:41
+      |
+15453 |             while let Some((_, mut pos, mut vel, uid)) = embed_iter.next() {
+      |                                         ----^^^
+      |                                         |
+      |                                         help: remove this `mut`
+
+warning: function `reservation_indices_are_consistent_v1` is never used
+     --> bastion-server\src\bastion_jobs.rs:19685:4
+      |
+19685 | fn reservation_indices_are_consistent_v1(
+      |    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+      |
+      = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: field `capacity` is never read
+   --> bastion-server\src\bastion_traversal.rs:369:9
+    |
+367 | pub(crate) struct TraversalLink {
+    |                   ------------- field in this struct
+368 |     /// Simultaneous same-direction traversers allowed. M3: always 1.
+369 |     pub capacity: u8,
+    |         ^^^^^^^^
+    |
+    = note: `TraversalLink` has derived impls for the traits `Debug` and `Clone`, but these are intentionally ignored during dead code analysis
+
+warning: `veloren-common-state` (lib) generated 2 warnings
+   Compiling veloren-server v0.18.0 (E:\veloren-master\.engine-integration-wt\server)
+warning: `veloren-client` (lib) generated 1 warning (run `cargo fix --lib -p veloren-client` to apply 1 suggestion)
+warning: unused import: `JournalStateV1`
+  --> server\src\net_command.rs:15:90
+   |
+15 |     CommandKindV1, CommandOutcomeV1, CommandReceiptV1, CommandRefusalV1, JournalErrorV1, JournalStateV1,
+   |                                                                                          ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `PathBuf`
+  --> server\src\save_inventory.rs:30:18
+   |
+30 |     path::{Path, PathBuf},
+   |                  ^^^^^^^
+
+warning: unused import: `RngExt`
+  --> server\src\sys\agent\mod.rs:21:12
+   |
+21 | use rand::{RngExt, SeedableRng, rng};
+   |            ^^^^^^
+
+warning: unused import: `BlockKind`
+  --> server\src\sys\msg\in_game.rs:15:22
+   |
+15 |     terrain::{Block, BlockKind, SpriteKind, TerrainGrid},
+   |                      ^^^^^^^^^
+
+warning: unused import: `common::grid::Grid`
+  --> server\src\lib.rs:98:5
+   |
+98 | use common::grid::Grid;
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning: `bastion-server` (lib) generated 5 warnings (run `cargo fix --lib -p bastion-server` to apply 3 suggestions)
+warning: unused import: `util::Sampler`
+  --> server\src\sys\msg\in_game.rs:35:32
+   |
+35 | use world::{IndexOwned, World, util::Sampler};
+   |                                ^^^^^^^^^^^^^
+
+   Compiling shaderc v0.10.1
+warning: variable does not need to be mutable
+   --> server\src\events\inventory_manip.rs:206:17
+    |
+206 |             let mut rng = {
+    |                 ----^^^
+    |                 |
+    |                 help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `rng`
+   --> server\src\events\inventory_manip.rs:206:17
+    |
+206 |             let mut rng = {
+    |                 ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_rng`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: variable does not need to be mutable
+   --> server\src\rtsim\tick.rs:665:13
+    |
+665 |             mut inventories,
+    |             ----^^^^^^^^^^^
+    |             |
+    |             help: remove this `mut`
+
+warning: enum `BypassRoleV1` is never used
+  --> server\src\net_command_bypass.rs:21:17
+   |
+21 | pub(crate) enum BypassRoleV1 {
+   |                 ^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `BYPASS_SURFACE_ROLES` is never used
+  --> server\src\net_command_bypass.rs:37:18
+   |
+37 | pub(crate) const BYPASS_SURFACE_ROLES: &[(&str, BypassRoleV1)] = &[
+   |                  ^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `BYPASS_SURFACE_PATTERNS` is never used
+  --> server\src\net_command_bypass.rs:78:18
+   |
+78 | pub(crate) const BYPASS_SURFACE_PATTERNS: [&str; 3] =
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: function `scan_bypass_surfaces_v1` is never used
+  --> server\src\net_command_bypass.rs:83:15
+   |
+83 | pub(crate) fn scan_bypass_surfaces_v1(root: &Path) -> Vec<String> {
+   |               ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: struct `LegacyDisconnectSiteV1` is never constructed
+  --> server\src\net_checkpoint_disconnect.rs:26:19
+   |
+26 | pub(crate) struct LegacyDisconnectSiteV1 {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `LEGACY_DISCONNECT_SITES` is never used
+  --> server\src\net_checkpoint_disconnect.rs:39:18
+   |
+39 | pub(crate) const LEGACY_DISCONNECT_SITES: &[LegacyDisconnectSiteV1] = &[
+   |                  ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: constant `CASE_COVERAGE` is never used
+  --> server\src\semantic_net\canary_coverage.rs:31:18
+   |
+31 | pub(crate) const CASE_COVERAGE: &[(&str, &str)] = &[
+   |                  ^^^^^^^^^^^^^
+
+warning: enum `ReceiveSiteClassV1` is never used
+  --> server\src\semantic_net\receive_inventory.rs:30:17
+   |
+30 | pub(crate) enum ReceiveSiteClassV1 {
+   |                 ^^^^^^^^^^^^^^^^^^
+
+warning: function `scan_server_src` is never used
+  --> server\src\semantic_net\receive_inventory.rs:66:15
+   |
+66 | pub(crate) fn scan_server_src(root: &Path) -> Vec<(String, String, u32)> {
+   |               ^^^^^^^^^^^^^^^
+
+warning: constant `SELF_EXCLUDED_FILES` is never used
+  --> server\src\semantic_net\receive_inventory.rs:73:7
+   |
+73 | const SELF_EXCLUDED_FILES: [&str; 2] =
+   |       ^^^^^^^^^^^^^^^^^^^
+
+warning: function `scan_dir` is never used
+  --> server\src\semantic_net\receive_inventory.rs:76:4
+   |
+76 | fn scan_dir(base: &Path, dir: &Path, out: &mut Vec<(String, String, u32)>) {
+   |    ^^^^^^^^
+
+warning: function `scan_file` is never used
+  --> server\src\semantic_net\receive_inventory.rs:89:4
+   |
+89 | fn scan_file(base: &Path, path: &Path, out: &mut Vec<(String, String, u32)>) {
+   |    ^^^^^^^^^
+
+warning: constant `RECEIVE_SITE_CATALOG` is never used
+  --> server\src\semantic_net\receive_inventory_catalog.rs:14:18
+   |
+14 | pub(super) const RECEIVE_SITE_CATALOG: [(&str, &str, u32, ReceiveSiteClassV1); 24] = [
+   |                  ^^^^^^^^^^^^^^^^^^^^
+
+warning: enum `SendSiteClassV1` is never used
+  --> server\src\semantic_net\send_inventory.rs:28:17
+   |
+28 | pub(crate) enum SendSiteClassV1 {
+   |                 ^^^^^^^^^^^^^^^
+
+warning: function `scan_server_src` is never used
+  --> server\src\semantic_net\send_inventory.rs:85:15
+   |
+85 | pub(crate) fn scan_server_src(root: &Path) -> Vec<(String, String, u32)> {
+   |               ^^^^^^^^^^^^^^^
+
+warning: constant `SELF_EXCLUDED_FILES` is never used
+  --> server\src\semantic_net\send_inventory.rs:92:7
+   |
+92 | const SELF_EXCLUDED_FILES: [&str; 2] = ["semantic_net/send_inventory.rs", "semantic_net/send_inventory_catalog.rs"];
+   |       ^^^^^^^^^^^^^^^^^^^
+
+warning: function `scan_dir` is never used
+  --> server\src\semantic_net\send_inventory.rs:94:4
+   |
+94 | fn scan_dir(base: &Path, dir: &Path, out: &mut Vec<(String, String, u32)>) {
+   |    ^^^^^^^^
+
+warning: function `scan_file` is never used
+   --> server\src\semantic_net\send_inventory.rs:107:4
+    |
+107 | fn scan_file(base: &Path, path: &Path, out: &mut Vec<(String, String, u32)>) {
+    |    ^^^^^^^^^
+
+warning: constant `SEND_SITE_CATALOG` is never used
+  --> server\src\semantic_net\send_inventory_catalog.rs:20:18
+   |
+20 | pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 201] = [
+   |                  ^^^^^^^^^^^^^^^^^
+
+warning: method `adopted_at_tick` is never used
+  --> server\src\weather\tick.rs:61:12
+   |
+51 | impl WeatherJob {
+   | --------------- method in this implementation
+...
+61 |     pub fn adopted_at_tick(&self) -> u64 { self.adopted_at_tick }
+   |            ^^^^^^^^^^^^^^^
+
+warning: unused import: `specs::Join`
+   --> voxygen\src\session\mod.rs:696:13
+    |
+696 |         use specs::Join;
+    |             ^^^^^^^^^^^
+    |
+    = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `specs::WorldExt`
+  --> voxygen\src\menu\main\mod.rs:28:5
+   |
+28 | use specs::WorldExt;
+   |     ^^^^^^^^^^^^^^^
+
+warning: `veloren-server` (lib) generated 29 warnings (run `cargo fix --lib -p veloren-server` to apply 8 suggestions)
+   Compiling veloren-server-cli v0.18.0 (E:\veloren-master\.engine-integration-wt\server-cli)
+warning: unused import: `ops::Add`
+ --> server-cli\src\shutdown_coordinator.rs:6:5
+  |
+6 |     ops::Add,
+  |     ^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `veloren-server-cli` (bin "veloren-server-cli") generated 1 warning (run `cargo fix --bin "veloren-server-cli" -p veloren-server-cli` to apply 1 suggestion)
+warning: `veloren-voxygen` (lib) generated 2 warnings
+    Finished `dev` profile [optimized] target(s) in 26m 16s
+EXIT=0

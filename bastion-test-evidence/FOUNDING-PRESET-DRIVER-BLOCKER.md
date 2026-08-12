@@ -1,4 +1,28 @@
-# BLOCKER — **the driver can only found where the player stands**
+# BLOCKER — **the driver can only found where the player stands** ✅ **RESOLVED**
+
+> ## ✅ **RESOLVED SAME SESSION at `8932f91f31` — `spawn <n> [x y z]` lands, and B1
+> passed live with a planted-mutation RED (`FOUNDING-PRESET-B1-LIVE-RESULT.md`).**
+
+## ⚠ TWO CORRECTIONS TO THIS DOCUMENT'S OWN FIRST DRAFT
+
+1. ★★★★★ **"Six verbs exist" was WRONG — there are TEN.** *I grepped for the verbs the
+   handoff listed instead of reading every match arm, so my enumeration could only
+   return what I already expected.* **A grep pattern is a claim about naming, and this
+   one confirmed itself.** *The missed verbs: `cancel`, `inspect_cell`, `survey`, and —
+   most importantly — **`cmd`**.*
+2. **`cmd` sends an ARBITRARY chat command** (`client.send_command`), *and `goto` exists
+   as an **Admin** command.* ★★ **So a second route existed the whole time: write the
+   player's UUID into `admins.ron` and teleport.** *Not taken —* **`spawn [x y z]` is
+   the better instrument** *because it decouples the founding target from the player's
+   body, which is what B1 actually needs (after a `goto` the player re-settles and
+   `pos.z` equals the datum again — the same dead end as F-1).*
+
+★ *Recorded because the second route is still useful for anything that genuinely needs
+the player MOVED, and because the enumeration error is the more instructive half.*
+
+---
+
+
 
 **Found 2026-08-12 while preparing the A1–A5 scripts. Blocks TWO acceptances with one
 missing primitive.**
