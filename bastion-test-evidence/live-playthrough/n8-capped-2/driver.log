@@ -1,0 +1,14 @@
+[1786493266502] === bastion_playtest starting: server=localhost:24004 username=bastion_llm_player script=bastion-test-evidence/live-playthrough/script-n8-promotion.txt ===
+[1786493266502] parsed 4 script commands
+[1786493270119] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/83e39ec9-53e2-4bf2-b23c-e035919912c8), name: "Veloren Server", git_hash: 1301381157, git_timestamp: 1786492106, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1786493270220] requested character join id=CharacterId(2)
+[1786493270220] in-game. entity=Entity(0, Generation(1))
+[1786493272299] player pos at script start: Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1786493272300] sent BastionCameraAnchor at Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1786493272300] sent BastionSpawnColony pos=Vec3 { x: 15216.5, y: 16016.5, z: 419.0 } count=8
+[1786493272334] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786493272917] [chat] GenericChatMsg { chat_type: Npc(Uid(6)), content: Localized { key: "npc-speech-menacing", seed: 53155, args: {} } }
+[1786493273217] [chat] GenericChatMsg { chat_type: Npc(Uid(70)), content: Localized { key: "npc-speech-menacing", seed: 11764, args: {} } }
+[1786493273348] waited 30 ticks -> sim 7.23..8.26 in 30 client spins; pos now Vec3 { x: 15216.234, y: 16016.663, z: 419.0 }
+[1786493273348] [note] driver disconnecting -- promotion-tick measured from server log after this
+[1786493273348] === script complete, disconnecting ===

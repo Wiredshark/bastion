@@ -1,0 +1,11 @@
+[1786494427800] === bastion_playtest starting: server=localhost:24004 username=bastion_llm_player script=bastion-test-evidence/live-playthrough/script-n8-promotion.txt ===
+[1786494427800] parsed 4 script commands
+[1786494431971] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/8ac3b000-67aa-4d6c-a187-8d86b873fddb), name: "Veloren Server", git_hash: 1301381157, git_timestamp: 1786492106, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1786494432072] requested character join id=CharacterId(2)
+[1786494432072] in-game. entity=Entity(0, Generation(1))
+[1786494434115] player pos at script start: Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1786494434116] sent BastionCameraAnchor at Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1786494434116] sent BastionSpawnColony pos=Vec3 { x: 15216.5, y: 16016.5, z: 419.0 } count=8
+[1786494434145] waited 30 ticks -> sim 34.91..40.03 in 1 client spins; pos now Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1786494434145] [note] driver disconnecting -- promotion-tick measured from server log after this
+[1786494434145] === script complete, disconnecting ===

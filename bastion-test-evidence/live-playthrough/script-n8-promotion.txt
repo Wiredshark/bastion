@@ -1,0 +1,12 @@
+# N=8 PROMOTION-TICK DISTRIBUTION TEST (Opus-specified): founding only, no
+# designations -- this driver's only job is to spawn 8 colonists and get
+# out of the way. Promotion completion is measured from the server's own
+# log after driver disconnect (a fixed real-wall-clock window governs how
+# long the server runs unattended, not a tick count -- the whole point is
+# that ticks-per-real-second differs between capped and uncapped, so a
+# tick-count wait would not give both arms the same real time to let
+# chunk-gen (the thing actually gating promotion) finish).
+anchor
+spawn 8
+wait 30
+note driver disconnecting -- promotion-tick measured from server log after this

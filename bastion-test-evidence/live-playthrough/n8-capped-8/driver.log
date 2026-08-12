@@ -1,0 +1,12 @@
+[1786494354077] === bastion_playtest starting: server=localhost:24004 username=bastion_llm_player script=bastion-test-evidence/live-playthrough/script-n8-promotion.txt ===
+[1786494354077] parsed 4 script commands
+[1786494357966] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/5525e4fd-17c5-4474-a3bc-cf905e2bbe5d), name: "Veloren Server", git_hash: 1301381157, git_timestamp: 1786492106, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1786494358099] requested character join id=CharacterId(2)
+[1786494358100] in-game. entity=Entity(0, Generation(1))
+[1786494360158] player pos at script start: Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1786494360159] sent BastionCameraAnchor at Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1786494360159] sent BastionSpawnColony pos=Vec3 { x: 15216.5, y: 16016.5, z: 419.0 } count=8
+[1786494360192] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786494361197] waited 30 ticks -> sim 7.20..8.22 in 30 client spins; pos now Vec3 { x: 15216.23, y: 16016.665, z: 419.0 }
+[1786494361197] [note] driver disconnecting -- promotion-tick measured from server log after this
+[1786494361197] === script complete, disconnecting ===
