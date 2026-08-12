@@ -57,10 +57,28 @@ nothing was listening.**
 
 1. **Promote S1 to a scored bar** in the endurance packet's bar table — *terminal zero
    streak ≥ its configured threshold is a FAIL, not a note.*
-2. ★★ **Decide its live authority separately from its scoring authority.** *A bar fails a
-   run at teardown; a **gate** could end a run early. Those are different powers and
-   this row should not grant the second by accident* —
-   [[refusal-needs-refusal-aware-consumers]].
+2. ★★★★★ **LIVE AUTHORITY — RULED (Fable): GRANTED, STAGED, AND NEVER FOR
+   ARC-CLOSERS.** *Flagged rather than assumed; ruled rather than inherited.*
+
+   | stage | power | earned by |
+   |---|---|---|
+   | **1** | **SCORED BAR** *(fails a run at teardown)* | *this row — planted test both arms; v5's curve is the free GREEN control on a pass* |
+   | **2** | ★★★ **LIVE ABORT, ITERATION RUNS ONLY** | **N runs where S1's real-time verdict MATCHES the teardown verdict** — *the sentinel proves the gavel before it gets the sword* |
+   | **3** | ⛔ **CERTIFICATION RUNS — NEVER** | *arc-closers and final gates always fly their full window; abort stays with a human or the architect, per-run, NAMED IN THE PACKET, never ambient* |
+
+### ★★★★★★ WHY STAGE 3 IS ABSOLUTE — **the argument demonstrates itself**
+
+**S1 would have aborted v4 at ~minute 60. v4's final ninety minutes are the 517-sample
+terminal streak — which is the baseline curve v5's food trajectory is now scored
+against.**
+
+> ## **THE EVIDENCE THAT MAKES TODAY'S SCORING POSSIBLE IS EXACTLY THE EVIDENCE AN
+> EARLY ABORT WOULD HAVE DESTROYED.**
+
+★★★★★ **A CERTIFICATION RUN'S VALUE IS THE WHOLE CURVE, NOT THE VERDICT.** *An
+iteration run wants the verdict as early as possible; a certification run wants the
+tail.* **Same signal, opposite economics — which is why the power is granted per tier
+and not per sentinel** — [[refusal-needs-refusal-aware-consumers]].
 3. **Planted test, both arms:** *a synthetic terminal-zero streak must FAIL the bar (RED
    by name), and a run with a recovering food curve must PASS it (GREEN control).*
    ★★★ *Per [[a-falsifier-needs-its-own-control]] — a bar that has never been shown to
