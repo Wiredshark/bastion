@@ -288,6 +288,44 @@ zero's — or a spike's — candidate readings before the data is not.*
 
 ---
 
+## 3d · ⛔ THE STOPPING RULE — **REGISTERED BEFORE THE 5-CYCLE STATE IS KNOWN**
+
+**The declared window is 5 cycles (270,000 ticks). The question "continue to 7?" will
+arrive at the mark.** ★★★★★ **It is answered HERE, while the answer is still unknown.**
+
+> ## **A RUN WHOSE LENGTH DEPENDS ON HOW IT IS GOING PRODUCES A BIASED SAMPLE. THAT IS
+> OPTIONAL STOPPING, AND IT BIASES TOWARD WHATEVER THE OBSERVER HOPES FOR.**
+
+★★★★★★ **THE ASYMMETRY TEST SETTLES IT: if v5 were STARVING at 5 cycles, would anyone
+propose extending to 7?** *No — it would be torn down and scored as a failure.* **So
+"extend because it's going well" is a rule that only ever fires in one direction, and a
+one-directional rule is not a rule.**
+
+### THE RULE
+
+    STOP AT 5 CYCLES, AS DECLARED.
+
+**Three reasons, in order of weight:**
+
+1. ★★★★★ **The extension would be a decision made ON the data** — *the exact shape the
+   scoring refusals exist to refuse, arriving at the run-length tier instead of the
+   bar tier.*
+2. **COMPARABILITY:** *v3 and v4 both ran ~2.5 h; 5 cycles ≈ 2 h 32 m.* ★★★ **The
+   terminal-zero-streak test compares v5's food curve against v4's measured 517
+   SAMPLES — a length-dependent quantity.** *Changing the run length changes the
+   denominator of the arc's central comparison.*
+3. **Fable's certification-tier law: a certification run flies its FULL WINDOW.** *5
+   cycles is the window. Flying MORE than the declared window is the same class of
+   drift as flying less.*
+
+### ★★★ IF SOMEONE WANTS 7 CYCLES ANYWAY
+
+**Then it is a SECOND RUN with its own declared window, not an extension of this one.**
+*That keeps v5 scoreable against v3/v4 and gives the longer question its own clean
+sample.* ★★ **The data is not lost either way — only the ability to compare it is.**
+
+---
+
 ## 4 · FALSIFIERS — **each names the observation that makes it RED**
 
 | claim | falsifier |
