@@ -105,7 +105,17 @@ impl Logger {
 enum ScriptCmd {
     Wait(u64),
     Anchor,
-    Spawn(u8),
+    /// FOUNDING PRESET acceptance (2026-08-12): the optional position is the
+    /// FOUNDING TARGET, not the player's body. Packet §3.1 — "God TARGETS F via
+    /// the overseer founding action" — the god aims, they do not have to stand
+    /// on it, so `current_pos` was the driver's simplification rather than the
+    /// UI's semantics. `None` keeps every existing script byte-identical.
+    ///
+    /// This is what makes §8 B1 testable LIVE: pass a z that differs from the
+    /// column's first air cell and the emitted `datum=` must still resolve from
+    /// TERRAIN. On the flat arena the player always settles to the datum, so
+    /// standing where you found can never discriminate the two (smoke F-1).
+    Spawn(u8, Option<Vec3<f32>>),
     Designate(DesignationKind, Region),
     Cancel(Region),
     InspectCell(Vec3<i32>),
@@ -172,7 +182,21 @@ fn parse_script(path: &str) -> Vec<ScriptCmd> {
         let cmd = match verb {
             "wait" => ScriptCmd::Wait(rest[0].parse().expect("bad wait ticks")),
             "anchor" => ScriptCmd::Anchor,
-            "spawn" => ScriptCmd::Spawn(rest[0].parse().expect("bad spawn count")),
+            // `spawn <n>` founds at the player; `spawn <n> <x> <y> <z>` founds at
+            // an explicitly TARGETED position (see ScriptCmd::Spawn).
+            "spawn" => {
+                let count = rest[0].parse().expect("bad spawn count");
+                let target = match rest.len() {
+                    1 => None,
+                    4 => Some(Vec3::new(
+                        rest[1].parse().unwrap_or_else(|_| panic!("bad spawn x at line {lineno}")),
+                        rest[2].parse().unwrap_or_else(|_| panic!("bad spawn y at line {lineno}")),
+                        rest[3].parse().unwrap_or_else(|_| panic!("bad spawn z at line {lineno}")),
+                    )),
+                    n => panic!("spawn takes <count> or <count> <x> <y> <z> at line {lineno}, got {n} args"),
+                };
+                ScriptCmd::Spawn(count, target)
+            },
             "designate" => {
                 let kind = parse_kind(rest[0]).unwrap_or_else(|| panic!("bad kind at line {lineno}: {}", rest[0]));
                 let region = parse_region(&rest[1..]).unwrap_or_else(|| panic!("bad region at line {lineno}"));
@@ -450,9 +474,16 @@ fn main() {
                 client.bastion_set_terrain_anchor(Some(current_pos));
                 log.log(&format!("sent BastionCameraAnchor at {current_pos:?}"));
             },
-            ScriptCmd::Spawn(count) => {
-                client.bastion_spawn_colony(current_pos, count);
-                log.log(&format!("sent BastionSpawnColony pos={current_pos:?} count={count}"));
+            ScriptCmd::Spawn(count, target) => {
+                // The TARGET is what the god aims at; the player's body is only
+                // the default. Logged distinctly so a scored run can tell which
+                // it was without re-reading the script.
+                let pos = target.unwrap_or(current_pos);
+                client.bastion_spawn_colony(pos, count);
+                log.log(&format!(
+                    "sent BastionSpawnColony pos={pos:?} count={count} targeted={}",
+                    target.is_some()
+                ));
             },
             ScriptCmd::Designate(kind, region) => {
                 client.bastion_place_designation(region, kind, None);
