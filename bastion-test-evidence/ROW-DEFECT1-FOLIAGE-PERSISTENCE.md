@@ -118,6 +118,42 @@ run that designates mining — the same run F8's registered prediction is waitin
 
 ---
 
+## 2c · THE FREE READ — **attempted on v5's existing log, and EXHAUSTED**
+
+**Before speccing new instrumentation, I asked whether the committed log already
+settles it. Every line mentioning the cell:**
+
+    112  emergency access arrived ownership check tick
+      5  emergency access job selected diagnostic
+      5  emergency access job accepted remote arrival
+      5  colonist arrived at job site
+      3  emergency access plan ordered jobs owner
+      2  emergency access job completed diagnostic
+      2  emergency access job completed
+
+★★★★ **NEW FACT: the cell was SELECTED as an egress mine target 5 times and ARRIVED at
+5 times, but COMPLETED only twice.** *Three attempts reached the cell and produced no
+completion.*
+
+★★ *Also: **112 ownership-check lines at a single cell** — heavy egress churn for two
+completions. Recorded as a measure; not interpreted.*
+
+### ⛔ AND IT DOES NOT DISCRIMINATE (a) FROM (b)
+
+*The tempting next step is to argue from the 3 non-completions — "the cell must have
+been air, so the write landed."* ★★★★★ **That requires knowing whether SELECTION checks
+`is_filled`, which I have not read — and inferring across unread code is exactly the
+five-dead-mechanisms trap.**
+
+> ## **THE EXISTING LOG CANNOT SETTLE IT. THE FREE READ IS EXHAUSTED, AND THAT
+> STRENGTHENS THE CASE FOR THE NEXT-TICK DIAGNOSTIC RATHER THAN REPLACING IT.**
+
+★★ **A cheap read attempted and reported as insufficient is worth more than a cheap read
+not attempted** — *it converts "we should instrument" from a preference into a
+demonstrated necessity.*
+
+---
+
 ## 3 · THE WORK
 
 1. **Build the save-query fixture** *(deserialise `userdata`, read one block by
