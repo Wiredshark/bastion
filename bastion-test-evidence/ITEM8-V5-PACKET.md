@@ -210,6 +210,26 @@ clustering signal, not a distributing one.*
 **Group the teleport lines by `uid`.** *Also carry `active_job_is_access` and the job
 kind — both are already on the line.*
 
+### ★★★★ A THIRD DISCRIMINATOR — **THE RATE PROFILE**, registered mid-run
+
+    T+30min:  2        T+41min: 14        T+64min: 23
+    rates:    0.07/min      1.09/min           0.39/min
+
+> ## **BURST-THEN-DECLINE, NOT MONOTONIC GROWTH.**
+
+★★★ *A trap that accumulates produces a rising or flat rate. A transient condition
+produces exactly this shape.* **Registered as a THIRD channel on the same question —
+but on n=3 samples, so it constrains rather than decides.**
+
+⚠ **AND THE COST, STATED:** *23 rescues × 60 s of prior stuck-time ≈ **23 colonist-
+minutes lost** out of ~512 (8 colonists × 64 min) — **~4.5% of total labour**.* **Not
+catastrophic; not nothing. It belongs in the results whatever the uid split says.**
+
+★★ **Note also: `emergency_access_completions` stayed FLAT at 6 while rescues went
+2 → 23.** *So the rescues are NOT generating egress work — consistent with BOTH
+readings (stuck-on-pathing vs a rescue that doesn't stick), which is why it is not
+itself a discriminator.*
+
     many uids, few each      -> reading A, benign
     few uids, many each      -> reading B, the trap survived the fix
 
