@@ -82,6 +82,33 @@ to score anything.*
 
 ---
 
+## 2b · ★★★★★★ F1's EXACT TEST — **operationalised BEFORE the data, not at 22:30**
+
+**F1 reads "generation-2 completions > 0 — sows continuing past the first seed wave."
+That sentence needs one unambiguous query, or it becomes negotiable at teardown.**
+
+> ## **THE TEST: DOES ANY `sown` EVENT CARRY A TIMESTAMP LATER THAN THE FIRST
+> `harvested` EVENT?**
+
+★★★★★ **A sow that follows a harvest is second-generation BY DEFINITION** — *it can
+only be planting into a cell the first wave already returned.* **No inference about
+plot counts, no ratio to argue over, one comparison of two timestamps.**
+
+    first_harvest = earliest 'bastion: harvested' timestamp
+    gen2_sows     = count of 'bastion: sown' with timestamp > first_harvest
+    F1 PASSES iff gen2_sows > 0
+
+### WHY NOT THE RATIO
+
+*`sown` (563) vs `tilled` (56) ≈ 10 cycles per plot is a **correct and compelling
+argument** — the builder's reasoning is sound and source-backed.* ⚠ **But it is an
+INFERENCE about plot reuse, and F1 should be settled by an OBSERVATION.**
+
+★★★ **Report the ratio as the magnitude. Score the bar on the timestamp.** *The ratio
+says how well; the timestamp says whether.*
+
+---
+
 ## 3 · THE THREE TRIANGULATING READS
 
 | read | pattern | decides |
