@@ -188,6 +188,51 @@ calibration now has a full curve behind it, not just a firing count.**
 
 ---
 
+## 3c · ★★★★★★ THE FAIL-SAFE RATE — **TWO READINGS, REGISTERED PRE-TEARDOWN**
+
+**14 teleport rescues at T+41, against v3's 4 in 75 minutes.** *A higher rescue rate
+than any prior run.*
+
+> ## **A FAILSAFE FIRING MORE OFTEN IS NOT UNAMBIGUOUSLY GOOD NEWS.**
+
+| reading | what it means | signature |
+|---|---|---|
+| **A — BENIGN TRAFFIC** | *the colony does ~6× more work, so more incidental sticking* | ★★ **rescues DISTRIBUTE across many uids** |
+| **B — A RESCUE LOOP** | *one colonist teleported, walks back to the same trap, sticks again* | ★★★★ **rescues CLUSTER on few uids** |
+
+★★★★★★ **READING B IS THE SERIOUS ONE: a rescue that doesn't STICK is the
+phantom-completion loop one level up — the net papering over a live trap instead of
+ending it.** *And the first two rescues observed were **both `uid=131`**, which is a
+clustering signal, not a distributing one.*
+
+### THE DISCRIMINATOR
+
+**Group the teleport lines by `uid`.** *Also carry `active_job_is_access` and the job
+kind — both are already on the line.*
+
+    many uids, few each      -> reading A, benign
+    few uids, many each      -> reading B, the trap survived the fix
+
+### ★★★★★ THREE REGISTERED READS THAT TRIANGULATE ONE QUESTION
+
+**Filed together because they converge, and any two agreeing constrains the third:**
+
+| read | decides |
+|---|---|
+| **the food SHAPE** *(sawtooth vs terminal streak, vs v4's 517)* | *is the colony alive or dying?* |
+| **rescue uid DISTRIBUTION** | *is the net handling traffic or hiding a trap?* |
+| **`completed_kind` at repeat positions** | *did defect 1 recur?* |
+
+★★★ **If rescues cluster on one uid holding an emergency-access Mine job, and
+`completed_kind` is constant at that position, those are the SAME finding arriving down
+two channels** — *and defect 1's staged read is answered by v5 exactly as the packet
+promised.*
+
+⚠ **REGISTERED AS MEASURES, NOT BARS.** *Changing a bar mid-run is refused; naming a
+zero's — or a spike's — candidate readings before the data is not.*
+
+---
+
 ## 4 · FALSIFIERS — **each names the observation that makes it RED**
 
 | claim | falsifier |
