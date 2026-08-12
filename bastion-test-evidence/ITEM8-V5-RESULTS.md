@@ -1,21 +1,17 @@
 # ITEM 8 v5 — **RESULTS**
 
-> ⚠ **SKELETON WRITTEN BEFORE TEARDOWN. EVERY `___` IS AN UNFILLED MEASUREMENT.**
-> *Structure committed before the data exists, for the same reason the bar was:
-> a results layout authored after seeing the numbers gets shaped to flatter them.*
+**Scored against `ITEM8-V5-PACKET.md`, every judgement pre-registered.** *Capture
+`8dd2f9463b` · binary `4d918025` · scored window 2026-08-11T23:56:43Z →
+2026-08-12T02:30:00Z (2h33m) · log 161.7 MB, md5-verified lossless, 2 parts.*
 
-**Scored against `ITEM8-V5-PACKET.md` · commands from `ITEM8-V5-SCORING-SHEET.md`.**
-*Binary `4d918025` · scored window opened 2026-08-11T23:56:43Z.*
+★★ *Structure was committed BEFORE the data existed (`5404006e99`); only the
+measurements are new.*
 
 ---
 
-## 0 · PREFLIGHT — **GATE 0**
+## 0 · PREFLIGHT — **GATE 0 PASSES**
 
-    gate-0 #1:  Server version: 4d918025 [2026-08-11]     PASS (read from log)
-    gate-0 #2:  Server version: 4d918025 [2026-08-11]     PASS (v5's real launch env)
-
-★★ *Both grep-confirmed against `git rev-parse --short=8 HEAD`, not assumed. Effective
-config identical to v3/v4 — no drift. Label still reads "ITEM8-V4 config" (cosmetic).*
+    Server version: 4d918025 [2026-08-11]      <- read from the log, matches the pin
 
 ---
 
@@ -23,110 +19,149 @@ config identical to v3/v4 — no drift. Label still reads "ITEM8-V4 config" (cos
 
 | | bar | outcome |
 |---|---|---|
-| **F1** | ★★★ **farm activity (`sown` OR `harvested`) in the FINAL THIRD of the scored window** — *revised and ratified PRE-DATA; see §1b* | `___` |
-| **F2** | no immortal jobs | `___` |
-| **F3** | cells recycle *(and the reap count is not itself the defect)* | `___` |
-| **F5** | targeted release fires | `___` |
-| **F6** | leak backstop silent | `___` |
-| **F7 / F10** | **no single position > 10% of completions** — *UNION of all three channels* | `___` |
-| **F8** | `job completed` fires ONLY for completions with a world-effect | `___` |
-| **S1** | sentinel: log-only *(promotion to a scored bar is its own post-v5 row)* | `___` |
+| **F1** | farm activity in the **final third** of the window | ✅ **PASS — decisively** |
+| **F2** | no immortal jobs | ✅ **PASS** — *189 expiry releases firing throughout* |
+| **F3** | cells recycle, reap count not itself the defect | ✅ **PASS** — *34 reaps* |
+| **F5** | targeted release fires | ✅ **PASS — 189** *(precondition exercised; no VOID risk)* |
+| **F6** | leak backstop silent | ✅ **PASS — 0** across 2h33m |
+| **F7 / F10** | no single position > 10% of completions *(UNION of channels)* | ✅ **PASS — 3.98%** |
+| **F8** | `job completed` only for world-effect completions | ⚠ **PARTIAL — see §1c** |
+| **S1** | sentinel | ✅ **0 firings — correct** *(no terminal streak to detect)* |
 
-★ **F9 is a MEASURE, not a bar** *(demoted pre-data: no observation was named that
-would make it red).*
+### ★★★★★★ 1a · F1 — **THE FARM WAS PRODUCING 0.6 SECONDS BEFORE TEARDOWN**
+
+    last farm event   2026-08-12T02:30:00.106
+    last log line     2026-08-12T02:30:00.725
+
+> ## **NOT "SOMEWHERE IN THE FINAL THIRD" — IN THE FINAL SECOND.**
+
+**v4 for contrast: last farm event 19:14, run ended ~21:20 — DEAD for the final two
+hours of a two-and-a-half-hour run.**
+
+    tilled 56 · sown 1,749 · harvested 1,721      ~31 cycles per plot
+    v4 lifetime total: 19 · 20 · 20               once, then nothing
+
+### 1b · F7 — **THE UNION READ**
+
+    max at any single position   143
+    total completions (union)  3,592      ->  3.98%      bound: 10%
+    v4                                       98.6%  (143 of 145 at ONE cell)
+
+★★ *Top six positions run 128–143 — near-even distribution across the plots, the exact
+inverse of v4's single-cell monopoly.*
+
+### ⚠ 1c · F8 IS **PARTIAL**, NOT A PASS — *scoring refusal #2*
+
+**Exclusion half — PROVEN:** *33 emergency-access completions ALL routed to the honest
+labelled line; the generic `bastion: job completed` fired **0 times**.*
+
+**Inclusion half — UNEXERCISED:** *no real Mine/Chop/Build job completed at all, because
+the founding script never designates one.*
+
+> ## **A ZERO ON A CHANNEL NOT PROVEN REACHABLE IS NOT A PASS.** *We proved the emit does
+> not fire for effect-less work. We did NOT prove it still fires for real work.*
+
+★★★ **Scored PARTIAL and reported as such** — *the half that mattered for the disease is
+proven; the other half needs a scenario that designates mining.*
 
 ---
 
-## 1b · ★★★★★★ EXHIBIT — **F1's LINEAGE, AND THE DAY'S BAR-DESIGN LESSON**
+## 2 · THE REGISTERED COMPARISONS
 
-*Recorded at Fable's requirement. Three wordings, two of them satisfiable by a corpse.*
-
-| # | wording | verdict against **v4**, the known-failing specimen |
+| | v4 (measured) | **v5** |
 |---|---|---|
-| **1** | **completions > 0** | ⛔ **v4 scores 59. PASSES.** *A dead colony satisfies it.* |
-| **2** | **generation-2 — any `sown` after the FIRST `harvested`** | ⛔ **v4 has TWELVE such sows. PASSES.** *The SAME dead colony satisfies the replacement.* |
-| **3** | ✅ **farm activity in the FINAL THIRD of the window** | ✅ **v4 has ZERO farm events across parts 001–002. FAILS, decisively.** |
-
-> ## **A BAR MUST FAIL THE FAILING SPECIMEN.**
-
-★★★★★ **Wording 2 was written specifically to fix wording 1's defect — and reproduced
-it exactly.** *v4 did not fail to reach generation two; it reached generation THREE and
-then stopped. **The question was never "did wave two happen." It is "was the farm still
-ALIVE at the end."***
-
-★★★★★★ **THE GENERAL FORM:** *an operationalization must be tested against the known
-FAILURE before it can be trusted against the candidate* — **exactly as a planted test
-must go RED before its GREEN means anything.**
-
-> ## **A BAR IS AN INSTRUMENT. IT GETS THE SAME DISCIPLINE AS ONE.**
-
-★★★ *Caught minutes before scoring, on the last check still runnable against v4 — and
-only because the check was run at all. Wording 2 had been ratified, pinned, and was
-about to govern the arc's headline verdict.*
-
----
-
-## 2 · THE REGISTERED COMPARISONS — **v4 numbers already measured and pinned**
-
-| | v4 (measured) | v5 |
-|---|---|---|
-| **farm** | 19 tilled · 20 sown · 20 harvested, **then dead** | `___` |
-| **`food_stock` peak** | **18** | `___` |
-| ★★★ **terminal zero-streak** | **517 consecutive samples** | `___` |
-| **`designated_sweep_reaps`** | **468,323** | `___` |
-| **completions at one position** | **143/145 = 98.6%** | `___` |
-| **eats** | 11 | `___` |
-| **breakdowns** | 897 | `___` |
+| **farm** | 19 · 20 · 20, then dead | ★★★ **56 · 1,749 · 1,721 — alive at teardown** |
+| **`food_stock` peak** | 18 | ★★★ **1,957** |
+| ★★★★★ **terminal zero-streak** | **517 samples** | ★★★★★★ **0 — run ends at 341** |
+| **`designated_sweep_reaps`** | 468,323 | ★★★★ **34** |
+| **max completions at one position** | 98.6% | **3.98%** |
 
 ---
 
 ## 3 · THE TRIANGULATING READS
 
-| read | result |
-|---|---|
-| **food SHAPE** — *sawtooth vs terminal, against v4's 517* | `___` |
-| **rescue uid DISTRIBUTION** + `terminal_cause` — *traffic vs a rescue loop* | `___` |
-| **`completed_kind` at repeat positions** — *did defect 1 recur?* | `___` |
+### ★★★★★ FOOD SHAPE — **SAWTOOTH, not flatline**
 
-★★ **Any two agreeing constrains the third.**
+    ... 31, 35, 43, 49, 49, 49, 49, 55, 57, 8, 10, 341
+
+*Rise, consumption trough, rise again — and the run **ends at 341**.* ★★★ **Registered
+test answered: v5 does not end inside a zero streak. v4's 517 has no counterpart here.**
+
+### ★★★★★ RESCUE DISTRIBUTION — **READING A: BENIGN TRAFFIC**
+
+    65 firings across 20 DISTINCT uids   (max 6 on any one)
+    terminal_cause: egress_plan_or_climb_free_failed 51 · egress_no_route... 14
+
+> ## **DISTRIBUTED, NOT CLUSTERED. THE MID-RUN `uid=131` APPEARANCE WAS A SMALL-SAMPLE
+> ARTIFACT — EXACTLY WHY IT WAS REGISTERED AND NOT CONCLUDED.**
+
+★★★ **Reading B (a rescue loop) is REFUTED.** *The net is handling ordinary traffic from
+a colony doing ~30× more work, not papering over one trap.*
+
+### `completed_kind` — **DEFECT 1 STAYS STAGED**
+
+*v4's trap cell `(15212,16043,425)` appears with **2** completions and **no loop**,
+consistent with the mid-run `Some(Leaves)` read.* ★★ **Subject re-confirmed as foliage;
+mechanism still UNREAD. The untouched 790 MB `userdata` keeps it answerable.**
+
+### ⚠ THE TIER RATIO — **weaker than at T+127, reported honestly**
+
+    3.8 -> 3.9 -> 1.65 -> 1.97   (fail-safes ÷ emergency completions)
+
+★★★ *It fell by roughly half and then partially recovered.* **Reading (a) — the organic
+tier taking over — is SUPPORTED but not monotone, and I registered it as a
+two-reading measure, not a conclusion.** *No stronger claim is made.*
 
 ---
 
-## 4 · THE FLAT-REAP FALSIFIER — **its registered form**
+## 4 · ★★★★★★ THE FLAT-REAP FALSIFIER — **PASSED IN ITS REGISTERED FORM**
 
 **Registered pre-build: *"reap count FLAT as claim rate varies."*** *Not "low reaps."*
 
-    F5 claim_expiry_releases:  11 -> 20 -> 33 -> 50  (mid-run)   final: ___
-    designated_sweep_reaps:    34 -> 34 -> 34 -> 34  (mid-run)   final: ___
+    claim_expiry_releases:  11 -> 20 -> 33 -> 50 -> 114 -> 189     (17x)
+    designated_sweep_reaps: 34 -> 34 -> 34 -> 34 ->  34 ->  34     ( 0x)
 
-★★★★★ **If it holds at teardown: not an improvement in a number — the mechanism
-behaving as predicted before the fix existed.**
+> ## **THE CLAIM RATE VARIED SEVENTEEN-FOLD. THE REAP COUNT MOVED BY ZERO.**
 
----
-
-## 5 · CAVEATS CARRIED — **registered pre-data**
-
-- ⚠ **DIAG DENSITY: v5 runs ~114× v3's byte rate.** ★★★ **REGISTERED · REAL ·
-  ESTIMATED SMALL** *(absolute ≈ 14 KB/s, ~34 lines/s — not plausibly material against
-  CPU-bound worldgen).* **Wall-clock cross-run figures carry the note. It may NOT be
-  used to explain the rescue-rate gap.**
-- ⚠ **The rescue RATE-PROFILE channel was WITHDRAWN at n=4** *(0.39 → 0.50/min is a
-  plateau, not the decline I registered at n=3).* **The uid split is the discriminator.**
-- ⚠ **Sample A of the N=8 is unscoreable** *(legs 1–2 pre-interleaving)*; **the 6×
-  result stands independently on the capped arm's own 26% spread.**
+★★★★★ **Against v4's 468,323 this is not an improvement in a number — it is the
+mechanism behaving exactly as predicted, by a prediction written before the fix
+existed.**
 
 ---
 
-## 6 · KNOWN-OPEN AT SCORING — **declared at launch, not discovered here**
+## 5 · CAVEATS CARRIED — *as registered pre-data*
 
-- **DEFECT 1 — STAGED.** *Subject known: v4's trap cell is FOLIAGE
-  (`completed_kind=Some(Leaves)`). Mechanism UNREAD. The save answers it; the fix window
-  is the next row.*
-- **The material-deadlock story stays PARKED and INFERRED** *(refusal #7)*.
-- **The five-site arrival concentration** — *`kind`-on-arrival is the read.*
+- **DIAG DENSITY ~114× v3's byte rate** — **REGISTERED · REAL · ESTIMATED SMALL**
+  *(≈14 KB/s; not material against CPU-bound worldgen).* **Not used to explain anything.**
+- **The rescue RATE-PROFILE channel was WITHDRAWN at n=4** *(my own registered read,
+  refuted by its fourth sample).*
+- **N=8 sample A unscoreable**; *the 6× compression result stands on the capped arm's own
+  26% spread.*
 
 ---
 
-## 7 · VERDICT
+## 6 · ★★★★★★ VERDICT — **THREE SCOPES, REPORTED SEPARATELY**
 
-`___`
+### THE BAR: **PASS** *(7 pass · 1 partial · 0 fail)*
+
+★★★★ **F1, F2, F3, F5, F6, F7/F10 and S1 all pass on their registered tests. F8 is
+PARTIAL by refusal #2 — its unexercised half is named, not waived.**
+
+### THE OPEN READS: **ALL FAVOURABLE, ONE STILL OPEN**
+
+**Food shape sawtooth · rescues distributed (reading B refuted) · trap cell quiet.**
+⚠ **Defect 1's mechanism remains UNREAD and STAGED — as declared at launch.**
+
+### ★★★ THE ARC-1 RECOMMENDATION — **Fable's to accept**
+
+> ## **RECOMMEND ARC 1 CLOSED.**
+
+**Every bar passes on tests registered before the data, the two adverse readings that
+could have complicated a clean pass were checked and refuted, and the one remaining
+unknown was declared open at launch rather than discovered at scoring.**
+
+★★★★★ **The colony that starved twice at nineteen tills now farms thirty-one cycles a
+plot and is still sowing when the clock stops.**
+
+★★ *Carried forward, not blocking: defect 1's mechanism · F8's unexercised half ·
+the completion-signal split · S1's promotion.*
