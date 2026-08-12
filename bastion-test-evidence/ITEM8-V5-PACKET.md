@@ -212,14 +212,20 @@ kind — both are already on the line.*
 
 ### ★★★★ A THIRD DISCRIMINATOR — **THE RATE PROFILE**, registered mid-run
 
-    T+30min:  2        T+41min: 14        T+64min: 23
-    rates:    0.07/min      1.09/min           0.39/min
+    T+30:  2      T+41: 14      T+64: 23      T+96: 39
+    rate:  0.07/min    1.09/min      0.39/min      0.50/min
 
-> ## **BURST-THEN-DECLINE, NOT MONOTONIC GROWTH.**
+> ## ⚠ **THE n=3 READING IS WITHDRAWN. AT n=4 THIS IS "BURST, THEN STEADY AT
+> ~0.45/min" — NOT A DECLINE.**
 
-★★★ *A trap that accumulates produces a rising or flat rate. A transient condition
-produces exactly this shape.* **Registered as a THIRD channel on the same question —
-but on n=3 samples, so it constrains rather than decides.**
+★★★★★ **I registered "burst-then-decline" at n=3 and the fourth sample refutes it.**
+*Withdrawing my own registered channel rather than re-describing it: 0.39 → 0.50 is not
+a decline continuing, it is a plateau.*
+
+★★★ **AND THE CHANNEL IS NOW WEAKER THAN I CLAIMED, NOT STRONGER.** *A steady rate is
+consistent with BOTH readings — ongoing traffic from a working colony, **and** a
+persistent condition being repeatedly papered over.* **It no longer discriminates.**
+*The uid split is the discriminator; the rate was a hopeful third and it did not hold.*
 
 ⚠ **AND THE COST, STATED:** *23 rescues × 60 s of prior stuck-time ≈ **23 colonist-
 minutes lost** out of ~512 (8 colonists × 64 min) — **~4.5% of total labour**.* **Not
