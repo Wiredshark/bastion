@@ -67,13 +67,54 @@ clears a cell under a live Mine job must produce the line).*
 | **Leaves** | *(b) needs regrowth faster than 31 min; **(a) becomes the simpler explanation*** |
 | **air** | ***(b) CONFIRMED**, and the regrowth window is bounded between 31 and 98 minutes* |
 
-★★★★★ **The instrument exists and is preserved: the untouched 790 MB `userdata` in
-capture `8dd2f9463b`.** *This is why "preserve `userdata` untouched" was the one
-irreversible item on the teardown checklist — the answer was written down before anyone
-knew the question's final form.*
+### 🛑 **THE SAVE CANNOT ANSWER IT. MY NAMED INSTRUMENT IS VOID BY PREMISE.**
 
-★★ **It is a HARNESS READ, not a grep.** *Deserialise the save, query the block at
-`(15212,16043,425)`. That is a fixture, and it is this row's first build step.*
+**Checked BEFORE building the fixture — which is the only reason this cost three greps
+instead of a build.**
+
+    common/src/apex/save_universe.rs:
+        pub enum SaveStoreIdV1 { CharacterDb = 1, RtsimData = 2 }
+
+    server/src/persistence/:  character/ · character_loader · character_updater
+                              diesel_to_rusqlite · error · json_models · models
+                              -- NO terrain module
+
+> ## **TERRAIN BLOCK STATE IS NOT PERSISTED. THE SAVE HOLDS CHARACTERS AND RTSIM DATA.
+> THE BLOCK AT `(15212,16043,425)` IS NOT IN IT AND NEVER WAS.**
+
+★★★★★★ **MY ERROR, and it is my own banked law:
+[[enumerate-what-the-instrument-can-see]].** *I named an instrument repeatedly, made it
+the one IRREVERSIBLE item on the teardown checklist, had it ratified and had 790 MB
+committed on it — **without ever checking that it could see the thing**.*
+
+### ★★★ THE ACTION WAS RIGHT; THE REASON WAS FALSE
+
+**Preserving `userdata` untouched remains correct** — *it holds rtsim state (colonist and
+NPC state) that is genuinely valuable and genuinely irreplaceable.* ★★ **But it was
+defended on a claim that was never true, and a right action defended by a wrong reason
+will be reused with the reason attached.** *Corrected here so it isn't.*
+
+---
+
+## 2b · ✅ THE REPLACEMENT INSTRUMENT — **cheaper AND sharper than the save**
+
+**Terrain edits live only in memory, so the read must be LIVE. And the sharp version
+needs no waiting at all:**
+
+> ## **LOG `terrain.get(job.pos)` ON THE TICK *AFTER* A MINE COMPLETION APPLIES.**
+
+| next-tick read | verdict |
+|---|---|
+| **air** | *the write LANDS* → **(b): something re-fills it later; the regrowth window is then the question** |
+| **still filled** | *the write DOES NOT LAND* → **(a), and `block_change`'s apply path is the next read** |
+
+★★★★★ **This discriminates (a) from (b) in ONE TICK instead of inferring it across 98
+minutes — and it is a diagnostic line, not a fixture build.** *The 31-minute framing was
+an artifact of the wrong instrument.*
+
+★★ **Gate it behind the existing `BASTION_EGRESS_DIAG` or its own flag** *(diag density
+is budgeted — [[the-instrument-changes-what-it-sees]])*, **and it rides the next scored
+run that designates mining — the same run F8's registered prediction is waiting on.**
 
 ---
 
