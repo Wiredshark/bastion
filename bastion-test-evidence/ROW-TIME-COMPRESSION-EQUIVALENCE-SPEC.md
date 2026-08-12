@@ -177,22 +177,35 @@ collapsing to 220–233 needs an explanation before the distribution is scored.*
 
 ### ⛔ SAMPLE A IS NOT SCOREABLE — **registered PRE-DATA, and deliberately**
 
-⚠ **THE ORDERING IS DISPUTED IN THE SOURCE REPORTS AND IS NOT YET RESOLVED.**
+✅ **RESOLVED FROM GROUND TRUTH (`786540a9ed`): INTERLEAVING BEGAN AT LEG 3.**
 
-| report | claim |
-|---|---|
-| **builder, mid-fan** | *"interleaving **from leg 3** onward"* → **legs 1–2 unmatched** |
-| **builder, at completion** | *"legs **1–6** a consecutive capped block; from leg 7 interleaved"* → **legs 1–6 unmatched** |
+*Two source reports disagreed — "from leg 3" (mid-fan) vs "legs 1–6 a consecutive block,
+interleaved from leg 7" (at completion).* **Re-derived from each leg's own
+`Server version` boot timestamp, with the full boot order published as a checkable
+table:** `capped-1 · capped-2 · capped-3 → uncapped-1 · …`
 
-★★★ **Both cannot be true. Recorded as DISPUTED rather than resolved in favour of
-either** — *an earlier revision of this section asserted the leg-3 version as
-"corrected on the facts", which was itself an unverified claim.*
+> ## **ONLY LEGS 1–2 ARE UNMATCHED. SAMPLE A IS TWO LEGS, NOT SIX.**
 
-★★★★ **IT DOES NOT CHANGE THE RESULT:** *the 6× gap survives either ordering, and the
-capped arm's own 185–233 tightness refutes the load confound independently.* **This is
-PROVENANCE, not outcome — and provenance is exactly what this arc spent a day learning
-not to wave through.** *(The measurements themselves are consistent across both
-reports: same multiset, every early uncapped value present in the final eight.)*
+### ★★★★★ THE METHOD NOTE, WHICH MATTERS MORE THAN THE FACT
+
+**An earlier revision of this section asserted the leg-3 version as "corrected on the
+facts". That assertion rested on ONE builder message and was itself unverified — it
+happened to be true.**
+
+> ## **BEING RIGHT BY LUCK IS NOT BEING RIGHT BY METHOD. MARKING IT DISPUTED WAS THE
+> CORRECT MOVE EVEN THOUGH THE ORIGINAL CLAIM SURVIVED.**
+
+★★★ *The tie was broken by boot timestamps, not by whichever report arrived most
+recently — and the losing report was the LATER one.* **Recency is not evidence.**
+
+★★★★ **IT NEVER CHANGED THE RESULT:** *the 6× gap survives either ordering, and the
+capped arm's own 185–233 tightness refutes the load confound independently.* **Pure
+provenance — and provenance is exactly what this arc spent a day learning not to wave
+through.**
+
+★★ *Also recovered: the stray batch's `capped-6` (232) booted cleanly in a real gap
+between foreground runs and is VALID — only legs 3/4, which directly raced it, needed
+re-running. The corruption was scoped by evidence rather than by assumption.*
 
 > ## **THE GENERAL RULE: A LATE-ARRIVING INTERLEAVE DOES NOT RETRO-MATCH THE LEGS THAT
 > PRECEDED IT. Ns from before the correction belong to a different sample than Ns
