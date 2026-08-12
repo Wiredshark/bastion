@@ -213,6 +213,51 @@ certification affordable.**
 
 ---
 
+## 3c-RESULT · ★★★★★★ **THE CERTIFICATION RAN. COMPRESSION IS NOT EQUIVALENT.**
+
+**Measured 2026-08-11, binaries `4d918025`, isolated legs, interleaved from leg 3.**
+
+    capped   (n=8):  233 220 221 185 192 232 188 220     range  185– 233, mean  211
+    uncapped (n=5): 1134 1347 1458 1177 1205             range 1134–1458, mean 1264
+
+> ## **~6× SHIFT. ZERO OVERLAP. THE NEAREST POINTS ARE 233 AND 1134 — A 4.9× GAP.**
+
+**The registered PASS condition was "uncapped's distribution inside capped's spread."
+IT FAILS, and not marginally.**
+
+★★★★★★ **The n=1 candidate is now n=8 vs n=5 with no overlap. Compression's effect on
+the loaded/simulated ratio is CONFIRMED.** *v5's real-time ruling rests on measurement,
+not suspicion — Ben's law satisfied through a **proven** wall-coupled subsystem, in the
+strongest form available.*
+
+### ★★★★★ THE ORDERING CONFOUND CANNOT ACCOUNT FOR IT — **the capped arm refutes it**
+
+*Sample A remains unscoreable as registered. The result survives that ruling anyway:*
+
+> ## **THE CAPPED ARM SPANS THE WHOLE WINDOW AND ITS SPREAD IS 185–233 (~26%). THAT
+> SPREAD *IS* THE MEASUREMENT OF BACKGROUND-LOAD SENSITIVITY, AND IT IS SMALL. A 6×
+> BETWEEN-ARM GAP IS NOT BACKGROUND LOAD.**
+
+★★ *The earlier standalone **192** falls INSIDE the new capped range; the **624** is the
+outlier. That favours "the isolated leg is a cleaner instrument" over "the box was
+uniformly loaded" — the post-run clean set confirms.*
+
+### ★★★★★★ THE FALSIFIER IS SATISFIED BY THE DATA — **plant stood down**
+
+| axis — capped vs uncapped | ⛔ **RED: 6×, no overlap** |
+|---|---|
+| **control — capped vs capped** | ✅ **GREEN: 185–233, tight** |
+
+**The comparison fires on the pacing axis and does NOT fire on same-pacing runs — both
+polarities, from the natural experiment.**
+
+★★★★★ **A planted failure exists to prove a GREEN result COULD have gone red. THIS
+RESULT WENT RED: the instrument demonstrated its own sensitivity by firing.** *Planting
+the chunk-gen delay would prove what the experiment just proved.* **Stood down, with
+the reason recorded — [[a-falsifier-needs-its-own-control]] is satisfied, not skipped.**
+
+---
+
 ## 3d · ★★★★★ CONSEQUENCE FOR v5 — **REAL TIME, AND THAT OBEYS BEN'S LAW**
 
 **Checklist entry 6 admits three impossibilities. Number 2 is A PROVEN WALL-COUPLED
