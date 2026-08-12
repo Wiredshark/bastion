@@ -165,3 +165,33 @@ plot and is still sowing when the clock stops.**
 
 ★★ *Carried forward, not blocking: defect 1's mechanism · F8's unexercised half ·
 the completion-signal split · S1's promotion.*
+
+---
+
+## 7 · ⚠ POST-SCORING ADDENDUM — **F8's ITEM CLOSED; F8's SCORE UNCHANGED**
+
+**After this run was scored, `6651687f9e` landed: `completion_outcome()` extracted as a
+pure function, CALLED BY THE LIVE ARM** *(verified at the call site — an extracted
+function nothing calls is this refactor's classic failure)*, **with four tests covering
+both polarities and the RED demonstrated by reverting** *(the 2 emergency tests failed,
+the 2 real-completion tests stayed GREEN — axis and control)*.
+
+> ## **THE CARRIED-FORWARD ITEM IS CLOSED. v5's F8 REMAINS **PARTIAL**.**
+
+★★★★★★ **A RUN'S SCORE IS A HISTORICAL FACT ABOUT THAT RUN.** *v5 had zero real
+Mine/Chop/Build completions; its inclusion half went unexercised, and that is what v5
+showed.* **Work landing afterwards does not retroactively change it — re-scoring a
+completed run because later work improved things would make every results doc in this
+programme worth less.**
+
+**What the fixture genuinely changes:** *the residual is now narrower than a normal
+harness-vs-live gap, because the live arm calls **the same function the tests call** —
+not a parallel implementation that might drift.* ★★★ **The path is proven correct and
+proven wired; it has simply never been TRIGGERED in a scored run, and that belongs to
+the founding script, not to the fix.**
+
+**REGISTERED PREDICTION, replacing the open item:**
+
+> ## **THE NEXT SCORED RUN THAT DESIGNATES MINING MUST SHOW `bastion: job completed` FIRING.**
+
+★★ *If it doesn't, the finding already has its name.*
