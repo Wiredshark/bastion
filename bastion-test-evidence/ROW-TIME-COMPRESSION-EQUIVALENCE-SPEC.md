@@ -175,6 +175,33 @@ script vs isolated leg), so they may not be comparable — but a 192–624 sprea
 collapsing to 220–233 needs an explanation before the distribution is scored.*
 **Discriminator: re-run two capped legs AFTER the concurrent run finishes.**
 
+### ⛔ SAMPLE A IS NOT SCOREABLE — **registered PRE-DATA, and deliberately**
+
+**Legs 1–6 ran capped-only in one early window; interleaving began at leg 7. The
+resulting set would be:**
+
+    capped:   6 legs EARLY  +  2 late
+    uncapped: 8 legs        ALL late
+
+> ## **THE CONFOUND SURVIVES THE INTERLEAVING — IT ONLY BECOMES HARDER TO SEE. 6-of-8
+> vs 0-of-8 is an UNMATCHED pair with a caveat, not a matched pair.**
+
+★★★★★★ **DON'T MODEL THE CONFOUND — DELETE IT.** *A full interleaved N=8 after the
+concurrent run costs ~15 minutes (legs are ~25 s + boot).*
+
+| sample | what it answers |
+|---|---|
+| **A** — capped legs under concurrent load | **nothing on its own** |
+| **B** — post-run interleaved N=8 | ★★★ **THE SCORED TEST** |
+| **A vs B's capped arm** | ★★★★★ **the 220–233 question: cleaner instrument, or uniformly-loaded box?** |
+
+★★★ **Three results from work already done, for ~15 minutes of new runtime.**
+
+⚠ **WHY THIS IS WRITTEN BEFORE THE NUMBERS EXIST:** *eight completed legs create
+pressure to score eight completed legs, and "we documented the ordering" will feel
+like enough once the data is in front of us.* **Refusal #3 — no partial count as a
+pass — applied to a sample rather than a cycle count.**
+
 ★★★ **Distributions, not fingerprints** — *bit-identity was never available on the live
 path, and 5b's control is what proved it.*
 
