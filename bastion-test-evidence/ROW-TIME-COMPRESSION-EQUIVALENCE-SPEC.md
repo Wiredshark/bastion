@@ -177,13 +177,22 @@ collapsing to 220–233 needs an explanation before the distribution is scored.*
 
 ### ⛔ SAMPLE A IS NOT SCOREABLE — **registered PRE-DATA, and deliberately**
 
-**Written when interleaving was planned to begin at leg 7.** ⚠ **CORRECTED ON THE
-FACTS: the builder began interleaving at LEG 3, so only legs 1–2 are unmatched — a far
-smaller exposure than this section was written against.**
+⚠ **THE ORDERING IS DISPUTED IN THE SOURCE REPORTS AND IS NOT YET RESOLVED.**
 
-*The reasoning stands as the general rule; the instance shrank.* ★★ **Recording the
-correction rather than leaving the harsher version standing: an over-stated confound is
-still a mis-stated fact.**
+| report | claim |
+|---|---|
+| **builder, mid-fan** | *"interleaving **from leg 3** onward"* → **legs 1–2 unmatched** |
+| **builder, at completion** | *"legs **1–6** a consecutive capped block; from leg 7 interleaved"* → **legs 1–6 unmatched** |
+
+★★★ **Both cannot be true. Recorded as DISPUTED rather than resolved in favour of
+either** — *an earlier revision of this section asserted the leg-3 version as
+"corrected on the facts", which was itself an unverified claim.*
+
+★★★★ **IT DOES NOT CHANGE THE RESULT:** *the 6× gap survives either ordering, and the
+capped arm's own 185–233 tightness refutes the load confound independently.* **This is
+PROVENANCE, not outcome — and provenance is exactly what this arc spent a day learning
+not to wave through.** *(The measurements themselves are consistent across both
+reports: same multiset, every early uncapped value present in the final eight.)*
 
 > ## **THE GENERAL RULE: A LATE-ARRIVING INTERLEAVE DOES NOT RETRO-MATCH THE LEGS THAT
 > PRECEDED IT. Ns from before the correction belong to a different sample than Ns
@@ -220,10 +229,14 @@ certification affordable.**
 
 **Measured 2026-08-11, binaries `4d918025`, isolated legs, interleaved from leg 3.**
 
-    capped   (n=8):  233 220 221 185 192 232 188 220     range  185– 233, mean  211
-    uncapped (n=5): 1134 1347 1458 1177 1205             range 1134–1458, mean 1264
+**FINAL, both arms complete (`e1e193cedc`):**
 
-> ## **~6× SHIFT. ZERO OVERLAP. THE NEAREST POINTS ARE 233 AND 1134 — A 4.9× GAP.**
+    capped   (n=8):  185 188 192 220 220 221 232 233   mean 211.4  median 220.0
+    uncapped (n=8): 1134 1177 1205 1314 1347 1389 1450 1458
+                                                       mean 1309.2 median 1330.5
+
+> ## **~6× SHIFT. ZERO OVERLAP. A 901-TICK GAP BETWEEN CAPPED'S MAX (233) AND
+> UNCAPPED'S MIN (1134).**
 
 **The registered PASS condition was "uncapped's distribution inside capped's spread."
 IT FAILS, and not marginally.**
