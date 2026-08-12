@@ -703,6 +703,62 @@ pub(crate) fn reengage_exhausted(count_after_increment: u32) -> bool {
     count_after_increment > EMERGENCY_REENGAGE_BOUND
 }
 
+/// ROW-COMPLETION-SIGNAL-SPLIT.md / F8: which log channel a completion
+/// uses, and what world-effects (drop, XP) it carries. Pure over the
+/// three inputs the decision actually depends on -- no ECS lookup, so
+/// both polarities (a real completion WITH its effects intact, and the
+/// emergency-access completion that suppresses them) are testable
+/// without spinning up a full tick. Mirrors the completion arm's own
+/// logic exactly; the arm calls this rather than re-deriving it, so a
+/// drift between "what the arm does" and "what this asserts" cannot
+/// happen silently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CompletionLogChannel {
+    /// `"bastion: job completed"` -- F1's counted health signal. Real
+    /// production only.
+    RealProduction,
+    /// `"bastion: emergency access job completed (no world effects...)"`
+    /// -- F8's honest counterpart. Never counted as production.
+    EmergencyAccessNoEffect,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct CompletionOutcome {
+    pub drop_item: Option<&'static str>,
+    pub grant_xp: bool,
+    pub log_channel: CompletionLogChannel,
+}
+
+pub(crate) fn completion_outcome(
+    is_emergency_access: bool,
+    designation: Option<DesignationKind>,
+    completed_kind: Option<BlockKind>,
+) -> CompletionOutcome {
+    let drop_item = if is_emergency_access {
+        None
+    } else {
+        match designation {
+            Some(DesignationKind::Mine) => Some(MINE_DROP_ITEM),
+            // CHOP redesign (FR10): only WOOD yields -- leaves clear
+            // free (yield scales with trunk size by construction: one
+            // drop per Wood block).
+            Some(DesignationKind::Chop) if completed_kind == Some(BlockKind::Wood) => {
+                Some(CHOP_DROP_ITEM)
+            },
+            _ => None,
+        }
+    };
+    CompletionOutcome {
+        drop_item,
+        grant_xp: !is_emergency_access,
+        log_channel: if is_emergency_access {
+            CompletionLogChannel::EmergencyAccessNoEffect
+        } else {
+            CompletionLogChannel::RealProduction
+        },
+    }
+}
+
 /// ROW-INDESTRUCTIBLE-MINE-CELL.md defect 2: the `ExhaustedReplan` decision
 /// itself, extracted out of the tick loop so the WIRING is unit-testable,
 /// not just `JobBoard::release_reengage_exhausted` in isolation (that
@@ -14801,20 +14857,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         info!(pos = ?job.pos, "bastion: bed registered (built)");
                     }
 
-                    if !is_emergency_access
-                        && let Some(item_id) = match job.kind.designation() {
-                            Some(DesignationKind::Mine) => Some(MINE_DROP_ITEM),
-                            // CHOP redesign (FR10): only WOOD yields — leaves
-                            // clear with no drop (yield scales with trunk size by
-                            // construction: one drop per Wood block).
-                            Some(DesignationKind::Chop)
-                                if completed_kind == Some(BlockKind::Wood) =>
-                            {
-                                Some(CHOP_DROP_ITEM)
-                            },
-                            _ => None,
-                        }
-                    {
+                    // ROW-COMPLETION-SIGNAL-SPLIT.md / F8: the drop/XP/log
+                    // decision is a single pure function
+                    // (`completion_outcome`), called here rather than
+                    // re-derived inline, so the F8 fixture test asserts the
+                    // SAME code path this live arm runs, not a parallel
+                    // description of it.
+                    let outcome =
+                        completion_outcome(is_emergency_access, job.kind.designation(), completed_kind);
+                    if let Some(item_id) = outcome.drop_item {
                         // B5.5: colonist output is a player resource —
                         // persistent (no despawn timer) and mergeable
                         // (`should_merge: true`), so burst mining aggregates
@@ -14834,32 +14885,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         );
                     }
 
-                    if !is_emergency_access {
+                    if outcome.grant_xp {
                         colonist.0.skills.grant_xp(job.work, COMPLETION_XP);
                     }
-                    // ROW-INDESTRUCTIBLE-MINE-CELL.md: "job completed" is a
-                    // counted health signal (F1, the arc's own bar) and must
-                    // mean real production -- drop, XP, cave-in all already
-                    // gate on `!is_emergency_access` above; this line now
-                    // does too, and the two arms are mutually exclusive so
-                    // no completion goes unlogged.
-                    if !is_emergency_access {
-                        info!(
-                            job = active.job,
-                            kind = ?job.kind,
-                            pos = ?job.pos,
-                            completed_kind = ?completed_kind,
-                            "bastion: job completed"
-                        );
-                    } else {
-                        board.emergency_access_completions += 1;
-                        info!(
-                            job = active.job,
-                            kind = ?job.kind,
-                            pos = ?job.pos,
-                            completed_kind = ?completed_kind,
-                            "bastion: emergency access job completed (no world effects -- drop/XP/cave-in all suppressed by design)"
-                        );
+                    match outcome.log_channel {
+                        CompletionLogChannel::RealProduction => {
+                            info!(
+                                job = active.job,
+                                kind = ?job.kind,
+                                pos = ?job.pos,
+                                completed_kind = ?completed_kind,
+                                "bastion: job completed"
+                            );
+                        },
+                        CompletionLogChannel::EmergencyAccessNoEffect => {
+                            board.emergency_access_completions += 1;
+                            info!(
+                                job = active.job,
+                                kind = ?job.kind,
+                                pos = ?job.pos,
+                                completed_kind = ?completed_kind,
+                                "bastion: emergency access job completed (no world effects -- drop/XP/cave-in all suppressed by design)"
+                            );
+                        },
                     }
                     if is_emergency_access && std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
                         let physics = physics_states.get(entity);
@@ -20443,6 +20491,78 @@ mod tests {
             !board.emergency_route_members.contains_key(&member),
             "the route membership must actually end"
         );
+    }
+
+    #[test]
+    fn completion_outcome_real_mine_keeps_its_world_effects() {
+        // F8 inclusion-half fixture (Fable-assigned): the polarity v5's own
+        // window never exercised -- no non-emergency Mine/Chop/Build job
+        // completed live, so the generic "job completed" emit's positive
+        // path was never PROVEN reachable, only its negative (emergency)
+        // path was. This asserts it directly: a real Mine completion keeps
+        // its drop and its XP, and routes to the counted production line.
+        let outcome = completion_outcome(false, Some(DesignationKind::Mine), Some(BlockKind::Rock));
+        assert_eq!(
+            outcome,
+            CompletionOutcome {
+                drop_item: Some(MINE_DROP_ITEM),
+                grant_xp: true,
+                log_channel: CompletionLogChannel::RealProduction,
+            },
+            "a real (non-emergency-access) Mine completion must drop, grant XP, and count as production"
+        );
+    }
+
+    #[test]
+    fn completion_outcome_real_chop_wood_drops_leaves_do_not() {
+        // Second real-completion polarity, same fixture: Chop's yield is
+        // conditional on the pre-removal block kind (FR10 -- only Wood
+        // yields, Leaves clear free), so this is its own assertion, not
+        // folded into the Mine case above.
+        let wood = completion_outcome(false, Some(DesignationKind::Chop), Some(BlockKind::Wood));
+        assert_eq!(wood.drop_item, Some(CHOP_DROP_ITEM), "Wood must drop the chop item");
+        assert!(wood.grant_xp);
+        assert_eq!(wood.log_channel, CompletionLogChannel::RealProduction);
+
+        let leaves = completion_outcome(false, Some(DesignationKind::Chop), Some(BlockKind::Leaves));
+        assert_eq!(leaves.drop_item, None, "Leaves must clear free -- no drop");
+        assert!(leaves.grant_xp, "XP is still granted even on a no-drop Leaves clear");
+        assert_eq!(leaves.log_channel, CompletionLogChannel::RealProduction);
+    }
+
+    #[test]
+    fn completion_outcome_emergency_access_suppresses_every_world_effect() {
+        // F8's negative polarity, the one v4 lied about and e60e34ec5d
+        // fixed: an emergency-access completion must drop nothing, grant
+        // no XP, and route to the honest (uncounted) line -- regardless of
+        // job kind or what block was actually there. This is the exact
+        // completed_kind=Some(Rock) case pulled live from v5's log at
+        // teardown (8dd2f9463b).
+        let outcome = completion_outcome(true, Some(DesignationKind::Mine), Some(BlockKind::Rock));
+        assert_eq!(
+            outcome,
+            CompletionOutcome {
+                drop_item: None,
+                grant_xp: false,
+                log_channel: CompletionLogChannel::EmergencyAccessNoEffect,
+            },
+            "an emergency-access completion must suppress every world-effect and route to the honest line"
+        );
+    }
+
+    #[test]
+    fn completion_outcome_emergency_access_overrides_chop_wood_too() {
+        // RED-DEMONSTRATED requirement (Fable): confirms is_emergency_access
+        // is checked FIRST, not folded into the per-kind match -- an
+        // emergency-access Chop-on-Wood (a real drop-eligible combination
+        // under the real-completion polarity above) must still drop
+        // nothing. Proves the two polarities are actually gated by the
+        // same flag, not by two independently-written branches that could
+        // silently diverge.
+        let outcome = completion_outcome(true, Some(DesignationKind::Chop), Some(BlockKind::Wood));
+        assert_eq!(outcome.drop_item, None);
+        assert!(!outcome.grant_xp);
+        assert_eq!(outcome.log_channel, CompletionLogChannel::EmergencyAccessNoEffect);
     }
 
     #[test]
