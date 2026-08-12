@@ -109,6 +109,34 @@ says how well; the timestamp says whether.*
 
 ---
 
+## 2c · ⚠ THE DIAG-DENSITY CONFOUND — **registered before scoring, not after**
+
+**v5 runs with strictly more instrumentation than v4:** `BASTION_EGRESS_DIAG=1` *(the
+wipe-reason trace, across ~a dozen wipe sites)*, `BASTION_ENTITY_EVENT_LOG=1`, plus
+`completed_kind`, `kind`-on-arrival and the stall emit.
+
+★★★★★ **[[the-instrument-changes-what-it-sees]] — diag density is budgeted, and two
+extra diag reads once broke bit-reproducibility on this project.**
+
+> ## **HEAVIER LOG IO COMPETES WITH BACKGROUND CHUNK GENERATION — THE EXACT MECHANISM
+> THE N=8 TEST JUST MEASURED AT 6×.**
+
+### ⚠ ONE OF MY OWN COMPARISONS IS AFFECTED
+
+*I compared v5's **39 rescues** against v3's **4 in 75 min** as though the runs were
+alike.* **They are not: heavier logging → slower ticks → colonists plausibly stick
+more.** ★★★ *That does not explain a 7× gap by itself, but it is an uncontrolled
+variable, and it is named BEFORE scoring rather than discovered in review.*
+
+| ✅ **UNAFFECTED — score freely** | *counts and ratios*: farm cycles, reaps, F5/F6, completions-by-position, the F1 timestamp test |
+|---|---|
+| ⚠ **CONFOUNDED — caveat required** | *anything WALL-CLOCK*: rescue rate, promotion timing, any cross-run "per minute" figure |
+
+★★ **The bars are all in the unaffected column.** *This constrains the MEASURES and the
+cross-run colour, not the verdict.*
+
+---
+
 ## 3 · THE THREE TRIANGULATING READS
 
 | read | pattern | decides |
