@@ -147,6 +147,47 @@ cave-ins.*
 
 ---
 
+## 3b · ★★★★★★ THE REGISTERED v4 BASELINE CURVE — **extracted PRE-TEARDOWN**
+
+**Every `food_stock` value in v4's capture (`1bedd79602`), all three parts:**
+
+| part | values seen | count |
+|---|---|---|
+| **000** | 0 · 10 · 12 · 14 · **18** | 308 · 1 · 5 · 9 · **62** |
+| **001** | ⛔ **0 only** | **265** |
+| **002** | ⛔ **0 only** | **252** |
+
+> ## **v4's FOOD STOCK PEAKED AT 18, THEN SAT AT ZERO FOR 517 CONSECUTIVE SAMPLES —
+> THE ENTIRE LAST TWO THIRDS OF THE RUN.**
+
+★★★ *This confirms and refines the "19-ish" figure in circulation: the peak was **18**,
+and — more important than the peak — **the curve is terminal, not declining**.*
+
+### ★★★★★ THE SCORING CONSEQUENCE — **registered before v5's teardown**
+
+**v5 showed `food_stock=67` at 40 min: 3.7× v4's ALL-TIME peak.** ⚠ **That is not the
+test.**
+
+> ## **THE DECIDING SHAPE IS WHETHER v5's FOOD RETURNS TO ZERO AND STAYS THERE. A HIGH
+> PEAK FOLLOWED BY A TERMINAL ZERO STREAK IS v4's CURVE WITH A BIGGER NUMBER ON IT.**
+
+**REGISTERED MEASURE:** *v5's longest terminal zero-streak in `food_stock`, and whether
+the run ends inside one.* ★★ *Compared against v4's 517.*
+
+### ★★★★★★ AND S1 WAS RIGHT ALL ALONG — **a third consumer with the signal and no authority**
+
+**`colony_terminal_zero_streak_samples=10` is the configured sentinel. v4 ran 517
+consecutive zeros and S1 fired 3 times — LOG-ONLY.**
+
+> ## **THE SENTINEL DETECTED THE FAMINE IN REAL TIME, CORRECTLY, AND NOTHING ACTED ON
+> IT BECAUSE IT WAS NOT A SCORED BAR.**
+
+★★★★ *Same family as the metric that lied up and the watchdog that was disarmed — but
+the opposite failure: **this instrument told the truth and had no consumer.*** **Its
+calibration now has a full curve behind it, not just a firing count.**
+
+---
+
 ## 4 · FALSIFIERS — **each names the observation that makes it RED**
 
 | claim | falsifier |
