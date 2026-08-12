@@ -3919,6 +3919,9 @@ impl PlayState for SessionState {
                                 unreachable!("HUD adaption in Spectator mode!")
                             },
                             PresenceKind::Possessor => None,
+                            // Colony presence is a server-side playerless anchor
+                            // (BASTION); a connected client can never hold it.
+                            PresenceKind::Colony => None,
                         };
 
                         // Get or update the ServerProfile.

@@ -1461,6 +1461,9 @@ impl Hud {
             PresenceKind::LoadingCharacter(id) => Some(id),
             PresenceKind::Spectator => None,
             PresenceKind::Possessor => None,
+            // Colony presence is a server-side playerless anchor (BASTION); a
+            // connected client can never hold it — no character to key on.
+            PresenceKind::Colony => None,
         };
 
         // Create a new HotbarState from the persisted slots.
