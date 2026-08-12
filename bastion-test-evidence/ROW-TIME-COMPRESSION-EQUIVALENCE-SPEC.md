@@ -177,14 +177,17 @@ collapsing to 220–233 needs an explanation before the distribution is scored.*
 
 ### ⛔ SAMPLE A IS NOT SCOREABLE — **registered PRE-DATA, and deliberately**
 
-**Legs 1–6 ran capped-only in one early window; interleaving began at leg 7. The
-resulting set would be:**
+**Written when interleaving was planned to begin at leg 7.** ⚠ **CORRECTED ON THE
+FACTS: the builder began interleaving at LEG 3, so only legs 1–2 are unmatched — a far
+smaller exposure than this section was written against.**
 
-    capped:   6 legs EARLY  +  2 late
-    uncapped: 8 legs        ALL late
+*The reasoning stands as the general rule; the instance shrank.* ★★ **Recording the
+correction rather than leaving the harsher version standing: an over-stated confound is
+still a mis-stated fact.**
 
-> ## **THE CONFOUND SURVIVES THE INTERLEAVING — IT ONLY BECOMES HARDER TO SEE. 6-of-8
-> vs 0-of-8 is an UNMATCHED pair with a caveat, not a matched pair.**
+> ## **THE GENERAL RULE: A LATE-ARRIVING INTERLEAVE DOES NOT RETRO-MATCH THE LEGS THAT
+> PRECEDED IT. Ns from before the correction belong to a different sample than Ns
+> after it.**
 
 ★★★★★★ **DON'T MODEL THE CONFOUND — DELETE IT.** *A full interleaved N=8 after the
 concurrent run costs ~15 minutes (legs are ~25 s + boot).*
@@ -284,24 +287,52 @@ an expiry date, and the trigger is what stops it decaying silently.**
 
 ## 4 · ★★★★ WHAT THE PROOF BUYS — **and the honest boundary**
 
-**Once passed, compressed becomes the DEFAULT for all unattended runs, including
-certifying ones.** *Real time survives as exactly two things: the revalidation
-trigger, and human-in-the-loop sessions (perceived pacing is not in the fingerprint;
-real time matters exactly when someone is watching).*
+> ## ⛔ **THIS SECTION WAS WRITTEN ASSUMING A PASS. THE CERTIFICATION FAILED. REWRITTEN
+> 2026-08-11 AGAINST THE MEASUREMENT.**
 
-★★★ **The certify-under-named-conditions law is not weakened — the named condition
-becomes "the proven-equivalent execution", which is STRONGER, because the equivalence
-is itself a certified claim carrying its own falsifier.**
+★★★★★★ **A NEGATIVE CERTIFICATION IS THE MOST USEFUL KIND WE COULD HAVE GOTTEN:** *it
+draws the compressed / real-time boundary in **measured ink** instead of suspicion, and
+Ben's fast-mode law now runs on evidence at BOTH ends — fast for everything the
+boundary permits, real for what it measures out.*
 
-### THE FLEET CLAUSE
+### ★★★★★ THE DECISION RULE — **is this run PROMOTION-COUPLED?**
 
-**compression × the 8-VM pool ≈ 24 endurance-equivalents/hour.**
+**Compression shifts promotion by ~6×. So the question for any test is whether its
+subject depends on WHEN colonists become `Loaded`.**
 
-> ★★★★ **ENDURANCE GRADUATES FROM SINGLE-RUN ANECDOTE TO CORPUS-GRADE EVIDENCE** —
-> *N-seed survival rates, which is what run-many-diagnose-aggregate has always
-> demanded and what the RL substrate needs for rollouts.*
+| the run… | mode |
+|---|---|
+| **observes colonist WORK** *(jobs, hauling, farming, needs, egress)* | ⛔ **REAL TIME** — *work requires `Loaded`; the ratio is the subject* |
+| **spans founding / the promotion window** | ⛔ **REAL TIME** |
+| **measures anything gated on `chunk_states`** | ⛔ **REAL TIME** |
+| **runs flat-arena + `BASTION_DETERMINISTIC`** | ✅ *compression is MOOT there — `BASTION_UNCAPPED_TPS` is read only by `server-cli`, and that path force-loads and serialises anyway* |
+| **human-in-the-loop** | ⛔ **REAL TIME** *(unchanged — pacing matters when someone watches)* |
 
-★★★ **AND IT RETIRES A LIMIT NAMED TODAY:** *the crash's intermittency (1 detonation
-in 2 runs) made a fix's live validation need REPETITIONS, which cost a day each.*
-**At 20 minutes a run, N=10 is affordable — the exact thing v3's finding said we
-could not have.**
+★★★ **Default when unsure: REAL TIME, and name why.** *The burden moved: it is now
+compression that must argue, because the coupling is measured and the exemption is not.*
+
+### ⚠ THE FLEET CLAUSE — **RETRACTED AS WRITTEN**
+
+**It promised: compression × the 8-VM pool ≈ 24 endurance-equivalents/hour, and
+"ENDURANCE GRADUATES FROM SINGLE-RUN ANECDOTE TO CORPUS-GRADE EVIDENCE."**
+
+> ## **ENDURANCE RUNS STUDY LOADED COLONISTS. THAT IS THE COUPLED CLASS. THE HEADLINE
+> PROMISE DOES NOT SURVIVE ITS OWN CERTIFICATION.**
+
+★★★★ **Stated plainly because a stale promise in a spec is the same failure shape as a
+doc comment that foresaw its own defect: it keeps being read as true.**
+
+**WHAT SURVIVES, HONESTLY:**
+
+- **the corpus/harness fan is unaffected** — *it never went through `clock.tick()`; its
+  speed was never compression's to give*
+- **N-seed endurance evidence is still wanted and is still expensive.** ★★ *The
+  affordability argument for repetitions must be re-made on other ground — parallel
+  REAL-TIME runs across the VM pool, which the fan already supports.*
+- ★★★ **8 real-time runs in parallel ≈ 8 endurance-equivalents per 2.5 h.** *Less than
+  24/hour by an order of magnitude, and still the difference between an anecdote and a
+  rate.*
+
+★★★★★ **The limit v3 named — repetitions costing a day each — is eased by PARALLELISM,
+not by compression.** *That was always the sounder half of the argument; compression
+was the part that needed proving, and it didn't prove.*
