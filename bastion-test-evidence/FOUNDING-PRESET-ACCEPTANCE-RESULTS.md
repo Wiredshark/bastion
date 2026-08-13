@@ -7,7 +7,7 @@ any of this data existed.** *Binary `6c2991eb` + targeted-spawn driver `8932f91f
 | bar | state |
 |---|---|
 | **A1** full preset | ✅ **PASS, falsifier-backed** *(planted PARTIAL goes RED on all 3 fields)* |
-| **A2** colonists stay | ⛔ **FAILS AS REGISTERED — and its plant does NOT discriminate** |
+| **A2** colonists stay | ⛔ **bar UNSOUND** — ✅ **but A2-B (WORK PULL) replaces it and PASSES 47.6% vs 0.0%** |
 | **A3** till→sow→eat | ⚠ **PARTIAL** *(was VOID)* — *stock now witnessed; till+sow observed; **eat** outstanding* |
 | **A4** second founding refuses | ✅ **PASS** |
 | **A5** terrain refusal | ✅ **PASS — with its N5 control** |
@@ -294,6 +294,58 @@ nothing" on a third independent channel.*
 ★★★ **§8 B3's standing risk holds: with seeds only, the first EAT waits on a HARVEST.**
 *That is a run-length question, not a defect — and §5's "minutes-scale" claim remains
 unproven for A3 specifically, exactly as the handoff said.*
+
+---
+
+## ★★★★★★ A2-B · **THE SUCCESSOR BAR — "DOES WORK PULL?" — BUILT AND PASSING**
+
+**A2's original bar could not work** *(no attractor on a one-colony world; both arms
+wandered to ~21–23)*. **Its successor tests §8 B4's actual CLAIM rather than assuming
+it:**
+
+> ## **B4 SAYS "WHAT HOLDS COLONISTS AT F IS THE WORK BEING AT F." THAT PREDICTS A
+> CONVERSE: PUT THE WORK 20 BLOCKS AWAY AND THEY SHOULD FOLLOW IT.**
+
+**MEASURE: fraction of colonist position samples within 8 blocks of the OUTCROP
+(20 blocks west of F).**
+
+| arm | samples | **within 8 of OUTCROP** | within 8 of F |
+|---|---|---|---|
+| ★★★ **work designated at the outcrop** | 704 | ✅ **335 = 47.6%** | 314 = 44.6% |
+| **no designations at all** *(the A2 mutant)* | 1008 | ⛔ **0 = 0.0%** | 568 = 56.3% |
+
+★★★★★★ **ZERO OF 1008. Not "rarely" — colonists NEVER visit the outcrop when no work is
+there.** *So the 21-block excursions in the no-work arm were wander in other directions,
+not drift toward anything.*
+
+### WHY THIS BAR IS SOUND WHERE A2's WAS NOT
+
+| | A2 (max distance from F) | ★★★ A2-B (concentration at the work) |
+|---|---|---|
+| **with work** | max 22.96 | **47.6% present** |
+| **without work** | max 21.00 | **0.0% present** |
+| **separation** | ⛔ **2 blocks — indistinguishable** | ✅ **47.6 points — absolute** |
+
+★★★★ **And I rejected the obvious alternative first:** *"colonists REACH the work,
+planted by removing the designations" is TAUTOLOGICAL — no jobs means no job sites to
+arrive at, so that plant cannot fail.* **Disguise #1/#4. The work-pull form avoids it
+because BOTH arms have colonists, a world, and a window — only the work's LOCATION
+changes.**
+
+### ★★★★★ WHAT IT ESTABLISHES
+
+1. **§8 B4's mechanism is CORRECT and now DEMONSTRATED, not assumed.** *Work is the
+   retention mechanism; there is no anchor, exactly as B4 said.*
+2. **Ben's observed failure is explained rather than merely prevented** — *his colonists
+   marched because the WORK was at the old colony. The pull is real; §4's one-colony
+   boundary removes the far attractor, and this run shows what the pull does when one
+   exists.*
+3. ⚠ **n=1 per arm.** *The separation is 47.6 vs 0.0, which no plausible wander model
+   closes — but the number of runs is one, and that is stated rather than buried.*
+
+**Evidence:** `script-founding-a2b-work-pull.txt` ·
+`server-founding-a2b-workpull.log` · control arm re-read from
+`server-founding-a2-MUTANT.log`.
 
 ---
 
