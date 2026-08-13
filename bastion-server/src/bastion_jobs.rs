@@ -915,6 +915,51 @@ pub(crate) fn colony_terminal_should_fire(streak_after_increment: u32, threshold
     streak_after_increment == threshold
 }
 
+/// ONE STEP of sentinel S1's state machine: fold a single food-stock sample
+/// into the streak and say whether the sentinel fires on it.
+///
+/// The predicate above only judges an ALREADY-COMPUTED streak. Everything
+/// that makes S1 correct over a run — the increment on a zero sample and,
+/// far more importantly, the **reset on any nonzero sample** — used to live
+/// inline at the call site inside a 20k-line function, where no test could
+/// reach it. The registered corpus cases are claims about a SEQUENCE (v4's
+/// long famine fires; v5's sawtooth does not), and the predicate alone
+/// cannot tell those apart at all: both reduce to "is this number the
+/// threshold". The sawtooth's whole content is the reset arm.
+///
+/// The call site DELEGATES to this. There is no second copy.
+pub(crate) fn colony_terminal_step(streak: &mut u32, food_stock: u32, threshold: u32) -> bool {
+    if food_stock == 0 {
+        *streak += 1;
+        colony_terminal_should_fire(*streak, threshold)
+    } else {
+        *streak = 0;
+        false
+    }
+}
+
+/// Drive a whole sample sequence through [`colony_terminal_step`], yielding
+/// the INDEX of every sample the sentinel fires on.
+///
+/// Returning indices rather than a count is deliberate: "did it fire" is not
+/// the bar. An edge-trigger broken from `==` to `>=` still fires — it fires
+/// on every sample thereafter — so a bar must be able to say *once, at
+/// index 9*. This shares [`colony_terminal_step`] with the live path, so a
+/// green here cannot mean a different machine from the one that ships.
+pub(crate) fn colony_terminal_scan(
+    samples: impl IntoIterator<Item = u32>,
+    threshold: u32,
+) -> Vec<usize> {
+    let mut streak = 0;
+    let mut fired = Vec::new();
+    for (index, food_stock) in samples.into_iter().enumerate() {
+        if colony_terminal_step(&mut streak, food_stock, threshold) {
+            fired.push(index);
+        }
+    }
+    fired
+}
+
 /// TIME-COMPRESSION fingerprint (Ben directive,
 /// ROW-TIME-COMPRESSION-EQUIVALENCE-SPEC.md §0): a stable, cheap bucket
 /// label for a job's kind. `Zone(_)`'s inner `ZoneKind` is deliberately
@@ -6751,20 +6796,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // the streak crosses the threshold, not once per sample
                 // thereafter, so a sustained famine doesn't spam the log
                 // for the rest of the run.
-                if food_stock == 0 {
-                    board.colony_terminal_zero_streak += 1;
-                    if colony_terminal_should_fire(
-                        board.colony_terminal_zero_streak,
-                        COLONY_TERMINAL_ZERO_STREAK_SAMPLES,
-                    ) {
-                        info!(
-                            tick = tick.0,
-                            consecutive_zero_samples = board.colony_terminal_zero_streak,
-                            "bastion: COLONY TERMINAL (sentinel S1, log-only)"
-                        );
-                    }
-                } else {
-                    board.colony_terminal_zero_streak = 0;
+                // DELEGATES to `colony_terminal_step` — the increment, the
+                // reset and the edge trigger all live there, so the
+                // sequence bars drive the SAME machine that ships. Keeping
+                // the arms inline here beside an extracted copy would let
+                // the tests pass while this code went unexercised.
+                if colony_terminal_step(
+                    &mut board.colony_terminal_zero_streak,
+                    food_stock,
+                    COLONY_TERMINAL_ZERO_STREAK_SAMPLES,
+                ) {
+                    info!(
+                        tick = tick.0,
+                        consecutive_zero_samples = board.colony_terminal_zero_streak,
+                        "bastion: COLONY TERMINAL (sentinel S1, log-only)"
+                    );
                 }
             }
             // ── RUN-0 (row 47): the energy governor — the run gait
@@ -20854,6 +20900,98 @@ mod tests {
                 "streak {streak} is below threshold -- must not fire (the non-terminal / food-incoming case)"
             );
         }
+    }
+
+    /// S1-A · **v4's FAMINE FIRES — exactly once, at the threshold sample.**
+    ///
+    /// The count is the bar, not the fact. An edge trigger broken from `==`
+    /// to `>=` still "fires" — it fires on all 508 samples after the ninth —
+    /// so a test that only asked *did it fire* would pass on the very
+    /// mutation it exists to catch.
+    #[test]
+    fn s1_a_the_long_famine_fires_exactly_once_at_the_threshold() {
+        let samples = vec![0u32; 517];
+        let fired = colony_terminal_scan(samples, COLONY_TERMINAL_ZERO_STREAK_SAMPLES);
+        assert_eq!(
+            fired,
+            vec![(COLONY_TERMINAL_ZERO_STREAK_SAMPLES - 1) as usize],
+            "517 zero samples must fire ONCE, on the sample that reaches the threshold"
+        );
+    }
+
+    /// S1-B · **v5's SAWTOOTH NEVER FIRES — and this is the reset arm's bar.**
+    ///
+    /// Every zero-run here is exactly **9**, one short of the threshold, so
+    /// the sequence is the tightest possible non-trigger: it fails the
+    /// moment the reset stops working. The predicate alone cannot express
+    /// this case at all — it never sees a streak of 10 to judge.
+    #[test]
+    fn s1_b_the_sawtooth_never_fires_because_nonzero_samples_reset_it() {
+        let mut samples = Vec::new();
+        while samples.len() < 341 {
+            for _ in 0..9 {
+                samples.push(0u32);
+            }
+            samples.push(1u32);
+        }
+        samples.truncate(341);
+        let longest_zero_run = samples
+            .split(|s| *s != 0)
+            .map(|run| run.len())
+            .max()
+            .unwrap_or(0);
+        assert_eq!(longest_zero_run, 9, "the specimen must be one short, or it proves nothing");
+        assert!(
+            colony_terminal_scan(samples, COLONY_TERMINAL_ZERO_STREAK_SAMPLES).is_empty(),
+            "no zero-run reaches the threshold, so the sentinel must stay silent"
+        );
+    }
+
+    /// S1-C · **BOTH SIDES OF THE BOUNDARY**, read off the constant rather
+    /// than hard-coded, so moving the threshold moves the bar with it.
+    #[test]
+    fn s1_c_the_boundary_holds_on_both_sides() {
+        let threshold = COLONY_TERMINAL_ZERO_STREAK_SAMPLES;
+        let one_short = vec![0u32; (threshold - 1) as usize];
+        assert!(
+            colony_terminal_scan(one_short, threshold).is_empty(),
+            "a run one short of the threshold must not fire"
+        );
+        let exact = vec![0u32; threshold as usize];
+        assert_eq!(
+            colony_terminal_scan(exact, threshold),
+            vec![(threshold - 1) as usize],
+            "a run of exactly the threshold must fire once, on its last sample"
+        );
+    }
+
+    /// S1 · **DELEGATION IS LOAD-BEARING.** `colony_terminal_scan` is only
+    /// evidence about the live sentinel if the live sentinel runs the same
+    /// step. This drives `colony_terminal_step` exactly as the call site
+    /// does — own the streak, feed it one sample — and requires it to agree
+    /// with the sequence driver on the same input.
+    #[test]
+    fn s1_step_and_scan_are_the_same_machine() {
+        let samples: Vec<u32> = vec![0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let threshold = COLONY_TERMINAL_ZERO_STREAK_SAMPLES;
+
+        // The call site's own shape: a streak it owns, stepped per sample.
+        let mut streak = 0u32;
+        let mut fired_at_the_site = Vec::new();
+        for (index, sample) in samples.iter().enumerate() {
+            if colony_terminal_step(&mut streak, *sample, threshold) {
+                fired_at_the_site.push(index);
+            }
+        }
+
+        assert_eq!(
+            fired_at_the_site,
+            colony_terminal_scan(samples, threshold),
+            "the sequence driver must be the call site's machine, not a second opinion"
+        );
+        // And it is not vacuously empty: the reset at index 3 pushes the
+        // firing sample to 13, not 9.
+        assert_eq!(fired_at_the_site, vec![13]);
     }
 
     #[test]
