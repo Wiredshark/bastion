@@ -1,0 +1,57 @@
+[1786637568557] === bastion_playtest starting: server=127.0.0.1:14004 username=wgate-g2 script=E:/veloren-master/bastion-test-evidence/script-worldgen-census.txt ===
+[1786637568557] parsed 31 script commands
+[1786637571849] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/32ab425e-4f48-4b69-8b39-abe044207de0), name: "Veloren Server", git_hash: 2847214391, git_timestamp: 1786637031, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1786637571983] requested character join id=CharacterId(2)
+[1786637571983] in-game. entity=Entity(0, Generation(1))
+[1786637574009] player pos at script start: Vec3 { x: 15216.493, y: 16016.563, z: 419.0 }
+[1786637574009] [note] W-CENSUS: REAL WORLDGEN -- no BASTION_FLAT_ARENA. Lattice fixed by
+[1786637574009] [note] W-CENSUS: WORLDGEN-PRESET-PREREG section 7, committed BEFORE any data:
+[1786637574009] [note] W-CENSUS: 3x3 at the 32-block chunk pitch around (15216,16016),
+[1786637574009] [note] W-CENSUS: walked in ascending (y,x) order. Not chosen after seeing results.
+[1786637574009] [note] W-CENSUS: A refusal does NOT consume the one-colony boundary, so one world
+[1786637574009] [note] W-CENSUS: absorbs every attempt. This is a CENSUS and is reported whole --
+[1786637574009] [note] W-CENSUS: it is not a search for a green. After the FIRST success, later
+[1786637574009] [note] W-CENSUS: attempts refuse colony_exists BY DESIGN and are not terrain data.
+[1786637574009] [note] W-CENSUS: witness = 'bastion: founding site relief' on EVERY attempt.
+[1786637574010] sent BastionCameraAnchor at Vec3 { x: 15216.493, y: 16016.563, z: 419.0 }
+[1786637577568] [chat] GenericChatMsg { chat_type: Npc(Uid(23)), content: Localized { key: "npc-speech-menacing", seed: 2815, args: {} } }
+[1786637578967] waited 150 ticks -> sim 8.80..13.80 in 148 client spins; pos now Vec3 { x: 15216.493, y: 16016.563, z: 419.0 }
+[1786637578967] [note] W-CENSUS: terrain settle window closed, beginning lattice
+[1786637578967] sent BastionSpawnColony pos=Vec3 { x: 15184.5, y: 15984.5, z: 419.0 } count=8 targeted=true
+[1786637579035] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786637579035] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786637580300] waited 40 ticks -> sim 13.80..15.15 in 40 client spins; pos now Vec3 { x: 15216.493, y: 16016.563, z: 419.0 }
+[1786637580300] sent BastionSpawnColony pos=Vec3 { x: 15216.5, y: 15984.5, z: 419.0 } count=8 targeted=true
+[1786637580369] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786637580369] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786637581634] waited 40 ticks -> sim 15.15..16.49 in 40 client spins; pos now Vec3 { x: 15216.493, y: 16016.563, z: 419.0 }
+[1786637581634] sent BastionSpawnColony pos=Vec3 { x: 15248.5, y: 15984.5, z: 419.0 } count=8 targeted=true
+[1786637581702] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786637582967] waited 40 ticks -> sim 16.49..17.84 in 40 client spins; pos now Vec3 { x: 15216.493, y: 16016.563, z: 419.0 }
+[1786637582967] sent BastionSpawnColony pos=Vec3 { x: 15184.5, y: 16016.5, z: 419.0 } count=8 targeted=true
+[1786637583002] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786637583002] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Your colony already lives in this world — relocation and multiple colonies are future features.") }
+[1786637584300] waited 40 ticks -> sim 17.84..19.19 in 40 client spins; pos now Vec3 { x: 15216.493, y: 16016.563, z: 419.0 }
+[1786637584300] sent BastionSpawnColony pos=Vec3 { x: 15216.5, y: 16016.5, z: 419.0 } count=8 targeted=true
+[1786637584370] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786637584370] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Your colony already lives in this world — relocation and multiple colonies are future features.") }
+[1786637585634] waited 40 ticks -> sim 19.19..20.54 in 40 client spins; pos now Vec3 { x: 15216.493, y: 16016.563, z: 419.0 }
+[1786637585634] sent BastionSpawnColony pos=Vec3 { x: 15248.5, y: 16016.5, z: 419.0 } count=8 targeted=true
+[1786637585702] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786637585702] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Your colony already lives in this world — relocation and multiple colonies are future features.") }
+[1786637586967] waited 40 ticks -> sim 20.54..21.88 in 40 client spins; pos now Vec3 { x: 15216.493, y: 16016.563, z: 419.0 }
+[1786637586967] sent BastionSpawnColony pos=Vec3 { x: 15184.5, y: 16048.5, z: 419.0 } count=8 targeted=true
+[1786637587002] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786637587002] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Your colony already lives in this world — relocation and multiple colonies are future features.") }
+[1786637588301] waited 40 ticks -> sim 21.88..23.23 in 40 client spins; pos now Vec3 { x: 15216.493, y: 16016.563, z: 419.0 }
+[1786637588301] sent BastionSpawnColony pos=Vec3 { x: 15216.5, y: 16048.5, z: 419.0 } count=8 targeted=true
+[1786637588336] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786637588336] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Your colony already lives in this world — relocation and multiple colonies are future features.") }
+[1786637589634] waited 40 ticks -> sim 23.23..24.58 in 40 client spins; pos now Vec3 { x: 15216.493, y: 16016.563, z: 419.0 }
+[1786637589634] sent BastionSpawnColony pos=Vec3 { x: 15248.5, y: 16048.5, z: 419.0 } count=8 targeted=true
+[1786637589669] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786637589669] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Your colony already lives in this world — relocation and multiple colonies are future features.") }
+[1786637591270] [chat] GenericChatMsg { chat_type: Npc(Uid(17)), content: Localized { key: "npc-speech-tell_monster", seed: 18439, args: {"dir": Content(Localized { key: "npc-speech-dir_north", seed: 31950, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 44283, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 17305, args: {} })} } }
+[1786637591635] waited 60 ticks -> sim 24.58..26.60 in 60 client spins; pos now Vec3 { x: 15216.493, y: 16016.563, z: 419.0 }
+[1786637591635] [note] W-CENSUS: lattice complete, window closed
+[1786637591635] === script complete, disconnecting ===
