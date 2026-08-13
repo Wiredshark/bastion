@@ -223,6 +223,34 @@ foliage hypothesis narrows further** *(task #86)*.
 standing resourced proving ground".** *It does for **mine**. It cannot for **chop**,
 by construction.* **The chop half of F8-inclusion is unreachable on this arena.**
 
+### ✅★★★★★★ F8-C1's MATCHED CONTROL — **run afterwards, because the finding was ONE-ARMED**
+
+**I showed chop REFUSING on the arena. I never showed chop WORKING anywhere.** *If chop
+were broken generally, "the arena's fault" would have been refuted.* ★★★ **So I ran the
+control: REAL worldgen, no `BASTION_FLAT_ARENA`, spawn `(15216.5, 16016.5, 419)`.**
+
+| world | chop designations | client message |
+|---|---|---|
+| ★★★ **real worldgen** | ✅ **6 created, rev=4** *(tree AABBs, e.g. z 412..454)* | *(none — no refusal)* |
+| **resourced arena** | ⛔ **0** | `"No trees rooted in the marked area."` |
+
+> ## **F8-C1 SURVIVES ITS OWN CONTROL: chop works on world-oracle trees and cannot work
+> on arena-painted blocks.**
+
+### ⚠ BUT THE CONTROL CORRECTED MY EVIDENCE FOR IT
+
+**I had cited "`designation placed kind=Chop` never appears" as part of F8-C1's proof.**
+
+    designation placed kind=Chop  --  0 occurrences in BOTH runs, working AND failing
+
+★★★★★ **That line does not exist for chop at all.** *Chop echoes per-tree
+`BastionDesignation` messages to the CLIENT instead of emitting the shared
+`designation placed` line.* **So my absent-line evidence proved nothing** — *the real
+evidence was the client's refusal message, and now this control.*
+
+★★★ **Reading an absence as evidence when the line never exists, for the third time
+this session** — *and this time inside a finding I had already committed.*
+
 ### F8-C2 · ⚠ **THE REFUSAL HAS NO SERVER-LOG WITNESS** *(and I nearly misreported it)*
 
 **The refusal IS delivered — to the CLIENT, as `CommandInfo`.** *It is absent from the

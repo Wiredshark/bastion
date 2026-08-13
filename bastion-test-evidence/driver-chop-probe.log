@@ -1,0 +1,11 @@
+[1786606279883] === bastion_playtest starting: server=127.0.0.1:14004 username=chopprobe script=E:/veloren-master/bastion-test-evidence/script-chop-probe.txt ===
+[1786606279883] parsed 4 script commands
+[1786606282864] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/fcb0698d-8677-46d2-972b-9841b52010a0), name: "Veloren Server", git_hash: 285524931, git_timestamp: 1786603751, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1786606283031] requested character join id=CharacterId(2)
+[1786606283031] in-game. entity=Entity(0, Generation(1))
+[1786606285049] player pos at script start: Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1786606285049] [note] CHOP-PROBE: learn the real-world spawn position so the chop footprint can be
+[1786606285049] [note] CHOP-PROBE: written in ABSOLUTE coordinates around it.
+[1786606285049] sent BastionCameraAnchor at Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1786606287049] waited 60 ticks -> sim 25.49..27.50 in 60 client spins; pos now Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1786606287049] === script complete, disconnecting ===

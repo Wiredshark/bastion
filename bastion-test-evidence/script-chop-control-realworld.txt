@@ -1,0 +1,14 @@
+note CHOP-CONTROL: the matched control F8-C1 was missing.
+note CHOP-CONTROL: F8-C1 says the ARENA's trees cannot be chopped because they are blocks
+note CHOP-CONTROL: painted at chunk generation while the chop path resolves its fell-set
+note CHOP-CONTROL: through the WORLD ORACLE (get_area_trees). I showed chop REFUSING there
+note CHOP-CONTROL: but never showed chop WORKING anywhere -- if chop were broken generally,
+note CHOP-CONTROL: 'the arena's fault' would be REFUTED.
+note CHOP-CONTROL: REAL WORLDGEN, no BASTION_FLAT_ARENA. Spawn (15216.5, 16016.5, 419).
+note CHOP-CONTROL: PASS = 'designation placed kind=Chop' with jobs > 0
+note CHOP-CONTROL: FAIL = 'No trees rooted' again => F8-C1's attribution is refuted
+anchor
+designate chop 15196 15996 419 15236 16036 419
+wait 200
+list_designations
+note CHOP-CONTROL: window closed

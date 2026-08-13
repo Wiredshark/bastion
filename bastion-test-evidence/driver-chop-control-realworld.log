@@ -1,0 +1,21 @@
+[1786606314701] === bastion_playtest starting: server=127.0.0.1:14004 username=chopctl script=E:/veloren-master/bastion-test-evidence/script-chop-control-realworld.txt ===
+[1786606314701] parsed 14 script commands
+[1786606317636] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/fcb0698d-8677-46d2-972b-9841b52010a0), name: "Veloren Server", git_hash: 285524931, git_timestamp: 1786603751, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1786606317770] requested character join id=CharacterId(16)
+[1786606317770] in-game. entity=Entity(0, Generation(1))
+[1786606319776] player pos at script start: Vec3 { x: 15216.2295, y: 16016.408, z: 419.0 }
+[1786606319776] [note] CHOP-CONTROL: the matched control F8-C1 was missing.
+[1786606319776] [note] CHOP-CONTROL: F8-C1 says the ARENA's trees cannot be chopped because they are blocks
+[1786606319776] [note] CHOP-CONTROL: painted at chunk generation while the chop path resolves its fell-set
+[1786606319776] [note] CHOP-CONTROL: through the WORLD ORACLE (get_area_trees). I showed chop REFUSING there
+[1786606319776] [note] CHOP-CONTROL: but never showed chop WORKING anywhere -- if chop were broken generally,
+[1786606319776] [note] CHOP-CONTROL: 'the arena's fault' would be REFUTED.
+[1786606319776] [note] CHOP-CONTROL: REAL WORLDGEN, no BASTION_FLAT_ARENA. Spawn (15216.5, 16016.5, 419).
+[1786606319776] [note] CHOP-CONTROL: PASS = 'designation placed kind=Chop' with jobs > 0
+[1786606319776] [note] CHOP-CONTROL: FAIL = 'No trees rooted' again => F8-C1's attribution is refuted
+[1786606319776] sent BastionCameraAnchor at Vec3 { x: 15216.2295, y: 16016.408, z: 419.0 }
+[1786606319776] sent BastionPlaceDesignation kind=Chop region=Region { min: Vec3 { x: 15196, y: 15996, z: 419 }, max: Vec3 { x: 15236, y: 16036, z: 419 } }
+[1786606326388] waited 200 ticks -> sim 58.78..65.46 in 198 client spins; pos now Vec3 { x: 15216.2295, y: 16016.408, z: 419.0 }
+[1786606326388] designations (rev=4): [(Region { min: Vec3 { x: 15160, y: 15984, z: 412 }, max: Vec3 { x: 15180, y: 16004, z: 454 } }, Chop, None), (Region { min: Vec3 { x: 15178, y: 16016, z: 416 }, max: Vec3 { x: 15198, y: 16036, z: 456 } }, Chop, None), (Region { min: Vec3 { x: 15162, y: 16025, z: 411 }, max: Vec3 { x: 15182, y: 16045, z: 451 } }, Chop, None), (Region { min: Vec3 { x: 15189, y: 16033, z: 417 }, max: Vec3 { x: 15209, y: 16053, z: 459 } }, Chop, None)]
+[1786606326388] [note] CHOP-CONTROL: window closed
+[1786606326388] === script complete, disconnecting ===

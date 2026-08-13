@@ -1,0 +1,4 @@
+note CHOP-PROBE: learn the real-world spawn position so the chop footprint can be
+note CHOP-PROBE: written in ABSOLUTE coordinates around it.
+anchor
+wait 60
