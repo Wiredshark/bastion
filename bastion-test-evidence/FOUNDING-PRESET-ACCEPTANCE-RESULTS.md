@@ -561,6 +561,68 @@ second profile — the plant pair is internally matched on `no_overflow`.)*
 
 ---
 
+## ⚖★★★★★★ ROW DISPOSITION — **FOUNDING PRESET v1**
+
+The row arrived having **never been run live, not once**. It leaves having had every
+bar exercised, four of the five plants fired, and one bar retired as unsound.
+
+### THE SCORE
+
+| bar | verdict | what carries it |
+|---|---|---|
+| **smoke** | ✅ PASS | 4/4 registered checks, first boot |
+| **B1** *(z-datum)* | ✅ PASS | first live exercise ever; green → **red** → green, 5-block discriminator |
+| **A1** *(preset completeness)* | ✅ PASS | §8 B5's PARTIAL-preset plant went **red on all three fields** |
+| **A2** *(colonist retention)* | ⛔ **RETIRED — UNSOUND** | its plant *cannot* discriminate; Ben's failure needs an attractor §4 forbids |
+| **A2-B** *(does work pull?)* | ✅ PASS | successor bar, built here: **47.6% vs 0.0%** |
+| **A3** *(the loop closes)* | ✅ PASS | VOID → PARTIAL → PASS; till→sow→harvest→**EAT** on founding stock |
+| **A4** *(second-founding refusal)* | ✅ PASS | restart case + plant/control pair, **this commit** |
+| **A5** *(spawn scatter)* | ✅ PASS | with N5's not-always-refusing control, in one leg |
+
+**Row verdict: PASS, 7 of 8 bars, one bar retired and replaced.**
+
+### WHAT THE ROW CHANGED IN THE CODE
+
+Every one of these exists because a bar could not be *read*, not because a feature was
+missing. The instrument was the deliverable as much as the verdict was.
+
+- `8932f91f31` — driver gains targeted `spawn`; unblocked **A5 and B1**
+- `73b07a745e` — `pos` on the presence diag; **A2 had no body-position instrument at all**
+- `37132be674` — the founding-stock seed witness; lifted **A3 out of VOID**
+- `bc169208aa` — chop resolution/refusal witness, **both arms named**; closes F8-C2
+- `1104c3c39d` — four unregistered env sites registered, each classed from its own site
+
+### WHAT REMAINS OPEN — **named, not gestured at**
+
+1. **⛔ F8-C1 · the arena's trees cannot be chopped.** §2's claim is **false for chop**.
+   The arena paints tree *blocks* at chunk generation; the chop path resolves its
+   fell-set through the **World oracle** (`get_area_trees` → `tree_valid_at`), which
+   knows nothing of them. Attributed with a matched control on real worldgen — chop
+   works there, so this is the arena's defect, not chop's. **Blocks any future
+   arena-hosted chop acceptance.**
+2. **§8 N2 · the widget tier is untested.** The driver's `spawn` reaches the same live
+   client-message handler the in-game action does — that tier is covered. The
+   **mouse/widget path is a separate witness** and no bar in this row runs at it. Not a
+   gap in the feature; a gap in the *tier coverage*, and it should be named as such
+   rather than quietly counted as done.
+3. **⚠ `host_input_manifest` completeness** — green now, but two **pre-existing,
+   unrelated** failures were established by content during the fix and are not mine to
+   close here.
+
+### WHAT I WILL **NOT** CLAIM
+
+- Not that the preset is correct on **real worldgen**. Every bar but the chop control
+  ran on the flat arena. The arena tests the z-datum for free; it does **not** test the
+  preset against slope, water, or chunk boundaries. *That is the next row, and it is a
+  real row.*
+- Not that A2's question is answered. A2-B answers a **different, sounder** question
+  ("does work pull?"). Retention under an attractor-free §4 remains **unmeasured** —
+  retired, not resolved.
+- Not that F8-C1's mine half generalises to chop. It closed v5's registered prediction
+  on **mining** (37 completions, 43/43 distinct positions). Chop is the open item above.
+
+---
+
 ## NEXT
 3. **F8-inclusion** *(designate the arena's tree and outcrop; observe a real
    `job completed` with drop+XP)*.
