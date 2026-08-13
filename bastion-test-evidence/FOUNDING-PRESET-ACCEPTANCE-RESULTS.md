@@ -8,7 +8,7 @@ any of this data existed.** *Binary `6c2991eb` + targeted-spawn driver `8932f91f
 |---|---|
 | **A1** full preset | ✅ **PASS, falsifier-backed** *(planted PARTIAL goes RED on all 3 fields)* |
 | **A2** colonists stay | ⛔ **FAILS AS REGISTERED — and its plant does NOT discriminate** |
-| **A3** till→sow→eat | ⚠ **VOID by refusal #4** — *seed drop has no witness (F-2)* |
+| **A3** till→sow→eat | ⚠ **PARTIAL** *(was VOID)* — *stock now witnessed; till+sow observed; **eat** outstanding* |
 | **A4** second founding refuses | ✅ **PASS** |
 | **A5** terrain refusal | ✅ **PASS — with its N5 control** |
 | **B1** z-datum *(§8, not an A-bar)* | ✅ **PASS, falsifier-backed** |
@@ -250,6 +250,50 @@ were `food stock sample` lines; the rest matched **`xp`** inside the migration n
 `V34__remove_immunemelee_be`**xp**`losion`.* **A two-letter pattern matches inside
 words** — *the naming-claim trap at its most literal, caught only by reading the
 matches instead of the count.*
+
+---
+
+## ★★★★★ A3 — **LIFTED FROM VOID TO PARTIAL (F-2 closed, `37132be674`)**
+
+**Smoke F-2 held A3 VOID under scoring refusal #4:** *the founding dropped
+`FOUNDING_SEED_STOCK` with **no emit**, so "founded WITH stock" was UNREAD rather than
+true.* **Built the witness:**
+
+    bastion: founding stock dropped item="common.items.bastion.wheat_seeds" amount=8
+        pos=Vec3 { x: 16384.5, y: 16384.5, z: 400 }
+
+★★★ **`amount` is read BACK OFF THE ITEM, never echoed from the constant** — *`set_amount`'s
+Result is discarded at that site, so the constant is INTENT and only the item carries
+EFFECT.* **Echoing the constant would have been the F8 defect in miniature.**
+
+**RED-DEMONSTRATED (bogus asset ⇒ `new_from_asset` Err ⇒ no drop):**
+
+| build | drop lines | `colony founded` |
+|---|---|---|
+| **GREEN** | **1**, `amount=8` | 1 |
+| ★★★★ **MUTANT** | ⛔ **0** | ✅ **still 1** |
+| **REVERTED** | **1**, `amount=8` | 1 |
+
+> ## **THE PLANT REMOVED THE DROP WITHOUT DELETING THE SUBJECT — SO THE WITNESS
+> DISCRIMINATES RATHER THAN BEING MERELY COUPLED TO SOMETHING.**
+
+★★ **A second control came free:** *the script founds TWICE and the second is refused; the
+drop line appears **exactly once**.* **The emit's position relative to the refusal path
+is proven by the count, not asserted** — *and it re-confirms "a refused founding mutates
+nothing" on a third independent channel.*
+
+### A3's REMAINING GAP — **narrowed, not closed**
+
+| stage | state |
+|---|---|
+| **stock** | ✅ **witnessed** — 8 seeds, live |
+| **till** | ✅ observed — **30** in a 300-tick leg |
+| **sow** | ✅ observed — **5** |
+| ⚠ **eat** | ⛔ **still unexercised** |
+
+★★★ **§8 B3's standing risk holds: with seeds only, the first EAT waits on a HARVEST.**
+*That is a run-length question, not a defect — and §5's "minutes-scale" claim remains
+unproven for A3 specifically, exactly as the handoff said.*
 
 ---
 
