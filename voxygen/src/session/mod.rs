@@ -3639,7 +3639,16 @@ impl PlayState for SessionState {
                                 crate::hud::bastion::RadialAction::Verb(
                                     common::bastion::ContextVerb::FoundColony,
                                 ) => {
-                                    client.bastion_spawn_colony(point, 6);
+                                    // ONE DEFINITION (founding-count row): this
+                                    // was a bare `6` while every scored bar ran
+                                    // at 8 and the bed plot provides 8 cells —
+                                    // three numbers with nothing relating them,
+                                    // so the shipped population was one no test
+                                    // ever exercised.
+                                    client.bastion_spawn_colony(
+                                        point,
+                                        common::bastion::FOUNDING_COLONIST_COUNT,
+                                    );
                                 },
                                 crate::hud::bastion::RadialAction::Verb(verb) => {
                                     client.bastion_context_action(target, verb);

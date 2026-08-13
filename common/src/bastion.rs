@@ -304,6 +304,29 @@ pub struct ActivityZones(pub Vec<(ZoneKind, Region)>);
 pub const ZONE_MAGNET_WEIGHT: f32 = 0.1;
 /// bastion (ZONE-0): beyond this XY distance a zone exerts no pull (no
 /// cross-map teleport-attraction; idle colonists drift in when nearby).
+/// How many colonists a founding brings.
+///
+/// THE ONE DEFINITION. Before this there were three numbers with nothing
+/// relating them: the shipped widget passed a bare `6`, every acceptance
+/// script passed `8`, and the preset's bed plot happens to provide 8 cells.
+/// Every scored bar in the program therefore ran at a population the shipped
+/// action never produces, and nothing could notice the drift.
+///
+/// THE BASIS: the bed plot is the binding resource — the only preset element
+/// sized per-colonist, and a colonist without a bed has no rest service. So
+/// the count is pinned to bed capacity, and
+/// `bed_capacity_covers_the_founding_count` (bastion-server) DERIVES that
+/// capacity from `FOUNDING_PRESET_V1` and fails if the two part company.
+///
+/// It lives in `common` because both ends need it: the voxygen widget that
+/// founds, and the server-side preset that beds them.
+///
+/// The VALUE is inherited from the scripts (8 — the saturated case every
+/// scored run used), not from the widget's `6`. Changing it is a design call
+/// rather than a refactor, which is exactly why it now sits in one place
+/// where such a call is visible.
+pub const FOUNDING_COLONIST_COUNT: u8 = 8;
+
 pub const ZONE_MAGNET_RANGE: f32 = 48.0;
 
 /// What a painted designation region means. B4 turns these into jobs.

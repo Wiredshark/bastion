@@ -128,6 +128,24 @@ pub const FOUNDING_PRESET_V1: &[PresetElement] = &[
     },
 ];
 
+/// The bed plot's sleeping capacity, DERIVED from the preset table rather
+/// than restated. Consumed by the bar that keeps
+/// [`common::bastion::FOUNDING_COLONIST_COUNT`] honest: asserting two
+/// literals against each other would merely re-encode the drift it exists to
+/// catch.
+pub fn bed_capacity() -> usize {
+    FOUNDING_PRESET_V1
+        .iter()
+        .filter(|element| element.role == PresetRole::Bed)
+        .map(|element| {
+            let span = |min: i32, max: i32| (max - min + 1).max(0) as usize;
+            span(element.min_off.x, element.max_off.x)
+                * span(element.min_off.y, element.max_off.y)
+                * span(element.min_off.z, element.max_off.z)
+        })
+        .sum()
+}
+
 /// Why a founding was refused. A refusal is a FIRST-CLASS OUTCOME with its
 /// own name on both channels (packet §3.2 / §4): the log carries
 /// `reason()`, the player sees [`Self::player_message`].
@@ -788,6 +806,38 @@ mod tests {
             grid.insert(*key, chunk_at(*first_air));
         }
         grid
+    }
+
+    /// **THE FOUNDING COUNT AND THE BED PLOT MUST NOT DRIFT APART.**
+    ///
+    /// Capacity is DERIVED from `FOUNDING_PRESET_V1`, never restated —
+    /// asserting `8 >= 8` between two literals would re-encode the very bug
+    /// this row closes. BOTH sides move the bar: shrink the bed and it
+    /// fails; raise `FOUNDING_COLONIST_COUNT` past capacity and it fails.
+    /// That is what makes it a test of the RELATION rather than of a number.
+    ///
+    /// Why the bed is the binding resource: it is the only preset element
+    /// sized per-colonist, and a colonist with no bed has no rest service.
+    #[test]
+    fn bed_capacity_covers_the_founding_count() {
+        let capacity = bed_capacity();
+        let count = common::bastion::FOUNDING_COLONIST_COUNT as usize;
+        assert!(
+            capacity > 0,
+            "the preset must contain a Bed element for this bar to mean anything"
+        );
+        assert!(
+            capacity >= count,
+            "the founding brings {count} colonists but the preset's bed plot sleeps only \
+             {capacity} -- either the bed shrank or the count grew"
+        );
+    }
+
+    /// And the specimen is pinned, so a bed reshaped to the same total by
+    /// accident still has to be looked at: 2 x 2 x 2 = 8.
+    #[test]
+    fn bed_capacity_is_the_two_by_two_by_two_the_table_describes() {
+        assert_eq!(bed_capacity(), 8);
     }
 
     /// THE DENOMINATOR the worldgen row's every count is reported against.
