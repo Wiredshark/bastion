@@ -224,6 +224,50 @@ const CATALOG: &[EnvVarSiteV1] = &[
          chop/mine work was there",
     ),
     site(
+        "bastion-server/src/bastion_entity_event_log.rs",
+        "BASTION_ENTITY_EVENT_LOG",
+        Diagnostic,
+        "the entity event log's master gate. Its own module doc states the \
+         posture verbatim -- 'no init, no allocation beyond the (empty) \
+         process-global slot, no ECS mutation, no scheduling change when off' \
+         -- so two runs differing only in this produce identical simulation \
+         and differ only in the recorded ring",
+    ),
+    site(
+        "bastion-server/src/bastion_entity_event_log.rs",
+        "BASTION_ENTITY_EVENT_LOG_RING_SIZE",
+        Diagnostic,
+        "ring capacity for the log above (DEFAULT_RING_SIZE, floored at 1). \
+         Changes how much history is RETAINED for reading, never what the \
+         simulation does -- a pure side-channel size knob",
+    ),
+    site(
+        "bastion-server/src/bastion_jobs.rs",
+        "BASTION_COLONY_PRESENCE_ACCEPTANCE_DIAG",
+        Diagnostic,
+        "per-colonist presence sample (tick, uid, loaded, hunger, rest, pos). \
+         Read at its site: a bare `if var_os(..).is_some()` around an emit \
+         loop over a join the block already pays for -- no mutation, no \
+         control flow beyond the emit. FOUNDING PRESET A2 reads its `pos` \
+         field, which is why the class matters: calling a Diagnostic a \
+         GameplayVariant would make every A2 run attest as a different world",
+    ),
+    site(
+        "bastion-server/src/bastion_jobs.rs",
+        "BASTION_FINGERPRINT",
+        Diagnostic,
+        "per-tick state digest for the time-compression equivalence proof. \
+         Reads existing JobBoard counters and job populations and hashes them \
+         in deterministic (BTreeMap/sorted) order so the hook cannot itself \
+         become a divergence source; it writes no simulated state. NOTE, \
+         recorded rather than left implicit: it is NOT free in WALL time, and \
+         this program has measured that wall cost is a real axis for \
+         chunk-gen-coupled behaviour (colonist promotion timing) even when \
+         simulation output is byte-identical. Diagnostic by this class's own \
+         definition -- but a run comparing WALL-COUPLED quantities should \
+         record whether it was on",
+    ),
+    site(
         "bastion-server/src/bastion_flight_recorder.rs",
         "BASTION_FLIGHT_RECORDER_DIR",
         Diagnostic,
