@@ -6,7 +6,7 @@ any of this data existed.** *Binary `6c2991eb` + targeted-spawn driver `8932f91f
 
 | bar | state |
 |---|---|
-| **A1** full preset | ✅ **PASS** *(smoke + every leg since)* — ⚠ *planted PARTIAL failure still to run* |
+| **A1** full preset | ✅ **PASS, falsifier-backed** *(planted PARTIAL goes RED on all 3 fields)* |
 | **A2** colonists stay | ⏳ **not yet run** |
 | **A3** till→sow→eat | ⚠ **VOID by refusal #4** — *seed drop has no witness (F-2)* |
 | **A4** second founding refuses | ✅ **PASS** |
@@ -62,10 +62,40 @@ control's success.*
 
 ---
 
+---
+
+## ★★★★★★ A1 — **FULL PRESET, WITH §8 B5's CORRECTED PLANTED FAILURE**
+
+**Three states, same script (`script-founding-preset-smoke.txt`), three builds.**
+
+| # | build | `elements=` · `complete=` · `designated_regions=` | plot lines |
+|---|---|---|---|
+| **1** | **REAL** | `stockpile,farm,bed` · **true** · **3** | stockpile · farm · bed |
+| **2** | ★★★★★ **MUTANT** *(skip `DesignationKind::Farm` at the placement loop)* | ⛔ `stockpile,bed` · **false** · **2** | stockpile · bed |
+| **3** | **REVERTED + REBUILT** | `stockpile,farm,bed` · **true** · **3** | all three |
+
+### ★★★★★★ WHY THIS PLANT IS THE ONE §8 B5 ASKED FOR
+
+**The packet's ORIGINAL plant was "founding action with preset-placement disabled must
+NOT emit the founded line."** *That removes the subject and the witness together — it
+proves the emit is coupled to something, never that it means FULL preset.* **B5 called
+it vacuity costume #3.**
+
+> ## **THE CORRECTED PLANT KEEPS THE FOUNDING HAPPENING AND MAKES THE WITNESS TELL THE
+> TRUTH ABOUT IT: the founded line STILL EMITS, carrying `complete=false`.**
+
+★★★★★ **All three discriminating fields moved** — *`elements=` shortened, `complete=`
+flipped, `designated_regions=` dropped 3→2.* **A1's witness discriminates full from
+partial, which is exactly the property the bar claims and the old plant could not have
+shown.**
+
+★★ *A4's `reason="colony_exists"` refusal also fired in the reverted run — the second
+founding is still refused, so this leg re-confirms A4 alongside A1.*
+
+---
+
 ## NEXT
 
-1. **A1's planted PARTIAL preset** *(§8 B5 — place all but the farm; the witness must go
-   RED via `complete=`/`elements=`/`designated_regions=`)*.
-2. **A2** *(§8 B4 — found WITHOUT designations; colonists must leave R=16)*.
+1. **A2** *(§8 B4 — found WITHOUT designations; colonists must leave R=16)*.
 3. **F8-inclusion** *(designate the arena's tree and outcrop; observe a real
    `job completed` with drop+XP)*.
