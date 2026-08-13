@@ -1,0 +1,5 @@
+PLANT RERUN (append-only save), binary 17:17:42 > source 16:58:30
+  boot1 founded/farm : 1 / 1
+  boot2 replayed     : replayed=9   (control: replayed=3)
+  boot2 FARM         : 1   (control: 0; plant must be >0)
+  boot2 kinds        : Stockpile Farm Bed Stockpile Bed Bed Stockpile Bed Bed 

@@ -1,0 +1,6 @@
+CONTROL FINAL (snapshot save), binary 17:23:38 > source 17:23:01
+  boot1 founded/farm : 1 / 1
+  boot2 replayed     : replayed=3   (plant: replayed=9)
+  boot2 FARM         : 0   (plant: 1)
+  boot2 kinds        : Stockpile Bed Bed 
+  boot2 stockpile zn : 1
