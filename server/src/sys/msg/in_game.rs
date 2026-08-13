@@ -1353,43 +1353,63 @@ impl<'a> System<'a> for Sys {
                     let refusal = if rtsim.bastion_colony_exists() {
                         Some((preset::FoundingRefusal::ColonyExists, None))
                     } else {
-                        match datum {
-                            // §3.2 TERRAIN VALIDATION over every plot
-                            // column, not just the centre.
-                            Some(datum_z) => {
-                                let origin = Vec3::new(origin_xy.x, origin_xy.y, datum_z);
-                                // ONE PRODUCER, TWO CONSUMERS (worldgen row
-                                // §5): the verdict below and the relief emit
-                                // read the SAME measurement. A second
-                                // function recomputing relief beside the
-                                // real one is the F8 defect.
-                                let relief = preset::survey_site(&terrain, origin);
-                                // WITHOUT THIS EMIT the refusal carries no
-                                // number: `reason="terrain"` cannot separate
-                                // a 2-block slope from a 90-block lakebed,
-                                // nor deviation from absence. `branch` is
-                                // what makes the water prediction testable.
-                                tracing::info!(
-                                    ?origin,
-                                    datum = relief.datum,
-                                    columns = relief.columns,
-                                    resolved = relief.resolved,
-                                    min_dev = ?relief.min_dev,
-                                    max_dev = ?relief.max_dev,
-                                    worst = ?relief.worst,
-                                    submerged = relief.submerged,
-                                    branch = relief.branch().name(),
-                                    "bastion: founding site relief"
-                                );
+                        {
+                            // F2: THE EMIT COVERS BOTH ARMS.
+                            //
+                            // This block used to live inside `Some(datum_z)`,
+                            // so an origin whose own column resolved no
+                            // surface was refused with NO relief line at all —
+                            // 16 of 24 search attempts were invisible to the
+                            // instrument built to make absence visible. An
+                            // absent line and a zero line render identically.
+                            //
+                            // When the datum is unresolved we survey against
+                            // the HINT — the same window `column_surface_z`
+                            // was already given — and say so in
+                            // `datum_resolved`, rather than fabricating a
+                            // datum that would read as resolved.
+                            let datum_resolved = datum.is_some();
+                            let survey_z = datum.unwrap_or(pos.z.floor() as i32);
+                            let origin = Vec3::new(origin_xy.x, origin_xy.y, survey_z);
+                            // ONE PRODUCER, TWO CONSUMERS (worldgen row
+                            // §5): the verdict below and the relief emit
+                            // read the SAME measurement. A second
+                            // function recomputing relief beside the
+                            // real one is the F8 defect.
+                            let relief = preset::survey_site(&terrain, origin);
+                            // WITHOUT THIS EMIT the refusal carries no
+                            // number: `reason="terrain"` cannot separate
+                            // a 2-block slope from a 90-block lakebed,
+                            // nor deviation from absence. `branch` is
+                            // what makes the water prediction testable.
+                            tracing::info!(
+                                ?origin,
+                                datum = relief.datum,
+                                datum_resolved,
+                                columns = relief.columns,
+                                resolved = relief.resolved,
+                                min_dev = ?relief.min_dev,
+                                max_dev = ?relief.max_dev,
+                                worst = ?relief.worst,
+                                submerged = relief.submerged,
+                                branch = relief.branch().name(),
+                                "bastion: founding site relief"
+                            );
+                            if datum_resolved {
+                                // §3.2 TERRAIN VALIDATION over every plot
+                                // column, not just the centre.
                                 match relief.verdict() {
                                     Ok(()) => None,
                                     Err((refusal, column)) => Some((refusal, Some(column))),
                                 }
-                            },
-                            // No resolvable surface at F itself (open
-                            // water, void, unloaded chunk) is the same
-                            // refusal by the same name.
-                            None => Some((preset::FoundingRefusal::Terrain, Some(origin_xy))),
+                            } else {
+                                // No resolvable surface at F itself (open
+                                // water, void, unloaded chunk) is the same
+                                // refusal by the same name. UNCHANGED — this
+                                // row adds a witness, it does not move a
+                                // decision.
+                                Some((preset::FoundingRefusal::Terrain, Some(origin_xy)))
+                            }
                         }
                     };
 
