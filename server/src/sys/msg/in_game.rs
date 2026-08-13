@@ -1351,7 +1351,29 @@ impl<'a> System<'a> for Sys {
                             // column, not just the centre.
                             Some(datum_z) => {
                                 let origin = Vec3::new(origin_xy.x, origin_xy.y, datum_z);
-                                match preset::validate_site(&terrain, origin) {
+                                // ONE PRODUCER, TWO CONSUMERS (worldgen row
+                                // §5): the verdict below and the relief emit
+                                // read the SAME measurement. A second
+                                // function recomputing relief beside the
+                                // real one is the F8 defect.
+                                let relief = preset::survey_site(&terrain, origin);
+                                // WITHOUT THIS EMIT the refusal carries no
+                                // number: `reason="terrain"` cannot separate
+                                // a 2-block slope from a 90-block lakebed,
+                                // nor deviation from absence. `branch` is
+                                // what makes the water prediction testable.
+                                tracing::info!(
+                                    ?origin,
+                                    datum = relief.datum,
+                                    columns = relief.columns,
+                                    resolved = relief.resolved,
+                                    min_dev = ?relief.min_dev,
+                                    max_dev = ?relief.max_dev,
+                                    worst = ?relief.worst,
+                                    branch = relief.branch().name(),
+                                    "bastion: founding site relief"
+                                );
+                                match relief.verdict() {
                                     Ok(()) => None,
                                     Err((refusal, column)) => Some((refusal, Some(column))),
                                 }

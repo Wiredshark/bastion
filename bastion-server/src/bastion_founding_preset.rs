@@ -238,24 +238,150 @@ pub fn footprint_columns(origin: Vec3<i32>) -> Vec<Vec2<i32>> {
 ///
 /// Returns the offending column on refusal so the emit can name WHERE, not
 /// merely that something was uneven.
-pub fn validate_site(
-    terrain: &TerrainGrid,
-    origin: Vec3<i32>,
-) -> Result<(), (FoundingRefusal, Vec2<i32>)> {
+/// WHICH TEST refused a site. `reason()` is `"terrain"` for both, so the
+/// log alone cannot separate "the ground is the wrong HEIGHT" from "there is
+/// no ground here at all" — and the worldgen row's water prediction is
+/// precisely a claim about which of the two fires. This names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReliefBranch {
+    /// Every column resolved and every deviation was within bounds.
+    Ok,
+    /// A column resolved a surface, but too far from the datum
+    /// ([`MAX_DATUM_DEVIATION`]). Water sites reach here via the LAKEBED:
+    /// `is_surface_terrain` does not match `Water`, and the scan reaches
+    /// `SURFACE_SCAN_DOWN` blocks below the hint.
+    Deviation,
+    /// A column resolved NO surface in the scan window at all — open void,
+    /// an unloaded chunk, or water deeper than the downward scan.
+    Absence,
+}
+
+impl ReliefBranch {
+    /// The log-side name. A stable identifier, not prose — the worldgen
+    /// bars read this string.
+    pub fn name(self) -> &'static str {
+        match self {
+            ReliefBranch::Ok => "ok",
+            ReliefBranch::Deviation => "deviation",
+            ReliefBranch::Absence => "absence",
+        }
+    }
+}
+
+/// THE MEASURED SHAPE of a candidate site, over every footprint column.
+///
+/// This is the SINGLE PRODUCER: [`validate_site`] does not re-derive any of
+/// it, it delegates to [`survey_site`] and reads the verdict off this value.
+/// The diagnostic emit reads the SAME value from the SAME call. Writing a
+/// second function that recomputes relief alongside the real one is the F8
+/// defect — a test that re-implements its subject cannot witness its
+/// subject's failure — so there is deliberately only one.
+#[derive(Debug, Clone)]
+pub struct SiteRelief {
+    /// Datum the site was measured against (`origin.z`).
+    pub datum: i32,
+    /// How many columns the preset occupies. Derived, not asserted: the
+    /// union of the element footprints. For v1 this is 60.
+    pub columns: usize,
+    /// How many of those resolved a surface at all. `resolved < columns`
+    /// means some column hit [`ReliefBranch::Absence`] — which is how a
+    /// chunk-boundary hole would announce itself.
+    pub resolved: usize,
+    /// Smallest and largest signed deviation `surface + 1 - datum` over the
+    /// RESOLVED columns. `None` when nothing resolved.
+    pub min_dev: Option<i32>,
+    pub max_dev: Option<i32>,
+    /// The column with the largest absolute deviation, and its deviation.
+    pub worst: Option<(Vec2<i32>, i32)>,
+    /// Per-column results in `footprint_columns` order, so the verdict can
+    /// reproduce the original early-return EXACTLY: the refusing column is
+    /// the first offender in iteration order, not merely some offender.
+    columns_scanned: Vec<(Vec2<i32>, Option<i32>)>,
+}
+
+impl SiteRelief {
+    /// The verdict, read off the measurement. Semantically identical to the
+    /// original early-returning loop: it walks columns in the same order and
+    /// reports the FIRST offender, so the named column does not move.
+    pub fn verdict(&self) -> Result<(), (FoundingRefusal, Vec2<i32>)> {
+        for (column, surface) in &self.columns_scanned {
+            match surface {
+                Some(surface) => {
+                    if (surface + 1 - self.datum).abs() > MAX_DATUM_DEVIATION {
+                        return Err((FoundingRefusal::Terrain, *column));
+                    }
+                },
+                None => return Err((FoundingRefusal::Terrain, *column)),
+            }
+        }
+        Ok(())
+    }
+
+    /// Which test decided it — see [`ReliefBranch`].
+    pub fn branch(&self) -> ReliefBranch {
+        for (_, surface) in &self.columns_scanned {
+            match surface {
+                Some(surface) => {
+                    if (surface + 1 - self.datum).abs() > MAX_DATUM_DEVIATION {
+                        return ReliefBranch::Deviation;
+                    }
+                },
+                None => return ReliefBranch::Absence,
+            }
+        }
+        ReliefBranch::Ok
+    }
+}
+
+/// MEASURE a candidate site over every footprint column — the producer both
+/// [`validate_site`] and the founding diagnostic consume.
+///
+/// Unlike the decision it feeds, this does NOT stop at the first offending
+/// column: a refusal that says only "terrain" and names one column cannot
+/// distinguish a 2-block deviation from a 90-block one, nor slope from open
+/// water. Scanning all of them costs 60 column lookups on a founding attempt,
+/// which happens once per world.
+pub fn survey_site(terrain: &TerrainGrid, origin: Vec3<i32>) -> SiteRelief {
+    let mut columns_scanned = Vec::new();
     for column in footprint_columns(origin) {
         // Hint at the datum's own surface (datum - 1): the window is
         // centred where the preset EXPECTS terrain, so a column that
         // deviates reads as a deviation rather than as a miss.
-        match column_surface_z(terrain, column.x, column.y, origin.z - 1) {
-            Some(surface) => {
-                if (surface + 1 - origin.z).abs() > MAX_DATUM_DEVIATION {
-                    return Err((FoundingRefusal::Terrain, column));
-                }
-            },
-            None => return Err((FoundingRefusal::Terrain, column)),
+        let surface = column_surface_z(terrain, column.x, column.y, origin.z - 1);
+        columns_scanned.push((column, surface));
+    }
+
+    let mut resolved = 0;
+    let mut min_dev: Option<i32> = None;
+    let mut max_dev: Option<i32> = None;
+    let mut worst: Option<(Vec2<i32>, i32)> = None;
+    for (column, surface) in &columns_scanned {
+        let Some(surface) = surface else { continue };
+        resolved += 1;
+        let dev = surface + 1 - origin.z;
+        min_dev = Some(min_dev.map_or(dev, |m: i32| m.min(dev)));
+        max_dev = Some(max_dev.map_or(dev, |m: i32| m.max(dev)));
+        if worst.is_none_or(|(_, w)| dev.abs() > w.abs()) {
+            worst = Some((*column, dev));
         }
     }
-    Ok(())
+
+    SiteRelief {
+        datum: origin.z,
+        columns: columns_scanned.len(),
+        resolved,
+        min_dev,
+        max_dev,
+        worst,
+        columns_scanned,
+    }
+}
+
+pub fn validate_site(
+    terrain: &TerrainGrid,
+    origin: Vec3<i32>,
+) -> Result<(), (FoundingRefusal, Vec2<i32>)> {
+    survey_site(terrain, origin).verdict()
 }
 
 /// A1's DISCRIMINATOR (packet §8 B5): does a founding's placed-role set
@@ -544,6 +670,203 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    /// Every chunk the preset's own footprint touches, DERIVED from
+    /// `footprint_columns` rather than listed. A hand-written key list is a
+    /// claim about geometry that silently rots when the element table moves;
+    /// this one cannot disagree with the code under test.
+    fn footprint_keys(origin: Vec3<i32>) -> Vec<Vec2<i32>> {
+        let mut keys = Vec::new();
+        for column in footprint_columns(origin) {
+            let key = chunk_key(column);
+            if !keys.contains(&key) {
+                keys.push(key);
+            }
+        }
+        keys
+    }
+
+    /// THE ORIGIN THAT STRADDLES. `TERRAIN_CHUNK_BLOCKS_LG = 5` ⇒ chunks are
+    /// 32 blocks, so an origin on a multiple of 32 puts `ox−7` and `oy−4` in
+    /// the previous chunks. This is the same rule the live W5 bar uses to
+    /// pick its site — stated once, here, and asserted below.
+    const STRADDLE_ORIGIN: Vec3<i32> = Vec3::new(15200, 16000, 419);
+
+    /// A world whose chunks sit at DIFFERENT heights, so a footprint that
+    /// spans a chunk boundary spans a real STEP. `flat_world` cannot express
+    /// slope at all — every chunk it makes is identical — which is exactly
+    /// why every prior bar ran blind to it.
+    fn stepped_world(base_air: i32, origin: Vec3<i32>, raised: &[(Vec2<i32>, i32)]) -> TerrainGrid {
+        use common::{
+            terrain::{Block, BlockKind, MapSizeLg, SpriteKind, TerrainChunk, TerrainChunkMeta},
+            volumes::vol_grid_2d::VolGrid2d,
+        };
+        use std::sync::Arc;
+
+        let chunk_at = |first_air: i32| {
+            Arc::new(TerrainChunk::new(
+                first_air,
+                Block::new(BlockKind::Grass, Rgb::new(11, 102, 35)),
+                Block::air(SpriteKind::Empty),
+                TerrainChunkMeta::void(),
+            ))
+        };
+        let mut grid = VolGrid2d::new(
+            MapSizeLg::new(Vec2::new(14, 14)).expect("a valid test map size"),
+            chunk_at(base_air),
+        )
+        .expect("the grid must build");
+        for key in footprint_keys(origin) {
+            grid.insert(key, chunk_at(base_air));
+        }
+        for (key, first_air) in raised {
+            grid.insert(*key, chunk_at(*first_air));
+        }
+        grid
+    }
+
+    /// THE DENOMINATOR the worldgen row's every count is reported against.
+    /// The pre-registration DERIVES 60 from the element table (farm −7..−3
+    /// and stockpile −2..+2 are contiguous, bed is strictly inside); this
+    /// makes that derivation fail loudly if the table ever changes, instead
+    /// of silently re-basing every percentage that cites it.
+    #[test]
+    fn survey_reports_sixty_columns() {
+        let origin = Vec3::new(15216, 16016, 419);
+        let world = flat_world(419, &footprint_keys(origin));
+        let relief = survey_site(&world, origin);
+        assert_eq!(relief.columns, 60, "footprint column count");
+        assert_eq!(relief.resolved, 60, "flat ground resolves every column");
+    }
+
+    /// W5's GEOMETRY CLAIM, at unit level: an origin on the 32-block chunk
+    /// pitch really does spread the footprint over four chunks. The live bar
+    /// asserts that every one of those columns still resolves; this asserts
+    /// that the site it picks is actually the hard case it claims to be —
+    /// otherwise W5 could "pass" on a footprint that never left one chunk.
+    #[test]
+    fn the_straddling_origin_really_spans_four_chunks() {
+        let keys = footprint_keys(STRADDLE_ORIGIN);
+        assert_eq!(
+            keys.len(),
+            4,
+            "an origin on the chunk pitch must straddle in BOTH axes, got {keys:?}"
+        );
+        let centre = footprint_keys(Vec3::new(15216, 16016, 419));
+        assert_eq!(
+            centre.len(),
+            1,
+            "and the arena-style origin must NOT straddle, or the contrast is empty"
+        );
+    }
+
+    /// A flat site is `Ok` on every field, and its deviations are ZERO —
+    /// not merely "within bounds". A relief instrument that reported a
+    /// constant would also pass a bounds check, so the bound is not enough.
+    #[test]
+    fn survey_of_flat_ground_is_zero_relief() {
+        let origin = Vec3::new(15216, 16016, 419);
+        let world = flat_world(419, &footprint_keys(origin));
+        let relief = survey_site(&world, origin);
+        assert_eq!(relief.min_dev, Some(0));
+        assert_eq!(relief.max_dev, Some(0));
+        assert_eq!(relief.branch(), ReliefBranch::Ok);
+        assert!(relief.verdict().is_ok());
+    }
+
+    /// THE ABSENCE BRANCH, REACHED ON PURPOSE. The worldgen row predicts
+    /// water refuses through `Deviation` and NOT through `Absence`; that
+    /// prediction is only falsifiable if `Absence` is reachable at all and
+    /// reports itself distinctly. An unloaded chunk is the honest way to
+    /// reach it, and it is also the failure mode a chunk-straddling
+    /// footprint would exhibit if boundaries did leak.
+    #[test]
+    fn an_unloaded_chunk_reports_absence_not_deviation() {
+        let world = flat_world(419, &[]);
+        let relief = survey_site(&world, Vec3::new(15216, 16016, 419));
+        assert_eq!(relief.columns, 60, "the footprint is still 60 columns");
+        assert_eq!(relief.resolved, 0, "no chunk is loaded, so nothing resolves");
+        assert_eq!(relief.min_dev, None);
+        assert_eq!(relief.branch(), ReliefBranch::Absence);
+        assert!(relief.verdict().is_err());
+    }
+
+    /// THE ACCEPTANCE CONDITION, AT ITS EXACT EDGE. `MAX_DATUM_DEVIATION`
+    /// is 1 and the comparison is `> 1` on integers, so the
+    /// pre-registration derives that a 1-block step is ACCEPTED and a
+    /// 2-block step is REFUSED. Both directions are asserted: a bound
+    /// tested only from the failing side cannot catch a bound that refuses
+    /// everything.
+    #[test]
+    fn deviation_bound_accepts_one_block_and_refuses_two() {
+        let origin = STRADDLE_ORIGIN;
+        let stepped = chunk_key(Vec2::new(origin.x - 7, origin.y - 4));
+
+        let one = stepped_world(419, origin, &[(stepped, 420)]);
+        let relief = survey_site(&one, origin);
+        assert_eq!(relief.resolved, 60, "a step is not an absence");
+        assert_eq!(relief.max_dev, Some(1), "a one-block step deviates by one");
+        assert!(
+            relief.verdict().is_ok(),
+            "MAX_DATUM_DEVIATION = 1 accepts a deviation OF one"
+        );
+
+        let two = stepped_world(419, origin, &[(stepped, 421)]);
+        let relief = survey_site(&two, origin);
+        assert_eq!(relief.max_dev, Some(2));
+        assert_eq!(relief.branch(), ReliefBranch::Deviation);
+        assert!(
+            relief.verdict().is_err(),
+            "`> MAX_DATUM_DEVIATION` on integers means two is refused"
+        );
+    }
+
+    /// The refusal must be attributed to the DEVIATION test, and the worst
+    /// column must be one that actually stepped — the water prediction in
+    /// the worldgen pre-registration is a claim about exactly this field,
+    /// so a `branch` that were hardcoded would make that claim unfalsifiable.
+    #[test]
+    fn deviation_branch_names_a_column_that_actually_moved() {
+        let origin = STRADDLE_ORIGIN;
+        let stepped = chunk_key(Vec2::new(origin.x - 7, origin.y - 4));
+        let world = stepped_world(419, origin, &[(stepped, 423)]);
+        let relief = survey_site(&world, origin);
+
+        assert_eq!(relief.branch(), ReliefBranch::Deviation);
+        assert_eq!(relief.resolved, 60, "a step is not an absence");
+        assert_eq!(relief.min_dev, Some(0), "the unstepped chunks stay at datum");
+        let (column, dev) = relief.worst.expect("a stepped world has a worst column");
+        assert_eq!(dev, 4, "raising first_air by 4 deviates by 4");
+        assert_eq!(
+            chunk_key(column),
+            stepped,
+            "the worst column must lie in the chunk that moved"
+        );
+    }
+
+    /// DELEGATION, NOT DUPLICATION. `validate_site` must return exactly what
+    /// the survey's own verdict returns — including WHICH column is named,
+    /// since the original early-returned at the first offender in iteration
+    /// order. If these two ever disagree, the emit is describing a different
+    /// computation from the one that decided, which is the whole failure
+    /// mode this instrument was built to avoid.
+    #[test]
+    fn validate_site_agrees_with_the_survey_it_delegates_to() {
+        let origin = STRADDLE_ORIGIN;
+        let stepped = chunk_key(Vec2::new(origin.x - 7, origin.y - 4));
+        for world in [
+            flat_world(419, &footprint_keys(origin)),
+            stepped_world(419, origin, &[(stepped, 420)]),
+            stepped_world(419, origin, &[(stepped, 425)]),
+            flat_world(419, &[]),
+        ] {
+            assert_eq!(
+                validate_site(&world, origin),
+                survey_site(&world, origin).verdict(),
+                "validate_site must BE the survey's verdict, not a second opinion"
+            );
         }
     }
 }
