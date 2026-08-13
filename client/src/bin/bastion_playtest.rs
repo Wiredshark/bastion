@@ -102,6 +102,7 @@ impl Logger {
     }
 }
 
+#[derive(Debug)]
 enum ScriptCmd {
     Wait(u64),
     Anchor,
@@ -168,8 +169,39 @@ fn parse_region(parts: &[&str]) -> Option<Region> {
     )
 }
 
+/// THE VERB TABLE this driver accepts — the capability half of the build
+/// fingerprint (F3).
+///
+/// A stale driver is not the defect; a stale driver that fails SILENTLY is.
+/// The `no_overflow` binary of 2026-08-11 took `spawn 8 x y z`, kept the
+/// count and discarded the coordinates, so nine distinct lattice origins all
+/// became the anchor and the census read as "all nine points are identical".
+/// It was caught by noticing a missing log field — luck, not method.
+///
+/// This table is printed at startup so any evidence log can be attributed to
+/// a build, and `verb_table_matches_the_parser` drives every entry through
+/// the REAL parser so the declaration cannot drift from it. A table written
+/// beside the parser that nothing checks would go stale exactly as the
+/// binary did.
+pub const SCRIPT_VERBS: &[&str] = &[
+    "wait",
+    "anchor",
+    "spawn",
+    "designate",
+    "cancel",
+    "inspect_cell",
+    "list_designations",
+    "survey",
+    "note",
+    "cmd",
+];
+
 fn parse_script(path: &str) -> Vec<ScriptCmd> {
     let text = fs::read_to_string(path).expect("failed to read script file");
+    parse_script_text(&text)
+}
+
+fn parse_script_text(text: &str) -> Vec<ScriptCmd> {
     let mut cmds = Vec::new();
     for (lineno, raw) in text.lines().enumerate() {
         let line = raw.trim();
@@ -178,6 +210,18 @@ fn parse_script(path: &str) -> Vec<ScriptCmd> {
         }
         let mut parts = line.split_whitespace();
         let verb = parts.next().unwrap();
+        // THE TABLE IS THE CONTRACT, not a comment about it. Gating here
+        // makes `SCRIPT_VERBS` load-bearing: a verb removed from it stops
+        // parsing, so the declaration cannot quietly under-report what this
+        // binary accepts. Without this the table could drift silently in
+        // the one direction that matters — exactly the failure mode the
+        // stale driver had.
+        if !SCRIPT_VERBS.contains(&verb) {
+            panic!(
+                "unknown script verb at line {lineno}: {verb} (this build declares: {})",
+                SCRIPT_VERBS.join(",")
+            );
+        }
         let rest: Vec<&str> = parts.collect();
         let cmd = match verb {
             "wait" => ScriptCmd::Wait(rest[0].parse().expect("bad wait ticks")),
@@ -250,6 +294,27 @@ fn main() {
     let mut log = Logger::new(&log_path);
     log.log(&format!(
         "=== bastion_playtest starting: server={server} username={username} script={script_path} ==="
+    ));
+
+    // F3 · BUILD FINGERPRINT, FIRST — before the script is even parsed.
+    //
+    // Every evidence log this driver has ever written was, strictly,
+    // unattributed: nothing in it said which binary produced it. A stale
+    // build that silently discarded arguments once turned nine distinct
+    // origins into one and read as a consistent census. The commit and the
+    // verb table go in the log so a reader can tell WHICH driver spoke, and
+    // so a capability the script relies on is visible rather than assumed.
+    //
+    // CAVEAT, stated where it lives: `GIT_HASH` derives from
+    // `VELOREN_GIT_VERSION`, which `common::util` lets a RUNTIME env var
+    // override. Unset (as in every run here) it reports the build; set, it
+    // would lie. It is the strongest identity this crate exposes, and its
+    // limit is named rather than papered over.
+    log.log(&format!(
+        "driver build={:08x} built_at={} verbs={}",
+        *common::util::GIT_HASH,
+        *common::util::GIT_TIMESTAMP,
+        SCRIPT_VERBS.join(",")
     ));
 
     let script = parse_script(&script_path);
@@ -594,4 +659,82 @@ fn main() {
     }
 
     log.log("=== script complete, disconnecting ===");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// D3 · **THE DECLARATION CANNOT DRIFT FROM THE PARSER.**
+    ///
+    /// Every verb in `SCRIPT_VERBS` is driven through the REAL parser. A
+    /// verb in the table the parser rejects fails here; a verb the parser
+    /// gained without the table fails the companion test below. A
+    /// capability list that nothing checks would go stale exactly as the
+    /// 2026-08-11 binary did — that is the whole defect this guards.
+    #[test]
+    fn verb_table_matches_the_parser() {
+        // A minimal VALID line per verb. Written as script text and parsed,
+        // not asserted about.
+        let sample = |verb: &str| -> String {
+            match verb {
+                "wait" => "wait 1".into(),
+                "anchor" => "anchor".into(),
+                "spawn" => "spawn 8".into(),
+                "designate" => "designate chop 1 2 3 4 5 6".into(),
+                "cancel" => "cancel 1 2 3 4 5 6".into(),
+                "inspect_cell" => "inspect_cell 1 2 3".into(),
+                "list_designations" => "list_designations".into(),
+                "survey" => "survey 1 2 3 4 5 6 7".into(),
+                "note" => "note hello".into(),
+                "cmd" => "cmd dropall".into(),
+                other => panic!(
+                    "SCRIPT_VERBS lists `{other}` but this test has no sample line for it -- \
+                     the table grew and its check did not"
+                ),
+            }
+        };
+        for verb in SCRIPT_VERBS {
+            let parsed = parse_script_text(&sample(verb));
+            assert_eq!(
+                parsed.len(),
+                1,
+                "declared verb `{verb}` must parse to exactly one command"
+            );
+        }
+    }
+
+    /// D3b · a verb NOT in the table must be rejected, or the table would be
+    /// a floor rather than the contract.
+    #[test]
+    #[should_panic(expected = "unknown script verb")]
+    fn an_undeclared_verb_is_rejected() { parse_script_text("teleport 1 2 3"); }
+
+    /// D2 · **THE EXACT CAPABILITY WHOSE SILENT ABSENCE VOIDED A CENSUS.**
+    /// Four arguments must yield a TARGETED spawn and one must not.
+    #[test]
+    fn spawn_targeting_is_carried_not_discarded() {
+        match parse_script_text("spawn 8 15184.5 15984.5 419.0").as_slice() {
+            [ScriptCmd::Spawn(8, Some(target))] => {
+                assert_eq!(target.x, 15184.5);
+                assert_eq!(target.y, 15984.5);
+                assert_eq!(target.z, 419.0);
+            },
+            other => panic!("four args must target; got {other:?}"),
+        }
+        match parse_script_text("spawn 8").as_slice() {
+            [ScriptCmd::Spawn(8, None)] => {},
+            other => panic!("one arg must not target; got {other:?}"),
+        }
+    }
+
+    /// D2b · **ARGUMENTS ARE REFUSED, NOT IGNORED.** The stale binary took
+    /// the count and dropped the rest, which is why nine origins collapsed
+    /// into one with nothing in the log to show for it. An arity the parser
+    /// cannot honour must fail LOUDLY, at its line.
+    #[test]
+    #[should_panic(expected = "spawn takes")]
+    fn a_spawn_arity_the_parser_cannot_honour_panics() {
+        parse_script_text("spawn 8 15184.5 15984.5");
+    }
 }
