@@ -1186,7 +1186,7 @@ fn plan_access(
     emergency_owner: Option<Uid>,
     emergency_approach: Option<(Vec3<f32>, (f32, f32, f32))>,
 ) -> Option<(DesignationKind, usize)> {
-    let protected_designations = board.designated.clone();
+    let protected_designations = board.designated_regions().collect::<Vec<_>>();
     // M2 PLANNER-FIX (the request-starvation root, corpus-proven): the old
     // colony-GLOBAL one-plan-at-a-time gate ("any live is_access job anywhere
     // swallows every other request") starved every other trapped pocket for
@@ -4471,7 +4471,19 @@ pub struct JobBoard {
     /// system never carves wilderness to chase an out-of-scope target.
     /// Maintained by place (append) / cancel (exact AABB subtraction —
     /// the unit-tested `Region::subtract`).
-    pub designated: Vec<Region>,
+    /// THE COLONY'S STANDING ORDERS: every live designation region paired
+    /// with the KIND that was painted there.
+    ///
+    /// The kind rides with the region rather than in a parallel log,
+    /// deliberately. `cancel_region` removes designations by INTERSECTION
+    /// and subtracts AABBs — a second structure would have to replicate
+    /// that predicate forever, and two structures that must agree is the
+    /// drift this codebase has been bitten by more than once. One store,
+    /// one `retain`, one truth.
+    ///
+    /// This is also what colony persistence serialises: an order is
+    /// durable, a job is transient work derived from it.
+    pub designated: Vec<(Region, DesignationKind)>,
     /// bastion (task #55, blocked-designation visibility, 2026-07-30): a
     /// designation Region the auto-access planner has given up on (its
     /// `plan_access` call returned `None`) -- names the specific cell that
@@ -5504,6 +5516,14 @@ impl JobBoard {
     /// Mine — you're placing new blocks, not removing existing ones), gated
     /// on `BUILD_MATERIAL_ITEM` (B5's single-material stand-in; B6 gives Build
     /// real per-blueprint recipes); Stockpile = none yet (B6 zones).
+    /// The claim mask's REGIONS alone — for the many readers that ask
+    /// "is this point inside any designation?" and do not care which kind.
+    /// One accessor so those call sites did not each grow their own
+    /// `.map(|(r, _)| r)`.
+    pub fn designated_regions(&self) -> impl Iterator<Item = Region> + '_ {
+        self.designated.iter().map(|(region, _)| *region)
+    }
+
     pub fn place_designation(
         &mut self,
         terrain: &TerrainGrid,
@@ -5514,7 +5534,7 @@ impl JobBoard {
         let work = kind.work_type();
         // B5.8: the designation volume joins the colony's claim mask
         // (whether or not blocks matched — the CLAIM is the painted box).
-        self.designated.push(region);
+        self.designated.push((region, kind));
         // B6 HAUL: a Stockpile paint REGISTERS a zone (the haul
         // destination) — it generates no block jobs (job_wanted = false);
         // haul jobs are generated separately against loose items.
@@ -5720,10 +5740,13 @@ impl JobBoard {
             }
         }
         if let Some((z_min, z_max)) = mask_z {
-            self.designated.push(Region {
-                min: Vec3::new(min_xy.x, min_xy.y, z_min),
-                max: Vec3::new(max_xy.x, max_xy.y, z_max),
-            });
+            self.designated.push((
+                Region {
+                    min: Vec3::new(min_xy.x, min_xy.y, z_min),
+                    max: Vec3::new(max_xy.x, max_xy.y, z_max),
+                },
+                kind,
+            ));
         }
         info!(
             ?kind,
@@ -5861,7 +5884,7 @@ impl JobBoard {
             threshold: (CHOP_WORK_PER_BLOCK * wood_count as f32).max(1.0),
             wood_count,
         });
-        self.designated.push(Region { min, max });
+        self.designated.push((Region { min, max }, DesignationKind::Chop));
         info!(
             job = id,
             ?base,
@@ -5901,7 +5924,7 @@ impl JobBoard {
         let n = cells.len();
         let id = self.next_zone;
         self.next_zone += 1;
-        self.designated.push(region);
+        self.designated.push((region, DesignationKind::Build));
         info!(plan = id, cells = n, "bastion: build plan queued (AUTON-1)");
         self.plans.push((id, cells));
         n
@@ -5949,11 +5972,16 @@ impl JobBoard {
         // subtraction, ≤6 pieces per intersected region).
         self.designated = std::mem::take(&mut self.designated)
             .into_iter()
-            .flat_map(|r| {
+            .flat_map(|(r, k)| {
                 if r.intersects(&region) {
+                    // The remainder of a partially cancelled order is still
+                    // an order OF THE SAME KIND -- the pieces inherit it.
                     r.subtract(&region)
+                        .into_iter()
+                        .map(|piece| (piece, k))
+                        .collect::<Vec<_>>()
                 } else {
-                    vec![r]
+                    vec![(r, k)]
                 }
             })
             .collect();
@@ -13864,10 +13892,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // and tuned for a different unit entirely.
                                 if !is_labor_hold_self_job(&job.kind)
                                     && job.stuck_strikes >= PERSIST_ESCALATE_STRIKES
-                                    && let Some(region) = board
+                                    && let Some((region, _)) = board
                                         .designated
                                         .iter()
-                                        .find(|r| r.contains_point(job.pos))
+                                        .find(|(r, _)| r.contains_point(job.pos))
                                         .copied()
                                 {
                                     let already_recorded = board
@@ -14864,7 +14892,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // designation AABB retires now (its only job is
                         // gone) — the client outline clears as the tree
                         // starts to fall.
-                        for region in board.designated.iter() {
+                        for (region, _) in board.designated.iter() {
                             if region.contains_point(done_pos)
                                 && !board
                                     .jobs
@@ -15157,7 +15185,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // possibly overdue) re-check driven by OTHER real
                     // jobs' state -- it cannot itself supply a false
                     // "nothing left" verdict.
-                    for region in board.designated.iter() {
+                    for (region, _) in board.designated.iter() {
                         if region.contains_point(done_pos)
                             && !board
                                 .jobs
@@ -15656,7 +15684,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             if let Some(job) = board.jobs.get_mut(&parent) {
                 job.carve_attempted = true;
             }
-            let mask = board.designated.clone();
+            let mask = board.designated_regions().collect::<Vec<_>>();
             *board.access_plan_calls.entry("self_rescue").or_insert(0) += 1;
             match plan_access(board, &terrain, &mask, from, to, false, None, None) {
                 Some((kind, steps)) => {
@@ -15691,7 +15719,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // no-op, delivered over the already-proven chat
                     // pipeline rather than unverifiable new HUD code).
                     if let Some(region) =
-                        board.designated.iter().find(|r| r.contains_point(to)).copied()
+                        board.designated.iter().find(|(r, _)| r.contains_point(to)).map(|(r, _)| *r)
                     {
                         let already_recorded =
                             board.blocked_regions.iter().any(|b| b.region == region);
@@ -19153,7 +19181,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         if let Some((jid, jpos, jdepth)) = descent_plan {
             let from = jpos + Vec3::unit_z();
             let to = Vec3::new(jpos.x, jpos.y, jpos.z + jdepth as i32);
-            let mask = board.designated.clone();
+            let mask = board.designated_regions().collect::<Vec<_>>();
             // DPA-1: dig_provisioned=true — THE Part-A wiring. Stairs still
             // plan first; tight shafts now fall to wood-costed rungs
             // instead of the D16 release.
@@ -20992,6 +21020,62 @@ mod tests {
         // And it is not vacuously empty: the reset at index 3 pushes the
         // firing sample to 13, not 9.
         assert_eq!(fired_at_the_site, vec![13]);
+    }
+
+    /// **THE DRIFT GUARD** for pairing the kind with the region instead of
+    /// keeping a parallel order log.
+    ///
+    /// `cancel_region` removes designations by INTERSECTION and subtracts
+    /// AABBs, so a partial cancel SPLITS an order into remainder pieces. A
+    /// parallel log would have had to replicate that predicate in a second
+    /// place forever; pairing means the pieces carry their kind by
+    /// construction. This asserts they actually do — a remainder that came
+    /// back as the wrong kind would silently re-designate a player's mine
+    /// as something else on the next restore.
+    #[test]
+    fn a_partially_cancelled_order_keeps_its_kind() {
+        let mut board = JobBoard::default();
+        let mine = Region {
+            min: Vec3::new(0, 0, 0),
+            max: Vec3::new(9, 9, 0),
+        };
+        let farm = Region {
+            min: Vec3::new(20, 0, 0),
+            max: Vec3::new(29, 9, 0),
+        };
+        board.designated.push((mine, DesignationKind::Mine));
+        board.designated.push((farm, DesignationKind::Farm));
+
+        // A strip that clips the MINE order and misses the farm entirely.
+        board.cancel_region(Region {
+            min: Vec3::new(0, 0, 0),
+            max: Vec3::new(4, 9, 0),
+        });
+
+        assert!(
+            board
+                .designated
+                .iter()
+                .any(|(r, k)| *r == farm && *k == DesignationKind::Farm),
+            "an untouched order must survive intact, kind and all"
+        );
+
+        let remainders: Vec<_> = board
+            .designated
+            .iter()
+            .filter(|(r, _)| r.intersects(&mine))
+            .collect();
+        assert!(
+            !remainders.is_empty(),
+            "a PARTIAL cancel must leave a remainder, or this proves nothing"
+        );
+        for (region, kind) in remainders {
+            assert_eq!(
+                *kind,
+                DesignationKind::Mine,
+                "the remainder {region:?} of a Mine order is still a Mine order"
+            );
+        }
     }
 
     #[test]
