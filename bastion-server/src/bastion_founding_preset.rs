@@ -141,6 +141,15 @@ pub enum FoundingRefusal {
     /// standable surface deviates by more than [`MAX_DATUM_DEVIATION`], or
     /// has no resolvable surface at all (open water, void, unloaded).
     Terrain,
+    /// A plot column stands under WATER. Its own refusal because
+    /// `reason="terrain"` cannot be told from slope in a log, and because
+    /// the two have nothing to do with each other: a lakebed can be
+    /// perfectly flat and still be the wrong place to put a farm.
+    ///
+    /// The gap this closes was masked by a correlate — a lake is usually a
+    /// depression, so the deviation test refused the site for its SHAPE and
+    /// the missing water test never showed.
+    Submerged,
 }
 
 impl FoundingRefusal {
@@ -151,6 +160,7 @@ impl FoundingRefusal {
         match self {
             FoundingRefusal::ColonyExists => "colony_exists",
             FoundingRefusal::Terrain => "terrain",
+            FoundingRefusal::Submerged => "submerged",
         }
     }
 
@@ -165,6 +175,9 @@ impl FoundingRefusal {
             FoundingRefusal::Terrain => {
                 "Uneven ground — the founding kit needs a flatter site (every plot column must sit \
                  within one block of where you stand)."
+            },
+            FoundingRefusal::Submerged => {
+                "Underwater — part of the founding kit would stand in water. Move to dry ground."
             },
         }
     }
@@ -257,6 +270,10 @@ pub enum ReliefBranch {
     /// A column resolved NO surface in the scan window at all — open void,
     /// an unloaded chunk, or water deeper than the downward scan.
     Absence,
+    /// Every column resolved and sat within bounds, but at least one stands
+    /// under water. The flat-lakebed case: nothing about the SHAPE refuses
+    /// it, which is exactly why it needs its own name.
+    Submerged,
 }
 
 impl ReliefBranch {
@@ -267,6 +284,7 @@ impl ReliefBranch {
             ReliefBranch::Ok => "ok",
             ReliefBranch::Deviation => "deviation",
             ReliefBranch::Absence => "absence",
+            ReliefBranch::Submerged => "submerged",
         }
     }
 }
@@ -305,6 +323,9 @@ pub struct SiteRelief {
     /// refuses a submerged site, and that claim is only checkable if
     /// "submerged" is observable separately from "far below the datum".
     pub submerged: usize,
+    /// The first submerged column in footprint order — the one the refusal
+    /// names. A count alone cannot tell the owner WHERE the water is.
+    pub first_submerged: Option<Vec2<i32>>,
     /// Per-column results in `footprint_columns` order, so the verdict can
     /// reproduce the original early-return EXACTLY: the refusing column is
     /// the first offender in iteration order, not merely some offender.
@@ -326,6 +347,18 @@ impl SiteRelief {
                 None => return Err((FoundingRefusal::Terrain, *column)),
             }
         }
+        // THE WATER GATE, deliberately AFTER the deviation test. A site that
+        // is both sloped and submerged still reports `terrain`: that refusal
+        // is older, cheaper and more common, and changing an existing
+        // refusal's reason would break the bars already reading it.
+        //
+        // Any single submerged column refuses. The preset's three elements
+        // are SURFACE structures — there is no partially-submerged design —
+        // so 1 is the only threshold derivable from "these plots sit on the
+        // ground"; anything between 2 and 60 would be invented.
+        if let Some(column) = self.first_submerged {
+            return Err((FoundingRefusal::Submerged, column));
+        }
         Ok(())
     }
 
@@ -340,6 +373,9 @@ impl SiteRelief {
                 },
                 None => return ReliefBranch::Absence,
             }
+        }
+        if self.first_submerged.is_some() {
+            return ReliefBranch::Submerged;
         }
         ReliefBranch::Ok
     }
@@ -365,6 +401,7 @@ pub fn survey_site(terrain: &TerrainGrid, origin: Vec3<i32>) -> SiteRelief {
 
     let mut resolved = 0;
     let mut submerged = 0;
+    let mut first_submerged: Option<Vec2<i32>> = None;
     let mut min_dev: Option<i32> = None;
     let mut max_dev: Option<i32> = None;
     let mut worst: Option<(Vec2<i32>, i32)> = None;
@@ -378,6 +415,9 @@ pub fn survey_site(terrain: &TerrainGrid, origin: Vec3<i32>) -> SiteRelief {
             .is_ok_and(|block| block.is_liquid())
         {
             submerged += 1;
+            if first_submerged.is_none() {
+                first_submerged = Some(*column);
+            }
         }
         let dev = surface + 1 - origin.z;
         min_dev = Some(min_dev.map_or(dev, |m: i32| m.min(dev)));
@@ -395,6 +435,7 @@ pub fn survey_site(terrain: &TerrainGrid, origin: Vec3<i32>) -> SiteRelief {
         max_dev,
         worst,
         submerged,
+        first_submerged,
         columns_scanned,
     }
 }
@@ -829,20 +870,20 @@ mod tests {
         grid
     }
 
-    /// ⚠ A REGISTERED FINDING, ASSERTED AS THE CODE'S ACTUAL BEHAVIOUR.
+    /// G1 · **A FLAT LAKEBED IS REFUSED.**
     ///
-    /// There is no water test anywhere in the founding path. `submerged`
-    /// measures the water; NOTHING consumes it. So a perfectly flat LAKEBED
-    /// — 60 columns of level ground under open water — deviates by zero and
-    /// is ACCEPTED, and the colony is founded underwater.
+    /// This test is the INVERSION of one that previously asserted the
+    /// opposite. That version pinned the gap — the preset founding
+    /// underwater — precisely so that adding a gate would fail it loudly
+    /// rather than let the change pass unnoticed. It did exactly that, and
+    /// this is the deliberate update.
     ///
-    /// Real worldgen usually hides this: a lake is a depression, so the
-    /// deviation test refuses the site for its SHAPE and the missing water
-    /// test never shows. This asserts the behaviour as it is, so that if a
-    /// water check is ever added the test fails LOUDLY and is updated
-    /// deliberately, rather than the gap being rediscovered a third time.
+    /// Note what does NOT refuse it: `max_dev` is 0 and every column
+    /// resolves, so nothing about the site's SHAPE is wrong. Only the water
+    /// is, which is why it needed a refusal of its own rather than being
+    /// folded into `terrain`.
     #[test]
-    fn a_flat_lakebed_is_accepted_because_nothing_consumes_submerged() {
+    fn a_flat_lakebed_is_refused_by_the_water_gate() {
         let origin = Vec3::new(15216, 16016, 419);
         let world = flooded_world(419, &footprint_keys(origin));
         let relief = survey_site(&world, origin);
@@ -850,11 +891,94 @@ mod tests {
         assert_eq!(relief.submerged, 60, "every column carries water above it");
         assert_eq!(relief.resolved, 60, "the lakebed still resolves");
         assert_eq!(relief.max_dev, Some(0), "a flat bed deviates by nothing");
-        assert_eq!(relief.branch(), ReliefBranch::Ok);
-        assert!(
-            relief.verdict().is_ok(),
-            "TODAY the preset founds on a flat lakebed -- there is no water gate"
+        assert_eq!(relief.branch(), ReliefBranch::Submerged);
+        assert_eq!(
+            relief.verdict(),
+            Err((
+                FoundingRefusal::Submerged,
+                relief.first_submerged.expect("a flooded site names a column")
+            )),
+            "a flat lakebed must be refused BY NAME, not accepted"
         );
+    }
+
+    /// G1b · **ONE submerged column is enough.** The threshold is 1 because
+    /// the preset's elements are surface structures; this drives the
+    /// boundary rather than restating it, so a gate that only refused
+    /// *fully* flooded sites would fail here.
+    #[test]
+    fn a_single_submerged_column_refuses_the_site() {
+        // MUST be the straddling origin: a footprint inside a single chunk
+        // cannot express a PARTIAL flood at chunk granularity — flooding
+        // "one chunk" would flood all 60 columns and prove nothing about
+        // the threshold.
+        let origin = STRADDLE_ORIGIN;
+        // Dry everywhere except the one chunk holding the farm's far corner.
+        let flooded_key = chunk_key(Vec2::new(origin.x - 7, origin.y - 4));
+        let mut world = flat_world(419, &footprint_keys(origin));
+        {
+            use common::{
+                terrain::{Block, BlockKind, TerrainChunk, TerrainChunkMeta},
+                vol::RectRasterableVol,
+            };
+            use std::sync::Arc;
+            let _ = <TerrainChunk as RectRasterableVol>::RECT_SIZE;
+            world.insert(
+                flooded_key,
+                Arc::new(TerrainChunk::new(
+                    419,
+                    Block::new(BlockKind::Grass, Rgb::new(11, 102, 35)),
+                    Block::new(BlockKind::Water, Rgb::new(0, 24, 255)),
+                    TerrainChunkMeta::void(),
+                )),
+            );
+        }
+        let relief = survey_site(&world, origin);
+        assert!(
+            relief.submerged > 0 && relief.submerged < 60,
+            "the specimen must be PARTLY flooded, got {} of 60",
+            relief.submerged
+        );
+        assert_eq!(relief.max_dev, Some(0), "and still perfectly flat");
+        assert!(
+            matches!(relief.verdict(), Err((FoundingRefusal::Submerged, _))),
+            "one submerged column is enough to refuse"
+        );
+    }
+
+    /// G3 · **THE ORDERING HOLDS.** A site that is both sloped and submerged
+    /// reports `terrain`, because the deviation test runs first and its
+    /// reason string is already read by existing bars.
+    #[test]
+    fn a_sloped_submerged_site_still_reports_terrain() {
+        let origin = STRADDLE_ORIGIN;
+        let stepped = chunk_key(Vec2::new(origin.x - 7, origin.y - 4));
+        // Flood everything, then step one chunk so it also deviates.
+        let mut world = flooded_world(419, &footprint_keys(origin));
+        {
+            use common::terrain::{Block, BlockKind, TerrainChunk, TerrainChunkMeta};
+            use std::sync::Arc;
+            world.insert(
+                stepped,
+                Arc::new(TerrainChunk::new(
+                    425,
+                    Block::new(BlockKind::Grass, Rgb::new(11, 102, 35)),
+                    Block::new(BlockKind::Water, Rgb::new(0, 24, 255)),
+                    TerrainChunkMeta::void(),
+                )),
+            );
+        }
+        let relief = survey_site(&world, origin);
+        assert!(relief.submerged > 0, "the site really is submerged too");
+        assert_eq!(
+            relief.branch(),
+            ReliefBranch::Deviation,
+            "slope is reported first"
+        );
+        assert!(matches!(
+            relief.verdict(),
+            Err((FoundingRefusal::Terrain, _))
+        ));
     }
 
     /// And the counterpart: dry ground must report ZERO submerged, or the
