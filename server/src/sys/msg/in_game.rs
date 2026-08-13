@@ -512,7 +512,29 @@ impl Sys {
                             region.min.xy(),
                             region.max.xy(),
                         );
+                        // FOUNDING PRESET F8-C2 (2026-08-12): the chop path had NO
+                        // server-side witness for EITHER outcome. It echoes per-tree
+                        // BastionDesignation messages to the CLIENT and never emits the
+                        // shared `designation placed` line, so `designation placed
+                        // kind=Chop` has ZERO occurrences whether chop works or fails --
+                        // proven by running both (arena: refused; real worldgen: 6 trees
+                        // designated). Any scored run reading the SERVER log is blind to
+                        // chop entirely, which is the name-the-line law broken on the
+                        // server side.
+                        //
+                        // Both arms emit, by name, so an absence in the log now means
+                        // "the message never arrived" rather than "chop is unwitnessed".
+                        tracing::info!(
+                            ?region,
+                            trees = trees.len(),
+                            "bastion: chop designation resolved"
+                        );
                         if trees.is_empty() {
+                            tracing::info!(
+                                ?region,
+                                reason = "no_trees_rooted",
+                                "bastion: chop designation refused"
+                            );
                             client.send(ServerGeneral::server_msg(
                                 common::comp::ChatType::CommandInfo,
                                 common::comp::Content::Plain(
