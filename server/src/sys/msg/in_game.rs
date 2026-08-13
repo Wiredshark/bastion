@@ -1370,6 +1370,7 @@ impl<'a> System<'a> for Sys {
                                     min_dev = ?relief.min_dev,
                                     max_dev = ?relief.max_dev,
                                     worst = ?relief.worst,
+                                    submerged = relief.submerged,
                                     branch = relief.branch().name(),
                                     "bastion: founding site relief"
                                 );

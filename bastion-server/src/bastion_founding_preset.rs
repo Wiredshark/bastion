@@ -41,6 +41,9 @@ use crate::bastion_jobs::column_surface_z;
 use common::{
     bastion::{DesignationKind, Region},
     terrain::TerrainGrid,
+    // `submerged` is the first terrain read this module makes on its own —
+    // every other lookup goes through `column_surface_z`.
+    vol::ReadVol,
 };
 use vek::*;
 
@@ -293,6 +296,15 @@ pub struct SiteRelief {
     pub max_dev: Option<i32>,
     /// The column with the largest absolute deviation, and its deviation.
     pub worst: Option<(Vec2<i32>, i32)>,
+    /// How many resolved columns carry LIQUID directly above their surface.
+    ///
+    /// Without this the relief emit cannot see water at all: `is_surface_terrain`
+    /// skips `Water`, so a lake column resolves its LAKEBED and reports as a
+    /// large deviation — indistinguishable from a cliff by every other field
+    /// here. The worldgen row's water bar is a claim about which branch
+    /// refuses a submerged site, and that claim is only checkable if
+    /// "submerged" is observable separately from "far below the datum".
+    pub submerged: usize,
     /// Per-column results in `footprint_columns` order, so the verdict can
     /// reproduce the original early-return EXACTLY: the refusing column is
     /// the first offender in iteration order, not merely some offender.
@@ -352,12 +364,21 @@ pub fn survey_site(terrain: &TerrainGrid, origin: Vec3<i32>) -> SiteRelief {
     }
 
     let mut resolved = 0;
+    let mut submerged = 0;
     let mut min_dev: Option<i32> = None;
     let mut max_dev: Option<i32> = None;
     let mut worst: Option<(Vec2<i32>, i32)> = None;
     for (column, surface) in &columns_scanned {
         let Some(surface) = surface else { continue };
         resolved += 1;
+        // The cell directly above the resolved surface. On a lake column
+        // that surface is the BED, so this is the water sitting on it.
+        if terrain
+            .get(Vec3::new(column.x, column.y, surface + 1))
+            .is_ok_and(|block| block.is_liquid())
+        {
+            submerged += 1;
+        }
         let dev = surface + 1 - origin.z;
         min_dev = Some(min_dev.map_or(dev, |m: i32| m.min(dev)));
         max_dev = Some(max_dev.map_or(dev, |m: i32| m.max(dev)));
@@ -373,6 +394,7 @@ pub fn survey_site(terrain: &TerrainGrid, origin: Vec3<i32>) -> SiteRelief {
         min_dev,
         max_dev,
         worst,
+        submerged,
         columns_scanned,
     }
 }
@@ -774,6 +796,74 @@ mod tests {
         assert_eq!(relief.max_dev, Some(0));
         assert_eq!(relief.branch(), ReliefBranch::Ok);
         assert!(relief.verdict().is_ok());
+    }
+
+    /// A world whose ground is flat and whose every cell ABOVE that ground is
+    /// water — a lakebed, not a shore. `TerrainChunk::new`'s third argument
+    /// is the block used above `first_air`, so this floods without touching
+    /// the terrain profile at all, which is exactly the separation the test
+    /// below needs.
+    fn flooded_world(first_air: i32, keys: &[Vec2<i32>]) -> TerrainGrid {
+        use common::{
+            terrain::{Block, BlockKind, MapSizeLg, TerrainChunk, TerrainChunkMeta},
+            volumes::vol_grid_2d::VolGrid2d,
+        };
+        use std::sync::Arc;
+
+        let chunk = || {
+            Arc::new(TerrainChunk::new(
+                first_air,
+                Block::new(BlockKind::Grass, Rgb::new(11, 102, 35)),
+                Block::new(BlockKind::Water, Rgb::new(0, 24, 255)),
+                TerrainChunkMeta::void(),
+            ))
+        };
+        let mut grid = VolGrid2d::new(
+            MapSizeLg::new(Vec2::new(14, 14)).expect("a valid test map size"),
+            chunk(),
+        )
+        .expect("the grid must build");
+        for key in keys {
+            grid.insert(*key, chunk());
+        }
+        grid
+    }
+
+    /// ⚠ A REGISTERED FINDING, ASSERTED AS THE CODE'S ACTUAL BEHAVIOUR.
+    ///
+    /// There is no water test anywhere in the founding path. `submerged`
+    /// measures the water; NOTHING consumes it. So a perfectly flat LAKEBED
+    /// — 60 columns of level ground under open water — deviates by zero and
+    /// is ACCEPTED, and the colony is founded underwater.
+    ///
+    /// Real worldgen usually hides this: a lake is a depression, so the
+    /// deviation test refuses the site for its SHAPE and the missing water
+    /// test never shows. This asserts the behaviour as it is, so that if a
+    /// water check is ever added the test fails LOUDLY and is updated
+    /// deliberately, rather than the gap being rediscovered a third time.
+    #[test]
+    fn a_flat_lakebed_is_accepted_because_nothing_consumes_submerged() {
+        let origin = Vec3::new(15216, 16016, 419);
+        let world = flooded_world(419, &footprint_keys(origin));
+        let relief = survey_site(&world, origin);
+
+        assert_eq!(relief.submerged, 60, "every column carries water above it");
+        assert_eq!(relief.resolved, 60, "the lakebed still resolves");
+        assert_eq!(relief.max_dev, Some(0), "a flat bed deviates by nothing");
+        assert_eq!(relief.branch(), ReliefBranch::Ok);
+        assert!(
+            relief.verdict().is_ok(),
+            "TODAY the preset founds on a flat lakebed -- there is no water gate"
+        );
+    }
+
+    /// And the counterpart: dry ground must report ZERO submerged, or the
+    /// field would be a constant and the test above would prove nothing.
+    #[test]
+    fn dry_ground_reports_no_submerged_columns() {
+        let origin = Vec3::new(15216, 16016, 419);
+        let world = flat_world(419, &footprint_keys(origin));
+        assert_eq!(survey_site(&world, origin).submerged, 0);
     }
 
     /// THE ABSENCE BRANCH, REACHED ON PURPOSE. The worldgen row predicts
