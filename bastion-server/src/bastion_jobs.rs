@@ -4484,6 +4484,18 @@ pub struct JobBoard {
     /// This is also what colony persistence serialises: an order is
     /// durable, a job is transient work derived from it.
     pub designated: Vec<(Region, DesignationKind)>,
+    /// COLONY PERSISTENCE: orders read back from the save that have not yet
+    /// been replayed, because `place_designation` needs a `TerrainGrid` and
+    /// at server start no chunks are loaded.
+    ///
+    /// The rtsim tick SEEDS this (it can see the save); the bastion tick
+    /// DRAINS it (it can see the terrain). Neither system can do both, which
+    /// is why the queue exists rather than a direct restore.
+    pub pending_restore: Vec<(Region, DesignationKind)>,
+    /// Whether the one-shot seed has run this server lifetime. Without it
+    /// the seed would re-add orders every tick, and a cancelled designation
+    /// would resurrect itself.
+    pub restore_seeded: bool,
     /// bastion (task #55, blocked-designation visibility, 2026-07-30): a
     /// designation Region the auto-access planner has given up on (its
     /// `plan_access` call returned `None`) -- names the specific cell that
@@ -6740,6 +6752,47 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // block. One counted entity + the effective rates, gated,
             // ~10 sim-sec cadence -- cheap enough to leave standing.
             let decay_diag = std::env::var_os("BASTION_DECAY_JOIN_DIAG").is_some();
+            // COLONY PERSISTENCE, THE DRAIN.
+            //
+            // The rtsim tick handed us the orders it read back from the
+            // save; replaying them needs a `TerrainGrid`, which only this
+            // system has. Each order goes back through `place_designation`
+            // — the SAME call a founding makes — so the jobs, the zone
+            // registrations and the claim mask all come from the shipping
+            // path instead of from restore-specific code that could drift
+            // away from it.
+            //
+            // Orders whose chunks are not loaded yet WAIT. At server start
+            // nothing is loaded, so on a restarted world this typically
+            // drains a few ticks after the first player brings the colony's
+            // chunks in.
+            if !board.pending_restore.is_empty() {
+                let pending = std::mem::take(&mut board.pending_restore);
+                let mut still_waiting = Vec::new();
+                let mut replayed = 0usize;
+                for (region, kind) in pending {
+                    // Both corners, not one: a region straddling a chunk
+                    // boundary can have its min loaded and its max not, and
+                    // replaying it then would resolve half its columns.
+                    let ready =
+                        terrain.get(region.min).is_ok() && terrain.get(region.max).is_ok();
+                    if ready {
+                        board.place_designation(&terrain, region, kind);
+                        replayed += 1;
+                    } else {
+                        still_waiting.push((region, kind));
+                    }
+                }
+                if replayed > 0 {
+                    info!(
+                        replayed,
+                        still_waiting = still_waiting.len(),
+                        "bastion: colony orders replayed from save"
+                    );
+                }
+                board.pending_restore = still_waiting;
+            }
+
             let mut decay_join_count: u32 = 0;
             for (_, needs) in (&colonists, &mut needs_storage).join() {
                 comp::bastion::decay_needs(needs, dt.0, &mood_cfg);

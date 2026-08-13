@@ -114,6 +114,8 @@ impl Data {
 
             tick: 0,
             time_of_day: TimeOfDay(settings.start_time),
+            // A freshly generated world has no colony, hence no orders.
+            bastion_designations: Vec::new(),
             should_purge: false,
             // `APEX-T4.3`: stamped by `RtSim::new` right after generation,
             // not here -- this constructor doesn't have the freshly-

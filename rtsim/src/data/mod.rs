@@ -94,6 +94,24 @@ pub struct Data {
     #[serde(default)]
     pub world_baseline_root: Option<[u8; 32]>,
 
+    /// bastion (COLONY PERSISTENCE): the colony's STANDING ORDERS — every
+    /// live designation region paired with the kind painted there.
+    ///
+    /// WHY HERE: rtsim data is the only colony state that already survives a
+    /// restart. The colonists come back from it; before this the zones did
+    /// not, so eight colonists returned to a world with nothing to do — and
+    /// work at F is the ONLY thing holding a colony together (there is no
+    /// colonist anchor). The orders had to live wherever the colonists live.
+    ///
+    /// ORDERS, NOT JOBS. A designation is a durable standing order; a job is
+    /// transient work derived from it and is rebuilt on load by replaying
+    /// these through the normal placement path. Serialising the JobBoard
+    /// itself would freeze scheduler state that is meant to be regenerated.
+    ///
+    /// Sibling `#[serde(default)]` pattern, no version bump.
+    #[serde(default)]
+    pub bastion_designations: Vec<(common::bastion::Region, common::bastion::DesignationKind)>,
+
     // If true, rtsim data will be ignored (and, hence, overwritten on next save) on load.
     #[serde(default)]
     pub should_purge: bool,

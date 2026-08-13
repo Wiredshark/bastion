@@ -756,6 +756,26 @@ impl<'a> System<'a> for Sys {
             .into_inner()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
 
+        // COLONY PERSISTENCE, THE SEED — once per server lifetime, and
+        // BEFORE the save block below, so the first save of a restarted
+        // world already carries the orders it is about to restore.
+        //
+        // This system can see the save but not the terrain, so it can only
+        // hand the orders over; `place_designation` needs a `TerrainGrid`
+        // and no chunks are loaded yet. The bastion tick drains the queue
+        // once each region's terrain exists.
+        if !job_board.restore_seeded {
+            job_board.restore_seeded = true;
+            let orders = rtsim.state.data().bastion_designations.clone();
+            if !orders.is_empty() {
+                tracing::info!(
+                    orders = orders.len(),
+                    "bastion: colony orders read from save, awaiting terrain to replay"
+                );
+                job_board.pending_restore = orders;
+            }
+        }
+
         // Perform a save if required
         if rtsim
             .last_saved
@@ -771,6 +791,23 @@ impl<'a> System<'a> for Sys {
                 .expect("DatabaseSettings RwLock was poisoned")
                 .db_dir
                 .clone();
+            // COLONY PERSISTENCE: the colony's standing ORDERS join the
+            // save. Written HERE, immediately before `save`, so the file
+            // can never carry a stale set from an earlier tick.
+            //
+            // THE UNION IS DELIBERATE AND LOAD-BEARING. After a restart the
+            // board is EMPTY until the restore finds its terrain, so saving
+            // `designated` alone would overwrite the very orders being
+            // restored with nothing — the save would eat them, and a
+            // 60-second window is more than long enough for that to happen.
+            // An order awaiting replay is still an order.
+            //
+            // The guard is dropped at the end of this statement — `save`
+            // takes `&mut rtsim` and must not have a data lock held across
+            // it (the same constraint `db_dir` is cloned out for above).
+            let mut orders = job_board.designated.clone();
+            orders.extend(job_board.pending_restore.iter().copied());
+            rtsim.state.data_mut().bastion_designations = orders;
             rtsim.save(/* &slow_jobs, */ false, &db_dir);
         }
 
