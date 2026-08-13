@@ -1,0 +1,24 @@
+[1786634483567] === bastion_playtest starting: server=127.0.0.1:14004 username=wgen-straddle script=E:/veloren-master/bastion-test-evidence/script-worldgen-straddle.txt ===
+[1786634483567] parsed 13 script commands
+[1786634486884] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/b5f73d5f-4ffb-4bea-bed6-03e7e5f91841), name: "Veloren Server", git_hash: 942083469, git_timestamp: 1786633438, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1786634487017] requested character join id=CharacterId(2)
+[1786634487017] in-game. entity=Entity(0, Generation(1))
+[1786634489045] player pos at script start: Vec3 { x: 15216.452, y: 16016.53, z: 419.0 }
+[1786634489045] [note] W5-STRADDLE: origin (15200,16000) -- BOTH coordinates on the 32-block chunk
+[1786634489045] [note] W5-STRADDLE: pitch, so the 60-column footprint spans FOUR chunks. The rule is
+[1786634489045] [note] W5-STRADDLE: prereg section 4; the unit test the_straddling_origin_really_spans
+[1786634489045] [note] W5-STRADDLE: _four_chunks asserts this origin is genuinely the hard case.
+[1786634489045] [note] W5-STRADDLE: BAR = resolved=60 in the relief emit. Every column must resolve,
+[1786634489045] [note] W5-STRADDLE: including the ones on the far side of a chunk boundary. Whether
+[1786634489045] [note] W5-STRADDLE: the site is then founded or refused is TERRAIN's business, not
+[1786634489045] [note] W5-STRADDLE: the bar's. FAIL = resolved < 60, or branch=absence.
+[1786634489045] sent BastionCameraAnchor at Vec3 { x: 15216.452, y: 16016.53, z: 419.0 }
+[1786634490860] [chat] GenericChatMsg { chat_type: Npc(Uid(11)), content: Localized { key: "npc-speech-menacing", seed: 29965, args: {} } }
+[1786634490960] [chat] GenericChatMsg { chat_type: Npc(Uid(3)), content: Localized { key: "npc-speech-menacing", seed: 22514, args: {} } }
+[1786634494026] waited 150 ticks -> sim 8.80..13.83 in 149 client spins; pos now Vec3 { x: 15216.452, y: 16016.53, z: 419.0 }
+[1786634494026] sent BastionSpawnColony pos=Vec3 { x: 15200.5, y: 16000.5, z: 419.0 } count=8 targeted=true
+[1786634494094] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634494094] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634496026] waited 60 ticks -> sim 13.83..15.85 in 60 client spins; pos now Vec3 { x: 15216.452, y: 16016.53, z: 419.0 }
+[1786634496026] [note] W5-STRADDLE: window closed
+[1786634496026] === script complete, disconnecting ===

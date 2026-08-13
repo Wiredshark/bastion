@@ -1,0 +1,121 @@
+[1786634600662] === bastion_playtest starting: server=127.0.0.1:14004 username=wgen-watersearch script=E:/veloren-master/bastion-test-evidence/script-worldgen-watersearch.txt ===
+[1786634600662] parsed 61 script commands
+[1786634603723] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/9bc02317-5499-4507-98fc-c3d35f89fdef), name: "Veloren Server", git_hash: 942083469, git_timestamp: 1786633438, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1786634603857] requested character join id=CharacterId(2)
+[1786634603857] in-game. entity=Entity(0, Generation(1))
+[1786634605894] player pos at script start: Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634605894] [note] W4-SEARCH: THIS IS A SEARCH, NOT A BAR. Its only output is a LOCATION.
+[1786634605894] [note] W4-SEARCH: The scored W4 attempt runs afterwards on the RESTORED binary.
+[1786634605894] [note] W4-SEARCH: Run with MAX_DATUM_DEVIATION=0 so that almost nothing is
+[1786634605894] [note] W4-SEARCH: accepted and the walk covers every point instead of stopping at
+[1786634605894] [note] W4-SEARCH: the first success. Searching for a specimen is not optional
+[1786634605894] [note] W4-SEARCH: stopping; the BAR applied to the specimen was fixed in advance.
+[1786634605894] [note] W4-SEARCH: RADIUS IS BOUNDED BY CHUNK LOADING. The server only holds chunks
+[1786634605894] [note] W4-SEARCH: near the player, so a distant probe reports branch=absence from an
+[1786634605894] [note] W4-SEARCH: UNLOADED CHUNK, not from water. 5x5 at 128-block pitch = +/-256.
+[1786634605894] [note] W4-SEARCH: looking for: submerged > 0 with resolved = 60.
+[1786634605894] sent BastionCameraAnchor at Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634612517] waited 200 ticks -> sim 8.82..15.50 in 198 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634612517] sent BastionSpawnColony pos=Vec3 { x: 14960.5, y: 15760.5, z: 419.0 } count=8 targeted=true
+[1786634612552] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634612552] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634613351] waited 25 ticks -> sim 15.50..16.35 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634613351] sent BastionSpawnColony pos=Vec3 { x: 15088.5, y: 15760.5, z: 419.0 } count=8 targeted=true
+[1786634613385] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634613385] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634614184] waited 25 ticks -> sim 16.35..17.19 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634614184] sent BastionSpawnColony pos=Vec3 { x: 15216.5, y: 15760.5, z: 419.0 } count=8 targeted=true
+[1786634614252] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634614252] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634615018] waited 25 ticks -> sim 17.19..18.03 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634615018] sent BastionSpawnColony pos=Vec3 { x: 15344.5, y: 15760.5, z: 419.0 } count=8 targeted=true
+[1786634615086] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634615086] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634615851] waited 25 ticks -> sim 18.03..18.87 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634615851] sent BastionSpawnColony pos=Vec3 { x: 15472.5, y: 15760.5, z: 419.0 } count=8 targeted=true
+[1786634615919] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634615919] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634616684] waited 25 ticks -> sim 18.87..19.71 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634616684] sent BastionSpawnColony pos=Vec3 { x: 14960.5, y: 15888.5, z: 419.0 } count=8 targeted=true
+[1786634616719] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634616719] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634617518] waited 25 ticks -> sim 19.71..20.55 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634617518] sent BastionSpawnColony pos=Vec3 { x: 15088.5, y: 15888.5, z: 419.0 } count=8 targeted=true
+[1786634617552] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634617552] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634618351] waited 25 ticks -> sim 20.55..21.40 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634618351] sent BastionSpawnColony pos=Vec3 { x: 15216.5, y: 15888.5, z: 419.0 } count=8 targeted=true
+[1786634618386] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634618386] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634619184] waited 25 ticks -> sim 21.40..22.24 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634619185] sent BastionSpawnColony pos=Vec3 { x: 15344.5, y: 15888.5, z: 419.0 } count=8 targeted=true
+[1786634619252] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634619252] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634620018] waited 25 ticks -> sim 22.24..23.08 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634620018] sent BastionSpawnColony pos=Vec3 { x: 15472.5, y: 15888.5, z: 419.0 } count=8 targeted=true
+[1786634620086] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634620086] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634620851] waited 25 ticks -> sim 23.08..23.92 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634620851] sent BastionSpawnColony pos=Vec3 { x: 14960.5, y: 16016.5, z: 419.0 } count=8 targeted=true
+[1786634620919] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634620919] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634621685] waited 25 ticks -> sim 23.92..24.76 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634621685] sent BastionSpawnColony pos=Vec3 { x: 15088.5, y: 16016.5, z: 419.0 } count=8 targeted=true
+[1786634621719] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634621719] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634622518] waited 25 ticks -> sim 24.76..25.61 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634622518] sent BastionSpawnColony pos=Vec3 { x: 15344.5, y: 16016.5, z: 419.0 } count=8 targeted=true
+[1786634622586] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634622586] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634623351] waited 25 ticks -> sim 25.61..26.45 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634623351] sent BastionSpawnColony pos=Vec3 { x: 15472.5, y: 16016.5, z: 419.0 } count=8 targeted=true
+[1786634623420] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634623420] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634624185] waited 25 ticks -> sim 26.45..27.29 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634624185] sent BastionSpawnColony pos=Vec3 { x: 14960.5, y: 16144.5, z: 419.0 } count=8 targeted=true
+[1786634624219] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634624220] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634625018] waited 25 ticks -> sim 27.29..28.13 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634625018] sent BastionSpawnColony pos=Vec3 { x: 15088.5, y: 16144.5, z: 419.0 } count=8 targeted=true
+[1786634625086] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634625086] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634625852] waited 25 ticks -> sim 28.13..28.97 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634625852] sent BastionSpawnColony pos=Vec3 { x: 15216.5, y: 16144.5, z: 419.0 } count=8 targeted=true
+[1786634625886] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634625886] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634626020] [chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-villager_conscientious", seed: 4910, args: {} } }
+[1786634626685] waited 25 ticks -> sim 28.97..29.81 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634626685] sent BastionSpawnColony pos=Vec3 { x: 15344.5, y: 16144.5, z: 419.0 } count=8 targeted=true
+[1786634626720] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634626720] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634627519] waited 25 ticks -> sim 29.81..30.66 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634627519] sent BastionSpawnColony pos=Vec3 { x: 15472.5, y: 16144.5, z: 419.0 } count=8 targeted=true
+[1786634627553] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634627553] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634628053] [chat] GenericChatMsg { chat_type: Npc(Uid(6)), content: Localized { key: "npc-speech-tell_site", seed: 63177, args: {"site": Content(Plain("Greabrien Glider Course")), "dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 21058, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 52772, args: {} })} } }
+[1786634628352] waited 25 ticks -> sim 30.66..31.50 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634628352] sent BastionSpawnColony pos=Vec3 { x: 14960.5, y: 16272.5, z: 419.0 } count=8 targeted=true
+[1786634628420] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634628420] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634629185] waited 25 ticks -> sim 31.50..32.34 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634629185] sent BastionSpawnColony pos=Vec3 { x: 15088.5, y: 16272.5, z: 419.0 } count=8 targeted=true
+[1786634629253] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634629253] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634629520] [chat] GenericChatMsg { chat_type: Npc(Uid(24)), content: Localized { key: "npc-speech-tell_site", seed: 25903, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 30927, args: {} }), "site": Content(Plain("Phreoraros")), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 26250, args: {} })} } }
+[1786634629720] [chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-site", seed: 14175, args: {"site": Content(Plain("Strach"))} } }
+[1786634630019] waited 25 ticks -> sim 32.34..33.18 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634630019] sent BastionSpawnColony pos=Vec3 { x: 15216.5, y: 16272.5, z: 419.0 } count=8 targeted=true
+[1786634630053] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634630053] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634630852] waited 25 ticks -> sim 33.18..34.02 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634630852] sent BastionSpawnColony pos=Vec3 { x: 15344.5, y: 16272.5, z: 419.0 } count=8 targeted=true
+[1786634630920] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634630920] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634631154] [chat] GenericChatMsg { chat_type: Npc(Uid(2)), content: Localized { key: "npc-speech-tell_site", seed: 10395, args: {"dist": Content(Localized { key: "npc-speech-dist_very_far", seed: 12171, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 17713, args: {} }), "site": Content(Plain("Pinton"))} } }
+[1786634631686] waited 25 ticks -> sim 34.02..34.86 in 25 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634631686] sent BastionSpawnColony pos=Vec3 { x: 15472.5, y: 16272.5, z: 419.0 } count=8 targeted=true
+[1786634631753] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786634631753] [chat] GenericChatMsg { chat_type: CommandError, content: Plain("Uneven ground — the founding kit needs a flatter site (every plot column must sit within one block of where you stand).") }
+[1786634633019] waited 40 ticks -> sim 34.86..36.21 in 40 client spins; pos now Vec3 { x: 15216.492, y: 16016.503, z: 419.0 }
+[1786634633019] [note] W4-SEARCH: search complete
+[1786634633019] === script complete, disconnecting ===

@@ -1,0 +1,61 @@
+note W4-SEARCH: THIS IS A SEARCH, NOT A BAR. Its only output is a LOCATION.
+note W4-SEARCH: The scored W4 attempt runs afterwards on the RESTORED binary.
+note W4-SEARCH: Run with MAX_DATUM_DEVIATION=0 so that almost nothing is
+note W4-SEARCH: accepted and the walk covers every point instead of stopping at
+note W4-SEARCH: the first success. Searching for a specimen is not optional
+note W4-SEARCH: stopping; the BAR applied to the specimen was fixed in advance.
+note W4-SEARCH: RADIUS IS BOUNDED BY CHUNK LOADING. The server only holds chunks
+note W4-SEARCH: near the player, so a distant probe reports branch=absence from an
+note W4-SEARCH: UNLOADED CHUNK, not from water. 5x5 at 128-block pitch = +/-256.
+note W4-SEARCH: looking for: submerged > 0 with resolved = 60.
+anchor
+wait 200
+spawn 8 14960.5 15760.5 419.0
+wait 25
+spawn 8 15088.5 15760.5 419.0
+wait 25
+spawn 8 15216.5 15760.5 419.0
+wait 25
+spawn 8 15344.5 15760.5 419.0
+wait 25
+spawn 8 15472.5 15760.5 419.0
+wait 25
+spawn 8 14960.5 15888.5 419.0
+wait 25
+spawn 8 15088.5 15888.5 419.0
+wait 25
+spawn 8 15216.5 15888.5 419.0
+wait 25
+spawn 8 15344.5 15888.5 419.0
+wait 25
+spawn 8 15472.5 15888.5 419.0
+wait 25
+spawn 8 14960.5 16016.5 419.0
+wait 25
+spawn 8 15088.5 16016.5 419.0
+wait 25
+spawn 8 15344.5 16016.5 419.0
+wait 25
+spawn 8 15472.5 16016.5 419.0
+wait 25
+spawn 8 14960.5 16144.5 419.0
+wait 25
+spawn 8 15088.5 16144.5 419.0
+wait 25
+spawn 8 15216.5 16144.5 419.0
+wait 25
+spawn 8 15344.5 16144.5 419.0
+wait 25
+spawn 8 15472.5 16144.5 419.0
+wait 25
+spawn 8 14960.5 16272.5 419.0
+wait 25
+spawn 8 15088.5 16272.5 419.0
+wait 25
+spawn 8 15216.5 16272.5 419.0
+wait 25
+spawn 8 15344.5 16272.5 419.0
+wait 25
+spawn 8 15472.5 16272.5 419.0
+wait 40
+note W4-SEARCH: search complete

@@ -1,0 +1,13 @@
+note W5-STRADDLE: origin (15200,16000) -- BOTH coordinates on the 32-block chunk
+note W5-STRADDLE: pitch, so the 60-column footprint spans FOUR chunks. The rule is
+note W5-STRADDLE: prereg section 4; the unit test the_straddling_origin_really_spans
+note W5-STRADDLE: _four_chunks asserts this origin is genuinely the hard case.
+note W5-STRADDLE: BAR = resolved=60 in the relief emit. Every column must resolve,
+note W5-STRADDLE: including the ones on the far side of a chunk boundary. Whether
+note W5-STRADDLE: the site is then founded or refused is TERRAIN's business, not
+note W5-STRADDLE: the bar's. FAIL = resolved < 60, or branch=absence.
+anchor
+wait 150
+spawn 8 15200.5 16000.5 419.0
+wait 60
+note W5-STRADDLE: window closed
