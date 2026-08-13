@@ -13,7 +13,7 @@ any of this data existed.** *Binary `6c2991eb` + targeted-spawn driver `8932f91f
 | **A5** terrain refusal | ✅ **PASS — with its N5 control** |
 | **B1** z-datum *(§8, not an A-bar)* | ✅ **PASS, falsifier-backed** |
 | **B7** binary provenance | ✅ **PASS** — *both packages in the Compiling list; voxygen clean* |
-| **F8-INCL** | ⏳ **not yet run** — *needs its own `designate` step* |
+| **F8-INCL** | ✅ **MINE HALF PASSES** — ⛔ *chop half BLOCKED BY THE ARENA; drop+XP unwitnessed* |
 
 ---
 
@@ -165,6 +165,91 @@ arms blew it.***
    witness).*
 2. **R must be derived from measured wander, not from a construction** — *and from more
    than one run per arm.*
+
+---
+
+## ★★★★★★ F8-INCLUSION — **THE MINE HALF CLOSES v5's REGISTERED PREDICTION**
+
+**v5's results doc registered:** *"the next scored run that designates mining MUST show
+`bastion: job completed` firing."* ★★★ **This is that run. It fires.**
+
+    designation placed kind=Mine jobs=75
+    bastion: job completed job=90 kind=Designated(Mine)
+        pos=Vec3 { x: 16364, y: 16382, z: 402 } completed_kind=Some(Rock)   … ×37
+
+| | |
+|---|---|
+| **Mine completions** | **37**, all `completed_kind=Some(Rock)` |
+| **Bed completions** | **6**, `Some(Air)` |
+| ★★★★ **total vs DISTINCT positions** | **43 / 43 — ZERO REPEATS** |
+| haul delivered · job claimed · arrivals | 22 · 133 · 152 |
+
+### ★★★★★★ THE ECONOMY CHAIN CLOSED ON ITS OWN
+
+**The handoff warned: *"Bed jobs need `BUILD_MATERIAL_ITEM` (stone). The founding stock
+is seeds only, so the bed stays unbuilt until something is mined."***
+
+> ## **SOMETHING WAS MINED, AND SIX BEDS GOT BUILT. mine → stone → haul → build, END TO
+> END, UNPROMPTED.**
+
+★★★ **And that is the drop evidence** — *not a witness line, but a downstream
+consequence that could not have occurred without drops.* ⚠ **Recorded as INFERRED, not
+observed.**
+
+### ★★★★ AND A DEFECT-1 DATA POINT, FREE
+
+**43 real Mine completions on ROCK, 43 distinct positions, no cell completing twice.**
+*v4's 281-completion trap cell was **`Leaves`**.* ★★★ **Rock consumes correctly; the
+foliage hypothesis narrows further** *(task #86)*.
+
+---
+
+## ⛔★★★★★ TWO FINDINGS FROM THE CHOP HALF
+
+### F8-C1 · **THE ARENA'S TREES CANNOT BE CHOPPED — §2's CLAIM IS FALSE FOR CHOP**
+
+    driver:  sent BastionPlaceDesignation kind=Chop region=(16400,16384,400)..(16404,16388,405)
+    client:  "No trees rooted in the marked area."      (68 ms later)
+    server:  designation placed kind=Chop      -- NEVER APPEARS
+
+**Cause, read in `in_game.rs`:** *the Chop branch resolves its fell-set through the
+**World oracle** — `get_area_trees` candidates → `tree_valid_at` confirm → flood-fill.*
+
+> ## **THE ARENA'S TREES ARE BLOCKS PAINTED AT CHUNK GENERATION BY
+> `apply_resourced_features`. THE WORLD SIM HAS NO TREE RECORD THERE, SO THE ORACLE
+> CORRECTLY REPORTS NONE.**
+
+★★★★★ **§2 says the resourced arena provides "a tree cluster (chop)" and becomes "the
+standing resourced proving ground".** *It does for **mine**. It cannot for **chop**,
+by construction.* **The chop half of F8-inclusion is unreachable on this arena.**
+
+### F8-C2 · ⚠ **THE REFUSAL HAS NO SERVER-LOG WITNESS** *(and I nearly misreported it)*
+
+**The refusal IS delivered — to the CLIENT, as `CommandInfo`.** *It is absent from the
+server log entirely.*
+
+★★★ **My first read of this was "the designation vanished silently".** *That was wrong:
+it vanished silently **from the server log**, which is the surface a scored run reads.*
+**Corrected before it reached a finding** — *the driver's chat capture is what caught
+it, which is the mirror image of smoke F-3 (where the driver's view was the misleading
+one).*
+
+> ## **NAME-THE-LINE APPLIES SERVER-SIDE: A REFUSAL A SCORED RUN CANNOT SEE IS NOT A
+> WITNESSED REFUSAL.**
+
+★★ *Same class as F-2 (seed drop) and the drop/XP gap below — three unwitnessed
+outcomes in one feature.*
+
+### ⚠ F8-C3 · **drop + XP HAVE NO WITNESS, AND MY OWN GREP LIED**
+
+**§5's F8 row asks to "observe `bastion: job completed` with drop+XP".** *The
+completion is observed; **drop and XP are not.***
+
+★★★★★ **A grep for `emit_drop|item.*drop|xp` returned 8 — ALL FALSE POSITIVES.** *Two
+were `food stock sample` lines; the rest matched **`xp`** inside the migration name
+`V34__remove_immunemelee_be`**xp**`losion`.* **A two-letter pattern matches inside
+words** — *the naming-claim trap at its most literal, caught only by reading the
+matches instead of the count.*
 
 ---
 
