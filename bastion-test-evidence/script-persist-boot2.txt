@@ -1,0 +1,11 @@
+note PERSIST-BOOT2: restarted server, SAME userdata. No founding is issued here.
+note PERSIST-BOOT2: the client's presence is only what loads the colony's chunks,
+note PERSIST-BOOT2: which is the condition the replay waits on.
+note PERSIST-BOOT2: P1 PASS = 'colony orders read from save orders=N' with N>0
+note PERSIST-BOOT2:          then 'colony orders replayed from save replayed=N'
+note PERSIST-BOOT2: P2 PASS = jobs regenerate from the replayed orders
+note PERSIST-BOOT2: FAIL = neither line, i.e. today's behaviour: colonists come
+note PERSIST-BOOT2:        back and the zones do not.
+anchor
+wait 300
+note PERSIST-BOOT2: window closed

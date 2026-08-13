@@ -1,0 +1,24 @@
+[1786652280031] === bastion_playtest starting: server=127.0.0.1:14004 username=pb1 script=E:/veloren-master/bastion-test-evidence/script-founding-a2-retention.txt ===
+[1786652280031] driver build=bbef73f9 built_at=1786645194 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,list_designations,survey,note,cmd
+[1786652280042] parsed 9 script commands
+[1786652283082] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/bf21464c-d0df-41b1-aafa-abb62ffdce2d), name: "Veloren Server", git_hash: 833983117, git_timestamp: 1786651434, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1786652283216] requested character join id=CharacterId(2)
+[1786652283216] in-game. entity=Entity(0, Generation(1))
+[1786652285216] player pos at script start: Vec3 { x: 16384.5, y: 16384.5, z: 400.0 }
+[1786652285216] [note] A2: colonists must STAY within R=16 of F across the window
+[1786652285216] [note] A2: R derived (prereg) -- spawn scatter +/-5 x and y = 7.07 radial, plus ~8 blocks
+[1786652285216] [note] A2: of legitimate work travel to a far preset corner. The failure it must catch is
+[1786652285216] [note] A2: a cross-country leash-march of HUNDREDS of blocks, so R is not a close call.
+[1786652285216] [note] A2: F = (16384.5, 16384.5, 400)
+[1786652285216] sent BastionCameraAnchor at Vec3 { x: 16384.5, y: 16384.5, z: 400.0 }
+[1786652285216] sent BastionSpawnColony pos=Vec3 { x: 16384.5, y: 16384.5, z: 400.0 } count=8 targeted=true
+[1786652285250] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786652290256] [chat] GenericChatMsg { chat_type: NpcSay(Uid(9)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1786652290756] [chat] GenericChatMsg { chat_type: NpcSay(Uid(3)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1786652293256] [chat] GenericChatMsg { chat_type: NpcSay(Uid(5)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1786652299257] [chat] GenericChatMsg { chat_type: NpcSay(Uid(7)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1786652300757] [chat] GenericChatMsg { chat_type: NpcSay(Uid(6)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1786652314358] [chat] GenericChatMsg { chat_type: Npc(Uid(3)), content: Localized { key: "npc-speech-tell_monster", seed: 59301, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 13766, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 51398, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 42228, args: {} })} } }
+[1786652314957] waited 900 ticks -> sim 12.10..42.13 in 892 client spins; pos now Vec3 { x: 16384.73, y: 16384.387, z: 400.0 }
+[1786652314957] [note] A2: window closed
+[1786652314957] === script complete, disconnecting ===
