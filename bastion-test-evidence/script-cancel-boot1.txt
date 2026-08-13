@@ -1,0 +1,14 @@
+note CANCEL-BOOT1: found the preset, then ERASE the farm plot.
+note CANCEL-BOOT1: arena centre (16384,16384), datum 400. The preset's farm sits
+note CANCEL-BOOT1: at offsets x -7..-3, y -4..+1 => absolute x 16377..16381,
+note CANCEL-BOOT1: y 16380..16385, z 399..400. Derived from FOUNDING_PRESET_V1,
+note CANCEL-BOOT1: not measured off a log.
+note CANCEL-BOOT1: the cancel rectangle is the farm's own AABB.
+anchor
+spawn 8
+wait 120
+note CANCEL-BOOT1: colony founded, now erasing the farm
+cancel 16377 16380 399 16381 16385 400
+wait 120
+list_designations
+note CANCEL-BOOT1: window closed -- server holds for the 60s rtsim save
