@@ -1,0 +1,12 @@
+note A3-EAT: the last A-bar gap. Section 8 B3's standing risk: with SEEDS ONLY, the
+note A3-EAT: first eat waits on a HARVEST, so section 5's 'minutes-scale' is unproven
+note A3-EAT: for A3 specifically. This leg tests whether run length is the only obstacle.
+note A3-EAT: REGISTERED BEFORE THE DATA --
+note A3-EAT:   PASS      = harvested > 0, then food_stock > 0, then 'bastion: ate' fires
+note A3-EAT:   PARTIAL   = harvest + food_stock rise but NO eat in the window
+note A3-EAT:   FINDING   = food_stock never rises => the block is NOT run length
+note A3-EAT: window 9000 ticks (~5 min sim), declared here and flown exactly.
+anchor
+spawn 8 16384.5 16384.5 400.0
+wait 9000
+note A3-EAT: window closed

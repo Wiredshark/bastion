@@ -349,6 +349,50 @@ changes.**
 
 ---
 
+## ★★★★★★ A3-EAT · **ANSWERED WITH A NUMBER — AND §8 B3's FRAMING IS CORRECTED**
+
+**Registered before the run** *(in the script itself)*: *PASS = harvest → food_stock →
+eat; PARTIAL = harvest + stock but no eat; FINDING = stock never rises.*
+
+    window: sim 2.09..302.12   (9000 ticks = 300 s, declared and flown exactly)
+
+    tilled 30 · sown 8 · crop 8 · harvested 8 · ate 0
+    food_stock  0 -> 10
+
+> ## **LANDS ON THE REGISTERED *PARTIAL*: THE HARVEST HAPPENED, THE FOOD EXISTS, AND
+> NOBODY ATE.**
+
+### ★★★★★★ THE CORRECTION — **the harvest was never the binding constraint**
+
+**§8 B3 says: *"with seeds only, the first EAT waits on a HARVEST."*** *That framing put
+the blocker on the farm.*
+
+**Measured: the harvest completed in FIVE MINUTES. The eat waits on HUNGER.**
+
+    hunger_decay_per_sec = 0.00088900001719594     (read from the run's own config line)
+    hunger after the 300 s window = 1.0 - 300 x 0.000889 = 0.73
+
+| hunger falls to | sim seconds | minutes | ticks |
+|---|---|---|---|
+| 0.90 | 112 | 1.9 | 3,375 |
+| 0.75 | 281 | 4.7 | 8,436 |
+| ★★★ **0.50** | **562** | **9.4** | **16,873** |
+| **0.25** | **844** | **14.1** | **25,309** |
+
+★★★★★ **So A3 IS minutes-scale — but its number is ~10–15 minutes, against the ~30
+SECONDS every other bar in this packet needs.** *A 20–30× difference in required run
+length that §5's blanket "these acceptance runs are minutes-scale regardless" never
+distinguished.*
+
+> ## **THE BLOCKER IS A CONFIG CONSTANT, NOT THE FARM — AND IT IS DERIVABLE FROM THE
+> RUN'S OWN CONFIG LINE RATHER THAN GUESSABLE.**
+
+★★ **A3 stays PARTIAL, not FAIL.** *Every stage it can reach in its window passed;
+the one stage it cannot reach is gated by a named, measured constant.* **Closing it
+needs one ~15-minute leg, and that leg's length is now derived rather than picked.**
+
+---
+
 ## NEXT
 3. **F8-inclusion** *(designate the arena's tree and outcrop; observe a real
    `job completed` with drop+XP)*.
