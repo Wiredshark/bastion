@@ -7,7 +7,7 @@ any of this data existed.** *Binary `6c2991eb` + targeted-spawn driver `8932f91f
 | bar | state |
 |---|---|
 | **A1** full preset | ✅ **PASS, falsifier-backed** *(planted PARTIAL goes RED on all 3 fields)* |
-| **A2** colonists stay | ⏳ **not yet run** |
+| **A2** colonists stay | ⛔ **FAILS AS REGISTERED — and its plant does NOT discriminate** |
 | **A3** till→sow→eat | ⚠ **VOID by refusal #4** — *seed drop has no witness (F-2)* |
 | **A4** second founding refuses | ✅ **PASS** |
 | **A5** terrain refusal | ✅ **PASS — with its N5 control** |
@@ -94,8 +94,80 @@ founding is still refused, so this leg re-confirms A4 alongside A1.*
 
 ---
 
-## NEXT
+## ⛔★★★★★★ A2 — **FAILS AS REGISTERED, AND ITS PLANTED FAILURE DOES NOT DISCRIMINATE**
 
-1. **A2** *(§8 B4 — found WITHOUT designations; colonists must leave R=16)*.
+### FIRST, THE INSTRUMENT HAD TO BE BUILT
+
+**Nothing in the tree emitted a colonist BODY position periodically.** *The only
+position-bearing lines are job sites (where WORK is, not where bodies are) and the
+fail-safe rescue.* ★★★★★ **Measuring A2 off job-site arrivals would have been unsound
+in the exact direction that matters: the plant removes the designations, so there would
+be NO arrivals at all, and "they left" would have been read from an ABSENCE.**
+
+**Built: `pos` added to the existing `BASTION_COLONY_PRESENCE_ACCEPTANCE_DIAG`** —
+*same env gate, same join, no new query.*
+
+### THE MEASUREMENT
+
+    GREEN  (full preset, designations placed):  max 22.96 blocks from F
+           per-uid:  6.3 · 20.5 · 5.3 · 17.7 · 9.9 · 16.1 · 12.0 · 23.0
+
+    MUTANT (NO designations at all, 0 plot lines): max 21.00 blocks from F
+           per-uid:  5.3 ·  6.6 · 5.0 · 21.0 ·  3.5 ·  2.2 · 12.1 ·  3.8
+
+    R (registered pre-data): 16
+
+> ## **BOTH ARMS EXCEED R. AND REMOVING *EVERY* DESIGNATION MOVED THE MAXIMUM BY TWO
+> BLOCKS — IN THE WRONG DIRECTION.**
+
+### ★★★★★★ WHY THE PLANT CANNOT WORK — **B4's correction was still not enough**
+
+**Ben's observed failure was colonists marching to THE OLD COLONY'S COORDINATES.** *That
+requires an **ATTRACTOR** somewhere else in the world.*
+
+★★★★★ **On a fresh one-colony world there is nowhere to march to.** *Removing the
+designations removes the WORK, but it does not create a distant destination — so the
+colonists just wander locally, which is what both arms show.*
+
+> ## **§4's ONE-COLONY BOUNDARY MAY ALREADY HAVE MADE A2's FAILURE MODE STRUCTURALLY
+> UNREACHABLE — WHICH IS EXACTLY WHAT §4 CLAIMED IT WOULD DO.**
+
+*"The leash-march fallthrough becomes impossible: spawn-bind only happens through the
+founding action."* ★★★ **If that holds, A2 cannot be demonstrated empirically on this
+world, and the honest score is neither PASS nor "mechanism broken".**
+
+### ⚠ AND ONE OBSERVATION THAT RUNS AGAINST THE BAR'S PREMISE
+
+**WITH designations, FOUR colonists ranged past 16 (20.5, 17.7, 16.1, 23.0). WITHOUT
+them, ONE did (21.0).** ★★★ *Directionally, the designations made colonists range
+**further**, not closer — because work gives them places to go.*
+
+⚠ **n=1 per arm and these numbers are dominated by ordinary wander, so this is
+registered as an observation, not a finding.** *But it is the opposite of what "work at
+F retains them" predicts, and it should be tested properly before that premise is
+relied on again.*
+
+### WHAT I AM **NOT** DOING
+
+⛔ **NOT re-baselining R to make A2 green** *(scoring refusal #1).* **R was derived and
+registered before the data; it failed; that is the result.**
+
+★★ *And I note my derivation was itself loose — it ADDED spawn scatter (7.07) to work
+travel (~8), but a colonist standing at the farm's far corner is ~8 from F regardless
+of where it spawned. **The registered R was too generous by construction and STILL both
+arms blew it.***
+
+### THE ROW THIS OPENS
+
+1. **A2 needs a bar that its plant can move** — *either an attractor-based reproduction
+   (a second site to march to, which §4 forbids), or a different measure entirely
+   (e.g. "colonists REACH the work", which the 36 `arrived at job site` lines already
+   witness).*
+2. **R must be derived from measured wander, not from a construction** — *and from more
+   than one run per arm.*
+
+---
+
+## NEXT
 3. **F8-inclusion** *(designate the arena's tree and outcrop; observe a real
    `job completed` with drop+XP)*.
