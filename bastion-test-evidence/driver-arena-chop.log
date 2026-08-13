@@ -1,0 +1,24 @@
+[1786635353476] === bastion_playtest starting: server=127.0.0.1:14004 username=arenachop script=E:/veloren-master/bastion-test-evidence/script-arena-chop.txt ===
+[1786635353476] parsed 17 script commands
+[1786635356690] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/0b62acac-142c-4463-8271-3d013995d6b1), name: "Veloren Server", git_hash: 679209024, git_timestamp: 1786634758, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1786635356824] requested character join id=CharacterId(2)
+[1786635356824] in-game. entity=Entity(0, Generation(1))
+[1786635358824] player pos at script start: Vec3 { x: 16384.5, y: 16384.5, z: 400.0 }
+[1786635358828] [note] T1/T2: ARENA CHOP -- the direct refutation of F8-C1.
+[1786635358828] [note] T1/T2: arena centre is (16384,16384): spawn_wpos = centre + 0.5 and the
+[1786635358828] [note] T1/T2: arena spawn is 16384.5. RESOURCED_TREES offsets (18,2)h5 (22,-3)h6
+[1786635358828] [note] T1/T2: (25,4)h4 give absolute trunks (16402,16386) (16406,16381)
+[1786635358828] [note] T1/T2: (16409,16388). The designation is offsets x[16,27] y[-5,6] =
+[1786635358828] [note] T1/T2: absolute x[16400,16411] y[16379,16390], 12x12 = 144 tiles, inside
+[1786635358828] [note] T1/T2: the path's own 4096 cap. Registered BEFORE the build; unchanged.
+[1786635358828] [note] T1/T2: T1 PASS = 'chop designation resolved' with trees=3
+[1786635358828] [note] T1/T2: T2 PASS = cells=[5, 6, 4] in some order -- each tree's fell-set
+[1786635358828] [note] T1/T2: equals its trunk height, because only Wood yields.
+[1786635358828] [note] T1/T2: FAIL = 'chop designation refused reason=no_trees_rooted' (F8-C1)
+[1786635358828] sent BastionCameraAnchor at Vec3 { x: 16384.5, y: 16384.5, z: 400.0 }
+[1786635362791] waited 120 ticks -> sim 2.12..6.13 in 119 client spins; pos now Vec3 { x: 16384.5, y: 16384.5, z: 400.0 }
+[1786635362792] sent BastionPlaceDesignation kind=Chop region=Region { min: Vec3 { x: 16400, y: 16379, z: 400 }, max: Vec3 { x: 16411, y: 16390, z: 400 } }
+[1786635365458] waited 80 ticks -> sim 6.13..8.82 in 80 client spins; pos now Vec3 { x: 16384.5, y: 16384.5, z: 400.0 }
+[1786635365458] designations (rev=3): [(Region { min: Vec3 { x: 16401, y: 16385, z: 400 }, max: Vec3 { x: 16403, y: 16387, z: 405 } }, Chop, None), (Region { min: Vec3 { x: 16405, y: 16380, z: 400 }, max: Vec3 { x: 16407, y: 16382, z: 406 } }, Chop, None), (Region { min: Vec3 { x: 16408, y: 16387, z: 400 }, max: Vec3 { x: 16410, y: 16389, z: 404 } }, Chop, None)]
+[1786635365458] [note] T1/T2: window closed
+[1786635365458] === script complete, disconnecting ===

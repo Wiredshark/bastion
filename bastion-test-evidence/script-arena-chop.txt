@@ -1,0 +1,17 @@
+note T1/T2: ARENA CHOP -- the direct refutation of F8-C1.
+note T1/T2: arena centre is (16384,16384): spawn_wpos = centre + 0.5 and the
+note T1/T2: arena spawn is 16384.5. RESOURCED_TREES offsets (18,2)h5 (22,-3)h6
+note T1/T2: (25,4)h4 give absolute trunks (16402,16386) (16406,16381)
+note T1/T2: (16409,16388). The designation is offsets x[16,27] y[-5,6] =
+note T1/T2: absolute x[16400,16411] y[16379,16390], 12x12 = 144 tiles, inside
+note T1/T2: the path's own 4096 cap. Registered BEFORE the build; unchanged.
+note T1/T2: T1 PASS = 'chop designation resolved' with trees=3
+note T1/T2: T2 PASS = cells=[5, 6, 4] in some order -- each tree's fell-set
+note T1/T2: equals its trunk height, because only Wood yields.
+note T1/T2: FAIL = 'chop designation refused reason=no_trees_rooted' (F8-C1)
+anchor
+wait 120
+designate chop 16400 16379 400 16411 16390 400
+wait 80
+list_designations
+note T1/T2: window closed

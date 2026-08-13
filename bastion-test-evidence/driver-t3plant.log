@@ -1,0 +1,25 @@
+[1786635496130] === bastion_playtest starting: server=127.0.0.1:14004 username=t3plant script=E:/veloren-master/bastion-test-evidence/script-arena-chop.txt ===
+[1786635496130] parsed 17 script commands
+[1786635499194] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/5241492a-c350-4110-b59b-653d8d077fbe), name: "Veloren Server", git_hash: 679209024, git_timestamp: 1786634758, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1786635499327] requested character join id=CharacterId(2)
+[1786635499328] in-game. entity=Entity(0, Generation(1))
+[1786635501328] player pos at script start: Vec3 { x: 16384.5, y: 16384.5, z: 400.0 }
+[1786635501328] [note] T1/T2: ARENA CHOP -- the direct refutation of F8-C1.
+[1786635501328] [note] T1/T2: arena centre is (16384,16384): spawn_wpos = centre + 0.5 and the
+[1786635501328] [note] T1/T2: arena spawn is 16384.5. RESOURCED_TREES offsets (18,2)h5 (22,-3)h6
+[1786635501328] [note] T1/T2: (25,4)h4 give absolute trunks (16402,16386) (16406,16381)
+[1786635501328] [note] T1/T2: (16409,16388). The designation is offsets x[16,27] y[-5,6] =
+[1786635501328] [note] T1/T2: absolute x[16400,16411] y[16379,16390], 12x12 = 144 tiles, inside
+[1786635501328] [note] T1/T2: the path's own 4096 cap. Registered BEFORE the build; unchanged.
+[1786635501328] [note] T1/T2: T1 PASS = 'chop designation resolved' with trees=3
+[1786635501328] [note] T1/T2: T2 PASS = cells=[5, 6, 4] in some order -- each tree's fell-set
+[1786635501328] [note] T1/T2: equals its trunk height, because only Wood yields.
+[1786635501328] [note] T1/T2: FAIL = 'chop designation refused reason=no_trees_rooted' (F8-C1)
+[1786635501328] sent BastionCameraAnchor at Vec3 { x: 16384.5, y: 16384.5, z: 400.0 }
+[1786635505295] waited 120 ticks -> sim 2.12..6.13 in 119 client spins; pos now Vec3 { x: 16384.5, y: 16384.5, z: 400.0 }
+[1786635505295] sent BastionPlaceDesignation kind=Chop region=Region { min: Vec3 { x: 16400, y: 16379, z: 400 }, max: Vec3 { x: 16411, y: 16390, z: 400 } }
+[1786635505328] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("No trees rooted in the marked area.") }
+[1786635507961] waited 80 ticks -> sim 6.13..8.82 in 80 client spins; pos now Vec3 { x: 16384.5, y: 16384.5, z: 400.0 }
+[1786635507961] designations (rev=0): []
+[1786635507961] [note] T1/T2: window closed
+[1786635507961] === script complete, disconnecting ===
