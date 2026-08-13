@@ -8,7 +8,7 @@ any of this data existed.** *Binary `6c2991eb` + targeted-spawn driver `8932f91f
 |---|---|
 | **A1** full preset | ✅ **PASS, falsifier-backed** *(planted PARTIAL goes RED on all 3 fields)* |
 | **A2** colonists stay | ⛔ **bar UNSOUND** — ✅ **but A2-B (WORK PULL) replaces it and PASSES 47.6% vs 0.0%** |
-| **A3** till→sow→eat | ⚠ **PARTIAL** *(was VOID)* — *stock now witnessed; till+sow observed; **eat** outstanding* |
+| **A3** till→sow→eat | ✅ **PASS** *(VOID → PARTIAL → PASS)* — **`ate`=3 on the derived leg** |
 | **A4** second founding refuses | ✅ **PASS** |
 | **A5** terrain refusal | ✅ **PASS — with its N5 control** |
 | **B1** z-datum *(§8, not an A-bar)* | ✅ **PASS, falsifier-backed** |
@@ -390,6 +390,52 @@ distinguished.*
 ★★ **A3 stays PARTIAL, not FAIL.** *Every stage it can reach in its window passed;
 the one stage it cannot reach is gated by a named, measured constant.* **Closing it
 needs one ~15-minute leg, and that leg's length is now derived rather than picked.**
+
+### ★★★★★ A3-EAT-2 · **THE DERIVED LEG — registered BEFORE its result**
+
+**The eat gate, read from code rather than guessed:**
+
+    needs.hunger < stagger_interrupt(mood_cfg.hunger.interrupt, values, consc, neur)
+    default_need_interrupt() = 0.2      clamped to [0.05, 0.3] per personality
+
+| threshold | sim seconds | **ticks** | who |
+|---|---|---|---|
+| **0.30** | 787 | **23,625** | first eligible colonist |
+| **0.20** | 900 | **27,000** | base |
+| **0.05** | 1,069 | **32,065** | last eligible |
+
+> ## **WINDOW = 28,000 TICKS — chosen to clear the first two, declared before the run
+> and flown exactly.**
+
+**REGISTERED CRITERIA:** *PASS = `bastion: ate` fires at least once, with `food_stock`
+having risen first.* ⚠ **FINDING = `food_stock` > 0 AND hunger below threshold AND
+still no eat** — *that would mean the eat is blocked by something other than hunger or
+supply, and it would be a real defect rather than a run-length artifact.*
+
+★★ *This is the leg my own previous entry said was needed. Its length is now derived
+from two constants and a division, not picked.*
+
+### ✅★★★★★★ **RESULT — A3 PASSES. THE LOOP CLOSES.**
+
+    tilled 30 · sown 10 · harvested 10 · ate 3
+    food_stock:  0 -> 6 -> 4 -> 0
+    min hunger:  0.1509      (below the 0.2 base gate)
+
+> ## **TILL → SOW → HARVEST → EAT, LIVE, ON FOUNDING STOCK, THROUGH THE PLAYER PATH.**
+
+★★★★★ **The derivation held exactly.** *Hunger crossed the gate inside the declared
+window, the eats fired, and `food_stock` went 0 → 6 (harvest) → 4 → 0 (consumed) — the
+whole arc of the colony's first meal, visible in one counter.*
+
+★★★ **A3 travelled VOID → PARTIAL → PASS in this session**, *and each step was a real
+change: VOID because the stock had no witness (built one), PARTIAL because the window
+was too short (measured why), PASS because the window was then derived from the eat
+gate and the decay rate rather than guessed.*
+
+⚠ **AND §5's RUN-MODE CLAIM IS NOW PRECISE:** *"these acceptance runs are minutes-scale
+regardless" is TRUE — but A3's minutes are **~15**, against **~0.5** for every other
+bar.* **A packet that had said "minutes-scale" and stopped would have had A3 fail on a
+30-second leg for no reason but the clock.**
 
 ---
 
