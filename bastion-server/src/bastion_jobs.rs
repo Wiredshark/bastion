@@ -10660,13 +10660,28 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // (entities, colonists, uids, needs_storage) join
             // `need_join_diag` above already pays for -- no second join.
             if std::env::var_os("BASTION_COLONY_PRESENCE_ACCEPTANCE_DIAG").is_some() {
-                for (e, _, u, n) in (&entities, &colonists, &uids, &needs_storage).join() {
+                // FOUNDING PRESET A2 (2026-08-12): `pos` added. A2 asks whether
+                // colonists STAY within R of the founding point, and nothing in
+                // the tree emitted a colonist BODY position periodically -- the
+                // only position-bearing lines are job sites (where work is, not
+                // where bodies are) and the fail-safe rescue. Measuring A2 off
+                // job-site arrivals would be unsound in the exact direction that
+                // matters: the planted failure removes the designations, so there
+                // would be NO arrivals at all, and "they left" would be read from
+                // an ABSENCE rather than a measurement.
+                //
+                // Reuses the join this block already pays for; still behind the
+                // same env gate, so diag density is unchanged when it is off.
+                for (e, _, u, n, p) in
+                    (&entities, &colonists, &uids, &needs_storage, &positions).join()
+                {
                     info!(
                         tick = tick.0,
                         uid = u.0.get(),
                         loaded = is_loaded(e),
                         hunger = n.hunger,
                         rest = n.rest,
+                        pos = ?p.0,
                         "bastion COLONY-PRESENCE-ACCEPTANCE-DIAG"
                     );
                 }
