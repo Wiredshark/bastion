@@ -1420,6 +1420,20 @@ impl<'a> System<'a> for Sys {
                         common::comp::Item::new_from_asset(crate::bastion_jobs::FARM_SEED_ITEM)
                     {
                         let _ = item.set_amount(crate::bastion_jobs::FOUNDING_SEED_STOCK);
+                        // FOUNDING PRESET F-2 (2026-08-12): the founding stock had NO
+                        // witness line. A5/A3 both read "founded WITH stock", and with
+                        // no emit that premise is UNREAD rather than true -- the same
+                        // shape as every unwitnessed outcome this arc has paid for.
+                        //
+                        // `amount` is read BACK OFF THE ITEM, never echoed from
+                        // FOUNDING_SEED_STOCK: `set_amount`'s Result is discarded above,
+                        // so the constant is the INTENT and only the item carries the
+                        // EFFECT. Reporting the constant here would be the F8 defect in
+                        // miniature -- announcing what we meant to do.
+                        //
+                        // Inside the `Ok` arm on purpose: if the asset fails to load
+                        // there is no drop, and there must be no line claiming one.
+                        let dropped_amount = item.amount();
                         post_emitters.emit(event::CreateItemDropEvent {
                             pos: common::comp::Pos(pos),
                             vel: common::comp::Vel(Vec3::zero()),
@@ -1428,6 +1442,12 @@ impl<'a> System<'a> for Sys {
                             loot_owner: None,
                             persistent: true,
                         });
+                        tracing::info!(
+                            item = crate::bastion_jobs::FARM_SEED_ITEM,
+                            amount = dropped_amount,
+                            pos = ?pos,
+                            "bastion: founding stock dropped"
+                        );
                     }
                     // bastion (ROW-COLONY-PRESENCE, DECISIONS #106): the
                     // live-path twin of `Server::bastion_found_colony_
