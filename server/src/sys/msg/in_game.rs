@@ -524,9 +524,16 @@ impl Sys {
                         //
                         // Both arms emit, by name, so an absence in the log now means
                         // "the message never arrived" rather than "chop is unwitnessed".
+                        // PER-TREE CELL COUNTS, not merely a tree count: a bar
+                        // reading `trees=N` alone would pass on N EMPTY
+                        // resolutions. These come from `tree_fell_set` reading
+                        // real blocks, so they are what make the count
+                        // non-vacuous — and on the arena they should equal the
+                        // trunk heights in `RESOURCED_TREES`.
                         tracing::info!(
                             ?region,
                             trees = trees.len(),
+                            cells = ?trees.iter().map(|(_, _, c)| c.len()).collect::<Vec<_>>(),
                             "bastion: chop designation resolved"
                         );
                         if trees.is_empty() {

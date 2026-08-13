@@ -53,6 +53,11 @@ pub fn detect_trees(
                 .map(|b| matches!(b.kind(), BlockKind::Wood | BlockKind::Leaves))
                 .unwrap_or(false)
         };
+        // CANDIDATE COLUMNS: `(trunk column, ground z)`. Only the SOURCE of
+        // candidates varies — everything after this list (the seed search
+        // and the bounded flood-fill) is shared and reads real blocks.
+        let mut candidates: Vec<(Vec2<i32>, i32)> = Vec::new();
+
         for attr in sim.get_area_trees(min_xy, max_xy) {
             // The oracle is a rough superset ("needs to be reworked",
             // all.rs:188) — confirm with the engine's own env-filter, the
@@ -63,18 +68,55 @@ pub fn detect_trees(
             if !world::layer::tree::tree_valid_at(attr.pos, &col, None, attr.seed) {
                 continue;
             }
+            candidates.push((attr.pos, col.alt as i32));
+        }
+
+        // F8-C1: THE ARENA IS ITS OWN ORACLE.
+        //
+        // `get_area_trees` is generative — `structure_gen` plus a climate
+        // lottery — so it can never propose a HAND-PLACED trunk, and
+        // `tree_valid_at` would filter a synthetic flat column even if it
+        // did. That is why the arena's trees refused with
+        // `no_trees_rooted` BEFORE any block was examined, and it is why
+        // this fix belongs at the candidate source rather than downstream:
+        // loosening the shared path to admit them would break the
+        // real-worldgen guarantee that attributed the defect to the arena
+        // in the first place.
+        //
+        // Gated on `resourced()`, so a normal world is bit-for-bit
+        // unaffected. The trunk's ground is `FLAT_ARENA_Z` by construction
+        // (`resourced_feature_cells` paints from the slab's first air cell
+        // upward), which is the same fact the seed search below would have
+        // learned from `col.alt` on real terrain.
+        if crate::bastion_flat_arena::resourced() {
+            let centre = crate::bastion_flat_arena::world_center_wpos(world).map(|e| e as i32);
+            for (offset, _height) in crate::bastion_flat_arena::RESOURCED_TREES {
+                let pos = centre + *offset;
+                let inside = pos.x >= min_xy.x
+                    && pos.x <= max_xy.x
+                    && pos.y >= min_xy.y
+                    && pos.y <= max_xy.y;
+                // ROOTED-IN-THE-PAINT is still the rule: a trunk outside
+                // the designated footprint is not felled just because the
+                // arena knows where it is.
+                if inside && !candidates.iter().any(|(c, _)| *c == pos) {
+                    candidates.push((pos, crate::bastion_flat_arena::FLAT_ARENA_Z));
+                }
+            }
+        }
+
+        for (pos, base_z) in candidates {
             // Seed at the first tree block near the column's ground — a
             // felled/ungenerated tree yields nothing (the chunk must be
             // loaded for its blocks to exist).
-            let base_z = col.alt as i32;
             let Some(seed_z) =
-                (base_z - 2..=base_z + 8).find(|&z| is_tree(Vec3::new(attr.pos.x, attr.pos.y, z)))
+                (base_z - 2..=base_z + 8).find(|&z| is_tree(Vec3::new(pos.x, pos.y, z)))
             else {
                 continue;
             };
             let cells = tree_fell_set(
                 &is_tree,
-                Vec3::new(attr.pos.x, attr.pos.y, seed_z),
+                Vec3::new(pos.x, pos.y, seed_z),
                 TREE_FELL_CELL_CAP,
                 TREE_FELL_HEIGHT_CAP,
                 TREE_FELL_RADIUS,
@@ -90,7 +132,7 @@ pub fn detect_trees(
             }
             trees.push((
                 Region { min: mn, max: mx },
-                Vec3::new(attr.pos.x, attr.pos.y, seed_z),
+                Vec3::new(pos.x, pos.y, seed_z),
                 cells,
             ));
         }
