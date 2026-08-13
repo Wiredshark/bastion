@@ -467,6 +467,100 @@ bar.* **A packet that had said "minutes-scale" and stopped would have had A3 fai
 
 ---
 
+## ✅★★★★★★ A4 · **THE SECOND-FOUNDING REFUSAL — RED-DEMONSTRATED, AND B6's RESTART CASE TESTED**
+
+A4 had been passing **on observation only**. The refusal fired in the smoke run, so I
+recorded a pass — but I had never run its plant, and *a bar that has never failed has
+never been shown to be a bar.* Two things were owed: the plant, and §8 B6's sharper
+case, which nothing had touched.
+
+### ★★★★★★ B6's ACTUAL CONCERN — **what survives a restart**
+
+B6 amended the one-colony predicate to read **rtsim colonist records**, on the ground
+that they are the only colony state that survives a restart. The JobBoard and the
+designations do not. So a predicate reading the *board* would, after any restart, see
+"no colony" and bless a second founding **while the first colony still stands** — the
+leash-march §4 exists to make impossible. That is a silent failure: no refusal, no
+error, just two colonies.
+
+Nothing had tested it. Testing it needs no code change, so it went first.
+
+### ⚠ AND MY FIRST RUN OF IT WAS **VOID, NOT RED** — *by a confound I built myself*
+
+The first attempt looked like a clean red: boot 2 founded a second colony, `refused=0`.
+It also promoted **eight entirely different colonists** — none of boot 1's. That
+mismatch was the tell. I checked the premise instead of reporting the result:
+
+```
+server/src/rtsim/tick.rs:762   if rtsim.last_saved.is_none_or(|ls| ls.elapsed() > Duration::from_secs(60))
+```
+
+**rtsim saves every 60 seconds of wall time.** Boot 1 founded at `14:18:51` and I
+killed it ~55 s later with `taskkill /F` — a hard kill, no graceful shutdown. *The save
+never fired.* Boot 2 loaded a save that predated the colony, so it correctly saw an
+empty world. The predicate was never under test. **The red was mine, not the code's.**
+
+The lesson is the same one this program keeps re-learning: a red I *wanted* earns more
+scepticism than a green, not less.
+
+### ★★★★★ THE REDO — **precondition checked BY CONTENT, before the result is read**
+
+The redo holds boot 1 for **150 s** past the founding, then asserts the precondition
+against the save file itself rather than against a clock:
+
+```
+PRECONDITION: is boot1 colonist 'Doran the Younger' in the save?
+  YES -- boot1 state persisted, test is VALID
+```
+
+Only then is the restart run scored.
+
+| | boot 1 (fresh world) | boot 2 (**restart, same userdata**) |
+|---|---|---|
+| `colony founded` | 1 | **0** |
+| `founding refused` | 0 | **1** — `reason="colony_exists"` |
+| colonists promoted **before** the attempt | — | **0** |
+
+**A4-RESTART PASSES.**
+
+And that last row is the load-bearing one. At the moment of refusal **not one colonist
+had been promoted to a loaded entity** — yet the refusal fired anyway. The predicate is
+therefore reading the persistent *record* store, not the loaded-entity population:
+
+```rust
+// server/src/rtsim/mod.rs::bastion_colony_exists
+self.state.data().npcs.npcs.values().any(|npc| npc.bastion_colonist.is_some())
+```
+
+That is precisely what B6 required, and it is now witnessed rather than asserted.
+
+### ✅★★★★★★ THE PLANT — **and it comes with its own matched control**
+
+One line disabled, at the call site rather than in the predicate, so what is being
+falsified is *the boundary check*, not the accessor:
+
+```rust
+// server/src/sys/msg/in_game.rs — §4, THE ONE-COLONY BOUNDARY
+let refusal = if false && rtsim.bastion_colony_exists() {   // A4 PLANT
+```
+
+Both arms ran on the **same profile** (`no_overflow`), the **same userdata**, the
+**same script** — the only difference is that line:
+
+| | `founded` | `refused` |
+|---|---|---|
+| **PLANT** — boundary disabled | **1** ⛔ | 0 |
+| **CONTROL** — boundary restored | 0 | **1** ✅ |
+
+**The bar fails the failing specimen and passes the matched control.** A4 is now a
+demonstrated bar, not an observation. Reverted, rebuilt, green confirmed on the
+restored binary.
+
+*(The debug-profile green from the restart leg stands as separate corroboration on a
+second profile — the plant pair is internally matched on `no_overflow`.)*
+
+---
+
 ## NEXT
 3. **F8-inclusion** *(designate the arena's tree and outcrop; observe a real
    `job completed` with drop+XP)*.

@@ -1,0 +1,593 @@
+[2m2026-08-13T14:24:22.675052Z[0m [33m WARN[0m [2mveloren_server_cli::settings[0m[2m:[0m Settings file not found! Creating a template file: E:/veloren-master/.engine-integration-wt/userdata-a4restart\server-cli\settings.template.ron — If you wish to change any settings, copy/move the template to settings.ron and edit the fields as you wish.
+[2m2026-08-13T14:24:22.675940Z[0m [32m INFO[0m [2mveloren_server_cli[0m[2m:[0m Using userdata folder at E:/veloren-master/.engine-integration-wt/userdata-a4restart
+[2m2026-08-13T14:24:22.702893Z[0m [32m INFO[0m [2mveloren_server_cli[0m[2m:[0m Starting server...
+[2m2026-08-13T14:24:22.702928Z[0m [32m INFO[0m [2mveloren_server[0m[2m:[0m Server data dir is: E:/veloren-master/.engine-integration-wt/userdata-a4restart\server
+[2m2026-08-13T14:24:22.702933Z[0m [32m INFO[0m [2mveloren_server[0m[2m:[0m Authentication is disabled
+[2m2026-08-13T14:24:22.702969Z[0m [32m INFO[0m [2mveloren_server[0m[2m:[0m Server boot ID: boot/76aecba1-9514-4107-8cb1-3b2edba5b3fa
+[2m2026-08-13T14:24:22.703078Z[0m [33m WARN[0m [2mveloren_server_cli::tui_runner[0m[2m:[0m EOF received, cli commands are disabled now!
+[2m2026-08-13T14:24:22.703194Z[0m [32m INFO[0m [2mveloren_common_assets[0m[2m:[0m Assets found path=E:/veloren-master/.engine-integration-wt/assets
+[2m2026-08-13T14:24:23.152273Z[0m [32m INFO[0m [2mveloren_server[0m[2m:[0m content manifest built [3mfiles[0m[2m=[0m10610
+[2m2026-08-13T14:24:23.184369Z[0m [32m INFO[0m [2mrefinery_core::traits[0m[2m:[0m schema history table is empty, going to apply all migrations
+[2m2026-08-13T14:24:23.184512Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m going to apply 70 migrations in multiple transactions.
+[2m2026-08-13T14:24:23.184519Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V1__character ...
+[2m2026-08-13T14:24:23.187080Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V2__body ...
+[2m2026-08-13T14:24:23.189584Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V3__stats ...
+[2m2026-08-13T14:24:23.192067Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V4__race_species ...
+[2m2026-08-13T14:24:23.195031Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V5__inventory ...
+[2m2026-08-13T14:24:23.197557Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V6__loadout ...
+[2m2026-08-13T14:24:23.200403Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V7__inv_increase ...
+[2m2026-08-13T14:24:23.201860Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V8__skills ...
+[2m2026-08-13T14:24:23.204306Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V9__add_missing_inv_loadout ...
+[2m2026-08-13T14:24:23.205557Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V10__dash_melee_energy_cost_fix ...
+[2m2026-08-13T14:24:23.206705Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V11__migrate_armour_stats ...
+[2m2026-08-13T14:24:23.207987Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V12__update_item_stats ...
+[2m2026-08-13T14:24:23.209265Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V13__fix_projectile_stats ...
+[2m2026-08-13T14:24:23.210574Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V14__power_stat_for_weapons ...
+[2m2026-08-13T14:24:23.212082Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V15__fix_various_problems ...
+[2m2026-08-13T14:24:23.213295Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V16__item_persistence ...
+[2m2026-08-13T14:24:23.220318Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V17__move_sceptres ...
+[2m2026-08-13T14:24:23.221580Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V18__rename_npcweapons ...
+[2m2026-08-13T14:24:23.222797Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V19__move_waypoint_to_stats ...
+[2m2026-08-13T14:24:23.225301Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V20__item_storage ...
+[2m2026-08-13T14:24:23.226836Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V21__shinygem_to_diamond ...
+[2m2026-08-13T14:24:23.228088Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V22__skills ...
+[2m2026-08-13T14:24:23.231408Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V23__purge_duplicate_items ...
+[2m2026-08-13T14:24:23.233003Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V24__remove_duplicate_possess_stick ...
+[2m2026-08-13T14:24:23.234390Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V25__starter_gear ...
+[2m2026-08-13T14:24:23.235674Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V26__weapon_replacements ...
+[2m2026-08-13T14:24:23.237194Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V27__armor_reorganization ...
+[2m2026-08-13T14:24:23.239318Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V28__fix_sturdy_red_backpack ...
+[2m2026-08-13T14:24:23.240499Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V29__fix_other_backpacks ...
+[2m2026-08-13T14:24:23.241711Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V30__fix_leather_set ...
+[2m2026-08-13T14:24:23.243134Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V31__fix_debug_armor ...
+[2m2026-08-13T14:24:23.244381Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V32__reset_sceptre_skills ...
+[2m2026-08-13T14:24:23.245634Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V33__fix_amethyst_staff ...
+[2m2026-08-13T14:24:23.246816Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V34__remove_immunemelee_bexplosion ...
+[2m2026-08-13T14:24:23.248158Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V35__rename_craftsman_hammer ...
+[2m2026-08-13T14:24:23.249595Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V36__deduplicate_items ...
+[2m2026-08-13T14:24:23.251010Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V37__equip_slots ...
+[2m2026-08-13T14:24:23.252236Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V38__reset_bow_skills ...
+[2m2026-08-13T14:24:23.253439Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V39__meat_MR_organization ...
+[2m2026-08-13T14:24:23.255200Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V40__meat_fix ...
+[2m2026-08-13T14:24:23.256432Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V41__mining_tree ...
+[2m2026-08-13T14:24:23.257664Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V42__remove_warlock_warlord ...
+[2m2026-08-13T14:24:23.259098Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V43__pets ...
+[2m2026-08-13T14:24:23.261589Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V44__reduce_asset_duplication ...
+[2m2026-08-13T14:24:23.262821Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V45__new_necklaces ...
+[2m2026-08-13T14:24:23.264216Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V46__skill_persistence ...
+[2m2026-08-13T14:24:23.267721Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V47__ability_sets ...
+[2m2026-08-13T14:24:23.270193Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V48__remove_bomb_pile ...
+[2m2026-08-13T14:24:23.271425Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V49__modular_weapons ...
+[2m2026-08-13T14:24:23.286579Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V50__musical_instruments ...
+[2m2026-08-13T14:24:23.287946Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V51__item_durability ...
+[2m2026-08-13T14:24:23.290498Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V52__miner_helmets ...
+[2m2026-08-13T14:24:23.291913Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V53__potion_combustion ...
+[2m2026-08-13T14:24:23.293168Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V54__overflow_slots ...
+[2m2026-08-13T14:24:23.294460Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V55__steeltonguedrum ...
+[2m2026-08-13T14:24:23.295658Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V56__character_player_uuid_index ...
+[2m2026-08-13T14:24:23.298244Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V57__dwarven_keys ...
+[2m2026-08-13T14:24:23.299849Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V58__npc_armor ...
+[2m2026-08-13T14:24:23.301330Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V59__potion_curious ...
+[2m2026-08-13T14:24:23.302536Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V60__recipe_book ...
+[2m2026-08-13T14:24:23.304059Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V61__fix_recipe_migration ...
+[2m2026-08-13T14:24:23.305550Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V62__hardcore ...
+[2m2026-08-13T14:24:23.308165Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V63__remove_bloodmoon_key ...
+[2m2026-08-13T14:24:23.309457Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V64__erase_pet_names ...
+[2m2026-08-13T14:24:23.310632Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V65__rename_helmet_to_head ...
+[2m2026-08-13T14:24:23.311902Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V66__merge_lantern_recipes ...
+[2m2026-08-13T14:24:23.313167Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V67__more_armor_migrations ...
+[2m2026-08-13T14:24:23.314525Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V68__rename_npcweapon ...
+[2m2026-08-13T14:24:23.315859Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V69__merge_metal_recipes ...
+[2m2026-08-13T14:24:23.317293Z[0m [32m INFO[0m [2mrefinery_core::traits::sync[0m[2m:[0m applying migration: V70__merge_remaining_unique_recipes ...
+[2m2026-08-13T14:24:23.318626Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m Applied 70 database migration(s):
+[2m2026-08-13T14:24:23.318638Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V1__character (checksum 9117075394110855725)
+[2m2026-08-13T14:24:23.318640Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V2__body (checksum 6157752084147612421)
+[2m2026-08-13T14:24:23.318642Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V3__stats (checksum 13972056030996213876)
+[2m2026-08-13T14:24:23.318643Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V4__race_species (checksum 17725497262845966991)
+[2m2026-08-13T14:24:23.318644Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V5__inventory (checksum 2296204078845749223)
+[2m2026-08-13T14:24:23.318646Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V6__loadout (checksum 4113908176235991387)
+[2m2026-08-13T14:24:23.318647Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V7__inv_increase (checksum 14586618203445988633)
+[2m2026-08-13T14:24:23.318648Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V8__skills (checksum 13750888823142164688)
+[2m2026-08-13T14:24:23.318649Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V9__add_missing_inv_loadout (checksum 7683767586967693766)
+[2m2026-08-13T14:24:23.318651Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V10__dash_melee_energy_cost_fix (checksum 6782154633539230651)
+[2m2026-08-13T14:24:23.318652Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V11__migrate_armour_stats (checksum 4250561370733984852)
+[2m2026-08-13T14:24:23.318653Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V12__update_item_stats (checksum 2682046764058750781)
+[2m2026-08-13T14:24:23.318654Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V13__fix_projectile_stats (checksum 9684998864943125609)
+[2m2026-08-13T14:24:23.318656Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V14__power_stat_for_weapons (checksum 3232427851139713902)
+[2m2026-08-13T14:24:23.318657Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V15__fix_various_problems (checksum 3677284111525558711)
+[2m2026-08-13T14:24:23.318659Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V16__item_persistence (checksum 4071622738827579892)
+[2m2026-08-13T14:24:23.318660Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V17__move_sceptres (checksum 10211991246089338915)
+[2m2026-08-13T14:24:23.318661Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V18__rename_npcweapons (checksum 5874698273404516747)
+[2m2026-08-13T14:24:23.318662Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V19__move_waypoint_to_stats (checksum 4968120725152602896)
+[2m2026-08-13T14:24:23.318663Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V20__item_storage (checksum 15645955395975896442)
+[2m2026-08-13T14:24:23.318664Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V21__shinygem_to_diamond (checksum 14401163018466160915)
+[2m2026-08-13T14:24:23.318666Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V22__skills (checksum 6304664136683765916)
+[2m2026-08-13T14:24:23.318667Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V23__purge_duplicate_items (checksum 8475295354042906120)
+[2m2026-08-13T14:24:23.318668Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V24__remove_duplicate_possess_stick (checksum 3892511089877010706)
+[2m2026-08-13T14:24:23.318669Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V25__starter_gear (checksum 12297568306891341032)
+[2m2026-08-13T14:24:23.318670Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V26__weapon_replacements (checksum 3916756410604680303)
+[2m2026-08-13T14:24:23.318671Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V27__armor_reorganization (checksum 355115092526764820)
+[2m2026-08-13T14:24:23.318673Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V28__fix_sturdy_red_backpack (checksum 383788314415304824)
+[2m2026-08-13T14:24:23.318674Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V29__fix_other_backpacks (checksum 4261054190619340614)
+[2m2026-08-13T14:24:23.318675Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V30__fix_leather_set (checksum 17138102695467063097)
+[2m2026-08-13T14:24:23.318676Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V31__fix_debug_armor (checksum 16042938412753080615)
+[2m2026-08-13T14:24:23.318677Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V32__reset_sceptre_skills (checksum 10182203831248564684)
+[2m2026-08-13T14:24:23.318678Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V33__fix_amethyst_staff (checksum 9604848746900261325)
+[2m2026-08-13T14:24:23.318679Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V34__remove_immunemelee_bexplosion (checksum 5443787630796502227)
+[2m2026-08-13T14:24:23.318681Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V35__rename_craftsman_hammer (checksum 17448708375386734886)
+[2m2026-08-13T14:24:23.318682Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V36__deduplicate_items (checksum 14535474030714730867)
+[2m2026-08-13T14:24:23.318683Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V37__equip_slots (checksum 17670694596716043178)
+[2m2026-08-13T14:24:23.318684Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V38__reset_bow_skills (checksum 2946902497248539682)
+[2m2026-08-13T14:24:23.318685Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V39__meat_MR_organization (checksum 12119461975081911054)
+[2m2026-08-13T14:24:23.318686Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V40__meat_fix (checksum 8567950153632141745)
+[2m2026-08-13T14:24:23.318688Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V41__mining_tree (checksum 4597753416950730742)
+[2m2026-08-13T14:24:23.318690Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V42__remove_warlock_warlord (checksum 7582057148074323076)
+[2m2026-08-13T14:24:23.318691Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V43__pets (checksum 18433196296812969669)
+[2m2026-08-13T14:24:23.318692Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V44__reduce_asset_duplication (checksum 6175258976537178019)
+[2m2026-08-13T14:24:23.318693Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V45__new_necklaces (checksum 13904973024489369378)
+[2m2026-08-13T14:24:23.318694Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V46__skill_persistence (checksum 1232753656384396185)
+[2m2026-08-13T14:24:23.318695Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V47__ability_sets (checksum 14481811957198129698)
+[2m2026-08-13T14:24:23.318696Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V48__remove_bomb_pile (checksum 13241228531294393202)
+[2m2026-08-13T14:24:23.318698Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V49__modular_weapons (checksum 9925744740750174409)
+[2m2026-08-13T14:24:23.318699Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V50__musical_instruments (checksum 17775170093105575001)
+[2m2026-08-13T14:24:23.318700Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V51__item_durability (checksum 9808753765296879698)
+[2m2026-08-13T14:24:23.318701Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V52__miner_helmets (checksum 13463685126931242488)
+[2m2026-08-13T14:24:23.318702Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V53__potion_combustion (checksum 6169398698926532945)
+[2m2026-08-13T14:24:23.318707Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V54__overflow_slots (checksum 7170889244486814327)
+[2m2026-08-13T14:24:23.318708Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V55__steeltonguedrum (checksum 6465091668118394334)
+[2m2026-08-13T14:24:23.318710Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V56__character_player_uuid_index (checksum 5461440106284075476)
+[2m2026-08-13T14:24:23.318711Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V57__dwarven_keys (checksum 2772538222823120165)
+[2m2026-08-13T14:24:23.318712Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V58__npc_armor (checksum 3411445219666517287)
+[2m2026-08-13T14:24:23.318713Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V59__potion_curious (checksum 9869216673629487416)
+[2m2026-08-13T14:24:23.318714Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V60__recipe_book (checksum 6534247327599213578)
+[2m2026-08-13T14:24:23.318715Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V61__fix_recipe_migration (checksum 5921500808049712958)
+[2m2026-08-13T14:24:23.318716Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V62__hardcore (checksum 16200974500114771960)
+[2m2026-08-13T14:24:23.318717Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V63__remove_bloodmoon_key (checksum 2894083738288817494)
+[2m2026-08-13T14:24:23.318719Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V64__erase_pet_names (checksum 8292297408000838344)
+[2m2026-08-13T14:24:23.318720Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V65__rename_helmet_to_head (checksum 2885737095059833865)
+[2m2026-08-13T14:24:23.318721Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V66__merge_lantern_recipes (checksum 14797805935592345465)
+[2m2026-08-13T14:24:23.318722Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V67__more_armor_migrations (checksum 5108486056019802376)
+[2m2026-08-13T14:24:23.318723Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V68__rename_npcweapon (checksum 6316852774348677033)
+[2m2026-08-13T14:24:23.318724Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V69__merge_metal_recipes (checksum 828686277743662713)
+[2m2026-08-13T14:24:23.318726Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m   V70__merge_remaining_unique_recipes (checksum 2143739316683503356)
+[2m2026-08-13T14:24:23.328727Z[0m [32m INFO[0m [2mveloren_server::persistence[0m[2m:[0m Database vacuumed
+[2m2026-08-13T14:24:23.358703Z[0m [32m INFO[0m [2mveloren_world::sim[0m[2m:[0m Starting world generation
+[2m2026-08-13T14:24:24.779453Z[0m [32m INFO[0m [2mveloren_world::civ[0m[2m:[0m starting peak naming
+[2m2026-08-13T14:24:24.857021Z[0m [32m INFO[0m [2mveloren_world::civ[0m[2m:[0m all peaks named [3mnum_peaks[0m[2m=[0m80
+[2m2026-08-13T14:24:24.857044Z[0m [32m INFO[0m [2mveloren_world::civ[0m[2m:[0m starting biome naming
+[2m2026-08-13T14:24:25.069651Z[0m [32m INFO[0m [2mveloren_world::civ[0m[2m:[0m all biomes named [3mbiome_count[0m[2m=[0m285
+[2m2026-08-13T14:24:25.070178Z[0m [32m INFO[0m [2mveloren_world::civ[0m[2m:[0m starting civilisation creation
+[2m2026-08-13T14:24:28.156020Z[0m [33m WARN[0m [2mveloren_world::civ[0m[2m:[0m Failed to find starting site for civilisation.
+[2m2026-08-13T14:24:28.239300Z[0m [33m WARN[0m [2mveloren_world::civ[0m[2m:[0m Failed to find starting site for civilisation.
+[2m2026-08-13T14:24:28.926929Z[0m [33m WARN[0m [2mveloren_world::civ[0m[2m:[0m Failed to find starting site for civilisation.
+[2m2026-08-13T14:24:29.074426Z[0m [33m WARN[0m [2mveloren_world::civ[0m[2m:[0m Failed to find starting site for civilisation.
+[2m2026-08-13T14:24:29.200898Z[0m [33m WARN[0m [2mveloren_world::civ[0m[2m:[0m Failed to find starting site for civilisation.
+[2m2026-08-13T14:24:29.200923Z[0m [32m INFO[0m [2mveloren_world::civ[0m[2m:[0m all civilisations created [3minitial_civ_count[0m[2m=[0m48
+[2m2026-08-13T14:24:30.463659Z[0m [32m INFO[0m [2mveloren_world::civ[0m[2m:[0m all sites placed [3mcnt[0m[2m=[0m194
+[2m2026-08-13T14:24:31.839668Z[0m [32m INFO[0m [2mveloren_world::site::economy::context[0m[2m:[0m economy simulation start
+[2m2026-08-13T14:24:32.174236Z[0m [32m INFO[0m [2mveloren_world::site::economy::context[0m[2m:[0m economy simulation end
+[2m2026-08-13T14:24:32.174262Z[0m [32m INFO[0m [2mveloren_world::site::economy::context[0m[2m:[0m Towns 4-1395021 avg 147968 inhabitants
+[2m2026-08-13T14:24:37.007916Z[0m [32m INFO[0m [2mveloren_server::automod[0m[2m:[0m Automod disabled
+[2m2026-08-13T14:24:37.007940Z[0m [32m INFO[0m [2mveloren_server[0m[2m:[0m bastion: FLAT-TEST-ARENA env check at server boot [3mflat_arena_enabled[0m[2m=[0mtrue
+[2m2026-08-13T14:24:37.011274Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m Looking for rtsim data at E:/veloren-master/.engine-integration-wt/userdata-a4restart\server\rtsim\data.dat...
+[2m2026-08-13T14:24:37.011364Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m No rtsim data found. Generating from world...
+[2m2026-08-13T14:24:37.029482Z[0m [32m INFO[0m [2mveloren_rtsim::generate[0m[2m:[0m Generated 16 rtsim factions.
+[2m2026-08-13T14:24:37.029570Z[0m [32m INFO[0m [2mveloren_rtsim::generate[0m[2m:[0m Registering 194 rtsim sites from world sites.
+[2m2026-08-13T14:24:37.029754Z[0m [32m INFO[0m [2mveloren_rtsim::generate[0m[2m:[0m Generated 2008 rtsim NPCs to be spawned.
+[2m2026-08-13T14:24:37.029761Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m Rtsim data generated.
+[2m2026-08-13T14:24:37.031137Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Starting default rtsim rules...
+[2m2026-08-13T14:24:37.031153Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::migrate::Migrate' rule...
+[2m2026-08-13T14:24:37.031172Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::architect::Architect' rule...
+[2m2026-08-13T14:24:37.031177Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::replenish_resources::ReplenishResources' rule...
+[2m2026-08-13T14:24:37.031181Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::report::ReportEvents' rule...
+[2m2026-08-13T14:24:37.031185Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::chronicle_events::ChronicleEvents' rule...
+[2m2026-08-13T14:24:37.031188Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::sync_npcs::SyncNpcs' rule...
+[2m2026-08-13T14:24:37.031191Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::simulate_npcs::SimulateNpcs' rule...
+[2m2026-08-13T14:24:37.031194Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::npc_ai::NpcAi' rule...
+[2m2026-08-13T14:24:37.031198Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_rtsim::rule::cleanup::CleanUp' rule...
+[2m2026-08-13T14:24:37.068143Z[0m [32m INFO[0m [2mveloren_server::rtsim::rule[0m[2m:[0m Starting server rtsim rules...
+[2m2026-08-13T14:24:37.068166Z[0m [32m INFO[0m [2mveloren_rtsim[0m[2m:[0m Initiating 'veloren_server::rtsim::rule::deplete_resources::DepleteResources' rule...
+[2m2026-08-13T14:24:37.073668Z[0m [32m INFO[0m [2mveloren_server[0m[2m:[0m Server version: 37132be6 [2026-08-13]
+[2m2026-08-13T14:24:37.074074Z[0m [32m INFO[0m [2mveloren_server[0m[2m:[0m bastion effective mood config [3mhunger_decay_per_sec[0m[2m=[0m0.00088900001719594 [3mrest_decay_per_sec[0m[2m=[0m0.0004440000047907233
+[2m2026-08-13T14:24:37.074088Z[0m [32m INFO[0m [2mveloren_server[0m[2m:[0m bastion effective mood config: need interrupt/comfort thresholds [3mhunger_interrupt[0m[2m=[0m0.20000000298023224 [3mhunger_comfort[0m[2m=[0m0.5 [3mrest_interrupt[0m[2m=[0m0.20000000298023224 [3mrest_comfort[0m[2m=[0m0.5 [3mrecreation_interrupt[0m[2m=[0m0.0 [3mrecreation_comfort[0m[2m=[0m0.4000000059604645
+[2m2026-08-13T14:24:37.074124Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion F3 pruner: effective threshold [3mvalue[0m[2m=[0m20.0 [3msource[0m[2m=[0m"default" [3mvar[0m[2m=[0m"BASTION_ACCESS_STALE_SECS"
+[2m2026-08-13T14:24:37.074134Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion F3 pruner: effective threshold [3mvalue[0m[2m=[0m930.0 [3msource[0m[2m=[0m"default" [3mvar[0m[2m=[0m"BASTION_ACCESS_STALL_SECS"
+[2m2026-08-13T14:24:37.074138Z[0m [32m INFO[0m [2mveloren_server[0m[2m:[0m bastion effective ITEM8-V4 config (F6 backstop threshold, sentinel S1 streak) [3mgeneric_claim_leak_secs[0m[2m=[0m1860.0 [3mcolony_terminal_zero_streak_samples[0m[2m=[0m10
+[2m2026-08-13T14:24:37.074351Z[0m [32m INFO[0m [2mveloren_server_cli[0m[2m:[0m Server is ready to accept connections. [3mweb_port[0m[2m=[0m14005 [3mgameserver_addresses[0m[2m=[0mMap { iter: IntoIter([Tcp { address: [::]:14004 }, Tcp { address: 0.0.0.0:14004 }]) }
+[2m2026-08-13T14:24:37.075003Z[0m [32m INFO[0m [2mveloren_server_cli::web[0m[2m:[0m listening on 127.0.0.1:14005
+[2m2026-08-13T14:24:40.862400Z[0m [32m INFO[0m [2mveloren_network::channel[0m[2m:[0m Accepting Tcp from [3mremote_addr[0m[2m=[0m"127.xxx.0.xxx:64892" [3mcid[0m[2m=[0m0
+[2m2026-08-13T14:24:40.862768Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0m94XKhB[1m}[0m[2m:[0m[1m[0m[2m:[0m[1mhandshake[0m[1m{[0m[3mcid[0m[2m=[0m0[1m}[0m[2m:[0m [2mveloren_network_protocol::handshake[0m[2m:[0m This Handshake is now configured! [3mpid[0m[2m=[0m38/+pT
+[2m2026-08-13T14:24:41.011546Z[0m [32m INFO[0m [2mveloren_server::sys::msg::register[0m[2m:[0m New User [3musername[0m[2m=[0m"a4boot1"
+[2m2026-08-13T14:24:41.015504Z[0m [32m INFO[0m [2mveloren_server_cli[0m[2m:[0m Client connected!
+[2m2026-08-13T14:24:45.883248Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: stockpile zone registered [3mzone[0m[2m=[0m0 [3mregion[0m[2m=[0mRegion { min: Vec3 { x: 16382, y: 16380, z: 399 }, max: Vec3 { x: 16386, y: 16385, z: 400 } }
+[2m2026-08-13T14:24:45.883283Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation placed [3mkind[0m[2m=[0mStockpile [3mjobs[0m[2m=[0m0
+[2m2026-08-13T14:24:45.883315Z[0m [32m INFO[0m [2mveloren_server::sys::msg::in_game[0m[2m:[0m bastion: founding preset plot placed [3mrole[0m[2m=[0m"stockpile" [3mkind[0m[2m=[0mStockpile [3mregion[0m[2m=[0mRegion { min: Vec3 { x: 16382, y: 16380, z: 399 }, max: Vec3 { x: 16386, y: 16385, z: 400 } } [3mjobs[0m[2m=[0m0
+[2m2026-08-13T14:24:45.883382Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm plot registered, per-column surface resolved [3mzone[0m[2m=[0m1 [3mregion[0m[2m=[0mRegion { min: Vec3 { x: 16377, y: 16380, z: 399 }, max: Vec3 { x: 16381, y: 16385, z: 400 } } [3mresolved[0m[2m=[0m30 [3munresolved[0m[2m=[0m0
+[2m2026-08-13T14:24:45.883388Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation placed [3mkind[0m[2m=[0mFarm [3mjobs[0m[2m=[0m0
+[2m2026-08-13T14:24:45.883392Z[0m [32m INFO[0m [2mveloren_server::sys::msg::in_game[0m[2m:[0m bastion: founding preset plot placed [3mrole[0m[2m=[0m"farm" [3mkind[0m[2m=[0mFarm [3mregion[0m[2m=[0mRegion { min: Vec3 { x: 16377, y: 16380, z: 399 }, max: Vec3 { x: 16381, y: 16385, z: 400 } } [3mjobs[0m[2m=[0m0
+[2m2026-08-13T14:24:45.883416Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: designation placed [3mkind[0m[2m=[0mBed [3mjobs[0m[2m=[0m8
+[2m2026-08-13T14:24:45.883422Z[0m [32m INFO[0m [2mveloren_server::sys::msg::in_game[0m[2m:[0m bastion: founding preset plot placed [3mrole[0m[2m=[0m"bed" [3mkind[0m[2m=[0mBed [3mregion[0m[2m=[0mRegion { min: Vec3 { x: 16381, y: 16381, z: 400 }, max: Vec3 { x: 16382, y: 16382, z: 401 } } [3mjobs[0m[2m=[0m8
+[2m2026-08-13T14:24:45.883468Z[0m [32m INFO[0m [2mveloren_server::rtsim[0m[2m:[0m bastion: spawned starting colony [3mnames[0m[2m=[0m["Doran the Younger", "Awen Oakenshield", "Cerys the Stout", "Quill the Younger", "Osric the Steady", "Awen Oakenshield", "Maddoc Oakenshield", "Nia the Stout"] [3mcount[0m[2m=[0m8
+[2m2026-08-13T14:24:45.883826Z[0m [32m INFO[0m [2mveloren_server::sys::msg::in_game[0m[2m:[0m bastion: founding stock dropped [3mitem[0m[2m=[0m"common.items.bastion.wheat_seeds" [3mamount[0m[2m=[0m8 [3mpos[0m[2m=[0mVec3 { x: 16384.5, y: 16384.5, z: 400.0 }
+[2m2026-08-13T14:24:45.883841Z[0m [32m INFO[0m [2mveloren_server::sys::msg::in_game[0m[2m:[0m bastion: colony founded [3mpreset[0m[2m=[0m"v1" [3mpos[0m[2m=[0mVec3 { x: 16384.5, y: 16384.5, z: 400.0 } [3mdatum[0m[2m=[0m400 [3mcolonists[0m[2m=[0m8 [3melements[0m[2m=[0mstockpile,farm,bed [3mcomplete[0m[2m=[0mtrue [3mjobs[0m[2m=[0m8 [3mdesignated_regions[0m[2m=[0m3
+[2m2026-08-13T14:24:45.985079Z[0m [32m INFO[0m [2mveloren_server::rtsim::tick[0m[2m:[0m bastion: colonist promoted to loaded entity [3mname[0m[2m=[0m"Doran the Younger"
+[2m2026-08-13T14:24:45.985120Z[0m [32m INFO[0m [2mveloren_server::rtsim::tick[0m[2m:[0m bastion: colonist promoted to loaded entity [3mname[0m[2m=[0m"Awen Oakenshield"
+[2m2026-08-13T14:24:45.985147Z[0m [32m INFO[0m [2mveloren_server::rtsim::tick[0m[2m:[0m bastion: colonist promoted to loaded entity [3mname[0m[2m=[0m"Cerys the Stout"
+[2m2026-08-13T14:24:45.985190Z[0m [32m INFO[0m [2mveloren_server::rtsim::tick[0m[2m:[0m bastion: colonist promoted to loaded entity [3mname[0m[2m=[0m"Quill the Younger"
+[2m2026-08-13T14:24:45.985212Z[0m [32m INFO[0m [2mveloren_server::rtsim::tick[0m[2m:[0m bastion: colonist promoted to loaded entity [3mname[0m[2m=[0m"Osric the Steady"
+[2m2026-08-13T14:24:45.985220Z[0m [32m INFO[0m [2mveloren_server::rtsim::tick[0m[2m:[0m bastion: colonist promoted to loaded entity [3mname[0m[2m=[0m"Awen Oakenshield"
+[2m2026-08-13T14:24:45.985240Z[0m [32m INFO[0m [2mveloren_server::rtsim::tick[0m[2m:[0m bastion: colonist promoted to loaded entity [3mname[0m[2m=[0m"Maddoc Oakenshield"
+[2m2026-08-13T14:24:45.985268Z[0m [32m INFO[0m [2mveloren_server::rtsim::tick[0m[2m:[0m bastion: colonist promoted to loaded entity [3mname[0m[2m=[0m"Nia the Stout"
+[2m2026-08-13T14:24:46.415262Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m8 [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16380, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415290Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m9 [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16380, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415294Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m10 [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16380, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415297Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m11 [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16380, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415300Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m12 [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16380, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415305Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m13 [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16381, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415308Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m14 [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16381, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415351Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m15 [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16381, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415356Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m16 [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16381, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415359Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m17 [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16381, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415362Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m18 [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16382, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415365Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m19 [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16382, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415368Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m20 [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16382, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415372Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m21 [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16382, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415376Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m22 [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16382, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415379Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m23 [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16383, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415382Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m24 [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16383, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415385Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m25 [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16383, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415388Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m26 [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16383, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415395Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m27 [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16383, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415399Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m28 [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16384, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415405Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m29 [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16384, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415409Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m30 [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16384, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415412Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m31 [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16384, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415414Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m32 [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16384, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415418Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m33 [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16385, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415421Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m34 [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16385, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415425Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m35 [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16385, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415429Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m36 [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16385, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.415432Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m37 [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16385, z: 399 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:46.815494Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m22 [3mcolonist[0m[2m=[0m2
+[2m2026-08-13T14:24:46.815534Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m12 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:24:46.815560Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m10 [3mcolonist[0m[2m=[0m4
+[2m2026-08-13T14:24:46.815572Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m37 [3mcolonist[0m[2m=[0m5
+[2m2026-08-13T14:24:46.815585Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m30 [3mcolonist[0m[2m=[0m6
+[2m2026-08-13T14:24:46.815599Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m20 [3mcolonist[0m[2m=[0m7
+[2m2026-08-13T14:24:46.815616Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m33 [3mcolonist[0m[2m=[0m8
+[2m2026-08-13T14:24:46.815627Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m8 [3mcolonist[0m[2m=[0m9
+[2m2026-08-13T14:24:46.848629Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m10 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16380, z: 399 }
+[2m2026-08-13T14:24:46.848657Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m30 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16384, z: 399 }
+[2m2026-08-13T14:24:47.148586Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m22 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16382, z: 399 }
+[2m2026-08-13T14:24:47.315273Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion preempt attempts [3mtick[0m[2m=[0m300 [3mpreempt_attempts[0m[2m=[0m0
+[2m2026-08-13T14:24:47.315318Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion food stock sample [3mtick[0m[2m=[0m300 [3mfood_stock[0m[2m=[0m0 [3msplits[0m[2m=[0m0 [3mclaim_expiry_releases[0m[2m=[0m0 [3mdesignated_sweep_reaps[0m[2m=[0m0 [3mgeneric_claim_leak_releases[0m[2m=[0m0 [3memergency_access_completions[0m[2m=[0m0
+[2m2026-08-13T14:24:47.348603Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m8 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16380, z: 399 }
+[2m2026-08-13T14:24:47.382068Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m37 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16385, z: 399 }
+[2m2026-08-13T14:24:47.515202Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m20 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16382, z: 399 }
+[2m2026-08-13T14:24:47.815261Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m12 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16380, z: 399 }
+[2m2026-08-13T14:24:48.815358Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m33 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16385, z: 399 }
+[2m2026-08-13T14:24:49.848822Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16384, z: 399 }
+[2m2026-08-13T14:24:49.882048Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m6
+[2m2026-08-13T14:24:49.915431Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m38 [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16384, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:50.315713Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m35 [3mcolonist[0m[2m=[0m6
+[2m2026-08-13T14:24:50.349345Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m35 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16385, z: 399 }
+[2m2026-08-13T14:24:50.515455Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16382, z: 399 }
+[2m2026-08-13T14:24:50.748784Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16385, z: 399 }
+[2m2026-08-13T14:24:50.815691Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m32 [3mcolonist[0m[2m=[0m5
+[2m2026-08-13T14:24:50.815743Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m19 [3mcolonist[0m[2m=[0m7
+[2m2026-08-13T14:24:50.848852Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m32 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16384, z: 399 }
+[2m2026-08-13T14:24:50.848878Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m19 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16382, z: 399 }
+[2m2026-08-13T14:24:50.915534Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m39 [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16382, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:50.915562Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m40 [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16385, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:51.115442Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16380, z: 399 }
+[2m2026-08-13T14:24:51.215679Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m9
+[2m2026-08-13T14:24:51.316288Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m31 [3mcolonist[0m[2m=[0m9
+[2m2026-08-13T14:24:51.417034Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m41 [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16380, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:51.582848Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16380, z: 399 }
+[2m2026-08-13T14:24:51.615821Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m3
+[2m2026-08-13T14:24:51.816213Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m41 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:24:51.883498Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16380, z: 399 }
+[2m2026-08-13T14:24:51.916021Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m42 [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16380, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:51.916045Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m43 [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16380, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:51.949161Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m4
+[2m2026-08-13T14:24:52.182760Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16382, z: 399 }
+[2m2026-08-13T14:24:52.182804Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16385, z: 399 }
+[2m2026-08-13T14:24:52.217682Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m31 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16384, z: 399 }
+[2m2026-08-13T14:24:52.316287Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m17 [3mcolonist[0m[2m=[0m2
+[2m2026-08-13T14:24:52.316321Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m28 [3mcolonist[0m[2m=[0m4
+[2m2026-08-13T14:24:52.316340Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m36 [3mcolonist[0m[2m=[0m8
+[2m2026-08-13T14:24:52.349522Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m17 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16381, z: 399 }
+[2m2026-08-13T14:24:52.349555Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m36 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16385, z: 399 }
+[2m2026-08-13T14:24:52.417486Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m44 [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16385, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:53.183027Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m28 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16384, z: 399 }
+[2m2026-08-13T14:24:53.349522Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16385, z: 399 }
+[2m2026-08-13T14:24:53.382706Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m6
+[2m2026-08-13T14:24:53.383058Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m41 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16380, z: 400 }
+[2m2026-08-13T14:24:53.416254Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m45 [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16385, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:53.816299Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m34 [3mcolonist[0m[2m=[0m6
+[2m2026-08-13T14:24:53.849830Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m34 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16385, z: 399 }
+[2m2026-08-13T14:24:53.849865Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16382, z: 399 }
+[2m2026-08-13T14:24:53.916154Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m46 [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16382, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:54.216410Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16384, z: 399 }
+[2m2026-08-13T14:24:54.316262Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m15 [3mcolonist[0m[2m=[0m5
+[2m2026-08-13T14:24:54.316312Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m18 [3mcolonist[0m[2m=[0m7
+[2m2026-08-13T14:24:54.417273Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m47 [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16384, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:54.649521Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m15 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16381, z: 399 }
+[2m2026-08-13T14:24:54.849599Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m18 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16382, z: 399 }
+[2m2026-08-13T14:24:55.716193Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16385, z: 399 }
+[2m2026-08-13T14:24:55.749400Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m8
+[2m2026-08-13T14:24:55.816318Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m26 [3mcolonist[0m[2m=[0m8
+[2m2026-08-13T14:24:55.849625Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m26 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16383, z: 399 }
+[2m2026-08-13T14:24:55.916782Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m48 [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16385, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:55.982932Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16384, z: 399 }
+[2m2026-08-13T14:24:56.016055Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m9
+[2m2026-08-13T14:24:56.316410Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m27 [3mcolonist[0m[2m=[0m9
+[2m2026-08-13T14:24:56.349644Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m27 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16383, z: 399 }
+[2m2026-08-13T14:24:56.416248Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m49 [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16384, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:56.849524Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16385, z: 399 }
+[2m2026-08-13T14:24:56.882743Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m6
+[2m2026-08-13T14:24:56.917618Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m50 [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16385, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:57.149762Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16380, z: 400 }
+[2m2026-08-13T14:24:57.316293Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion preempt attempts [3mtick[0m[2m=[0m600 [3mpreempt_attempts[0m[2m=[0m0
+[2m2026-08-13T14:24:57.316315Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion food stock sample [3mtick[0m[2m=[0m600 [3mfood_stock[0m[2m=[0m0 [3msplits[0m[2m=[0m0 [3mclaim_expiry_releases[0m[2m=[0m0 [3mdesignated_sweep_reaps[0m[2m=[0m0 [3mgeneric_claim_leak_releases[0m[2m=[0m0 [3memergency_access_completions[0m[2m=[0m0
+[2m2026-08-13T14:24:57.316498Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m48 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:24:57.316526Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m29 [3mcolonist[0m[2m=[0m6
+[2m2026-08-13T14:24:57.383948Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16381, z: 399 }
+[2m2026-08-13T14:24:57.816411Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m16 [3mcolonist[0m[2m=[0m2
+[2m2026-08-13T14:24:57.849621Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m16 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16381, z: 399 }
+[2m2026-08-13T14:24:57.849651Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m29 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16384, z: 399 }
+[2m2026-08-13T14:24:57.849659Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16382, z: 399 }
+[2m2026-08-13T14:24:57.882943Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m48 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16385, z: 400 }
+[2m2026-08-13T14:24:57.916295Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m51 [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16382, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:58.016327Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16381, z: 399 }
+[2m2026-08-13T14:24:58.049440Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m5
+[2m2026-08-13T14:24:58.216297Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16384, z: 399 }
+[2m2026-08-13T14:24:58.317577Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m13 [3mcolonist[0m[2m=[0m4
+[2m2026-08-13T14:24:58.317606Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m21 [3mcolonist[0m[2m=[0m5
+[2m2026-08-13T14:24:58.317621Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m11 [3mcolonist[0m[2m=[0m7
+[2m2026-08-13T14:24:58.349591Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m13 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16381, z: 399 }
+[2m2026-08-13T14:24:58.349614Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m21 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16382, z: 399 }
+[2m2026-08-13T14:24:58.416369Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m52 [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16381, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:58.416393Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m53 [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16384, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:24:58.616275Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m11 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16380, z: 399 }
+[2m2026-08-13T14:24:59.216324Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16383, z: 399 }
+[2m2026-08-13T14:24:59.316474Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m24 [3mcolonist[0m[2m=[0m8
+[2m2026-08-13T14:24:59.349647Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m24 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16383, z: 399 }
+[2m2026-08-13T14:24:59.416338Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m54 [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16383, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:25:00.116343Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16383, z: 399 }
+[2m2026-08-13T14:25:00.316643Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m25 [3mcolonist[0m[2m=[0m9
+[2m2026-08-13T14:25:00.349879Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m25 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16383, z: 399 }
+[2m2026-08-13T14:25:00.416630Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m55 [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16383, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:25:00.583348Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16384, z: 399 }
+[2m2026-08-13T14:25:00.616490Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m6
+[2m2026-08-13T14:25:00.816806Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m23 [3mcolonist[0m[2m=[0m6
+[2m2026-08-13T14:25:00.916691Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m56 [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16384, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:25:01.183322Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m23 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16383, z: 399 }
+[2m2026-08-13T14:25:01.350044Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16382, z: 399 }
+[2m2026-08-13T14:25:01.350068Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16380, z: 399 }
+[2m2026-08-13T14:25:01.418011Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m57 [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16380, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:25:01.418035Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m58 [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16382, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:25:01.650061Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16385, z: 400 }
+[2m2026-08-13T14:25:01.816867Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m47 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:25:01.816896Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m14 [3mcolonist[0m[2m=[0m5
+[2m2026-08-13T14:25:01.816915Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m9 [3mcolonist[0m[2m=[0m7
+[2m2026-08-13T14:25:01.850033Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m47 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16384, z: 400 }
+[2m2026-08-13T14:25:01.850055Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m14 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16381, z: 399 }
+[2m2026-08-13T14:25:01.850060Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m9 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16380, z: 399 }
+[2m2026-08-13T14:25:02.350063Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16383, z: 399 }
+[2m2026-08-13T14:25:02.416816Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m59 [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16383, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:25:02.883394Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16381, z: 399 }
+[2m2026-08-13T14:25:02.917680Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m60 [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16381, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:25:03.383442Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16381, z: 399 }
+[2m2026-08-13T14:25:03.416833Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m61 [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16381, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:25:03.716775Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16383, z: 399 }
+[2m2026-08-13T14:25:03.916803Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m62 [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16383, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:25:03.916832Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16383, z: 399 }
+[2m2026-08-13T14:25:04.417006Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m63 [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16383, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:25:04.583701Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16380, z: 399 }
+[2m2026-08-13T14:25:04.850371Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: tilled [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16381, z: 399 }
+[2m2026-08-13T14:25:04.917010Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m64 [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16380, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:25:04.917038Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m65 [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16381, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:25:05.217068Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16384, z: 400 }
+[2m2026-08-13T14:25:05.317218Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m38 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:25:05.350361Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m38 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16384, z: 400 }
+[2m2026-08-13T14:25:07.317101Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion preempt attempts [3mtick[0m[2m=[0m900 [3mpreempt_attempts[0m[2m=[0m0
+[2m2026-08-13T14:25:07.317122Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion food stock sample [3mtick[0m[2m=[0m900 [3mfood_stock[0m[2m=[0m0 [3msplits[0m[2m=[0m0 [3mclaim_expiry_releases[0m[2m=[0m0 [3mdesignated_sweep_reaps[0m[2m=[0m0 [3mgeneric_claim_leak_releases[0m[2m=[0m0 [3memergency_access_completions[0m[2m=[0m0
+[2m2026-08-13T14:25:08.717126Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16384, z: 400 }
+[2m2026-08-13T14:25:08.750266Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m3
+[2m2026-08-13T14:25:08.817474Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m40 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:25:08.850561Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m40 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16385, z: 400 }
+[2m2026-08-13T14:25:10.783800Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m5
+[2m2026-08-13T14:25:11.850621Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16385, z: 400 }
+[2m2026-08-13T14:25:12.317552Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m45 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:25:12.983992Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m45 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16385, z: 400 }
+[2m2026-08-13T14:25:14.650663Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m4
+[2m2026-08-13T14:25:14.883958Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m2
+[2m2026-08-13T14:25:15.925740Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0m94XKhB[1m}[0m[2m:[0m[1m[0m[2m:[0m[1mremote[0m[1m{[0m[3mp[0m[2m=[0m38/+pT[1m}[0m[2m:[0m[1mrecv[0m[2m:[0m [2mveloren_network::participant[0m[2m:[0m protocol failed, shutting down channel [3me[0m[2m=[0mCustom(Tcp(Custom { kind: BrokenPipe, error: "read returned 0 bytes" })) [3mcid[0m[2m=[0m0
+[2m2026-08-13T14:25:15.954781Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0m94XKhB[1m}[0m[2m:[0m[1mnetwork[0m[1m{[0m[3mp[0m[2m=[0m94XKhB[1m}[0m[2m:[0m[1mremote[0m[1m{[0m[3mp[0m[2m=[0m38/+pT[1m}[0m[2m:[0m [2mveloren_network::api[0m[2m:[0m Participant already has been shutdown gracefully
+[2m2026-08-13T14:25:15.955956Z[0m [32m INFO[0m [2mveloren_server_cli[0m[2m:[0m Client disconnected!
+[2m2026-08-13T14:25:15.985414Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16385, z: 400 }
+[2m2026-08-13T14:25:16.017297Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m3
+[2m2026-08-13T14:25:16.317722Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m49 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:25:16.350804Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m49 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16384, z: 400 }
+[2m2026-08-13T14:25:17.317453Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion preempt attempts [3mtick[0m[2m=[0m1200 [3mpreempt_attempts[0m[2m=[0m0
+[2m2026-08-13T14:25:17.317474Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion food stock sample [3mtick[0m[2m=[0m1200 [3mfood_stock[0m[2m=[0m0 [3msplits[0m[2m=[0m0 [3mclaim_expiry_releases[0m[2m=[0m0 [3mdesignated_sweep_reaps[0m[2m=[0m0 [3mgeneric_claim_leak_releases[0m[2m=[0m0 [3memergency_access_completions[0m[2m=[0m0
+[2m2026-08-13T14:25:19.350911Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16384, z: 400 }
+[2m2026-08-13T14:25:19.817751Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m55 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:25:20.284352Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m55 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16383, z: 400 }
+[2m2026-08-13T14:25:23.017801Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16383, z: 400 }
+[2m2026-08-13T14:25:27.217795Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m4
+[2m2026-08-13T14:25:27.318049Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion preempt attempts [3mtick[0m[2m=[0m1500 [3mpreempt_attempts[0m[2m=[0m0
+[2m2026-08-13T14:25:27.318070Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion food stock sample [3mtick[0m[2m=[0m1500 [3mfood_stock[0m[2m=[0m0 [3msplits[0m[2m=[0m0 [3mclaim_expiry_releases[0m[2m=[0m0 [3mdesignated_sweep_reaps[0m[2m=[0m0 [3mgeneric_claim_leak_releases[0m[2m=[0m0 [3memergency_access_completions[0m[2m=[0m0
+[2m2026-08-13T14:25:33.751550Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m5
+[2m2026-08-13T14:25:34.685005Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m9
+[2m2026-08-13T14:25:37.085047Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m7
+[2m2026-08-13T14:25:37.432262Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion preempt attempts [3mtick[0m[2m=[0m1800 [3mpreempt_attempts[0m[2m=[0m0
+[2m2026-08-13T14:25:37.432287Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion food stock sample [3mtick[0m[2m=[0m1800 [3mfood_stock[0m[2m=[0m0 [3msplits[0m[2m=[0m0 [3mclaim_expiry_releases[0m[2m=[0m0 [3mdesignated_sweep_reaps[0m[2m=[0m0 [3mgeneric_claim_leak_releases[0m[2m=[0m0 [3memergency_access_completions[0m[2m=[0m0
+[2m2026-08-13T14:25:41.332223Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m2
+[2m2026-08-13T14:25:42.398950Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m3
+[2m2026-08-13T14:25:47.432622Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion preempt attempts [3mtick[0m[2m=[0m2100 [3mpreempt_attempts[0m[2m=[0m0
+[2m2026-08-13T14:25:47.432645Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion food stock sample [3mtick[0m[2m=[0m2100 [3mfood_stock[0m[2m=[0m0 [3msplits[0m[2m=[0m0 [3mclaim_expiry_releases[0m[2m=[0m0 [3mdesignated_sweep_reaps[0m[2m=[0m0 [3mgeneric_claim_leak_releases[0m[2m=[0m0 [3memergency_access_completions[0m[2m=[0m0
+[2m2026-08-13T14:25:51.932591Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m4
+[2m2026-08-13T14:25:52.666017Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m2
+[2m2026-08-13T14:25:53.099348Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m3
+[2m2026-08-13T14:25:57.433165Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion preempt attempts [3mtick[0m[2m=[0m2400 [3mpreempt_attempts[0m[2m=[0m0
+[2m2026-08-13T14:25:57.433189Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion food stock sample [3mtick[0m[2m=[0m2400 [3mfood_stock[0m[2m=[0m0 [3msplits[0m[2m=[0m0 [3mclaim_expiry_releases[0m[2m=[0m0 [3mdesignated_sweep_reaps[0m[2m=[0m0 [3mgeneric_claim_leak_releases[0m[2m=[0m0 [3memergency_access_completions[0m[2m=[0m0
+[2m2026-08-13T14:25:57.499636Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m7
+[2m2026-08-13T14:26:01.900041Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m3
+[2m2026-08-13T14:26:07.433714Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion preempt attempts [3mtick[0m[2m=[0m2700 [3mpreempt_attempts[0m[2m=[0m0
+[2m2026-08-13T14:26:07.433738Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion food stock sample [3mtick[0m[2m=[0m2700 [3mfood_stock[0m[2m=[0m0 [3msplits[0m[2m=[0m0 [3mclaim_expiry_releases[0m[2m=[0m0 [3mdesignated_sweep_reaps[0m[2m=[0m0 [3mgeneric_claim_leak_releases[0m[2m=[0m0 [3memergency_access_completions[0m[2m=[0m0
+[2m2026-08-13T14:26:11.700463Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m8
+[2m2026-08-13T14:26:13.667365Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m3
+[2m2026-08-13T14:26:17.435536Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion preempt attempts [3mtick[0m[2m=[0m3000 [3mpreempt_attempts[0m[2m=[0m0
+[2m2026-08-13T14:26:17.435559Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion food stock sample [3mtick[0m[2m=[0m3000 [3mfood_stock[0m[2m=[0m0 [3msplits[0m[2m=[0m0 [3mclaim_expiry_releases[0m[2m=[0m0 [3mdesignated_sweep_reaps[0m[2m=[0m0 [3mgeneric_claim_leak_releases[0m[2m=[0m0 [3memergency_access_completions[0m[2m=[0m0
+[2m2026-08-13T14:26:17.435581Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: COLONY TERMINAL (sentinel S1, log-only) [3mtick[0m[2m=[0m3000 [3mconsecutive_zero_samples[0m[2m=[0m10
+[2m2026-08-13T14:26:21.267743Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m9
+[2m2026-08-13T14:26:21.467660Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m5
+[2m2026-08-13T14:26:21.667725Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m4
+[2m2026-08-13T14:26:24.334416Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m3
+[2m2026-08-13T14:26:26.968046Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m8
+[2m2026-08-13T14:26:27.434736Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion preempt attempts [3mtick[0m[2m=[0m3300 [3mpreempt_attempts[0m[2m=[0m0
+[2m2026-08-13T14:26:27.434757Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion food stock sample [3mtick[0m[2m=[0m3300 [3mfood_stock[0m[2m=[0m0 [3msplits[0m[2m=[0m0 [3mclaim_expiry_releases[0m[2m=[0m0 [3mdesignated_sweep_reaps[0m[2m=[0m0 [3mgeneric_claim_leak_releases[0m[2m=[0m0 [3memergency_access_completions[0m[2m=[0m0
+[2m2026-08-13T14:26:28.034925Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: crop MATURE [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16380, z: 400 }
+[2m2026-08-13T14:26:28.367965Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m7
+[2m2026-08-13T14:26:28.534864Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m66 [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16380, z: 400 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:26:28.934976Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m66 [3mcolonist[0m[2m=[0m2
+[2m2026-08-13T14:26:29.001354Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m2
+[2m2026-08-13T14:26:30.901615Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m66 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16380, z: 400 }
+[2m2026-08-13T14:26:31.501388Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m6
+[2m2026-08-13T14:26:31.534873Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m5
+[2m2026-08-13T14:26:32.535033Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: crop MATURE [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16385, z: 400 }
+[2m2026-08-13T14:26:33.035139Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m67 [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16385, z: 400 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:26:33.435087Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m67 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:26:33.834879Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m9
+[2m2026-08-13T14:26:35.202306Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: harvested (cell returns to                                      tilled) [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16380, z: 400 }
+[2m2026-08-13T14:26:35.535154Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m68 [3mpos[0m[2m=[0mVec3 { x: 16377, y: 16380, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:26:35.535182Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m67 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16385, z: 400 }
+[2m2026-08-13T14:26:36.035075Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: crop MATURE [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16384, z: 400 }
+[2m2026-08-13T14:26:36.535110Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m69 [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16384, z: 400 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:26:36.935310Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m69 [3mcolonist[0m[2m=[0m2
+[2m2026-08-13T14:26:37.526589Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion preempt attempts [3mtick[0m[2m=[0m3600 [3mpreempt_attempts[0m[2m=[0m0
+[2m2026-08-13T14:26:37.526611Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion food stock sample [3mtick[0m[2m=[0m3600 [3mfood_stock[0m[2m=[0m0 [3msplits[0m[2m=[0m0 [3mclaim_expiry_releases[0m[2m=[0m0 [3mdesignated_sweep_reaps[0m[2m=[0m0 [3mgeneric_claim_leak_releases[0m[2m=[0m0 [3memergency_access_completions[0m[2m=[0m0
+[2m2026-08-13T14:26:37.760161Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m69 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16384, z: 400 }
+[2m2026-08-13T14:26:38.026558Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m8
+[2m2026-08-13T14:26:38.360095Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: harvested (cell returns to                                      tilled) [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16385, z: 400 }
+[2m2026-08-13T14:26:38.626780Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m70 [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16385, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:26:39.559937Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m7
+[2m2026-08-13T14:26:39.626813Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: crop MATURE [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16384, z: 400 }
+[2m2026-08-13T14:26:40.126828Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m71 [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16384, z: 400 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:26:40.526919Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m71 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:26:41.226859Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m71 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16384, z: 400 }
+[2m2026-08-13T14:26:41.993315Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m5
+[2m2026-08-13T14:26:42.060380Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: harvested (cell returns to                                      tilled) [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16384, z: 400 }
+[2m2026-08-13T14:26:42.127973Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m72 [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16384, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:26:42.526699Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m4
+[2m2026-08-13T14:26:42.626882Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: crop MATURE [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16385, z: 400 }
+[2m2026-08-13T14:26:43.126942Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m73 [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16385, z: 400 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:26:43.527147Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m73 [3mcolonist[0m[2m=[0m2
+[2m2026-08-13T14:26:43.760302Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: harvested (cell returns to                                      tilled) [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16384, z: 400 }
+[2m2026-08-13T14:26:44.060348Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m73 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16385, z: 400 }
+[2m2026-08-13T14:26:44.126923Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m74 [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16384, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:26:47.127141Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: crop MATURE [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16385, z: 400 }
+[2m2026-08-13T14:26:47.527106Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion preempt attempts [3mtick[0m[2m=[0m3900 [3mpreempt_attempts[0m[2m=[0m0
+[2m2026-08-13T14:26:47.527130Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion food stock sample [3mtick[0m[2m=[0m3900 [3mfood_stock[0m[2m=[0m0 [3msplits[0m[2m=[0m0 [3mclaim_expiry_releases[0m[2m=[0m0 [3mdesignated_sweep_reaps[0m[2m=[0m0 [3mgeneric_claim_leak_releases[0m[2m=[0m0 [3memergency_access_completions[0m[2m=[0m0
+[2m2026-08-13T14:26:47.627149Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m75 [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16385, z: 400 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:26:47.827144Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: harvested (cell returns to                                      tilled) [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16385, z: 400 }
+[2m2026-08-13T14:26:48.027208Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m75 [3mcolonist[0m[2m=[0m2
+[2m2026-08-13T14:26:48.060528Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m75 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16385, z: 400 }
+[2m2026-08-13T14:26:48.127173Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m76 [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16385, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:26:50.127254Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: crop MATURE [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16384, z: 400 }
+[2m2026-08-13T14:26:50.627386Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m77 [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16384, z: 400 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:26:50.660430Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m8
+[2m2026-08-13T14:26:50.993859Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m7
+[2m2026-08-13T14:26:51.028620Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m77 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:26:51.061947Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m77 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16384, z: 400 }
+[2m2026-08-13T14:26:51.827324Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: harvested (cell returns to                                      tilled) [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16385, z: 400 }
+[2m2026-08-13T14:26:52.127374Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m78 [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16385, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:26:53.594080Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: harvested (cell returns to                                      tilled) [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16384, z: 400 }
+[2m2026-08-13T14:26:53.627644Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m79 [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16384, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:26:54.127403Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: crop MATURE [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16383, z: 400 }
+[2m2026-08-13T14:26:54.627423Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m80 [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16383, z: 400 } [3msow[0m[2m=[0mfalse [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:26:55.027539Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m80 [3mcolonist[0m[2m=[0m2
+[2m2026-08-13T14:26:57.460875Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m80 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16383, z: 400 }
+[2m2026-08-13T14:26:57.527572Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion preempt attempts [3mtick[0m[2m=[0m4200 [3mpreempt_attempts[0m[2m=[0m0
+[2m2026-08-13T14:26:57.527594Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion food stock sample [3mtick[0m[2m=[0m4200 [3mfood_stock[0m[2m=[0m0 [3msplits[0m[2m=[0m0 [3mclaim_expiry_releases[0m[2m=[0m0 [3mdesignated_sweep_reaps[0m[2m=[0m0 [3mgeneric_claim_leak_releases[0m[2m=[0m0 [3memergency_access_completions[0m[2m=[0m0
+[2m2026-08-13T14:27:00.994185Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m6
+[2m2026-08-13T14:27:01.227717Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: harvested (cell returns to                                      tilled) [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16383, z: 400 }
+[2m2026-08-13T14:27:01.527865Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m81 [3mcolonist[0m[2m=[0m2
+[2m2026-08-13T14:27:01.527905Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m82 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:27:01.527929Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m83 [3mcolonist[0m[2m=[0m4
+[2m2026-08-13T14:27:01.527947Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m84 [3mcolonist[0m[2m=[0m5
+[2m2026-08-13T14:27:01.560981Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m82 [3mkind[0m[2m=[0mHaul { item: Uid(21), destination: 0 } [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16383, z: 400 }
+[2m2026-08-13T14:27:01.561018Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m84 [3mkind[0m[2m=[0mHaul { item: Uid(23), destination: 0 } [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16383, z: 400 }
+[2m2026-08-13T14:27:01.594230Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m4
+[2m2026-08-13T14:27:02.160810Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m5
+[2m2026-08-13T14:27:02.794424Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m83 [3mkind[0m[2m=[0mHaul { item: Uid(22), destination: 0 } [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16383, z: 400 }
+[2m2026-08-13T14:27:03.027628Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m8
+[2m2026-08-13T14:27:03.161626Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m83 [3mkind[0m[2m=[0mHaul { item: Uid(22), destination: 0 } [3mpos[0m[2m=[0mVec3 { x: 16384, y: 16382, z: 400 }
+[2m2026-08-13T14:27:03.194548Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: haul delivered [3mjob[0m[2m=[0m83 [3mcommand[0m[2m=[0m0 [3mzone[0m[2m=[0m0 [3mamount[0m[2m=[0m14
+[2m2026-08-13T14:27:03.527938Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m39 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:27:05.294640Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m39 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16382, z: 400 }
+[2m2026-08-13T14:27:06.028102Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m81 [3mkind[0m[2m=[0mHaul { item: Uid(20), destination: 0 } [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16383, z: 400 }
+[2m2026-08-13T14:27:06.128391Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: farm job created [3mjob[0m[2m=[0m85 [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16383, z: 400 } [3msow[0m[2m=[0mtrue [3maffordance[0m[2m=[0mOnTopAlways
+[2m2026-08-13T14:27:06.494756Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m81 [3mkind[0m[2m=[0mHaul { item: Uid(20), destination: 0 } [3mpos[0m[2m=[0mVec3 { x: 16384, y: 16382, z: 400 }
+[2m2026-08-13T14:27:06.528046Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: haul delivered [3mjob[0m[2m=[0m81 [3mcommand[0m[2m=[0m1 [3mzone[0m[2m=[0m0 [3mamount[0m[2m=[0m14
+[2m2026-08-13T14:27:07.528486Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion preempt attempts [3mtick[0m[2m=[0m4500 [3mpreempt_attempts[0m[2m=[0m0
+[2m2026-08-13T14:27:07.528511Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion food stock sample [3mtick[0m[2m=[0m4500 [3mfood_stock[0m[2m=[0m14 [3msplits[0m[2m=[0m0 [3mclaim_expiry_releases[0m[2m=[0m0 [3mdesignated_sweep_reaps[0m[2m=[0m0 [3mgeneric_claim_leak_releases[0m[2m=[0m0 [3memergency_access_completions[0m[2m=[0m0
+[2m2026-08-13T14:27:07.828035Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16382, z: 400 }
+[2m2026-08-13T14:27:08.028448Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m58 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:27:08.061340Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m58 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16382, z: 400 }
+[2m2026-08-13T14:27:10.394827Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16382, z: 400 }
+[2m2026-08-13T14:27:10.528676Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m74 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:27:10.794893Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m74 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16384, z: 400 }
+[2m2026-08-13T14:27:13.094700Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m7
+[2m2026-08-13T14:27:13.129379Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16384, z: 400 }
+[2m2026-08-13T14:27:13.528584Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m79 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:27:13.561999Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m79 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16384, z: 400 }
+[2m2026-08-13T14:27:15.728350Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16384, z: 400 }
+[2m2026-08-13T14:27:16.029047Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m52 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:27:16.061736Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m52 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16381, z: 400 }
+[2m2026-08-13T14:27:17.528763Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion preempt attempts [3mtick[0m[2m=[0m4800 [3mpreempt_attempts[0m[2m=[0m0
+[2m2026-08-13T14:27:17.528785Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion food stock sample [3mtick[0m[2m=[0m4800 [3mfood_stock[0m[2m=[0m14 [3msplits[0m[2m=[0m0 [3mclaim_expiry_releases[0m[2m=[0m0 [3mdesignated_sweep_reaps[0m[2m=[0m0 [3mgeneric_claim_leak_releases[0m[2m=[0m0 [3memergency_access_completions[0m[2m=[0m0
+[2m2026-08-13T14:27:18.228487Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16381, z: 400 }
+[2m2026-08-13T14:27:18.529347Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m43 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:27:18.561969Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m43 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16380, z: 400 }
+[2m2026-08-13T14:27:20.729084Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16381, y: 16380, z: 400 }
+[2m2026-08-13T14:27:21.029245Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m42 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:27:21.161750Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m4
+[2m2026-08-13T14:27:21.428759Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m42 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16380, z: 400 }
+[2m2026-08-13T14:27:22.262162Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m8
+[2m2026-08-13T14:27:22.428766Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m5
+[2m2026-08-13T14:27:23.462409Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16380, z: 400 }
+[2m2026-08-13T14:27:23.529752Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m57 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:27:23.562392Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m57 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16380, z: 400 }
+[2m2026-08-13T14:27:24.262213Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m7
+[2m2026-08-13T14:27:25.595806Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16380, z: 400 }
+[2m2026-08-13T14:27:26.029360Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m64 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:27:26.062512Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m64 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16380, z: 400 }
+[2m2026-08-13T14:27:27.529226Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion preempt attempts [3mtick[0m[2m=[0m5100 [3mpreempt_attempts[0m[2m=[0m0
+[2m2026-08-13T14:27:27.529250Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion food stock sample [3mtick[0m[2m=[0m5100 [3mfood_stock[0m[2m=[0m14 [3msplits[0m[2m=[0m0 [3mclaim_expiry_releases[0m[2m=[0m0 [3mdesignated_sweep_reaps[0m[2m=[0m0 [3mgeneric_claim_leak_releases[0m[2m=[0m0 [3memergency_access_completions[0m[2m=[0m0
+[2m2026-08-13T14:27:27.962965Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16380, z: 400 }
+[2m2026-08-13T14:27:28.031401Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m56 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:27:29.096177Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m56 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16384, z: 400 }
+[2m2026-08-13T14:27:30.996131Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16378, y: 16384, z: 400 }
+[2m2026-08-13T14:27:31.030842Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m70 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:27:31.362731Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m70 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16385, z: 400 }
+[2m2026-08-13T14:27:33.263150Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16385, z: 400 }
+[2m2026-08-13T14:27:33.329510Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m3
+[2m2026-08-13T14:27:33.529720Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m78 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:27:33.562812Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m78 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16385, z: 400 }
+[2m2026-08-13T14:27:35.329649Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16385, z: 400 }
+[2m2026-08-13T14:27:35.529742Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m54 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:27:35.562928Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m54 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16383, z: 400 }
+[2m2026-08-13T14:27:37.096098Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m5
+[2m2026-08-13T14:27:37.425126Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16380, y: 16383, z: 400 }
+[2m2026-08-13T14:27:37.624980Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion preempt attempts [3mtick[0m[2m=[0m5400 [3mpreempt_attempts[0m[2m=[0m0
+[2m2026-08-13T14:27:37.625004Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion food stock sample [3mtick[0m[2m=[0m5400 [3mfood_stock[0m[2m=[0m14 [3msplits[0m[2m=[0m0 [3mclaim_expiry_releases[0m[2m=[0m0 [3mdesignated_sweep_reaps[0m[2m=[0m0 [3mgeneric_claim_leak_releases[0m[2m=[0m0 [3memergency_access_completions[0m[2m=[0m0
+[2m2026-08-13T14:27:37.625194Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: job claimed [3mjob[0m[2m=[0m62 [3mcolonist[0m[2m=[0m3
+[2m2026-08-13T14:27:37.658403Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: colonist arrived at job site, working (B5) [3mjob[0m[2m=[0m62 [3mkind[0m[2m=[0mDesignated(Farm) [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16383, z: 400 }
+[2m2026-08-13T14:27:37.858144Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m4
+[2m2026-08-13T14:27:39.358432Z[0m [32m INFO[0m [2mbastion_server::bastion_jobs[0m[2m:[0m bastion: sown [3mpos[0m[2m=[0mVec3 { x: 16379, y: 16383, z: 400 }
+[2m2026-08-13T14:27:39.391600Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m3
+[2m2026-08-13T14:27:41.191694Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m9
+[2m2026-08-13T14:27:45.991898Z[0m [32m INFO[0m [2mveloren_server_agent::action_nodes[0m[2m:[0m bastion GOTO-STAND-RESCUE [3muid[0m[2m=[0m7

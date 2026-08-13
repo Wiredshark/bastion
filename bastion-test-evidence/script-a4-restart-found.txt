@@ -1,0 +1,12 @@
+note A4-RESTART: section 8 B6's actual concern, never yet tested.
+note A4-RESTART: colonists persist (rtsim records); the JobBoard and designations do NOT.
+note A4-RESTART: a predicate reading the BOARD sees 'no colony' after any restart and
+note A4-RESTART: blesses a SECOND founding while the first colony still stands -- the
+note A4-RESTART: leash-march that section 4 exists to make impossible.
+note A4-RESTART: THIS SCRIPT RUNS ON A RESTARTED SERVER, SAME USERDATA.
+note A4-RESTART: PASS = founding refused reason=colony_exists
+note A4-RESTART: FAIL = a second colony is founded => the predicate reads the wrong store
+anchor
+spawn 8 16384.5 16384.5 400.0
+wait 200
+note A4-RESTART: window closed
