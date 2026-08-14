@@ -58,6 +58,30 @@ than a colony-wide one.)*
   drop the write entirely) ⇒ **P2 red**: hauls continue despite `haul 0`. This is the
   realistic defect — a command that logs success and changes nothing.
 
+## 4b · AMENDMENT 1 — **THE SCORING WINDOW OPENS AT THE COMMAND, NOT AT BOOT**
+
+*Added 2026-08-14 while the re-run arms were still in worldgen — **no arm had produced
+a single haul line yet.** Recorded here rather than applied silently at scoring time.*
+
+The server starts ticking at boot; the driver connects **minutes** later, because worldgen
+(especially three in parallel) is slow. So a haul can land **before the command is even
+reachable**. P2 as originally written — *`haul deposited` == 0* over the whole log — would
+then read RED on a command that worked perfectly, purely because the colony hauled during
+worldgen-lag.
+
+**P2 and P3 are therefore scored over the window that OPENS at the tick of the command's
+own witness emit**, and A over the tick of its `anchor`. Everything before that boundary is
+outside the command's causal reach and is reported separately as `pre_window=`.
+
+Two reasons this is legitimate rather than convenient:
+1. **The boundary is machine-read, not chosen.** The witness emit already carries its tick;
+   I am not picking a cut after seeing where the hauls fell.
+2. **It is registered before the data exists** — which is the whole point of the practice,
+   and is why this amendment is dated and diffable rather than folded into the results.
+
+**It also cannot rescue a failure:** if the post-window count is non-zero, P2 is RED. The
+amendment narrows what counts as evidence; it does not soften the bar.
+
 ## 5 · WHAT I WILL **NOT** DO
 
 1. **I will not claim item 16 closed.** This is its *priorities* half. **Hauler-vs-eater
