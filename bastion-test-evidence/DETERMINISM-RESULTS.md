@@ -96,6 +96,47 @@ is measured is that the **end-to-end live pipeline** is not reproducible. Whethe
 *simulation* is deterministic remains untested, because no run has yet held the client
 arrival fixed.
 
+## ✅ ATTEMPT 4 — THE ANSWER. THE SIMULATION **IS** DETERMINISTIC.
+
+Attempt 3's correction named the last input: the client. Without a colony presence entity
+the only thing keeping the colony's chunks loaded is a connected client, and work cannot
+proceed on unloaded terrain — so a connect landing at a different point in the tick
+sequence moved everything downstream.
+
+`bastion_found_colony_presence` already existed (`COLONY_PRESENCE_VIEW_DISTANCE = 1`) with
+two call sites; the deterministic autofound path was not one of them. It is now
+(`8173de1bfa`), so the colony loads its own chunks and a capture needs **no client at
+all**.
+
+**Two headless legs, `clients=0` in both:**
+
+| | plots | tilled | sown | harvested | hauls |
+|---|---|---|---|---|---|
+| hd1 | 3 | 30 | **50** | **22** | **24** |
+| hd2 | 3 | 30 | **50** | **22** | **24** |
+
+**Identical — including every throughput counter that diverged in all three earlier
+attempts.** And stripped of timestamps, the userdata tag and the boot UUID, the two logs
+are **1035 lines and identical line for line.**
+
+### THE ISOLATING CONTROL — because "headless matches" could have been the wrong reason
+
+Same headless setup, **`BASTION_DETERMINISTIC` unset**:
+
+| | tilled | sown | harvested | hauls |
+|---|---|---|---|---|
+| nd1 | 30 | **12** | 12 | **3** |
+| nd2 | 30 | **36** | 22 | **14** |
+
+Without the flag the same configuration spreads `sown` 12→36 and `hauls` 3→14. **The
+match is the flag's doing, not an artefact of removing the client.** Without this control,
+"two headless runs agree" would have been consistent with *nothing varying headlessly at
+all* — a false green wearing the right numbers.
+
+**D1 verdict, final: PASS.** `BASTION_DETERMINISTIC` delivers a bit-identical simulation
+when — and only when — every input is pinned: the founding tick (seeded autofound), the
+work (shared `place_preset`), and the chunk-loading trigger (server-owned presence).
+
 ## ★ WHAT THIS ROW ACTUALLY ESTABLISHES
 
 **Live scored magnitudes cannot currently be made reproducible**, and the reason is

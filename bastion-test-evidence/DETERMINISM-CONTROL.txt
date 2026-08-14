@@ -1,0 +1,4 @@
+=== CONTROL: same headless setup, BASTION_DETERMINISTIC UNSET ===
+  (deterministic pair was: tilled=30 sown=50 harvested=22 hauls=24, logs identical)
+  nd1 (NO FLAG): plots=3  tilled=30  sown=12  harvested=12  hauls=3  clients=0
+  nd2 (NO FLAG): plots=3  tilled=30  sown=36  harvested=22  hauls=14  clients=0

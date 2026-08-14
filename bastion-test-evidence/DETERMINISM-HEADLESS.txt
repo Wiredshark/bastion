@@ -1,0 +1,10 @@
+=== RUN ATTESTATION 2026-08-14 09:24:34 ===
+HEAD          : abc725800b
+dirty .rs     : 1
+  !! THE BINARY'S BAKED HASH NAMES HEAD, NOT THIS TREE.
+      M server/src/lib.rs
+binary        : veloren-server-cli.exe  built 2026-08-14 09:24:17
+  fresh: no tracked .rs source is newer than the binary
+=== HEADLESS DETERMINISM: autofound + presence, NO CLIENT ===
+  hd1: presence=1  plots=3  tilled=30  sown=50  harvested=22  hauls=24  clients=0
+  hd2: presence=1  plots=3  tilled=30  sown=50  harvested=22  hauls=24  clients=0
