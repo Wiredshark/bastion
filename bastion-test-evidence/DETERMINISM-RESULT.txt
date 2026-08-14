@@ -1,0 +1,11 @@
+=== RUN ATTESTATION 2026-08-14 06:40:27 ===
+HEAD          : 9332a553c8
+dirty .rs     : 0
+binary        : veloren-server-cli.exe  built 2026-08-14 01:39:31
+  fresh: no tracked .rs source is newer than the binary
+=== D1: TWO RUNS UNDER BASTION_DETERMINISTIC (same script, fresh userdata) ===
+  det1: colonists=8  harvested=28  hauls=15  wheat=8  seeds=7  peak_stock=18  tilled=30
+  det2: colonists=8  harvested=40  hauls=14  wheat=6  seeds=8  peak_stock=32  tilled=30
+=== D2 control, ALREADY MEASURED without the flag ===
+  h8a: harvested=14 hauls=5 peak_stock=4
+  h8b: harvested=8  hauls=0 peak_stock=0

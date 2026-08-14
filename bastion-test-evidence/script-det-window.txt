@@ -1,0 +1,3 @@
+note DET: autofounded at boot via the SEEDED path; driver only holds the window open.
+anchor
+wait 9000

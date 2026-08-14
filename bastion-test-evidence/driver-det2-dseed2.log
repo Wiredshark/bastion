@@ -1,0 +1,11 @@
+[1786706948350] === bastion_playtest starting: server=127.0.0.1:14004 username=dseed2 script=E:/veloren-master/bastion-test-evidence/script-det-window.txt ===
+[1786706948350] driver build=bbef73f9 built_at=1786645194 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,list_designations,survey,note,cmd
+[1786706948351] parsed 3 script commands
+[1786706951489] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/c1fe7e1d-5f70-4a57-b489-507717282cd2), name: "Veloren Server", git_hash: 2743484446, git_timestamp: 1786683265, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1786706951593] requested character join id=CharacterId(2)
+[1786706951593] in-game. entity=Entity(0, Generation(1))
+[1786706953593] player pos at script start: Vec3 { x: 16384.357, y: 16384.594, z: 400.0 }
+[1786706953593] [note] DET: autofounded at boot via the SEEDED path; driver only holds the window open.
+[1786706953593] sent BastionCameraAnchor at Vec3 { x: 16384.357, y: 16384.594, z: 400.0 }
+[1786707253788] waited 9000 ticks -> sim 8.73..308.75 in 9005 client spins; pos now Vec3 { x: 16384.357, y: 16384.533, z: 400.0 }
+[1786707253788] === script complete, disconnecting ===

@@ -1,0 +1,5 @@
+=== D1 RETRY: BASTION_DETERMINISTIC + BASTION_AUTOFOUND_COLONY (seeded founding) ===
+  dseed1: names=[Awen Longstride Doran the Stout Hesta the Steady Lira Ironhand Nia the Quiet Osric of the Vale Wynn Brighteye Wynn the Wary ]
+        harvested=0  tilled=0  hauls=0  peak_stock=0
+  dseed2: names=[Awen Longstride Doran the Stout Hesta the Steady Lira Ironhand Nia the Quiet Osric of the Vale Wynn Brighteye Wynn the Wary ]
+        harvested=0  tilled=0  hauls=0  peak_stock=0
