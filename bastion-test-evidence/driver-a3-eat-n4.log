@@ -1,0 +1,49 @@
+[1786678596151] === bastion_playtest starting: server=127.0.0.1:14004 username=a3n4 script=E:/veloren-master/bastion-test-evidence/script-a3-eat-n4.txt ===
+[1786678596151] driver build=bbef73f9 built_at=1786645194 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,list_designations,survey,note,cmd
+[1786678596151] parsed 14 script commands
+[1786678599274] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/4b10d23c-ac2f-44e7-bf2c-b814684403be), name: "Veloren Server", git_hash: 2592285205, git_timestamp: 1786653887, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1786678599411] requested character join id=CharacterId(2)
+[1786678599411] in-game. entity=Entity(0, Generation(1))
+[1786678601411] player pos at script start: Vec3 { x: 16384.5, y: 16384.5, z: 400.0 }
+[1786678601411] [note] A3-N4: A3-EAT's derived leg at HALF the population. Identical in every
+[1786678601411] [note] A3-N4: respect -- same F, same 28,000-tick window derived from the eat gate
+[1786678601411] [note] A3-N4: (hunger interrupt 0.2 base, clamped [0.05,0.3]) and the decay rate
+[1786678601411] [note] A3-N4: 0.00088900001719594/s -- EXCEPT spawn 8 becomes spawn 4.
+[1786678601411] [note] A3-N4: THE WINDOW IS NOT SHORTENED. A3 travelled PARTIAL->PASS precisely
+[1786678601411] [note] A3-N4: because its window was derived rather than guessed; trimming it here
+[1786678601411] [note] A3-N4: to save wall time would re-create the defect that row closed.
+[1786678601411] [note] A3-N4: PASS = 'bastion: ate' >= 1 with food_stock having risen first.
+[1786678601411] [note] A3-N4: DIRECTIONAL PREDICTION (registered, falsifiable): the farm's yield is
+[1786678601411] [note] A3-N4: fixed by the plot while consumption scales with head-count, so at n=4
+[1786678601411] [note] A3-N4: the ending food_stock should EXCEED the 0 seen at n=8.
+[1786678601411] sent BastionCameraAnchor at Vec3 { x: 16384.5, y: 16384.5, z: 400.0 }
+[1786678601411] sent BastionSpawnColony pos=Vec3 { x: 16384.5, y: 16384.5, z: 400.0 } count=4 targeted=true
+[1786678601445] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 4 settlers arriving.") }
+[1786678618638] [chat] GenericChatMsg { chat_type: NpcSay(Uid(3)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1786678623160] [chat] GenericChatMsg { chat_type: NpcSay(Uid(5)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1786678647806] [chat] GenericChatMsg { chat_type: Npc(Uid(3)), content: Localized { key: "npc-speech-tell_monster", seed: 55617, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 1409, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 14094, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 63931, args: {} })} } }
+[1786678649573] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-villager", seed: 56359, args: {} } }
+[1786678692209] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-tell_monster", seed: 41083, args: {"dir": Content(Localized { key: "npc-speech-dir_north", seed: 31743, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 28712, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 47305, args: {} })} } }
+[1786678744948] [chat] GenericChatMsg { chat_type: NpcSay(Uid(4)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1786678752018] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-tell_monster", seed: 37172, args: {"body": Content(Localized { key: "noun-wendigo", seed: 19607, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 19287, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 57749, args: {} })} } }
+[1786678753638] [chat] GenericChatMsg { chat_type: Npc(Uid(2)), content: Localized { key: "npc-speech-villager", seed: 31775, args: {} } }
+[1786678837373] [chat] GenericChatMsg { chat_type: Npc(Uid(2)), content: Localized { key: "npc-speech-villager", seed: 36006, args: {} } }
+[1786678870791] [chat] GenericChatMsg { chat_type: Npc(Uid(3)), content: Localized { key: "npc-speech-villager", seed: 56516, args: {} } }
+[1786678911845] [chat] GenericChatMsg { chat_type: Npc(Uid(2)), content: Localized { key: "npc-speech-villager", seed: 40497, args: {} } }
+[1786678969403] [chat] GenericChatMsg { chat_type: Npc(Uid(3)), content: Localized { key: "npc-speech-villager", seed: 53814, args: {} } }
+[1786678971208] [chat] GenericChatMsg { chat_type: Npc(Uid(2)), content: Localized { key: "npc-speech-villager", seed: 19586, args: {} } }
+[1786678994237] [chat] GenericChatMsg { chat_type: Npc(Uid(2)), content: Localized { key: "npc-speech-villager", seed: 1103, args: {} } }
+[1786678996224] [chat] GenericChatMsg { chat_type: Npc(Uid(3)), content: Localized { key: "npc-speech-villager", seed: 9072, args: {} } }
+[1786679053137] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-villager", seed: 19532, args: {} } }
+[1786679054836] [chat] GenericChatMsg { chat_type: Npc(Uid(3)), content: Localized { key: "npc-speech-tell_monster", seed: 24852, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 56625, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 17015, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 39473, args: {} })} } }
+[1786679085685] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-tell_monster", seed: 51124, args: {"body": Content(Localized { key: "noun-wendigo", seed: 44021, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 36905, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 63589, args: {} })} } }
+[1786679129321] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-villager", seed: 56817, args: {} } }
+[1786679130955] [chat] GenericChatMsg { chat_type: Npc(Uid(3)), content: Localized { key: "npc-speech-villager", seed: 32079, args: {} } }
+[1786679131522] [chat] GenericChatMsg { chat_type: Npc(Uid(3)), content: Localized { key: "npc-speech-villager", seed: 14055, args: {} } }
+[1786679300919] [chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-villager", seed: 845, args: {} } }
+[1786679382266] [chat] GenericChatMsg { chat_type: Npc(Uid(2)), content: Localized { key: "npc-speech-night", seed: 29850, args: {} } }
+[1786679383900] [chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-tell_monster", seed: 27071, args: {"body": Content(Localized { key: "noun-wendigo", seed: 39381, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 16433, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 383, args: {} })} } }
+[1786679478135] [chat] GenericChatMsg { chat_type: Npc(Uid(2)), content: Localized { key: "npc-speech-villager", seed: 35044, args: {} } }
+[1786679480725] [chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-tell_monster", seed: 48910, args: {"dir": Content(Localized { key: "npc-speech-dir_north", seed: 708, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 62880, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 22645, args: {} })} } }
+[1786679541684] waited 28000 ticks -> sim 12.10..945.45 in 27933 client spins; pos now Vec3 { x: 16384.594, y: 16384.729, z: 400.0 }
+[1786679541684] === script complete, disconnecting ===

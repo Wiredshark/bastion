@@ -1,0 +1,16 @@
+=== RUN ATTESTATION 2026-08-13 23:35:38 ===
+HEAD          : f6e1707988
+dirty .rs     : 0
+binary        : veloren-server-cli.exe  built 2026-08-13 18:15:18
+  fresh: no tracked .rs source is newer than the binary
+=== E3 PRECONDITION ===
+  colonists=4
+=== E1: DOES THE LOOP CLOSE? ===
+  tilled    : 30
+  sown      : 10
+  harvested : 10
+  ATE       : 2
+=== E2: food_stock trajectory (n=8 ended at 0) ===
+  distinct food_stock values seen: food_stock=0 food_stock=2 
+  last food_stock: food_stock=2
+  min hunger: 
