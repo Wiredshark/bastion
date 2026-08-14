@@ -15066,12 +15066,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // DET-RNG-008: mine-drop toss stream keyed on the
                         // mined cell.
                         let mut rng = toss_scatter_rng(tick.0, job.pos, 0x30E_0002);
+                        // Y1 · THE YIELD WITNESS (F8-C3 was open: drop and XP
+                        // had no witness at all, so the chop yield was
+                        // unmeasurable).
+                        //
+                        // THE AMOUNT IS READ BACK OFF THE PRODUCED ITEM, never
+                        // from the placement-time `wood_count`. That tally is
+                        // the work THRESHOLD's input, frozen when the job was
+                        // placed — an emit carrying it would report the
+                        // PREDICTION rather than the yield, and could never
+                        // disagree with the thing it exists to check. The
+                        // founding-stock seed witness had the same trap and
+                        // the same fix.
+                        let item = Item::new_from_asset_expect(item_id);
+                        let dropped_amount = item.amount();
                         crate::bastion_actions::emit_drop(
                             &mut item_drop_emitter,
                             job.pos,
-                            Item::new_from_asset_expect(item_id),
+                            item,
                             *program_time,
                             &mut rng,
+                        );
+                        info!(
+                            item = item_id,
+                            amount = dropped_amount,
+                            kind = ?completed_kind,
+                            pos = ?job.pos,
+                            "bastion: job yield dropped"
                         );
                     }
 
@@ -15421,12 +15442,41 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // DET-RNG-008: chop-drop toss stream keyed on the
                             // felled cell.
                             let mut rng = toss_scatter_rng(tick.0, cell, 0xC40B_0003);
+                            // Y1 · THE CHOP YIELD WITNESS (F8-C3 was open —
+                            // drop and XP had no witness, so the yield was
+                            // unmeasurable).
+                            //
+                            // HERE, not at base-cut completion: the base cut
+                            // only converts the tree into a `FellingTree`;
+                            // the drops rain down per Wood cell during the
+                            // stagger. Instrumenting the completion would
+                            // have counted TREES (3) and called it yield.
+                            //
+                            // The amount is read back OFF THE PRODUCED ITEM,
+                            // never from `fell.wood_count` — that tally is
+                            // frozen at placement to set the work threshold,
+                            // so an emit carrying it would report the
+                            // PREDICTION and could never disagree with the
+                            // thing it checks.
+                            //
+                            // Per-CELL, with the cell logged: the trunk
+                            // columns are distinct, so per-tree attribution
+                            // falls out of the positions without a second
+                            // counter to drift.
+                            let item = Item::new_from_asset_expect(CHOP_DROP_ITEM);
+                            let dropped_amount = item.amount();
                             crate::bastion_actions::emit_drop(
                                 &mut item_drop_emitter,
                                 cell,
-                                Item::new_from_asset_expect(CHOP_DROP_ITEM),
+                                item,
                                 *program_time,
                                 &mut rng,
+                            );
+                            info!(
+                                item = CHOP_DROP_ITEM,
+                                amount = dropped_amount,
+                                cell = ?cell,
+                                "bastion: chop yield dropped"
                             );
                         },
                         Some(BlockKind::Leaves) => {
