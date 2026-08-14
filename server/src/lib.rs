@@ -5123,6 +5123,43 @@ impl Server {
                         let center = bastion_flat_arena::world_center_wpos(&self.world);
                         let sp = bastion_flat_arena::spawn_wpos(center);
                         self.bastion_spawn_colony_seeded(sp, n, 0);
+                        // THE PRESET, TOO — otherwise this path spawns
+                        // colonists into a world with NO WORK, and every
+                        // scored counter reads zero. Two deterministic runs
+                        // then "match" at 0 == 0, which is vacuous on exactly
+                        // the numbers a determinism capture exists to compare.
+                        //
+                        // Same placement authority the live handler uses
+                        // (`place_preset`), so the captured colony is the one
+                        // an overseer would found rather than a lookalike.
+                        {
+                            use bastion_server::bastion_founding_preset as preset;
+                            let origin_xy = preset::origin_xy(sp);
+                            let ecs = self.state.ecs();
+                            let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
+                            let datum =
+                                preset::resolve_datum(&terrain, origin_xy, sp.z.floor() as i32);
+                            if let Some(datum_z) = datum {
+                                let origin = Vec3::new(origin_xy.x, origin_xy.y, datum_z);
+                                let mut board =
+                                    ecs.write_resource::<bastion_server::bastion_jobs::JobBoard>();
+                                let (roles, jobs) =
+                                    preset::place_preset(&mut board, &terrain, origin);
+                                tracing::info!(
+                                    ?origin,
+                                    elements = %preset::roles_summary(&roles),
+                                    complete = preset::preset_is_complete(&roles),
+                                    jobs,
+                                    "bastion: autofound colony founded (deterministic path)"
+                                );
+                            } else {
+                                tracing::warn!(
+                                    ?origin_xy,
+                                    "bastion: autofound could not resolve a datum -- no preset \
+                                     placed"
+                                );
+                            }
+                        }
                     }
                 }
             }

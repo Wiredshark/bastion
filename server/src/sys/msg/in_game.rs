@@ -1447,20 +1447,8 @@ impl<'a> System<'a> for Sys {
                     // template order, through the SAME `place_designation`
                     // the painted path uses — one placement authority, not
                     // a founding-only copy of it.
-                    let mut placed_roles = Vec::new();
-                    let mut placed_jobs = 0usize;
-                    for (role, kind, region) in preset::preset_regions(origin) {
-                        let jobs = job_board.place_designation(&terrain, region, kind);
-                        placed_jobs += jobs.len();
-                        placed_roles.push(role);
-                        tracing::info!(
-                            role = role.name(),
-                            ?kind,
-                            ?region,
-                            jobs = jobs.len(),
-                            "bastion: founding preset plot placed"
-                        );
-                    }
+                    let (placed_roles, placed_jobs) =
+                        preset::place_preset(&mut job_board, &terrain, origin);
 
                     // bastion (B3): spawn the starting band (validated above).
                     rtsim.bastion_spawn_colony(pos, count);

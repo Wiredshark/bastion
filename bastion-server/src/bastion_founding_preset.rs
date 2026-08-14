@@ -128,6 +128,40 @@ pub const FOUNDING_PRESET_V1: &[PresetElement] = &[
     },
 ];
 
+/// PLACE THE WHOLE PRESET at `origin`, returning the roles placed and the
+/// jobs created.
+///
+/// ONE PLACEMENT AUTHORITY, TWO CALLERS: the live founding handler and the
+/// deterministic autofound boot path. Before this, only the handler could
+/// place the preset, so the autofound path spawned colonists into a world
+/// with NO designations — which made every work counter zero and every
+/// "two deterministic runs matched" comparison vacuous (`0 == 0`).
+///
+/// A second placement loop beside this one would be the F8 defect: two
+/// sequences that must agree, drifting silently. Each caller keeps its own
+/// EMITS (their audiences differ) but the placement itself lives here.
+pub fn place_preset(
+    board: &mut crate::bastion_jobs::JobBoard,
+    terrain: &TerrainGrid,
+    origin: Vec3<i32>,
+) -> (Vec<PresetRole>, usize) {
+    let mut placed_roles = Vec::new();
+    let mut placed_jobs = 0usize;
+    for (role, kind, region) in preset_regions(origin) {
+        let jobs = board.place_designation(terrain, region, kind);
+        placed_jobs += jobs.len();
+        placed_roles.push(role);
+        tracing::info!(
+            role = role.name(),
+            ?kind,
+            ?region,
+            jobs = jobs.len(),
+            "bastion: founding preset plot placed"
+        );
+    }
+    (placed_roles, placed_jobs)
+}
+
 /// The bed plot's sleeping capacity, DERIVED from the preset table rather
 /// than restated. Consumed by the bar that keeps
 /// [`common::bastion::FOUNDING_COLONIST_COUNT`] honest: asserting two
