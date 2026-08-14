@@ -120,6 +120,7 @@ enum ScriptCmd {
     Designate(DesignationKind, Region),
     Cancel(Region),
     InspectCell(Vec3<i32>),
+    InspectColonists,
     ListDesignations,
     Survey {
         x0: i32,
@@ -190,6 +191,7 @@ pub const SCRIPT_VERBS: &[&str] = &[
     "designate",
     "cancel",
     "inspect_cell",
+    "inspect_colonists",
     "list_designations",
     "survey",
     "note",
@@ -254,6 +256,7 @@ fn parse_script_text(text: &str) -> Vec<ScriptCmd> {
                 let n: Vec<i32> = rest.iter().map(|p| p.parse().unwrap()).collect();
                 ScriptCmd::InspectCell(Vec3::new(n[0], n[1], n[2]))
             },
+            "inspect_colonists" => ScriptCmd::InspectColonists,
             "list_designations" => ScriptCmd::ListDesignations,
             "survey" => {
                 let n: Vec<i32> = rest.iter().map(|p| p.parse().unwrap()).collect();
@@ -580,6 +583,85 @@ fn main() {
                 clock.tick();
                 log.log(&format!("inspect_cell {pos:?} -> {:?}", client.bastion_inspect()));
             },
+            ScriptCmd::InspectColonists => {
+                // ARC 2 item 9. The inspector's ENTITY arm is what the HUD
+                // uses, and nothing automated had ever exercised it -- the
+                // driver could only inspect CELLS. `Colonist` is not a
+                // network-synced component, so the client cannot enumerate
+                // colonists directly; it does exactly what the HUD does --
+                // sends a Uid and lets the SERVER decide whether anything
+                // Bastion-tracked is there. That keeps this on the shipping
+                // path rather than inventing a second resolver.
+                let uids: Vec<common::uid::Uid> = {
+                    use specs::Join;
+                    let ecs = client.state().ecs();
+                    let uid_store = ecs.read_storage::<common::uid::Uid>();
+                    let mut v: Vec<common::uid::Uid> = (&uid_store).join().copied().collect();
+                    // Deterministic order so two samples are comparable and
+                    // the log is diffable between legs.
+                    v.sort_by_key(|u| u.0);
+                    v
+                };
+                let mut found = 0usize;
+                for uid in uids {
+                    client.bastion_inspect_request(BastionInspectTarget::Entity(uid));
+                    // THE REPLY MUST ANSWER THIS REQUEST. `bastion_inspect()`
+                    // is a single latest-reply slot, so reading it after a
+                    // fixed one-tick wait returns whatever happened to be
+                    // there -- which, when the round trip takes longer than a
+                    // tick, is the PREVIOUS uid's payload. That produced a
+                    // convincing lie on the first run: distinct uids reporting
+                    // the same colonist and one uid reporting two different
+                    // colonists across samples, which reads exactly like a
+                    // server resolver ignoring its target. The reply carries
+                    // its OWN target; match on it instead of trusting arrival
+                    // order.
+                    let mut matched = false;
+                    for _ in 0..60 {
+                        let _ = client.tick(comp::ControllerInputs::default(), clock.game_dt());
+                        client.cleanup();
+                        clock.tick();
+                        if let Some((BastionInspectTarget::Entity(got), _)) =
+                            client.bastion_inspect()
+                            && *got == uid
+                        {
+                            matched = true;
+                            break;
+                        }
+                    }
+                    if !matched {
+                        // Silence here would be indistinguishable from "not a
+                        // colonist", so it is logged as its own outcome.
+                        log.log(&format!("INSPECT uid={} NO-REPLY-MATCHED", uid.0));
+                        continue;
+                    }
+                    if let Some((_, Some(common::comp::bastion::BastionInspectKind::Colonist(p)))) =
+                        client.bastion_inspect()
+                    {
+                        found += 1;
+                        // One line per colonist, key=value so a scorer can
+                        // diff FIELDS between two samples rather than eyeball
+                        // a Debug blob.
+                        log.log(&format!(
+                            "INSPECT uid={} name={} hunger={:.4} rest={:.4} recreation={:.4} \
+                             energy={:.4} mood={:.4} drive={:?} scores={:?} activity={:?} \
+                             status={:?}",
+                            uid.0,
+                            p.name,
+                            p.hunger,
+                            p.rest,
+                            p.recreation,
+                            p.energy,
+                            p.mood,
+                            p.drive,
+                            p.last_scores,
+                            p.activity,
+                            p.status
+                        ));
+                    }
+                }
+                log.log(&format!("inspect_colonists -> {found} colonist payload(s)"));
+            },
             ScriptCmd::ListDesignations => {
                 log.log(&format!(
                     "designations (rev={}): {:?}",
@@ -701,6 +783,7 @@ mod tests {
                 "list_designations" => "list_designations".into(),
                 "survey" => "survey 1 2 3 4 5 6 7".into(),
                 "note" => "note hello".into(),
+                "inspect_colonists" => "inspect_colonists".into(),
                 "cmd" => "cmd dropall".into(),
                 other => panic!(
                     "SCRIPT_VERBS lists `{other}` but this test has no sample line for it -- \
