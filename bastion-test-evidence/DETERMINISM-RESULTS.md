@@ -70,12 +70,31 @@ same eight colonists, same order — and both ran to **tick 9000**:
   or capped by the plot.
 - **Diverged:** `sown` 12/10, `hauls` 7/3, `peak_stock` 20/12 — all throughput.
 
-With the founding pinned, the window identical and the inputs matched, **`BASTION_DETERMINISTIC` does not make the work simulation reproducible.** That is now a
-measured statement with its precondition met, not the void of attempt 1 nor the vacuity
-of attempt 2.
+### ⚠ AND THAT CONCLUSION IS ITSELF CONFOUNDED — corrected on the same day I wrote it
 
-**D1 verdict: FAIL on throughput, PASS on identity/geometry** — and the split is the
-useful part, because it says exactly which numbers a determinism capture can carry.
+I first wrote: *"`BASTION_DETERMINISTIC` does not make the work simulation
+reproducible."* **That claim is not supported, and I am withdrawing it.**
+
+Diffing the two logs with timestamps and the userdata tag normalised out: they agree for
+**574 lines**, and the divergences are
+
+1. the **boot UUID** — documented as *"excluded from authoritative simulation state/RNG
+   keys, never persisted"*, so not a simulation input; and
+2. **`Accepting Tcp` at line 262 vs 246** — the client connects at a **different point in
+   the server's own tick sequence**.
+
+`autofound` sits at line **198 in both**. The founding is pinned. But **the client is what
+loads the chunks**, and work cannot proceed on unloaded terrain — so a connect that lands
+16 lines apart starts the whole work trajectory from a different tick offset.
+
+> **The client-connect tick is an uncontrolled input, exactly like the founding tick in
+> attempt 1.** Same error class, third occurrence in one row, caught each time only by
+> checking the premise before reporting the number.
+
+**D1 verdict: PASS on identity and geometry; throughput is UNRESOLVED — not FAIL.** What
+is measured is that the **end-to-end live pipeline** is not reproducible. Whether the
+*simulation* is deterministic remains untested, because no run has yet held the client
+arrival fixed.
 
 ## ★ WHAT THIS ROW ACTUALLY ESTABLISHES
 
