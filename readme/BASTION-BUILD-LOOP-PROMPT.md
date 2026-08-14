@@ -49,6 +49,12 @@ reference.
   finding.
 - **NEVER put a cargo build and a long run in the same timed call.** A killed build leaves
   a plausible stale binary — that cost a scored run.
+- **Assert the leg's ENABLING CONDITION by reading the artefact, not by running the step
+  that should have created it.** An Admin-gated command needs `--no-auth` on the **grant**
+  as well as the run: without it the CLI resolves the username through the auth server,
+  fails, and writes an **empty `admins.ron`** while exiting 0. Three arms scored `witness=0`
+  and read as a refutation of the feature; the feature was never reached. **Check
+  `admins.ron` has an entry, not that `admin add` returned success.**
 
 ## §3 · PLANT CRAFT
 
@@ -92,9 +98,19 @@ agree" is also consistent with nothing varying headlessly at all.
 
 ## §6 · SPEED — use all of it
 
-- **`BASTION_UNCAPPED_TPS=1`** removes the wall-clock sleep. Its own source comment: skips
-  `clock.tick()` only, *"changes ONLY wall-clock pacing, never simulation dt … unset =
-  today's behavior, bit-for-bit."* A 28 000-tick leg is ~15 min capped.
+- **`BASTION_UNCAPPED_TPS=1` — HEADLESS LEGS ONLY.** It removes the wall-clock sleep. Its
+  own source comment is reassuring and true as far as it goes: skips `clock.tick()` only,
+  *"changes ONLY wall-clock pacing, never simulation dt … unset = today's behavior,
+  bit-for-bit."* A 28 000-tick leg is ~15 min capped.
+  > ⛔ **But the skip is ungated — it free-runs from server boot and never waits for a
+  > client.** On a client-driven leg the server can burn the entire scored window before
+  > the driver finishes connecting, so a command "issued after founding" lands after the
+  > window instead. **The comment's guarantee is about `dt`; the hazard is about
+  > *arrival*, and no comment on the producer mentions it.** Read what a flag does to the
+  > *other* participants, not just to the subsystem it names.
+  >
+  > On a client-driven leg, **the parallelism lever is ports, not TPS** — which costs
+  > nothing, since three arms at 30 tps in parallel take exactly as long as one.
 - **Parallel legs**: each leg gets its own `VELOREN_USERDATA`, and the port lives in
   `<userdata>/server/server_config/settings.ron` (`gameserver_protocols`, default 14004).
   Give each leg a distinct port and they run concurrently.
