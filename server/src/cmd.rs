@@ -154,6 +154,7 @@ fn do_command(
         ServerChatCommand::BanIp => handle_ban_ip,
         ServerChatCommand::BanLog => handle_ban_log,
         ServerChatCommand::BastionArena => handle_bastion_arena,
+        ServerChatCommand::BastionPriority => handle_bastion_priority,
         ServerChatCommand::BattleMode => handle_battlemode,
         ServerChatCommand::BattleModeForce => handle_battlemode_force,
         ServerChatCommand::Body => handle_body,
@@ -6303,6 +6304,78 @@ fn handle_lightning(
 
 /// bastion (B-ASSET1): --asset-arena controls. Delegates to
 /// `Server::bastion_arena_command`; a friendly no-op outside arena boots.
+/// bastion (ROADMAP 16): the LIVE route to work priorities.
+///
+/// The mechanism was already complete — `WorkPriorities` (0 = never, 1..=4),
+/// a selector that skips priority-0 jobs and lets higher priority outrank
+/// distance, and `Server::bastion_set_work_priority`. All of it was reachable
+/// ONLY from the harness. This command is the missing player-facing half, and
+/// it routes to that same setter rather than growing a second write — a
+/// duplicate here would drift from the one the harness proves.
+fn handle_bastion_priority(
+    server: &mut Server,
+    client: EcsEntity,
+    _target: EcsEntity,
+    args: Vec<String>,
+    action: &ServerChatCommand,
+) -> CmdResult<()> {
+    let (Some(work_name), Some(priority)) = (args.first().cloned(), args.get(1)) else {
+        return Err(action.help_content());
+    };
+    let priority: u8 = priority
+        .parse::<u8>()
+        .ok()
+        .filter(|p| *p <= 4)
+        .ok_or_else(|| action.help_content())?;
+    let work = match work_name.to_lowercase().as_str() {
+        "mine" => common::bastion::WorkType::Mine,
+        "chop" => common::bastion::WorkType::Chop,
+        "build" => common::bastion::WorkType::Build,
+        "haul" => common::bastion::WorkType::Haul,
+        "cook" => common::bastion::WorkType::Cook,
+        "farm" => common::bastion::WorkType::Farm,
+        _ => return Err(action.help_content()),
+    };
+
+    // Colony-wide: read the roster, then drive the EXISTING per-name setter
+    // once per colonist. The borrow is collected and dropped before the
+    // `&mut server` calls.
+    //
+    // Deliberately NOT a new colony-wide write: `bastion_set_work_priority`
+    // is the path the harness exercises, and a second writer beside it would
+    // be free to drift from the one under test.
+    let names: Vec<String> = {
+        let ecs = server.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        use specs::Join;
+        (&colonists).join().map(|c| c.0.name.clone()).collect()
+    };
+    let mut changed = 0usize;
+    for name in &names {
+        if server.bastion_set_work_priority(name, work, priority) {
+            changed += 1;
+        }
+    }
+
+    tracing::info!(
+        ?work,
+        priority,
+        changed,
+        colonists = names.len(),
+        "bastion: work priority set (live command)"
+    );
+    server.notify_client(
+        client,
+        ServerGeneral::server_msg(
+            comp::ChatType::CommandInfo,
+            Content::Plain(format!(
+                "bastion: {work_name} priority set to {priority} for {changed} colonist(s)"
+            )),
+        ),
+    );
+    Ok(())
+}
+
 fn handle_bastion_arena(
     server: &mut Server,
     client: EcsEntity,

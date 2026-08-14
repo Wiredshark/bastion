@@ -374,6 +374,11 @@ pub enum ServerChatCommand {
     BanLog,
     /// bastion (B-ASSET1): --asset-arena controls (next/prev/fixture/dismiss).
     BastionArena,
+    /// bastion (ROADMAP 16): set a colony-wide work priority. The mechanism
+    /// (`WorkPriorities`, 0=never..4) and the setter both already existed and
+    /// were exercised only by the harness — this is the LIVE route, so an
+    /// owner can actually say "stop hauling".
+    BastionPriority,
     BattleMode,
     BattleModeForce,
     Body,
@@ -1138,6 +1143,17 @@ impl ServerChatCommand {
                 ),
                 Some(Admin),
             ),
+            ServerChatCommand::BastionPriority => cmd(
+                vec![
+                    Any("work (mine|chop|build|haul|cook|farm)", Required),
+                    Integer("priority 0-4 (0 = never)", 3, Required),
+                ],
+                Content::Plain(
+                    "bastion: set a colony-wide work priority (0 = never, 4 = highest)"
+                        .to_string(),
+                ),
+                Some(Admin),
+            ),
             ServerChatCommand::Scale => cmd(
                 vec![
                     Float("factor", 1.0, Required),
@@ -1281,6 +1297,7 @@ impl ServerChatCommand {
             ServerChatCommand::WeatherZone => "weather_zone",
             ServerChatCommand::Lightning => "lightning",
             ServerChatCommand::BastionArena => "bastion_arena",
+            ServerChatCommand::BastionPriority => "bastion_priority",
             ServerChatCommand::Scale => "scale",
             ServerChatCommand::RepairEquipment => "repair_equipment",
             ServerChatCommand::Tether => "tether",

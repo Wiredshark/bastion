@@ -19459,7 +19459,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // sequence even while temporarily unreachable.
                             // The normal amnesty makes it claimable again;
                             // later cells may not leapfrog it meanwhile.
-                            .filter(|(_, job)| job.claimed_by.is_none() && !job.unreachable)
+                            .filter(|(_, job)| job.is_claim_candidate())
                             .map(|(id, _)| id)
                     })
                     .flatten()
@@ -19504,7 +19504,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             let mut best: Option<(JobId, u8, f32)> = None;
             for id in board.decision_job_ids() {
                 let job = &board.jobs[&id];
-                if job.claimed_by.is_some() || job.unreachable {
+                // The priority gate below is the ONLY consumer of
+                // `WorkPriorities`, and this is the filter that decides what
+                // ever reaches it — see `Job::is_claim_candidate`, which
+                // documents why an EatFrom job (filed under WorkType::Haul)
+                // must never become a candidate.
+                if !job.is_claim_candidate() {
                     continue;
                 }
                 let emergency_owner = board.emergency_access_jobs.get(&id).copied();
@@ -21193,6 +21198,60 @@ mod tests {
     /// construction. This asserts they actually do — a remainder that came
     /// back as the wrong kind would silently re-designate a player's mine
     /// as something else on the next restore.
+    /// ITEM 16, the landmine this row found by reading the producer rather
+    /// than by testing for it: `insert_eat_job` files EATING under
+    /// `WorkType::Haul`. The live command `bastion_priority haul 0` writes
+    /// priority 0 for `WorkType::Haul` on every colonist — so read naively,
+    /// a player disabling hauling would stop their colony eating.
+    ///
+    /// It does not, and this pins down exactly why: the sole consumer of
+    /// `WorkPriorities` is the claim selector, and an eat job is inserted
+    /// PRE-CLAIMED, so it is never a claim candidate and the gate never sees
+    /// it. That is a consequence of claim-ordering, not of anyone intending
+    /// eating to be un-suppressible.
+    ///
+    /// The second half is a MATCHED CONTROL, and it is the point of the
+    /// test: the same job, still `WorkType::Haul`, with `claimed_by` cleared
+    /// DOES become a candidate. So the protection is the claim and nothing
+    /// else — if a future change ever releases a self-job into the selector,
+    /// `haul 0` becomes a starvation command. Without the control this test
+    /// would only be restating a constructor.
+    #[test]
+    fn an_eat_job_is_invisible_to_the_work_priority_gate() {
+        let mut board = JobBoard::default();
+        let eater = Uid(NonZeroU64::new(7).unwrap());
+        let id = board.insert_eat_job(
+            Uid(NonZeroU64::new(42).unwrap()),
+            Vec3::new(1, 2, 3),
+            eater,
+            1u64,
+            "common.items.bastion.wheat",
+        );
+
+        assert_eq!(
+            board.jobs[&id].work,
+            common::bastion::WorkType::Haul,
+            "eating is filed under Haul; if this ever changes, the starvation \
+             coupling this test guards has moved somewhere else"
+        );
+        assert!(
+            !board.jobs[&id].is_claim_candidate(),
+            "an eat job must never reach the claim selector -- that is the \
+             only reason `bastion_priority haul 0` does not starve the colony"
+        );
+
+        // MATCHED CONTROL: identical job, identical WorkType::Haul, one
+        // field flipped. It becomes a candidate -- proving the predicate
+        // discriminates on the claim, and that the claim is the whole of the
+        // protection.
+        board.jobs.get_mut(&id).unwrap().claimed_by = None;
+        assert!(
+            board.jobs[&id].is_claim_candidate(),
+            "with the claim released the very same Haul-typed job IS a \
+             candidate -- so nothing but pre-claiming shields eating"
+        );
+    }
+
     #[test]
     fn a_partially_cancelled_order_keeps_its_kind() {
         let mut board = JobBoard::default();

@@ -1237,6 +1237,32 @@ pub struct Job {
     pub affordance: AffordanceClass,
 }
 
+impl Job {
+    /// bastion (item 16): is this job a candidate for the CLAIM SELECTOR —
+    /// the loop that ranks unheld work and, crucially, the ONLY place
+    /// `WorkPriorities` is consulted?
+    ///
+    /// This exists as one named predicate because the answer decides whether
+    /// a player-set work priority can reach a job at all, and that turned out
+    /// to be load-bearing in a way nothing named it:
+    ///
+    /// **`insert_eat_job` files eating under [`WorkType::Haul`].** Read
+    /// naively, `bastion_priority haul 0` should therefore stop the colony
+    /// EATING and starve it. It does not — but only because self-jobs
+    /// (`EatFrom`/`RestAt`/`Despond`) are inserted PRE-CLAIMED, so they fail
+    /// this predicate and never reach the priority gate downstream of it.
+    ///
+    /// So the safety is a consequence of claim-ordering, not of intent. If a
+    /// future change ever lets a self-job enter the selector unclaimed — or
+    /// adds a second priority check keyed on `job.work` somewhere else — then
+    /// disabling Haul silently becomes a starvation command. Route any new
+    /// priority gate through THIS predicate so the coupling stays visible,
+    /// and see `an_eat_job_is_invisible_to_the_work_priority_gate`.
+    pub fn is_claim_candidate(&self) -> bool {
+        self.claimed_by.is_none() && !self.unreachable
+    }
+}
+
 /// bastion (TOOL-0, TOOLS-UPGRADE §3): the work-tick's TOOL factor — a
 /// multiplier on the server's `work_rate`. The verb↔tool map rides the
 /// shipped `ToolKind`s (Mine→Pick, Chop→Axe, Build→Hammer; Haul/Cook have
