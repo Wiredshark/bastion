@@ -1,0 +1,20 @@
+note CHOP-YIELD: Y2/Y3 -- fell the arena cluster and COUNT THE WOOD.
+note CHOP-YIELD: same designation rectangle the fell-set row used, derived from
+note CHOP-YIELD: RESOURCED_TREES: centre (16384,16384), trunks at offsets
+note CHOP-YIELD: (18,2)h5 (22,-3)h6 (25,4)h4 => absolute (16402,16386)
+note CHOP-YIELD: (16406,16381) (16409,16388); rect x[16400,16411] y[16379,16390].
+note CHOP-YIELD: colonists must FELL them, not merely resolve them, so this
+note CHOP-YIELD: needs a real work window -- the base cut alone only converts a
+note CHOP-YIELD: tree into a FellingTree; the drops rain down per Wood cell
+note CHOP-YIELD: during the stagger that follows.
+note CHOP-YIELD: Y2 PASS = 15 'chop yield dropped' lines total (5+6+4 Wood).
+note CHOP-YIELD: Y3 PASS = 5, 6 and 4 grouped by trunk column, in some order.
+note CHOP-YIELD: leaves (27 cells) must yield NOTHING -- 42 would mean the bar
+note CHOP-YIELD: is counting everything felled rather than Wood.
+anchor
+spawn 8 16384.5 16384.5 400.0
+wait 120
+designate chop 16400 16379 400 16411 16390 400
+wait 6000
+list_designations
+note CHOP-YIELD: window closed
