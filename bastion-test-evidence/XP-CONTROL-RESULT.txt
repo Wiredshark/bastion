@@ -1,0 +1,6 @@
+=== CONTROL RESTORED (plant gave 24, split 8/8/8) ===
+           1 xp=32.0 wood=4
+           1 xp=40.0 wood=5
+           1 xp=48.0 wood=6
+  chop xp TOTAL: 120
+  yield: 15

@@ -1,0 +1,6 @@
+=== PLANT: the x wood_count scale dropped (control: 120, split 40/48/32) ===
+           1 xp=8.0 wood=4
+           1 xp=8.0 wood=5
+           1 xp=8.0 wood=6
+  chop xp TOTAL: 24   (control 120)
+  yield UNAFFECTED (still 15?): 15

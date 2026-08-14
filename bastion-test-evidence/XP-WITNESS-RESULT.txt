@@ -1,0 +1,8 @@
+=== X1: XP witnessed at all (was: no emit anywhere) ===
+  'xp granted' lines: 51
+=== X2: the CHOP grants (registered 120 total, split 40/48/32) ===
+           1 xp=32.0 wood=4
+           1 xp=40.0 wood=5
+           1 xp=48.0 wood=6
+  chop xp TOTAL: 120
+  yield cross-check (must still be 15): 15
