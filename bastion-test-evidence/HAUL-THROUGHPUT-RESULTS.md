@@ -19,7 +19,36 @@ Scored against `HAUL-THROUGHPUT-PREREG.md`. Engine tip `9332a553c8`.
 | **n=4 run 1** | **18** | 5 | 2 | 3 | ✅ **14** |
 | n=4 run 2 | 10 | 2 | 1 | 1 | 2 |
 
-## ⛔ H3 IS REFUTED — AND SO IS THE OBSERVATION THAT MOTIVATED IT
+## ⛔⛔ **H3's REFUTATION IS ITSELF REFUTED — DETERMINISTIC RERUN, 2026-08-14**
+
+Everything below this section was measured **through a connected client with the flag
+off**, before the determinism row existed. Re-run **headless + `BASTION_DETERMINISTIC`**,
+two legs per arm:
+
+| | harvested | hauls | wheat | peak stock |
+|---|---|---|---|---|
+| n=8 leg 1 | 22 | **24** | 10 | 44 |
+| n=8 leg 2 | 22 | **24** | 10 | 44 |
+| n=4 leg 1 | 8 | **0** | 0 | 0 |
+| n=4 leg 2 | 8 | **0** | 0 | 0 |
+
+**Each arm reproduces exactly, and the arms differ starkly: 24 hauls vs 0.**
+
+> **H3 HOLDS. Haul throughput does scale with population** — and the original refutation
+> was an artefact of the noise the determinism row later characterised. The old spread
+> (hauls 5, 0, 5, 2) straddled the true effect completely, and one noisy n=4 leg
+> out-hauling a noisy n=8 leg was enough to make me call it dead.
+
+**What this costs:** a refutation I reported with confidence was wrong. What saved it from
+staying wrong is that the row **registered its own weakness in the same breath** — "the
+effect, if any, is smaller than this run-to-run variance" — which is precisely the claim
+determinism was then able to test.
+
+**And A3-at-n=4's retraction stands anyway.** Its peak-stock 6→2 was still n=1 per arm
+through a client; this rerun does not rehabilitate that observation, it replaces it with a
+measured one.
+
+## ⛔ H3 IS REFUTED — AND SO IS THE OBSERVATION THAT MOTIVATED IT *(superseded — see above)*
 
 A3-at-n=4 recorded peak stock **6 (n=8) → 2 (n=4)** and I proposed halved haul
 throughput as the mechanism, registering it as *untested*. Testing it:

@@ -1,0 +1,5 @@
+=== HAUL THROUGHPUT, HEADLESS + DETERMINISTIC (magnitudes now valid) ===
+  n=8: harvested=22  hauls=24  wheat=10  peak_stock=44
+  n=4: harvested=8  hauls=0  wheat=0  peak_stock=0
+  n=8: harvested=22  hauls=24  wheat=10  peak_stock=44
+  n=4: harvested=8  hauls=0  wheat=0  peak_stock=0
