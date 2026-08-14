@@ -935,6 +935,41 @@ pub(crate) fn colony_terminal_should_fire(streak_after_increment: u32, threshold
 /// threshold". The sawtooth's whole content is the reset arm.
 ///
 /// The call site DELEGATES to this. There is no second copy.
+/// bastion (ARC 2 item 10): **THE ONE PRODUCER** of the colony's food stock.
+///
+/// This number already decided something serious — `colony_terminal_step`
+/// reads it to declare the colony dead — but it was computed INLINE at that
+/// one call site, as a local. The colony dashboard needs the same number, and
+/// a dashboard that recomputed it would become a SECOND producer of a value
+/// the sim uses to end the run. The two would agree on the day they were
+/// written and drift silently afterwards, and the dashboard would keep
+/// reporting confidently while disagreeing with the thing that kills you.
+///
+/// Definition, preserved verbatim from the terminal check: sum
+/// `FOOD_DEFS`-matching pickup items **that lie inside a stockpile region** —
+/// the same population `EatFrom` actually draws from, deliberately NOT "every
+/// item in a pile". Callers pass the join; the RULE lives here.
+pub(crate) fn colony_food_stock<'a>(
+    items: impl IntoIterator<Item = (&'a PickupItem, &'a comp::Pos)>,
+    board: &JobBoard,
+) -> u32 {
+    let mut food_stock: u32 = 0;
+    for (item, pos) in items {
+        let item_def_id = item.item().item_definition_id();
+        let Some(def) = item_def_id.itemdef_id() else {
+            continue;
+        };
+        if !FOOD_DEFS.contains(&def) {
+            continue;
+        }
+        let cell = pos.0.map(|e| e.floor() as i32);
+        if board.stockpile_at(cell).is_some() {
+            food_stock += item.amount() as u32;
+        }
+    }
+    food_stock
+}
+
 pub(crate) fn colony_terminal_step(streak: &mut u32, food_stock: u32, threshold: u32) -> bool {
     if food_stock == 0 {
         *streak += 1;
@@ -6844,20 +6879,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // EatFrom actually draws from, not "every item in a pile."
             if tick.0 % 300 == 0 {
                 use specs::Join;
-                let mut food_stock: u32 = 0;
-                for (item, pos) in (&pickup_items, &positions).join() {
-                    let item_def_id = item.item().item_definition_id();
-                    let Some(def) = item_def_id.itemdef_id() else {
-                        continue;
-                    };
-                    if !FOOD_DEFS.contains(&def) {
-                        continue;
-                    }
-                    let cell = pos.0.map(|e| e.floor() as i32);
-                    if board.stockpile_at(cell).is_some() {
-                        food_stock += item.amount() as u32;
-                    }
-                }
+                // ARC 2 item 10: the rule now lives in ONE place
+                // (`colony_food_stock`) so the dashboard reports the same
+                // number that decides the colony is dead, rather than a
+                // second copy of it that agrees only until someone edits one.
+                let food_stock = colony_food_stock((&pickup_items, &positions).join(), &board);
                 // ITEM8-V4: the b5 heartbeat port (Fable-ruled) -- splits =
                 // b5_split_off_one_fired, the precondition witness for the
                 // split_off_one crash fix's own registered prediction (its
