@@ -585,6 +585,9 @@ pub enum BastionColonistStatus {
 pub enum BastionInspectTarget {
     Entity(crate::uid::Uid),
     Cell(vek::Vec3<i32>),
+    /// bastion (ARC 2 item 10): the colony itself — the one target that is not
+    /// a thing you can point at, which is exactly why the dashboard needs it.
+    Colony,
 }
 
 /// bastion (UI-5, row 62.2): one inspected object's full internal state —
@@ -599,6 +602,36 @@ pub enum BastionInspectKind {
     Stockpile(BastionStockpileInspect),
     Farm(BastionFarmInspect),
     FellSet(BastionFellSetInspect),
+    /// bastion (ARC 2 item 10): the colony as a whole. Rides this enum rather
+    /// than a new wire pair because the inspector is already the universal
+    /// "ask the server about a thing" channel — a second path would be a
+    /// second authority over the same question.
+    Colony(BastionColonyInspect),
+}
+
+/// bastion (ARC 2 item 10): the colony dashboard's payload.
+///
+/// Every field is a COUNT OF SOMETHING THE SERVER ALREADY TRACKS. Nothing here
+/// is new sim state, and nothing is derived by a formula that lives only in
+/// this struct — `food_stock` in particular comes from `colony_food_stock`,
+/// the single producer the colony-terminal check also reads, so the dashboard
+/// cannot drift from the number that decides the colony is dead.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BastionColonyInspect {
+    /// Loaded colonists.
+    pub colonists: u32,
+    /// `FOOD_DEFS` items inside stockpile regions — the population `EatFrom`
+    /// draws from, NOT every item in a pile.
+    pub food_stock: u32,
+    /// Jobs on the board, total.
+    pub jobs_total: u32,
+    /// Of those, actively held by a colonist.
+    pub jobs_claimed: u32,
+    /// Of those, flagged unreachable (the player's "why is nothing happening"
+    /// answer).
+    pub jobs_unreachable: u32,
+    /// Standing designation orders.
+    pub designations: u32,
 }
 
 /// bastion (UI-5): a job / designation-in-progress debug view. The claimant

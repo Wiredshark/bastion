@@ -121,6 +121,7 @@ enum ScriptCmd {
     Cancel(Region),
     InspectCell(Vec3<i32>),
     InspectColonists,
+    InspectColony,
     ListDesignations,
     Survey {
         x0: i32,
@@ -192,6 +193,7 @@ pub const SCRIPT_VERBS: &[&str] = &[
     "cancel",
     "inspect_cell",
     "inspect_colonists",
+    "inspect_colony",
     "list_designations",
     "survey",
     "note",
@@ -257,6 +259,7 @@ fn parse_script_text(text: &str) -> Vec<ScriptCmd> {
                 ScriptCmd::InspectCell(Vec3::new(n[0], n[1], n[2]))
             },
             "inspect_colonists" => ScriptCmd::InspectColonists,
+            "inspect_colony" => ScriptCmd::InspectColony,
             "list_designations" => ScriptCmd::ListDesignations,
             "survey" => {
                 let n: Vec<i32> = rest.iter().map(|p| p.parse().unwrap()).collect();
@@ -662,6 +665,38 @@ fn main() {
                 }
                 log.log(&format!("inspect_colonists -> {found} colonist payload(s)"));
             },
+            ScriptCmd::InspectColony => {
+                // ARC 2 item 10. Same protocol, same reply-matching
+                // discipline as inspect_colonists -- the single-slot API
+                // makes "read after one tick" quietly wrong.
+                client.bastion_inspect_request(BastionInspectTarget::Colony);
+                let mut got = None;
+                for _ in 0..60 {
+                    let _ = client.tick(comp::ControllerInputs::default(), clock.game_dt());
+                    client.cleanup();
+                    clock.tick();
+                    if let Some((BastionInspectTarget::Colony, payload)) = client.bastion_inspect()
+                    {
+                        got = Some(payload.clone());
+                        break;
+                    }
+                }
+                match got {
+                    Some(Some(common::comp::bastion::BastionInspectKind::Colony(c))) => {
+                        log.log(&format!(
+                            "COLONY colonists={} food_stock={} jobs_total={} jobs_claimed={}                              jobs_unreachable={} designations={}",
+                            c.colonists,
+                            c.food_stock,
+                            c.jobs_total,
+                            c.jobs_claimed,
+                            c.jobs_unreachable,
+                            c.designations
+                        ));
+                    },
+                    Some(other) => log.log(&format!("COLONY WRONG-KIND {other:?}")),
+                    None => log.log("COLONY NO-REPLY-MATCHED"),
+                }
+            },
             ScriptCmd::ListDesignations => {
                 log.log(&format!(
                     "designations (rev={}): {:?}",
@@ -784,6 +819,7 @@ mod tests {
                 "survey" => "survey 1 2 3 4 5 6 7".into(),
                 "note" => "note hello".into(),
                 "inspect_colonists" => "inspect_colonists".into(),
+                "inspect_colony" => "inspect_colony".into(),
                 "cmd" => "cmd dropall".into(),
                 other => panic!(
                     "SCRIPT_VERBS lists `{other}` but this test has no sample line for it -- \

@@ -1205,6 +1205,21 @@ impl SessionState {
             let client = self.client.borrow();
             match client.bastion_inspect() {
                 Some((t, Some(kind))) if *t == target => match kind {
+                    // ARC 2 item 10: the colony dashboard. Formatted here
+                    // rather than stubbed, so the payload renders wherever the
+                    // panel is opened on a Colony target. NOTE: no UI
+                    // affordance selects `Target::Colony` yet -- that is the
+                    // widget half and is deliberately out of this row's scope.
+                    Kind::Colony(c) => vec![
+                        "- COLONY -".to_string(),
+                        format!("Colonists: {}", c.colonists),
+                        format!("Food in stockpiles: {}", c.food_stock),
+                        format!(
+                            "Jobs: {} ({} claimed, {} unreachable)",
+                            c.jobs_total, c.jobs_claimed, c.jobs_unreachable
+                        ),
+                        format!("Standing orders: {}", c.designations),
+                    ],
                     Kind::Colonist(p) => {
                         let mut traits: Vec<&str> = Vec::new();
                         if p.personality4.0 {

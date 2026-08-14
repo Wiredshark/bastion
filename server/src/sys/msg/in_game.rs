@@ -1695,6 +1695,44 @@ impl<'a> System<'a> for Sys {
                                         })
                                     })
                                     .map(BastionInspectKind::Colonist),
+                                // ARC 2 item 10: the colony as a whole. Every
+                                // field is a count of something already
+                                // tracked -- and `food_stock` calls
+                                // `colony_food_stock`, the SAME producer the
+                                // colony-terminal check reads, so the
+                                // dashboard cannot report a healthier colony
+                                // than the one the death check sees.
+                                BastionInspectTarget::Colony => {
+                                    use specs::Join;
+                                    let colonists = (&insp_colonists).join().count() as u32;
+                                    let food_stock = crate::bastion_jobs::colony_food_stock(
+                                        (&insp_pickup_items, &positions).join(),
+                                        &job_board,
+                                    );
+                                    let jobs_total = job_board.jobs.len() as u32;
+                                    let jobs_claimed = job_board
+                                        .jobs
+                                        .values()
+                                        .filter(|j| j.claimed_by.is_some())
+                                        .count()
+                                        as u32;
+                                    let jobs_unreachable = job_board
+                                        .jobs
+                                        .values()
+                                        .filter(|j| j.unreachable)
+                                        .count()
+                                        as u32;
+                                    Some(BastionInspectKind::Colony(
+                                        common::comp::bastion::BastionColonyInspect {
+                                            colonists,
+                                            food_stock,
+                                            jobs_total,
+                                            jobs_claimed,
+                                            jobs_unreachable,
+                                            designations: job_board.designated_regions().count() as u32,
+                                        },
+                                    ))
+                                },
                             };
                             let _ =
                                 client.send(ServerGeneral::BastionInspectInfo { target, payload });
