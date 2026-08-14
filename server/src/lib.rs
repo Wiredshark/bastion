@@ -5160,6 +5160,25 @@ impl Server {
                                 );
                             }
                         }
+                        // AND THE PRESENCE — the last uncontrolled input.
+                        //
+                        // Without it, the ONLY thing keeping the colony's
+                        // chunks loaded is a connected client, and work
+                        // cannot proceed on unloaded terrain. The client
+                        // arrives at a wall-clock-dependent tick (measured:
+                        // `Accepting Tcp` at log line 262 vs 246 across two
+                        // otherwise byte-identical runs), so the whole work
+                        // trajectory started from a different offset and no
+                        // determinism comparison was possible.
+                        //
+                        // A server-owned presence loads them with no client
+                        // at all, which is what makes a driverless
+                        // determinism capture possible.
+                        self.bastion_found_colony_presence(sp);
+                        tracing::info!(
+                            pos = ?sp,
+                            "bastion: autofound colony presence created (no client needed)"
+                        );
                     }
                 }
             }
