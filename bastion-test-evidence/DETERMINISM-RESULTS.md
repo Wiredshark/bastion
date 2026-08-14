@@ -53,6 +53,30 @@ the message handler it bypasses.
 > that vary. Reporting it as D1 PASS would have been the cleanest false green of the
 > session.
 
+## ATTEMPT 3 — THE VACUITY FIXED, AND THE REAL ANSWER
+
+`place_preset` extracted so the autofound path founds a **real** colony (engine
+`abc725800b`). Both legs then had work to compare, with the founding **byte-identical** —
+same eight colonists, same order — and both ran to **tick 9000**:
+
+| | plots | tilled | harvested | sown | hauls | peak stock |
+|---|---|---|---|---|---|---|
+| d3a | 3 | 30 | 10 | **12** | **7** | **20** |
+| d3b | 3 | 30 | 10 | **10** | **3** | **12** |
+
+> ## **IDENTITY AND GEOMETRY REPRODUCE. THROUGHPUT DOES NOT.**
+
+- **Reproduced:** colonist names, `plots=3`, `tilled=30`, `harvested=10` — all geometric
+  or capped by the plot.
+- **Diverged:** `sown` 12/10, `hauls` 7/3, `peak_stock` 20/12 — all throughput.
+
+With the founding pinned, the window identical and the inputs matched, **`BASTION_DETERMINISTIC` does not make the work simulation reproducible.** That is now a
+measured statement with its precondition met, not the void of attempt 1 nor the vacuity
+of attempt 2.
+
+**D1 verdict: FAIL on throughput, PASS on identity/geometry** — and the split is the
+useful part, because it says exactly which numbers a determinism capture can carry.
+
 ## ★ WHAT THIS ROW ACTUALLY ESTABLISHES
 
 **Live scored magnitudes cannot currently be made reproducible**, and the reason is

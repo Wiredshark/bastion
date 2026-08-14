@@ -1,0 +1,12 @@
+=== RUN ATTESTATION 2026-08-14 07:46:53 ===
+HEAD          : 9332a553c8
+dirty .rs     : 3
+  !! THE BINARY'S BAKED HASH NAMES HEAD, NOT THIS TREE.
+      M bastion-server/src/bastion_founding_preset.rs
+      M server/src/lib.rs
+      M server/src/sys/msg/in_game.rs
+binary        : veloren-server-cli.exe  built 2026-08-14 07:46:36
+  fresh: no tracked .rs source is newer than the binary
+=== D1 v3: seeded autofound NOW PLACES THE PRESET -- work exists to compare ===
+  d3a: autofound=1  plots=3  tilled=30  sown=12  harvested=10  hauls=7  peak_stock=20
+  d3b: autofound=1  plots=3  tilled=30  sown=10  harvested=10  hauls=3  peak_stock=12
