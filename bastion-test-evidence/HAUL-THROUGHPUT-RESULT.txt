@@ -1,0 +1,3 @@
+=== HAUL THROUGHPUT vs POPULATION (A3 window, 28000 ticks) ===
+  n=8: colonists=8  harvested=36  haul deposits=17  delivered=95  peak food_stock=54
+  n=4: colonists=4  harvested=10  haul deposits=1  delivered=2  peak food_stock=0

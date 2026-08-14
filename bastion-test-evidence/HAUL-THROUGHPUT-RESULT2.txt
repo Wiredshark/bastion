@@ -1,0 +1,8 @@
+=== HAUL THROUGHPUT, corrected witness, TWO runs per arm ===
+  n=8 run1: colonists=8  harvested=14  hauls=5  FOOD hauls=0  peak_food_stock=4
+  n=8 run2: colonists=8  harvested=8  hauls=0  FOOD hauls=0  peak_food_stock=0
+  n=4 run1: colonists=4  harvested=18  hauls=5  FOOD hauls=0  peak_food_stock=14
+  n=4 run2: colonists=4  harvested=10  hauls=2  FOOD hauls=0  peak_food_stock=2
+=== item ids actually seen ===
+      2 item=Some("common.items.bastion.wheat")
+      3 item=Some("common.items.bastion.wheat_seeds")
