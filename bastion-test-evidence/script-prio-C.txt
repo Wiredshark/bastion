@@ -1,0 +1,8 @@
+note PRIO-C: haul disabled, then RE-ENABLED mid-window.
+note PRIO-C: PASS = 'haul deposited' > 0 -- proves arm B's zero is the command's
+note PRIO-C: doing and reversible, not a colony that never hauls.
+anchor
+cmd bastion_priority haul 0
+wait 3000
+cmd bastion_priority haul 3
+wait 12000

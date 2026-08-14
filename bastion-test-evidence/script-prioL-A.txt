@@ -1,0 +1,5 @@
+note PRIO-A (control): colony runs its window, NO priority command issued.
+note PRIO-A: PASS = 'haul deposited' > 0. If this is 0 the other arms are void,
+note PRIO-A: because "hauling stopped" means nothing when nothing was hauling.
+anchor
+wait 36000
