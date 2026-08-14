@@ -393,9 +393,23 @@ fn main() {
             let list = client.character_list();
             if !list.loading && !list.characters.is_empty() {
                 if let Some(id) = list.characters[0].character.id {
+                    // bastion (fixture row): the driver's view distance is the
+                    // ONE structural difference between a client-connected leg
+                    // and the headless colony-presence leg, which uses
+                    // COLONY_PRESENCE_VIEW_DISTANCE = 1. At the default 6 a
+                    // client loads a 13x13 chunk area against presence's 3x3 --
+                    // ~18x more world -- so the two configurations were never
+                    // the same colony, and F2 measured them as if they were.
+                    // Env-settable so ONE binary can run both ends of that
+                    // comparison; unset = 6, the historical default, unchanged.
+                    let vd = std::env::var("BASTION_DRIVER_VIEW_DISTANCE")
+                        .ok()
+                        .and_then(|v| v.parse::<u32>().ok())
+                        .unwrap_or(6);
+                    log.log(&format!("requesting view distance terrain={vd} entity={vd}"));
                     client.request_character(id, ViewDistances {
-                        terrain: 6,
-                        entity: 6,
+                        terrain: vd,
+                        entity: vd,
                     });
                     requested_join = true;
                     log.log(&format!("requested character join id={id:?}"));

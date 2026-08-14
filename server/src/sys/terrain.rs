@@ -714,10 +714,46 @@ pub fn convert_to_loaded_vd(vd: u32, max_view_distance: u32) -> i32 {
     // players move over a chunk border.
     const UNLOAD_THRESHOLD: u32 = 2;
 
+    // bastion: `max_view_distance` comes from settings.ron and is NOT validated
+    // where it is read, so an operator may configure it below `MIN_VD`. Rust's
+    // `clamp` PANICS when min > max, so `max_view_distance: Some(1)` used to take
+    // the server down from a rayon worker during terrain sync -- config accepted
+    // at load, crash minutes later, with the panic naming two bare numbers
+    // ("min = 6, max = 1") and neither the setting nor the file. Raising the
+    // ceiling to the floor makes a too-small setting mean "the minimum", which is
+    // the only coherent reading of it, instead of a crash.
+    let max_view_distance = max_view_distance.max(crate::MIN_VD);
     // NOTE: This cast is safe for the reasons mentioned above.
     (vd.clamp(crate::MIN_VD, max_view_distance)
         .saturating_add(UNLOAD_THRESHOLD))
     .min(MAX_VD) as i32
+}
+
+#[cfg(test)]
+mod bastion_vd_tests {
+    use super::convert_to_loaded_vd;
+
+    /// A `max_view_distance` below `MIN_VD` is reachable from settings.ron and
+    /// used to panic inside `clamp` ("min > max. min = 6, max = 1"), taking the
+    /// server down from a rayon worker long after the config was accepted.
+    ///
+    /// This calls the real function at the real boundary. The matched control is
+    /// the second half: an ordinary in-range max still behaves exactly as before,
+    /// so the guard fixes the crash without moving any working value.
+    #[test]
+    fn a_max_view_distance_below_the_floor_does_not_panic() {
+        // the exact configuration that crashed the server
+        let got = convert_to_loaded_vd(6, 1);
+        assert_eq!(
+            got,
+            convert_to_loaded_vd(6, crate::MIN_VD),
+            "a max below MIN_VD must read as MIN_VD, not panic"
+        );
+
+        // MATCHED CONTROL: an in-range max is untouched by the guard.
+        assert_eq!(convert_to_loaded_vd(10, 25), 12, "vd 10 under max 25 keeps its +2");
+        assert_eq!(convert_to_loaded_vd(30, 25), 27, "a request above max still clamps to max");
+    }
 }
 
 /// Returns: ((player_chunk_pos, player_vd_squared), entity, is_client)

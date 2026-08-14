@@ -48,6 +48,22 @@ pub fn handle_initialize_character(server: &mut Server, ev: InitializeCharacterE
         let clamped_vds = ev
             .requested_view_distances
             .clamp(server.settings().max_view_distance);
+        // bastion (fixture row): the view distance a joining client ACTUALLY
+        // gets is a precondition for every live-path measurement -- it decides
+        // how much world the colony simulates alongside itself (a VD-6 client
+        // loads a 13x13 chunk area; COLONY_PRESENCE_VIEW_DISTANCE is 1, a 3x3).
+        // Nothing logged it, so an arm that intended to clamp and silently did
+        // not was indistinguishable from one that clamped and had no effect.
+        // Emitted unconditionally, clamped or not, so the precondition can be
+        // printed above the result rather than inferred.
+        tracing::info!(
+            requested_terrain = ev.requested_view_distances.terrain,
+            requested_entity = ev.requested_view_distances.entity,
+            granted_terrain = clamped_vds.terrain,
+            granted_entity = clamped_vds.entity,
+            max_view_distance = ?server.settings().max_view_distance,
+            "bastion: client view distance granted"
+        );
         server
             .state
             .initialize_character_data(ev.entity, ev.character_id, clamped_vds);
