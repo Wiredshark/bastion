@@ -1,0 +1,9 @@
+=== CHOP YIELD (registered: 15 Wood = 5+6+4; leaves yield 0) ===
+  chop resolved  : chop designation resolved region=Region { min: Vec3 { x: 16400, y: 16379, z: 400 }, max: Vec3 { x: 16411, y: 16390, z: 400 } } trees=3 cells=[14, 15, 13]
+  TIMBER (base cuts done): 3
+  Y2 total yield drops   : 15
+  Y3 per trunk column    :
+           5 16402,16386
+           6 16406,16381
+           4 16409,16388
+  leaves yielded (must be 0 extra): total drops above vs 15

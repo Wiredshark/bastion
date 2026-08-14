@@ -1,0 +1,60 @@
+[1786680152554] === bastion_playtest starting: server=127.0.0.1:14004 username=chopyield script=E:/veloren-master/bastion-test-evidence/script-chop-yield.txt ===
+[1786680152554] driver build=bbef73f9 built_at=1786645194 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,list_designations,survey,note,cmd
+[1786680152555] parsed 20 script commands
+[1786680155821] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/b79d6ac3-f6ac-4cff-a0c3-10b4661f2a86), name: "Veloren Server", git_hash: 4141969529, git_timestamp: 1786659425, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1786680155955] requested character join id=CharacterId(2)
+[1786680155956] in-game. entity=Entity(0, Generation(1))
+[1786680157956] player pos at script start: Vec3 { x: 16384.5, y: 16384.5, z: 400.0 }
+[1786680157956] [note] CHOP-YIELD: Y2/Y3 -- fell the arena cluster and COUNT THE WOOD.
+[1786680157956] [note] CHOP-YIELD: same designation rectangle the fell-set row used, derived from
+[1786680157956] [note] CHOP-YIELD: RESOURCED_TREES: centre (16384,16384), trunks at offsets
+[1786680157956] [note] CHOP-YIELD: (18,2)h5 (22,-3)h6 (25,4)h4 => absolute (16402,16386)
+[1786680157956] [note] CHOP-YIELD: (16406,16381) (16409,16388); rect x[16400,16411] y[16379,16390].
+[1786680157956] [note] CHOP-YIELD: colonists must FELL them, not merely resolve them, so this
+[1786680157956] [note] CHOP-YIELD: needs a real work window -- the base cut alone only converts a
+[1786680157956] [note] CHOP-YIELD: tree into a FellingTree; the drops rain down per Wood cell
+[1786680157956] [note] CHOP-YIELD: during the stagger that follows.
+[1786680157956] [note] CHOP-YIELD: Y2 PASS = 15 'chop yield dropped' lines total (5+6+4 Wood).
+[1786680157956] [note] CHOP-YIELD: Y3 PASS = 5, 6 and 4 grouped by trunk column, in some order.
+[1786680157956] [note] CHOP-YIELD: leaves (27 cells) must yield NOTHING -- 42 would mean the bar
+[1786680157956] [note] CHOP-YIELD: is counting everything felled rather than Wood.
+[1786680157956] sent BastionCameraAnchor at Vec3 { x: 16384.5, y: 16384.5, z: 400.0 }
+[1786680157956] sent BastionSpawnColony pos=Vec3 { x: 16384.5, y: 16384.5, z: 400.0 } count=8 targeted=true
+[1786680157989] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Founding colony: 8 settlers arriving.") }
+[1786680161913] waited 120 ticks -> sim 8.78..12.78 in 118 client spins; pos now Vec3 { x: 16384.504, y: 16384.5, z: 400.0 }
+[1786680161913] sent BastionPlaceDesignation kind=Chop region=Region { min: Vec3 { x: 16400, y: 16379, z: 400 }, max: Vec3 { x: 16411, y: 16390, z: 400 } }
+[1786680168825] [chat] GenericChatMsg { chat_type: NpcSay(Uid(3)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1786680168825] [chat] GenericChatMsg { chat_type: NpcSay(Uid(4)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1786680168825] [chat] GenericChatMsg { chat_type: NpcSay(Uid(7)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1786680172814] [chat] GenericChatMsg { chat_type: NpcSay(Uid(2)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1786680208450] [chat] GenericChatMsg { chat_type: NpcSay(Uid(7)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1786680223188] [chat] GenericChatMsg { chat_type: Npc(Uid(3)), content: Localized { key: "npc-speech-villager", seed: 9951, args: {} } }
+[1786680224785] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-villager", seed: 61805, args: {} } }
+[1786680234788] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-villager", seed: 31523, args: {} } }
+[1786680236421] [chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-villager", seed: 1755, args: {} } }
+[1786680250656] [chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-villager", seed: 6591, args: {} } }
+[1786680252289] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-villager", seed: 43087, args: {} } }
+[1786680259324] [chat] GenericChatMsg { chat_type: Npc(Uid(3)), content: Localized { key: "npc-speech-villager", seed: 31789, args: {} } }
+[1786680259990] [chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-villager", seed: 18506, args: {} } }
+[1786680286993] [chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-villager", seed: 25061, args: {} } }
+[1786680288627] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-villager", seed: 39236, args: {} } }
+[1786680292427] [chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-tell_monster", seed: 51287, args: {"body": Content(Localized { key: "noun-wendigo", seed: 2185, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 34277, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 40299, args: {} })} } }
+[1786680294061] [chat] GenericChatMsg { chat_type: Npc(Uid(3)), content: Localized { key: "npc-speech-villager", seed: 61901, args: {} } }
+[1786680297861] [chat] GenericChatMsg { chat_type: Npc(Uid(3)), content: Localized { key: "npc-speech-villager", seed: 41716, args: {} } }
+[1786680299494] [chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-tell_monster", seed: 47880, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 56263, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 10925, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 21430, args: {} })} } }
+[1786680314196] [chat] GenericChatMsg { chat_type: Npc(Uid(2)), content: Localized { key: "npc-speech-villager", seed: 63056, args: {} } }
+[1786680315829] [chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-villager", seed: 50772, args: {} } }
+[1786680323663] [chat] GenericChatMsg { chat_type: Npc(Uid(6)), content: Localized { key: "npc-speech-villager", seed: 62983, args: {} } }
+[1786680325297] [chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-tell_monster", seed: 20595, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 56259, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 33440, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 13084, args: {} })} } }
+[1786680328063] [chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-villager", seed: 64762, args: {} } }
+[1786680330664] [chat] GenericChatMsg { chat_type: NpcSay(Uid(2)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1786680340098] [chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-tell_monster", seed: 53633, args: {"dir": Content(Localized { key: "npc-speech-dir_north", seed: 37310, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 59041, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 26186, args: {} })} } }
+[1786680341731] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-tell_monster", seed: 13291, args: {"dir": Content(Localized { key: "npc-speech-dir_north", seed: 62151, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 30439, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 25669, args: {} })} } }
+[1786680345531] [chat] GenericChatMsg { chat_type: Npc(Uid(3)), content: Localized { key: "npc-speech-villager", seed: 12540, args: {} } }
+[1786680347165] [chat] GenericChatMsg { chat_type: Npc(Uid(2)), content: Localized { key: "npc-speech-tell_monster", seed: 13174, args: {"dir": Content(Localized { key: "npc-speech-dir_north", seed: 27773, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 2002, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 55140, args: {} })} } }
+[1786680357465] [chat] GenericChatMsg { chat_type: Npc(Uid(2)), content: Localized { key: "npc-speech-villager", seed: 29911, args: {} } }
+[1786680359099] [chat] GenericChatMsg { chat_type: Npc(Uid(6)), content: Localized { key: "npc-speech-villager", seed: 10089, args: {} } }
+[1786680359965] waited 6000 ticks -> sim 12.78..212.81 in 5941 client spins; pos now Vec3 { x: 16384.842, y: 16384.354, z: 400.0 }
+[1786680359966] designations (rev=3): [(Region { min: Vec3 { x: 16401, y: 16385, z: 400 }, max: Vec3 { x: 16403, y: 16387, z: 405 } }, Chop, None), (Region { min: Vec3 { x: 16405, y: 16380, z: 400 }, max: Vec3 { x: 16407, y: 16382, z: 406 } }, Chop, None), (Region { min: Vec3 { x: 16408, y: 16387, z: 400 }, max: Vec3 { x: 16410, y: 16389, z: 404 } }, Chop, None)]
+[1786680359966] [note] CHOP-YIELD: window closed
+[1786680359966] === script complete, disconnecting ===

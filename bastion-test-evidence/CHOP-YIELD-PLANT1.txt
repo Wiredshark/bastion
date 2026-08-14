@@ -1,0 +1,9 @@
+=== PLANT 1: leaves yield too (control: 15 total, 5/6/4 per column) ===
+  total yield drops : 42   (control 15; leaves add 27 => 42)
+  distinct columns  : 27   (control 3)
+  per-column counts :
+           7 x: 16406, y: 16381
+           6 x: 16402, y: 16386
+           5 x: 16409, y: 16388
+           1 x: 16410, y: 16389
+           1 x: 16410, y: 16388
