@@ -14541,6 +14541,38 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 *program_time,
                             );
                         }
+                        // H1 · THE HAUL WITNESS. Hauling had no emit at all,
+                        // which is why `food_stock`'s 6-vs-2 across
+                        // populations could only be a story.
+                        //
+                        // HERE, at LEG 2's item-transfer: leg 1 is the
+                        // pickup and completes nothing into a stockpile.
+                        // `food_stock` counts food ITEMS LYING IN A
+                        // STOCKPILE CELL, so this deposit is the exact
+                        // event that moves that number — instrumenting the
+                        // job's completion instead would have counted trips
+                        // including the ones that delivered nothing.
+                        //
+                        // `dropped` is the RETURN of the transfer, not the
+                        // job's intent: a haul that arrives carrying nothing
+                        // reports 0 and is visibly distinct from one that
+                        // delivered.
+                        // THE ITEM ID IS LOAD-BEARING, not decoration.
+                        // `deposit_all_of` deposits `required_item` — ANY
+                        // kind — while `food_stock` counts FOOD ONLY. A
+                        // witness without the id makes "do arrivals explain
+                        // the stock?" unanswerable: 95 deliveries against a
+                        // food stock of 54 compares two different
+                        // populations of thing. Found by running the bar
+                        // and reading a number that could not mean what it
+                        // had to mean.
+                        info!(
+                            job = active.job,
+                            item = ?job.required_item,
+                            dropped,
+                            dest = ?job.pos,
+                            "bastion: haul deposited"
+                        );
                         // Last read of `job` — it is dead after this,
                         // freeing `board` for the admission-ledger borrow.
                         // T1.15: remove_job (below) releases the reservation
