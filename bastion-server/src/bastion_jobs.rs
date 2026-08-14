@@ -785,6 +785,13 @@ fn grant_completion_xp(
 ) {
     if had_effect {
         skills.grant_xp(work, COMPLETION_XP);
+        // X1 · XP WITNESS at the SHARED site. F8-C3 named drop AND XP; the
+        // drop half closed with the chop yield, and an emit only at the chop
+        // grant would have left mine/build/haul XP exactly as unwitnessed as
+        // before. `wood` is absent here because this grant is unscaled — one
+        // completion, one flat award — which is itself the distinction the
+        // chop site's `wood=` field makes visible.
+        tracing::info!(work = ?work, xp = COMPLETION_XP, "bastion: xp granted");
     }
 }
 
@@ -14819,6 +14826,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 pos = ?job.pos,
                                 "bastion: gathered"
                             );
+                            // X1 · the third grant site. "gathered" already
+                            // emitted, but carried no XP amount — the award
+                            // was invisible in a line that looked complete.
+                            info!(work = ?job.work, xp = COMPLETION_XP, "bastion: xp granted");
                             board.remove_job(active.job);
                             to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
                         }
@@ -14925,10 +14936,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         && let Some(fell) = board.chop_fell_sets.remove(&active.job)
                     {
                         let done_pos = job.pos;
-                        colonist
-                            .0
-                            .skills
-                            .grant_xp(job.work, COMPLETION_XP * fell.wood_count as f32);
+                        // X1 · XP WITNESS (F8-C3's other half). The chop grant
+                        // is the only SCALED one: once per tree, at the base
+                        // cut, for the whole tree.
+                        //
+                        // `fell.wood_count` is the RIGHT source here, unlike
+                        // next door in the yield witness where it was refused.
+                        // XP is awarded per-tree at this instant and there is
+                        // no per-cell XP event to read back from — the tally
+                        // IS the quantity the game grants. Same value,
+                        // opposite verdicts, because the quantity differs.
+                        let xp = COMPLETION_XP * fell.wood_count as f32;
+                        colonist.0.skills.grant_xp(job.work, xp);
+                        info!(
+                            work = ?job.work,
+                            xp,
+                            wood = fell.wood_count,
+                            job = active.job,
+                            "bastion: xp granted"
+                        );
                         info!(
                             job = active.job,
                             base = ?done_pos,
