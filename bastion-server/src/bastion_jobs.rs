@@ -935,6 +935,66 @@ pub(crate) fn colony_terminal_should_fire(streak_after_increment: u32, threshold
 /// threshold". The sawtooth's whole content is the reset arm.
 ///
 /// The call site DELEGATES to this. There is no second copy.
+/// bastion (CLAIM-COLLAPSE row): why the claim loop refused, counted by reason.
+///
+/// The loop has TEN `continue` sites and nothing recorded which one fired, so a
+/// colonist holding no job was indistinguishable from a colonist refused for any
+/// of ten reasons — or from one never offered a candidate at all. The field
+/// sweep watched `jobs_claimed` go 6 → 0 after 19 material-blocked jobs landed
+/// and had no way to ask why.
+///
+/// TWO LEVELS, deliberately separate. `colonist_*` counters reject a WHOLE
+/// colonist before any job is looked at; the rest reject one job. A collapse
+/// with `considered == 0` is an upstream story (nobody was offered anything)
+/// and a collapse with large refusals is a filtering story — and those have
+/// different fixes, which is exactly why one number could not answer it.
+///
+/// CONSERVATION: `considered == eligible + <sum of the per-job reasons>`. The
+/// residual is asserted, not assumed, so a branch added later without a counter
+/// shows up as a broken sum rather than as a quietly wrong histogram.
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ClaimRefusalCensus {
+    // colonist-level (no candidate is ever considered)
+    pub colonists_seen: u32,
+    pub colonist_not_work: u32,
+    pub colonist_route_held: u32,
+    // job-level
+    pub considered: u32,
+    pub not_candidate: u32,
+    pub emergency_route: u32,
+    pub self_job_kind: u32,
+    pub affordance: u32,
+    pub descent_gated: u32,
+    pub materials: u32,
+    pub skill_floor: u32,
+    pub priority_zero: u32,
+    pub access_dist: u32,
+    pub eligible: u32,
+}
+
+impl ClaimRefusalCensus {
+    /// Sum of the per-job refusal buckets.
+    pub fn refused(&self) -> u32 {
+        self.not_candidate
+            + self.emergency_route
+            + self.self_job_kind
+            + self.affordance
+            + self.descent_gated
+            + self.materials
+            + self.skill_floor
+            + self.priority_zero
+            + self.access_dist
+    }
+
+    /// CONSERVATION: every considered candidate was either refused for a named
+    /// reason or reached scoring. A non-zero residual means the histogram has a
+    /// blind spot, and a histogram with a blind spot attributes the collapse to
+    /// whichever reason it happens to count.
+    pub fn residual(&self) -> i64 {
+        self.considered as i64 - self.eligible as i64 - self.refused() as i64
+    }
+}
+
 /// bastion (ARC 2 item 10): **THE ONE PRODUCER** of the colony's food stock.
 ///
 /// This number already decided something serious — `colony_terminal_step`
@@ -19448,7 +19508,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 .map(|(e, _, u, _)| (e, *u))
                 .collect();
         claim_order.sort_by_key(|(_, u)| u.0.get());
+        // CLAIM-COLLAPSE row: refusals counted by reason across this tick's
+        // whole claim pass. Declared here so it spans every colonist -- the
+        // question "why did claims go to zero" is about the PASS, not one
+        // colonist.
+        let mut census = ClaimRefusalCensus::default();
         for (entity, uid) in claim_order {
+            census.colonists_seen += 1;
             let uid = &uid;
             let (Some(colonist), Some(pos)) = (colonists.get(entity), positions.get(entity))
             else {
@@ -19502,12 +19568,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 .is_some_and(|a| a.current != comp::bastion::Drive::Work)
                 && !owns_emergency_access
             {
-                continue;
+                { census.colonist_not_work += 1; continue; }
             }
             if emergency_route_owner.is_some() && emergency_next_job.is_none() {
                 // Keep route members available to climb or take the next
                 // step; they must not wander off into unrelated work.
-                continue;
+                { census.colonist_route_held += 1; continue; }
             }
             // FARM (row 46) generalization: the colonist's carried-def
             // set — the claim branch below checks the JOB'S OWN
@@ -19529,6 +19595,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // top-down and dispersion shaping).
             let mut best: Option<(JobId, u8, f32)> = None;
             for id in board.decision_job_ids() {
+                census.considered += 1;
                 let job = &board.jobs[&id];
                 // The priority gate below is the ONLY consumer of
                 // `WorkPriorities`, and this is the filter that decides what
@@ -19536,16 +19603,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // documents why an EatFrom job (filed under WorkType::Haul)
                 // must never become a candidate.
                 if !job.is_claim_candidate() {
-                    continue;
+                    { census.not_candidate += 1; continue; }
                 }
                 let emergency_owner = board.emergency_access_jobs.get(&id).copied();
                 if let Some(route_owner) = emergency_route_owner {
                     if emergency_owner != Some(route_owner) || emergency_next_job != Some(id) {
-                        continue;
+                        { census.emergency_route += 1; continue; }
                     }
                 } else if emergency_owner.is_some() {
                     // Other colonists must not reserve rescue-critical steps.
-                    continue;
+                    { census.emergency_route += 1; continue; }
                 }
                 // GATHER deposit ruling: a DepositRun empties ONE specific
                 // colonist's bag — created pre-claimed; an orphan (claimant
@@ -19559,7 +19626,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         | common::bastion::JobKind::EatFrom { .. }
                         | common::bastion::JobKind::Despond { .. }
                 ) {
-                    continue;
+                    { census.self_job_kind += 1; continue; }
                 }
                 // B15 / FR12: a Mine cell is claimable only with a STANDABLE
                 // stance (⊆ exposed — access always qualifies; an ordinary cell
@@ -19601,11 +19668,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 if job.affordance != AffordanceClass::Untargeted
                     && !standable.contains_key(&id)
                 {
-                    continue;
+                    { census.affordance += 1; continue; }
                 }
                 // B5.8-E: held until return-access leads the descent.
                 if descent_gated.contains(&id) {
-                    continue;
+                    { census.descent_gated += 1; continue; }
                 }
                 // B6: a material job with nothing in hand is claimable IF a
                 // STOCKPILED loose item of the def is reservable (the fetch
@@ -19625,14 +19692,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 && !board.is_reserved(*iuid)
                         })
                 {
-                    continue;
+                    { census.materials += 1; continue; }
                 }
                 if colonist.0.skills.level_for(job.work) < job.skill_floor {
-                    continue;
+                    { census.skill_floor += 1; continue; }
                 }
                 let priority = colonist.0.work_priorities.get(job.work);
                 if priority == 0 {
-                    continue;
+                    { census.priority_zero += 1; continue; }
                 }
                 let dist = pos.0.distance(job.pos.map(|e| e as f32));
                 // B5.8: RESCUE access jobs are built by whoever is ON SITE —
@@ -19647,13 +19714,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // dig (>16 from all workers) → nobody-eligible → F3 prune →
                 // re-emit churn, the leg-C 108/432 stall.
                 if job.is_access && emergency_owner.is_some() && dist > 16.0 {
-                    continue;
+                    { census.access_dist += 1; continue; }
                 }
                 // …and vertical-access construction outranks ordinary work
                 // (a priority TIER, compared before score): the trapped
                 // colonist takes its own rescue rungs over re-claiming the
                 // unreachable job; a wall crew finishes the ladder before
                 // chasing the job on top.
+                census.eligible += 1;
                 let priority = if job.is_access || job.kind.is(DesignationKind::Ladder) {
                     priority.saturating_add(1)
                 } else {
@@ -19856,6 +19924,39 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let stance = standable.get(&job_id).copied().unwrap_or(Vec3::unit_z());
                 assignments.push((entity, job_id, stance));
             }
+        }
+        // CLAIM-COLLAPSE row: one line per cadence window, never per candidate
+        // -- ten sites across ~50 jobs and 8 colonists every tick would drown
+        // the log it lives in (the instrument must not become the thing it
+        // measures). Cadence fixed BEFORE the first leg, matching the existing
+        // heartbeat.
+        //
+        // `residual` is the conservation check, printed rather than assumed:
+        // considered - eligible - refused must be 0. A non-zero value means a
+        // `continue` exists that no counter sees, and a histogram with a blind
+        // spot blames whichever reason it does count.
+        if tick.0 % 300 == 0 {
+            info!(
+                tick = tick.0,
+                colonists_seen = census.colonists_seen,
+                colonist_not_work = census.colonist_not_work,
+                colonist_route_held = census.colonist_route_held,
+                considered = census.considered,
+                eligible = census.eligible,
+                refused = census.refused(),
+                residual = census.residual(),
+                assigned = assignments.len(),
+                not_candidate = census.not_candidate,
+                emergency_route = census.emergency_route,
+                self_job_kind = census.self_job_kind,
+                affordance = census.affordance,
+                descent_gated = census.descent_gated,
+                materials = census.materials,
+                skill_floor = census.skill_floor,
+                priority_zero = census.priority_zero,
+                access_dist = census.access_dist,
+                "bastion: claim refusal census"
+            );
         }
         for (entity, job_id, stance) in assignments {
             let _ = active_jobs.insert(entity, ActiveJob {
@@ -21242,6 +21343,46 @@ mod tests {
     /// else — if a future change ever releases a self-job into the selector,
     /// `haul 0` becomes a starvation command. Without the control this test
     /// would only be restating a constructor.
+    /// CLAIM-COLLAPSE row, C1. The refusal histogram is only worth reading if
+    /// it accounts for every candidate it looked at: a histogram with a blind
+    /// spot attributes a collapse to whichever reason it happens to count.
+    ///
+    /// This tests the CHECKER, not the loop — `residual()` must be zero when
+    /// the buckets add up and NON-ZERO when a branch goes uncounted. The loop's
+    /// own completeness is evidenced live by `residual=0` in the emit; that is
+    /// the half a unit test cannot reach.
+    #[test]
+    fn the_refusal_census_detects_its_own_blind_spot() {
+        // a pass where every considered candidate is accounted for
+        let good = ClaimRefusalCensus {
+            considered: 10,
+            eligible: 3,
+            not_candidate: 4,
+            materials: 2,
+            priority_zero: 1,
+            ..Default::default()
+        };
+        assert_eq!(good.refused(), 7, "refused() must sum the named buckets");
+        assert_eq!(
+            good.residual(),
+            0,
+            "a fully-accounted pass must conserve: considered - eligible - refused == 0"
+        );
+
+        // MATCHED CONTROL: the SAME pass with one refusal left uncounted --
+        // exactly what deleting a `census.x += 1` at a `continue` would do.
+        let blind = ClaimRefusalCensus {
+            materials: 1,
+            ..good
+        };
+        assert_eq!(
+            blind.residual(),
+            1,
+            "an uncounted branch must surface as a non-zero residual, not as a \
+             quietly smaller bucket"
+        );
+    }
+
     #[test]
     fn an_eat_job_is_invisible_to_the_work_priority_gate() {
         let mut board = JobBoard::default();
