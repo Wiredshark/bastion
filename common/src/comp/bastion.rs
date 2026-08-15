@@ -632,6 +632,21 @@ pub struct BastionColonyInspect {
     pub jobs_unreachable: u32,
     /// Standing designation orders.
     pub designations: u32,
+    /// bastion (BLOCKED-MATERIALS row): jobs waiting on a material **nobody
+    /// can supply** — not carried by any colonist and not fetchable from a
+    /// stockpile.
+    ///
+    /// This is the number that explains an idle colony. The claim-collapse row
+    /// measured a state where all 8 colonists were in Work drive, all 54 jobs
+    /// were refused at the material gate, and the dashboard reported
+    /// `jobs_claimed=0, jobs_unreachable=0` — a screen that was entirely true
+    /// and explained nothing.
+    ///
+    /// **Counted PER JOB.** The selector's refusal count is per
+    /// (job, colonist) pair — 54 jobs × 8 colonists was 432 — and shipping
+    /// that would report candidate-evaluations as though they were jobs.
+    #[serde(default)]
+    pub jobs_blocked_materials: u32,
 }
 
 /// bastion (UI-5): a job / designation-in-progress debug view. The claimant

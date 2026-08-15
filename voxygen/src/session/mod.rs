@@ -1219,6 +1219,8 @@ impl SessionState {
                             c.jobs_total, c.jobs_claimed, c.jobs_unreachable
                         ),
                         format!("Standing orders: {}", c.designations),
+                        // The line that answers "why is nothing happening".
+                        format!("Waiting on materials: {} job(s)", c.jobs_blocked_materials),
                     ],
                     Kind::Colonist(p) => {
                         let mut traits: Vec<&str> = Vec::new();

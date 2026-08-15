@@ -995,6 +995,35 @@ impl ClaimRefusalCensus {
     }
 }
 
+/// bastion (BLOCKED-MATERIALS row): is a material of `def` AVAILABLE to fetch —
+/// lying in a stockpile and not already reserved?
+///
+/// This is the "fetch leg" half of the claim gate's material test, extracted so
+/// the colony dashboard's blocked-job count and the gate itself read **one
+/// rule**. They must agree by construction: a dashboard that said "nothing is
+/// blocked" while the selector refused every job for materials would be worse
+/// than no dashboard at all.
+///
+/// NOTE the asymmetry, which is why only this half is shared: the gate's other
+/// term is `carried_defs`, and in the claim loop that set is ONE COLONIST'S
+/// hands. The colony-level equivalent already exists as `Job::needs_materials`
+/// (recomputed per cycle from a colony-wide carried set), so the dashboard
+/// composes `needs_materials && !stockpile_has_material(..)` rather than
+/// re-deriving either half.
+pub fn stockpile_has_material<'a>(
+    def: &str,
+    items: impl IntoIterator<Item = (&'a PickupItem, &'a comp::Pos, &'a Uid)>,
+    board: &JobBoard,
+) -> bool {
+    items.into_iter().any(|(pi, ipos, iuid)| {
+        pi.item().item_definition_id().itemdef_id() == Some(def)
+            && board
+                .stockpile_at(ipos.0.map(|e| e.floor() as i32))
+                .is_some()
+            && !board.is_reserved(*iuid)
+    })
+}
+
 /// bastion (ARC 2 item 10): **THE ONE PRODUCER** of the colony's food stock.
 ///
 /// This number already decided something serious — `colony_terminal_step`
@@ -19682,15 +19711,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 if let Some(req) = job.required_item
                     && !carried_defs.contains(req)
                     && !matches!(job.kind, common::bastion::JobKind::Haul { .. })
-                    && !(&pickup_items, &positions, &uids)
-                        .join()
-                        .any(|(pi, ipos, iuid)| {
-                            pi.item().item_definition_id().itemdef_id() == Some(req)
-                                && board
-                                    .stockpile_at(ipos.0.map(|e| e.floor() as i32))
-                                    .is_some()
-                                && !board.is_reserved(*iuid)
-                        })
+                    && !stockpile_has_material(
+                        req,
+                        (&pickup_items, &positions, &uids).join(),
+                        &board,
+                    )
                 {
                     { census.materials += 1; continue; }
                 }

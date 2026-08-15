@@ -883,6 +883,7 @@ impl<'a> System<'a> for Sys {
             // UI-5 (row 62.2): dropped-item entities — a stockpile cell's
             // contents are summed from these in the same post-join drain.
             ReadStorage<'a, common::comp::PickupItem>,
+            ReadStorage<'a, common::uid::Uid>,
             // STATUS-SURFACE: energy meter + the tick for status-stamp TTL.
             ReadStorage<'a, common::comp::Energy>,
             specs::Read<'a, crate::Tick>,
@@ -937,6 +938,7 @@ impl<'a> System<'a> for Sys {
                 insp_arbiters,
                 insp_rtsim_entities,
                 insp_pickup_items,
+                insp_uids,
                 insp_energies,
                 insp_tick,
                 insp_active_jobs,
@@ -1722,6 +1724,34 @@ impl<'a> System<'a> for Sys {
                                         .filter(|j| j.unreachable)
                                         .count()
                                         as u32;
+                                    // BLOCKED-MATERIALS row: per JOB, never per
+                                    // (job, colonist) pair. `needs_materials`
+                                    // is the colony-wide "nobody carries it"
+                                    // flag the board already maintains;
+                                    // `stockpile_has_material` is the SAME
+                                    // fetch-leg rule the claim gate uses, so
+                                    // the dashboard cannot disagree with the
+                                    // selector about what is blocked.
+                                    let jobs_blocked_materials = job_board
+                                        .jobs
+                                        .values()
+                                        .filter(|j| {
+                                            j.needs_materials
+                                                && !matches!(
+                                                    j.kind,
+                                                    common::bastion::JobKind::Haul { .. }
+                                                )
+                                                && j.required_item.is_some_and(|req| {
+                                                    !crate::bastion_jobs::stockpile_has_material(
+                                                        req,
+                                                        (&insp_pickup_items, &positions, &insp_uids)
+                                                            .join(),
+                                                        &job_board,
+                                                    )
+                                                })
+                                        })
+                                        .count()
+                                        as u32;
                                     Some(BastionInspectKind::Colony(
                                         common::comp::bastion::BastionColonyInspect {
                                             colonists,
@@ -1730,6 +1760,7 @@ impl<'a> System<'a> for Sys {
                                             jobs_claimed,
                                             jobs_unreachable,
                                             designations: job_board.designated_regions().count() as u32,
+                                            jobs_blocked_materials,
                                         },
                                     ))
                                 },

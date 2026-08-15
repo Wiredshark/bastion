@@ -698,13 +698,19 @@ fn main() {
                 match got {
                     Some(Some(common::comp::bastion::BastionInspectKind::Colony(c))) => {
                         log.log(&format!(
-                            "COLONY colonists={} food_stock={} jobs_total={} jobs_claimed={}                              jobs_unreachable={} designations={}",
+                            // blocked_materials printed ALWAYS: a field the
+                            // logger omits is indistinguishable from a field
+                            // the server never sent, and this session has hit
+                            // that exact shape three times (ownership,
+                            // mood_explanation, and this one).
+                            "COLONY colonists={} food_stock={} jobs_total={} jobs_claimed={} jobs_unreachable={} designations={} blocked_materials={}",
                             c.colonists,
                             c.food_stock,
                             c.jobs_total,
                             c.jobs_claimed,
                             c.jobs_unreachable,
-                            c.designations
+                            c.designations,
+                            c.jobs_blocked_materials
                         ));
                     },
                     Some(other) => log.log(&format!("COLONY WRONG-KIND {other:?}")),
