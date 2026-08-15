@@ -125,6 +125,7 @@ enum ScriptCmd {
     InspectCell(Vec3<i32>),
     InspectColonists,
     InspectColony,
+    CountItems,
     ListDesignations,
     Survey {
         x0: i32,
@@ -163,6 +164,19 @@ fn await_designation_rev(client: &mut Client, clock: &mut Clock, rev_before: u64
         }
     }
     false
+}
+
+/// DROP WITNESS row: how many loose `PickupItem` entities the CLIENT can see.
+///
+/// `PickupItem` is a synced component (`impl NetSync for PickupItem`), so a
+/// dropped item is observable from here. `dropall` emits no chat reply and was
+/// therefore treated as unobservable -- but the observable was an ENTITY, not a
+/// message.
+fn count_pickup_items(client: &Client) -> usize {
+    use specs::Join;
+    let ecs = client.state().ecs();
+    let items = ecs.read_storage::<comp::PickupItem>();
+    (&items).join().count()
 }
 
 fn parse_kind(s: &str) -> Option<DesignationKind> {
@@ -216,6 +230,7 @@ pub const SCRIPT_VERBS: &[&str] = &[
     "inspect_cell",
     "inspect_colonists",
     "inspect_colony",
+    "count_items",
     "list_designations",
     "survey",
     "note",
@@ -282,6 +297,7 @@ fn parse_script_text(text: &str) -> Vec<ScriptCmd> {
             },
             "inspect_colonists" => ScriptCmd::InspectColonists,
             "inspect_colony" => ScriptCmd::InspectColony,
+            "count_items" => ScriptCmd::CountItems,
             "list_designations" => ScriptCmd::ListDesignations,
             "survey" => {
                 let n: Vec<i32> = rest.iter().map(|p| p.parse().unwrap()).collect();
@@ -716,6 +732,29 @@ fn main() {
                 }
                 log.log(&format!("inspect_colonists -> {found} colonist payload(s)"));
             },
+            ScriptCmd::CountItems => {
+                use specs::Join;
+                let ecs = client.state().ecs();
+                let items = ecs.read_storage::<comp::PickupItem>();
+                let positions = ecs.read_storage::<comp::Pos>();
+                let mut lines: Vec<String> = Vec::new();
+                for (item, pos) in (&items, &positions).join() {
+                    lines.push(format!(
+                        "{}@({:.1},{:.1},{:.1})",
+                        item.item()
+                            .item_definition_id()
+                            .itemdef_id()
+                            .unwrap_or("?"),
+                        pos.0.x,
+                        pos.0.y,
+                        pos.0.z
+                    ));
+                }
+                let n = lines.len();
+                drop(items);
+                drop(positions);
+                log.log(&format!("ITEMS count={n} {}", lines.join(" ")));
+            },
             ScriptCmd::InspectColony => {
                 // ARC 2 item 10. Same protocol, same reply-matching
                 // discipline as inspect_colonists -- the single-slot API
@@ -825,6 +864,7 @@ fn main() {
             },
             ScriptCmd::Cmd(name, cmd_args) => {
                 log.log(&format!("sent chat command /{name} {cmd_args:?}"));
+                let watch_items = name == "dropall";
                 client.send_command(name, cmd_args);
                 // ACK BARRIER: spin until the server's chat reply for THIS
                 // command arrives, instead of a single speculative tick.
@@ -833,8 +873,21 @@ fn main() {
                 // AFTER the following `dropall` had already been sent, so the
                 // drop emptied an inventory that had not yet received the
                 // items -- and the run reported "the drop produced nothing".
+                // DROP WITNESS row: `dropall` emits NO chat reply, so the
+                // chat barrier below can never observe it. Its real effect is
+                // ENTITIES appearing, and PickupItem is synced -- so for that
+                // one command the barrier watches the item count instead.
+                let items_before = count_pickup_items(&client);
                 let mut acked = false;
                 for _ in 0..ACK_SPIN_CAP {
+                    if watch_items && count_pickup_items(&client) > items_before {
+                        acked = true;
+                        log.log(&format!(
+                            "dropall witnessed: items {items_before} -> {}",
+                            count_pickup_items(&client)
+                        ));
+                        break;
+                    }
                     match client.tick(comp::ControllerInputs::default(), clock.game_dt()) {
                         Ok(events) => {
                             for event in events {
@@ -910,6 +963,7 @@ mod tests {
                 "note" => "note hello".into(),
                 "inspect_colonists" => "inspect_colonists".into(),
                 "inspect_colony" => "inspect_colony".into(),
+                "count_items" => "count_items".into(),
                 "cmd" => "cmd dropall".into(),
                 other => panic!(
                     "SCRIPT_VERBS lists `{other}` but this test has no sample line for it -- \
