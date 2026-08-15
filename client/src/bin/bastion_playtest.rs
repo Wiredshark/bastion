@@ -646,9 +646,17 @@ fn main() {
                         // diff FIELDS between two samples rather than eyeball
                         // a Debug blob.
                         log.log(&format!(
+                            // `ownership` and `mood_explanation` are logged as
+                            // PRESENT/ABSENT rather than in full: the server
+                            // builds both as Some(..), so the question this
+                            // line has to answer is whether they arrive at
+                            // all. Their absence from this format is what let
+                            // me report "they were None" about fields I had
+                            // never looked at -- silence in a log is evidence
+                            // about the LOGGER, not about the field.
                             "INSPECT uid={} name={} hunger={:.4} rest={:.4} recreation={:.4} \
                              energy={:.4} mood={:.4} drive={:?} scores={:?} activity={:?} \
-                             status={:?}",
+                             status={:?} ownership={} mood_expl={}",
                             uid.0,
                             p.name,
                             p.hunger,
@@ -659,7 +667,13 @@ fn main() {
                             p.drive,
                             p.last_scores,
                             p.activity,
-                            p.status
+                            p.status,
+                            if p.ownership.is_some() { "SOME" } else { "NONE" },
+                            if p.mood_explanation.is_some() {
+                                "SOME"
+                            } else {
+                                "NONE"
+                            }
                         ));
                     }
                 }
