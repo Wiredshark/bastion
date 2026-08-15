@@ -86,13 +86,55 @@ pub const RESOURCED_OUTCROP_HEIGHT: i32 = 3;
 /// nearby" never contend for the same columns.
 pub const RESOURCED_CLEAR_RADIUS: i32 = 12;
 
+/// bastion (VERTICAL-FIXTURE): half-width of the MINE PIT — the
+/// depression excavated around the outcrop when the pit variant is on.
+/// Wider than [`RESOURCED_OUTCROP_HALF_WIDTH`] so the outcrop sits on the
+/// pit FLOOR with clear ground around it, rather than wedged against a
+/// wall where a miner could never stand beside it.
+pub const PIT_HALF_WIDTH: i32 = 5;
+
+/// bastion (VERTICAL-FIXTURE): the pit's depth in blocks when enabled.
+///
+/// WHY A PIT AND NOT A TALLER OUTCROP. `BastionColonistStatus::RestingToClimb`
+/// is written inside the EMERGENCY EGRESS machinery, gated on
+/// `grounded_clear && !route_energy_ready` — it is not "a colonist climbing
+/// a hill", it is a colonist STUCK on an escape route and too tired to get
+/// out. The status surface's own doc calls these "the four indistinguishable
+/// PIT states". Height produces no escape route; a depression does.
+pub const PIT_DEPTH: i32 = 4;
+
+/// bastion (VERTICAL-FIXTURE): the pit variant's depth, or 0 when off.
+///
+/// A VARIANT OF A VARIANT, gated exactly like [`resourced`]: false unless
+/// the resourced arena is itself on, so the pit can never half-apply to a
+/// normal world or to the bare slab.
+pub fn pit_depth() -> i32 {
+    static ON: OnceLock<bool> = OnceLock::new();
+    let on = *ON.get_or_init(|| {
+        resourced() && std::env::var("BASTION_FLAT_ARENA_PIT").is_ok_and(|v| v != "0")
+    });
+    if on { PIT_DEPTH } else { 0 }
+}
+
 /// THE FEATURE SET, as absolute world cells — pure, so the layout can be
 /// asserted without generating a chunk.
 ///
-/// Every cell sits at or above [`FLAT_ARENA_Z`] (the slab's first air
-/// cell), i.e. ON the ground rather than in it: a tree's trunk starts
-/// where a colonist's feet would.
+/// With `pit_depth == 0` every cell sits at or above [`FLAT_ARENA_Z`] (the
+/// slab's first air cell), i.e. ON the ground rather than in it: a tree's
+/// trunk starts where a colonist's feet would.
 pub fn resourced_feature_cells(center_wpos: Vec2<u32>) -> Vec<(Vec3<i32>, Block)> {
+    resourced_feature_cells_with_pit(center_wpos, pit_depth())
+}
+
+/// The pure form, with the pit depth PASSED IN rather than read from the
+/// environment — so both the flat invariant (`pit_depth == 0`, features sit
+/// on the slab) and the pit invariant (`> 0`, the outcrop sits on the pit
+/// floor) are assertable in one test binary, with no env manipulation and
+/// no `OnceLock` that a second test would inherit.
+pub fn resourced_feature_cells_with_pit(
+    center_wpos: Vec2<u32>,
+    pit_depth: i32,
+) -> Vec<(Vec3<i32>, Block)> {
     let centre = center_wpos.map(|e| e as i32);
     let mut cells = Vec::new();
 
@@ -122,11 +164,38 @@ pub fn resourced_feature_cells(center_wpos: Vec2<u32>) -> Vec<(Vec3<i32>, Block)
 
     // MINE: a solid rock outcrop.
     let outcrop = centre + RESOURCED_OUTCROP_OFFSET;
+
+    // THE PIT, EXCAVATED FIRST. Emitted BEFORE the outcrop because
+    // `apply_resourced_features` applies cells in order via `chunk.set`, so
+    // a later solid cell overwrites this air — the outcrop is carved back
+    // in below, and the ordering is what keeps it solid.
+    //
+    // THE OUTCROP GOES IN THE PIT, rather than the pit going somewhere
+    // else, because a fixture only fires if the colony has a REASON to
+    // enter it. A depression beside the work is a hole colonists path
+    // around; a depression CONTAINING the only mine work is one a miner
+    // must descend into and then escape — which is the emergency-egress
+    // scenario `RestingToClimb` is written from.
+    for dz in -pit_depth..0 {
+        for dy in -PIT_HALF_WIDTH..=PIT_HALF_WIDTH {
+            for dx in -PIT_HALF_WIDTH..=PIT_HALF_WIDTH {
+                cells.push((
+                    Vec3::new(outcrop.x + dx, outcrop.y + dy, FLAT_ARENA_Z + dz),
+                    Block::air(SpriteKind::Empty),
+                ));
+            }
+        }
+    }
+
+    // The outcrop stands on the pit FLOOR (`-pit_depth`), so it is still a
+    // solid minable column and still 3 blocks tall — the mine work is
+    // unchanged, only its elevation is. With `pit_depth == 0` this is
+    // exactly the original expression.
     for z in 0..RESOURCED_OUTCROP_HEIGHT {
         for dy in -RESOURCED_OUTCROP_HALF_WIDTH..=RESOURCED_OUTCROP_HALF_WIDTH {
             for dx in -RESOURCED_OUTCROP_HALF_WIDTH..=RESOURCED_OUTCROP_HALF_WIDTH {
                 cells.push((
-                    Vec3::new(outcrop.x + dx, outcrop.y + dy, FLAT_ARENA_Z + z),
+                    Vec3::new(outcrop.x + dx, outcrop.y + dy, FLAT_ARENA_Z - pit_depth + z),
                     Block::new(BlockKind::Rock, Rgb::new(94, 94, 98)),
                 ));
             }
@@ -238,6 +307,59 @@ mod tests {
     /// stand-in for `world.get_center()`.
     const CENTRE: Vec2<u32> = Vec2::new(15216, 16016);
 
+    /// VERTICAL-FIXTURE: with the pit on, the outcrop sits on the pit
+    /// FLOOR and the excavation reaches full depth — the two facts the
+    /// fixture's whole premise rests on, asserted without a chunk, a
+    /// server, or an env var.
+    ///
+    /// The pit must be DEEPER than the outcrop is tall, or a miner could
+    /// simply walk up its own work and out; that is asserted here rather
+    /// than left as a comment, because it is the difference between a
+    /// depression a colonist must escape and a ramp.
+    #[test]
+    fn pit_variant_puts_the_outcrop_on_the_pit_floor() {
+        let flat = resourced_feature_cells_with_pit(CENTRE, 0);
+        let pit = resourced_feature_cells_with_pit(CENTRE, PIT_DEPTH);
+
+        let lowest_rock = |cells: &[(Vec3<i32>, Block)]| {
+            cells
+                .iter()
+                .filter(|(_, b)| b.kind() == BlockKind::Rock)
+                .map(|(p, _)| p.z)
+                .min()
+                .expect("the arena must place mine work")
+        };
+        assert_eq!(lowest_rock(&flat), FLAT_ARENA_Z, "flat: outcrop on the slab");
+        assert_eq!(
+            lowest_rock(&pit),
+            FLAT_ARENA_Z - PIT_DEPTH,
+            "pit: the outcrop must stand on the pit floor, not float at slab level"
+        );
+
+        // The excavation reaches the floor and is wider than the outcrop.
+        let deepest_air = pit
+            .iter()
+            .filter(|(_, b)| b.is_air())
+            .map(|(p, _)| p.z)
+            .min()
+            .expect("the pit variant must excavate");
+        assert_eq!(deepest_air, FLAT_ARENA_Z - PIT_DEPTH);
+        assert!(
+            PIT_HALF_WIDTH > RESOURCED_OUTCROP_HALF_WIDTH,
+            "a miner needs floor to stand on beside the outcrop"
+        );
+        assert!(
+            PIT_DEPTH > RESOURCED_OUTCROP_HEIGHT,
+            "a pit no deeper than the outcrop is tall is a ramp, not a pit"
+        );
+
+        // And the flat arm excavates NOTHING — the control is a control.
+        assert!(
+            !flat.iter().any(|(_, b)| b.is_air()),
+            "pit_depth = 0 must leave the slab untouched"
+        );
+    }
+
     /// §2's core property: the SAME LAYOUT EVERY RUN. Nothing here is
     /// seeded, sampled, or ordered by a hash — so two calls are equal
     /// element-for-element, and a run's terrain can never be the
@@ -296,7 +418,11 @@ mod tests {
     /// never buried in it: a trunk starts where a colonist's feet would.
     #[test]
     fn resourced_features_sit_on_the_slab_not_in_it() {
-        for (wpos, _) in resourced_feature_cells(CENTRE) {
+        // Pinned to the pure form at depth 0: the invariant is a property of
+        // the UNPITTED arena, and reading it through the env-gated wrapper
+        // would make this test's meaning depend on a process-wide `OnceLock`
+        // that any other test could have set first.
+        for (wpos, _) in resourced_feature_cells_with_pit(CENTRE, 0) {
             assert!(
                 wpos.z >= FLAT_ARENA_Z,
                 "feature cell at z={} is inside the slab (first air is {})",
