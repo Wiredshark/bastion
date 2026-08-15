@@ -74,6 +74,9 @@ const NOMINAL_TPS: f64 = TPS as f64;
 // VOID; `WAIT_SPIN_CAP_MULTIPLIER` stays underneath as a cheap absolute
 // ceiling for whatever this somehow misses.
 const WAIT_SPIN_CAP_MULTIPLIER: u64 = 20;
+// ACK BARRIER: bound on waiting for a command acknowledgement. Generous --
+// it exists to stop an unbounded hang, not to time the server.
+const ACK_SPIN_CAP: u32 = 600;
 
 fn ts() -> u128 {
     SystemTime::now()
@@ -141,6 +144,25 @@ enum ScriptCmd {
     // role (`server-cli admin add <user> admin`), same as any other
     // admin-gated command.
     Cmd(String, Vec<String>),
+}
+
+/// ACK BARRIER (ack-barrier row): tick until the server's designation
+/// revision moves off `rev_before`, or the bound expires.
+///
+/// Returns whether the transition was OBSERVED. A timeout is reported by the
+/// caller as `ACK-TIMEOUT` and never as silence -- an unobserved ack and a
+/// fast one must not render identically, which is the same rule the inspect
+/// reply-matching had to learn.
+fn await_designation_rev(client: &mut Client, clock: &mut Clock, rev_before: u64) -> bool {
+    for _ in 0..ACK_SPIN_CAP {
+        let _ = client.tick(comp::ControllerInputs::default(), clock.game_dt());
+        client.cleanup();
+        clock.tick();
+        if client.bastion_designations_rev() != rev_before {
+            return true;
+        }
+    }
+    false
 }
 
 fn parse_kind(s: &str) -> Option<DesignationKind> {
@@ -571,8 +593,23 @@ fn main() {
                 ));
             },
             ScriptCmd::Designate(kind, region) => {
+                // ACK BARRIER: return only once the server's designation
+                // revision has actually moved. `bastion_designations_rev`
+                // bumps on any change (its own doc comment), so it is the
+                // acknowledgement -- and nothing consumed it as one before.
+                //
+                // Sampling 87ms after SENDING a designation read the OLD
+                // count and looked exactly like a refusal. A guess that is
+                // too short does not error; it reads as a result.
+                let rev_before = client.bastion_designations_rev();
                 client.bastion_place_designation(region, kind, None);
                 log.log(&format!("sent BastionPlaceDesignation kind={kind:?} region={region:?}"));
+                let acked = await_designation_rev(&mut client, &mut clock, rev_before);
+                log.log(&format!(
+                    "designate ACK rev {rev_before} -> {} ({})",
+                    client.bastion_designations_rev(),
+                    if acked { "observed" } else { "ACK-TIMEOUT" }
+                ));
             },
             ScriptCmd::Cancel(region) => {
                 client.bastion_cancel_designation(region);
@@ -789,19 +826,52 @@ fn main() {
             ScriptCmd::Cmd(name, cmd_args) => {
                 log.log(&format!("sent chat command /{name} {cmd_args:?}"));
                 client.send_command(name, cmd_args);
-                // One tick round-trip so the resulting chat feedback (or
-                // error) lands in the log before the next script line.
-                match client.tick(comp::ControllerInputs::default(), clock.game_dt()) {
-                    Ok(events) => {
-                        for event in events {
-                            if let Event::Chat(m) = &event {
-                                log.log(&format!("[chat] {m:?}"));
+                // ACK BARRIER: spin until the server's chat reply for THIS
+                // command arrives, instead of a single speculative tick.
+                //
+                // One tick was not enough: `give_item` was acknowledged 660ms
+                // AFTER the following `dropall` had already been sent, so the
+                // drop emptied an inventory that had not yet received the
+                // items -- and the run reported "the drop produced nothing".
+                let mut acked = false;
+                for _ in 0..ACK_SPIN_CAP {
+                    match client.tick(comp::ControllerInputs::default(), clock.game_dt()) {
+                        Ok(events) => {
+                            for event in events {
+                                if let Event::Chat(m) = &event {
+                                    log.log(&format!("[chat] {m:?}"));
+                                    // Any CommandInfo/CommandError is the
+                                    // server having PROCESSED the command --
+                                    // success and refusal both count, because
+                                    // the barrier is about ordering, not
+                                    // about the command succeeding.
+                                    if matches!(
+                                        m.chat_type,
+                                        comp::ChatType::CommandInfo
+                                            | comp::ChatType::CommandError
+                                    ) {
+                                        acked = true;
+                                    }
+                                }
                             }
-                        }
-                    },
-                    Err(e) => {
-                        log.log(&format!("tick error after cmd: {e:?}"));
-                    },
+                        },
+                        Err(e) => {
+                            log.log(&format!("tick error after cmd: {e:?}"));
+                        },
+                    }
+                    client.cleanup();
+                    clock.tick();
+                    if acked {
+                        break;
+                    }
+                }
+                log.log(&format!(
+                    "cmd ACK {}",
+                    if acked { "observed" } else { "ACK-TIMEOUT" }
+                ));
+                match Ok::<Vec<Event>, ()>(Vec::new()) {
+                    Ok(_events) => {},
+                    Err(()) => {},
                 }
                 client.cleanup();
                 clock.tick();
