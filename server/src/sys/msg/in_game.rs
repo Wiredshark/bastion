@@ -838,6 +838,12 @@ impl<'a> System<'a> for Sys {
             Read<'a, DeltaTime>,
             Read<'a, Settings>,
             Read<'a, AreasContainer<BuildArea>>,
+            // COLONY-TICK row: stamps `BastionColonyInspect::tick`. This is
+            // `crate::Tick` (re-exported from bastion-server), the SAME
+            // resource the `bastion F3-BRANCH` emit stamps -- so a colony
+            // sample and a branch transition can be placed on one timeline.
+            // A parallel clock would align plausibly and wrongly.
+            Read<'a, crate::Tick>,
         ),
         ReadStorage<'a, CanBuild>,
         WriteStorage<'a, ForceUpdate>,
@@ -903,7 +909,7 @@ impl<'a> System<'a> for Sys {
             entities,
             events,
             (terrain, slow_jobs, editable_settings, semantic_metrics, cohort_registry, cohort_metrics),
-            (id_maps, dt, settings, build_areas),
+            (id_maps, dt, settings, build_areas, bastion_tick),
             can_build,
             mut force_updates,
             is_rider,
@@ -1761,6 +1767,7 @@ impl<'a> System<'a> for Sys {
                                             jobs_unreachable,
                                             designations: job_board.designated_regions().count() as u32,
                                             jobs_blocked_materials,
+                                            tick: bastion_tick.0,
                                         },
                                     ))
                                 },

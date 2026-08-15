@@ -779,7 +779,8 @@ fn main() {
                             // the server never sent, and this session has hit
                             // that exact shape three times (ownership,
                             // mood_explanation, and this one).
-                            "COLONY colonists={} food_stock={} jobs_total={} jobs_claimed={} jobs_unreachable={} designations={} blocked_materials={}",
+                            "COLONY tick={} colonists={} food_stock={} jobs_total={} jobs_claimed={} jobs_unreachable={} designations={} blocked_materials={}",
+                            c.tick,
                             c.colonists,
                             c.food_stock,
                             c.jobs_total,

@@ -647,6 +647,25 @@ pub struct BastionColonyInspect {
     /// that would report candidate-evaluations as though they were jobs.
     #[serde(default)]
     pub jobs_blocked_materials: u32,
+    /// bastion (COLONY-TICK row): the server `Tick` this sample was taken at.
+    ///
+    /// WHY: every other field here is a QUANTITY with no TIME. The blind-spot
+    /// row could establish that `jobs_blocked_materials` moved, and could
+    /// establish when the F3 branch chain was blind, but could not say whether
+    /// any sample fell INSIDE a blind window — because the branch emit is
+    /// ticked (server log) and this payload was not (driver log). Two series
+    /// that cannot be aligned answer no question that spans them.
+    ///
+    /// THE SAME CLOCK, NOT A PARALLEL ONE: this is `crate::Tick` — the very
+    /// resource `bastion F3-BRANCH` stamps (`bastion_jobs.rs`, `Read<'a,
+    /// Tick>`), re-exported through `veloren-server`. A second clock that
+    /// merely also counts up would make the alignment look sound and be wrong.
+    ///
+    /// Tail-appended with `serde(default)` per the wire discipline the sibling
+    /// inspect struct already documents: an older client decodes 0 rather than
+    /// failing, and 0 is distinguishable from any real post-boot tick.
+    #[serde(default)]
+    pub tick: u64,
 }
 
 /// bastion (UI-5): a job / designation-in-progress debug view. The claimant
