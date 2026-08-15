@@ -949,7 +949,7 @@ pub(crate) fn colony_terminal_should_fire(streak_after_increment: u32, threshold
 /// `FOOD_DEFS`-matching pickup items **that lie inside a stockpile region** —
 /// the same population `EatFrom` actually draws from, deliberately NOT "every
 /// item in a pile". Callers pass the join; the RULE lives here.
-pub(crate) fn colony_food_stock<'a>(
+pub fn colony_food_stock<'a>(
     items: impl IntoIterator<Item = (&'a PickupItem, &'a comp::Pos)>,
     board: &JobBoard,
 ) -> u32 {
