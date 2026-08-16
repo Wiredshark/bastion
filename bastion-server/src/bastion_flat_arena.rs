@@ -101,7 +101,58 @@ pub const PIT_HALF_WIDTH: i32 = 5;
 /// a hill", it is a colonist STUCK on an escape route and too tired to get
 /// out. The status surface's own doc calls these "the four indistinguishable
 /// PIT states". Height produces no escape route; a depression does.
+/// ⚠ MEASURED 2026-08-16: THIS PIT NEVER TRAPS ANYONE, and the reasoning
+/// above — sound about the MACHINERY — never checked the DETECTOR.
+/// `egress_scan_with` accepts any ring surface with
+/// `s >= feet.z - 4 && s <= feet.z + reach - 1`, so a 4-deep floor is inside
+/// its own "level-or-lower surfaces COUNT as egress (hop down)" band; and at
+/// [`PIT_HALF_WIDTH`] `= 5` the pit is 10 across, past the scan's documented
+/// ">7 across evades this local test" limit. Four rows chased `status`
+/// reading `None` before the read found this (EGRESS-ENTRY-READ.md). The
+/// replacement geometry is [`SHAFT_DEPTH`]/[`SHAFT_HALF_WIDTH`] below; the
+/// pit constants are LEFT UNCHANGED so every committed pit-arm result stays
+/// reproducible.
 pub const PIT_DEPTH: i32 = 4;
+
+/// bastion (SHAFT-FIXTURE): the shaft variant's depth — the geometry the
+/// egress detector's own arithmetic requires for a TRAP.
+///
+/// `reach = cap_for_skill(0) = 3` for a novice, so a rim is standable at
+/// `feet.z + 2` or lower. At 8 deep the rim is 6 blocks above that, and 8
+/// is also outside the `feet.z - 4` hop-down band.
+pub const SHAFT_DEPTH: i32 = 8;
+
+/// bastion (SHAFT-FIXTURE): half-width 1 — a 3-across shaft.
+///
+/// ★ NOT A SIZE PREFERENCE, AN ARITHMETIC REQUIREMENT. The scan's annulus
+/// starts at `d >= 3`; if any FLOOR cell sits that far from a colonist, the
+/// floor itself reads as egress (it is level with the feet) and the trap
+/// never fires. Two floor cells are at most `2 * half_width` apart, so the
+/// trap needs `2 * half_width <= 2`. A 7-across shaft — wide enough to ring
+/// the normal 5-across outcrop — FAILS for exactly this reason, which is
+/// pinned as an assertion in `bastion_jobs`'s
+/// `egress_scan_traps_in_a_narrow_shaft_and_frees_in_the_wide_pit`.
+pub const SHAFT_HALF_WIDTH: i32 = 1;
+
+/// bastion (SHAFT-FIXTURE): the shaft's outcrop is a SINGLE COLUMN.
+///
+/// The normal outcrop is 5 across ([`RESOURCED_OUTCROP_HALF_WIDTH`] `= 2`)
+/// and cannot fit in a 3-across shaft with anywhere to stand. One column
+/// leaves the 8 surrounding floor cells free — and every one of them is
+/// within `d < 3` of the others, so none of them is scanned as egress.
+pub const SHAFT_OUTCROP_HALF_WIDTH: i32 = 0;
+
+/// bastion (SHAFT-FIXTURE): the shaft variant's depth, or 0 when off.
+/// Gated exactly like [`pit_depth`], and MUTUALLY EXCLUSIVE with it: a run
+/// that asks for both gets the shaft, because the pit's own doc above
+/// records that it cannot trap.
+pub fn shaft_depth() -> i32 {
+    static ON: OnceLock<bool> = OnceLock::new();
+    let on = *ON.get_or_init(|| {
+        resourced() && std::env::var("BASTION_FLAT_ARENA_SHAFT").is_ok_and(|v| v != "0")
+    });
+    if on { SHAFT_DEPTH } else { 0 }
+}
 
 /// bastion (VERTICAL-FIXTURE): the pit variant's depth, or 0 when off.
 ///
@@ -123,7 +174,67 @@ pub fn pit_depth() -> i32 {
 /// slab's first air cell), i.e. ON the ground rather than in it: a tree's
 /// trunk starts where a colonist's feet would.
 pub fn resourced_feature_cells(center_wpos: Vec2<u32>) -> Vec<(Vec3<i32>, Block)> {
+    // SHAFT-FIXTURE: the shaft WINS over the pit when both are asked for.
+    // The pit's own doc records that it cannot trap anyone (the egress scan
+    // reads a 4-deep, 10-across depression as escapable, correctly), so a
+    // run that wants a trap gets the geometry that produces one.
+    let shaft = shaft_depth();
+    if shaft > 0 {
+        return resourced_feature_cells_shaft(center_wpos, shaft);
+    }
     resourced_feature_cells_with_pit(center_wpos, pit_depth())
+}
+
+/// SHAFT-FIXTURE: the TRAPPING geometry — a narrow deep shaft whose only
+/// mine work is a single column on its floor.
+///
+/// Pure and depth-passed for the same reason as the pit form: assertable in
+/// one test binary with no env manipulation.
+///
+/// WHY THIS SHAPE, from the detector's arithmetic (EGRESS-ENTRY-READ.md):
+/// `egress_scan_with` accepts a ring surface iff
+/// `s >= feet.z - 4 && s <= feet.z + reach - 1`, scanning only `d >= 3`.
+/// [`SHAFT_DEPTH`] `= 8` puts the rim far above `feet + reach - 1` (= +2 for
+/// a novice) and outside the −4 hop-down band; [`SHAFT_HALF_WIDTH`] `= 1`
+/// guarantees no FLOOR cell is ever `d >= 3` from a colonist standing in it,
+/// which is the failure a 7-across shaft would have had.
+pub fn resourced_feature_cells_shaft(
+    center_wpos: Vec2<u32>,
+    shaft_depth: i32,
+) -> Vec<(Vec3<i32>, Block)> {
+    let centre = center_wpos.map(|e| e as i32);
+    let mut cells = Vec::new();
+    let outcrop = centre + RESOURCED_OUTCROP_OFFSET;
+
+    // THE SHAFT, EXCAVATED FIRST — same ordering rule as the pit: air goes
+    // down before the outcrop is carved back in, because
+    // `apply_resourced_features` applies cells in order via `chunk.set`.
+    for dz in -shaft_depth..0 {
+        for dy in -SHAFT_HALF_WIDTH..=SHAFT_HALF_WIDTH {
+            for dx in -SHAFT_HALF_WIDTH..=SHAFT_HALF_WIDTH {
+                cells.push((
+                    Vec3::new(outcrop.x + dx, outcrop.y + dy, FLAT_ARENA_Z + dz),
+                    Block::air(SpriteKind::Empty),
+                ));
+            }
+        }
+    }
+
+    // THE SINGLE-COLUMN OUTCROP on the shaft floor: the only mine work in
+    // the arena, so a miner must descend to reach it. At
+    // [`SHAFT_OUTCROP_HALF_WIDTH`] `= 0` this is one column, leaving the
+    // eight surrounding floor cells free to stand on.
+    for z in 0..RESOURCED_OUTCROP_HEIGHT {
+        for dy in -SHAFT_OUTCROP_HALF_WIDTH..=SHAFT_OUTCROP_HALF_WIDTH {
+            for dx in -SHAFT_OUTCROP_HALF_WIDTH..=SHAFT_OUTCROP_HALF_WIDTH {
+                cells.push((
+                    Vec3::new(outcrop.x + dx, outcrop.y + dy, FLAT_ARENA_Z - shaft_depth + z),
+                    Block::new(BlockKind::Rock, Rgb::new(94, 94, 98)),
+                ));
+            }
+        }
+    }
+    cells
 }
 
 /// The pure form, with the pit depth PASSED IN rather than read from the

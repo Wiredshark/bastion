@@ -20272,6 +20272,64 @@ mod tests {
     use super::*;
     use std::num::NonZeroU64;
 
+    /// SHAFT FIXTURE (SHAFT-FIXTURE-PREREG.md) G1: the geometry arithmetic,
+    /// pinned BEFORE any fixture code exists.
+    ///
+    /// Four rows chased `status` reading `None` — dormant field, aliased
+    /// poll, a rejected guard — before the read showed the pit fixture never
+    /// makes anyone TRAPPED: `PIT_DEPTH = 4` sits inside this scan's own
+    /// `s >= feet.z - 4` accept floor ("level-or-lower surfaces COUNT as
+    /// egress"), and at `PIT_HALF_WIDTH = 5` the pit is 10 across, past the
+    /// documented ">7 evades this local test" limit. This test states the
+    /// replacement geometry as ARITHMETIC, so it fails here rather than
+    /// after a worldgen change and a server run.
+    #[test]
+    fn egress_scan_traps_in_a_narrow_shaft_and_frees_in_the_wide_pit() {
+        let feet = Vec3::new(0, 0, 400);
+        let reach = cap_for_skill(0); // novice: 3
+        assert_eq!(reach, 3, "the accept band below depends on this");
+
+        // THE PIT (10 across): the annulus at d>=3 still lands on the pit
+        // FLOOR, level with the colonist -> egress, by design.
+        let (pit_has_egress, _) = egress_scan_with(|_, _| Some(feet.z), feet, reach);
+        assert!(pit_has_egress, "a 10-across pit must read as escapable");
+
+        // THE SHAFT (3 across): every ring cell at d>=3 is solid WALL, whose
+        // surface is the rim 8 above. 8 > feet.z + reach - 1 == +2, so no
+        // ring cell is standable -> TRAPPED, with a rim target for the plan.
+        let (shaft_has_egress, rim) =
+            egress_scan_with(|_, _| Some(feet.z + 8), feet, reach);
+        assert!(!shaft_has_egress, "a 3-across, 8-deep shaft must read as trapped");
+        assert!(rim.is_some(), "a trapped verdict must still offer a rim target");
+
+        // ★ AND THE WIDTH TRAP I ALMOST BUILT. A 7-across shaft (half-width
+        // 3) leaves a standing ring around a 5-across outcrop -- but its OWN
+        // FLOOR reaches d=3 from a colonist at the edge, and floor is level
+        // with the feet, so the scan finds egress inside the shaft itself.
+        // The trap therefore needs 2*half_width <= 2 -- a 3-across shaft
+        // with a SINGLE-COLUMN outcrop -- so that every d>=3 cell is
+        // necessarily wall. Modelled here as "some ring cells are floor".
+        let seven_across = |x: i32, y: i32| {
+            if x.abs().max(y.abs()) <= 3 { Some(feet.z) } else { Some(feet.z + 8) }
+        };
+        assert!(
+            egress_scan_with(seven_across, feet, reach).0,
+            "a 7-across shaft does NOT trap: its own floor is standable at d=3"
+        );
+
+        // THE BOUNDARY, both sides: reach-1 above is still egress; one more
+        // is not. This is the off-by-one the reviewer extracted this
+        // function to pin.
+        assert!(egress_scan_with(|_, _| Some(feet.z + reach - 1), feet, reach).0);
+        assert!(!egress_scan_with(|_, _| Some(feet.z + reach), feet, reach).0);
+
+        // AND THE LOWER ACCEPT FLOOR, which is what disqualified the pit:
+        // a surface 4 below still counts as egress (hop down), 5 below does
+        // not.
+        assert!(egress_scan_with(|_, _| Some(feet.z - 4), feet, reach).0);
+        assert!(!egress_scan_with(|_, _| Some(feet.z - 5), feet, reach).0);
+    }
+
     /// STAMP-EMIT (STAMP-EMIT-PREREG.md) M1: the edge rule, all four
     /// branches. The stamp sites re-stamp EVERY TICK they hold, so this
     /// predicate is the whole difference between one line per episode and
