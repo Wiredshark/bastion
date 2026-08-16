@@ -3003,7 +3003,30 @@ pub fn resolve_surface_bounds(
 /// is a noted known-limit pending a real reachability probe. Returns
 /// (has_egress, nearest rim target for an access plan).
 fn egress_scan(terrain: &TerrainGrid, feet: Vec3<i32>, reach: i32) -> (bool, Option<Vec3<i32>>) {
-    egress_scan_with(|x, y| column_surface_z(terrain, x, y, feet.z), feet, reach)
+    let out = egress_scan_with(|x, y| column_surface_z(terrain, x, y, feet.z), feet, reach);
+    // THE SCAN VERDICT IS THE MISSING WITNESS (LADDER-CONTENTION-RESULTS.md).
+    // Two arms differing by ONE designation box inverted on 63-vs-0
+    // emergency-access lines with 1-vs-25 climbs, and no read explained it:
+    // the wall-mining story died to a completion-depth grep (the colonists
+    // dug DOWN, not out). Whether this scan says "escapable" is the fact
+    // every downstream stage depends on, and until now it was inferred from
+    // the ABSENCE of later emits -- which is exactly the absence-vs-exclusion
+    // collapse this project keeps paying for.
+    //
+    // Rides the EXISTING egress flag rather than adding a fourth: the arms
+    // that need this already set it, and diag density is budgeted.
+    if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+        info!(
+            feet_z = feet.z,
+            feet_x = feet.x,
+            feet_y = feet.y,
+            reach,
+            has_egress = out.0,
+            rim_z = out.1.map(|t| t.z),
+            "bastion: egress scan verdict"
+        );
+    }
+    out
 }
 
 /// The pure core of [`egress_scan`], generic over the surface probe so the
