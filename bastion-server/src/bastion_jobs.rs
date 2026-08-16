@@ -6684,6 +6684,44 @@ pub trait RtSimAccess: Send + Sync + 'static {
     fn rt_state(&self) -> &::rtsim::RtState;
 }
 
+/// THE NEXT-TICK READBACK (READBACK-PREREG.md; ROW-DEFECT1 §2b's instrument).
+///
+/// WHY: two colonists completed a Mine at the same cell 98 minutes apart —
+/// the air write issued by the first was not in effect for the second. The
+/// save cannot answer whether the write ever landed (terrain block state is
+/// not persisted — the row's first instrument was void by premise), so the
+/// read must be LIVE, and the sharp version needs no waiting: read the cell
+/// on the tick AFTER the completion's `block_change.set` applies.
+///
+/// `pre` is free: at the completion site the set is still deferred, so
+/// `terrain.get` there reads the pre-state. One emit then carries both
+/// sides, and `lands=` is the (a)-vs-(b) discriminator — `false` means the
+/// write did not land; `true` means it landed and any later refill is a
+/// separate mechanism with a bounded window.
+///
+/// THE INSTRUMENT MUST NOT BECOME AN ACTOR: `terrain.get` only, no writes,
+/// and the whole path is gated on `BASTION_MINE_READBACK_DIAG` (diag
+/// density is budgeted; this fires per Mine completion).
+#[derive(Clone, Copy)]
+pub struct MineReadbackEntry {
+    pub pos: Vec3<i32>,
+    pub completed_tick: u64,
+    pub pre: Option<Block>,
+    pub expected: Block,
+}
+
+/// `Write<'a, _>` auto-inserts the `Default` on setup, so this needs no
+/// manual `ecs.insert` — and it is deliberately NOT a `JobBoard` field: the
+/// board serializes, and pending diagnostics must never enter a save.
+#[derive(Default)]
+pub struct MineReadbackQueue(pub Vec<MineReadbackEntry>);
+
+fn mine_readback_diag() -> bool {
+    static MINE_READBACK_DIAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *MINE_READBACK_DIAG
+        .get_or_init(|| std::env::var_os("BASTION_MINE_READBACK_DIAG").is_some())
+}
+
 /// The arbitration + travel + work-execution system.
 pub struct Sys<R>(core::marker::PhantomData<R>);
 
@@ -6795,6 +6833,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // site.
                 ReadExpect<'a, comp::item::AbilityMap>,
                 ReadExpect<'a, comp::item::MaterialStatManifest>,
+                // THE NEXT-TICK READBACK queue (READBACK-PREREG.md). In the
+                // innermost tuple because the outer ones sit at specs' arity
+                // ceiling (the nesting comment above).
+                Write<'a, MineReadbackQueue>,
             ),
         ),
     );
@@ -6860,6 +6902,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     velocity_interpolation,
                     ability_map,
                     msm,
+                    mut mine_readback,
                 ),
             ),
         ): Self::SystemData,
@@ -6867,6 +6910,41 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         let mut item_drop_emitter = item_drop_events.emitter();
         let mut chat_emitter = chat_events.emitter();
         let mut inv_manip_emitter = inventory_manip_events.emitter();
+
+        // THE NEXT-TICK READBACK drain (READBACK-PREREG.md). Runs FIRST,
+        // before this tick queues any new entry, so a completion queued at
+        // tick T is always read at exactly T+1 -- R2's bar. Strictly older
+        // (`<`): an entry read the same tick it was queued would race the
+        // deferred `block_change` apply and measure the PRE state again --
+        // that inversion is precisely the registered plant.
+        if mine_readback_diag() {
+            let current = tick.0;
+            let ready: Vec<MineReadbackEntry> = {
+                let q = &mut mine_readback.0;
+                let mut ready = Vec::new();
+                q.retain(|e| {
+                    if e.completed_tick < current {
+                        ready.push(*e);
+                        false
+                    } else {
+                        true
+                    }
+                });
+                ready
+            };
+            for e in ready {
+                let post = terrain.get(e.pos).ok().copied();
+                info!(
+                    pos = ?e.pos,
+                    completed_tick = e.completed_tick,
+                    readback_tick = current,
+                    pre = ?e.pre,
+                    post = ?post,
+                    lands = (post == Some(e.expected)),
+                    "bastion: mine readback"
+                );
+            }
+        }
 
         // ── B7-0 (row 44): needs DECAY every tick (rate × dt — cadence-
         // independent arithmetic), MOOD recomputed each arbitration cadence
@@ -15194,6 +15272,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let Some(new_block) = crate::bastion_actions::completion_block(job.kind) else {
                         continue;
                     };
+                    // THE NEXT-TICK READBACK push (READBACK-PREREG.md). The
+                    // set below is DEFERRED to the terrain apply, so this
+                    // `terrain.get` reads the PRE state for free -- one
+                    // queued entry carries both sides of the write. Mine
+                    // only: the defect population (ROW-DEFECT1) is mined
+                    // cells, and diag density is budgeted.
+                    if mine_readback_diag() && job.kind.is(DesignationKind::Mine) {
+                        mine_readback.0.push(MineReadbackEntry {
+                            pos: job.pos,
+                            completed_tick: tick.0,
+                            pre: terrain.get(job.pos).ok().copied(),
+                            expected: new_block,
+                        });
+                    }
                     block_change.set(job.pos, new_block);
                     // B5.8: a player-built ladder line registers as an
                     // access anchor too (one per column — XY dedupe), so

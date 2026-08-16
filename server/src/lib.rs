@@ -688,6 +688,15 @@ impl Server {
         state.ecs_mut().insert(Vec::<ChunkRequest>::new());
         // bastion (B4): job board + harness-pinned chunk set.
         state.ecs_mut().insert(bastion_jobs::JobBoard::default());
+        // bastion (READBACK-PREREG.md): the next-tick mine readback queue.
+        // MANUALLY inserted: `Write<T: Default>`'s auto-setup does NOT run
+        // under this dispatcher -- the first pitread leg panicked in shred
+        // ("Tried to fetch resource ... MineReadbackQueue ... does not
+        // exist") one tick after boot, so the auto-insert assumption is
+        // MEASURED false here, not merely doubted.
+        state
+            .ecs_mut()
+            .insert(bastion_jobs::MineReadbackQueue::default());
         // bastion (PATH-0): the sequential path scheduler's state.
         state
             .ecs_mut()
