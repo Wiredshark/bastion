@@ -1171,6 +1171,42 @@ pub fn colonist_status_display(
     None
 }
 
+/// STATUS-SURFACE / STAMP-EMIT (STAMP-EMIT-PREREG.md): is this stamp a NEW
+/// EPISODE, or the same wait re-stamping itself?
+///
+/// WHY THIS EXISTS: `status` is display-only and lives
+/// `STATUS_DISPLAY_TTL_TICKS` (60) ticks, while the harness driver polls the
+/// inspector every 600 SIM-SECONDS (18,000 ticks) -- the stamp is visible for
+/// 0.33% of a sampling interval, so `RestingToClimb` read `None` in every
+/// sample of every pit arm ever run. That is aliasing, not a dormant field
+/// (STATUS-FIELD-READ.md). The fix is to make the stamp a fact in the log
+/// instead of a coin flip in a poll.
+///
+/// EDGE-TRIGGERED BY CONSTRUCTION: both stamp sites re-stamp EVERY TICK they
+/// hold (the TTL doc says so), so an unconditional emit would be a per-tick
+/// per-colonist flood -- and diag density is budgeted: an instrument that
+/// changes what it observes is not an instrument. A stamp is a new episode
+/// when there was no prior entry, when the VARIANT changed, or when the prior
+/// stamp had already expired -- the last case is the TTL's own semantics
+/// ("an expired stamp means the wait genuinely ended").
+pub(crate) fn stamp_is_new_episode(
+    prior: Option<(common::comp::bastion::BastionColonistStatus, u64)>,
+    now: common::comp::bastion::BastionColonistStatus,
+    now_tick: u64,
+) -> bool {
+    match prior {
+        None => true,
+        Some((was, stamp)) => {
+            was != now || now_tick.saturating_sub(stamp) > STATUS_DISPLAY_TTL_TICKS
+        },
+    }
+}
+
+fn status_stamp_diag() -> bool {
+    static STATUS_STAMP_DIAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *STATUS_STAMP_DIAG.get_or_init(|| std::env::var_os("BASTION_STATUS_STAMP_DIAG").is_some())
+}
+
 /// STATUS-SURFACE: the ONE read-only display accessor over the BACKSTOP-OPT
 /// reason fields — the single entry point for both the live inspector fill
 /// (`sys::msg::in_game`) and the harness probe
@@ -7568,6 +7604,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let within_budget = wait.1 <= budget;
                     if within_budget && !board.emergency_no_progress.contains(uid) {
                         watch_wipe(&mut board.stuck_watch, uid, "queue-wait");
+                        // STAMP-EMIT: edge-triggered -- this branch re-stamps
+                        // every tick it holds, so only a NEW episode is worth
+                        // a line.
+                        if status_stamp_diag()
+                            && stamp_is_new_episode(
+                                board.status_display.get(uid).copied(),
+                                common::comp::bastion::BastionColonistStatus::WaitingForLadder,
+                                tick.0,
+                            )
+                        {
+                            info!(
+                                uid = uid.0.get(),
+                                status = "WaitingForLadder",
+                                tick = tick.0,
+                                site = "queue-wait",
+                                "bastion: status stamp"
+                            );
+                        }
                         board.status_display.insert(
                             *uid,
                             (
@@ -13082,6 +13136,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // cycler) falls through to `Replanning` in
                                 // the classifier instead, which is the honest
                                 // read of that state.
+                                // STAMP-EMIT: edge-triggered, same rule as the
+                                // queue-wait site.
+                                if status_stamp_diag()
+                                    && stamp_is_new_episode(
+                                        board.status_display.get(&uid).copied(),
+                                        common::comp::bastion::BastionColonistStatus::RestingToClimb,
+                                        tick.0,
+                                    )
+                                {
+                                    info!(
+                                        uid = uid.0.get(),
+                                        status = "RestingToClimb",
+                                        tick = tick.0,
+                                        site = "energy-gate-wait",
+                                        "bastion: status stamp"
+                                    );
+                                }
                                 board.status_display.insert(
                                     uid,
                                     (
@@ -20200,6 +20271,44 @@ fn reservation_indices_are_consistent_v1(
 mod tests {
     use super::*;
     use std::num::NonZeroU64;
+
+    /// STAMP-EMIT (STAMP-EMIT-PREREG.md) M1: the edge rule, all four
+    /// branches. The stamp sites re-stamp EVERY TICK they hold, so this
+    /// predicate is the whole difference between one line per episode and
+    /// one line per tick per colonist.
+    #[test]
+    fn stamp_edge_fires_on_new_episode_and_stays_silent_while_held() {
+        use common::comp::bastion::BastionColonistStatus as S;
+        // (1) no prior entry -- the first stamp of a wait IS an episode.
+        assert!(stamp_is_new_episode(None, S::RestingToClimb, 100));
+        // (2) SAME variant, stamped last tick: the wait is still held, and
+        //     this is the case that would flood the log.
+        assert!(!stamp_is_new_episode(
+            Some((S::RestingToClimb, 99)),
+            S::RestingToClimb,
+            100
+        ));
+        // (3) DIFFERENT variant -- a genuine transition, always an episode.
+        assert!(stamp_is_new_episode(
+            Some((S::WaitingForLadder, 99)),
+            S::RestingToClimb,
+            100
+        ));
+        // (4) same variant but the prior stamp EXPIRED: by the TTL's own
+        //     semantics the previous wait genuinely ended, so a new stamp
+        //     is a new episode. Boundary checked on both sides.
+        let ttl = STATUS_DISPLAY_TTL_TICKS;
+        assert!(!stamp_is_new_episode(
+            Some((S::RestingToClimb, 100)),
+            S::RestingToClimb,
+            100 + ttl
+        ));
+        assert!(stamp_is_new_episode(
+            Some((S::RestingToClimb, 100)),
+            S::RestingToClimb,
+            100 + ttl + 1
+        ));
+    }
 
     /// ITEM 2 (ROW-ITEM2-STALL-COUNTER-PACKET): planted RED-first --
     /// today's branch C resets `access_idle_secs` unconditionally on any
