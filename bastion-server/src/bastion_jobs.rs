@@ -16068,11 +16068,41 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // stillness path + a never-firing churn = 600s of hover). The
             // egress_scan verdict is the false-positive guard, not the
             // leash.
+            // THE CHURN COUNTER IS THE LAST INFERENCE IN THIS CHAIN
+            // (SCAN-VERDICT-RESULTS.md). The A/B showed `egress_scan` runs
+            // once in the shaft arm and ZERO times in the contend arm -- a
+            // logged fact -- but WHY was one step away: the gate below is
+            // `churn.1 < CHURN_TRAPPED_RELEASES`, and nothing reports
+            // `churn.1`. These two emits close that step.
+            //
+            // BOTH OUTCOMES, DELIBERATELY: a colonist that MOVED (leash
+            // reset) and one that never churned at all would otherwise be
+            // indistinguishable by silence -- the same absence-vs-exclusion
+            // collapse that has cost this project four instruments to keep
+            // catching. RESET says "it counted and lost it"; TICK says "it
+            // is counting, here is how far".
             if posf.distance_squared(churn.0) > 36.0 {
+                if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                    info!(
+                        uid = uid.0.get(),
+                        was = churn.1,
+                        threshold = CHURN_TRAPPED_RELEASES,
+                        "bastion: churn RESET (moved past leash)"
+                    );
+                }
                 *churn = (posf, 1);
                 continue;
             }
             churn.1 = churn.1.saturating_add(1);
+            if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                info!(
+                    uid = uid.0.get(),
+                    churn = churn.1,
+                    threshold = CHURN_TRAPPED_RELEASES,
+                    reaches_scan = (churn.1 >= CHURN_TRAPPED_RELEASES),
+                    "bastion: churn TICK"
+                );
+            }
             // (The dead persistent-churn teleport tier — churn.1 >= 16,
             // unreachable because the reset below sawtooths it 0→8→0 —
             // was REMOVED per reviewer F5. The verdict-INDEPENDENT
