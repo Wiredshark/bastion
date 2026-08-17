@@ -98,12 +98,25 @@ pub const RESOURCED_CLEAR_RADIUS: i32 = 12;
 /// Generating it makes the wall's EXISTENCE a fixture fact, and leaves the
 /// run measuring exactly one thing.
 ///
-/// Larger than [`RESOURCED_CLEAR_RADIUS`] (12) so the ring never overlaps the
-/// cleared work area or the tree/outcrop features, and far inside the arena's
-/// own radius ([`FLAT_ARENA_RADIUS_CHUNKS`] × 32), so the slab still extends
-/// well past the wall on every side — a hostile must have somewhere to stand
-/// OUTSIDE it, or the fixture cannot pose its own question.
-pub const WALL_RADIUS: i32 = 24;
+/// ★ THE NUMBER COMES FROM THE FEATURE SET, NOT FROM A GUESS. The furthest
+/// resourced feature is the third tree at [`RESOURCED_TREES`]`(25, 4)`, and the
+/// outcrop reaches `|dx| = 22` (`RESOURCED_OUTCROP_OFFSET` −20 ± half-width 2).
+/// **My first value was 24 and `wall_ring_clears_the_work_area_and_the_features`
+/// failed on that very tree** (`dx=25`) — the ring would have left one of the
+/// colony's own chop targets OUTSIDE its wall, and the arm would have measured
+/// a wall and a severed work area at once. 32 clears the furthest feature by 7
+/// and is one chunk width, and it is still far inside the arena's own radius
+/// ([`FLAT_ARENA_RADIUS_CHUNKS`] × 32), so the slab extends well past the wall
+/// on every side — a hostile must have somewhere to stand OUTSIDE it, or the
+/// fixture cannot pose its own question.
+///
+/// ★ This is a LAYOUT constraint, not a result-tuning one, and the distinction
+/// matters: [`WALL_HEIGHT`] must never be raised to make a treatment pass
+/// (the height that stops a hostile *is* the measurement), whereas the radius
+/// is fixed by where the arena already puts its trees. **The test derives the
+/// constraint from `resourced_feature_cells` itself rather than from a
+/// remembered list, which is why it caught this.**
+pub const WALL_RADIUS: i32 = 32;
 
 /// bastion (WALL-FIXTURE, ITEM 15a): the wall's height in blocks.
 ///
