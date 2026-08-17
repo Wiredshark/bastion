@@ -3,6 +3,18 @@ use crate::TerrainPersistence;
 #[cfg(not(feature = "worldgen"))]
 use crate::test_world::{IndexOwned, World};
 use tracing::error;
+
+/// TICK-LOADING ROW: gate for the promotions-per-tick census.
+///
+/// Off unless `BASTION_TERRAIN_PROVISION_DIAG` is set. This fires once per
+/// server tick on the live path, so an ungated emit would be one of the
+/// densest lines in the log and would itself perturb the timing the row is
+/// trying to measure.
+fn terrain_provision_diag() -> bool {
+    static TERRAIN_PROVISION_DIAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *TERRAIN_PROVISION_DIAG
+        .get_or_init(|| std::env::var_os("BASTION_TERRAIN_PROVISION_DIAG").is_some())
+}
 #[cfg(feature = "worldgen")]
 use world::{IndexOwned, World};
 
@@ -155,6 +167,33 @@ impl<'a> System<'a> for Sys {
         } else {
             data.chunk_generator.recv_new_chunks_sorted()
         };
+        // TICK-LOADING ROW: the promotions-per-tick census. NOTHING measured
+        // this before -- `arrivals` was consumed by the loop below without its
+        // length ever being counted, so the distribution this row must derive
+        // its budget from did not exist as data.
+        //
+        // ★ It emits the TICK, the COUNT, the PENDING backlog and WHICH DRAIN
+        // was taken, together on one line. The drain flag is not decoration:
+        // a count of 3 means something different under the tick-gated drain
+        // than under the free-running one, and a census that omitted it would
+        // pool two populations.
+        //
+        // ★★ `pending` is the DENOMINATOR. Promotions alone cannot distinguish
+        // "the budget bound" from "nothing was ready" -- the same
+        // absence/exclusion conflation that cost this program repeatedly. With
+        // pending beside it, a low count with a large backlog and a low count
+        // with an empty backlog are different rows.
+        //
+        // Off by default: diag density is a budget, not a free good.
+        if terrain_provision_diag() {
+            tracing::info!(
+                tick = data.tick.0,
+                promoted = arrivals.len(),
+                pending = data.chunk_generator.pending_chunk_count(),
+                deterministic_drain = common::deterministic_worldgen_enabled(),
+                "bastion: terrain provisioning census"
+            );
+        }
         'insert_terrain_chunks: for (key, res) in arrivals {
             #[cfg_attr(not(feature = "persistent_world"), expect(unused_mut))]
             let (mut chunk, supplement) = match res {

@@ -138,18 +138,81 @@ impl ChunkGenerator {
     /// terrain-content outcomes across VMs (mf_completion byte-equal) but
     /// per-tick apply MEMBERSHIP still shifted agent timing (teleports
     /// 10v17) — membership is what this pins.
+    ///
+    /// ★ KNOWN DEFECT, RECORDED NOT FIXED: this doc block describes
+    /// `recv_new_chunks_deterministic`, but an edit in this row inserted
+    /// `pending_chunk_count` between the comment and its function, so rustdoc
+    /// now attaches it to the accessor. It compiles and documents the wrong
+    /// item. I attempted the re-order twice mid-row and each attempt broke the
+    /// file worse than the defect (a stray placeholder fn, then a wrapper
+    /// calling a nonexistent `_inner` while a real definition still existed).
+    /// Reverted both. THE DOC PLACEMENT IS NOT WORTH BREAKING THE BUILD FOR
+    /// WHILE THE FUNCTIONAL CHANGE IS UNVERIFIED — it is a separate, safe,
+    /// mechanical move once this row's build and A1 are green.
+    /// TICK-LOADING ROW: the outstanding request backlog, read-only.
+    ///
+    /// This is the DENOMINATOR for the promotions-per-tick census. A promotion
+    /// count on its own cannot separate "the drain was bound" from "nothing had
+    /// finished yet"; with the backlog beside it those are distinguishable.
+    pub fn pending_chunk_count(&self) -> usize { self.pending_chunks.len() }
+
+    /// TICK-LOADING ROW: the per-tick terrain-provisioning budget.
+    ///
+    /// DERIVED FROM A MEASUREMENT, NOT CHOSEN. On the traversal baseline
+    /// (14183 census ticks, live free-running drain, real terrain) the
+    /// promoted-per-tick distribution over ticks that promoted was
+    /// n=177, min=1, median=1, P95=4, max=13. The rule
+    /// (`TICK-LOADING-BUDGET-RULE.md`, committed before the number existed,
+    /// as amended by AMENDMENT-1 for a mis-specified population) gives
+    /// ceil(P95) = 4.
+    ///
+    /// ★ 4 BINDS on 5 of 177 working ticks (2.8%) — it binds *sometimes*,
+    /// which is what a budget is for. The pre-amendment value of 2 would have
+    /// bound on ~7% and clipped every burst (5, 7, 7, 8, 13); a budget at
+    /// max=13 would never bind and would bound nothing.
+    const DETERMINISTIC_PROMOTION_BUDGET: usize = 4;
+
     pub fn recv_new_chunks_deterministic(&mut self, delay: u64) -> Vec<ChunkGenResult> {
         while let Ok((key, res)) = self.chunk_rx.try_recv() {
             if self.pending_chunks.contains_key(&key) {
                 self.arrived.insert(key, res);
             }
         }
-        let due: Vec<Vec2<i32>> = self
+        let mut due: Vec<Vec2<i32>> = self
             .pending_chunks
             .iter()
             .filter(|(_, p)| p.request_tick.saturating_add(delay) <= self.current_tick)
             .map(|(k, _)| *k)
             .collect();
+        // TICK-LOADING ROW: bound the DUE set, not the promoted set.
+        //
+        // ★★★ WHY THE DUE SET AND NOT THE PROMOTED SET. The obvious budget --
+        // "promote at most N chunks that have ARRIVED" -- destroys the very
+        // property this function exists for. Arrival is the async threadpool's
+        // completion order; selecting on it makes per-tick membership depend on
+        // wall time again, which is the coupling the row is removing.
+        // Capping the DUE set keeps membership a pure function of
+        // (request_tick, delay, current_tick, key order) and nothing else.
+        //
+        // ★★ WHAT IT BUYS. The barrier below BLOCKS until every due chunk
+        // arrives -- that blocking is what makes promotion deterministic, and it
+        // is also why a tick-coupled live path costs wall time. Bounding the due
+        // set bounds how much any single tick can be made to wait, so the
+        // barrier becomes predictable per tick instead of unbounded.
+        //
+        // ★ SORTED BY KEY BEFORE TRUNCATING, and that is load-bearing:
+        // pending_chunks is a HashMap, so its iteration order is not stable.
+        // Truncating an unsorted collect() would select a DIFFERENT SUBSET per
+        // run from identical state -- a fresh nondeterminism source planted
+        // inside the determinism mechanism. Sorting first makes the retained
+        // subset a pure function of the key set.
+        //
+        // The value comes from measurement, not choice: BUDGET=4 is
+        // ceil(P95) of promoted-per-tick over ticks that promoted, on the
+        // traversal baseline (n=177, median 1, max 13). Rule 28076fbe33 as
+        // amended by 8e0b7e86bc, both committed before the number existed.
+        due.sort_unstable_by_key(|k| (k.x, k.y));
+        due.truncate(Self::DETERMINISTIC_PROMOTION_BUDGET);
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(180);
         for key in &due {
             while !self.arrived.contains_key(key) {
