@@ -20565,10 +20565,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             let mut pairs: Vec<(Uid, Vec3<f32>, specs::Entity)> = Vec::new();
             let mut min_health = f32::MAX;
             let mut colonists_seen = 0u32;
+            // ITEM 15: every colonist position, NOT only those perceiving a
+            // hostile. Pass 3 needs the whole colony as a reference set, and
+            // `pairs` is by construction the perceiving subset.
+            let mut colony_pos: Vec<Vec3<f32>> = Vec::new();
             for (c_ent, _, c_pos, c_uid) in
                 (&entities, &colonists, &positions, &uids).join()
             {
                 colonists_seen += 1;
+                colony_pos.push(c_pos.0);
                 if let Some(h) = healths.get(c_ent) {
                     min_health = min_health.min(h.fraction());
                 }
@@ -20627,6 +20632,39 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // mistake for a real entity. `-1.0` on the separations is the same
             // discipline in the one place the type forces a float -- and it is
             // only ever emitted beside `perceived=0`, the field that says why.
+            // ---- Pass 3 (ITEM 15): the UNPERCEIVED hostile side. ----
+            //
+            // ★★★ WHY PASSES 1-2 CANNOT ANSWER ITEM 15. `pairs` is populated
+            // only inside `agents.get(c_ent).target` with `t.hostile` — i.e.
+            // ONLY for hostiles a colonist ALREADY PERCEIVES. That is a JOIN
+            // ACTING AS A FILTER, and the filtered-out case is precisely the
+            // case the wall experiment is about: if the wall works, nobody
+            // perceives anything, `pairs` is empty, and `min_sep` reports -1.0
+            // — identical to a world where no hostile was ever spawned.
+            //
+            // #95 was withheld for exactly this ambiguity ("perceived=0 cannot
+            // separate 'wall blocked it' from 'wolf wandered off'"). This pass
+            // is the separation: it enumerates the hostile side DIRECTLY, so a
+            // wall that excludes reads as `near_any` SMALL with `perceived=0`,
+            // while an absent wolf reads as `near_any` = -1.0.
+            //
+            // ★★ DETERMINISM BY CONSTRUCTION: only the DISTANCE and the COUNT
+            // are emitted, never the nearest entity's identity. A min over a
+            // join is order-invariant in its VALUE, but a tie-broken identity
+            // would depend on ECS iteration order and would be a fresh
+            // nondeterminism source in a diagnostic — the opposite of useful
+            // while #89 is open.
+            let mut near_any = f32::MAX;
+            let mut nonc_agents = 0u32;
+            for (a_ent, _, a_pos) in (&entities, &agents, &positions).join() {
+                if colonists.get(a_ent).is_some() {
+                    continue;
+                }
+                nonc_agents += 1;
+                for c in &colony_pos {
+                    near_any = near_any.min(c.distance(a_pos.0));
+                }
+            }
             let (sep, sep_h, near_c, near_h, tgt_col, aggro, h_host, h_tgt) =
                 match best {
                     Some(b) => (Some(b.0), Some(b.1), Some(b.2), b.3, b.4, b.5, b.6, b.7),
@@ -20645,6 +20683,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 h_aggro_on = aggro,
                 h_hostile_flag = h_host,
                 min_health = if min_health == f32::MAX { -1.0 } else { min_health },
+                // ITEM 15: perception-independent. `near_any` -1.0 means NO
+                // non-colonist agent exists at all; a small `near_any` beside
+                // `perceived=0` is a hostile that came close and was NOT seen
+                // -- which is what a working wall looks like, and what pass 2
+                // alone can never distinguish from an empty world.
+                near_any = if near_any == f32::MAX { -1.0 } else { near_any },
+                nonc_agents,
                 "bastion: hostile proximity census"
             );
         }
