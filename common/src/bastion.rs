@@ -1081,6 +1081,30 @@ pub enum JobKind {
         /// Sim time when the despondency lifts.
         until: f64,
     },
+    /// bastion (ITEM 11, row 2026-08-16): RECREATION — the need's first
+    /// PRODUCER. Same shape as [`JobKind::Despond`]: a pre-claimed
+    /// self-job at the colonist's own feet that idles until `until`,
+    /// restoring `recreation` while it runs.
+    ///
+    /// WHY THIS EXISTS. Recreation was a ONE-WAY RATCHET: it decays at
+    /// `decay_per_sec`, feeds a mood penalty through `shortfall`, and
+    /// NOTHING in the codebase raised it — hunger has `EatFrom`, rest has
+    /// `RestAt`, and recreation had no counterpart, so every colony ran
+    /// an unopposed mood drag that no fixture was long enough to see
+    /// (3000 sim-seconds to cross comfort from 1.0, against 2400–3600
+    /// total run length). Measured, not assumed: `PendingNeed` had no
+    /// Recreate arm and recreation's interrupt is 0 = never preempts.
+    ///
+    /// LOWEST PRIORITY BY CONSTRUCTION. Despond/RestAt/EatFrom answer
+    /// collapse, exhaustion and starvation; this answers boredom. It is
+    /// created only when nothing more urgent is pending, so a hungry
+    /// colonist never relaxes instead of eating.
+    ///
+    /// Appended last (the wire rule every self-job above follows).
+    Recreate {
+        /// Sim time when the break ends.
+        until: f64,
+    },
 }
 
 impl JobKind {
@@ -1093,7 +1117,8 @@ impl JobKind {
             | JobKind::DepositRun { .. }
             | JobKind::RestAt { .. }
             | JobKind::EatFrom { .. }
-            | JobKind::Despond { .. } => None,
+            | JobKind::Despond { .. }
+            | JobKind::Recreate { .. } => None,
         }
     }
 

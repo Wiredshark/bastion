@@ -6546,6 +6546,40 @@ impl JobBoard {
     /// bastion (B7-3): insert a PRE-CLAIMED Despond job at the
     /// colonist's own feet — the breakdown state as a top-tier self-job
     /// (blocks all claims until it lifts).
+    /// bastion (ITEM 11): insert a PRE-CLAIMED Recreate job — recreation's
+    /// first producer, in the `insert_despond_job` shape below (self-job at
+    /// the colonist's own feet, pre-claimed so it never enters claim
+    /// selection, `WorkType::Haul` like every other self-job).
+    ///
+    /// The need it answers decays and, until this existed, was never
+    /// restored by anything: a measured one-way ratchet feeding an
+    /// unopposed mood penalty (ITEM11-RECREATION-READ.md).
+    pub fn insert_recreate_job(&mut self, feet: Vec3<i32>, uid: Uid, until: f64) -> JobId {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.jobs.insert(id, Job {
+            kind: common::bastion::JobKind::Recreate { until },
+            work: common::bastion::WorkType::Haul,
+            pos: feet,
+            skill_floor: 0,
+            claimed_by: Some(uid),
+            suspended_for: None,
+            unreachable: false,
+            progress: 0.0,
+            required_item: None,
+            needs_materials: false,
+            carve_attempted: false,
+            is_access: false,
+            stuck_strikes: 0,
+            benched_until_tick: None,
+            depth: 0,
+            reservation: None,
+            affordance: AffordanceClass::Untargeted,
+        });
+        self.total_claims += 1;
+        id
+    }
+
     pub fn insert_despond_job(&mut self, feet: Vec3<i32>, uid: Uid, until: f64) -> JobId {
         let id = self.next_id;
         self.next_id += 1;

@@ -1425,6 +1425,12 @@ pub enum JobKindTagV1 {
     RestAt,
     EatFrom,
     Despond,
+    /// bastion (ITEM 11): recreation's self-job. APPENDED LAST — this is a
+    /// VERSIONED tag (V1) whose ordinal is part of the digest, so a new
+    /// variant may only go on the end; inserting it beside the other
+    /// self-jobs would renumber `Despond` and move every hash that has
+    /// ever included one.
+    Recreate,
 }
 
 impl From<&crate::bastion::JobKind> for JobKindTagV1 {
@@ -1437,6 +1443,7 @@ impl From<&crate::bastion::JobKind> for JobKindTagV1 {
             J::RestAt { .. } => JobKindTagV1::RestAt,
             J::EatFrom { .. } => JobKindTagV1::EatFrom,
             J::Despond { .. } => JobKindTagV1::Despond,
+            J::Recreate { .. } => JobKindTagV1::Recreate,
         }
     }
 }
