@@ -27,12 +27,41 @@ use std::sync::OnceLock;
 use vek::*;
 #[cfg(feature = "worldgen")] use world::World;
 
-/// Arena half-width in CHUNKS (32-block chunks → 16 ⇒ a 1056×1056-block
-/// flat square). Sized against observed colony dynamics: generator scan
-/// radii (±12), the soft-magnet leash, and the deep-wander excursions the
-/// AUTON-2 forensics measured (~150 blocks) all fit with a wide margin, so
-/// a test colony's whole behavioral footprint stays on the flat.
-pub const FLAT_ARENA_RADIUS_CHUNKS: i32 = 16;
+/// The largest client VIEW DISTANCE, in chunks, that any scored arm has used.
+/// `HAUL-FIXTURE-RESULTS.md` / `VIEW-DISTANCE-RESULTS.md` ran VD **6** and VD
+/// **25** as an A/B (the pair that refuted view distance as the haul-count
+/// mechanism), so 25 is the horizon the fixture must actually cover.
+///
+/// ★ Named as a constant rather than written into the radius, so the arena's
+/// own test can state the invariant instead of comparing two magic numbers.
+pub const MAX_TESTED_VIEW_DISTANCE_CHUNKS: i32 = 25;
+
+/// Arena half-width in CHUNKS (32-block chunks). Sized against observed colony
+/// dynamics: generator scan radii (±12), the soft-magnet leash, and the
+/// deep-wander excursions the AUTON-2 forensics measured (~150 blocks) all fit
+/// with a wide margin, so a test colony's whole behavioral footprint stays on
+/// the flat.
+///
+/// ★★ **AND — ITEM 19 — AGAINST THE CLIENT'S VIEW HORIZON, WHICH THE ORIGINAL
+/// SIZING NEVER CONSIDERED.** The paragraph above answers *"where do colonists
+/// walk"*. A renderer horizon test asks *"what does the client SEE"*, and those
+/// are different requirements on the same number. At the old value of **16**, a
+/// client at VD **25** rendered **9 chunks past the slab** into ordinary
+/// worldgen — so any horizon measurement was contaminated by real terrain and
+/// the retest was void by construction. **That is the one-constant fixture
+/// defect the roadmap names, and the constant was never wrong for its stated
+/// purpose — it was silently reused for a second one.**
+///
+/// 26 = [`MAX_TESTED_VIEW_DISTANCE_CHUNKS`] + 1 chunk of margin ⇒ a
+/// 1696×1696-block slab. `arena_radius_covers_the_tested_view_horizon` holds
+/// the invariant so a future VD bump fails the test instead of silently
+/// re-voiding the row.
+///
+/// ⚠ COST, stated not measured: the override area grows 33×33 → 53×53 chunks
+/// (~2.6×). Each overridden chunk is a flat slab and *cheaper* than real
+/// worldgen, so boot time may well improve — **but I did not measure it**, and
+/// a claim either way would be a number without a producer.
+pub const FLAT_ARENA_RADIUS_CHUNKS: i32 = 26;
 
 /// The arena's uniform surface height — comfortably above sea level so the
 /// slab never floods, in the same z-band the site-area scenarios exercise.
@@ -514,6 +543,30 @@ mod tests {
     /// The world centre used by the tests — an arbitrary but fixed
     /// stand-in for `world.get_center()`.
     const CENTRE: Vec2<u32> = Vec2::new(15216, 16016);
+
+    /// ITEM 19: the arena must extend at least as far as the client can SEE,
+    /// not merely as far as colonists WALK.
+    ///
+    /// ★ The radius was originally sized against colony dynamics alone, and was
+    /// correct for that. Reusing it as the renderer-horizon fixture added a
+    /// second requirement nobody wrote down, and at radius 16 vs VD 25 the
+    /// client rendered 9 chunks of REAL worldgen past the slab — so the horizon
+    /// retest could never have measured the flat arena.
+    ///
+    /// This test exists so the next VD increase FAILS HERE rather than silently
+    /// voiding that row again: it is the invariant, stated once, in the place
+    /// that owns the number.
+    #[test]
+    fn arena_radius_covers_the_tested_view_horizon() {
+        assert!(
+            FLAT_ARENA_RADIUS_CHUNKS > MAX_TESTED_VIEW_DISTANCE_CHUNKS,
+            "arena radius {FLAT_ARENA_RADIUS_CHUNKS} chunks does not strictly cover the \
+             largest tested view distance {MAX_TESTED_VIEW_DISTANCE_CHUNKS} — a client at \
+             that VD renders {} chunk(s) of real worldgen beyond the slab, which voids any \
+             renderer-horizon measurement",
+            MAX_TESTED_VIEW_DISTANCE_CHUNKS - FLAT_ARENA_RADIUS_CHUNKS + 1,
+        );
+    }
 
     /// WALL-FIXTURE (ITEM 15a): the ring is HOLLOW, CLOSED, and stands ON the
     /// slab. Asserted without a chunk, a server, or an env var — the fixture's
