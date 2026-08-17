@@ -2399,6 +2399,27 @@ pub const RUN_SPEED: f32 = 1.0;
 /// then the accelerated regen outpaced it back to full mid-run). 15/s =
 /// a net −5/s against a maxed regen; a full colonist gets a ~7–18s
 /// burst — the design's "reserved sprint".
+/// bastion (ITEM 11): how long a recreation break lasts, in sim-seconds.
+///
+/// SIZED AGAINST THE DECAY, not chosen for feel. Recreation falls at
+/// `decay_per_sec`; a break must restore materially more than it loses or
+/// the colonist re-triggers immediately and the arm becomes a stutter.
+/// 120s is ~4% of the 3000s it takes to fall from full to comfort — long
+/// enough to be visible in a log, short enough that a colony does not lose
+/// a shift to it. A v1 number, and the first thing an A/B should move.
+pub const RECREATION_BREAK_SECS: f64 = 120.0;
+
+/// bastion (ITEM 11): recreation breaks are OFF unless asked for.
+///
+/// Turning boredom into scheduled behaviour changes colony throughput —
+/// colonists stop working to relax — and that is a measured question, not
+/// a default. The arm is wired and testable now; the flag is how it earns
+/// its way on.
+pub fn recreation_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("BASTION_RECREATION").is_some())
+}
+
 pub const RUN_DRAIN_PER_SEC: f32 = 15.0;
 /// bastion (RUN-0): the governor's floor — Energy below this FORCES the
 /// run flag off (the colonist physically can't sustain it; re-running
@@ -11952,6 +11973,41 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .preempt_cooldown
                         .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
                     board.preempt_attempts += 1;
+                }
+
+                // ── ITEM 11: RECREATION, THE LOWEST-PRIORITY NEED ──
+                //
+                // PLACED HERE ON PURPOSE, and the placement IS the priority
+                // contract. This point is reached only after `'candidates`
+                // has tried every urgent need and none was serviced, so a
+                // break can never be chosen over rest, food or a
+                // breakdown: `serviced` is the proof, checked below.
+                //
+                // Recreation is the need with NO other producer -- it
+                // decays, penalises mood through `shortfall`, and until
+                // this row nothing raised it. The comfort band is the same
+                // one the mood penalty uses, so a colonist takes a break
+                // exactly when the colony is already paying for its
+                // absence, never earlier.
+                //
+                // FLAG-GATED for now (BASTION_RECREATION=1): the arm is
+                // wired and testable, but turning boredom into scheduled
+                // behaviour changes colony throughput, and that deserves a
+                // measured A/B rather than arriving switched on.
+                if !serviced
+                    && recreation_enabled()
+                    && needs.recreation < mood_cfg.recreation.comfort
+                    && !board.preempt_cooldown.contains_key(uid)
+                {
+                    let until = time.0 + RECREATION_BREAK_SECS;
+                    info!(
+                        colonist = %uid,
+                        recreation = needs.recreation,
+                        comfort = mood_cfg.recreation.comfort,
+                        secs = RECREATION_BREAK_SECS,
+                        "bastion: need preempt -- recreation below comfort (ITEM 11)"
+                    );
+                    preempt_pending.push((entity, *uid, PendingNeed::Recreate(until)));
                 }
             }
         }
