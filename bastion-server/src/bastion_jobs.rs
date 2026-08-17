@@ -7139,9 +7139,48 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             }
 
             let mut decay_join_count: u32 = 0;
-            for (_, needs) in (&colonists, &mut needs_storage).join() {
+            // ITEM 11 RESIDUAL: recreation's missing SOURCE. `active_jobs` is
+            // joined with `.maybe()` -- A JOIN IS A FILTER, and a hard join
+            // here would silently drop every colonist without an active job
+            // from the DECAY itself, turning a restore into a decay outage for
+            // idle colonists. `decay_join_count` is the guard that would have
+            // caught it, and it must not move.
+            let mut recreate_restored: u32 = 0;
+            for (_, needs, active) in
+                (&colonists, &mut needs_storage, active_jobs.maybe()).join()
+            {
                 comp::bastion::decay_needs(needs, dt.0, &mood_cfg);
+                // Restore AFTER decay, in the same tick, so the net is exactly
+                // `comfort / RECREATION_BREAK_SECS` per second -- the rate
+                // `restore_recreation`'s own doc derives. Restoring before
+                // decay would be the same arithmetic but reads as if the two
+                // were independent, and they are not.
+                let on_break = active
+                    .and_then(|aj| board.jobs.get(&aj.job))
+                    .is_some_and(|j| {
+                        matches!(j.kind, common::bastion::JobKind::Recreate { .. })
+                    });
+                if on_break {
+                    comp::bastion::restore_recreation(
+                        needs,
+                        dt.0,
+                        &mood_cfg,
+                        RECREATION_BREAK_SECS as f32,
+                    );
+                    recreate_restored += 1;
+                }
                 decay_join_count += 1;
+            }
+            if recreate_restored > 0 && tick.0 % 60 == 0 {
+                // Emitted at 2 Hz, not per tick: the point is to witness that
+                // the restore is REACHING someone, and a per-tick line would
+                // bury the run. Carries the count, so "one colonist on a
+                // break" and "the whole colony idling" cannot read alike.
+                info!(
+                    tick = tick.0,
+                    colonists_on_break = recreate_restored,
+                    "bastion: recreation restore applied (ITEM 11 RESIDUAL)"
+                );
             }
             if decay_diag && tick.0 % 300 == 0 {
                 info!(

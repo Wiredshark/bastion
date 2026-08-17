@@ -243,6 +243,46 @@ pub fn decay_needs(needs: &mut Needs, dt: f32, cfg: &crate::bastion::MoodConfig)
     needs.recreation = (needs.recreation - cfg.recreation.decay_per_sec * dt).max(0.0);
 }
 
+/// bastion (ITEM 11 RESIDUAL, 2026-08-17): the SOURCE the recreation loop was
+/// missing. Applied ONLY while a colonist holds a `Recreate` job.
+///
+/// ★ THE RATE IS DERIVED FROM A REQUIREMENT, NOT CHOSEN. `decay_needs` runs on
+/// every colonist every tick, including one on a break, so a restore of exactly
+/// `decay_per_sec` would only hold the meter still. The requirement is **"one
+/// full break takes a colonist from empty to comfort"**, which fixes the rate:
+///
+/// ```text
+/// net_per_sec  = restore_per_sec - decay_per_sec = comfort / break_secs
+/// restore_per_sec = decay_per_sec + comfort / break_secs
+/// ```
+///
+/// So the number expresses a stated design fact and moves automatically if
+/// either the comfort band or the break length is retuned. **This is why it is
+/// not a balance number I would be out of scope picking:** the alternative was
+/// an arbitrary multiplier, and *"a field cannot calibrate its own bound."*
+///
+/// ⚠ **THE BAR THIS MUST BE MEASURED AGAINST IS NET-ACROSS-A-BREAK, NOT
+/// PER-TICK.** A restore that merely slowed the decay would satisfy a naive
+/// "did recreation rise this tick" check and still leave the ratchet one-way.
+///
+/// Pure and `break_secs`-passed for the same reason the pit and shaft cell
+/// generators take their depth: assertable in one test binary with no server.
+pub fn restore_recreation(
+    needs: &mut Needs,
+    dt: f32,
+    cfg: &crate::bastion::MoodConfig,
+    break_secs: f32,
+) {
+    // A zero/negative break length would divide by zero or drain the meter;
+    // refuse rather than produce a number, since a silently-wrong rate here
+    // reads exactly like a working restore.
+    if !(break_secs > 0.0) {
+        return;
+    }
+    let per_sec = cfg.recreation.decay_per_sec + cfg.recreation.comfort / break_secs;
+    needs.recreation = (needs.recreation + per_sec * dt).min(1.0);
+}
+
 /// bastion (ITEM 11): decay all three AND report the recreation comfort
 /// crossing, for callers that want the edge witnessed.
 ///
@@ -252,12 +292,23 @@ pub fn decay_needs(needs: &mut Needs, dt: f32, cfg: &crate::bastion::MoodConfig)
 /// — same call, same result — and returns the edge, so a caller that
 /// wants the witness opts in and every existing caller is untouched.
 ///
-/// RECREATION IS THE ONE-WAY RATCHET: it decays at `decay_per_sec`, feeds
-/// a mood penalty through `shortfall`, and NOTHING in the codebase raises
-/// it (hunger has `EatFrom`, rest has `RestAt`; `PendingNeed` has no
-/// Recreate arm and recreation's interrupt is 0 = never preempts). The
-/// crossing is therefore a ONCE-PER-COLONIST-PER-RUN event, which is
-/// exactly what makes it worth an edge emit rather than a state check.
+/// ⚠ **THIS PARAGRAPH WAS TRUE WHEN WRITTEN AND ITEM 11 MADE IT FALSE — twice,
+/// by my own hand.** It read: *"RECREATION IS THE ONE-WAY RATCHET … NOTHING in
+/// the codebase raises it … `PendingNeed` has no Recreate arm."*
+///
+/// 1. Item 11 added `PendingNeed::Recreate` and the preempt, so the "no Recreate
+///    arm" clause died immediately and I did not update this comment.
+/// 2. The residual read (2026-08-17) found the deeper half still true — nothing
+///    raised the meter — and `restore_recreation` above now does.
+///
+/// ★ Kept as a correction rather than deleted, because the stale version is why
+/// the ratchet survived a whole build: **a doc that describes the world before
+/// your change will keep telling the next reader that the gap is still open —
+/// or, worse, that it is already closed.**
+///
+/// **CURRENT TRUTH:** recreation decays at `decay_per_sec`, feeds a mood penalty
+/// through `shortfall`, is raised **only** by `restore_recreation` while a
+/// `Recreate` job is held, and its crossing is still an edge worth witnessing.
 pub fn decay_needs_witnessed(
     needs: &mut Needs,
     dt: f32,
