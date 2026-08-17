@@ -10530,12 +10530,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // reads (the Opus Flee ruling): a hostile target on
                 // the Agent comp, or health below the psyche's flee
                 // fraction. No spatial query, no rng.
-                let flee_sig = agents.get(entity).is_some_and(|ag| {
-                    ag.target.is_some_and(|t| t.hostile)
-                        || healths
-                            .get(entity)
-                            .is_some_and(|h| h.fraction() < ag.psyche.flee_health)
+                // ITEM 13c: the two branches are computed SEPARATELY rather
+                // than as one short-circuited `||`, so the emit below can name
+                // WHICH one fired. Both are pure component reads with no side
+                // effects, so evaluating both eagerly cannot change behaviour —
+                // only `||`'s short-circuit is given up, and `healths.get` is a
+                // storage lookup, not work. The emit's frequency is unchanged
+                // (it still fires only on a transition INTO Flee).
+                //
+                // Why this exists: item 13c proved branch B fires, but could
+                // only attribute it AT THE ARM LEVEL — no hostile existed in
+                // the world, a matched control emitted zero, and 19 untreated
+                // arms emitted zero. The line itself named neither the colonist
+                // nor the cause, so a run with BOTH a hostile and a wounded
+                // colonist would have been unattributable per event.
+                let flee_target = agents
+                    .get(entity)
+                    .is_some_and(|ag| ag.target.is_some_and(|t| t.hostile));
+                let flee_hurt = agents.get(entity).is_some_and(|ag| {
+                    healths
+                        .get(entity)
+                        .is_some_and(|h| h.fraction() < ag.psyche.flee_health)
                 });
+                let flee_sig = flee_target || flee_hurt;
                 let Some(arb) = arbiters.get_mut(entity) else {
                     continue;
                 };
@@ -10575,7 +10592,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // Drive flips to Flee, and resumes toward the SAME
                     // still-claimed job once Drive flips back to Work —
                     // "resume after", not a fresh claim.
-                    info!("bastion: FLEE — drive preempts work (per-tick)");
+                    // ITEM 13c: carries the colonist and the CAUSE. `health`
+                    // and `flee_health` are logged as the actual fraction and
+                    // the actual threshold, not as a verdict, so the line can
+                    // be checked rather than believed -- and so a future
+                    // "branch B never fires" claim has to argue with a number.
+                    info!(
+                        colonist = %uid,
+                        by_target = flee_target,
+                        by_health = flee_hurt,
+                        health = healths.get(entity).map(|h| h.fraction()).unwrap_or(-1.0),
+                        flee_health = agents
+                            .get(entity)
+                            .map(|ag| ag.psyche.flee_health)
+                            .unwrap_or(-1.0),
+                        "bastion: FLEE — drive preempts work (per-tick)"
+                    );
                     continue;
                 }
                 // Same-tier selection at the cadence, committed.

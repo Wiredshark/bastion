@@ -3726,13 +3726,26 @@ impl Server {
     /// not guessed. Read-only, no world writes, zero added hot-path cost
     /// (`min_distance_to_target` is already maintained every tick this
     /// reads at settle).
+    /// ORDER (#84, 2026-08-17): iterated in KEY ORDER, not hash order.
+    /// `timeout_counts_by_pos` is a `HashMap`, so `.keys()` yields an
+    /// unspecified order; this list is serialized into the harness JSON and
+    /// `holdcheck` compares lists WHOLE ("a reordered list is a change"), so an
+    /// unsorted collect reported a wave MOVER on every permutation with no
+    /// content change at all -- measured at 16/48 seeds on wave31->wave32, ALL
+    /// of them order-only. Sorting by position makes the sequence a function of
+    /// the CONTENT, which is what a baseline has to be.
     pub fn bastion_travel_timeout_min_distances(&self) -> Vec<f32> {
         let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
-        board
+        let mut keyed: Vec<(vek::Vec3<i32>, f32)> = board
             .timeout_counts_by_pos
             .keys()
-            .filter_map(|pos| board.min_distance_to_target.get(pos).copied())
-            .collect()
+            .filter_map(|pos| board.min_distance_to_target.get(pos).copied().map(|d| (*pos, d)))
+            .collect();
+        // Sorted by POSITION, not by the distance value: two positions can share
+        // a distance, and sorting by a non-unique key leaves the tie's order
+        // hash-dependent -- the same defect one step further in.
+        keyed.sort_unstable_by_key(|(pos, _)| (pos.x, pos.y, pos.z));
+        keyed.into_iter().map(|(_, d)| d).collect()
     }
 
     /// bastion (TRAVEL-ROW-SPEC §4.1, harness hook, 2026-08-08): (job
@@ -3745,12 +3758,20 @@ impl Server {
     pub fn bastion_travel_timeout_last_positions(
         &self,
     ) -> Vec<(vek::Vec3<i32>, vek::Vec3<f32>)> {
+        // ORDER (#84, 2026-08-17): sorted by job position -- see
+        // `bastion_travel_timeout_min_distances` for the full reasoning. This
+        // accessor feeds THREE harness JSON fields (b5_travel_timeout_last_
+        // positions, and b5_self_job_reachability_probe via main.rs:3707), so
+        // its order escaped into all three; the third was found by the DATA,
+        // not by the read.
         let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
-        board
+        let mut out: Vec<(vek::Vec3<i32>, vek::Vec3<f32>)> = board
             .timeout_counts_by_pos
             .keys()
             .filter_map(|pos| board.last_timeout_pos.get(pos).map(|lp| (*pos, *lp)))
-            .collect()
+            .collect();
+        out.sort_unstable_by_key(|(pos, _)| (pos.x, pos.y, pos.z));
+        out
     }
 
     /// bastion (task #55, harness hook, 2026-07-30): how many designation
