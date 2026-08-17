@@ -243,6 +243,31 @@ pub fn decay_needs(needs: &mut Needs, dt: f32, cfg: &crate::bastion::MoodConfig)
     needs.recreation = (needs.recreation - cfg.recreation.decay_per_sec * dt).max(0.0);
 }
 
+/// bastion (ITEM 11): decay all three AND report the recreation comfort
+/// crossing, for callers that want the edge witnessed.
+///
+/// WHY A SECOND ENTRY POINT rather than a flag on `decay_needs`: that
+/// function is called on every colonist every tick and its signature is
+/// depended on by tests and by the determinism arithmetic. This wraps it
+/// — same call, same result — and returns the edge, so a caller that
+/// wants the witness opts in and every existing caller is untouched.
+///
+/// RECREATION IS THE ONE-WAY RATCHET: it decays at `decay_per_sec`, feeds
+/// a mood penalty through `shortfall`, and NOTHING in the codebase raises
+/// it (hunger has `EatFrom`, rest has `RestAt`; `PendingNeed` has no
+/// Recreate arm and recreation's interrupt is 0 = never preempts). The
+/// crossing is therefore a ONCE-PER-COLONIST-PER-RUN event, which is
+/// exactly what makes it worth an edge emit rather than a state check.
+pub fn decay_needs_witnessed(
+    needs: &mut Needs,
+    dt: f32,
+    cfg: &crate::bastion::MoodConfig,
+) -> bool {
+    let before = needs.recreation;
+    decay_needs(needs, dt, cfg);
+    crossed_comfort_downward(before, needs.recreation, cfg.recreation.comfort)
+}
+
 /// bastion (B7-0): a need's penalty basis — nonzero only BELOW the
 /// comfort band, so a topped-up colonist is unperturbed and a starving
 /// one is heavily penalized. Continuous (mood tracks pressure smoothly).
