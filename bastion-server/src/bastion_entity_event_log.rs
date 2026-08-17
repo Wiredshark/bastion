@@ -408,7 +408,23 @@ impl EntityStore {
                 collect(subject, event);
             }
         }
-        all.sort_by_key(|r| r.tick);
+        // ORDER (#84, 2026-08-17): sorted by a TOTAL key, not by `tick` alone.
+        //
+        // `tick` is NOT unique -- two subjects can be released on the same
+        // tick -- and `sort_by_key` is STABLE, so equal ticks keep their input
+        // order. That input order comes from iterating `self.rings` and
+        // `self.permanent`, both `HashMap`s, so the tie-break was hash order
+        // and this list reached the harness JSON (`b5_eelog_released_events`)
+        // as an array that `holdcheck` compares WHOLE.
+        //
+        // ★ Found by applying the rule written for the travel_timeout fix an
+        // hour earlier -- "a non-unique sort key leaves the tie hash-dependent,
+        // the same defect one step further in" -- to the one list field that
+        // was VACUOUS (always empty) in the seeds that scored that fix. An
+        // empty list hides this perfectly: it cannot move, so no wave has ever
+        // reported it, and it would have surfaced only once some scenario
+        // released two colonists on one tick.
+        all.sort_by_key(|r| (r.tick, r.subject.0.get(), r.job));
         let truncated = all.len() > cap;
         if truncated {
             let start = all.len() - cap;
