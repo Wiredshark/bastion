@@ -16488,6 +16488,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     }
                     continue;
                 }
+                // THE STILLNESS WATCH IS THE PATH THAT ACTUALLY FIRES
+                // (SCAN-VERDICT-AMENDMENT-1.md). The shaft arm produced a
+                // scan verdict with ZERO churn ticks: there are two
+                // `egress_scan` call sites, and the churn instrument was
+                // above the OTHER one. Instrumented here the same way --
+                // BOTH outcomes -- so "still enough" and "not still enough"
+                // cannot be told apart only by silence.
+                if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                    info!(
+                        uid = uid.0.get(),
+                        still_secs = watch.1,
+                        threshold = EGRESS_STILL_SECS,
+                        reaches_scan = (watch.1 >= EGRESS_STILL_SECS),
+                        "bastion: stillness watch"
+                    );
+                }
                 if watch.1 < EGRESS_STILL_SECS {
                     continue;
                 }
