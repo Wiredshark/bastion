@@ -184,10 +184,17 @@ pub const FAMILIES: &[FamilyV1] = &[
 /// root), so the array grows 50 -> 54 -> 77.
 const INSTANT_SYSTEMTIME_BASELINE: [(&str, &str, u32); 172] = instant_systemtime_baseline();
 
-/// 3 sites at pin time, all verified: comments naming a hasher this code
-/// already avoids, zero live usage. A clean family is still worth
-/// pinning -- the completeness/staleness tests keep it clean.
-const DEFAULT_HASHER_BASELINE: [(&str, &str, u32); 3] = default_hasher_baseline();
+/// 4 sites, all verified: comments naming a hasher this code already
+/// avoids, zero live usage. A clean family is still worth pinning -- the
+/// completeness/staleness tests keep it clean.
+///
+/// WAS 3, RAISED TO 4 (2026-08-16). The fourth is the TIME-COMPRESSION
+/// fingerprint's comment (6eb221148e, 2026-08-11) -- same class as the
+/// other three. ★ THE STALENESS TEST WORKED AND NOBODY WAS LISTENING: it
+/// went red the day that comment landed and stayed red for five days,
+/// because every run in between was a FILTERED `cargo test <name>` that
+/// never reached this crate. Found by running the whole suite.
+const DEFAULT_HASHER_BASELINE: [(&str, &str, u32); 4] = default_hasher_baseline();
 
 /// 16 sites at pin time. 7 verified safe (6 are this program's own
 /// scanner-file convention, sort-immediately-after; 1 is
@@ -344,7 +351,7 @@ const RAW_ENTITY_ID_BASELINE: [(&str, &str, u32); 23] = raw_entity_id_baseline()
 const fn instant_systemtime_baseline() -> [(&'static str, &'static str, u32); 172] {
     include!("determinism_scan_baseline_instant.rs")
 }
-const fn default_hasher_baseline() -> [(&'static str, &'static str, u32); 3] {
+const fn default_hasher_baseline() -> [(&'static str, &'static str, u32); 4] {
     include!("determinism_scan_baseline_default_hasher.rs")
 }
 // The baseline files these pull in are NOT purely machine-owned. Builders

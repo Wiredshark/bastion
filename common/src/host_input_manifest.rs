@@ -360,6 +360,47 @@ const CATALOG: &[EnvVarSiteV1] = &[
     ),
     site(
         "bastion-server/src/bastion_jobs.rs",
+        "BASTION_MINE_READBACK_DIAG",
+        Diagnostic,
+        "next-tick mine readback (READBACK-PREREG.md) -- logs terrain.get at the \
+         completion site and again one tick later, so 'the air write landed' is a \
+         fact instead of an inference",
+    ),
+    site(
+        "bastion-server/src/bastion_jobs.rs",
+        "BASTION_STATUS_STAMP_DIAG",
+        Diagnostic,
+        "edge-triggered status-stamp emit (STAMP-EMIT-PREREG.md) -- both stamp \
+         sites re-stamp every tick they hold, so this fires on the EPISODE edge, \
+         never per tick",
+    ),
+    site(
+        "bastion-server/src/bastion_jobs.rs",
+        "BASTION_RECREATION",
+        GameplayVariant,
+        "ITEM 11's recreation break -- a REAL gameplay variant, off by default: \
+         colonists stopping work to relax changes colony throughput, so it earns \
+         its way on through a measured A/B rather than shipping enabled",
+    ),
+    site(
+        "bastion-server/src/bastion_flat_arena.rs",
+        "BASTION_FLAT_ARENA_SHAFT",
+        GameplayVariant,
+        "the SHAFT fixture (SHAFT-FIXTURE-PREREG.md) -- 8 deep, 3 across, the \
+         geometry egress_scan's own arithmetic requires for a trap; the 4-deep \
+         10-across pit cannot trap and its constants say so",
+    ),
+    site(
+        "bastion-server/src/bastion_flat_arena.rs",
+        "BASTION_FLAT_ARENA_PIT",
+        GameplayVariant,
+        "the PIT fixture's depth gate -- a PRE-EXISTING registration gap, not \
+         from the rows that surround it here: this variable predates them and \
+         was already unregistered, which means this manifest test was RED before \
+         those rows and nobody had run the full suite to see it",
+    ),
+    site(
+        "bastion-server/src/bastion_jobs.rs",
         "BASTION_TIGHTDIG",
         GameplayVariant,
         "the FR15-TIGHTDIG alternate stuck-economy metric -- a real gameplay \
