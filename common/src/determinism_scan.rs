@@ -104,6 +104,23 @@ pub const FAMILIES: &[FamilyV1] = &[
             ("common/src/comp/inventory/item/mod.rs", "comment only, naming a hasher this code explicitly moved AWAY from -- zero live usage"),
             ("common/src/state_hash.rs", "comment only, documenting WHY DomainHasher exists instead of DefaultHasher -- zero live usage"),
             ("bastion-server/src/bastion_jobs.rs", "comment only, documenting a past fix -- zero live usage"),
+            // ★ THE SECOND HALF OF A REGISTRATION THAT WAS ONLY HALF DONE
+            // (2026-08-17). The TIME-COMPRESSION comment (6eb221148e,
+            // 2026-08-11) needs TWO entries -- a baseline row AND a verified
+            // note -- because `default_hasher_family_is_genuinely_clean`
+            // asserts `baseline.len() == verified_notes.len()`. On 2026-08-16
+            // the baseline row was added and this note was not, so the
+            // staleness guard went green while its SIBLING stayed red, and the
+            // family read as fixed. A red that survives its own fix is worse
+            // than one that never got attention: the ledger says handled.
+            //
+            // REVIEWED, not bumped, as the assertion's own message demands:
+            // `bastion_jobs.rs:19271` is a COMMENT inside the
+            // `BASTION_FINGERPRINT` block stating the code deliberately does
+            // NOT use DefaultHasher -- it uses `digest_canonical_bytes_v1`
+            // because SipHash is version-unstable across toolchains. Same
+            // class as the three above: a hasher named only to disown it.
+            ("bastion-server/src/bastion_jobs.rs", "comment only, at the TIME-COMPRESSION fingerprint hook, naming DefaultHasher to explain why digest_canonical_bytes_v1 is used INSTEAD -- zero live usage"),
         ],
         baseline_file: "determinism_scan_baseline_default_hasher.rs",
     },
