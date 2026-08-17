@@ -9508,6 +9508,23 @@ fn b58_scenario(args: &Args) -> ExitCode {
             "d_rescue_cleared": d_rescue_cleared,
             "d_all_out": d_all_out,
             "e_egress_fired": e_egress_fired,
+            // bastion (#108): WHETHER THE PIT EVER HELD A COLONIST TO RESCUE.
+            // `e_out` is `e_pit_colonist.as_ref().is_some_and(|name| ...reached
+            // the surface...)`, and `is_some_and` on a `None` is ALWAYS FALSE —
+            // so when the lure fails to trap anybody, `e_out` reads false for a
+            // SETUP reason wearing an EGRESS reason's name.
+            //
+            // ★ MEASURED on 96 seeds before adding this: `e_out` fails 92 and
+            // `e_lured` fails 80, a 12-seed gap consistent with a funnel (open
+            // the floor -> find someone in the pit -> get them out) but NOT
+            // evidence of one, because the middle stage was computed and never
+            // emitted. This is that stage. With it, b58's largest single failure
+            // count splits into two causes that want completely different fixes.
+            //
+            // ★★ Reported, never gating: it is a PRECONDITION witness, and
+            // gating on it would convert a fixture miss into a second red rather
+            // than explaining the first.
+            "e_pit_colonist_found": e_pit_colonist.is_some(),
             "orphans_final": orphans_final,
             "soak_avg_tick_ms": avg_tick_ms,
             // FR15 baseline (reported): (no_progress_ticks, timeouts, teleports).
