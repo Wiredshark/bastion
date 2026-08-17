@@ -3727,7 +3727,7 @@ impl Server {
     /// (`min_distance_to_target` is already maintained every tick this
     /// reads at settle).
     /// ORDER (#84, 2026-08-17): iterated in KEY ORDER, not hash order.
-    /// `timeout_counts_by_pos` is a `HashMap`, so `.keys()` yields an
+    /// `timeout_counts_by_pos` is a `HashMap`, so iterating its keys yields an
     /// unspecified order; this list is serialized into the harness JSON and
     /// `holdcheck` compares lists WHOLE ("a reordered list is a change"), so an
     /// unsorted collect reported a wave MOVER on every permutation with no
