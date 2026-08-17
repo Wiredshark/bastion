@@ -132,7 +132,7 @@ pub(crate) const NUMERIC_SURFACE_ROLES: &[(&str, NumericRoleV1, &str)] = &[
     ("server/src/events/invite.rs", NumericRoleV1::Authoritative, "squared invite range deciding whether an invite may be sent"),
     ("server/src/events/mounting.rs", NumericRoleV1::Authoritative, "squared mount range deciding whether a mount may be entered"),
     ("server/src/rtsim/tick.rs", NumericRoleV1::Authoritative, "npc simulation scaling on the server side of rtsim"),
-    ("server/src/state_ext.rs", NumericRoleV1::Authoritative, "squared-distance checks in entity placement and lookup helpers"),
+    ("server/src/state_ext.rs", NumericRoleV1::Authoritative, "NOT squared distances (the prose here said so until 2026-08-17 and was never true): a CUBED body-scale factor writing comp::Mass at entity creation, plus the literal sqrt(2) diagonal margin in the view-distance chunk filter"),
     ("server/src/sys/agent/behavior_tree/mod.rs", NumericRoleV1::Authoritative, "squared-distance gates selecting the agent behaviour node"),
     ("server/src/sys/entity_sync.rs", NumericRoleV1::Authoritative, "squared distances deciding WHAT IS SYNCED TO WHOM, the same decision region.rs makes at region granularity"),
     ("server/src/sys/item.rs", NumericRoleV1::Authoritative, "squared range deciding item entity interaction"),
@@ -733,10 +733,32 @@ pub(crate) const NUMERIC_SITES: &[NumericSiteV1] = {
              "squared mount range deciding whether a mount may be entered"),
         site("server/src/rtsim/tick.rs", "powf", 1, Power, AgentDecision, CarriedAcrossTicks,
              "npc simulation scaling on the server side of rtsim"),
-        site("server/src/state_ext.rs", ".powi(", 1, IntegerPower, WorldSync, BranchCondition,
-             "squared-distance checks in entity placement and lookup helpers"),
-        site("server/src/state_ext.rs", "sqrt()", 1, SquareRoot, WorldSync, BranchCondition,
-             "squared-distance checks in entity placement and lookup helpers"),
+        // #91/#94 (2026-08-17): BOTH of these carried the description
+        // "squared-distance checks in entity placement and lookup helpers",
+        // and NEITHER was that. The count moved by one; the prose had never
+        // been true. Re-pinning the count while leaving false prose attached
+        // is how a pin stops being evidence -- the next reader inherits
+        // "squared-distance check" and never looks.
+        //
+        // `.powi(` is `scale.0.powi(3)` writing `comp::Mass` at entity
+        // creation: CUBED, not squared, and not a distance. It branches on
+        // nothing -- it is a stored magnitude feeding physics -- so the old
+        // `WorldSync`/`BranchCondition` classification was wrong on both axes.
+        site("server/src/state_ext.rs", ".powi(", 1, IntegerPower, Spawning, CarriedAcrossTicks,
+             "body mass scaled by the CUBE of entity scale, written into comp::Mass at creation -- a stored magnitude, not a branch"),
+        // `sqrt()` is `2.0_f64.sqrt()`: the constant root-2, the diagonal
+        // margin in the view-distance chunk filter. IEEE-754 mandates
+        // correctly-rounded sqrt, so a literal operand is bit-identical on
+        // every conforming platform -- MORE deterministic than the computed
+        // sqrt this family exists to catch. The real distance computation on
+        // that line is `.distance(...)`, which this scanner cannot see.
+        //
+        // 1 -> 2 because the same view-distance filter is DUPLICATED
+        // (state_ext.rs ~624-636 and ~680-691): same walk, same margin, two
+        // functions, nothing enforcing their agreement. The numeric red was a
+        // symptom of the copy, not of a new computation.
+        site("server/src/state_ext.rs", "sqrt()", 2, SquareRoot, WorldSync, BranchCondition,
+             "the LITERAL 2.0_f64.sqrt() diagonal margin in the view-distance chunk filter, duplicated across two near-identical functions"),
         site("server/src/sys/agent/behavior_tree/mod.rs", ".powi(", 8, IntegerPower, AgentDecision, BranchCondition,
              "squared-distance gates selecting the agent behaviour node"),
         site("server/src/sys/entity_sync.rs", ".powi(", 7, IntegerPower, WorldSync, BranchCondition,
@@ -1197,6 +1219,26 @@ mod numeric_surface_v1 {
 
     /// The branch-driving set is pinned. Shrinking it silently would be a
     /// coverage loss disguised as a cleanup; growing it is a finding.
+    ///
+    /// **53 -> 52 (2026-08-17, #91/#94), and the guard is why this is
+    /// written down instead of just re-pinned.** The removed member is
+    /// `server/src/state_ext.rs`'s `.powi(` site. It was classified
+    /// `BranchCondition` under the description "squared-distance checks in
+    /// entity placement and lookup helpers" — and it is neither of those
+    /// things. It is `scale.0.powi(3)`: a body's mass scaled by the CUBE of
+    /// its size, written straight into `comp::Mass` at entity creation. It
+    /// appears in no comparison. **Nothing branches on it**, so it was never
+    /// a member of this set and its removal is a correction, not a cleanup.
+    ///
+    /// The shrink is therefore NOT a coverage loss: the site stays inventoried
+    /// in `NUMERIC_SITES` with reach `CarriedAcrossTicks`, which is what it
+    /// actually does — a stored magnitude that feeds physics forever after.
+    /// What is lost is a false claim that an ulp there picks a code path.
+    ///
+    /// ★ The same file's `sqrt()` count moved 1 -> 2 in the same commit and
+    /// did NOT change this number, because both sqrt sites are the same
+    /// literal `2.0_f64.sqrt()` margin inside one duplicated view-distance
+    /// filter — one site row, two occurrences.
     #[test]
     fn the_branch_driving_set_is_pinned() {
         let branch: Vec<&str> = NUMERIC_SITES
@@ -1206,7 +1248,7 @@ mod numeric_surface_v1 {
             .collect();
         assert_eq!(
             branch.len(),
-            53,
+            52,
             "the branch-driving set changed; these are the sites where one ulp becomes a \
              different code path:\n{branch:#?}"
         );
