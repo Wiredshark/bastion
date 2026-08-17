@@ -896,6 +896,13 @@ impl<'a> System<'a> for Sys {
             // engine-list T3.58: the colonist's current job assignment,
             // for the InspectorOwnershipV1 evidence key.
             ReadStorage<'a, common::comp::bastion::ActiveJob>,
+            // ITEM 13 (health branch): the inspector could report every need a
+            // colonist has EXCEPT the one that kills them. `Health` was already
+            // in this system's outer SystemData, but the payload is built inside
+            // a closure over the bastion sub-tuple, so it is taken here under the
+            // same `insp_` convention as its siblings rather than reached for
+            // across the borrow.
+            ReadStorage<'a, Health>,
         ),
     );
 
@@ -948,6 +955,7 @@ impl<'a> System<'a> for Sys {
                 insp_energies,
                 insp_tick,
                 insp_active_jobs,
+                insp_healths,
             ),
         ): Self::SystemData,
     ) {
@@ -1693,6 +1701,13 @@ impl<'a> System<'a> for Sys {
                                             energy: insp_energies
                                                 .get(e)
                                                 .map_or(0.0, |en| en.fraction()),
+                                            // ITEM 13 (health branch): `.fraction()`
+                                            // to match `energy`'s unit, but kept
+                                            // inside the Option so a missing
+                                            // component cannot read as death.
+                                            health: insp_healths
+                                                .get(e)
+                                                .map(|h| h.fraction()),
                                             status: crate::bastion_jobs::colonist_status(
                                                 &job_board,
                                                 uid,

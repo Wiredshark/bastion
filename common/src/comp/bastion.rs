@@ -650,6 +650,22 @@ pub struct BastionInspectPayload {
     /// `None` if not requested/available. Tail-appended per the wire
     /// discipline.
     pub ownership: Option<InspectorOwnershipV1>,
+    /// ITEM 13 (health branch): current health as a fraction of maximum, or
+    /// `None` when the entity carries no `Health` component at all.
+    ///
+    /// ★★★ THE `Option` IS LOAD-BEARING AND IS NOT STYLE. The sibling `energy`
+    /// field above collapses with `map_or(0.0, ..)`, so "this entity has no
+    /// Energy component" and "this colonist is exhausted" arrive at the
+    /// inspector as the same number. Copying that shape here would make a
+    /// MISSING COMPONENT render as `0.0` — i.e. as **dead** — which is the one
+    /// reading item 13 exists to make. An exclusion and an absence must never
+    /// render identically, so absence gets its own value.
+    ///
+    /// ★ A join is a filter: colonists DO carry `Health` (the cave-in path
+    /// damages them through `healths.get_mut`), so `None` here is not the
+    /// expected case — it is a signal that the population changed underneath
+    /// this reading, and it is reported rather than averaged into a rate.
+    pub health: Option<f32>,
 }
 
 /// bastion (STATUS-SURFACE): the inspector's colonist status line — the

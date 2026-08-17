@@ -707,15 +707,29 @@ fn main() {
                             // me report "they were None" about fields I had
                             // never looked at -- silence in a log is evidence
                             // about the LOGGER, not about the field.
+                            // ITEM 13: `health` is printed as the raw Option debug
+                            // (`Some(0.7143)` / `None`) rather than flattened to a
+                            // number, for the reason stated on the field itself: a
+                            // missing component must not be readable as 0.0/dead.
+                            //
+                            // ★ `conscientious` and `neurotic` are added here having
+                            // ALREADY been on the wire — the payload carries 14
+                            // fields and this line printed 12. That gap is the exact
+                            // trap the comment above warns about, and I walked into
+                            // it: I read THIS FORMAT STRING to conclude what the
+                            // payload contained. The conclusion happened to be right
+                            // for `health`; it was wrong for these two.
                             "INSPECT uid={} name={} hunger={:.4} rest={:.4} recreation={:.4} \
-                             energy={:.4} mood={:.4} drive={:?} scores={:?} activity={:?} \
-                             status={:?} ownership={} mood_expl={}",
+                             energy={:.4} health={:?} mood={:.4} drive={:?} scores={:?} \
+                             activity={:?} status={:?} ownership={} mood_expl={} \
+                             consc={} neur={}",
                             uid.0,
                             p.name,
                             p.hunger,
                             p.rest,
                             p.recreation,
                             p.energy,
+                            p.health,
                             p.mood,
                             p.drive,
                             p.last_scores,
@@ -726,7 +740,9 @@ fn main() {
                                 "SOME"
                             } else {
                                 "NONE"
-                            }
+                            },
+                            p.conscientious,
+                            p.neurotic
                         ));
                     }
                 }
