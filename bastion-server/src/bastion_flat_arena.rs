@@ -57,10 +57,19 @@ pub const MAX_TESTED_VIEW_DISTANCE_CHUNKS: i32 = 25;
 /// the invariant so a future VD bump fails the test instead of silently
 /// re-voiding the row.
 ///
-/// ⚠ COST, stated not measured: the override area grows 33×33 → 53×53 chunks
-/// (~2.6×). Each overridden chunk is a flat slab and *cheaper* than real
-/// worldgen, so boot time may well improve — **but I did not measure it**, and
-/// a claim either way would be a number without a producer.
+/// ★ COST — **MEASURED 2026-08-17, and the number is small.** The override area
+/// grows 33×33 → 53×53 chunks (~2.6×), and server boot-to-port went
+/// **63–75 s (six runs at radius 16) → 78 s (radius 26)**. A few seconds, near
+/// noise — because each overridden chunk is a flat slab written directly,
+/// which is cheaper than the real worldgen it replaces, so 2.6× the chunks is
+/// nothing like 2.6× the time.
+///
+/// ⚠ *Recorded because I briefly believed the opposite.* Watching a log that
+/// had not yet flushed its `port open after` line, I read my own polling
+/// latency as server latency and started drafting a ">3× regression, make the
+/// radius conditional" fix. **The absence of a line is not a measurement of
+/// the thing the line reports** — the same law the evidence files are held to,
+/// applied to a live log.
 pub const FLAT_ARENA_RADIUS_CHUNKS: i32 = 26;
 
 /// The arena's uniform surface height — comfortably above sea level so the
