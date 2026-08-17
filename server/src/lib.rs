@@ -2688,6 +2688,26 @@ impl Server {
         use common::uid::Uid;
         let target = Uid(std::num::NonZeroU64::new(uid)?);
         let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
+        // bastion (#101): well-defined only if a colonist holds AT MOST ONE live
+        // `Despond` job. `insert_despond_job` does NO de-duplication — it
+        // allocates and inserts unconditionally — so the uniqueness is ENTIRELY
+        // the callers': the harness hook refuses when the colonist already holds
+        // an active job, and the live path creates from `PendingNeed::Despond`
+        // behind the arbiter's `pending_self_job`, a single `Option<JobId>`.
+        // ★ Both are arguments about code ELSEWHERE. This turns them into a test.
+        debug_assert!(
+            board
+                .jobs
+                .values()
+                .filter(|j| matches!(j.kind, common::bastion::JobKind::Despond { .. })
+                    && j.claimed_by == Some(target))
+                .count()
+                <= 1,
+            "bastion_despond_until: colonist {target:?} holds MORE THAN ONE live Despond job — \
+             `find_map` returns whichever the hasher visited first. The callers are supposed to \
+             make this impossible (`pending_self_job` is a single Option); if this fires, that is \
+             a JobBoard bug and NOT something a sort would fix."
+        );
         board.jobs.values().find_map(|j| match j.kind {
             common::bastion::JobKind::Despond { until } if j.claimed_by == Some(target) => {
                 Some(until)
@@ -2708,6 +2728,30 @@ impl Server {
         use common::uid::Uid;
         let target = Uid(std::num::NonZeroU64::new(uid)?);
         let board = self.state.ecs().read_resource::<bastion_jobs::JobBoard>();
+        // bastion (#101): the STRICTLY BROADER predicate of the pair — it matches
+        // on `claimed_by` OR `suspended_for`, so it is the more exposed of the
+        // two and can match twice even where the sibling matches once (one
+        // claimed job plus one suspended job for the same colonist).
+        //
+        // ★★ The existing comment here defends a DIFFERENT property: "colonist
+        // A's query can never surface colonist B's job". True, and about
+        // cross-colonist leakage — it says nothing about ONE colonist matching
+        // TWICE, which is the hazard `find_map` actually has. A comment that
+        // answers an adjacent question reads, at a glance, as though the
+        // question were settled.
+        debug_assert!(
+            board
+                .jobs
+                .values()
+                .filter(|j| matches!(j.kind, common::bastion::JobKind::Despond { .. })
+                    && (j.claimed_by == Some(target) || j.suspended_for == Some(target)))
+                .count()
+                <= 1,
+            "bastion_despond_until_any: colonist {target:?} matches MORE THAN ONE live Despond \
+             job across the claimed/suspended union — `find_map` returns whichever the hasher \
+             visited first. Broader predicate than the sibling, so this can fire where that one \
+             does not."
+        );
         board.jobs.values().find_map(|j| match j.kind {
             common::bastion::JobKind::Despond { until }
                 if j.claimed_by == Some(target) || j.suspended_for == Some(target) =>

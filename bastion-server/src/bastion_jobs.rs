@@ -2060,6 +2060,31 @@ pub fn access_stall_secs() -> f32 {
 /// active links, scanned once per `Released` event (event-driven, not
 /// per-tick).
 pub(crate) fn queue_position_for(board: &JobBoard, uid: common::uid::Uid) -> Option<usize> {
+    // bastion (#101): `find_map` over a HashMap takes the FIRST match in HASHER
+    // order, so it is only well-defined if AT MOST ONE link can match. That
+    // invariant does hold today, and it holds one level up rather than here:
+    // `emergency_route_members: HashMap<Uid, Uid>` is keyed MEMBER -> OWNER, so
+    // a member has at most one owner by the key type, and the link only adds
+    // ORDER. ★ But nothing ASSERTED it, and `traversal_enqueue`'s idempotency is
+    // per-link — which is where the eye goes and is NOT where the uniqueness
+    // lives.
+    //
+    // ★★ A SORT WOULD BE THE WRONG FIX. Sorting makes the CHOICE deterministic
+    // while leaving the MULTIPLICITY, so if a uid ever does end up in two live
+    // links that is a JobBoard bug and a sort would hide it behind a stable
+    // answer forever. The assert fails instead, which is the point.
+    debug_assert!(
+        board
+            .traversal_links
+            .values()
+            .filter(|link| link.position(uid).is_some())
+            .count()
+            <= 1,
+        "queue_position_for: uid {uid:?} is enqueued in MORE THAN ONE traversal link — \
+         `find_map` would return whichever the hasher happened to visit first. This is a \
+         JobBoard invariant break (a member has one owner by the key type of \
+         `emergency_route_members`), not a lookup bug."
+    );
     board.traversal_links.values().find_map(|link| link.position(uid))
 }
 
