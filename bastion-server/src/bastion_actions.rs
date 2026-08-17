@@ -81,7 +81,10 @@ pub fn completion_block(kind: JobKind) -> Option<Block> {
         | JobKind::DepositRun { .. }
         | JobKind::RestAt { .. }
         | JobKind::EatFrom { .. }
-        | JobKind::Despond { .. } => None,
+        | JobKind::Despond { .. }
+        // bastion (ITEM 11): a break edits no terrain — the colonist
+        // simply idles in place, exactly as Despond does.
+        | JobKind::Recreate { .. } => None,
     }
 }
 

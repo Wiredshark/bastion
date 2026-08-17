@@ -1135,6 +1135,7 @@ pub(crate) fn job_kind_label(kind: &common::bastion::JobKind) -> &'static str {
         common::bastion::JobKind::RestAt { .. } => "RestAt",
         common::bastion::JobKind::EatFrom { .. } => "EatFrom",
         common::bastion::JobKind::Despond { .. } => "Despond",
+        common::bastion::JobKind::Recreate { .. } => "Recreate",
     }
 }
 
@@ -1884,7 +1885,10 @@ fn job_still_wanted(kind: &common::bastion::JobKind, block: &Block) -> bool {
         | common::bastion::JobKind::DepositRun { .. }
         | common::bastion::JobKind::RestAt { .. }
         | common::bastion::JobKind::EatFrom { .. }
-        | common::bastion::JobKind::Despond { .. } => true,
+        | common::bastion::JobKind::Despond { .. }
+        // bastion (ITEM 11): Recreate is a self-job like the four above —
+        // pre-claimed FOR one colonist, never drawn from the open board.
+        | common::bastion::JobKind::Recreate { .. } => true,
     }
 }
 
@@ -11045,6 +11049,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             Rest(Vec3<i32>),
             Eat(Uid, common::bastion::ReservationId, Vec3<i32>, &'static str),
             Despond(f64),
+            /// bastion (ITEM 11): the recreation break — `until` sim time.
+            /// LOWEST PRIORITY of every variant here by construction: it is
+            /// only ever pushed after Rest/Eat/Despond have declined, so a
+            /// hungry or exhausted colonist can never relax instead.
+            Recreate(f64),
             // AUTON-2 unification (site 4/6, row 50, 2026-08-09): a
             // SUSPENDED self-job (RestAt/EatFrom) this colonist already
             // owns — re-activate it verbatim (same job id, same target,
@@ -15247,7 +15256,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         | common::bastion::JobKind::DepositRun { .. }
                         | common::bastion::JobKind::RestAt { .. }
                         | common::bastion::JobKind::EatFrom { .. }
-                        | common::bastion::JobKind::Despond { .. } => false,
+                        | common::bastion::JobKind::Despond { .. }
+                        // bastion (ITEM 11): like every other self-job, a
+                        // break has no terrain precondition to re-check —
+                        // `still_valid` is about a designation's target
+                        // block, and a break has none.
+                        | common::bastion::JobKind::Recreate { .. } => false,
                     });
                     if !still_valid {
                         info!(
@@ -15935,6 +15949,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         info!(kind = "Despond", "bastion SELFJOB-CREATED-DIAG");
                     }
                     board.insert_despond_job(feet, uid, until)
+                },
+                // bastion (ITEM 11): recreation's break, same self-job
+                // shape as Despond above — at the colonist's own feet,
+                // pre-claimed, idling until `until`.
+                PendingNeed::Recreate(until) => {
+                    let feet = positions
+                        .get(entity)
+                        .map(|p| p.0.map(|v| v.floor() as i32))
+                        .unwrap_or_default();
+                    if std::env::var_os("BASTION_SELFJOB_COMPLETION_DIAG").is_some() {
+                        info!(kind = "Recreate", "bastion SELFJOB-CREATED-DIAG");
+                    }
+                    board.insert_recreate_job(feet, uid, until)
                 },
                 // AUTON-2 unification (site 4/6, corrected per Fable
                 // DECISIONS #72): the job already exists — reclaim
