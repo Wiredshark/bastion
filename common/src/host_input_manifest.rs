@@ -383,6 +383,19 @@ const CATALOG: &[EnvVarSiteV1] = &[
          its way on through a measured A/B rather than shipping enabled",
     ),
     site(
+        "bastion-server/src/bastion_founding_preset.rs",
+        "BASTION_FOUNDING_NO_FARM",
+        GameplayVariant,
+        "ARC 3 blocker (#92) -- suppresses the founding preset's Farm element so \
+         a designated 3-cell shaft mine can win arbitration. Four scripted \
+         attempts failed because founding work NEVER ENTERS THE DESIGNATION \
+         BOARD (list_designations reads [] while 96 farm jobs exist), so the \
+         driver's `cancel` is structurally incapable of removing it -- the \
+         suppression has to happen at the source. Default OFF; filters in \
+         preset_regions only, so the site-validation footprint shrinks in step \
+         with what is placed",
+    ),
+    site(
         "bastion-server/src/bastion_flat_arena.rs",
         "BASTION_FLAT_ARENA_WALLED",
         GameplayVariant,

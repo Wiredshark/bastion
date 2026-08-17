@@ -264,11 +264,46 @@ pub fn element_region(element: &PresetElement, origin: Vec3<i32>) -> Region {
     }
 }
 
+/// bastion (ARC 3 BLOCKER / #92): suppress the founding preset's FARM element.
+///
+/// ★ WHY THIS EXISTS, AND WHY A SCRIPT COULD NOT DO IT. The ARC 3 arm needs a
+/// colonist to take a 3-cell mine job at the bottom of the shaft
+/// (`SHAFT_OUTCROP_HALF_WIDTH = 0` leaves a single column). Four scripted
+/// attempts failed because the founding preset seeds farm work that wins every
+/// arbitration — 74 then 96 farm jobs against 3 mineable cells with 8
+/// colonists. The obvious script fix, `cancel` on the farm region, is
+/// **structurally impossible**: founding work never enters the designation
+/// board, so `list_designations` reads `[]` while 96 farm jobs exist. A cancel
+/// is scoped to the board; the founding path is not on it.
+///
+/// ★★ SO THE SUPPRESSION HAS TO BE HERE, AT THE SOURCE — and it is a FIXTURE
+/// control, not a gameplay change: default OFF, one env read, no effect on any
+/// unflagged run.
+///
+/// ⚠ **AND IT IS THE ONLY CORRECT SHAPE OF FIX.** The tempting alternative —
+/// widening the mine box so it out-competes the farm — would change the shaft's
+/// geometry, and `SHAFT_HALF_WIDTH = 1` is exactly what guarantees no floor cell
+/// is ever `d >= 3` from a colonist standing in it. A wider shaft is an
+/// *escapable* one, so buying arbitration with geometry would test the opposite
+/// of the thing under test.
+pub fn farm_suppressed() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("BASTION_FOUNDING_NO_FARM").is_some())
+}
+
 /// The whole template, resolved to absolute regions. This is what the
 /// placement site iterates — it never computes a position of its own.
+///
+/// ★ `farm_suppressed()` filters HERE and nowhere else, because this is the one
+/// function the placement site and `footprint_columns` both go through — so the
+/// site-validation footprint shrinks in step with what is actually placed,
+/// rather than validating columns for a plot that will not exist.
+/// `bed_capacity()` reads `FOUNDING_PRESET_V1` directly and is deliberately
+/// untouched: the colonist-count bar must keep checking the REAL table.
 pub fn preset_regions(origin: Vec3<i32>) -> Vec<(PresetRole, DesignationKind, Region)> {
     FOUNDING_PRESET_V1
         .iter()
+        .filter(|element| !(farm_suppressed() && element.role == PresetRole::Farm))
         .map(|element| {
             (
                 element.role,
