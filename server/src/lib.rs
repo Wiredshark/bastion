@@ -847,6 +847,44 @@ impl Server {
         // gate-green-but-inert bug's decisive signal — if this logs `false`
         // on a launch that set BASTION_FLAT_ARENA / passed --bastion-flat-arena,
         // the transport, not the override, is at fault).
+        // #96: the line above reported ONE gate, and item 15 was voided by a
+        // DIFFERENT one. `BASTION_FLAT_ARENA_WALLED=1` produced no wall in the
+        // world even though the attestation proved the var reached the process
+        // and two unit tests proved `wall_cells()` emits a closed hollow ring —
+        // because both tests call `wall_cells()` DIRECTLY and neither exercises
+        // the `walled()` gate or the write into a chunk. A green gate beside an
+        // inert feature is precisely what this emit exists to catch, so it now
+        // carries every arena gate and, crucially, the CELL COUNTS.
+        //
+        // The counts are what make it diagnostic rather than merely descriptive:
+        // `feature_cells` is the total `resourced_feature_cells` will try to
+        // write, and `wall_cells` is the ring's share of it. So
+        //   walled=false                  -> the GATE is the bug
+        //   walled=true, wall_cells=0     -> the generator is the bug
+        //   walled=true, wall_cells>0     -> the WRITE is the bug, and the
+        //                                    survey that found no rock at the
+        //                                    ring is pointing at chunk.set
+        // Three outcomes, distinguished before a single further run.
+        #[cfg(feature = "worldgen")]
+        {
+            let arena_centre = bastion_flat_arena::world_center_wpos(&world);
+            info!(
+                flat_arena_enabled = bastion_flat_arena::enabled(),
+                resourced = bastion_flat_arena::resourced(),
+                walled = bastion_flat_arena::walled(),
+                pit_depth = bastion_flat_arena::pit_depth(),
+                shaft_depth = bastion_flat_arena::shaft_depth(),
+                feature_cells = bastion_flat_arena::resourced_feature_cells(arena_centre).len(),
+                wall_cells = bastion_flat_arena::wall_cells(
+                    arena_centre,
+                    bastion_flat_arena::WALL_RADIUS,
+                    bastion_flat_arena::WALL_HEIGHT,
+                )
+                .len(),
+                "bastion: FLAT-TEST-ARENA env check at server boot"
+            );
+        }
+        #[cfg(not(feature = "worldgen"))]
         info!(
             flat_arena_enabled = bastion_flat_arena::enabled(),
             "bastion: FLAT-TEST-ARENA env check at server boot"
