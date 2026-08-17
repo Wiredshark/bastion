@@ -700,7 +700,25 @@ pub(crate) fn release_decision(
 /// race-dominated in sims — three net terminators, fastest wins — so this is
 /// its honest pin). The count is AFTER the call site's increment.
 pub(crate) fn reengage_exhausted(count_after_increment: u32) -> bool {
-    count_after_increment > EMERGENCY_REENGAGE_BOUND
+    // THE LAST UNTESTED `status` VARIANT'S GATE. `RescueImminent` is branch 1
+    // of the classifier -- `emergency_reengage_exhausted` membership -- and
+    // the ONLY way into that set is this predicate returning true. The shaft
+    // arm logs 14 aborts and ZERO exhaustions, so the question is how close
+    // any single member gets to the bound; nothing reported the count.
+    //
+    // Same pattern as the churn and stillness watches, both of which turned
+    // an inference into a number -- and the stillness one refuted the churn
+    // attribution outright. Rides the existing egress flag; no fourth knob.
+    let out = count_after_increment > EMERGENCY_REENGAGE_BOUND;
+    if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+        info!(
+            count = count_after_increment,
+            bound = EMERGENCY_REENGAGE_BOUND,
+            exhausted = out,
+            "bastion: reengage bound check"
+        );
+    }
+    out
 }
 
 /// ROW-COMPLETION-SIGNAL-SPLIT.md / F8: which log channel a completion
