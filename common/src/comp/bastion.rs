@@ -248,6 +248,25 @@ pub fn decay_needs(needs: &mut Needs, dt: f32, cfg: &crate::bastion::MoodConfig)
 /// one is heavily penalized. Continuous (mood tracks pressure smoothly).
 pub fn shortfall(value: f32, comfort: f32) -> f32 { (comfort - value).max(0.0) }
 
+/// ITEM 11 (ITEM11-RECREATION-READ.md): did this need cross BELOW its comfort
+/// band on this tick — the edge, not the state?
+///
+/// WHY AN EDGE AND WHY HERE. `recreation` decays at 0.0002/sec and NOTHING in
+/// the codebase raises it: hunger has `EatFrom`, rest has `RestAt`,
+/// recreation has a decay term, a −0.15 mood penalty and no producer. From
+/// 1.0 that is **3000 sim-seconds** to reach comfort 0.4, while every current
+/// fixture runs 2400–3600 sim-seconds TOTAL — which is exactly why the drag
+/// has never been observed. Endurance v2 is the first run long enough.
+///
+/// The caller emits on `true`, so a multi-hour run reports the crossing as a
+/// FACT instead of leaving it to be inferred from a mood number later. Pure
+/// and edge-shaped so it fires ONCE per crossing rather than every tick below
+/// the band — the same budgeted-diag discipline as the status stamp's
+/// edge rule.
+pub fn crossed_comfort_downward(before: f32, after: f32, comfort: f32) -> bool {
+    before >= comfort && after < comfort
+}
+
 /// bastion (B7-0): a thought's decayed contribution — linear to zero
 /// over its lifetime, a PURE function of `(deposit_time, now)` (no
 /// per-tick state, no drift; the determinism house invariant).
@@ -958,6 +977,30 @@ mod bastion_b70_tests {
 
     /// B7-0's formula pinned: topped-up == base exactly; the fully
     /// starved case matches the hand-computed value; decay arithmetic is
+    /// ITEM 11: the comfort-crossing edge, all four cases plus the boundary.
+    /// This is the witness for a need that DECAYS AND IS NEVER RESTORED --
+    /// the edge must fire exactly once on the way down and never while the
+    /// colonist sits below the band, or a multi-hour run drowns in it.
+    #[test]
+    fn recreation_comfort_crossing_is_an_edge_not_a_state() {
+        let comfort = 0.4;
+        // THE CROSSING: above -> below, the one true case.
+        assert!(crossed_comfort_downward(0.41, 0.39, comfort));
+        // ALREADY BELOW: still decaying, must stay silent -- this is the
+        // case that would flood a 3000-second run.
+        assert!(!crossed_comfort_downward(0.39, 0.38, comfort));
+        // STILL ABOVE: nothing to report.
+        assert!(!crossed_comfort_downward(0.99, 0.98, comfort));
+        // UPWARD (when a satisfier finally exists, this must NOT read as a
+        // downward crossing).
+        assert!(!crossed_comfort_downward(0.39, 0.41, comfort));
+        // THE BOUNDARY, both sides: landing exactly ON comfort is NOT below
+        // (shortfall is 0 there, so mood is unperturbed -- the edge must
+        // agree with `shortfall`'s own definition).
+        assert!(!crossed_comfort_downward(0.41, comfort, comfort));
+        assert!(crossed_comfort_downward(comfort, comfort - 0.001, comfort));
+    }
+
     /// exact and saturates; thought decay is linear-pure; clamp holds.
     #[test]
     fn bastion_mood_formula_exact() {
