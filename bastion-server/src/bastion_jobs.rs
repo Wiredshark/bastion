@@ -6858,6 +6858,30 @@ fn mine_readback_diag() -> bool {
         .get_or_init(|| std::env::var_os("BASTION_MINE_READBACK_DIAG").is_some())
 }
 
+/// bastion (#93): the HOSTILE PROXIMITY CENSUS gate.
+///
+/// ARC 3 items 14 and 15 are both blocked on one unmeasured fact — no run has
+/// ever shown a hostile HARMING a colonist. Every arm reads identically:
+/// hostile spawns, `by_target=true` flee emits fire, `health=1.0` throughout,
+/// zero damage. Three stories fit that equally well, and nothing on disk
+/// separates them because **nothing measures the hostile at all**:
+///
+///   S1 flight works      — separation opens faster than the hostile closes it
+///   S2 it never pursues  — the hostile never selects a colonist
+///   S3 it reaches but cannot harm
+///
+/// #92 spent four VOIDs trying to DEFEAT S1 with a trap, then proved the trap
+/// structurally impossible (the engine gates descent on an escape route
+/// existing first, so a shaft cannot hold a working colonist). This is the
+/// replacement: measure, do not build another fixture.
+///
+/// Off by default — diag density is a budget, not a free good.
+fn hostile_proximity_diag() -> bool {
+    static HOSTILE_PROXIMITY_DIAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *HOSTILE_PROXIMITY_DIAG
+        .get_or_init(|| std::env::var_os("BASTION_HOSTILE_PROXIMITY_DIAG").is_some())
+}
+
 /// The arbitration + travel + work-execution system.
 pub struct Sys<R>(core::marker::PhantomData<R>);
 
@@ -20421,6 +20445,125 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 "bastion: claim refusal census"
             );
         }
+
+        // ★ #93 THE HOSTILE PROXIMITY CENSUS (ITEM93-HOSTILE-PROXIMITY-
+        // PREREGISTRATION.md, committed BEFORE this code existed).
+        //
+        // Answers the one question ARC 3 items 14 and 15 both hang on, and
+        // that no arm has ever measured: when a hostile is in the world and
+        // the colonists visibly perceive it (`by_target=true`), what does the
+        // HOSTILE do? Every previous arm read only the colonist side, so
+        // "flight prevented contact", "it never pursued" and "it reached but
+        // could not harm" were indistinguishable.
+        //
+        // Two fields decide it, and the decision table over them was
+        // registered before any data existed:
+        //
+        //   h_targets_colonist == false  -> S2, never pursues (checked FIRST:
+        //       a hostile that never selects a colonist makes any separation
+        //       reading uninterpretable as evidence about flight)
+        //   true + sep_h never < 5.0     -> S1, flight works
+        //   true + sep_h < 5.0           -> S3, reaches
+        //
+        // `perceived == 0` is EMITTED, not skipped: an absence and an
+        // exclusion must never render identically, and a run where no
+        // colonist ever holds a hostile target is a finding about the
+        // colonists' target storage rather than about the hostile.
+        //
+        // No trend field. The series is emitted raw and "closing" is derived
+        // at scoring time -- an in-engine boolean would answer one question
+        // and no adjacent one.
+        if hostile_proximity_diag() && tick.0 % 30 == 0 {
+            // Pass 1 -- the colonist side. `agents` is a WriteStorage joined
+            // immutably here so that pass 2 can `.get()` the TARGET entity's
+            // agent, which a mutable join would forbid.
+            let mut pairs: Vec<(Uid, Vec3<f32>, specs::Entity)> = Vec::new();
+            let mut min_health = f32::MAX;
+            let mut colonists_seen = 0u32;
+            for (c_ent, _, c_pos, c_uid) in
+                (&entities, &colonists, &positions, &uids).join()
+            {
+                colonists_seen += 1;
+                if let Some(h) = healths.get(c_ent) {
+                    min_health = min_health.min(h.fraction());
+                }
+                // A hostile target, by the SAME two field reads the Flee
+                // signal uses -- so this census and the FLEE emit can never
+                // disagree about who is perceiving what.
+                if let Some(t) = agents.get(c_ent).and_then(|ag| ag.target) {
+                    if t.hostile {
+                        pairs.push((*c_uid, c_pos.0, t.target));
+                    }
+                }
+            }
+            // Pass 2 -- the HOSTILE side, the half nothing has ever read.
+            let mut best: Option<(f32, f32, Uid, Option<Uid>, bool, bool, bool, Option<Uid>)> =
+                None;
+            for (c_uid, c_pos, h_ent) in &pairs {
+                let Some(h_pos) = positions.get(*h_ent) else {
+                    continue;
+                };
+                let sep = c_pos.distance(h_pos.0);
+                let sep_h = c_pos.xy().distance(h_pos.0.xy());
+                if best.is_some_and(|(_, b, ..)| b <= sep_h) {
+                    continue;
+                }
+                // Does the hostile's OWN agent point back at a colonist?
+                // `colonists.get(..).is_some()` is the membership BIT: a
+                // join would have silently excluded a hostile with no
+                // target at all, and that is exactly the S2 case.
+                let h_target = agents.get(*h_ent).and_then(|ag| ag.target);
+                let h_targets_colonist = h_target
+                    .is_some_and(|t| colonists.get(t.target).is_some());
+                let h_aggro_on = h_target.is_some_and(|t| t.aggro_on);
+                let h_hostile_flag = h_target.is_some_and(|t| t.hostile);
+                // IDENTIFY the target, do not merely classify it. The wolf is
+                // spawned AT the driver client, so "it selected the player"
+                // is a live confound that would otherwise be absorbed by the
+                // S2 verdict as "never pursues" -- a different finding with a
+                // different consequence for items 14/15. A uid here makes the
+                // two separable by inspection instead of by argument.
+                let h_target_uid = h_target.and_then(|t| uids.get(t.target).copied());
+                best = Some((
+                    sep,
+                    sep_h,
+                    *c_uid,
+                    uids.get(*h_ent).copied(),
+                    h_targets_colonist,
+                    h_aggro_on,
+                    h_hostile_flag,
+                    h_target_uid,
+                ));
+            }
+            // ABSENCE IS RENDERED AS ABSENCE. The uid fields are `Option` and
+            // print as `None`, never as a magic number: `Uid` wraps a
+            // `NonZeroU64`, so there is no in-band sentinel to borrow, and
+            // inventing one would put a value on the line that a reader could
+            // mistake for a real entity. `-1.0` on the separations is the same
+            // discipline in the one place the type forces a float -- and it is
+            // only ever emitted beside `perceived=0`, the field that says why.
+            let (sep, sep_h, near_c, near_h, tgt_col, aggro, h_host, h_tgt) =
+                match best {
+                    Some(b) => (Some(b.0), Some(b.1), Some(b.2), b.3, b.4, b.5, b.6, b.7),
+                    None => (None, None, None, None, false, false, false, None),
+                };
+            info!(
+                tick = tick.0,
+                colonists_seen,
+                perceived = pairs.len(),
+                min_sep = sep.unwrap_or(-1.0),
+                sep_h = sep_h.unwrap_or(-1.0),
+                near_colonist = ?near_c,
+                near_hostile = ?near_h,
+                h_targets_colonist = tgt_col,
+                h_target_uid = ?h_tgt,
+                h_aggro_on = aggro,
+                h_hostile_flag = h_host,
+                min_health = if min_health == f32::MAX { -1.0 } else { min_health },
+                "bastion: hostile proximity census"
+            );
+        }
+
         for (entity, job_id, stance) in assignments {
             let _ = active_jobs.insert(entity, ActiveJob {
                 job: job_id,

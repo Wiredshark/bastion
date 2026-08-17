@@ -368,6 +368,16 @@ const CATALOG: &[EnvVarSiteV1] = &[
     ),
     site(
         "bastion-server/src/bastion_jobs.rs",
+        "BASTION_HOSTILE_PROXIMITY_DIAG",
+        Diagnostic,
+        "#93 hostile proximity census (ITEM93-HOSTILE-PROXIMITY-PREREGISTRATION.md) \
+         -- the HOSTILE half of a threat encounter, which no arm has ever measured: \
+         min colonist-hostile separation, the hostile's own target identity and \
+         aggro_on. Separates flight-works / never-pursues / cannot-damage, the three \
+         stories that fit every ARC 3 arm identically",
+    ),
+    site(
+        "bastion-server/src/bastion_jobs.rs",
         "BASTION_STATUS_STAMP_DIAG",
         Diagnostic,
         "edge-triggered status-stamp emit (STAMP-EMIT-PREREG.md) -- both stamp \
