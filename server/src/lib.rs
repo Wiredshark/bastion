@@ -867,20 +867,41 @@ impl Server {
         // Three outcomes, distinguished before a single further run.
         #[cfg(feature = "worldgen")]
         {
-            let arena_centre = bastion_flat_arena::world_center_wpos(&world);
+            // #99: the COUNTS are computed only when the arena is on. They are
+            // the expensive half — `resourced_feature_cells` builds a Vec of
+            // every feature cell — and on an ordinary launch that Vec is
+            // fixture geometry for a fixture that is not running. Cheap at
+            // boot, but computing fixture geometry in a non-fixture launch is
+            // exactly the kind of thing a later reader mistakes for meaning.
+            //
+            // The FLAGS stay unconditional. That is the whole point of this
+            // line: it has to self-report on the launch where the operator
+            // expected the arena and did not get it, and a line that only
+            // prints when the arena worked could never say so.
+            //
+            // `Option`, not 0: a real zero and a not-computed zero must never
+            // render identically — the same rule the hostile-proximity census
+            // follows for its uid fields. `None` here means NOT MEASURED.
+            let counts = bastion_flat_arena::enabled().then(|| {
+                let centre = bastion_flat_arena::world_center_wpos(&world);
+                (
+                    bastion_flat_arena::resourced_feature_cells(centre).len(),
+                    bastion_flat_arena::wall_cells(
+                        centre,
+                        bastion_flat_arena::WALL_RADIUS,
+                        bastion_flat_arena::WALL_HEIGHT,
+                    )
+                    .len(),
+                )
+            });
             info!(
                 flat_arena_enabled = bastion_flat_arena::enabled(),
                 resourced = bastion_flat_arena::resourced(),
                 walled = bastion_flat_arena::walled(),
                 pit_depth = bastion_flat_arena::pit_depth(),
                 shaft_depth = bastion_flat_arena::shaft_depth(),
-                feature_cells = bastion_flat_arena::resourced_feature_cells(arena_centre).len(),
-                wall_cells = bastion_flat_arena::wall_cells(
-                    arena_centre,
-                    bastion_flat_arena::WALL_RADIUS,
-                    bastion_flat_arena::WALL_HEIGHT,
-                )
-                .len(),
+                feature_cells = ?counts.map(|c| c.0),
+                wall_cells = ?counts.map(|c| c.1),
                 "bastion: FLAT-TEST-ARENA env check at server boot"
             );
         }
