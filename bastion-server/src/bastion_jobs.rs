@@ -978,7 +978,19 @@ pub struct ClaimRefusalCensus {
     pub colonist_route_held: u32,
     // job-level
     pub considered: u32,
+    /// bastion: total of the two disjuncts below. ★ KEPT as the sum so every
+    /// existing consumer, pin and scored document reads an unchanged number —
+    /// `refused()` still adds THIS field and must never add the two splits, or
+    /// every refusal would be counted twice.
     pub not_candidate: u32,
+    /// bastion (#106): `claimed_by.is_some()` — ★ **A HEALTHY STATE.** Someone
+    /// else is already doing this job. In a thriving colony this dominates, so a
+    /// large value is evidence of THROUGHPUT, not of a problem.
+    pub already_claimed: u32,
+    /// bastion (#106): not claimed AND not a candidate ⇒ `unreachable`. ★★ **THE
+    /// DEFECT HALF** — the one worth alerting on. Named `unreachable_job` rather
+    /// than `unreachable` to keep it unambiguous beside `Job::unreachable`.
+    pub unreachable_job: u32,
     pub emergency_route: u32,
     pub self_job_kind: u32,
     pub affordance: u32,
@@ -20119,7 +20131,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // documents why an EatFrom job (filed under WorkType::Haul)
                 // must never become a candidate.
                 if !job.is_claim_candidate() {
-                    { census.not_candidate += 1; continue; }
+                    // bastion (#106): SPLIT THE UNION. `is_claim_candidate()` is
+                    // `claimed_by.is_none() && !unreachable`, so this one bucket
+                    // has been counting a HEALTHY state ("someone else is already
+                    // doing it") together with a DEFECT state ("nobody can reach
+                    // it").
+                    //
+                    // ★ It is the largest bucket almost everywhere -- measured
+                    // over the whole-surface sweep: dig_access 76891, b58 12139 --
+                    // and it is therefore evidence of NOTHING, because in a
+                    // THRIVING colony it SHOULD be enormous. dig_access's 76891
+                    // sits beside eligible=256: that is throughput, not
+                    // catastrophe, and the eye is drawn to the big number first.
+                    //
+                    // ★★ `not_candidate` is KEPT as the total so every existing
+                    // consumer, pin and scored doc still reads the same number;
+                    // the two new counters are additive and sum to it.
+                    census.not_candidate += 1;
+                    if job.claimed_by.is_some() {
+                        census.already_claimed += 1;
+                    } else {
+                        // Not claimed, yet not a candidate -> `unreachable` is the
+                        // only remaining disjunct. ★ THIS is the one worth
+                        // alerting on.
+                        census.unreachable_job += 1;
+                    }
+                    continue;
                 }
                 let emergency_owner = board.emergency_access_jobs.get(&id).copied();
                 if let Some(route_owner) = emergency_route_owner {
@@ -20448,6 +20485,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // `continue` exists that no counter sees, and a histogram with a blind
         // spot blames whichever reason it does count.
         if tick.0 % 300 == 0 {
+            // bastion (#106): ENFORCE THE SPLIT'S OWN INVARIANT AT THE PRODUCER.
+            // The struct's doc comment says `already_claimed + unreachable_job ==
+            // not_candidate`, and ★ A COMMENT CANNOT ENFORCE: a `ClaimRefusalCensus`
+            // literal can set `not_candidate` without either split (the existing
+            // unit test does exactly that via `..Default::default()`), so the
+            // invariant is a property of THIS producer, not of the type.
+            // ★★ Asserted here, where the counters are actually incremented, so a
+            // future third disjunct in `is_claim_candidate()` trips a test instead
+            // of silently landing in neither bucket and making the split lie.
+            debug_assert_eq!(
+                census.already_claimed + census.unreachable_job,
+                census.not_candidate,
+                "claim census: already_claimed + unreachable_job must equal not_candidate — \
+                 if `Job::is_claim_candidate()` grew a THIRD disjunct, this split is now \
+                 incomplete and the two sub-counts no longer account for the total"
+            );
             info!(
                 tick = tick.0,
                 colonists_seen = census.colonists_seen,
@@ -20459,6 +20512,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 residual = census.residual(),
                 assigned = assignments.len(),
                 not_candidate = census.not_candidate,
+                // bastion (#106): the two disjuncts of `not_candidate`, emitted
+                // BESIDE it rather than replacing it. ★ `already_claimed` is the
+                // colony working; `unreachable_job` is the defect. Until now the
+                // census's LARGEST bucket could not tell them apart, which made
+                // it unable to discriminate exactly where it mattered most.
+                already_claimed = census.already_claimed,
+                unreachable_job = census.unreachable_job,
                 emergency_route = census.emergency_route,
                 self_job_kind = census.self_job_kind,
                 affordance = census.affordance,
