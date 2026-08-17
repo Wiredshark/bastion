@@ -384,6 +384,17 @@ const CATALOG: &[EnvVarSiteV1] = &[
     ),
     site(
         "bastion-server/src/bastion_flat_arena.rs",
+        "BASTION_FLAT_ARENA_WALLED",
+        GameplayVariant,
+        "the WALL fixture (ITEM 15a) -- a hollow stone ring at WALL_RADIUS, \
+         world-GENERATED rather than colony-built so the wall's existence is a \
+         fixture fact: a Build designation would make 'the hostile got in' \
+         ambiguous between the wall failing and the wall never being finished. \
+         Composes with the pit/shaft variants (perimeter vs centre) instead of \
+         excluding them",
+    ),
+    site(
+        "bastion-server/src/bastion_flat_arena.rs",
         "BASTION_FLAT_ARENA_SHAFT",
         GameplayVariant,
         "the SHAFT fixture (SHAFT-FIXTURE-PREREG.md) -- 8 deep, 3 across, the \

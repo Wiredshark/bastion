@@ -86,6 +86,79 @@ pub const RESOURCED_OUTCROP_HEIGHT: i32 = 3;
 /// nearby" never contend for the same columns.
 pub const RESOURCED_CLEAR_RADIUS: i32 = 12;
 
+/// bastion (WALL-FIXTURE, ITEM 15a): half-extent of the perimeter WALL — a
+/// hollow square ring centred on the arena, enclosing the colony.
+///
+/// ★ WHY A WORLD-GENERATED WALL AND NOT A `Build` DESIGNATION: item 15 splits
+/// into a PHYSICS question ("does a wall stop a hostile") and an ECONOMY
+/// question ("can the colony build one"). `Build` requires
+/// `BUILD_MATERIAL_ITEM` and carries the blocked-materials machinery that has
+/// stalled real arms, so a colony-built wall makes "the wolf got in"
+/// ambiguous between *the wall failed* and *the wall was never finished*.
+/// Generating it makes the wall's EXISTENCE a fixture fact, and leaves the
+/// run measuring exactly one thing.
+///
+/// Larger than [`RESOURCED_CLEAR_RADIUS`] (12) so the ring never overlaps the
+/// cleared work area or the tree/outcrop features, and far inside the arena's
+/// own radius ([`FLAT_ARENA_RADIUS_CHUNKS`] × 32), so the slab still extends
+/// well past the wall on every side — a hostile must have somewhere to stand
+/// OUTSIDE it, or the fixture cannot pose its own question.
+pub const WALL_RADIUS: i32 = 24;
+
+/// bastion (WALL-FIXTURE, ITEM 15a): the wall's height in blocks.
+///
+/// ⚠ **THIS CONSTANT IS A CLAIM ABOUT TRAVERSAL AND IT IS NOT YET VERIFIED.**
+/// The reachability model has STEP / JUMP / SCRAMBLE tiers, and 4 is chosen to
+/// sit above a step and a plain jump — but *what a quadruped can clear is
+/// unread*. A wall the hostile simply hops is a CONTROL FAILURE, not a
+/// treatment failure, so any run using this fixture must print the
+/// hostile's own approach against an unwalled control before reading the
+/// treatment arm. **Do not raise this to "make the test pass": the number
+/// that stops a wolf IS the measurement.**
+pub const WALL_HEIGHT: i32 = 4;
+
+/// bastion (WALL-FIXTURE, ITEM 15a): is the perimeter wall on?
+///
+/// A VARIANT OF A VARIANT, gated exactly like [`pit_depth`]/[`shaft_depth`]:
+/// false unless the resourced arena is itself on, so the wall can never
+/// half-apply to a normal world or the bare slab. ★ Unlike pit-vs-shaft it is
+/// NOT mutually exclusive with them — the wall is at the PERIMETER and the
+/// others are at the CENTRE, so they compose.
+pub fn walled() -> bool {
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| {
+        resourced() && std::env::var("BASTION_FLAT_ARENA_WALLED").is_ok_and(|v| v != "0")
+    })
+}
+
+/// bastion (WALL-FIXTURE, ITEM 15a): the perimeter ring's cells, as absolute
+/// world cells. Pure and radius/height-passed for the same reason as the pit
+/// and shaft forms: assertable in one test binary with no env manipulation.
+///
+/// A HOLLOW square — only the four edges, never the interior — because the
+/// point is an enclosure, not a plateau. Emitted from [`FLAT_ARENA_Z`] (the
+/// slab's first air cell) upward, so the wall stands ON the ground exactly as
+/// a tree trunk does.
+pub fn wall_cells(center_wpos: Vec2<u32>, radius: i32, height: i32) -> Vec<(Vec3<i32>, Block)> {
+    let centre = center_wpos.map(|e| e as i32);
+    let mut cells = Vec::new();
+    for dz in 0..height {
+        for d in -radius..=radius {
+            // The four edges. Corners are produced twice by construction (once
+            // by the x-pair, once by the y-pair); `chunk.set` is idempotent for
+            // an identical block, so the duplicate is harmless and dropping it
+            // would cost a branch in every iteration to save nothing.
+            for (dx, dy) in [(d, -radius), (d, radius), (-radius, d), (radius, d)] {
+                cells.push((
+                    Vec3::new(centre.x + dx, centre.y + dy, FLAT_ARENA_Z + dz),
+                    Block::new(BlockKind::Rock, Rgb::new(94, 94, 98)),
+                ));
+            }
+        }
+    }
+    cells
+}
+
 /// bastion (VERTICAL-FIXTURE): half-width of the MINE PIT — the
 /// depression excavated around the outcrop when the pit variant is on.
 /// Wider than [`RESOURCED_OUTCROP_HALF_WIDTH`] so the outcrop sits on the
@@ -179,10 +252,21 @@ pub fn resourced_feature_cells(center_wpos: Vec2<u32>) -> Vec<(Vec3<i32>, Block)
     // reads a 4-deep, 10-across depression as escapable, correctly), so a
     // run that wants a trap gets the geometry that produces one.
     let shaft = shaft_depth();
-    if shaft > 0 {
-        return resourced_feature_cells_shaft(center_wpos, shaft);
+    let mut cells = if shaft > 0 {
+        resourced_feature_cells_shaft(center_wpos, shaft)
+    } else {
+        resourced_feature_cells_with_pit(center_wpos, pit_depth())
+    };
+    // WALL-FIXTURE (ITEM 15a): APPENDED, not substituted. The wall is at the
+    // perimeter and the pit/shaft are at the centre, so it composes with
+    // whichever centre geometry is active rather than replacing it. Appended
+    // LAST so it is applied after any excavation, matching the ordering rule
+    // the pit and shaft already rely on (`apply_resourced_features` applies
+    // cells in order via `chunk.set`).
+    if walled() {
+        cells.extend(wall_cells(center_wpos, WALL_RADIUS, WALL_HEIGHT));
     }
-    resourced_feature_cells_with_pit(center_wpos, pit_depth())
+    cells
 }
 
 /// SHAFT-FIXTURE: the TRAPPING geometry — a narrow deep shaft whose only
@@ -417,6 +501,79 @@ mod tests {
     /// The world centre used by the tests — an arbitrary but fixed
     /// stand-in for `world.get_center()`.
     const CENTRE: Vec2<u32> = Vec2::new(15216, 16016);
+
+    /// WALL-FIXTURE (ITEM 15a): the ring is HOLLOW, CLOSED, and stands ON the
+    /// slab. Asserted without a chunk, a server, or an env var — the fixture's
+    /// own design rule, and the reason `wall_cells` takes radius/height rather
+    /// than reading them from the environment.
+    ///
+    /// ★ These are the three ways a perimeter can silently fail to be one:
+    /// a GAP (a hostile walks through and the row blames the AI), a SOLID
+    /// interior (the colony is entombed, not enclosed), and a wall floating
+    /// above or buried below the ground plane.
+    #[test]
+    fn wall_ring_is_hollow_closed_and_on_the_slab() {
+        let cells = wall_cells(CENTRE, WALL_RADIUS, WALL_HEIGHT);
+        let c = CENTRE.map(|e| e as i32);
+        let occupied: std::collections::HashSet<Vec3<i32>> =
+            cells.iter().map(|(p, _)| *p).collect();
+
+        // 1. CLOSED: every cell of every edge is present, at every height.
+        for dz in 0..WALL_HEIGHT {
+            for d in -WALL_RADIUS..=WALL_RADIUS {
+                for (dx, dy) in [
+                    (d, -WALL_RADIUS),
+                    (d, WALL_RADIUS),
+                    (-WALL_RADIUS, d),
+                    (WALL_RADIUS, d),
+                ] {
+                    let p = Vec3::new(c.x + dx, c.y + dy, FLAT_ARENA_Z + dz);
+                    assert!(occupied.contains(&p), "gap in the ring at {p:?}");
+                }
+            }
+        }
+
+        // 2. HOLLOW: nothing strictly inside the ring is filled. The colony
+        //    has to live in there.
+        for dy in -(WALL_RADIUS - 1)..=(WALL_RADIUS - 1) {
+            for dx in -(WALL_RADIUS - 1)..=(WALL_RADIUS - 1) {
+                for dz in 0..WALL_HEIGHT {
+                    let p = Vec3::new(c.x + dx, c.y + dy, FLAT_ARENA_Z + dz);
+                    assert!(!occupied.contains(&p), "interior filled at {p:?}");
+                }
+            }
+        }
+
+        // 3. ON THE SLAB: the lowest course sits at the first air cell, so the
+        //    wall stands on the ground exactly as a tree trunk does — not
+        //    hovering above it, not buried in it.
+        let min_z = cells.iter().map(|(p, _)| p.z).min().unwrap();
+        let max_z = cells.iter().map(|(p, _)| p.z).max().unwrap();
+        assert_eq!(min_z, FLAT_ARENA_Z, "wall does not start at the slab top");
+        assert_eq!(max_z, FLAT_ARENA_Z + WALL_HEIGHT - 1, "wall height wrong");
+    }
+
+    /// WALL-FIXTURE (ITEM 15a): the ring must not eat the work area. If the
+    /// wall overlapped the cleared radius or the features, the fixture would
+    /// be testing two changes at once and any result would be unattributable.
+    #[test]
+    fn wall_ring_clears_the_work_area_and_the_features() {
+        assert!(
+            WALL_RADIUS > RESOURCED_CLEAR_RADIUS,
+            "wall at {WALL_RADIUS} would overlap the cleared work area ({RESOURCED_CLEAR_RADIUS})"
+        );
+        // Every feature the resourced arena places must fall strictly INSIDE
+        // the ring -- checked against the real feature set, not against a
+        // remembered list of what it contains.
+        for (pos, _) in resourced_feature_cells(CENTRE) {
+            let c = CENTRE.map(|e| e as i32);
+            let (dx, dy) = ((pos.x - c.x).abs(), (pos.y - c.y).abs());
+            assert!(
+                dx < WALL_RADIUS && dy < WALL_RADIUS,
+                "feature cell {pos:?} is on or outside the ring (dx={dx}, dy={dy})"
+            );
+        }
+    }
 
     /// VERTICAL-FIXTURE: with the pit on, the outcrop sits on the pit
     /// FLOOR and the excavation reaches full depth — the two facts the
