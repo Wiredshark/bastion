@@ -32,12 +32,23 @@ set -u
 WT="${PIT_WT:-/e/veloren-master/.engine-integration-wt}"
 EV="${PIT_EV:-/e/veloren-master/bastion-test-evidence}"
 B="${PIT_B:-$WT/target/no_overflow}"
-A="${PIT_A:-E:/veloren-master/.engine-integration-wt/assets}"
+# Derived from WT, not spelled a second way — the same duplication that made UD
+# diverge on Linux. PIT_A still overrides for a host that needs an explicit form.
+A="${PIT_A:-$WT/assets}"
 # Windows builds emit .exe; Linux does not. One definition, used everywhere.
 EXE="${PIT_EXE-.exe}"
 ARM="${1:?usage: run-pit.sh <pit|flat|pitdiag|pitwood|pitnowood|pitwood2|pitnowood2|pitwood3|pitplant|pitread|sweep|stamp|shaft|contend|queuewait|flee|fleecost|fleehealth|fleehealthctl|wallctl|wall|recr|recrctl|shaftwolf|hostile|wall2ctl|wall2|wallcheck|wallcheckctl|wallsurvey|wallsurveyctl|wallsurvey2|wallsurvey2ctl|wallverdict|wallverdictctl>}"
 TAG="pit-$ARM"; GAME=26024; WEB=26025; METRICS=18026
-UD="E:/veloren-master/.engine-integration-wt/userdata-$TAG"
+# ONE DEFINITION. This was `E:/veloren-master/.engine-integration-wt/userdata-$TAG`
+# -- the SAME directory as `$WT/userdata-$TAG`, spelled a second way. On Windows
+# the two spellings resolve identically, so the duplication was invisible; on
+# Linux they diverge completely and the failure is SILENT AND TOTAL:
+#   * the server writes its userdata under a literal "E:" directory
+#   * `sed` rewrites the ports in $WT/userdata-$TAG, which the server never reads
+#   * the server therefore stays on DEFAULT port 14004 while the driver dials
+#     $GAME=26024, never connects, and no observer ever requests terrain
+# -> pending=0 on every tick of all six legs: the VOID that cost this row four runs.
+UD="$WT/userdata-$TAG"
 
 # THE SINGLE DEFINITION -- recorded by the attestation and applied to the
 # server from the same string, so the evidence file cannot disagree with
