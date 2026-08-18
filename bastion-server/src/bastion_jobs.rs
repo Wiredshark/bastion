@@ -3710,11 +3710,33 @@ where
         // job completion, squeeze count) trying to explain a silence that was
         // this branch. The refusal now names itself.
         if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+            // A CONJUNCTION THAT REPORTS ONE REASON REPORTS NOTHING. Six clauses
+            // gate this branch; "no_expected_ground_contact" names the AND, not
+            // the operand that failed. #90 was exactly this shape -- four
+            // always-false clauses masked seventeen real rates because the
+            // collapse was reported instead of the terms. Each clause is
+            // emitted as its own field, so a decline says WHICH.
+            let c_hit = first.is_some();
+            let c_block = first.is_some_and(|h| h.block == expected_support);
+            let c_sample = first.is_some_and(|h| h.sample <= 1);
+            let c_flat_x = first.is_some_and(|h| h.resolve_dir.x.abs() <= f32::EPSILON);
+            let c_flat_y = first.is_some_and(|h| h.resolve_dir.y.abs() <= f32::EPSILON);
+            let c_up = first.is_some_and(|h| h.resolve_dir.z > 0.0);
+            let c_solid = terrain
+                .get(expected_support)
+                .is_ok_and(|block| block.is_solid());
             info!(
                 ?start,
                 ?end,
                 ignored_initial_support = ?first,
                 ?expected_support,
+                c_hit,
+                c_block,
+                c_sample,
+                c_flat_x,
+                c_flat_y,
+                c_up,
+                c_solid,
                 reason = "no_expected_ground_contact",
                 "bastion: emergency route sweep declined initial-support handling"
             );
