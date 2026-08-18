@@ -332,6 +332,7 @@ PITARENA="${PITARENA-BASTION_FLAT_ARENA=1 BASTION_FLAT_ARENA_RESOURCED=1 }"
 # it is what makes the legs affordable. But an arm that MEASURES anything
 # tick-indexed must cap the rate, or its tick axis is wall-clock in disguise.
 PITTPS="${PITTPS-BASTION_UNCAPPED_TPS=1}"
+PITDRIVERENV="${PITDRIVERENV-}"
 # PITPLANT: registered failure-injection, empty by default so every existing arm
 # is byte-identical. The server is launched via `env $BASTION_ENV`, so a plant
 # variable that is NOT in this string never reaches the server process -- it
@@ -394,7 +395,11 @@ echo "port $GAME open after ${t}s" >> "$EV/$TAG.log"
 # already prints `status={:?}` (bastion_playtest.rs:723). Scoring it from the
 # server log would be reading a different surface than the one the field is
 # specified against.
-"$B/bastion_playtest$EXE" "127.0.0.1:$GAME" "$TAG" \
+# THE DRIVER GETS NO ENV. PITPLANT splices into BASTION_ENV, which reaches
+# ONLY `env $BASTION_ENV veloren-server-cli` -- so a DRIVER-side flag
+# (BASTION_JOIN_HOLD_TICKS, BASTION_DRIVER_*) was silently dropped and its
+# arm ran IDENTICALLY to its control. #89 first A/B was VOID on this.
+env $PITDRIVERENV "$B/bastion_playtest$EXE" "127.0.0.1:$GAME" "$TAG" \
     "$EV/$SCRIPT" "$EV/driver-$TAG.log" > "$EV/driverout-$TAG.log" 2>&1
 echo "driver exited rc=$?" >> "$EV/$TAG.log"
 
