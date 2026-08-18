@@ -186,11 +186,25 @@ impl<'a> System<'a> for Sys {
         //
         // Off by default: diag density is a budget, not a free good.
         if terrain_provision_diag() {
+            // ★★★ MEMBERSHIP, not just the count. A3 round 2 proved counts
+            // CANNOT answer a determinism question here: the traversal requests
+            // a fixed chunk set, so the TOTAL is conserved by construction
+            // (304 promoted on all six legs, plant on and off alike) while the
+            // per-tick timing still diverged on 120 of 11,416 ticks. A budget
+            // changes WHEN a chunk promotes, never HOW MANY promote overall --
+            // so only the KEYS, in order, at a tick can distinguish two runs.
+            //
+            // Sorted so the emit is a function of the SET, not of arrival
+            // order: an unsorted list would differ run-to-run even when the
+            // same chunks promoted on the same tick, manufacturing divergence.
+            let mut keys: Vec<_> = arrivals.iter().map(|(k, _)| (k.x, k.y)).collect();
+            keys.sort_unstable();
             tracing::info!(
                 tick = data.tick.0,
                 promoted = arrivals.len(),
                 pending = data.chunk_generator.pending_chunk_count(),
                 deterministic_drain = common::deterministic_worldgen_enabled(),
+                keys = ?keys,
                 "bastion: terrain provisioning census"
             );
         }
