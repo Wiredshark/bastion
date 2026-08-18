@@ -8045,6 +8045,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     {
                         agent.rtsim_controller.activity = None;
                     }
+                    // #110 gate 1: creation was unobservable (both live
+                    // construction sites are bare struct literals), so the
+                    // by-kind census had no producer. Kind is static here.
+                    if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+                        tracing::info!(
+                            uid = ?uid,
+                            kind = "NaturalShaft",
+                            "bastion: traversal transaction created"
+                        );
+                    }
                     let transaction = BastionTraversalTask {
                         link_id: owner.0.get(),
                         // R10: adopt-on-acquire (never advance here).
@@ -9371,7 +9381,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             let adopted_epoch = board.current_epoch(route_owner.0.get());
                             board
                                 .bastion_traversal_tasks
-                                .insert(*uid, BastionTraversalTask {
+                                .insert(*uid, {
+                                    // #110 gate 1: creation emit, ladder
+                                    // sibling of the NaturalShaft site.
+                                    if std::env::var_os("BASTION_EGRESS_DIAG")
+                                        .is_some()
+                                    {
+                                        tracing::info!(
+                                            uid = ?uid,
+                                            kind = "ConstructedLadder",
+                                            "bastion: traversal transaction created"
+                                        );
+                                    }
+                                    BastionTraversalTask {
                                     link_id: route_owner.0.get(),
                                     // R10: adopt-on-acquire.
                                     epoch: adopted_epoch,
@@ -9402,7 +9424,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     traversal_started_tick: 0,
                                     stable_window_started_tick: 0,
                                     last_stable_sample_tick: 0,
-                                });
+                                }});
                             colonist.0.route_squeeze_until = time.0 + 0.2;
                             let delta = target_pos.xy() - pos.0.xy();
                             controller.inputs.move_dir = if delta.magnitude_squared() > 0.01 {

@@ -318,6 +318,20 @@ impl BastionTraversalTask {
     }
 
     pub(crate) fn abort(&mut self, reason: &'static str, tick: u64) {
+        // #110 gate 1: abort was SILENT -- state flipped with no emit, so a
+        // run full of created-then-aborted transactions logged identically to
+        // a run with none, and "never engages" could not be told from "engages
+        // and churns". Emit BEFORE overwriting phase: the phase it aborted
+        // FROM is the diagnostic payload.
+        if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+            tracing::info!(
+                kind = ?self.traversal_kind,
+                aborted_from = ?self.phase,
+                reason,
+                tick,
+                "bastion: traversal transaction aborted"
+            );
+        }
         self.abort_reason = Some(reason);
         self.phase = BastionTraversalPhase::Abort;
         self.phase_tick = tick;
