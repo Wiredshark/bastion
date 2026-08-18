@@ -20,7 +20,7 @@
 #
 # Usage:  run-ledger.sh [evidence-dir]
 set -u
-EV="${1:-/e/veloren-master/bastion-test-evidence}"
+EV="${1:-${PIT_EV:-/e/veloren-master/bastion-test-evidence}}"
 
 acc=0; un=0; fail=0; n=0
 printf "%-12s %-14s %s\n" TAG STATE EVIDENCE

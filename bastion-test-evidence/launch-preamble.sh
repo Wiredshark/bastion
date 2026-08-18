@@ -49,7 +49,7 @@ export BASTION_LOGS
 # a warning depends on an operator reading it, and the operator is the
 # component that already failed twice.
 bash "$EV/attest-run.sh" "$EV/${TAG}-attest.txt" \
-     "$B/veloren-server-cli.exe" "$B/bastion_playtest.exe" || {
+     "$B/veloren-server-cli${PIT_EXE-.exe}" "$B/bastion_playtest${PIT_EXE-.exe}" || {
   echo "ATTESTATION REFUSED -- not launching $TAG" >&2
   exit 1
 }

@@ -51,7 +51,11 @@
 #   env:  BASTION_ENV   the run's declared config, e.g. "BASTION_DETERMINISTIC=1 ..."
 #         BASTION_LOGS  the evidence files this run will write (space-separated)
 set -u
-WT=/e/veloren-master/.engine-integration-wt
+# Overridable so the attestation can run off this machine — same PIT_* contract
+# as run-pit.sh. Left hardcoded, every binary path resolves under a Windows
+# root that does not exist on a VM, and the check reports MISSING MISSING for
+# binaries that are in fact present: a FALSE REFUSAL, not a real gate.
+WT="${PIT_WT:-/e/veloren-master/.engine-integration-wt}"
 OUT="${1:?usage: attest-run.sh <evidence-file> [binary ...]}"
 shift || true
 # Collected inside the `{ } | tee` block, which runs in a SUBSHELL -- a plain
