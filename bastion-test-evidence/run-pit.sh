@@ -235,6 +235,7 @@ case "$ARM" in
   # no gate; what it needed was 16 colonists, sized so an all-identical draw is
   # ~1% instead of the ~10% that made the 8-colonist read ambiguous.
   guardspread) PITVAR=""
+              PITFOUND="BASTION_AUTOFOUND_COLONY=16 "   # #113: 16, not 8
               SCRIPT="script-guardspread.txt" ;;
   # TICK-LOADING ROW, measurement arm. UNCAPPED, real-time, live drain -- this
   # is the baseline whose promotions-per-tick distribution the budget must be
@@ -336,7 +337,15 @@ PITTPS="${PITTPS-BASTION_UNCAPPED_TPS=1}"
 # variable that is NOT in this string never reaches the server process -- it
 # would run the arm as its own control and report a null result as a refutation.
 PITPLANT="${PITPLANT:-}"
-export BASTION_ENV="${PITDET}BASTION_AUTOFOUND_COLONY=8 ${PITARENA}${PITTPS}${PITPLANT}$PITVAR"
+# ★★★ #113: COLONY SIZE IS A PER-ARM KNOB. Hardcoding =8 meant no arm could
+# name a different founding population -- exactly #100's defect (the flat arena
+# was unconditional until it became PITARENA). Default 8 keeps every existing
+# arm BYTE-IDENTICAL. NOTE: this copy also carries ${PITPLANT}, the VM
+# env-injection channel that the main-checkout copy does not have -- which is
+# why this was ported by EDIT and not by copying the file over (a `cp` reverted
+# the Linux port earlier tonight).
+PITFOUND="${PITFOUND-BASTION_AUTOFOUND_COLONY=8 }"
+export BASTION_ENV="${PITDET}${PITFOUND}${PITARENA}${PITTPS}${PITPLANT}$PITVAR"
 
 # THE FOUR FILES THIS RUN WILL WRITE, declared before it writes any of them.
 # Same one-definition discipline as BASTION_ENV above: these strings are used
