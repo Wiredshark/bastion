@@ -468,6 +468,12 @@ impl RtSim {
         // DETRNG/ARCH-003: colony generation is simulation input, not
         // cosmetic entropy. Reuse the one rtsim RNG authority.
         let mut rng = ::rtsim::tick_rng(self.world_seed, seed_tick, 0xBA57_C010);
+        // Personality is rolled from its OWN salted stream, not `rng`: drawing
+        // it inline would shift every subsequent draw (names, bodies, offsets),
+        // silently replacing the colonists every existing baseline was measured
+        // on. A separate stream keeps the pre-fix sequence byte-identical and
+        // adds traits orthogonally.
+        let mut personality_rng = ::rtsim::tick_rng(self.world_seed, seed_tick, 0xBA57_C011);
         // Home = nearest site, so simulated-mode AI keeps them local.
         let home = data
             .sites
@@ -507,6 +513,17 @@ impl RtSim {
             )
             .with_bastion_colonist(colonist);
             npc.home = home;
+            // Npc::new leaves `personality: Default::default()` = all five
+            // axes at MID (127) -- below every >HIGH_THRESHOLD trait and above
+            // every <LOW_THRESHOLD one, so a default colonist can NEVER carry
+            // a personality trait. Measured before this fix: 0 trait-true
+            // colonists across 348 driver logs, every fixture. Wild NPCs get
+            // `.with_personality(random_good(..))` in rtsim::generate; this is
+            // the only site that can roll the COLONIST band. `random()`, not
+            // `random_good()`: random_good clamps conscientiousness to
+            // [LOW_THRESHOLD, MAX], making ~83% of colonists Conscientious,
+            // which collapses the trait spread the guard row selects from.
+            npc.personality = common::rtsim::Personality::random(&mut personality_rng);
             data.npcs.create_npc(npc);
         }
         info!(?names, count, "bastion: spawned starting colony");
