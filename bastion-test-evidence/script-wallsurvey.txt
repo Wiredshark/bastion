@@ -1,0 +1,41 @@
+note ITEM 15 WALL-EXISTENCE CHECK, TAKE 2 -- WITH AN INSTRUMENT THAT CAN ANSWER.
+note
+note ★ TAKE 1 USED THE WRONG VERB, AND THE NAME IS WHY. `inspect_cell` sounds like
+note   a terrain reader. It is a DESIGNATION reader: it returned
+note   'Some((Cell(pos), None))' for every coordinate, wall or not, and its
+note   replies lag one request behind. It cannot distinguish rock from air, so
+note   take 1 settled nothing. A GREP PATTERN IS A CLAIM ABOUT NAMING and so is
+note   a verb name -- read the producer, not the label.
+note
+note ★★ `survey` IS THE RIGHT INSTRUMENT: it scans terrain COLUMNS and reports
+note   how many had NO SURFACE in the z-range given. So a z-window that contains
+note   ONLY the wall's courses turns 'is the wall there' into a count.
+note
+note   WALL_RADIUS is 32 and the arena centre is (16384, 16384, 400), so the ring
+note   stands at x = 16416 with courses z 400..403. A window of z[402,403] is
+note   ABOVE the slab and INSIDE the wall's height.
+note
+note ★★★ THE MATCHED PAIR IS INSIDE ONE RUN, WHICH IS WHAT MAKES IT READABLE.
+note   Surveying only the wall column would leave 'no surface' ambiguous between
+note   'no wall' and 'the survey window is wrong'. So each arm surveys BOTH the
+note   wall column AND the colony centre, in the same z-window:
+note     wall present -> wall column HAS a surface, centre does NOT
+note     wall absent  -> NEITHER has one
+note   The centre column is the within-arm control, so a broken window fails
+note   both and cannot masquerade as a missing wall.
+anchor
+wait 60
+survey 16416 16384 16416 16384 403 402 1
+note ^ EAST WALL COLUMN, z[402,403]. Expect '0 with no surface' in the walled
+note   arm and '1 with no surface' in the unwalled arm.
+survey 16352 16384 16352 16384 403 402 1
+note ^ WEST WALL COLUMN, same window. A ring that applied on one bearing and not
+note   the other is a real failure mode the cell-list unit test cannot see.
+survey 16384 16384 16384 16384 403 402 1
+note ^ COLONY CENTRE -- the WITHIN-ARM CONTROL. Must read '1 with no surface' in
+note   BOTH arms: nothing stands above the slab at the centre. If this reads 0,
+note   the z-window is wrong and the two readings above mean nothing.
+survey 16416 16380 16416 16388 403 402 1
+note ^ NINE CELLS ALONG THE EAST FACE. A ring with a one-cell hole would still
+note   read '0 with no surface' at a single sampled column; this makes a gap
+note   visible as a count between 0 and 9.

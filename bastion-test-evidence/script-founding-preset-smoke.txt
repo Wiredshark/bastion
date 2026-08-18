@@ -1,0 +1,8 @@
+note SMOKE: first founding must place the full kit
+anchor
+spawn 8
+wait 300
+list_designations
+note SMOKE: second founding must REFUSE reason=colony_exists
+spawn 8
+wait 150

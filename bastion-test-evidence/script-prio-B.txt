@@ -1,0 +1,7 @@
+note PRIO-B: same window, but haul priority set to 0 (never) right after connect.
+note PRIO-B: PASS = 'haul deposited' == 0, with the command's own witness present.
+note PRIO-B: the witness is also the PRECONDITION -- the command is Admin-gated,
+note PRIO-B: so if the grant failed the handler never ran and the arm is VOID, not red.
+anchor
+cmd bastion_priority haul 0
+wait 12000

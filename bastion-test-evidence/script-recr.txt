@@ -1,0 +1,43 @@
+note ITEM 11 RESTORE -- CALIBRATION FIRST, A/B SECOND.
+note
+note ★ THE PRECONDITION, READ BEFORE WRITING THIS SCRIPT:
+note   recreation decay_per_sec = 0.0002, comfort = 0.4 (bastion_mood.ron:36).
+note   So a colonist crosses comfort from 1.0 after (1.0-0.4)/0.0002 = 3000
+note   SIM-SECONDS. The preempt CANNOT fire before that, and neither can the
+note   restore -- it only applies while a Recreate job is held.
+note   ★ bastion.rs:1094 already states this figure. I did not discover it; I
+note   read it, and it is why this arm exists at all.
+note
+note WHY A CALIBRATION RUN. 'wait N' is N CLIENT ticks -- wall-bound. The server
+note   runs with BASTION_UNCAPPED_TPS=1, so it simulates FASTER than wall time
+note   by an unknown factor. That factor decides whether the real A/B needs 5
+note   minutes or 50. Guessing it would produce an arm that either wastes an
+note   hour or ends before anything can fire, and a run that ends early looks
+note   exactly like a feature that does not work.
+note
+note THE MEASUREMENT: recreation sampled at a known tick cadence. The DROP per
+note   sample gives sim-seconds-per-client-tick directly, since the decay rate
+note   is a known constant. That number sizes the A/B -- it is not itself a
+note   test of the restore.
+anchor
+inspect_colonists
+note SAMPLE 0 -- t=0 reference. recreation should read very near 1.0.
+wait 1800
+inspect_colonists
+note SAMPLE 1 -- after 1800 client ticks.
+wait 1800
+inspect_colonists
+note SAMPLE 2 -- after 3600. Two intervals make the rate a trend, not a point.
+wait 3600
+inspect_colonists
+note SAMPLE 3 -- after 7200 total.
+wait 7200
+inspect_colonists
+note SAMPLE 4 -- after 14400 total. The recreation delta across these five
+note   samples, divided by 0.0002, IS the sim-seconds elapsed -- a measurement
+note   of the compression factor with its producer attached.
+note
+note ★ WHAT THIS RUN DOES NOT TEST: the restore. If recreation never reaches
+note   0.4 here, NO Recreate job is ever created, so a zero restore-witness is
+note   VOID BY PREMISE and must be reported as such -- not as 'the restore does
+note   not work'. That verdict is registered here, before the numbers exist.

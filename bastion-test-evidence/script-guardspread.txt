@@ -1,0 +1,83 @@
+note ITEM 14 v1 -- MEASURE the live hold-threshold spread. NOT a new mechanism.
+note
+note ★ WHY THIS IS A MEASUREMENT AND NOT A BUILD. bastion_jobs.rs already calls
+note   stagger_interrupt(mood_cfg.rest.interrupt, &colonist.0.values, consc, neur)
+note   PER ENTITY. Per-colonist hold thresholds are implemented and already vary.
+note   Ben's ruling asks v1 to prove TWO DISTINCT hold thresholds LIVE. Building a
+note   second mechanism would duplicate a working one; what is missing is the
+note   observation.
+note
+note ★★ SIZED FROM THE GENERATOR, NOT GUESSED. common/src/rtsim.rs:
+note     distributed(0,255) = sum of THREE uniform draws on 0..=85 (Irwin-Hall n=3),
+note       mean 127.5, sigma ~43
+note     Conscientious => conscientiousness > HIGH_THRESHOLD = 255-102 = 153
+note     153 is ~0.59 sigma above the mean  =>  P(trait) ~ 25%
+note   At 8 colonists an all-false draw is ~10% -- which is exactly what the item 13
+note   fixture showed, and which I briefly misread as the mechanism being DORMANT.
+note   At 16 colonists an all-false draw is ~1%. THAT is why this spawns 16: the
+note   sample size is set by the probability of a false null, not by convenience.
+note
+note ★★★ THE INSTRUMENT SHIPPED BY ACCIDENT THIS MORNING. consc/neur were on the
+note   inspect wire and dropped by the client format string. I added them only
+note   because the payload carried 14 fields while the log printed 12, while wiring
+note   item 13's health. Those two fields ARE the trait inputs to the threshold, so
+note   this bar became observable as a side effect of an unrelated row.
+note
+note THE BARS, registered before the data:
+note   BAR 1 (precondition): >= 16 colonists appear in INSPECT. Fewer => the spawn
+note     did not take and the run is VOID, not a null.
+note   BAR 2 (the deliverable): at least TWO DISTINCT (consc,neur) combinations
+note     across the colony. Since h = values(Craft+Tradition)/100 + 0.5*consc
+note     - 0.5*neur and eff = base*(1 - 0.4*h), two distinct trait pairs are two
+note     distinct hold thresholds -- which is Ben's ruling met, live.
+note   BAR 3 (strength): report the COUNT of each combination. All-identical at
+note     n=16 is a ~1% event and would be evidence AGAINST the generator varying
+note     traits, not merely an unlucky draw.
+note
+note ★ WHAT WOULD MAKE THIS VOID: fewer than 16 colonists inspected. Recorded here
+note   because a short colony would read as "less spread" and is the failure mode
+note   most likely to be mistaken for a result.
+note ★★★★ TAKE 2 -- THE DISCRIMINATOR THE FIRST RUN LACKED. Take 1 returned 8
+note   distinct colonists against a required 16 and was VOIDed by bar 1, cause
+note   unasserted. The read that followed found the mechanism: inspect_colonists
+note   enumerates from the CLIENT's Uid storage, because (its own comment)
+note   "Colonist is not a network-synced component, so the client cannot
+note   enumerate colonists directly". It sends every Uid it can SEE.
+note
+note   So "8 colonists" may mean the colony HAS 8, or that the client can SEE 8
+note   of more. Those are different worlds and the first run could not tell them
+note   apart -- absence of sync renders identically to absence of colonists,
+note   which is the same conflation this whole day kept producing.
+note
+note   inspect_colony reports colonists = (&insp_colonists).join().count() --
+note   an UNFILTERED SERVER-SIDE total. Emitting both, adjacent, separates them:
+note     colony_total == 8   => the spawn did not add colonists (fixture problem)
+note     colony_total >  8   => the client sees a SUBSET (instrument bound, and
+note                            NO fixture change can lift it)
+note ★★★★★ TAKE 3 -- ORDERING FIX. Takes 1 and 2 called `spawn` BEFORE `anchor`
+note   and the spawn was refused. The server's reply says "need god mode", but
+note   the actual gate (in_game.rs:620) is a THREE-CLAUSE conjunction:
+note       presence.bastion_terrain_anchor.is_some()
+note         && pos finite
+note         && (1..=16).contains(&count)
+note   ONE message covers all three, and it names the clause that was NOT
+note   failing. count=16 was in range; the missing thing was THE ANCHOR.
+note   Registered as a diagnostic defect in its own right: a refusal that names
+note   a cause other than its failing clause sends the reader hunting for a
+note   permission system that is not the problem -- which is exactly what it
+note   did to me for two takes.
+anchor
+spawn 16
+wait 600
+inspect_colony
+note GUARDSPREAD COLONY-TOTAL 0 -- server-side count, the denominator.
+inspect_colonists
+note GUARDSPREAD SAMPLE 0 -- trait pairs across the colonists the CLIENT can see.
+wait 2000
+inspect_colony
+note GUARDSPREAD COLONY-TOTAL 1 -- if this GREW between samples, colonists were
+note   still arriving and take 1's short count was a TIMING artifact, not a cap.
+inspect_colonists
+note GUARDSPREAD SAMPLE 1 -- second read. Traits are assigned at generation and
+note   must NOT drift between samples; a change here is a finding about the
+note   personality store, not about guarding.

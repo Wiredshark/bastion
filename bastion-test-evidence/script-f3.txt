@@ -1,0 +1,5 @@
+note F3: client connects, holds to ~tick 9000, then DISCONNECTS while the server runs on.
+note F3: each leg is its own control -- same server, same colony, one factor removed.
+note F3: PASS = hauls in the no-client half exceed hauls in the client half, 3 of 4 legs.
+anchor
+wait 9000

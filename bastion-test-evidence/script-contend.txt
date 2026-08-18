@@ -1,0 +1,44 @@
+note LADDER CONTENTION (LADDER-CONTENTION-PREREG.md). Same 3-across shaft -- its geometry
+note   is load-bearing (G1) -- with MORE WORK AT DEPTH so several of the 8 colonists need
+note   the single route out at once.
+note
+note The shaft arm already hit QueuedForLink twice with a narrower box; this widens the
+note   mine designation across the whole shaft floor and its walls, so the queue has
+note   customers rather than one straggler.
+anchor
+inspect_cell 16364 16384 392
+note PRECONDITION 0 -- shaft floor must be AIR. If it is solid the shaft did not
+note   generate and every number below is VOID by construction, not by discovery.
+designate mine 16358 16378 391 16370 16390 396
+list_designations
+note The box now spans z 391..396 -- the outcrop (392..394) PLUS the shaft walls above it,
+note   so work exists at several depths and colonists linger below the rim.
+inspect_colonists
+note SAMPLE 0 -- baseline, all at surface.
+wait 400
+inspect_colonists
+inspect_colony
+note SAMPLE 1
+wait 400
+inspect_colonists
+inspect_colony
+note SAMPLE 2
+wait 400
+inspect_colonists
+inspect_colony
+note SAMPLE 3
+wait 400
+inspect_colonists
+inspect_colony
+note SAMPLE 4
+wait 400
+inspect_colonists
+inspect_colony
+note SAMPLE 5
+wait 400
+inspect_colonists
+inspect_colony
+note SAMPLE 6 -- six sampling instants rather than four: route A is a COINCIDENCE BAR
+note   (a colonist must be parked in QueuedForLink AT a sample), so more samples is the
+note   honest way to give it a chance without changing what is measured.
+count_items

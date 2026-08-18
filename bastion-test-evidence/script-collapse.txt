@@ -1,0 +1,14 @@
+note CLAIM COLLAPSE: C0 reproduce (claims>0, then a material-blocked designation, then claims==0).
+note C1 the census must CONSERVE (residual=0). C2 name the dominant refusal reason.
+note NO food is dropped in this leg. The sweep dropped 50 mushrooms shortly before its
+note collapse, so omitting it here keeps the designation as the only changed factor.
+anchor
+inspect_colony
+wait 3000
+inspect_colony
+note now the material-blocked designation, 30 blocks above the arena floor
+designate build 16390 16390 430 16392 16392 431
+wait 9000
+inspect_colony
+wait 9000
+inspect_colony

@@ -1,0 +1,49 @@
+note ITEM 15 / #96 -- THE WALL VERDICT, IN ONE SELF-CONTAINED LEG.
+note
+note ★ WHY A FOURTH ATTEMPT. Each earlier take failed on PROVENANCE, not on the
+note   question:
+note     take 1  inspect_cell reads DESIGNATIONS, not terrain -- wrong verb.
+note     take 2  narrow window only; its within-arm control was NEGATIVE, so it
+note             could not tell "no wall" from "survey blind".
+note     take 3  added the positive control -- but ALL FOUR survey legs so far
+note             talked to an ORPHAN server holding port 26024, so none of their
+note             readings can be attributed to the env their leg declared.
+note     take 3b the re-run's server log was 172 lines with no gate emit, while
+note             the same binary had produced 468 lines two minutes earlier --
+note             so that server did not finish booting either.
+note
+note ★★ SO THIS LEG CARRIES ITS OWN PROVENANCE, and all three checks must appear
+note   IN THE SAME LOG or the reading is refused:
+note     1. no orphan warning in the wrapper output;
+note     2. the boot line 'FLAT-TEST-ARENA env check' present, showing
+note        walled=true and wall_cells>0 -- proof the server that answered these
+note        surveys is the one built with the gate ON;
+note     3. both survey windows below, from that same server.
+note   AN ATTESTATION PROVES WHAT WAS LAUNCHED, NOT WHAT WAS TALKED TO -- so the
+note   gate emit is the only thing that ties the READINGS to the CONFIG.
+anchor
+wait 120
+note --- POSITIVE CONTROL: a window that MUST contain something ---
+survey 16384 16384 16384 16384 405 395 1
+note ^ CENTRE, z[395,405]. FLAT_ARENA_Z is 400 and the slab's top solid cell is
+note   399, so every arena column has a surface here. '0 with no surface' proves
+note   the survey sees terrain. If this reads 1, everything below is void and
+note   the finding is "the instrument is blind", not "the wall is missing".
+survey 16416 16384 16416 16384 405 395 1
+note ^ RING COLUMN, same wide window. Also must find a surface.
+note
+note --- THE QUESTION: is anything standing ABOVE the slab on the ring line? ---
+survey 16416 16384 16416 16384 403 402 1
+note ^ RING COLUMN, z[402,403] -- inside a 4-high wall, above the slab.
+note   0 with no surface = THE WALL IS THERE. 1 = it is not.
+survey 16352 16384 16352 16384 403 402 1
+note ^ WEST face, same narrow window. A ring applied on one bearing and not the
+note   other is a failure the cell-list unit test cannot see.
+survey 16416 16380 16416 16388 403 402 1
+note ^ NINE CELLS along the east face: a one-cell gap shows as a count in 1..8
+note   rather than as a clean 0 or 9.
+survey 16384 16384 16384 16384 403 402 1
+note ^ CENTRE, narrow window -- the NEGATIVE reference. Must read 1 (nothing
+note   stands above the slab at the centre) in every case. Paired with the
+note   positive control above, the two together pin the instrument from both
+note   sides before any wall reading is believed.

@@ -1,0 +1,40 @@
+note ITEM 13 -- HOSTILES NEAR COLONY: the Flee drive's first LIVE test.
+note
+note THE PRODUCER, read before the fixture (bastion_jobs.rs:10533):
+note   flee_sig = agent.target.is_some_and(|t| t.hostile)
+note              || health.fraction() < psyche.flee_health
+note   and flee_preempt_transition(flee_sig, current) -> Some(Drive::Flee) when
+note   flee_sig && current != Flee. It is a PER-TICK higher-tier preemption that
+note   SUSPENDS the job lease rather than cancelling it.
+note
+note THE BAR: at least one INSPECT sample reading drive=Flee. Every pit/shaft arm
+note   ever run has read drive=Work or drive=Personal -- Flee has never appeared,
+note   which is why the roadmap calls this drive live-untested.
+note
+note ADMISSIBILITY: a client is connected, so this is a SEPARATION witness
+note   (Flee present vs absent), never a rate. The control is every prior arm's
+note   drive census, already on disk.
+anchor
+inspect_colonists
+note SAMPLE 0 -- BASELINE, before any hostile exists. drive=Flee must NOT appear
+note   here; if it does the fixture proves nothing about the spawn.
+wait 120
+inspect_colonists
+note SAMPLE 1 -- still peaceful. Two clean baselines before the treatment.
+note
+note ---- THE TREATMENT: a hostile, adjacent to the working colony ----
+cmd spawn enemy wolf
+wait 30
+inspect_colonists
+note SAMPLE 2 -- immediately after the spawn. The agent must ACQUIRE the target
+note   before flee_sig can rise, so an absence here is a timing fact, not a
+note   refutation.
+wait 60
+inspect_colonists
+note SAMPLE 3
+wait 60
+inspect_colonists
+note SAMPLE 4
+wait 120
+inspect_colonists
+note SAMPLE 5 -- last sample. drive= census across all six is the measurement.

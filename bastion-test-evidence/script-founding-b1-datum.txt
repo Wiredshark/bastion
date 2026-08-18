@@ -1,0 +1,8 @@
+note B1-LIVE: found at an explicitly TARGETED position whose z is 5 above the terrain
+note B1-LIVE: arena first-air-cell is 400; target z is 405
+note B1-LIVE: PASS = emitted datum=400 (derived from terrain)
+note B1-LIVE: FAIL = emitted datum=405 (taken from the reported z)
+anchor
+spawn 8 16400.5 16400.5 405.0
+wait 300
+note B1-LIVE: control -- the untargeted form must still found at the player

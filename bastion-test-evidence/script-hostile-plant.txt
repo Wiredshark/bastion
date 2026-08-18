@@ -1,0 +1,32 @@
+note #93 PLANT LEG -- the SHORT script the two registered plants run under.
+note
+note WHY IT IS SHORT AND WHY THAT IS NOT A SHORTCUT. A plant demonstrates that a
+note   FIELD RESPONDS; it does not measure the wolf. The scored arm's long tail
+note   exists to see whether separation closes over time, and a plant has no
+note   use for that. What a plant needs is exactly one thing the baseline
+note   cannot give it: perceived > 0. Attempt 4 showed by_target flee emits
+note   firing WITHIN A SECOND of the spawn, so 300 sim-seconds after it is
+note   generous, not marginal.
+note
+note ★ THE BASELINE HALF IS STILL HERE, AND IT IS LOAD-BEARING. Each plant has a
+note   registered CONTROL that must stay GREEN, and both controls are read from
+note   the same run -- P1 must leave perceived/h_targets_colonist untouched,
+note   P2 must leave min_sep untouched. A plant leg with no pre-spawn samples
+note   could not show that the plant changed one field and not the other, and a
+note   plant that reddened everything would prove nothing at all.
+anchor
+wait 300
+note PRE-SPAWN. perceived=0 expected here, in BOTH plant legs and in the clean
+note   arm -- this is the matched slice that says the plant did not simply break
+note   the emit.
+cmd spawn enemy wolf
+wait 300
+inspect_colonists
+note POST-SPAWN. The scored plant reads are server-side:
+note   P1 (hostile Pos <- colonist Pos): min_sep and sep_h must be EXACTLY 0.0
+note      in every post-spawn sample, while perceived and h_targets_colonist
+note      read the same as the clean arm.
+note   P2 (h_targets_colonist forced false): the verdict must flip to S2/S2b
+note      while min_sep reads the same as the clean arm.
+note ★ If a plant does NOT redden its own field, the instrument is unproven and
+note   REFUSAL #5 applies: the clean arm is NOT scored at all.

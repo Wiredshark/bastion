@@ -1,0 +1,15 @@
+note DROP WITNESS: PickupItem is a SYNCED component, so the client can see dropped items.
+note P1 = count > 0 after the drop. P2 = dropall's barrier reports observed, not ACK-TIMEOUT.
+note P3 = WHERE they land (a measurement, not a bar) -- compared against
+note   preset stockpile   (16382,16380,399)-(16386,16385,400)
+note   drop-zone stockpile (16389,16389,399)-(16395,16395,406)
+anchor
+count_items
+designate stockpile 16389 16389 399 16395 16395 406
+cmd give_item common.items.crafting_ing.stones 50
+cmd dropall
+count_items
+inspect_colony
+wait 900
+count_items
+inspect_colony

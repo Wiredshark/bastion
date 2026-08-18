@@ -1,0 +1,10 @@
+note ITEM 10: colony dashboard. D1 = the Colony arm answers. D2 = exact invariants.
+note D2 expects colonists==8 (BASTION_AUTOFOUND_COLONY) and designations == what we place.
+note D3 = a field MOVES between the two samples.
+anchor
+inspect_colony
+designate chop -20 -20 400 -16 -16 404
+wait 3000
+inspect_colony
+wait 3000
+inspect_colony

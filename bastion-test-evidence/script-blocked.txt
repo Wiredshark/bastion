@@ -1,0 +1,13 @@
+note BLOCKED-MATERIALS: B1 per-job (<= jobs_total, never 8x), B2 zero at baseline while claims>0,
+note B3 non-zero in the SAME sample where jobs_claimed==0. B2 and B3 must both come from THIS leg --
+note the within-run contrast is the evidence, not the non-zero alone.
+anchor
+inspect_colony
+wait 3000
+inspect_colony
+note now the material-blocked designation, 30 blocks above the arena floor
+designate build 16390 16390 430 16392 16392 431
+wait 9000
+inspect_colony
+wait 9000
+inspect_colony

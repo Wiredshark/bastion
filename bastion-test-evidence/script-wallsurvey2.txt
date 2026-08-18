@@ -1,0 +1,37 @@
+note ITEM 15 WALL-EXISTENCE, TAKE 3 -- WITH A POSITIVE CONTROL.
+note
+note ★ WHY TAKE 2 COULD NOT CONCLUDE. It surveyed z[402,403] and got '1 with no
+note   surface' at the wall column, at the west column, and at the centre -- in
+note   BOTH the walled and unwalled arms. I read the centre column as the
+note   within-arm control, but it is a NEGATIVE control: it expects to find
+note   nothing, so it reads the same whether the survey works or is blind.
+note   A NEGATIVE CONTROL CANNOT PROVE THE INSTRUMENT CAN SEE.
+note
+note ★★ THE FIX IS A WINDOW THAT MUST CONTAIN SOMETHING. FLAT_ARENA_Z is 400, so
+note   the arena slab's top is at z=400 and EVERY column in the arena has a
+note   surface in z[395,405]. That window is a POSITIVE control: any column
+note   reporting 'no surface' in it means the survey is not seeing terrain, and
+note   every reading in take 2 was uninterpretable.
+note
+note ★★★ AND THE SAME WIDE WINDOW ANSWERS THE ORIGINAL QUESTION, because survey
+note   reports OVERHANG CANDIDATES with their surface z. A wall column's surface
+note   sits at 403 and a bare slab column's at 400, so:
+note     wall present -> wall column and centre column differ
+note     wall absent  -> they agree
+note   One window, self-validating: if the positive control fails, I say the
+note   instrument is blind rather than that the wall is missing.
+anchor
+wait 120
+survey 16384 16384 16384 16384 405 395 1
+note ^ CENTRE, WIDE WINDOW. POSITIVE CONTROL: must report '0 with no surface'.
+note   If it reports 1, the survey cannot see the arena floor and NOTHING below
+note   is interpretable -- that is the finding, not a missing wall.
+survey 16416 16384 16416 16384 405 395 1
+note ^ EAST WALL COLUMN, same wide window. Also expects a surface; the QUESTION
+note   is at what height, which the overhang/candidate output carries.
+survey 16416 16380 16416 16388 405 395 1
+note ^ NINE CELLS ALONG THE EAST FACE, same window.
+survey 16420 16384 16420 16384 405 395 1
+note ^ FOUR BLOCKS OUTSIDE THE RING -- bare slab in both arms. The matched
+note   NEGATIVE reference for the wall column: whatever the wall column reads,
+note   this reads the un-walled version of it.

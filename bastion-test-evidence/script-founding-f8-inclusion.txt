@@ -1,0 +1,14 @@
+note F8-INCLUSION: a REAL Mine/Chop completion through the GENERIC path, live
+note F8-INCLUSION: closes the inclusion half scored PARTIAL on item 8 v5
+note F8-INCLUSION: v5 registered prediction -- the next scored run that designates
+note F8-INCLUSION: mining MUST show 'bastion: job completed' firing. This is that run.
+anchor
+spawn 8 16384.5 16384.5 400.0
+wait 120
+note F8: designate the arena's stone outcrop (centre-20,0 half-width 2, z 400..402)
+designate mine 16362 16382 400 16366 16386 402
+wait 300
+note F8: designate the arena's tree cluster (centre+18,2 h5 and +22,-3 h6)
+designate chop 16400 16384 400 16404 16388 405
+wait 900
+note F8: window closed -- expect job completed with drop and XP

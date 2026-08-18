@@ -1,0 +1,15 @@
+note DROP PLACEMENT: handle_drop_all puts items at pos + (5..10, 5..10, +5), NOT at the feet.
+note Player is at (16384.5,16384.5,400) so the drop lands x,y in [16389.5,16394.5], z=405,
+note while the preset stockpile is (16382,16380,399)-(16386,16385,400) -- a miss on all 3 axes.
+note FIXTURE: designate a stockpile AT the drop zone instead of fighting the offset.
+note D1 = blocked_materials FALLS after the drop. D2 = it drops below the baseline.
+anchor
+designate stockpile 16389 16389 399 16395 16395 406
+inspect_colony
+cmd give_item common.items.crafting_ing.stones 50
+wait 300
+cmd dropall
+wait 900
+inspect_colony
+wait 3000
+inspect_colony

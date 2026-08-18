@@ -1,0 +1,38 @@
+note CONTROL ARM: byte-identical to script-pitwood.txt except the two cmd lines that
+note   deliver wood are removed. One axis -- wood present or absent. See WOOD-CONTROL-PREREG.
+note BRANCH B: clear the material-starvation hold so the F3 chain can select branch B.
+note
+note material_held is the STARVATION hold, not possession (see
+note   F3-BRANCH-LIVE-AMENDMENT-1). Clearing it needs wood_available at :19355:
+note   a PickupItem of CHOP_DROP_ITEM, INSIDE a registered stockpile, and UNRESERVED.
+note
+note The stockpile box below is the DROP ROW's measured one -- give_item + dropall
+note places items at the player + (rng 5..10, rng 5..10, +5), measured landing at
+note (16392.8, 16393.8, 404.9) from a player at (16384.5, 16384.5, 400.0). Reused
+note unchanged rather than re-derived.
+anchor
+designate stockpile 16389 16389 399 16395 16395 406
+list_designations
+count_items
+note BASELINE item count above -- the drop must MOVE it or the precondition is unmet.
+designate mine 16358 16378 395 16370 16390 399
+count_items
+inspect_colony
+note If wood registered, blocked_materials should differ from the starved arm's 44.
+note   That is a MOVEMENT indicator, not a quantity I explain.
+wait 600
+inspect_colonists
+inspect_colony
+note SAMPLE 1
+wait 600
+inspect_colonists
+inspect_colony
+note SAMPLE 2
+wait 600
+inspect_colonists
+inspect_colony
+note SAMPLE 3
+wait 600
+inspect_colonists
+inspect_colony
+note SAMPLE 4 -- window closes. Declared 2400 sim-seconds, same as the pit arm.

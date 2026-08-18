@@ -1,0 +1,105 @@
+note ARC 3 SHARED BLOCKER -- CAN A HOSTILE HARM A COLONIST AT ALL?
+note
+note WHY THIS ARM EXISTS. Items 14 (Guard) and 15 (Fortifications) are both
+note   blocked on the SAME missing fact, and it is not a design question:
+note   ITEM15A-WALL-RESULTS.md measured 8 colonists, 8 FLEE emits, health=1.0 on
+note   EVERY emit, and ZERO damage lines. A wall's value is harm prevented and
+note   the baseline harm is zero; a guard would defend against nothing
+note   measurable. So: make a hostile harm a colonist, or prove it cannot.
+note
+note ★ THE CANDIDATE BEING TESTED (not asserted): Target::aggro_on is documented
+note   as "whether the target has come close enough to trigger aggro". If aggro
+note   needs proximity and colonists FLEE the instant they perceive a hostile,
+note   aggro may never trigger -- flight would be a complete defence and the
+note   threat model would be toothless BY DESIGN rather than by defect.
+note
+note ★★ THE DISCRIMINATOR IS THE SHAFT, NOT A BIGGER MONSTER.
+note   BASTION_FLAT_ARENA_SHAFT is 8 deep and 3 across, built and unit-tested as
+note   a genuine trap because egress_scan's own arithmetic says a colonist
+note   cannot climb out (SHAFT-FIXTURE-RESULTS). A TRAPPED COLONIST CANNOT FLEE.
+note   So this arm removes the escape rather than adding force -- which keeps
+note   the hostile identical to item 15a's and changes exactly one variable.
+note
+note THE BAR: "bastion: FLEE ... by_health=true" emits, counted SERVER-side.
+note   by_health requires DAMAGE, and a melee quadruped cannot damage at range,
+note   so it is a CONTACT witness.
+note
+note ★ BOTH BRANCHES ARE INFORMATIVE, REGISTERED BEFORE THE RUN:
+note   by_health > 0  -> flight was what prevented contact; the threat model
+note                     works once escape is removed, and items 14/15 gain a
+note                     measurable baseline.
+note   by_health == 0 -> the flight candidate is REFUTED and the blocker is
+note                     something else entirely. That is a better outcome than
+note                     another plausible story, and it is NOT a failed run.
+anchor
+note ★ ACTIVATION -- THE STEP THE FIRST ATTEMPT OMITTED AND THAT VOIDED IT.
+note   BASTION_FLAT_ARENA_SHAFT generates the shaft; it does NOT put anyone in
+note   it. With no designation the trap stood empty for a whole run and every
+note   colonist stayed on the surface, free to flee -- which re-measured item
+note   15a instead of testing anything. A TRAP IS NOT A TREATMENT UNTIL SOMEONE
+note   IS INSIDE IT.
+note   The box below is the one script-shaft.txt derives FROM THE SHAFT FLOOR
+note   (z 391-395, floor at 392) -- reused verbatim rather than re-derived,
+note   because the first shaft VOID in this program came from a box at z 395-399
+note   that sat ABOVE the outcrop and designated air.
+note ★★ SUPPRESS THE COMPETING WORK FIRST -- #92's diagnosis.
+note   Attempt 2 placed this designation and got ZERO mine events: the colony
+note   created 74 FARM jobs and the shaft offers exactly THREE mineable cells
+note   (SHAFT_OUTCROP_HALF_WIDTH=0 leaves a single column at z 392-394). Three
+note   cells cannot win selection against 74 jobs with 8 colonists.
+note   ★ THE FIX IS TO REMOVE THE COMPETITION, NOT TO ENLARGE THE TRAP:
+note   SHAFT_HALF_WIDTH=1 is exactly what makes the shaft inescapable, so a
+note   wider mine box would test an ESCAPABLE shaft and prove nothing.
+note   The founding preset puts Farm at origin+(-7,-4,-1)..(-3,1,0) and the
+note   shaft at origin+(-20,0), so a cancel box around the founding area
+note   removes farm/stockpile/bed and leaves the shaft mine untouched.
+note ★★★ ATTEMPT 3 VOIDED HERE, AND THE LOG SAID SO IN ONE LINE:
+note   'designations (rev=0): [' -- the board was EMPTY when the cancel ran.
+note   The cancel preceded the COLONY FOUNDING, so it removed nothing, and
+note   founding then placed the farm afterwards (farm jobs went 74 -> 96).
+note   A cancel is not a policy; it is a one-shot edit of whatever exists AT
+note   THAT MOMENT. So it must run AFTER founding, never before.
+wait 600
+list_designations
+note ★ The founding preset should be visible above (Stockpile/Farm/Bed). If the
+note   list is EMPTY here, founding has not happened yet and the cancel below
+note   will no-op exactly as it did in attempt 3 -- that is the VOID signature.
+cancel 16374 16374 390 16394 16394 405
+list_designations
+note ★ VERIFY THE CANCEL -- if a Farm designation still appears above, the
+note   competition was NOT removed and this run is VOID for the same reason as
+note   attempt 2. Do not read the by_health count in that case.
+designate mine 16358 16378 391 16370 16390 395
+list_designations
+note Work is on the shaft floor. Colonists must DESCEND to reach it, and
+note   egress_scan's own arithmetic says they cannot climb back out.
+wait 900
+inspect_colonists
+note ★ PRECONDITION SAMPLE -- the descent must be VISIBLE here, not assumed.
+note   FLAT_ARENA_Z is 400 and the shaft floor is 392, so a colonist working the
+note   box reads z below 400. If no colonist is below the surface at this point,
+note   the treatment never applied and the run is VOID -- report it as VOID, do
+note   NOT read the by_health count.
+inspect_colonists
+note SAMPLE 0 -- baseline, no hostile. Any by_health emit before the spawn would
+note   mean something OTHER than the wolf damaged a colonist.
+wait 300
+inspect_colonists
+note SAMPLE 1 -- second clean baseline.
+note
+note ---- THE HOSTILE ARRIVES ----
+cmd spawn enemy wolf
+inspect_colonists
+note SPAWN SAMPLE
+wait 600
+inspect_colonists
+note SAMPLE 2
+wait 600
+inspect_colonists
+note SAMPLE 3
+wait 600
+inspect_colonists
+note SAMPLE 4 -- last. The scored figure is the server-side by_health emit count
+note   across the whole run. Client samples witness that colonists were alive
+note   and ticking; they are NOT the measurement (item 13c: 40 of 40 samples
+note   read drive=Work while the server emitted the Flee twice).

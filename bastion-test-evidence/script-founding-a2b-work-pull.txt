@@ -1,0 +1,12 @@
+note A2-B: does WORK PULL colonists? Section 8 B4 claims the work being at F is what
+note A2-B: holds them there. That predicts the converse: work FAR from F pulls them AWAY.
+note A2-B: F = (16384.5,16384.5,400); the outcrop is 20 blocks WEST at (16364,16384).
+note A2-B: MEASURE = fraction of colonist samples within 8 blocks of the OUTCROP.
+note A2-B: control arm (already run) = same founding, NO designations, max dist 21.
+note A2-B: this arm designates the outcrop and nothing else.
+anchor
+spawn 8 16384.5 16384.5 400.0
+wait 120
+designate mine 16362 16382 400 16366 16386 402
+wait 900
+note A2-B: window closed

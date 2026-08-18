@@ -1,0 +1,21 @@
+note STONES FIXTURE: BUILD_MATERIAL_ITEM is common.items.crafting_ing.stones, but chopping
+note yields wood -- so build jobs are blocked forever in an arena with no stone source.
+note S0 stones land (blocked_materials must FALL). S1 baseline 9 explained (must drop BELOW 9).
+note S3 an out-of-reach build job, now claimable, is attempted and fails to arrive.
+note FIXTURE FIX: a WAIT sits between give_item and dropall. Without it the drop executes
+note before the give is processed (measured: give-success arrived 660ms AFTER dropall was
+note sent), so dropall empties an inventory that has not received the items yet. This also
+note explains the field sweep's "50 given, 2 counted" -- those 2 were items already held.
+anchor
+inspect_colony
+cmd give_item common.items.crafting_ing.stones 50
+wait 300
+cmd dropall
+wait 900
+inspect_colony
+note S3: out-of-reach designation, now with material available so it CAN be claimed
+designate build 16390 16390 430 16392 16392 431
+wait 9000
+inspect_colony
+wait 9000
+inspect_colony

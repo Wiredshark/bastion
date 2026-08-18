@@ -1,0 +1,38 @@
+note THE SHAFT ARM (SHAFT-FIXTURE-PREREG.md + AMENDMENT-1). script-pit.txt's mine box
+note   is hardcoded z 395..399 for the PIT floor (400-4=396). The shaft floor is 400-8=392
+note   and its outcrop occupies 392..394 -- entirely BELOW that box -- so the first shaft
+note   leg designated AIR and its zeros were VOID, not RED.
+note
+note THE BOX BELOW IS DERIVED FROM THE SHAFT FLOOR, and the precondition is SAMPLED
+note   rather than assumed: a VOID run and a RED run look identical unless the run
+note   prints whether anyone was ever in the hole.
+anchor
+inspect_cell 16364 16384 392
+note PRECONDITION 0 -- the shaft floor. Expect AIR here (the shaft is carved) and the
+note   outcrop is the column at the centre offset.
+inspect_cell 16364 16384 396
+note PRECONDITION 1 -- four above the floor: inside the shaft, must also be air. If this
+note   reads SOLID the shaft did not generate and every later number is VOID.
+designate mine 16358 16378 391 16370 16390 395
+list_designations
+note The box spans z 391..395, covering the outcrop at 392..394 with a block of margin.
+inspect_colonists
+note SAMPLE 0 -- baseline. Colonist z values here are SURFACE (~400).
+wait 600
+inspect_colonists
+inspect_colony
+note SAMPLE 1 -- if anyone has descended, their z reads near 392. THAT is the
+note   precondition for anything this arm claims about egress.
+wait 600
+inspect_colonists
+inspect_colony
+note SAMPLE 2
+wait 600
+inspect_colonists
+inspect_colony
+note SAMPLE 3
+wait 600
+inspect_colonists
+inspect_colony
+note SAMPLE 4 -- last sample.
+count_items

@@ -1,0 +1,13 @@
+note ACK BARRIER: this script is the EXACT sequence that misread before.
+note A2: designate then inspect_colony with NO wait between. The old driver sampled 87ms
+note after sending and reported designations=3 (the pre-designation count). It must now
+note report 4 in the FIRST sample.
+note A3: give_item then dropall with NO wait between. The ack line for give_item must be
+note logged BEFORE dropall is sent -- scored on ordering, not on downstream item counts.
+anchor
+designate stockpile 16389 16389 399 16395 16395 406
+inspect_colony
+cmd give_item common.items.crafting_ing.stones 50
+cmd dropall
+wait 900
+inspect_colony

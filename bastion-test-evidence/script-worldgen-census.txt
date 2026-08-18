@@ -1,0 +1,31 @@
+note W-CENSUS: REAL WORLDGEN -- no BASTION_FLAT_ARENA. Lattice fixed by
+note W-CENSUS: WORLDGEN-PRESET-PREREG section 7, committed BEFORE any data:
+note W-CENSUS: 3x3 at the 32-block chunk pitch around (15216,16016),
+note W-CENSUS: walked in ascending (y,x) order. Not chosen after seeing results.
+note W-CENSUS: A refusal does NOT consume the one-colony boundary, so one world
+note W-CENSUS: absorbs every attempt. This is a CENSUS and is reported whole --
+note W-CENSUS: it is not a search for a green. After the FIRST success, later
+note W-CENSUS: attempts refuse colony_exists BY DESIGN and are not terrain data.
+note W-CENSUS: witness = 'bastion: founding site relief' on EVERY attempt.
+anchor
+wait 150
+note W-CENSUS: terrain settle window closed, beginning lattice
+spawn 8 15184.5 15984.5 419.0
+wait 40
+spawn 8 15216.5 15984.5 419.0
+wait 40
+spawn 8 15248.5 15984.5 419.0
+wait 40
+spawn 8 15184.5 16016.5 419.0
+wait 40
+spawn 8 15216.5 16016.5 419.0
+wait 40
+spawn 8 15248.5 16016.5 419.0
+wait 40
+spawn 8 15184.5 16048.5 419.0
+wait 40
+spawn 8 15216.5 16048.5 419.0
+wait 40
+spawn 8 15248.5 16048.5 419.0
+wait 60
+note W-CENSUS: lattice complete, window closed

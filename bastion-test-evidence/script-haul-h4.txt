@@ -1,0 +1,16 @@
+note A3-EAT-2: the DERIVED leg. Previous 9000-tick leg gave harvest 8 + food_stock 10
+note A3-EAT-2: and ate 0, because the blocker is HUNGER, not the farm.
+note A3-EAT-2: DERIVATION, read from code not guessed --
+note A3-EAT-2:   eat gate: needs.hunger < stagger_interrupt(mood_cfg.hunger.interrupt, ..)
+note A3-EAT-2:   default_need_interrupt() = 0.2, clamped to [0.05, 0.3] per personality
+note A3-EAT-2:   hunger_decay_per_sec = 0.00088900001719594 (from the run's own config)
+note A3-EAT-2:   threshold 0.30 -> 787 s -> 23625 ticks   (first eligible colonist)
+note A3-EAT-2:   threshold 0.20 -> 900 s -> 27000 ticks   (base)
+note A3-EAT-2:   threshold 0.05 -> 1069 s -> 32065 ticks  (last eligible)
+note A3-EAT-2: WINDOW = 28000 ticks, chosen to clear the first two, declared and flown.
+note A3-EAT-2: PASS = 'bastion: ate' fires at least once, with food_stock having risen first.
+note A3-EAT-2: FINDING = food_stock > 0 and hunger below threshold and STILL no eat.
+anchor
+spawn 4 16384.5 16384.5 400.0
+wait 28000
+note A3-EAT-2: window closed

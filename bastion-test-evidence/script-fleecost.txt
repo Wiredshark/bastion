@@ -1,0 +1,45 @@
+note ITEM 13b -- WHAT FLEEING COSTS: does a hostile interrupt WORK, and does it resume?
+note
+note WHY A SECOND ARM. script-flee.txt proved the drive FIRES but designates no
+note   work at all -- 38 claims, 0 completions, nothing to lose. A cost question
+note   needs work IN FLIGHT when the hostile arrives, so this arm designates a
+note   mine box first and lets the colony get into rhythm before the spawn.
+note
+note THE PRODUCER: flee_preempt_transition SUSPENDS the job lease rather than
+note   cancelling it (the survival-yields rule: never cancel-and-reclaim). So the
+note   prediction is COMPLETIONS PAUSE AND THEN CONTINUE -- not that claims are
+note   lost. A permanent stall would contradict the design's own comment.
+note
+note THE BAR is a THREE-WINDOW comparison inside one run: completions before the
+note   spawn, during the flee window, and after. Client connected, so this is a
+note   separation of counts within a run, never a rate.
+anchor
+designate mine 16358 16378 395 16370 16390 399
+list_designations
+note Work designated. Let the colony build up a completion rhythm BEFORE any
+note   hostile exists -- an interruption is only visible against a baseline rate.
+wait 600
+inspect_colonists
+inspect_colony
+note WINDOW A -- peaceful work. The colony-level counters here are the baseline.
+wait 600
+inspect_colonists
+inspect_colony
+note WINDOW A2 -- second peaceful sample; two points make the baseline a trend.
+note
+note ---- THE HOSTILE ARRIVES, MID-WORK ----
+cmd spawn enemy wolf
+inspect_colonists
+note SPAWN SAMPLE -- drive should show Flee here or next sample.
+wait 300
+inspect_colonists
+inspect_colony
+note WINDOW B -- DURING/just after the flee. Completions vs window A is the cost.
+wait 600
+inspect_colonists
+inspect_colony
+note WINDOW C -- recovery. If the lease truly suspends, completions resume here.
+wait 600
+inspect_colonists
+inspect_colony
+note WINDOW C2 -- final. A resumed colony looks like A again; a broken one does not.

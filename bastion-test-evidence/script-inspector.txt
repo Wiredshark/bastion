@@ -1,0 +1,8 @@
+note ITEM 9: verify the inspector's ENTITY arm on the live path.
+note I0 = a Colonist payload comes back at all. I1 = fields populated (a FLOOR, constants pass it).
+note I2 = a field MOVES between the two samples below. I3 = two colonists differ within one sample.
+anchor
+wait 3000
+inspect_colonists
+wait 3000
+inspect_colonists

@@ -1,0 +1,9 @@
+note A2: colonists must STAY within R=16 of F across the window
+note A2: R derived (prereg) -- spawn scatter +/-5 x and y = 7.07 radial, plus ~8 blocks
+note A2: of legitimate work travel to a far preset corner. The failure it must catch is
+note A2: a cross-country leash-march of HUNDREDS of blocks, so R is not a close call.
+note A2: F = (16384.5, 16384.5, 400)
+anchor
+spawn 8 16384.5 16384.5 400.0
+wait 900
+note A2: window closed

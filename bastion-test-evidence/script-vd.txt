@@ -1,0 +1,4 @@
+note VD arm: client connects and holds past tick 9000; view distance is forced server-side.
+note VD arm: V0 precondition is the server's own "client view distance granted" emit.
+anchor
+wait 9600

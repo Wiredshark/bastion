@@ -1,0 +1,60 @@
+note ITEM 13c CONTROL -- IDENTICAL to script-fleehealth.txt EXCEPT the two sudo
+note   targets are DELIBERATELY unresolvable ("uid@3zz" fails u64 parse), so the
+note   damage CANNOT land. Same fixture, same waits, same sample count, same
+note   absence of any hostile -- the ONLY difference is whether the treatment
+note   takes effect. Registered expectation: ZERO "bastion: FLEE" emits.
+note   If this control ALSO emits FLEE, the treated run's 2 emits are not
+note   attributable to the damage and the whole result is withdrawn.
+note
+note ITEM 13c -- THE HEALTH BRANCH of flee_sig, the half item 13 could not reach.
+note
+note THE PRODUCER has TWO branches (bastion_jobs.rs:10533):
+note   flee_sig = agent.target.is_some_and(|t| t.hostile)          <- branch A
+note              || health.fraction() < psyche.flee_health        <- branch B
+note   Item 13 exercised branch A with a wolf; every colonist held full health
+note   throughout, so branch B has NEVER fired in this program.
+note
+note WHY THIS NEEDS ITS OWN ARM AND NOT A BIGGER WOLF: a hostile sets branch A,
+note   so any damage it deals arrives with branch A ALREADY TRUE and the two
+note   become unattributable. Branch B needs damage with NO hostile present --
+note   which is why this arm spawns nothing and uses /sudo <uid> health <hp>.
+note
+note THE BAR: drive=Flee with NO hostile in the world. If it fires, branch B is
+note   live and item 13 is complete on both branches. If it does not, the branch
+note   is dormant and the reason is a code fact to be read, not a fixture retry.
+anchor
+inspect_colonists
+note SAMPLE 0 -- BASELINE. Full health, no hostile. drive=Flee must be absent, and
+note   the uid= values here are what the sudo below targets.
+wait 120
+inspect_colonists
+note SAMPLE 1 -- second clean baseline.
+note
+note ---- THE TREATMENT: damage, WITHOUT a hostile ----
+note   psyche.flee_health for a peaceful NPC is typically a fraction well below
+note   1.0, so 10 hp of a default pool should sit under it. The exact threshold
+note   is NOT assumed -- the samples below record health so the comparison is
+note   against a measured value, not a guessed one.
+note   SYNTAX, READ NOT GUESSED: EntityTarget::from_str splits on '@', not ':'.
+note   Run 1 sent "uid:3" -- no '@', so the FromStr fallback made it a
+note   Player("uid:3") lookup and the server answered "player not found". The
+note   arm was VOID, not RED: 0 Flee measured nothing because no damage landed.
+note   A syntax error surfacing as "player not found" is the parser's infallible
+note   fallback, and it is why the error text was misleading.
+note   hp=1 (not 10): humanoid flee_health is 0.3-0.4 by species, so 1/max sits
+note   under the threshold for ANY max above 3, without assuming the pool size.
+note   ★ ONLY uid 3 AND 4 ARE DAMAGED. The other six colonists are the MATCHED
+note   CONTROL, same run, same tick, same world -- so a Flee that appears on a
+note   damaged uid and not on an undamaged one is attributable to the damage.
+cmd sudo uid@3zz health 1
+cmd sudo uid@4zz health 1
+inspect_colonists
+note SAMPLE 2 -- immediately after the damage.
+wait 60
+inspect_colonists
+note SAMPLE 3
+wait 120
+inspect_colonists
+note SAMPLE 4 -- last. drive= census across all five is the measurement, and the
+note   absence of any spawn command in this script is what makes branch B the
+note   only possible cause of a Flee here.

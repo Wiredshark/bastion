@@ -1,0 +1,14 @@
+note A3-N4: A3-EAT's derived leg at HALF the population. Identical in every
+note A3-N4: respect -- same F, same 28,000-tick window derived from the eat gate
+note A3-N4: (hunger interrupt 0.2 base, clamped [0.05,0.3]) and the decay rate
+note A3-N4: 0.00088900001719594/s -- EXCEPT spawn 8 becomes spawn 4.
+note A3-N4: THE WINDOW IS NOT SHORTENED. A3 travelled PARTIAL->PASS precisely
+note A3-N4: because its window was derived rather than guessed; trimming it here
+note A3-N4: to save wall time would re-create the defect that row closed.
+note A3-N4: PASS = 'bastion: ate' >= 1 with food_stock having risen first.
+note A3-N4: DIRECTIONAL PREDICTION (registered, falsifiable): the farm's yield is
+note A3-N4: fixed by the plot while consumption scales with head-count, so at n=4
+note A3-N4: the ending food_stock should EXCEED the 0 seen at n=8.
+anchor
+spawn 4 16384.5 16384.5 400.0
+wait 28000

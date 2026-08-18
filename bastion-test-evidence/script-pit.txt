@@ -1,0 +1,33 @@
+note VERTICAL FIXTURE -- V1 witness is status=RestingToClimb via inspect_colonists.
+note RestingToClimb is written inside the EMERGENCY EGRESS machinery, gated on
+note   grounded_clear && !route_energy_ready -- a colonist STUCK on an escape route
+note   with depleted energy, NOT a colonist climbing. See VERTICAL-FIXTURE-AMENDMENT-1.
+note
+note The pit puts the ONLY mine work on the floor of a 4-deep excavation, so a miner
+note must descend and then escape. Arena centre is ~(16384,16384) and the outcrop
+note offset is (-20,0) with half-width 2, so the rock occupies roughly
+note   x 16362..16366, y 16382..16386, z 396..398   (pit floor = 400 - 4 = 396)
+note The designation box below is DELIBERATELY WIDER than that: a few blocks of
+note centre error would otherwise designate empty air and void the leg on a
+note coordinate guess rather than on the mechanism.
+anchor
+inspect_colonists
+note BASELINE above -- every colonist should read status=None before any pit work.
+designate mine 16358 16378 395 16370 16390 399
+list_designations
+note DECLARED WINDOW: `wait` counts SIM-SECONDS (it waits on the server-tracked `Time`
+note   resource, not client ticks), so four samples 600 apart is 2400 sim-seconds total.
+note   Fixed HERE, before launch, and not extended if the run looks promising.
+wait 600
+inspect_colonists
+note SAMPLE 1 -- miners should be descending or working the pit floor by now.
+wait 600
+inspect_colonists
+note SAMPLE 2 -- an egress attempt below full energy is expected around here.
+wait 600
+inspect_colonists
+note SAMPLE 3
+wait 600
+inspect_colonists
+note SAMPLE 4 -- last scored sample; the window closes after this.
+inspect_colony

@@ -1,0 +1,41 @@
+note ITEM 15 WALL-EXISTENCE CHECK (ITEM15-WALL-EFFECT-AMENDMENT-1).
+note
+note WHY THIS IS A SEPARATE LEG AND NOT A LINE IN script-wall2.txt. The control
+note   and treatment arms have already run the IDENTICAL script; that one-axis
+note   property is worth more than the convenience of folding this check in. A
+note   mid-experiment script edit would have made the two arms incomparable.
+note
+note WHAT IT SETTLES. 'No harm in the treatment' is the WALL WORKS outcome -- and
+note   it is ALSO exactly what a run with no wall in it would produce. The
+note   attestation proves the env var reached the PROCESS; two committed unit
+note   tests prove the GENERATOR emits a closed hollow ring. Neither proves rock
+note   is in the WORLD, because the cells are applied at chunk-gen via chunk.set
+note   and nothing observes the result.
+note
+note ★ IT RUNS UNDER BOTH ARMS' ENV, AND REGARDLESS OF THE OUTCOME. A check
+note   performed only when the answer is inconvenient is not a check.
+note
+note THE COORDINATES. Arena centre is (16384, 16384, 400), read from the run's own
+note   'autofound colony founded origin=' line. WALL_RADIUS is 32, so the ring's
+note   east face -- the bearing the wolf spawns on -- is x = 16416. WALL_HEIGHT
+note   is 4, so the courses are z = 400..403.
+anchor
+wait 60
+note ★ EXPECTED: SOLID in the walled arm, AIR in the unwalled arm. Both faces and
+note   both courses, so a partially-applied ring is visible as a mixture rather
+note   than as a single ambiguous reading.
+inspect_cell 16416 16384 400
+note ^ east face, lowest course -- the one a quadruped would walk into.
+inspect_cell 16416 16384 403
+note ^ east face, top course -- the one it would have to clear.
+inspect_cell 16352 16384 400
+note ^ WEST face, lowest course. Included because a ring that applied on one
+note   bearing and not another is a real failure mode the cell-list unit test
+note   cannot see -- the test checks the LIST, not the applied world.
+inspect_cell 16384 16384 400
+note ^ CENTRE, lowest course. This is the INTERIOR CONTROL: it must read AIR in
+note   BOTH arms. If the centre reads solid the colony is entombed rather than
+note   enclosed, and every other reading here is uninterpretable.
+inspect_cell 16429 16384 400
+note ^ the SPAWN POINT, outside the ring. Must read air in both arms -- if the
+note   wolf spawned inside rock, the arm was void for a reason unrelated to walls.

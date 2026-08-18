@@ -1,0 +1,94 @@
+note ITEM 11 RESTORE -- THE A/B. Sized by measurement, not by guess.
+note
+note ★ SIZING, FROM ITEM11-CALIBRATION-RESULTS.md (a run that already happened):
+note   0.035 sim-seconds per client tick, stable across four intervals
+note   (0.034-0.037), measured as (1.0 - recreation) / 0.0002 at five samples.
+note
+note   recreation decays 1.0 -> comfort 0.4 in (1.0-0.4)/0.0002 = 3000 SIM-s.
+note   3000 / 0.035 = ~84,000 client ticks before the preempt CAN fire.
+note   One break is RECREATION_BREAK_SECS = 120 sim-s = ~3,430 client ticks.
+note
+note ★★ THIS IS WHY THE CALIBRATION ARM EXISTED. A 5-minute run reaches ~600
+note   sim-s -- one fifth of the way to the first break -- and would have read
+note   EXACTLY like a restore that does not work. The number had to be measured
+note   before this script could be written.
+note
+note ★★★ THE BAR IS NET-ACROSS-A-BREAK, NEVER PER-TICK. A restore that merely
+note   SLOWED the decay would pass a "did recreation rise this tick" check and
+note   leave the ratchet one-way. So the dense phase below samples every 1,000
+note   ticks (~35 sim-s), which resolves a 3,430-tick break into ~3 samples:
+note   one before, one inside, one after. Point sampling a TRANSITION is the
+note   error item 13c already paid for; a 120-s break is not a transition, and
+note   the cadence is stated here rather than assumed adequate.
+note
+note ★ RUN THIS WITH BOTH ARMS: 'recrab' (BASTION_RECREATION=1) and 'recrabctl'
+note   (flag off, identical script). The control is the pre-existing behaviour:
+note   recreation strictly NON-INCREASING for every colonist. If the control
+note   ever rises, the A/B is void and the rise is the finding.
+anchor
+inspect_colonists
+note RECR-AB SAMPLE 0 -- t=0 baseline. recreation near 1.0.
+wait 20000
+inspect_colonists
+note RECR-AB SAMPLE 1 -- 20000 ticks (~700 sim-s). Decay on track?
+wait 20000
+inspect_colonists
+note RECR-AB SAMPLE 2 -- 40000 ticks (~1400 sim-s).
+wait 20000
+inspect_colonists
+note RECR-AB SAMPLE 3 -- 60000 ticks (~2100 sim-s).
+wait 18000
+inspect_colonists
+note RECR-AB SAMPLE 4 -- 78000 ticks (~2730 sim-s). Approaching comfort 0.4.
+note
+note ★★ DENSE PHASE BEGINS. From here every 1,000 ticks, because the crossing
+note   and the first break both land in this window and a coarse sample would
+note   average the break away.
+wait 1000
+inspect_colonists
+note RECR-AB SAMPLE 5 -- 79000
+wait 1000
+inspect_colonists
+note RECR-AB SAMPLE 6 -- 80000
+wait 1000
+inspect_colonists
+note RECR-AB SAMPLE 7 -- 81000
+wait 1000
+inspect_colonists
+note RECR-AB SAMPLE 8 -- 82000
+wait 1000
+inspect_colonists
+note RECR-AB SAMPLE 9 -- 83000
+wait 1000
+inspect_colonists
+note RECR-AB SAMPLE 10 -- 84000. Comfort crossing expected AT OR NEAR HERE.
+wait 1000
+inspect_colonists
+note RECR-AB SAMPLE 11 -- 85000
+wait 1000
+inspect_colonists
+note RECR-AB SAMPLE 12 -- 86000
+wait 1000
+inspect_colonists
+note RECR-AB SAMPLE 13 -- 87000
+wait 1000
+inspect_colonists
+note RECR-AB SAMPLE 14 -- 88000
+wait 1000
+inspect_colonists
+note RECR-AB SAMPLE 15 -- 89000
+wait 1000
+inspect_colonists
+note RECR-AB SAMPLE 16 -- 90000
+wait 1000
+inspect_colonists
+note RECR-AB SAMPLE 17 -- 91000
+wait 1000
+inspect_colonists
+note RECR-AB SAMPLE 18 -- 92000. End of window: ~3220 sim-s, comfortably past
+note   the 3000 crossing plus two full break lengths.
+note
+note ★ WHAT THE SERVER LOG MUST ALSO SHOW (bar 3, not visible from here):
+note   'bastion: recreation restore applied (ITEM 11 RESIDUAL)' with
+note   colonists_on_break >= 1. A restore no colonist ever receives is
+note   DORMANT-BY-PREMISE, not a working loop, and gets that name.

@@ -1,0 +1,57 @@
+note THE UNEXERCISED-FIELD SWEEP (FIELD-SWEEP-PREREG.md): move food_stock and
+note   jobs_unreachable off the zero they have read in every sample since ARC 2 closed.
+note
+note food_stock = colony_food_stock: FOOD_DEFS items (mushroom, wheat) whose floored
+note   cell is INSIDE a stockpile region. Not "food on the ground".
+note
+note THE CONTROL RUNS FIRST, ON PURPOSE. Wood is not in FOOD_DEFS, so an identical
+note   drop of it must leave food_stock at 0 -- and it must be measured BEFORE the
+note   mushrooms exist, because once food is in the pile no later sample can show
+note   what the wood alone did.
+anchor
+note The stockpile box is the DROP ROW's measured one (give_item + dropall lands at
+note   player + rng 5..10, rng 5..10, +5). Reused unchanged rather than re-derived.
+designate stockpile 16389 16389 399 16395 16395 406
+list_designations
+count_items
+note BASELINE item count above.
+inspect_colony
+note SAMPLE 0 -- pre-drop. food_stock MUST read 0 here.
+note
+note ---- S1 CONTROL: wood, not in FOOD_DEFS ----
+cmd give_item common.items.log.wood 50
+cmd dropall
+count_items
+wait 60
+inspect_colony
+note SAMPLE 1 -- WOOD IN THE STOCKPILE. food_stock must STILL read 0.
+note   This is the matched control: items exist in the pile, and none are food.
+note
+note ---- S1 TREATMENT: mushrooms, in FOOD_DEFS ----
+cmd give_item common.items.food.mushroom 40
+cmd dropall
+count_items
+wait 60
+inspect_colony
+note SAMPLE 2 -- MUSHROOMS IN THE SAME STOCKPILE. food_stock must be > 0.
+note   One axis changed between samples 1 and 2: the item's FOOD-ness.
+note
+note ---- S2: give the board jobs that can strand ----
+note   A mine box on the pit floor is the pit row's proven way to create jobs the
+note   colonists must traverse to; the unreachable flag is set on churn/timeout
+note   release. This does not MANUFACTURE the flag -- it runs the scenario and
+note   samples what the board holds.
+designate mine 16358 16378 395 16370 16390 399
+wait 600
+inspect_colony
+inspect_colonists
+note SAMPLE 3
+wait 600
+inspect_colony
+inspect_colonists
+note SAMPLE 4
+wait 600
+inspect_colony
+inspect_colonists
+note SAMPLE 5 -- last colony sample; jobs_unreachable read across 3 windows.
+count_items

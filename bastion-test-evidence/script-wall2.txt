@@ -1,0 +1,66 @@
+note ITEM 15 -- DOES A WALL REDUCE HARM? The row 15a could not be.
+note
+note WHY 15a COULD NOT BE SCORED, AND WHAT CHANGED. 15a measured 8 colonists, 8
+note   flee emits, health=1.0 on every one, and concluded there was no harm for a
+note   wall to prevent. #93 showed that conclusion rested on TWO instrument
+note   defects: the FLEE emit is edge-triggered and fires at PERCEPTION (before
+note   contact), and the 'zero damage lines' grep counted a log line the engine
+note   never writes. With a 30-tick proximity census the same fixture shows a
+note   colonist taken to 0.78 health. The baseline harm is REAL, so the wall now
+note   has something to prevent and the row is scoreable.
+note
+note ★★ THE FIXTURE DEFECT THIS SCRIPT EXISTS TO FIX. /spawn places the hostile AT
+note   THE DRIVER CLIENT, and the driver stands at the colony centre (16384,
+note   16384, 400) -- which is the CENTRE OF THE WALL RING, radius 32. The 15a
+note   arm would have spawned the wolf INSIDE the wall. A wall cannot exclude a
+note   threat that starts within it, and because the control had zero harm too,
+note   both arms would have agreed for reasons having nothing to do with walls.
+note   So: goto OUTSIDE the ring, spawn there, and come back.
+note
+note ★ WALL_HEIGHT STAYS 4 AND WALL_RADIUS STAYS 32. The fixture's own doc says
+note   WALL_HEIGHT 'must never be raised to make a treatment pass'. If the wolf
+note   crosses a 4-high wall, that is THE RESULT -- not a fixture to tune.
+note
+note THIS SCRIPT IS SHARED BY BOTH ARMS. The ONLY difference between control and
+note   treatment is BASTION_FLAT_ARENA_WALLED. One axis, one binary, one script.
+anchor
+wait 600
+inspect_colonists
+note BASELINE -- colony founded, work underway, no hostile. The census must read
+note   perceived=0 through here in BOTH arms.
+note
+note ---- THE DRIVER LEAVES THE ENCLOSURE ----
+note   16429 is 45 blocks east of centre: 13 blocks OUTSIDE the ring at 16416.
+cmd goto 16429 16384 400
+wait 60
+note ★ VOID CHECK: the wolf must spawn OUTSIDE. If the treatment arm's first
+note   census sample after this reads sep_h well under 32, the spawn landed
+note   inside the ring and the arm is VOID -- do not score it as a wall failure.
+cmd spawn enemy wolf
+note ---- AND RETURNS INSIDE ----
+cmd goto 16384 16384 400
+inspect_colonists
+note SPAWN SAMPLE.
+wait 300
+inspect_colonists
+note SAMPLE 1 -- the approach window. In the CONTROL the wolf should close; in
+note   the TREATMENT the ring stands between it and every colonist.
+wait 600
+inspect_colonists
+note SAMPLE 2.
+wait 600
+inspect_colonists
+note SAMPLE 3.
+wait 600
+inspect_colonists
+note SAMPLE 4 -- last.
+note
+note ★ SCORED (ITEM15-WALL-EFFECT-PREREGISTRATION), PRECONDITION FIRST:
+note   PRECONDITION -- the CONTROL must reproduce harm: min_health < 1.0 with
+note     sep_h under CONTACT_R = 5.0 blocks. If the control shows no harm the row
+note     is VOID BY PREMISE AGAIN and the treatment is NOT scored. A treatment
+note     cannot be credited with preventing something that never happened.
+note   PRIMARY -- harm depth, 1.0 minus min(min_health), in health fraction.
+note   SECONDARY -- min(sep_h), how close it got, in blocks.
+note   WITNESS -- h_targets_colonist ever true: did it even try?
+note   All four outcomes are registered, including WALL FAILS and UNCLASSIFIED.

@@ -1,0 +1,13 @@
+note POP-N4: A2-B's work-pull arm at HALF the population. Identical in every
+note POP-N4: respect -- same F (16384.5,16384.5,400), same outcrop 20 blocks WEST
+note POP-N4: at (16364,16384), same designation rect, same 900-tick window --
+note POP-N4: EXCEPT spawn 8 becomes spawn 4.
+note POP-N4: MEASURE = fraction of colonist samples within 8 blocks of the outcrop.
+note POP-N4: PASS >= 20%. The no-work control measured exactly 0 of 1008, so 20%
+note POP-N4: is an order of magnitude above any noise that control admits.
+note POP-N4: FAIL ~= 0%, meaning the pull is population-dependent.
+anchor
+spawn 4 16384.5 16384.5 400.0
+wait 120
+designate mine 16362 16382 400 16366 16386 402
+wait 900

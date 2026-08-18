@@ -1,0 +1,14 @@
+note CANCEL-SLOW: same as script-cancel-boot1 but with a >60s gap between the
+note CANCEL-SLOW: founding and the cancel, so an rtsim SAVE lands BETWEEN them.
+note CANCEL-SLOW: that gap is what makes the append-only plant discriminating --
+note CANCEL-SLOW: without it the farm is never in a save file to resurrect, and
+note CANCEL-SLOW: the plant would go green for the wrong reason.
+note CANCEL-SLOW: 30 ticks/s, so 2100 ticks = 70s > the 60s save boundary.
+anchor
+spawn 8
+wait 2100
+note CANCEL-SLOW: a save has now landed WITH the farm in it; erasing the farm
+cancel 16377 16380 399 16381 16385 400
+wait 2100
+list_designations
+note CANCEL-SLOW: window closed

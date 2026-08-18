@@ -1,0 +1,12 @@
+note A5: terrain refusal on a GENUINELY UNEVEN site (the resourced arena's outcrop)
+note A5: outcrop spans x 16362..16366 y 16382..16386, 3 blocks tall -- top solid 402, datum 403
+note A5: flat slab top solid 399, datum 400 -- a preset footprint straddling the edge varies by 3
+note A5: PASS = founding refused reason=terrain, with a named column
+anchor
+spawn 8 16364.5 16384.5 403.0
+wait 60
+note A5-CONTROL (packet N5): the SAME founder must still SUCCEED on flat ground
+note A5-CONTROL: else the bar is satisfiable by a founder that refuses everything
+spawn 8 16384.5 16384.5 400.0
+wait 300
+note A5: a refused founding must have mutated NOTHING -- the control founding is the proof

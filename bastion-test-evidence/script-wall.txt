@@ -1,0 +1,50 @@
+note ITEM 15a -- DOES A WALL STOP A HOSTILE? One script, BOTH arms: the fixture
+note   env (BASTION_FLAT_ARENA_WALLED) is what differs, never the script, so the
+note   two arms cannot diverge in anything except the wall itself.
+note
+note THE BAR (amended before any run, see ITEM15A-WALL-PREREGISTRATION.md):
+note   "bastion: FLEE ... by_health=true" emits, counted SERVER-side.
+note   by_target witnesses PERCEPTION -- which may be range-based and pass
+note   straight through geometry. by_health witnesses DAMAGE, and a melee
+note   quadruped cannot deal damage at a distance, so by_health is a CONTACT
+note   witness: exactly the thing a wall is meant to prevent.
+note
+note ★ THE CONTROL IS THE PREMISE, NOT A FORMALITY. Item 13's branch A proves a
+note   colonist PERCEIVES a hostile -- it reads the COLONIST's agent -- not that
+note   the wolf pursues or reaches anyone. If the UNWALLED arm produces zero
+note   by_health emits, then nothing was ever kept out and the row is VOID, not
+note   a pass. That verdict is registered here, before the numbers exist.
+note
+note WHY THE CLIENT CENSUS IS NOT THE INSTRUMENT: item 13c measured 40 of 40
+note   samples reading drive=Work while the server emitted the Flee twice. The
+note   drive fires on TRANSITION and returns to Work, so point sampling at this
+note   cadence cannot resolve it. Counting emits is the whole measurement.
+anchor
+inspect_colonists
+note SAMPLE 0 -- baseline. No hostile yet. Any by_health emit before this point
+note   would mean something OTHER than the wolf damaged a colonist, and the run
+note   would be unattributable.
+wait 300
+inspect_colonists
+note SAMPLE 1 -- second clean baseline, so "no flee before the spawn" is a
+note   measured fact rather than an assumption.
+note
+note ---- THE HOSTILE ARRIVES, OUTSIDE THE RING ----
+note   'cmd spawn enemy wolf' spawns at the CALLER, and the driver stands where
+note   it connected -- not inside the colony. In the walled arm the ring is
+note   between the wolf and the colonists by construction.
+cmd spawn enemy wolf
+inspect_colonists
+note SPAWN SAMPLE
+wait 600
+inspect_colonists
+note SAMPLE 2 -- the wolf has had time to close.
+wait 600
+inspect_colonists
+note SAMPLE 3
+wait 600
+inspect_colonists
+note SAMPLE 4 -- last. The scored figure is the server-side by_health emit count
+note   across the whole run, control vs treatment; these client samples exist to
+note   witness that colonists were alive and ticking throughout, NOT to measure
+note   the drive.

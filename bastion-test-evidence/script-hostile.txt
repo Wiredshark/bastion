@@ -1,0 +1,68 @@
+note #93 HOSTILE PROXIMITY CENSUS -- the HOSTILE half of the encounter.
+note
+note WHY THIS ARM EXISTS. Items 14 (Guard) and 15 (Fortifications) are blocked on
+note   one unmeasured fact. Every ARC 3 arm reads identically: a hostile spawns,
+note   by_target=true FLEE emits fire, health=1.0 on every colonist, zero damage
+note   lines. THREE stories fit that equally well:
+note     S1 flight works     -- separation opens faster than the wolf closes it
+note     S2 it never pursues -- the wolf never selects a colonist
+note     S3 it reaches but cannot harm
+note   Nothing on disk separates them, because NOTHING HAS EVER MEASURED THE
+note   WOLF. This arm is a measurement, not a fixture.
+note
+note ★ WHAT #92 COST AND WHAT IT BOUGHT. Four VOIDs went into building a TRAP to
+note   defeat S1 by removing escape. The fifth reading proved the trap
+note   impossible: the engine plans a ladder BEFORE releasing deep cells, so a
+note   shaft either holds nobody (gate closed) or has a way out (gate open).
+note   A shaft cannot trap a WORKING colonist. Hence: instrument instead.
+note
+note ★★ THE FIXTURE IS DELIBERATELY THE PLAINEST ONE AVAILABLE -- flat, resourced,
+note   no pit, no shaft, no wall. Every geometric variable that voided an earlier
+note   attempt is simply absent. The only event is the spawn.
+note
+note THE INSTRUMENT: server-side `bastion: hostile proximity census`, every 30
+note   ticks, gated on BASTION_HOSTILE_PROXIMITY_DIAG. The client samples below
+note   are WITNESSES that colonists are alive and ticking -- they are NOT the
+note   measurement (item 13c: 40 of 40 client samples read drive=Work while the
+note   server emitted Flee twice).
+anchor
+note ★ BASELINE WINDOW -- no hostile exists yet. The census must emit here with
+note   perceived=0. An absence and an exclusion must never render identically:
+note   if these lines are missing entirely, the diag flag did not take and the
+note   run is VOID, not S2.
+wait 600
+inspect_colonists
+note BASELINE SAMPLE 1 -- colony founded, work underway, no hostile.
+wait 300
+inspect_colonists
+note BASELINE SAMPLE 2.
+note
+note ---- THE HOSTILE ARRIVES ----
+cmd spawn enemy wolf
+inspect_colonists
+note SPAWN SAMPLE. From here the census carries the scored fields.
+wait 300
+inspect_colonists
+note SAMPLE 1 -- the closing window, if there is one.
+wait 600
+inspect_colonists
+note SAMPLE 2.
+wait 600
+inspect_colonists
+note SAMPLE 3.
+wait 600
+inspect_colonists
+note SAMPLE 4 -- last.
+note
+note ★ SCORED, IN THE REGISTERED ORDER (ITEM93-HOSTILE-PROXIMITY-PREREGISTRATION):
+note   PRECONDITION -- census lines exist, and perceived>0 in at least one sample
+note     after the spawn. If perceived is 0 throughout, the finding is about the
+note     COLONISTS' target storage and contradicts the six banked by_target
+note     emits; it is NOT evidence about the wolf.
+note   S2 IS CHECKED FIRST: h_targets_colonist false in every sample -> the wolf
+note     never selects a colonist, and flight is IRRELEVANT rather than
+note     vindicated. h_target_uid identifies what it selected instead, so
+note     "it targeted the driver client" cannot hide inside the S2 verdict.
+note   THEN S1 vs S3 on sep_h against CONTACT_R=5.0 blocks, declared before the
+note     run. The raw minima are published with the verdict so any reader can
+note     re-threshold.
