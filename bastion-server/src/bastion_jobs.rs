@@ -3701,6 +3701,24 @@ where
                 .is_ok_and(|block| block.is_solid())
     });
     if !expected_ground_contact {
+        // AN EXCLUSION AND AN ABSENCE MUST NOT RENDER IDENTICALLY. The
+        // classification emit below sits AFTER this early return, so a run that
+        // takes this branch every time logged NOTHING -- indistinguishable from
+        // a run where this function was never called. Measured consequence: 12
+        // of 29 runs that demonstrably engaged emergency access showed zero
+        // classifications, and I spent four hypotheses (run length, tick,
+        // job completion, squeeze count) trying to explain a silence that was
+        // this branch. The refusal now names itself.
+        if std::env::var_os("BASTION_EGRESS_DIAG").is_some() {
+            info!(
+                ?start,
+                ?end,
+                ignored_initial_support = ?first,
+                ?expected_support,
+                reason = "no_expected_ground_contact",
+                "bastion: emergency route sweep declined initial-support handling"
+            );
+        }
         return first;
     }
     let overrides = HashMap::from([(expected_support, Block::empty())]);
