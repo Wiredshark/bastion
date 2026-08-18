@@ -1,0 +1,62 @@
+note TICK-LOADING BASELINE, TAKE 3 -- A TRAVERSAL FIXTURE.
+note
+note ★★★ WHY TAKE 2 WAS VOID AND A BIGGER SAMPLE CANNOT FIX IT. Take 2 ran the
+note   live free-running drain correctly (0 of 3382 ticks deterministic -- the
+note   per-arm PITDET fix verified) and was still VOID: only 6 of 3382 ticks had
+note   ANY outstanding chunk request. 0.18%.
+note
+note   The pit fixtures run BASTION_FLAT_ARENA -- a flat generated arena around a
+note   STATIONARY colony. Nothing moves, so nothing requests terrain. Running ten
+note   times longer multiplies 6 by ten and still measures a colony that never
+note   goes anywhere. THE FIXTURE CANNOT PRODUCE A LOADING DISTRIBUTION AT ANY
+note   SAMPLE SIZE.
+note
+note ★★ SO THIS ARM MOVES THE OBSERVER. Chunk promotion is driven by an observer
+note   crossing UNGENERATED terrain. `goto` is a stock server command and the
+note   driver's `cmd` verb already forwards it, so this needs NO engine change --
+note   only a fixture that asks for terrain.
+note
+note ★ THE ARENA FLAGS ARE CLEARED BY THE ARM (provtrav), not asserted here. A
+note   flat pre-generated arena has nothing left to generate; measuring loading
+note   inside one would repeat take 2's mistake with extra steps. That clearing
+note   lives in the config surface because a comment cannot enforce -- the lesson
+note   that produced take 1's withheld run.
+note
+note THE BARS, registered before data:
+note   BAR 1 (precondition): >= 30 census ticks with pending>0, per the
+note     pre-committed rule 28076fbe33. Below that the run is VOID and NO budget
+note     is quoted -- not "use a default".
+note   BAR 2 (precondition): deterministic_drain=false on EVERY tick. A single
+note     true means the wrong population and the run is VOID, as take 1 was.
+note   BAR 3 (the deliverable): P95 of promoted-per-tick over ticks with
+note     pending>0. That number, and only that number, becomes the budget.
+note
+note ★ REGISTERED PREDICTION, both directions: traversal should raise the
+note   working-tick fraction by orders of magnitude (0.18% -> double digits). If
+note   it does NOT, then chunk promotion is not observer-driven in the way I have
+note   assumed, and THAT is the finding -- the row would need to identify what
+note   actually drives promotion before any budget can be derived.
+anchor
+inspect_colony
+note PROVTRAV SAMPLE 0 -- baseline at spawn, before any movement.
+wait 600
+note ---- TRAVERSAL LEG 1: 2000 blocks east. Far outside any pre-generated area.
+cmd goto 18384 16384 400
+wait 3000
+inspect_colony
+note PROVTRAV SAMPLE 1 -- after leg 1.
+note ---- TRAVERSAL LEG 2: 2000 north of there, fresh terrain again.
+cmd goto 18384 18384 400
+wait 3000
+inspect_colony
+note PROVTRAV SAMPLE 2 -- after leg 2.
+note ---- TRAVERSAL LEG 3: diagonal return across unvisited ground.
+cmd goto 14384 14384 400
+wait 3000
+inspect_colony
+note PROVTRAV SAMPLE 3 -- after leg 3.
+note
+note ★ Three legs, not one: a single teleport loads one neighbourhood and then
+note   goes quiet, which would give a burst and a long tail of zeros -- the same
+note   mostly-zeros distribution take 2 produced, just with a taller spike. Three
+note   separated destinations keep the request stream alive across the window.
