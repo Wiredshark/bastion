@@ -224,6 +224,37 @@ pub trait StateExt {
     ) -> Result<T, Content>;
 }
 
+
+/// The chunk keys within `view_distance` of `pos_xy`, already filtered to the
+/// circular view region.
+///
+/// SINGLE DEFINITION (#98). `create_persister` and `create_colony_presence`
+/// carried byte-identical copies of this iterator and its filter. A duplicated
+/// filter is two things that must be edited together and silently diverge when
+/// they are not -- #91 traced a numeric-surface red to this exact pair, where
+/// the same `2.0_f64.sqrt()` was counted twice because it appeared twice. The
+/// comment on the old copies ("calculation from client chunk request
+/// filtering") documented a THIRD site the value is meant to track, which a
+/// single definition can now be pointed at.
+fn view_distance_chunk_keys(
+    chunk_pos: Vec2<i32>,
+    pos_xy: Vec2<f32>,
+    view_distance: u32,
+) -> impl Iterator<Item = Vec2<i32>> {
+    use common::{terrain::TerrainChunkSize, vol::RectVolSize};
+    let vd = view_distance as i32;
+    (-vd..vd + 1)
+        .flat_map(move |x| (-vd..vd + 1).map(move |y| Vec2::new(x, y)))
+        .map(move |offset| offset + chunk_pos)
+        .filter(move |chunk_key| {
+            pos_xy.map(|e| e as f64).distance(
+                chunk_key.map(|e| e as f64 + 0.5)
+                    * TerrainChunkSize::RECT_SIZE.map(|e| e as f64),
+            ) < (view_distance as f64 - 1.0 + 2.5 * 2.0_f64.sqrt())
+                * TerrainChunkSize::RECT_SIZE.x as f64
+        })
+}
+
 impl StateExt for State {
     fn create_npc(
         &mut self,
@@ -620,19 +651,7 @@ impl StateExt for State {
             let mut chunk_generator =
                 ecs.write_resource::<crate::chunk_generator::ChunkGenerator>();
             let chunk_pos = self.terrain().pos_key(pos.0.map(|e| e as i32));
-            (-(view_distance as i32)..view_distance as i32 + 1)
-            .flat_map(|x| {
-                (-(view_distance as i32)..view_distance as i32 + 1).map(move |y| Vec2::new(x, y))
-            })
-            .map(|offset| offset + chunk_pos)
-            // Filter chunks outside the view distance
-            // Note: calculation from client chunk request filtering
-            .filter(|chunk_key| {
-                pos.0.xy().map(|e| e as f64).distance(
-                    chunk_key.map(|e| e as f64 + 0.5) * TerrainChunkSize::RECT_SIZE.map(|e| e as f64),
-                ) < (view_distance as f64 - 1.0 + 2.5 * 2.0_f64.sqrt())
-                    * TerrainChunkSize::RECT_SIZE.x as f64
-            })
+            view_distance_chunk_keys(chunk_pos, pos.0.xy(), view_distance)
             .for_each(|chunk_key| {
                 {
                     let time = (*ecs.read_resource::<TimeOfDay>(), (*ecs.read_resource::<Calendar>()).clone());
@@ -677,18 +696,7 @@ impl StateExt for State {
             let mut chunk_generator =
                 ecs.write_resource::<crate::chunk_generator::ChunkGenerator>();
             let chunk_pos = self.terrain().pos_key(pos.0.map(|e| e as i32));
-            (-(view_distance as i32)..view_distance as i32 + 1)
-                .flat_map(|x| {
-                    (-(view_distance as i32)..view_distance as i32 + 1)
-                        .map(move |y| Vec2::new(x, y))
-                })
-                .map(|offset| offset + chunk_pos)
-                .filter(|chunk_key| {
-                    pos.0.xy().map(|e| e as f64).distance(
-                        chunk_key.map(|e| e as f64 + 0.5) * TerrainChunkSize::RECT_SIZE.map(|e| e as f64),
-                    ) < (view_distance as f64 - 1.0 + 2.5 * 2.0_f64.sqrt())
-                        * TerrainChunkSize::RECT_SIZE.x as f64
-                })
+            view_distance_chunk_keys(chunk_pos, pos.0.xy(), view_distance)
                 .for_each(|chunk_key| {
                     let time = (
                         *ecs.read_resource::<TimeOfDay>(),
