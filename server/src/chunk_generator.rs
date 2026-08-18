@@ -212,7 +212,44 @@ impl ChunkGenerator {
         // traversal baseline (n=177, median 1, max 13). Rule 28076fbe33 as
         // amended by 8e0b7e86bc, both committed before the number existed.
         due.sort_unstable_by_key(|k| (k.x, k.y));
-        due.truncate(Self::DETERMINISTIC_PROMOTION_BUDGET);
+        // ═══ A3 ROUND-2 PLANT — WALL-COUPLED, MAGNITUDE-PARAMETERISED ═══
+        // Registered at cc7c3ef835 BEFORE any round-2 data. Re-introduces the
+        // coupling this row removed, AT THE STAGE IT DISABLES (the due-set
+        // bound). BASTION_A3_PLANT_WALLCLOCK carries the MODULUS, so one binary
+        // serves all three arms: unset => P0 (real budget), 8 => P1 (round-1
+        // magnitude), 2 => P2 (HALF strength).
+        //
+        // P2 is the load-bearing arm: BAR A requires gap(P1) > gap(P2) > gap(P0),
+        // and a metric that cannot rank half-strength between the other two is
+        // not measuring severity. A two-arm re-run would "pass" either way.
+        //
+        // A parse FAILURE MUST NOT silently fall back to the real budget -- that
+        // would run P1/P2 as P0 and report a null result as a refutation. It
+        // panics instead: a mis-specified arm must not produce a number.
+        match std::env::var("BASTION_A3_PLANT_WALLCLOCK") {
+            Ok(m) => {
+                let modulus: usize = m.parse().unwrap_or_else(|_| {
+                    panic!(
+                        "BASTION_A3_PLANT_WALLCLOCK={m:?} is not a positive integer modulus; \
+                         refusing to run an unlabelled arm"
+                    )
+                });
+                assert!(modulus > 0, "BASTION_A3_PLANT_WALLCLOCK must be > 0");
+                let nanos = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.subsec_nanos() as usize)
+                    .unwrap_or(0);
+                let n = 1 + nanos % modulus;
+                tracing::warn!(
+                    modulus,
+                    promoted_cap = n,
+                    "bastion: A3 WALL-CLOCK PLANT ACTIVE — this run is DELIBERATELY \
+                     nondeterministic and must never be used as a baseline"
+                );
+                due.truncate(n);
+            },
+            Err(_) => due.truncate(Self::DETERMINISTIC_PROMOTION_BUDGET),
+        }
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(180);
         for key in &due {
             while !self.arrived.contains_key(key) {
