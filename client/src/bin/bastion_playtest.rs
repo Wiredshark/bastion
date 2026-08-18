@@ -433,7 +433,32 @@ fn main() {
         clock.tick();
         ticks += 1;
 
-        if !requested_join {
+        // #89 (1bcd1d251c): the JOIN is the session boundary where
+        // nondeterminism enters. This loop is paced by `clock.tick()` -- WALL
+        // CLOCK -- and fires `request_character` on whichever spin the
+        // character list happens to arrive on, which is network/disk timed.
+        // The resulting `InitializeCharacterEvent` therefore lands on a
+        // DIFFERENT SERVER TICK between runs, and every downstream count
+        // inherits the offset. Measured: the view-distance grant is the FIRST
+        // divergence in 25 of 42 same-seed twin pairs, beating all fourteen
+        // colony families combined.
+        //
+        // The hold removes the ARRIVAL JITTER from the join: instead of
+        // "request as soon as the list lands", request at a FIXED spin count
+        // that is comfortably past any list-load. Default 0 = today's
+        // behaviour, byte-identical, so every banked baseline stands until an
+        // arm opts in.
+        //
+        // ★ SCOPED HONESTLY: this pins the CLIENT side of the boundary. If the
+        // server is running uncapped, the server tick reached by spin N still
+        // varies with server speed -- so this is expected to REDUCE, not
+        // necessarily eliminate, join-tick variance. Which it does is the
+        // measurement, not an assumption.
+        let join_hold: u64 = std::env::var("BASTION_JOIN_HOLD_TICKS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        if !requested_join && ticks >= join_hold {
             let list = client.character_list();
             if !list.loading && !list.characters.is_empty() {
                 if let Some(id) = list.characters[0].character.id {
