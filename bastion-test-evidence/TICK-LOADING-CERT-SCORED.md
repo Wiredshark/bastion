@@ -45,6 +45,36 @@ Two constant series agree for free. The `provtrav*` arms carry no colony, so
 their gameplay observables cannot move, and "identical" there is worth nothing.
 [[null-needs-a-couldnt-happen-witness]]
 
+## ★★ WITHDRAWN — the section below is WRONG. Read this first.
+
+**`provbase` has no deterministic barrier.** `run-pit.sh` clears `PITDET` for it
+by name, with the comment *"the ONE arm that must take the LIVE free-running
+drain"*. Its logs say `deterministic_drain=false` on every tick. It is the
+deliberate free-running **control**, so divergence there is the expected,
+designed behaviour and says nothing about the deterministic path.
+
+I checked that precondition **after** committing the conclusion. That is the
+process failure, not the arithmetic.
+
+**And the follow-up was wrong too.** I then built a matrix and concluded *no arm
+in the corpus has both the barrier and live gameplay*. It reported the barrier as
+absent for ~96 arms because I keyed on `deterministic_drain=`, which is a field
+of the **terrain census** — arms without `BASTION_TERRAIN_PROVISION_DIAG` cannot
+emit it whatever their barrier state. An absent field read as an absent barrier.
+
+The truth, from the config surface and a boot emit rather than from a token:
+
+- `run-pit.sh`: `PITDET="${PITDET-BASTION_DETERMINISTIC=1 }"` — **the barrier
+  defaults to ON**, so every arm that does not clear it has it.
+- `endurseed` logs `autofound colony founded (deterministic path)` and carries
+  live gameplay (`food_stock`, 188 distinct values).
+
+**So `endurseed` can answer the question, and two twin pairs of it are running
+now.** The gap I originally filed was real; the arm that closes it already
+existed, and neither of my two readings found it correctly.
+
+## The superseded reading, kept because the errors are the lesson
+
 ## ★ ANSWERED — and my "instrument gap" was wrong
 
 I filed the gap below and then followed the banked-corpus-first rule anyway.
