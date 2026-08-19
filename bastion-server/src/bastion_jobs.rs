@@ -16612,8 +16612,44 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 job.carve_attempted = true;
             }
             let mask = board.designated_regions().collect::<Vec<_>>();
+            // ★ AXIS-1 PROBE (banked item 8, 2026-08-19). Corpus fact: this
+            // call site is 0 emissions / 55 calls across 48 seeds, while the
+            // `emergency` site — the SAME `plan_access` — succeeds 46/478 in
+            // the same runs. The two sites differ on THREE axes at once, so
+            // the emergency site proves the function CAN succeed but isolates
+            // nothing. This gate varies exactly ONE of them: the mask.
+            //
+            // `designated_regions()` is the claim; the emergency site instead
+            // passes a synthesised bubble around `from`. If emissions go
+            // non-zero under this flag alone, the mask is the blocker (outcome
+            // MASK). If they stay 0, the mask is exonerated and the remaining
+            // candidates are `emergency_owner`/`emergency_approach` (outcome
+            // CONTEXT / BOTH-REQUIRED / NEITHER).
+            //
+            // Default OFF: absent the flag this is byte-identical to before.
+            let sr_bubble;
+            let plan_mask: &[Region] =
+                if std::env::var_os("BASTION_SELFRESCUE_BUBBLE").is_some() {
+                    // Same geometry as the emergency site's bubble.
+                    const SR_BUBBLE_R: i32 = 8;
+                    sr_bubble = [Region {
+                        min: Vec3::new(
+                            from.x - SR_BUBBLE_R,
+                            from.y - SR_BUBBLE_R,
+                            from.z - 2,
+                        ),
+                        max: Vec3::new(
+                            from.x + SR_BUBBLE_R,
+                            from.y + SR_BUBBLE_R,
+                            from.z + 64,
+                        ),
+                    }];
+                    &sr_bubble
+                } else {
+                    &mask
+                };
             *board.access_plan_calls.entry("self_rescue").or_insert(0) += 1;
-            match plan_access(board, &terrain, &mask, from, to, false, None, None) {
+            match plan_access(board, &terrain, plan_mask, from, to, false, None, None) {
                 Some((kind, steps)) => {
                     *board
                         .access_plan_emissions
