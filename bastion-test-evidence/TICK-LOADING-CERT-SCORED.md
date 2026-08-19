@@ -142,3 +142,54 @@ runs. The law says on-green; this is not green. What is now ready for Ben is a
 sharper question than before — membership determinism is measured at n=30 pairs
 with set identity, and only the propagation question stands between that and a
 defensible "timing out of scope". **That scoping call is his, not mine.**
+
+---
+
+# ★ TWO DIFFERENT BARS ARE IN PLAY, AND THEY DISAGREE
+
+This row is being judged against two criteria written at different times. They
+are not the same test, and reporting one verdict hides that.
+
+### 1. The roadmap's own revalidation criterion — **PASSED**
+
+`readme/BUILD-ROADMAP.md`, TICK-DRIVEN WORLD-LOADING:
+
+> *"Revalidation: the N=8 distribution test re-run post-change must show
+> capped/uncapped overlap."*
+
+Measured at **n=30 twin pairs / 62 runs**: capped, uncapped **and** the cap=8
+plant all land on the **identical** 242-key promoted set. That is not overlap,
+it is set identity — the strongest form the criterion can take, at nearly 4× the
+required N.
+
+### 2. Ben's later 3-bar SPEED MANDATE — **BAR 2 FAILS**
+
+> *"determinism fingerprint holds with loading inside (twin runs state-identical
+> **including chunk timing**)"*
+
+The timing clause is the addition. Tick-sequence **differs in 31/31 pairs**, in
+both anchor classes. Membership is deterministic; schedule is not.
+
+### What that means
+
+The row **does** what the roadmap asked of it: promotion no longer depends on the
+capped/uncapped axis, which was the wall-clock coupling the row existed to kill.
+It does **not** meet the stricter later bar, which asks for tick-identical
+scheduling as well.
+
+**This is a scoping call, not a measurement gap, and it is Ben's:**
+
+| option | consequence |
+|---|---|
+| **A — accept the roadmap criterion** | the row lands; compressed mode is justified by *what is promoted* being identical |
+| **B — hold the mandate's bar 2** | the row stays open until scheduling is tick-identical, which #89 concluded is platform-level |
+
+★ What is still genuinely unmeasured, and what would decide it on evidence rather
+than on preference: **does the schedule difference reach game state?** Two
+`endurseed` twin pairs — the barrier ON *and* live colony observables — are
+running now, with `score-endurdet.sh` written in advance. If game state holds
+identical, option A is safe on measurement rather than on definition. If it
+diverges, option B is the honest call and neither bar was strict enough.
+
+**Compressed mode is NOT declared default in the meantime.** The law says
+on-green, and no reading of these results is unambiguously green.
