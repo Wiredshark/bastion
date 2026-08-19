@@ -19,9 +19,18 @@ empty queue is itself a finding — refill from `readme/BUILD-ROADMAP.md`.
 2. **`b5_mine_cell_diag` content mover (#84)** — **BLOCKED on data**: no adjacent
    wave pair exists, and wave24 vs wave34 is not comparable (75 vs 119 fields).
    Needs a new wave pair at adjacent commits.
-3. **`emit_drop` has no landing-position log** — the toss witness records the
-   launch vector only. Low priority: the toss is 0.5 horizontal, so items land
-   within half a block and the landing site is unlikely to matter.
+3. ~~**`emit_drop` has no landing-position log**~~ **MIS-SPECIFIED — rewritten
+   2026-08-19 after a producer read, not implemented.** The landing position
+   **does not exist at `emit_drop`**: the site emits `CreateItemDropEvent` with
+   a *velocity* (0.5 horizontal, `2.0..4.0` vertical) and physics decides where
+   the entity settles afterwards. A log line at the producer can only ever
+   restate the launch vector it already prints. Satisfying the intent requires
+   an **observer on the item entity at rest** — a different system and a
+   different row. Combined with the queue's own reasoning (0.5 horizontal ⇒
+   lands within half a block), the value does not justify that build.
+   **Correct successor, if ever wanted:** log position at settle, keyed by the
+   drop's item uid, so "scattered out of reach" and "reachable but never
+   claimed" become distinguishable — which was the real question behind it.
 4. **#110 gate 1** — instrument built, subject extinct at the current tip.
    Re-aim at a trait-pinned reckless population per the roadmap's rider.
 5. **`ch_cancel_clean` is an unexercised falsifier** — true on all 41 seeds where
