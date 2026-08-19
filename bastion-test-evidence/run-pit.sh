@@ -401,7 +401,27 @@ PITPLANT="${PITPLANT:-}"
 # why this was ported by EDIT and not by copying the file over (a `cp` reverted
 # the Linux port earlier tonight).
 PITFOUND="${PITFOUND-BASTION_AUTOFOUND_COLONY=8 }"
-export BASTION_ENV="${PITDET}${PITFOUND}${PITARENA}${PITTPS}${PITPLANT}$PITVAR"
+# ★★★ JOINED WITH EXPLICIT SPACES, NOT BY TRUSTING EACH PART'S TRAILING SPACE.
+# This was a bare concatenation of six variables, every one of which had to end
+# in a space or silently glue itself to the next. PITTPS did not:
+#
+#   BASTION_ENV=[... BASTION_UNCAPPED_TPS=1BASTION_DROP_TOSS_DIAG=1 ]
+#
+# `env` then saw ONE variable named BASTION_UNCAPPED_TPS with the value
+# "1BASTION_DROP_TOSS_DIAG=1", and the plant was never set. It cost two 45-minute
+# fans and was invisible until the BASTION_ENV attestation landed -- which found
+# it in a single short run.
+#
+# ★ It also explains why the SAME ENV= route worked for c2a: provtravcap sets
+# PITTPS="" (capped), so there was nothing to glue onto. The channel was broken
+# only for arms that leave TPS at its uncapped default -- i.e. every endurance
+# arm -- which is exactly the shape that looks like "the plant does not work
+# here" rather than "the runner is broken".
+#
+# `set -- ` + shell word-splitting drops empty components and inserts exactly one
+# separator, so no component's formatting can corrupt its neighbour again.
+set -- $PITDET $PITFOUND $PITARENA $PITTPS $PITPLANT $PITVAR
+export BASTION_ENV="$*"
 
 # THE FOUR FILES THIS RUN WILL WRITE, declared before it writes any of them.
 # Same one-definition discipline as BASTION_ENV above: these strings are used
