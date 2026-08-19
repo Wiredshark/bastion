@@ -46,6 +46,31 @@ all"*; this analysis independently says the split happens at the very event that
 instrument logs. The convergence is a coincidence of ordering, not of design —
 but it means the running fan lands on the right tick.
 
+## ★★ THE LOCALIZATION DOES NOT GENERALIZE — corrected against the corpus
+
+The tick-3,600 split above is real **for that pair**: ten consecutive census
+samples agree exactly and then diverge. **It is not the general case.** Scoring
+the whole corpus on *the last tick at which any job was assigned*:
+
+| class | last tick with `assigned > 0` |
+|---|---|
+| **THRIVE** (7/7) | **265,200 … 271,200** — every run assigns work to the end |
+| **COLLAPSE** (7/7) | **300 … 264,300** |
+
+Collapse onset spans almost the entire run: 300, 4,800, 78,000, 82,800, 220,200,
+264,300. **A colony can run for 264,000 ticks assigning work and still finish
+with 10 maturations.** So "the split happens at the first harvest" describes one
+pair, not the mechanism.
+
+★ The discriminator that *does* hold 14/14 is weaker and I should state it as
+such: **THRIVE assigns to the end; COLLAPSE stops before it.** The separation is
+perfect but the margin is thin — 264,300 against 265,200, one run wide.
+
+★ And it costs the tidy story. I had a mechanism localized to a single event,
+generalized from n=1 pair, and the corpus says the onset is spread across two
+orders of magnitude in time. **The first harvest is where THAT pair split, not
+where colonies split.**
+
 ## What this does NOT yet say
 
 It localizes the split to an event; it does not say what differs **at** that
