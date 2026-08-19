@@ -45,6 +45,49 @@ Two constant series agree for free. The `provtrav*` arms carry no colony, so
 their gameplay observables cannot move, and "identical" there is worth nothing.
 [[null-needs-a-couldnt-happen-witness]]
 
+## ★ ANSWERED — and my "instrument gap" was wrong
+
+I filed the gap below and then followed the banked-corpus-first rule anyway.
+**The corpus already contained the arm**: `provbase` carries ~3,900 census emits
+**and** live colony state. My claim that no arm could answer it was wrong, and
+the search that corrected it cost nothing.
+
+Three `provbase` twin pairs, every founding input verified matched first:
+
+| control | result |
+|---|---|
+| full colonist name-list hash | **`d6a994cb04e6` — IDENTICAL in all 6 runs**, so `seed_tick` and the founding RNG stream match |
+| founding block | all 60 untargeted spawns floor to **(16384, 16384)** |
+| founding preset placement | farm at `x=16377` in every run |
+
+With inputs matched:
+
+| pair | terrain schedule | job arrivals | food_stock |
+|---|---|---|---|
+| `0818-0707` | differs | **44 vs 50** | differs at tick 3600 (0 vs 2) |
+| `0818-1237` | differs | **44 vs 53** | differs at ticks 3600, 3900 |
+| `0818-1510` | differs | 45 vs 45 | **identical** |
+
+**Gameplay state diverges between twins whose inputs are identical.** Job
+arrivals and food move together in all three pairs — including the pair where
+both hold — which is the internal control.
+
+★ Stated precisely, because the temptation is to overclaim: terrain schedule
+differs in **3/3** but gameplay diverges in only **2/3**, so a schedule
+difference is **not sufficient** and the causal link is **not established**. What
+*is* established needs no mechanism: **twin runs with matched inputs produce
+different game states.**
+
+## What that does to the row
+
+"Certify membership, timing out of scope" is **not defensible**. It would
+certify something true (membership is deterministic, 30/30) that is **not the
+thing that matters** — colony behaviour is not reproducible run-to-run, and that
+is visible in the observable a player would care about. The row **FAILS**, now
+for a measured reason with a named observable rather than a tripped clause.
+
+## The superseded gap, kept for the record
+
 ## The instrument gap, named
 
 Neither existing arm can answer it:
