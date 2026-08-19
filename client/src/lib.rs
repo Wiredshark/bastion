@@ -3634,6 +3634,19 @@ impl Client {
                     }
                 }
             }
+            // ROW #89 INSTRUMENT DEBT (a8a877a486): the send-cap A/B measures a
+            // CLIENT-tick effect with a SERVER-tick ruler. The server sees the
+            // 49-chunk burst arrive as a STEP inside one tick, so a cap that
+            // dribbles 8 per CLIENT tick is invisible to it. This counts what
+            // the client actually sent per ITS OWN tick -- the only place the
+            // cap can be observed binding.
+            if current_tick_send_chunk_requests > 0 {
+                tracing::info!(
+                    sent = current_tick_send_chunk_requests,
+                    pending_total = self.pending_chunks.len(),
+                    "bastion: row89 client send-cap census"
+                );
+            }
             self.loaded_distance = self.loaded_distance.sqrt()
                 - ((TerrainChunkSize::RECT_SIZE.x as f32 / 2.0).powi(2)
                     + (TerrainChunkSize::RECT_SIZE.y as f32 / 2.0).powi(2))
