@@ -187,8 +187,28 @@ declaration recording it.
 
 ## DECLARED: compressed mode is the default for every unattended run
 
-**It stays the default, and this certification is why it may.** Stated in the
-terms the standing law uses:
+> ### ★★ PRECISION CORRECTION — the mandate's trigger did NOT fire
+>
+> The mandate reads *"**On green**: compressed mode becomes the default … declare
+> it in the disposition and update the runners."* **Bar 2 is not green.** So the
+> trigger did not fire, and this section must not be read as the trigger firing.
+>
+> **The default does not rest on this certification.** It rests on Ben's
+> standing order of **2026-08-11** (*"every test needs to be run on fast mode
+> for anything unless it is impossible"*), which predates this row and is
+> independent of it — and `run-pit.sh:398` has implemented it since.
+> **Nothing here changed a default; there was no flip to perform.**
+>
+> An earlier draft of this section said *"this certification is why it may."*
+> **That was an overreach and is withdrawn.** The certification does not
+> authorise the default; it *characterises* it. Two distinct claims, and
+> conflating them let a FAIL bar sit under a word like "declared".
+>
+> **What this section actually is:** the evidence a ratification would rest on
+> IF Ben rules bar 2 out of scope. **Until that ruling, the default stands on
+> the standing order alone and this row remains open.**
+
+Stated in the terms the standing law uses:
 
 - **Bar 1 — the registered refutation target — PASSES in its strongest form.**
   The target was *overlap* between capped and uncapped promotion distributions.
