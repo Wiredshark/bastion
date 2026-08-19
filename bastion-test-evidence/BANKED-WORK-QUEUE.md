@@ -129,6 +129,15 @@ empty queue is itself a finding — refill from `readme/BUILD-ROADMAP.md`.
 - **Tick-loading scope call** — roadmap criterion passes, mandate bar 2 fails.
 - **Run-gait trigger** — `running = true` appears nowhere; 2 of 4 status
   variants never observed in 33,926 samples.
+- **★ Should `self_rescue` be given `emergency_owner` + `emergency_approach`?**
+  Measured 2026-08-19: without both it can **never** succeed (0/55 corpus-wide,
+  0/36 across three arms); with both it succeeds on 3 of 5 seeds. **But passing
+  `emergency_owner` is not a neutral hint** — it enrols the colonist in the
+  emergency route machinery (`emergency_route_members` / `_targets` /
+  `_descriptors`, `leave_route`) and activates an owner-gated `return None` on
+  `emergency_reengage_exhausted`. Whether a *self-rescue* should adopt
+  **emergency egress semantics** is a judgement about what self-rescue IS, so
+  the builder stopped at the measurement. See `SELF-RESCUE-NEVER-SUCCEEDS.md`.
 
 ## Done from this queue today
 
