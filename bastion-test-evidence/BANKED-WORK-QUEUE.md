@@ -204,6 +204,38 @@ air with no column to carve?
    pre-registered row rather than an inline edit — **the build is the open
    decision, the feasibility is not.**
 
+## Closed 2026-08-19 (later block)
+
+- **#84 content mover — ANSWERED from banked data** (`30047a0593`): `plan_access`
+  is the source on **120 of 126** blocked-cell entries (95%). Same subject as the
+  self_rescue thread; they should never have been two rows.
+- **Item 39 opened + advanced** (`d92fce6af4`, `ea1f2a2166`): the tick guard sits
+  **22–53× above** the operating range (1.90–4.44 ms vs a 100.0 threshold), and
+  the spread it would have to detect is barely above the instrument's own
+  **1.21× noise floor**. A workload correlation was computed and **withdrawn**
+  (the field is a *zero-input soak at step 8*).
+- **Deterministic cost proxy BUILT** (`44bd816182`): `JobBoard::work_units`,
+  surfaced as `b5_work_units` **beside** the millisecond field. Counts work, not
+  time — so it doubles as a determinism witness, which a clock can never be.
+- **Item 4 trait pinning BUILT** (`e4808a8976`): `BASTION_PIN_TRAIT` pins any of
+  the 16 variants; an unrecognised name **panics** rather than silently falling
+  back to random.
+- **SPEED ROW 14 — REFUSED** (`d5de850603`, reverted forward in `d4ed8024c3`):
+  built to completion, then the edge-cut showed `veloren-server` uses **31**
+  symbols from `bastion_jobs` of which **26 are in the logic the row needed to
+  leave behind**. Killed by its own measurement.
+- **Two accelerants ENFORCED, not documented**: `CORPUS` (exit 9) and `BANKED`
+  (exit 7) now refuse a fan launch; `DRYRUN` lets both be tested without spend.
+
+## Open, and each needs a decision rather than a build
+
+1. **bar-2 scope** — engine PASS vs engine+client FAIL. Decides how the row closes.
+2. **haul-deadlock default** — `BASTION_FIX_HAUL_STARVED_CELL` on by default?
+3. **`self_rescue` egress semantics** — measured necessary; adopting them is design.
+4. **stranded-colonist behaviour** — what should a colonist do with no column to carve?
+5. **`avg_tick_ms` threshold re-base** — a BAR change.
+6. **which `PersonalityTrait` stands in for "reckless"** — one word; `Adventurous` is nearest.
+
 ## Blocked / needs a decision (Ben)
 
 - **Tick-loading scope call** — roadmap criterion passes, mandate bar 2 fails.
