@@ -46,7 +46,20 @@ empty queue is itself a finding — refill from `readme/BUILD-ROADMAP.md`.
    478** in the same runs. Counter pair verified against the emit on 48/48
    seeds. Not a per-seed effect: corpus-wide and total. No spend.
 
-8. **★ Isolate WHICH of the three call-site axes blocks `self_rescue`** — the
+8. **IN FLIGHT 2026-08-19 — axis 1 (mask) built, first run VOID, re-running
+   with a witness.** Probe `BASTION_SELFRESCUE_BUBBLE` swaps
+   `designated_regions()` for the emergency site's bubble geometry
+   (`6d87fef84d`), runs **locally** via `bastion-harness --b5-scenario` — no
+   VM, the row was chartered as a fan and is a laptop job.
+   **Run 1 reproduced the banked corpus exactly** (calls 37→11, 3→7, 29→6,
+   16→6, 11→6, matching wave34) with **emissions 0 in BOTH arms** — which
+   *looks* like NEITHER but is **VOID**: exactly one field differed across the
+   whole payload (`b5_soak_avg_tick_ms`, wall-clock noise), so "bubble used,
+   changed nothing" and "flag never arrived" were indistinguishable. Witness
+   added (`self_rescue_bubble_active` counter + emit); a NEITHER verdict is
+   only meaningful once that counter is nonzero.
+
+9. **★ Isolate WHICH of the three call-site axes blocks `self_rescue`** — the
    two live sites differ on mask (`designated_regions()` vs a synthesised
    egress bubble), `emergency_owner`, and `emergency_approach` **all at once**,
    so the emergency site proves `plan_access` *can* succeed but isolates
