@@ -1,5 +1,25 @@
 # ★★★ THE ENGINE IS TICK-DETERMINISTIC. THE CLIENT IS BAR 2's ENTIRE CAUSE.
 
+> # ★★ RESULT STANDS BUT THE SAMPLE IS TOO THIN TO CERTIFY ON — being re-run at VD=6
+>
+> The run promoted **9 chunks across 3 ticks** and then stayed flat for the
+> remaining **7,100 ticks**. 6-of-6 cross-host agreement on that is real, and it
+> is not a basis for declaring a certification bar green.
+>
+> Cause, measured: `COLONY_PRESENCE_VIEW_DISTANCE = 1` is a 3×3 area. The colony
+> loads its nine chunks and never needs another — **93 jobs were claimed and
+> `colonist arrived at job site` fired ZERO times**, so nothing ever moved to pull
+> in new terrain.
+>
+> A client uses **VD=6 (13×13 = 169 chunks)**. The view distance is now an env
+> knob (`BASTION_COLONY_PRESENCE_VD`, default 1 so existing runs are unchanged)
+> and the arm re-runs at 6 — a comparable exercise to the driven arm's 304 chunks
+> rather than a token one.
+>
+> ★ Declaring bar 2 green off 3 promoting ticks would have been the same vacuous
+> green this document's own precondition caught an hour earlier, one level up.
+
+
 `provheadless` — `provtravcap`'s env with **no client**. The autofound colony
 carries its own `Presence`, so the server requests terrain for itself.
 
