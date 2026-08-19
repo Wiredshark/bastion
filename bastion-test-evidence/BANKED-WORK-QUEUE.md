@@ -33,6 +33,19 @@ empty queue is itself a finding — refill from `readme/BUILD-ROADMAP.md`.
    claimed" become distinguishable — which was the real question behind it.
 4. **#110 gate 1** — instrument built, subject extinct at the current tip.
    Re-aim at a trait-pinned reckless population per the roadmap's rider.
+   **★ SCOPED 2026-08-19 (producer read, no run): THE PINNING DOES NOT EXIST
+   YET — this item is a BUILD, not a re-run.** Personality traits exist
+   (`common/src/rtsim.rs::PersonalityTrait`, 16 variants; `Personality::is`
+   consumed at `common/src/comp/bastion.rs:550`), but **nothing pins them** —
+   no `BASTION_PIN_TRAIT`-style hook anywhere in `bastion-server/` or
+   `common/`. ★ And **"reckless" is not among the 16 variants**: the only
+   `Reckless` in the tree is `BuffKind::Reckless` (`common/src/cmd.rs:161`), a
+   different system. So the rider's wording cannot be taken literally — the
+   re-aim needs (a) an env-gated trait-pin hook and (b) a decision about
+   **which actual variant** stands in for "reckless" (`Adventurous` is the
+   nearest by name, and that is a gameplay-design judgement, i.e. **Ben's**).
+   Do not start the build until (b) is answered, or the instrument aims at a
+   trait nobody chose.
 5. **`ch_cancel_clean` is an unexercised falsifier** — true on all 41 seeds where
    it ran, false only where it could not run. A check that has never gone red
    has never shown it can.
