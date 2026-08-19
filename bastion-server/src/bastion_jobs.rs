@@ -9989,8 +9989,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // of the three differences between a caller that has NEVER succeeded
         // (0/55) and one that does (46/478). Carrying it here costs nothing
         // when the probe is off and makes the axis testable at all.
-        let mut carve_requests: Vec<(Vec3<i32>, Vec3<i32>, JobId, Option<common::uid::Uid>)> =
-            Vec::new();
+        #[allow(clippy::type_complexity)]
+        let mut carve_requests: Vec<(
+            Vec3<i32>,
+            Vec3<i32>,
+            JobId,
+            Option<common::uid::Uid>,
+            // AXIS 3 (banked item 9): the emergency site's `emergency_approach`.
+            // Built HERE, in the per-entity join, because `scales`/`colliders`
+            // are storage reads and `pos`/`entity` are already in hand — the
+            // call site would otherwise have to re-resolve the entity from the
+            // uid and re-derive what this loop already knows.
+            Option<(Vec3<f32>, (f32, f32, f32))>,
+        )> = Vec::new();
         // B5.8-E3: unreachable releases feed the claim-churn detector
         // (entity, pos, feet, reach) — processed post-loop (same borrow
         // constraint as carve_requests).
@@ -14487,11 +14498,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     && !job.is_access
                                     && job.pos.z - feet.z > reach
                                 {
+                                    let approach = {
+                                        let scale = scales
+                                            .get(entity)
+                                            .map_or(1.0, |scale| scale.0.min(10.0));
+                                        colliders
+                                            .get(entity)
+                                            .and_then(|collider| {
+                                                common_systems::phys::capsule_terrain_cylinder(
+                                                    collider, scale, 0.22,
+                                                )
+                                            })
+                                            .map(|cyl| (pos.0, cyl))
+                                    };
                                     carve_requests.push((
                                         feet,
                                         job.pos,
                                         active.job,
                                         uids.get(entity).copied(),
+                                        approach,
                                     ));
                                 } else if matches!(job.kind, common::bastion::JobKind::Haul { .. })
                                     && job.stuck_strikes >= PERSIST_ESCALATE_STRIKES
@@ -16607,7 +16632,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // deterministic route selection was applied to whichever pocket the
         // producer happened to surface first. Sort by (target cell, parent job
         // id) so the winning request is a pure function of the pending set.
-        carve_requests.sort_by_key(|(_from, to, parent, _owner)| (to.x, to.y, to.z, *parent));
+        carve_requests
+            .sort_by_key(|(_from, to, parent, _owner, _appr)| (to.x, to.y, to.z, *parent));
         let access_pending = board.jobs.values().any(|j| j.is_access);
         if access_pending {
             board.access_pending_true_ticks += 1;
@@ -16615,7 +16641,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 board.self_rescue_starved_by_access_pending += 1;
             }
         }
-        for (from, to, parent, owner) in
+        for (from, to, parent, owner, approach) in
             carve_requests
                 .into_iter()
                 .take(if access_pending { 0 } else { 1 })
@@ -16711,8 +16737,42 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             } else {
                 None
             };
+            // ★ AXIS-3 PROBE (banked item 9). The third and last difference
+            // between this caller and the one that succeeds. Independent of
+            // axis 2, so the two flags together give the BOTH-REQUIRED cell of
+            // the registered outcome table in a single run.
+            let ctx_approach = if std::env::var_os("BASTION_SELFRESCUE_APPROACH").is_some() {
+                if approach.is_some() {
+                    *board
+                        .access_plan_calls
+                        .entry("self_rescue_approach_active")
+                        .or_insert(0) += 1;
+                    info!(
+                        parent,
+                        "bastion: AXIS-3 self_rescue passing APPROACH (probe active)"
+                    );
+                } else {
+                    // Same third state as axis 2: flag on, nothing to pass.
+                    info!(
+                        parent,
+                        "bastion: AXIS-3 probe ON but request carries NO approach — not scoreable"
+                    );
+                }
+                approach
+            } else {
+                None
+            };
             *board.access_plan_calls.entry("self_rescue").or_insert(0) += 1;
-            match plan_access(board, &terrain, plan_mask, from, to, false, ctx_owner, None) {
+            match plan_access(
+                board,
+                &terrain,
+                plan_mask,
+                from,
+                to,
+                false,
+                ctx_owner,
+                ctx_approach,
+            ) {
                 Some((kind, steps)) => {
                     *board
                         .access_plan_emissions
