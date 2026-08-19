@@ -41,6 +41,31 @@ the data. A read-derived mechanism that has never been measured is exactly the
 kind of thing that looks right and is not — the haul deadlock survived that test
 this morning; this one may not.
 
+## ★★ THE FIX IS PARTIAL BY CONSTRUCTION — said before the data, not after
+
+Sorting happens **within one tick's drain**. But SlowJobs complete
+asynchronously, so **which tick a chunk lands in is still a thread race**: a
+batch that finishes late is drained on a later tick and sorted into *that*
+tick's sequence.
+
+So the fix makes the order **within** a tick a pure function of the chunk set,
+and leaves the **assignment of chunks to ticks** unpinned.
+
+**That is precisely why the registered prediction says REDUCE, not ELIMINATE** —
+and now the reason is structural rather than cautious. If the fix arm comes back
+fully identical, that would mean tick-assignment happens to be stable under this
+fixture, not that the race is gone.
+
+★ **The complete fix would need a barrier on the serialize side**, holding a
+tick's chunks until every batch for that tick has completed — the same shape as
+`recv_new_chunks_deterministic` does for the generator. That is a bigger change
+and it should not be attempted before this A/B says how much of the divergence
+the cheap half removes.
+
+★★ Recording this now matters because a partial result is exactly what invites
+over-claiming. If the divergence shrinks, the honest headline is *"the within-
+tick order was one contributor"* — **not** *"bar 2 is fixed"*.
+
 ## Preconditions above every verdict
 
 1. Both twins boot and carry a terminator.
