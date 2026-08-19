@@ -49,6 +49,10 @@ hickory-resolver = { version = "0.26.1", features = [
 image = { workspace = true }
 num = { workspace = true }
 tracing = { workspace = true }
+# For `bastion_playtest`: without a subscriber every tracing emit in
+# client/src/lib.rs goes NOWHERE (measured: 14 of them, including the
+# row89 chunk-request witness that exists to declare an arm VOID).
+tracing-subscriber = { workspace = true }
 rayon = { workspace = true }
 specs = { workspace = true, features = [
     "serde",

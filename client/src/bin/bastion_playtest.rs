@@ -323,6 +323,22 @@ fn parse_script_text(text: &str) -> Vec<ScriptCmd> {
 }
 
 fn main() {
+    // ★★ WITHOUT THIS, EVERY `tracing::*` EMIT IN `client/src/lib.rs` IS
+    // INVISIBLE (2026-08-19). This binary had no subscriber, so 14 client-side
+    // diagnostics went nowhere — including the row89 chunk-request witness
+    // whose own comment says it exists "so the arm can declare itself VOID
+    // instead". It could never have done that. An instrument with no consumer
+    // is not an instrument.
+    //
+    // stderr, because the runner already captures it to driverout-<tag>.log and
+    // the playtest's own `log.log()` file must stay parseable.
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .with_writer(std::io::stderr)
+        .try_init();
     let mut args = std::env::args().skip(1);
     let server = args.next().unwrap_or_else(|| "localhost".to_string());
     let username = args.next().unwrap_or_else(|| "bastion_llm_player".to_string());
