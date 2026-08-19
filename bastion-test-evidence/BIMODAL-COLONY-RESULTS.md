@@ -1,5 +1,13 @@
 # BIMODAL COLONY OUTCOME — CONFIRMED against its own falsifier
 
+> ## ★★ SUPERSEDED IN PART (2026-08-19): **the gap is NOT empty.**
+> A later run finished at **exactly 50 maturations** — inside the registered
+> 50–500 band — so the registered falsifier fired and **"bimodal" is withdrawn
+> as a description of the MECHANISM**. The two clusters are still real; the claim
+> that nothing lands between them is not. See `DROPTOSS-RESULTS.md`.
+> Everything below was true of the corpus as it stood (n=26) and is kept intact.
+
+
 Both pre-registered questions answered on one 6-host fan, 12 runs, all arms
 returning both twins.
 
