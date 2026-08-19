@@ -306,6 +306,23 @@ case "$ARM" in
               PITARENA=""    # real terrain
               PITTPS=""      # CAPPED: the tick axis is now comparable across runs
               SCRIPT="script-provtraverse.txt" ;;
+  # ★ THE ANCHOR FIX'S RED DEMONSTRATION. Identical to provtravcap except the
+  # driver runs with Pos withheld for 90 ticks -- above the old fixed TPS*2=60
+  # spin, so this FORCES the exact case the old driver got wrong.
+  #
+  # It exists because a full 6-run fan demonstrated nothing: Pos arrived at tick
+  # 47-48 in 6 of 6 runs, the old code would have matched every one, and the
+  # registered bar B ("the fix was NEEDED") went unsatisfied. That fan was
+  # scored VOID rather than green. A condition you wait to occur by luck is not
+  # a test; this plants it.
+  #
+  # PLANTED runs are self-labelling: the driver logs "PLANT ACTIVE" and the run
+  # must never be scored as a live measurement.
+  anchorplant) PITVAR=" BASTION_TERRAIN_PROVISION_DIAG=1"
+              PITARENA=""
+              PITTPS=""
+              PITDRIVERENV="BASTION_PLANT_POS_DELAY=90"
+              SCRIPT="script-provtraverse.txt" ;;
   wall2)   PITVAR=" BASTION_FLAT_ARENA_WALLED=1 BASTION_HOSTILE_PROXIMITY_DIAG=1"
               SCRIPT="script-wall2.txt" ;;
   wallctl) PITVAR=""
