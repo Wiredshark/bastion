@@ -47,7 +47,7 @@ independent.** `ch_engaged` is *computed from* that field via `ch_oracle_class`
 `b5_ch_scan_incomplete` is constant `false` corpus-wide. Their agreement is
 construction, not evidence of a broken oracle. **Withdrawn.**
 
-### What is NOT explained by reading the producer
+### What was not explained on the FIRST producer read — all three resolved later, below
 
 | tie | status |
 |---|---|
@@ -55,7 +55,8 @@ construction, not evidence of a broken oracle. **Withdrawn.**
 | `b5_ch_jobs` ≡ `b5_ch_trees` | 10 distinct values, always equal — unexplained |
 | `b5_any_needs_materials` ≡ `b5_build_placed` | semantically unrelated names — unexplained |
 
-Those three are worth a producer read. The other four are accounted for.
+Those three were worth a producer read, and it was done — see
+**"ALL THREE UNEXPLAINED TIES RESOLVED"** below. All seven are now accounted for.
 
 ## ★ Is a tie surprising? Testing my own claim against multiple comparisons
 
@@ -138,10 +139,11 @@ several are deliberate invariants. The fix is at the **scorer**: collapse
 identical columns before tallying, and report the independent-signal count beside
 the field count so a wave's denominator states what it actually resolves.
 
-Nothing here is a producer defect to fix. The `_measured` twins are a **known,
-documented residual** the harness already declares, and the `ch_engaged` tie is
-**derived by construction**. The three unexplained ties
-(`ch_cancel_clean`, `ch_jobs`≡`ch_trees`, `any_needs_materials`≡`build_placed`)
-are worth a producer read before anyone calls them anything — each survives
-multiple-comparison correction, so there **is** something to explain, but
-"unexplained" is not "wrong".
+**Nothing here is a producer defect.** All seven ties are accounted for: two are
+a documented residual the harness declares itself, and five are
+**shared-precondition** ties — two fields gated on the same upstream event, which
+is the instrument working correctly rather than duplicating itself.
+
+The one item that does want attention is **`ch_cancel_clean`, an assertion that
+has never gone red in 41 exercised seeds** — an unexercised falsifier, not a
+defect.
