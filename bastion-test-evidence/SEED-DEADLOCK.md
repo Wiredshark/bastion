@@ -38,6 +38,38 @@ designation swept"* against **8** in thriving ones. The sweeper reaps the
 unclaimed farm job and frees the cell — then the generator re-creates it. The
 two fight, and the haul window is the gap between them.
 
+## ★ THE GENERATOR ORDERING MAKES IT WORSE — measured from the tick gates
+
+`ARBITRATION_INTERVAL = SIM_TPS / 2 = 15`, and each generator runs on a fixed
+offset inside that cycle:
+
+| offset | generator |
+|---|---|
+| **3** | **farm** — creates the sow job on a free cell (`!board.farms.is_empty()`) |
+| **7** | **haul** — skips cells that hold a job |
+
+**The farm generator runs FIRST, every cycle.** So a cell freed at any point is
+re-occupied at offset 3 before the haul pass at offset 7 ever sees it empty.
+Within a cycle there is no window at all — the ordering is not a coincidence of
+load, it is fixed in the tick gates.
+
+### The part the code does NOT settle, stated plainly
+
+The **sweeper** reaps unclaimed jobs on a *time threshold*
+(`access_stall_secs`), not on a tick offset, so it can free a cell at offsets
+4–6 and open a genuine window. Collapsed runs show **276** sweeps, which is a
+lot of chances.
+
+I cannot close that by reading: I do not know how quickly a reaped cell is
+re-taken, and the arithmetic I can do (≈9 sweeps per cell × a 3-in-15 chance of
+landing in the window) predicts far more haul events than the **5** observed.
+**Either the window closes faster than a tick, or something else also blocks
+those hauls.**
+
+★ That is the honest boundary of the read, and it is why the witness below was
+built rather than another paragraph of reasoning: the instrument counts skips
+directly and does not care which story is right.
+
 ## What is established, and what is not
 
 **Established by reading:** the farm job's position, the drop position, and the

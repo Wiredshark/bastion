@@ -10336,6 +10336,40 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     };
                     let Some(static_def) = matched else { continue };
                     let cell = ipos.0.map(|e| e.floor() as i32);
+                    // ★ THE DEADLOCK WITNESS (SEED-DEADLOCK.md).
+                    //
+                    // `occupied` is EVERY job position on the board, so a loose
+                    // item lying on a cell that holds a BLOCKED job is skipped
+                    // here -- including the seed that job is blocked WAITING
+                    // FOR. A farm job sits at its cell needing a seed; the
+                    // harvest dropped its seeds on that same cell; this line
+                    // makes them invisible to hauling; the job stays blocked
+                    // forever. Measured consequence: the colony dies in ~half of
+                    // otherwise-identical runs.
+                    //
+                    // That chain was READ, not observed. This emit is the
+                    // observation: it names the item skipped, the cell, and
+                    // whether a job on that cell is itself waiting for exactly
+                    // this item def -- which is the difference between "an item
+                    // sat under a work site" (fine) and "a job starved on the
+                    // resource underneath it" (the deadlock).
+                    if std::env::var_os("BASTION_HAUL_SKIP_DIAG").is_some()
+                        && occupied.contains(&cell)
+                        && board.stockpile_at(cell).is_none()
+                        && !board.is_reserved(*iuid)
+                    {
+                        let starving = board.jobs.values().any(|j| {
+                            j.pos == cell
+                                && j.claimed_by.is_none()
+                                && j.required_item == Some(static_def)
+                        });
+                        info!(
+                            ?cell,
+                            item = static_def,
+                            starving_job_on_cell = starving,
+                            "bastion: haul candidate SKIPPED, cell occupied by a job"
+                        );
+                    }
                     if board.stockpile_at(cell).is_some()
                         || board.is_reserved(*iuid)
                         || occupied.contains(&cell)
