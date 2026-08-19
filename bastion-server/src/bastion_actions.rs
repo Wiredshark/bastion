@@ -99,12 +99,38 @@ pub fn emit_drop(
     program_time: ProgramTime,
     rng: &mut impl RngExt,
 ) {
+    // ★ THE TOSS IS THE ONLY RANDOM PART, AND IT IS TICK-DERIVED.
+    //
+    // The spawn POSITION is deterministic (`pos + 0.5`); the rng sets only the
+    // VELOCITY — a random heading and a 2.0..4.0 upward toss — so where the item
+    // finally LANDS is decided by physics from this vector.
+    //
+    // That matters because the harvest site seeds this rng on `tick.0`
+    // (`toss_scatter_rng(tick.0, job.pos, …)`), and the harvest tick is measured
+    // NOT reproducible between twin runs. A documented strict-conservation
+    // invariant — "SEED_YIELD (2) > the 1 consumed, the crop can never
+    // extinguish" — nonetheless extinguished in 7 of 14 identically-seeded runs,
+    // and the proof covers the COUNT emitted, never the count RECOVERED.
+    //
+    // Emitting the toss makes the difference between those two countable. Env-
+    // gated so the default corpus is unchanged; without it the landing site is
+    // unobservable and "scattered out of reach" cannot be told apart from
+    // "reachable but never claimed". See SEED-CONSERVATION-CONTRADICTION.md.
+    let vel = (Vec2::unit_x().rotated_z(rng.random::<f32>() * std::f32::consts::TAU) * 0.5)
+        .with_z(rng.random_range(2.0..4.0));
+    if std::env::var_os("BASTION_DROP_TOSS_DIAG").is_some() {
+        tracing::info!(
+            origin = ?pos,
+            vel_x = vel.x,
+            vel_y = vel.y,
+            vel_z = vel.z,
+            item = item.item_definition_id().itemdef_id().unwrap_or("?"),
+            "bastion: drop toss"
+        );
+    }
     emitter.emit(CreateItemDropEvent {
         pos: comp::Pos(pos.map(|e| e as f32) + Vec3::broadcast(0.5)),
-        vel: comp::Vel(
-            (Vec2::unit_x().rotated_z(rng.random::<f32>() * std::f32::consts::TAU) * 0.5)
-                .with_z(rng.random_range(2.0..4.0)),
-        ),
+        vel: comp::Vel(vel),
         ori: comp::Ori::default(),
         item: PickupItem::new(item, program_time, true),
         loot_owner: None,
