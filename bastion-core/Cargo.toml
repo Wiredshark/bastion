@@ -1,17 +1,17 @@
 [package]
-name = "bastion-server"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
+name = "bastion-core"
+version = "0.18.0"
+edition = "2024"
 
-[lints]
-workspace = true
-
-[features]
-worldgen = []
+# ★ SPEED ROW: invert the veloren-server -> bastion-server edge.
+# This crate holds ONLY what `veloren-server` needs from the bastion side, so
+# that `veloren-server` can depend on THIS instead of on `bastion-server`. The
+# 23k-line job logic then sits ABOVE veloren-server and a one-line edit to it
+# no longer forces veloren-server's 9.95 s rebuild.
+# Closure measured before any code moved: 6,616 of 32,244 lines (20.5%), with
+# zero back-references from the moving set into the logic that stays.
 
 [dependencies]
-bastion-core = { path = "../bastion-core" }
 common = { package = "veloren-common", path = "../common" }
 common-ecs = { package = "veloren-common-ecs", path = "../common/ecs" }
 common-state = { package = "veloren-common-state", path = "../common/state" }
@@ -29,7 +29,3 @@ rand = { workspace = true }
 rand_chacha = { workspace = true }
 hashbrown = { workspace = true }
 enum-map = { workspace = true }
-
-[dev-dependencies]
-# Test-only: construct ordered NpcId (slotmap) keys for the DET-MOOD-003 fixture.
-slotmap = "1.0"

@@ -2373,7 +2373,12 @@ mod tests {
         for path in [
             "bastion-server/src/bastion_jobs.rs",
             "bastion-server/src/bastion_actions.rs",
-            "bastion-server/src/bastion_mood.rs",
+            // ★ Moved to `bastion-core` by the speed row (2026-08-19). The path
+            // FOLLOWS THE CODE rather than being deleted: this guard is keyed on
+            // file paths, so dropping the entry would have silently stopped
+            // enforcing T0.2 on this file the moment it moved. Every further
+            // module this row relocates must be re-pointed here too.
+            "bastion-core/src/bastion_mood.rs",
             "bastion-server/src/bastion_piles.rs",
             "bastion-server/src/bastion_chop.rs",
             "bastion-server/src/bastion_path.rs",
