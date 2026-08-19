@@ -119,6 +119,76 @@ impl Personality {
 
     fn distributed_value(rng: &mut impl RngExt) -> u8 { distributed(Self::MIN, Self::MAX, rng) }
 
+    /// ★ TEST HOOK (banked item 4 / #110, 2026-08-19): build a `Personality`
+    /// that deterministically SATISFIES one named trait, leaving every other
+    /// axis mid-range.
+    ///
+    /// #110's gate-1 subject went extinct at the current tip, and the roadmap
+    /// rider calls for re-aiming it at a trait-pinned population. Nothing in
+    /// the tree could pin a trait, and the fields are private to this module,
+    /// so the pin has to live here.
+    ///
+    /// ★ It is deliberately GENERIC over all 16 variants rather than hardcoding
+    /// one. The rider says "reckless", which is NOT a `PersonalityTrait` — the
+    /// only `Reckless` in the tree is `BuffKind::Reckless`, a different system.
+    /// Choosing which variant stands in for it is a gameplay-design judgement,
+    /// so this makes that choice a RUNTIME VALUE instead of baking a guess into
+    /// the code.
+    ///
+    /// Values are the extremes (`MIN`/`MAX`) so a pinned personality satisfies
+    /// its trait under any threshold tuning, and `MID` elsewhere so no OTHER
+    /// trait is accidentally satisfied where that is possible at all.
+    ///
+    /// ★ NOT exclusive, and cannot be: some traits NEST. `Adventurous` needs
+    /// `openness > HIGH`, which is exactly `Open`'s condition, so pinning the
+    /// first necessarily satisfies the second. The test below asserts the
+    /// pin HOLDS for all 16 and records the co-occurrences rather than
+    /// pretending they are absent.
+    pub fn pinned(trait_: PersonalityTrait) -> Self {
+        let mut p = Self {
+            openness: Self::MID,
+            conscientiousness: Self::MID,
+            extraversion: Self::MID,
+            agreeableness: Self::MID,
+            neuroticism: Self::MID,
+        };
+        match trait_ {
+            PersonalityTrait::Open => p.openness = Self::MAX,
+            PersonalityTrait::Adventurous => {
+                p.openness = Self::MAX;
+                p.neuroticism = Self::MIN;
+            },
+            PersonalityTrait::Closed => p.openness = Self::MIN,
+            PersonalityTrait::Conscientious => p.conscientiousness = Self::MAX,
+            PersonalityTrait::Unconscientious => p.conscientiousness = Self::MIN,
+            PersonalityTrait::Busybody | PersonalityTrait::Disagreeable => {
+                p.agreeableness = Self::MIN
+            },
+            PersonalityTrait::Extroverted => p.extraversion = Self::MAX,
+            PersonalityTrait::Introverted => p.extraversion = Self::MIN,
+            PersonalityTrait::Agreeable => p.agreeableness = Self::MAX,
+            PersonalityTrait::Sociable => {
+                p.agreeableness = Self::MAX;
+                p.extraversion = Self::MAX;
+            },
+            PersonalityTrait::Neurotic => p.neuroticism = Self::MAX,
+            PersonalityTrait::Seeker => {
+                p.neuroticism = Self::MAX;
+                p.openness = Self::MAX;
+            },
+            PersonalityTrait::Worried => {
+                p.neuroticism = Self::MAX;
+                p.agreeableness = Self::MAX;
+            },
+            PersonalityTrait::SadLoner => {
+                p.neuroticism = Self::MAX;
+                p.extraversion = Self::MIN;
+            },
+            PersonalityTrait::Stable => p.neuroticism = Self::MIN,
+        }
+        p
+    }
+
     pub fn random(rng: &mut impl RngExt) -> Self {
         Self {
             openness: Self::distributed_value(rng),
@@ -582,5 +652,66 @@ mod endpoint_contract_tests {
 
         controller.clear_path_endpoint();
         assert_eq!(controller.path_endpoint_tolerance(corridor), None);
+    }
+}
+
+#[cfg(test)]
+mod pinned_personality_tests {
+    use super::*;
+
+    // Indexed rather than compared: `PersonalityTrait` is a VANILLA type with
+    // no Debug/PartialEq, and adding derives to upstream code for a test's
+    // convenience is not a trade worth making.
+    const ALL: [(&str, PersonalityTrait); 16] = [
+        ("Open", PersonalityTrait::Open),
+        ("Adventurous", PersonalityTrait::Adventurous),
+        ("Closed", PersonalityTrait::Closed),
+        ("Conscientious", PersonalityTrait::Conscientious),
+        ("Busybody", PersonalityTrait::Busybody),
+        ("Unconscientious", PersonalityTrait::Unconscientious),
+        ("Extroverted", PersonalityTrait::Extroverted),
+        ("Introverted", PersonalityTrait::Introverted),
+        ("Agreeable", PersonalityTrait::Agreeable),
+        ("Sociable", PersonalityTrait::Sociable),
+        ("Disagreeable", PersonalityTrait::Disagreeable),
+        ("Neurotic", PersonalityTrait::Neurotic),
+        ("Seeker", PersonalityTrait::Seeker),
+        ("Worried", PersonalityTrait::Worried),
+        ("SadLoner", PersonalityTrait::SadLoner),
+        ("Stable", PersonalityTrait::Stable),
+    ];
+
+    /// The pin must actually hold for EVERY variant — a pin that silently
+    /// failed for one would aim #110's instrument at an unpinned population and
+    /// look identical to a pinned one.
+    #[test]
+    fn pinned_satisfies_its_own_trait_for_all_sixteen() {
+        for (name, t) in ALL {
+            assert!(
+                Personality::pinned(t).is(t),
+                "Personality::pinned({name}) does not satisfy {name} — the pin is a no-op for                  this variant, and any run using it would be SILENTLY UNPINNED"
+            );
+        }
+    }
+
+    /// Co-occurrence is REAL (nested traits share a condition, e.g. Adventurous
+    /// implies Open) and is bounded here rather than asserted away, so a row
+    /// needing a clean single-trait population knows which variants cannot give
+    /// it one.
+    #[test]
+    fn pinned_co_occurrence_is_bounded_by_nesting() {
+        for (i, (name, t)) in ALL.iter().enumerate() {
+            let p = Personality::pinned(*t);
+            let also: Vec<&str> = ALL
+                .iter()
+                .enumerate()
+                .filter(|(j, (_, o))| *j != i && p.is(*o))
+                .map(|(_, (n, _))| *n)
+                .collect();
+            assert!(
+                also.len() <= 2,
+                "pinned({name}) also satisfies {also:?} — more overlap than nesting explains"
+            );
+        }
     }
 }

@@ -523,7 +523,44 @@ impl RtSim {
             // `random_good()`: random_good clamps conscientiousness to
             // [LOW_THRESHOLD, MAX], making ~83% of colonists Conscientious,
             // which collapses the trait spread the guard row selects from.
-            npc.personality = common::rtsim::Personality::random(&mut personality_rng);
+            // ★ BASTION_PIN_TRAIT (banked item 4 / #110, 2026-08-19): pin every
+            // colonist to ONE named personality trait so an instrument aimed at
+            // a trait-carrying population has a subject. #110's gate-1 subject
+            // went extinct at the current tip; the roadmap rider calls for a
+            // trait-pinned re-aim, and nothing in the tree could pin a trait.
+            //
+            // ★ An UNRECOGNISED name REFUSES loudly rather than falling back to
+            // random. A silent fallback would produce an unpinned run that is
+            // indistinguishable from a pinned one in every log line — the exact
+            // shape of null that costs a whole fan to diagnose.
+            npc.personality = match std::env::var("BASTION_PIN_TRAIT") {
+                Ok(name) => {
+                    let t = match name.as_str() {
+                        "Open" => common::rtsim::PersonalityTrait::Open,
+                        "Adventurous" => common::rtsim::PersonalityTrait::Adventurous,
+                        "Closed" => common::rtsim::PersonalityTrait::Closed,
+                        "Conscientious" => common::rtsim::PersonalityTrait::Conscientious,
+                        "Busybody" => common::rtsim::PersonalityTrait::Busybody,
+                        "Unconscientious" => common::rtsim::PersonalityTrait::Unconscientious,
+                        "Extroverted" => common::rtsim::PersonalityTrait::Extroverted,
+                        "Introverted" => common::rtsim::PersonalityTrait::Introverted,
+                        "Agreeable" => common::rtsim::PersonalityTrait::Agreeable,
+                        "Sociable" => common::rtsim::PersonalityTrait::Sociable,
+                        "Disagreeable" => common::rtsim::PersonalityTrait::Disagreeable,
+                        "Neurotic" => common::rtsim::PersonalityTrait::Neurotic,
+                        "Seeker" => common::rtsim::PersonalityTrait::Seeker,
+                        "Worried" => common::rtsim::PersonalityTrait::Worried,
+                        "SadLoner" => common::rtsim::PersonalityTrait::SadLoner,
+                        "Stable" => common::rtsim::PersonalityTrait::Stable,
+                        other => panic!(
+                            "BASTION_PIN_TRAIT={other:?} is not a PersonalityTrait. Valid:                              Open Adventurous Closed Conscientious Busybody Unconscientious                              Extroverted Introverted Agreeable Sociable Disagreeable Neurotic                              Seeker Worried SadLoner Stable. (NB: \"reckless\" is NOT one of                              them -- the only Reckless in the tree is BuffKind::Reckless, a                              different system.)"
+                        ),
+                    };
+                    info!(trait_ = %name, "bastion: colonist personality PINNED (BASTION_PIN_TRAIT)");
+                    common::rtsim::Personality::pinned(t)
+                },
+                Err(_) => common::rtsim::Personality::random(&mut personality_rng),
+            };
             data.npcs.create_npc(npc);
         }
         info!(?names, count, "bastion: spawned starting colony");
