@@ -18,11 +18,9 @@ use specs::{Component, VecStorage};
 pub mod bastion_actions;
 // (bastion_arena stayed in veloren-server: it is an `impl Server` integration
 // shim — an inherent impl on the server type cannot live in a leaf crate.)
-#[cfg(feature = "worldgen")] pub mod bastion_assets;
 pub mod bastion_chop;
 pub mod bastion_entity_event_log;
 pub mod bastion_flat_arena;
-pub mod bastion_flight_recorder;
 pub mod bastion_founding_preset;
 pub mod bastion_jobs;
 pub mod bastion_path;
@@ -36,6 +34,9 @@ pub mod bastion_traversal_tooling;
 // orphaned the `#[cfg(not(feature = "worldgen"))]` that guarded it, which
 // would have silently compiled it into worldgen builds for the first time.
 pub use bastion_core::bastion_mood;
+pub use bastion_core::bastion_flight_recorder;
+#[cfg(feature = "worldgen")]
+pub use bastion_core::bastion_assets;
 #[cfg(not(feature = "worldgen"))]
 pub use bastion_core::test_world;
 

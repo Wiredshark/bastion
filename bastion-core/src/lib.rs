@@ -7,6 +7,11 @@
 //! Everything `veloren-server` needs lives here instead; the job logic sits
 //! ABOVE it and no longer cascades.
 
+// `bastion_assets` keeps its ORIGINAL `worldgen` gate — the same class of
+// silent semantic change that test_world nearly suffered.
+#[cfg(feature = "worldgen")]
+pub mod bastion_assets;
+pub mod bastion_flight_recorder;
 pub mod bastion_mood;
 // Gated exactly as it was in bastion-server, so moving it does not
 // change which builds compile it.
