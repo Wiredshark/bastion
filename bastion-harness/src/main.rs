@@ -4629,11 +4629,19 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // ★ item 39: capture the DETERMINISTIC work counter next to the
     // wall-clock one, so every b5 payload carries both and a future
     // comparison can use the reproducible number instead of the noisy one.
-    let work_units_at_end = server
-        .state()
-        .ecs()
-        .read_resource::<server::bastion_jobs::JobBoard>()
-        .work_units;
+    let (work_units_at_end, work_series) = {
+        let ecs = server.state().ecs();
+        let b = ecs.read_resource::<server::bastion_jobs::JobBoard>();
+        (b.work_units, b.work_series.clone())
+    };
+    // ★ item 39: the WITHIN-RUN series. Per-interval deltas are what a
+    // degradation claim needs -- a rising delta is drift, a flat one is not.
+    // Emitted as deltas rather than raw totals because the totals are
+    // monotonic by construction and would hide the shape.
+    let work_deltas: Vec<u64> = work_series
+        .windows(2)
+        .map(|w| w[1].saturating_sub(w[0]))
+        .collect();
 
     // MINE-COMPLETION-INVARIANT (Ben-directed, 2026-07-30): captured once,
     // read by both the report and the gate below.
@@ -5224,6 +5232,7 @@ fn b5_scenario(args: &Args) -> ExitCode {
         // degradation claim needs a number that is a pure function of the
         // simulation. Twin runs must agree EXACTLY on this one.
         "b5_work_units": work_units_at_end,
+        "b5_work_deltas": work_deltas,
     });
     println!("{}", result);
     println!("B5 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });

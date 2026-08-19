@@ -4826,6 +4826,16 @@ pub struct JobBoard {
     ///
     /// Compare across builds, never against a clock.
     pub work_units: u64,
+    /// ★ WITHIN-RUN SERIES (item 39, 2026-08-19). `work_units` is a per-run
+    /// TOTAL, so it compares builds but cannot see drift *during* a run — and
+    /// "sub-threshold tick degradation" is a within-run question by name.
+    ///
+    /// This samples the total at a fixed tick stride, so the series is a pure
+    /// function of the simulation like the counter it samples. A rising
+    /// per-interval delta is degradation; a flat one is not. Neither statement
+    /// is available from a wall clock, whose own repeatability floor (1.21x,
+    /// measured) swamps the effect being looked for.
+    pub work_series: Vec<u64>,
 
     /// T1.3/T1.10 (T1-001): the command admission ledger for job-completion
     /// commands routed through the CommandReceipt/CommandStatus lifecycle.
@@ -7507,6 +7517,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 board.work_units = board
                     .work_units
                     .saturating_add(1 + colonists.count() as u64);
+                // Sample on a fixed tick stride so the series is comparable
+                // across runs of the same length. 600 ticks = the soak window,
+                // so a b5 run yields a handful of points and an endurance run
+                // yields hundreds.
+                const WORK_SAMPLE_STRIDE: u64 = 600;
+                if tick.0 % WORK_SAMPLE_STRIDE == 11 {
+                    let total = board.work_units;
+                    board.work_series.push(total);
+                }
                 let table = crate::bastion_mood::ThoughtTable::current();
                 let affinities = crate::bastion_mood::ValueAffinityTable::current();
                 let data = rtsim.rt_state().data();
