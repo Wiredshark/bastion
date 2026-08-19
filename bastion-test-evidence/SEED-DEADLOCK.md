@@ -81,6 +81,37 @@ read, not measured. Consistent evidence exists — a collapsed run has **5** hau
 events against a thriving run's **9,167**, and its `blocked_materials` never
 moves — but consistency is not observation.
 
+## ★★ THE GEOMETRIC PREMISE IS NOW MEASURED, NOT READ — from banked logs
+
+The chain needs the seed-needing sow job to sit on the cell where the harvest
+dropped. That is checkable in the bank, using emits that already exist
+(`farm job created … pos=… sow=true` and `harvested … pos=…`):
+
+| run | harvest cells | sow-job cells | **overlap** |
+|---|---|---|---|
+| COLLAPSE | 8 | 30 | **8 — 100%** |
+| THRIVE | 30 | 30 | **30 — 100%** |
+
+**Every harvest cell is also a seed-needing sow-job cell**, at the same z. The
+geometry the deadlock requires holds in every run.
+
+★ And note the collapsed run creates **344** farm jobs (**306** needing a seed)
+across its life — the generator is running constantly, re-creating the job on
+the cell whose seeds are lying there unhauled. It is not that the colony stopped
+trying.
+
+### ★ The overlap is 100% in the THRIVING run too — and that is the point
+
+Geometry alone does not cause the collapse: both regimes have it. **The
+deadlock-prone arrangement is universal; what differs is whether a haul pass
+lands in the window.** That is precisely what the mechanism predicts — a race,
+not a static configuration — and it is why the collapsed run shows 5 haul events
+against the thriving run's 9,167 with identical geometry.
+
+Had the overlap been 100% in COLLAPSE and low in THRIVE, the mechanism would be
+simpler and *wrong*: it would make the arrangement the cause, and no timing story
+would be needed.
+
 ## ★ The registered prediction, testable on the running fan
 
 If this is right, the `BASTION_DROP_TOSS_DIAG` runs must show:
