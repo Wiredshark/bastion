@@ -3626,9 +3626,21 @@ impl Client {
                 .sqrt();
 
             // If chunks are taking too long, assume they're no longer pending.
-            let now = Instant::now();
-            self.pending_chunks
-                .retain(|_, created| now.duration_since(*created) < Duration::from_secs(3));
+            //
+            // ROW #89 FALSIFIER (registered 713d7de3e8): this retain is a
+            // WALL-CLOCK gate in the chunk-REQUEST path -- a request is
+            // forgotten and re-sent after 3 real seconds, and on an uncapped
+            // server real seconds have no fixed relationship to tick count.
+            // Bisection located the divergence as a 49-chunk burst arriving 50
+            // TICKS apart between twin runs of the same seed; this is the only
+            // wall-clock read left in that chain (the server side was censused
+            // clean). Gated so the arms differ by EXACTLY this call and nothing
+            // else; unset = today's behaviour, byte-for-byte.
+            if std::env::var_os("BASTION_TICK_GATED_REQUESTS").is_none() {
+                let now = Instant::now();
+                self.pending_chunks
+                    .retain(|_, created| now.duration_since(*created) < Duration::from_secs(3));
+            }
         }
 
         if let Some(lod_pos) = pos.map(|p| p.0.xy()).or(self.lod_pos_fallback) {
