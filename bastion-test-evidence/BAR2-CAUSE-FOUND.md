@@ -1,0 +1,76 @@
+# BAR 2's CAUSE: the chunk SEND path is a thread race, and #89 never tested it
+
+Found by reading, with the mechanism class learned from the haul deadlock:
+**a race between two asynchronous producers feeding an order-sensitive consumer.**
+
+## The chain
+
+| step | code | ordered? |
+|---|---|---|
+| chunks released by the deterministic barrier | `recv_new_chunks_deterministic` | **YES — membership pinned** |
+| new chunks fanned out to nearby players | `new_chunks.par_iter().for_each_init(…)` — **rayon** | **no** |
+| serialization | `slow_jobs.spawn("CHUNK_SERIALIZER", …)`, batched 10 per job, each `chunk_sender.send(…)` **on completion** | **no** |
+| delivery to clients | `for sc in chunk_receiver.try_iter() { … client.send_prepared(&sc.msg) }` | **consumes in ARRIVAL order** |
+
+**The client receives chunks in SlowJob completion order** — i.e. in whatever
+order the thread pool finishes batches.
+
+★ And the consumer **cannot** repair it: `SerializedChunk { lossy_compression,
+msg, recipients }` carries **no chunk key**. There is nothing to sort by.
+
+★ Someone already hit a determinism bug one level down — `meta.recipients
+.sort_unstable()` is right there in the spawn body. The *recipients* were made
+deterministic; the *chunks* were not.
+
+## Why the barrier does not cover it — stated in the barrier's own doc
+
+> *"membership is what this pins."*
+
+The barrier pins **which** chunks are released, not **when each arrives at a
+client**. That is exactly what was measured:
+
+| clause | result |
+|---|---|
+| membership | **IDENTICAL, 30/30 matched pairs** |
+| schedule | **DIFFERS, 31/31** |
+
+**Bar 2 asks for something the implemented mechanism explicitly does not
+provide.** The gap is not a missed investigation — it is a scope mismatch
+recorded in the code and never reconciled against the bar.
+
+## ★ #89 did not test this, and its own conclusion points here
+
+#89's fan tested six candidates. The nearest, `f-netorder`, censused
+**inbound** message order — *client → server*. **The outbound chunk send is a
+different direction and was never censused.**
+
+And #89 closed with: *"the barrier controls RELEASE, not REQUEST, and the
+client's chunk demand is the uncontrolled half."*
+
+**This is WHY the demand is uncontrolled.** The feedback loop closes:
+
+```
+send order (thread race) → what the client HAS
+   → what the client REQUESTS → server demand → promotion schedule
+```
+
+#89 correctly located the uncontrolled half and did not find its cause. The
+cause is upstream of the request, in the send path.
+
+## What would satisfy bar 2
+
+1. Carry `chunk_key` in `SerializedChunk`.
+2. Buffer at `chunk_send` and emit in **canonical key order** per tick, exactly
+   as `canonical_haul_pickup_order` does for pickups — the codebase already has
+   this pattern and a test for it.
+
+Bounded, and gated like every other determinism control here.
+
+## ★ Stated limits
+
+This is a **READ**, not a measurement. What is established: the send order is
+thread-dependent **by construction**, the consumer cannot sort, and #89 censused
+the other direction. What is **not** established: that this is the *whole* of
+bar 2's residual. A fix would need its own A/B, and the honest prediction is
+registered here — **ordering the send should reduce, not necessarily eliminate,
+the tick-sequence divergence.**
