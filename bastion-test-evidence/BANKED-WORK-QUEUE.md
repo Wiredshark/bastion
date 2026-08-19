@@ -58,6 +58,13 @@ empty queue is itself a finding — refill from `readme/BUILD-ROADMAP.md`.
    `ch_cancel_clean` is `ch_aabb.is_some_and(..)` — so "cancel missed" and "no
    tree found" both render `false`, and a red scored without the precondition
    would be scoring a coincidence. Runs locally; no VM.
+   **★★ CLOSED 2026-08-19 — FALSIFIER LIVE (`1273ec3a33`,
+   `CANCEL-FALSIFIER-LIVE.md`).** Baseline **5/5 True** (reproduces the corpus),
+   planted **5/5 False**, precondition met on 5 of 5 with 0 excluded, and
+   `ch_trees` **identical between arms** (1,1,10,3,1) — so the plant moved the
+   cancellation and nothing else. `ch_cancel_clean` is a real assertion; its
+   41/41 green is a passing test, not an untested constant. **Transfers to no
+   other field** — each unexercised check needs its own red.
 
 6. ~~**★ Colonists claim work headlessly and NEVER ARRIVE.**~~ **CLOSED
    2026-08-19 — REFUTED. See `HEADLESS-ARRIVAL-REFUTED.md` (`21a0f3321a`).**
