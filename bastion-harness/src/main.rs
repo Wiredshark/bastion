@@ -4431,7 +4431,30 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // PER-TREE CANCEL: erasing through the tree's echoed box removes exactly
     // its jobs (the AABB is the designation the client gets).
     let ch_cancel_clean = ch_aabb.is_some_and(|a| {
-        server.bastion_cancel_designation(a);
+        // ★ PLANTED CONTROL (banked item 5, 2026-08-19).
+        // `ch_cancel_clean` was true on ALL 41 seeds where it ran and false
+        // only on the 7 where no tree was found, i.e. where the cancel never
+        // executed. A check that has never gone red has never demonstrated it
+        // CAN, and until it does it carries no information beyond its own
+        // precondition.
+        //
+        // The plant cancels a region 4096 blocks away instead of the tree's
+        // own AABB. The cancel still RUNS (so the precondition is untouched)
+        // but misses, the tree's jobs survive, and the predicate must go
+        // FALSE. If it stays true under this flag, the assertion is vacuous —
+        // which is the thing actually worth knowing.
+        //
+        // Default OFF: absent the flag this is byte-identical to before.
+        let cancel_target = if std::env::var_os("BASTION_PLANT_CANCEL_MISS").is_some() {
+            let off = Vec3::new(4096, 4096, 0);
+            Region {
+                min: a.min + off,
+                max: a.max + off,
+            }
+        } else {
+            a
+        };
+        server.bastion_cancel_designation(cancel_target);
         server.bastion_jobs_in_region(a) == 0
     });
     // Clear any remaining detected trees' jobs (other rings/trees).
