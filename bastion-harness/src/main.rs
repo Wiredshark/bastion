@@ -4620,11 +4620,20 @@ fn b5_scenario(args: &Args) -> ExitCode {
     );
 
     // 8. Zero-input soak.
+
     let soak_ticks: u64 = 600;
     let soak_started = Instant::now();
     tick(&mut server, soak_ticks);
     let soak_elapsed = soak_started.elapsed();
     let avg_tick_ms = soak_elapsed.as_secs_f64() * 1000.0 / soak_ticks as f64;
+    // ★ item 39: capture the DETERMINISTIC work counter next to the
+    // wall-clock one, so every b5 payload carries both and a future
+    // comparison can use the reproducible number instead of the noisy one.
+    let work_units_at_end = server
+        .state()
+        .ecs()
+        .read_resource::<server::bastion_jobs::JobBoard>()
+        .work_units;
 
     // MINE-COMPLETION-INVARIANT (Ben-directed, 2026-07-30): captured once,
     // read by both the report and the gate below.
@@ -5210,6 +5219,11 @@ fn b5_scenario(args: &Args) -> ExitCode {
         "b5_tool_steel_measured": tl_steel_raw,
         "b5_tool_ok": tl_ok,
         "b5_soak_avg_tick_ms": avg_tick_ms,
+        // ★ item 39: the DETERMINISTIC companion to the line above. The
+        // wall-clock figure has a measured 1.21x repeatability floor, so a
+        // degradation claim needs a number that is a pure function of the
+        // simulation. Twin runs must agree EXACTLY on this one.
+        "b5_work_units": work_units_at_end,
     });
     println!("{}", result);
     println!("B5 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });

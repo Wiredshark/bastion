@@ -4812,6 +4812,21 @@ pub enum ReleaseReason {
 /// The job board resource.
 #[derive(Default)]
 pub struct JobBoard {
+    /// ★ DETERMINISTIC COST PROXY (roadmap item 39, 2026-08-19).
+    ///
+    /// `b5_soak_avg_tick_ms` is WALL-CLOCK, and its own repeatability was
+    /// measured at **1.21x** (seed 37, 13 runs, same machine) against a
+    /// between-seed spread of 2.34x. Nothing at that scale can be called
+    /// degradation, so item 39 cannot advance on milliseconds at all.
+    ///
+    /// This counts WORK, not time: one tick per arbitration cycle actually
+    /// executed, plus one per colonist examined in it. It is a pure function of
+    /// the simulation, so twin runs must agree EXACTLY -- which also makes it a
+    /// determinism witness, not merely a performance number.
+    ///
+    /// Compare across builds, never against a clock.
+    pub work_units: u64,
+
     /// T1.3/T1.10 (T1-001): the command admission ledger for job-completion
     /// commands routed through the CommandReceipt/CommandStatus lifecycle.
     /// Runtime-only (JobBoard is not serialized and not recorder-sampled),
@@ -7486,6 +7501,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 }
             }
             if tick.0 % ARBITRATION_INTERVAL as u64 == 11 {
+                // Deterministic cost proxy: one unit for the cycle, one per
+                // colonist it examines. Wall-clock cannot resolve item 39's
+                // question; this can.
+                board.work_units = board
+                    .work_units
+                    .saturating_add(1 + colonists.count() as u64);
                 let table = crate::bastion_mood::ThoughtTable::current();
                 let affinities = crate::bastion_mood::ValueAffinityTable::current();
                 let data = rtsim.rt_state().data();
