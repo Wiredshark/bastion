@@ -755,7 +755,21 @@ impl Server {
         {
             let pool = state.ecs_mut().write_resource::<SlowJobPool>();
             pool.configure("CHUNK_DROP", |_n| 1);
-            pool.configure("CHUNK_GENERATOR", |n| n / 2 + n / 4);
+            // ROW #89 DIAGNOSTIC (registered 80d5923470): 12 generator threads
+            // + 8 serializer + rayon's n contend with the ONE main tick loop for
+            // 16 cores at boot. That is the only surviving candidate for the
+            // measured 1.27-1.54x early-boot tick-rate variation, after every
+            // client-side hypothesis was excluded. Pinning to 1 makes chunk
+            // generation ~12x slower in wall time -- this is a DIAGNOSTIC ARM,
+            // never a candidate fix.
+            if std::env::var_os("BASTION_PIN_CHUNKGEN").is_some() {
+                pool.configure("CHUNK_GENERATOR", |_| 1);
+                tracing::warn!(
+                    "bastion: row89 CHUNK_GENERATOR PINNED to 1 thread —                      diagnostic arm, generation is deliberately serialised"
+                );
+            } else {
+                pool.configure("CHUNK_GENERATOR", |n| n / 2 + n / 4);
+            }
             pool.configure("CHUNK_SERIALIZER", |n| n / 2);
             pool.configure("RTSIM_SAVE", |_| 1);
             pool.configure("WEATHER", |_| 1);
