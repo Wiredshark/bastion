@@ -56,3 +56,48 @@ Recovering too late is arithmetically the same as not recovering.
 
 Each was checked against banked data within minutes of being written, and each
 cost nothing but the check.
+
+---
+
+# ★ TESTING MY OWN PREDICTION — and it comes back INCONCLUSIVE
+
+The prediction above was *"a longer run should FILL the gap."* That is testable
+now, from the escape-time distribution, without spending anything.
+
+Seven runs escaped by tick **117,900**. Seven never escaped in **271,000**.
+Under a constant hazard fitted to those data (λ = **2.99e-6**/tick, mean
+time-to-escape ~335,000 ticks):
+
+| | |
+|---|---|
+| runs still trapped at tick 117,900 | 7 |
+| **expected** late escapes before tick 271,000 | **2.57** |
+| **observed** | **0** |
+| P(observe 0 \| constant hazard) | **0.077** |
+
+**Not significant at n=14.** It leans toward *early-or-never* — a hazard that
+collapses once the colony has been trapped a while — but it does not reject a
+constant hazard, and I am not going to report a 0.077 as if it did.
+
+## The two models, and the run length that separates them
+
+| model | consequence for the gap |
+|---|---|
+| **constant hazard** | late escapes happen; a longer run **fills** the gap with mid-range yields |
+| **early-or-never** | trapped colonies stay trapped; the gap **never** fills, at any length |
+
+Sizing, under the fitted λ:
+
+| target late escapes | further ticks | total run | vs current |
+|---|---|---|---|
+| 3 | 187,000 | 305,000 | **1.1×** |
+| 5 | 420,000 | 537,000 | **2.0×** |
+
+★ So the discriminating experiment is **one fixture-length change**, not a new
+instrument: at ~2× the current 271k-tick run, a constant hazard predicts ~5
+mid-range outcomes and early-or-never predicts **zero**. The models diverge
+sharply and cheaply.
+
+★★ Recording this as **owed**, not done. The prediction in this document is now
+quantified rather than rhetorical, and the honest current state is that
+**n=14 cannot tell the two apart**.
