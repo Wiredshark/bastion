@@ -183,3 +183,50 @@ starve on the resource sitting underneath it.
 **Filed, not built.** It touches the live claim path and wants its own
 red-demonstration; the fix is worthless without a planted control proving the
 deadlock can be reproduced on demand.
+
+---
+
+# ★★★ THIS CLOSES #114 — its origin run IS a deadlocked run
+
+#114 began from an endurance run described as *"every candidate refused
+(considered=280 refused=280) and 210 of those 280 refusals were `materials`"*.
+That run is in the bank, and it carries the full signature:
+
+```
+considered=280  refused=280   materials=210  self_job_kind=63  not_candidate=7
+maturations=32                haul=9
+```
+
+`210 + 63 + 7 = 280`. Genuine blocks are `210 + 7 = 217`, of which **`materials`
+is 210 — 97%**. Haul events: **9**, the same tiny number as every collapsed
+`endurseed` run (5, 5, …) against a thriving run's 9,167.
+
+**The origin observation was not evidence of seed scarcity. It was the haul
+deadlock, seen once.**
+
+## ★ And #114's bar was calibrated ON that deadlocked run
+
+The registered bar was **`maturations > 32` ⇒ starvation is the cause**. The
+origin run's maturation count is **32**. So the threshold was read off a colony
+that had already deadlocked — the bar asked *"did this run beat a dead colony?"*
+
+That is precisely why it failed to discriminate: **7 of 26 runs land below it and
+15 land 30–60× above it**, because the bar sits inside the collapse cluster
+rather than between the two regimes. A threshold taken from a single specimen
+inherits whatever state that specimen was in.
+[[a-field-cannot-calibrate-its-own-bound]]
+
+## Why adding seeds did not fix it
+
+`endurseed` exists to hand the colony **200 wheat seeds** and see whether
+scarcity was the cause. It produced a **50/50** outcome, which read as "seeds
+help sometimes".
+
+Under the deadlock the result is expected: the gift stocks the *first* cycle, but
+every subsequent cycle depends on **harvested** seeds reaching the stockpile —
+and those land on the sow job's own cell, where the haul generator will not touch
+them. **A larger initial stock cannot fix a broken return path**; it only buys
+more first cycles.
+
+★ So the intervention was aimed one link away from the failure, and the 50/50 it
+produced was the timing race, not a partial cure.
