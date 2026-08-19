@@ -53,3 +53,66 @@ Bar 3 needs a real rate: **3 control + 3 fix at 271k**, scoring collapses per
 arm. The manifest is written and shape-checked (44 min worst case). That is a
 6-host fan and the only remaining question is whether removing the skip removes
 the *collapses*, not merely the *skips*.
+
+---
+
+# ★★★ THE RATE FAN — 3 vs 3, PERFECT SEPARATION, AND THE VARIANCE COLLAPSES
+
+| arm | maturations | skips | starving | admitted |
+|---|---|---|---|---|
+| CONTROL c1 | **319** | 37,806 | 32,555 | 0 |
+| CONTROL c2 | **8** | 21,214 | 18,196 | 0 |
+| CONTROL c3 | **96** | 51,252 | 39,377 | 0 |
+| **FIX f1** | **1,893** | 8,103 | 812 | 812 |
+| **FIX f2** | **1,978** | 6,719 | 829 | 829 |
+| **FIX f3** | **2,001** | 7,944 | 842 | 842 |
+
+| | CONTROL | FIX |
+|---|---|---|
+| range | 8 – 319 | **1,893 – 2,001** |
+| mean | 141 | **1,957** |
+| **coefficient of variation** | **0.93** | **0.02** |
+
+## The headline is not the mean — it is the variance
+
+**Every fix run beats every control run by 5.9×.** Exact one-tailed p for perfect
+separation at 3v3 is **0.050** — the floor achievable at this n, so the rate
+evidence is as strong as three-a-side can be.
+
+★ But the sharper result is that **the fix makes the outcome nearly
+deterministic**: the three fix runs land within **6%** of one another (CV 0.02)
+while the controls span **40×** (CV 0.93). **A 39× tighter distribution.**
+
+That is what a removed race looks like. The deadlock did not merely lower the
+average — it turned a reproducible process into a coin flip. **Removing it
+restores reproducibility, which is worth more to this program than the yield.**
+
+★★ And it retroactively explains the entire bimodality investigation: the
+"two regimes", the empty gap, the 243× spread, the escape-time distribution —
+**all of it was one race, observed through outcomes.** With the race removed the
+distribution is not bimodal, not continuous, but *narrow*.
+
+## The mechanism numbers, on the same runs
+
+| | CONTROL | FIX |
+|---|---|---|
+| starvation skips | **90,128** | 2,483 → **admitted** |
+| skips still correctly refused | — | **22,766** |
+
+The fix admitted 2,483 hauls and **still refused 22,766** — items under claimed
+jobs or under jobs that do not want them. The narrow exemption behaves exactly as
+designed on live data.
+
+## Status
+
+All three registered bars now pass, on 4 control and 4 fix runs total:
+
+| bar | verdict |
+|---|---|
+| 1 — mechanism observed (the falsifier for my own chain) | **PASS** — 104,788 starvation skips across control runs |
+| 2 — fix acts, not inert | **PASS** — 3,324 admissions |
+| 3 — outcome | **PASS** — perfect separation, p = 0.050, CV 0.93 → 0.02 |
+
+★ The fix remains **env-gated and default-off**. Making it default is a live-path
+change and Ben's call; the evidence for it is now on the table rather than in a
+recommendation.
