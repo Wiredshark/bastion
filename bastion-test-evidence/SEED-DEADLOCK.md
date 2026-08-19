@@ -112,6 +112,34 @@ Had the overlap been 100% in COLLAPSE and low in THRIVE, the mechanism would be
 simpler and *wrong*: it would make the arrangement the cause, and no timing story
 would be needed.
 
+## ★ SAFETY REVIEW OF THE FIX — could it thrash?
+
+The obvious hazard: the exemption hauls a seed to the stockpile; the fetch
+machinery delivers it back to the job's cell; the exemption hauls it away again;
+forever.
+
+**It cannot, for two independent reasons.**
+
+1. **Delivery is CARRIED, not dropped.** The B6 fetch contract states *"the
+   fetch's `carrying` flip derives from `required_item`"* — the colonist picks
+   the item up and holds it, and the job consumes it. Nothing is re-dropped on
+   the cell for the haul generator to see.
+2. **The exemption requires `claimed_by.is_none()`.** Fetch-and-deliver happens
+   *after* a colonist claims the job, so by the time anything is being delivered
+   the job is claimed and the exemption no longer applies at all.
+
+Either reason alone closes the loop; both hold. **The exemption is live only in
+the window where the job is unclaimed and starving** — exactly the deadlock — and
+goes inert the moment work actually starts.
+
+★ Also checked: both HashMap iterations the fix and witness introduce are
+`.any()`, which `HASHMAP-ITERATION-JUDGEMENT.md` classifies as
+**permutation-invariant**. No determinism hazard is added.
+
+★ And the cap is not an alternative explanation: `HAUL_JOBS_PER_COLONIST = 2`
+gives a cap of 16 haul jobs for 8 colonists, while collapsed runs record **5**
+haul events in total. The cap is nowhere near binding.
+
 ## ★ The registered prediction, testable on the running fan
 
 If this is right, the `BASTION_DROP_TOSS_DIAG` runs must show:
