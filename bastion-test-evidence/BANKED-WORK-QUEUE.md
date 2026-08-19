@@ -132,6 +132,23 @@ empty queue is itself a finding — refill from `readme/BUILD-ROADMAP.md`.
    `emergency_approach?` early exit in the escape-shaft fallback, and the
    owner-gated `emergency_reengage_exhausted` refusal — the counter-prediction
    registered before the axes-2/3 run.
+   **★★ LOCALIZED 2026-08-19 (`e06e66a62a`, `ITEM10-SHAFT-LOCALIZED.md`).**
+   Two candidates **DEAD**: `emergency_reengage_exhausted` fired **0** times on
+   all 3 seeds (my registered counter-prediction — true of the code, false of
+   these seeds), and the shaft was never skipped for a missing approach (**0**).
+   Accounting is exact (19=19, 19=17+2, 27=27), so attribution survives the
+   diag's missing caller tag. **`ladder_pillar` succeeds 2 times in 65 calls,
+   both to the `emergency` caller**; `emergency_escape_shaft` is the workhorse
+   and returns `None` every time on 37/3 while succeeding 3× on 29. A
+   tall-climb hypothesis was measured and **dropped** (emitting seed's median
+   span 59 = refusing seed's 59). **Residual now localised to
+   `emergency_escape_shaft`.**
+
+11. **★ NEW: why does `emergency_escape_shaft` refuse on seeds 37 and 3?** The
+   successor to item 10, one level deeper. Needs a witness **inside** the shaft
+   naming which of its own preconditions fails, **and a caller tag** — item
+   10's run escaped the mixed-caller confound only because the arithmetic
+   happened to close, which is luck, not design. Runs locally, no VM.
 
 ## Blocked / needs a decision (Ben)
 
