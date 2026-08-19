@@ -22,6 +22,13 @@ empty queue is itself a finding — refill from `readme/BUILD-ROADMAP.md`.
    it ran, false only where it could not run. A check that has never gone red
    has never shown it can.
 
+6. **★ Colonists claim work headlessly and NEVER ARRIVE.** In a driverless run:
+   **93 jobs claimed, `colonist arrived at job site` = 0**, across 7,112 ticks.
+   The same emit fires **985–1,009** times in driven endurance runs. Candidate:
+   pathing depends on terrain outside the presence radius, so a VD=1 colony can
+   claim work it cannot reach. **The VD=6 re-run tests that for free** — if
+   arrivals appear at VD=6, the dependency is confirmed and the cause is named.
+
 ## Blocked / needs a decision (Ben)
 
 - **Tick-loading scope call** — roadmap criterion passes, mandate bar 2 fails.
