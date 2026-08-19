@@ -8668,6 +8668,7 @@ dependencies = [
  "specs",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "vek 0.17.2",
  "veloren-client-i18n",
  "veloren-common",
