@@ -1378,7 +1378,24 @@ impl Server {
     pub(crate) fn bastion_found_colony_presence(&mut self, wpos: Vec3<f32>) {
         #[cfg(feature = "worldgen")]
         {
-            const COLONY_PRESENCE_VIEW_DISTANCE: u32 = 1;
+            // ★ VIEW DISTANCE IS NOW A KNOB (BASTION_COLONY_PRESENCE_VD).
+            //
+            // 1 is a 3x3 chunk area, which loads NINE chunks and then nothing
+            // ever again -- measured: a headless run promoted 9 chunks across 3
+            // ticks and stayed flat for the remaining 7,100. That is a real
+            // determinism result on a trivial sample, and a trivial sample is
+            // exactly how a vacuous green happens.
+            //
+            // A client uses 6 (13x13 = 169 chunks), so raising this makes the
+            // headless arm a COMPARABLE exercise to the driven one instead of a
+            // token one. Default 1 keeps every existing run byte-identical.
+            let colony_presence_vd: u32 = std::env::var("BASTION_COLONY_PRESENCE_VD")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .filter(|&v| v > 0)
+                .unwrap_or(1);
+            #[allow(non_snake_case)]
+            let COLONY_PRESENCE_VIEW_DISTANCE: u32 = colony_presence_vd;
             self.state
                 .create_colony_presence(
                     comp::Pos(wpos),

@@ -334,7 +334,7 @@ case "$ARM" in
   # capped TPS, provisioning census -- but NO CLIENT. The colony's own Presence
   # requests terrain, so the cross-process arrival race that bar 2 always trips
   # on cannot occur. Identical twins here isolate the engine from the client.
-  provheadless) PITVAR=" BASTION_TERRAIN_PROVISION_DIAG=1 BASTION_AUTOFOUND_REAL_TERRAIN=1"
+  provheadless) PITVAR=" BASTION_TERRAIN_PROVISION_DIAG=1 BASTION_AUTOFOUND_REAL_TERRAIN=1 BASTION_COLONY_PRESENCE_VD=6"
               PITARENA=""
               PITTPS=""
               PITHEADLESS=1
