@@ -44,8 +44,25 @@ GH=$("$HARNESS" --print-git-hash 2>/dev/null)
 RH=$(git rev-parse --short=10 HEAD)
 echo "harness git-hash : $GH"
 echo "repo HEAD        : $RH"
-[ "$GH" = "$RH" ] || echo "!! MISMATCH — binary is not HEAD; results NOT attributable to HEAD"
-echo "dirty .rs files  : $(git status --short -- '*.rs' | wc -l)"
+# ★★ REFUSE, do not warn. A warning that must be READ to be safe is not a
+# safeguard — this one printed while a run was launched against a binary that
+# predated the probe. Decide it here instead.
+if [ "$GH" != "$RH" ]; then
+  CHANGED=$(git diff --name-only "$GH" HEAD -- '*.rs' 2>/dev/null)
+  if [ -n "$CHANGED" ]; then
+    echo "!! REFUSING: binary is $GH, HEAD is $RH, and these .rs files differ:" >&2
+    echo "$CHANGED" | sed 's/^/     /' >&2
+    echo "   The probe may not be in the binary. Rebuild before scoring." >&2
+    exit 4
+  fi
+  echo "  (binary != HEAD, but no .rs differs — safe to score)"
+fi
+DIRTY=$(git status --short -- '*.rs' | wc -l)
+echo "dirty .rs files  : $DIRTY"
+if [ "$DIRTY" -ne 0 ]; then
+  echo "!! REFUSING: uncommitted .rs changes — the binary cannot contain them." >&2
+  exit 5
+fi
 echo "seeds            : $*"
 echo "arms             : A=baseline (claim mask)   B=BASTION_SELFRESCUE_BUBBLE=1"
 echo

@@ -40,8 +40,31 @@ GH=$("$HARNESS" --print-git-hash 2>/dev/null)
 RH=$(git rev-parse --short=10 HEAD)
 echo "harness git-hash : $GH"
 echo "repo HEAD        : $RH"
-[ "$GH" = "$RH" ] || echo "!! binary is not HEAD — check whether any .rs differs before trusting this"
-echo "dirty .rs files  : $(git status --short -- '*.rs' | wc -l)"
+
+# ★★ REFUSE, do not warn (2026-08-19). The first version printed
+# "!! binary is not HEAD — check whether any .rs differs" and left the decision
+# to a human who was about to score a PLANT that was not in the binary. That
+# run would have shown baseline == planted and read as VACUOUS — the worst
+# possible false verdict, since it says "this assertion cannot detect its own
+# failure" when in truth the failure was never injected.
+#
+# A warning that must be read to be safe is not a safeguard. Decide it here.
+if [ "$GH" != "$RH" ]; then
+  CHANGED=$(git diff --name-only "$GH" HEAD -- '*.rs' 2>/dev/null)
+  if [ -n "$CHANGED" ]; then
+    echo "!! REFUSING: binary is $GH, HEAD is $RH, and these .rs files differ:" >&2
+    echo "$CHANGED" | sed 's/^/     /' >&2
+    echo "   The plant may not be in the binary. Rebuild before scoring." >&2
+    exit 4
+  fi
+  echo "  (binary != HEAD, but no .rs differs — safe to score)"
+fi
+DIRTY=$(git status --short -- '*.rs' | wc -l)
+echo "dirty .rs files  : $DIRTY"
+if [ "$DIRTY" -ne 0 ]; then
+  echo "!! REFUSING: uncommitted .rs changes — the binary cannot contain them." >&2
+  exit 5
+fi
 echo "seeds            : $*"
 echo "arms             : A=baseline   B=BASTION_PLANT_CANCEL_MISS=1"
 echo
