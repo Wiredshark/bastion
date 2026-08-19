@@ -13613,6 +13613,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         }
                         info!(
                             job = active.job,
+                            // The arrival emit named the JOB but never the
+                            // COLONIST, so claim->arrival could not be joined
+                            // per colonist: a census of "who claimed but never
+                            // arrived" was impossible, and grepping colonist=
+                            // here returned 0 against 16 claimers -- an
+                            // impossible pair that read as a finding.
+                            colonist = uids.get(entity).map(|uid| uid.0.get()),
                             kind = ?job.kind,
                             pos = ?job.pos,
                             "bastion: colonist arrived at job site, working (B5)"
