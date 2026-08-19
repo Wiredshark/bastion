@@ -16644,6 +16644,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             from.z + 64,
                         ),
                     }];
+                    // ★ COULDN'T-HAPPEN WITNESS. Without this the axis-1 A/B is
+                    // VOID: "bubble used, changed nothing" and "flag never
+                    // reached the process" both produce a B arm identical to A.
+                    // The first run of this probe had exactly that outcome —
+                    // one differing field across the whole payload, and it was
+                    // `b5_soak_avg_tick_ms`, i.e. wall-clock noise. The witness
+                    // is what makes a NEITHER verdict mean anything.
+                    *board
+                        .access_plan_calls
+                        .entry("self_rescue_bubble_active")
+                        .or_insert(0) += 1;
+                    info!(
+                        parent,
+                        ?from,
+                        "bastion: AXIS-1 self_rescue using BUBBLE mask (probe active)"
+                    );
                     &sr_bubble
                 } else {
                     &mask
