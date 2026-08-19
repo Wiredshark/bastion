@@ -31,7 +31,7 @@ impl<'a> System<'a> for Sys {
         ReadStorage<'a, Presence>,
         WriteStorage<'a, Client>,
         ReadExpect<'a, SemanticIngressMetricsV1>,
-        Read<'a, common::resources::Tick>,
+        Read<'a, crate::Tick>,
     );
 
     const NAME: &'static str = "msg::terrain";
