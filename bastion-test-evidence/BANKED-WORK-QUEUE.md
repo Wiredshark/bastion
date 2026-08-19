@@ -27,6 +27,15 @@ empty queue is itself a finding — refill from `readme/BUILD-ROADMAP.md`.
 5. **`ch_cancel_clean` is an unexercised falsifier** — true on all 41 seeds where
    it ran, false only where it could not run. A check that has never gone red
    has never shown it can.
+   **★ CONTROL BUILT 2026-08-19 (`bc309249ce`), awaiting a run slot.**
+   `BASTION_PLANT_CANCEL_MISS` cancels a region 4096 blocks away instead of the
+   tree's AABB — the cancel still RUNS (precondition untouched) but misses, so
+   the jobs survive and the predicate must go FALSE. Scorer:
+   `score-cancel-falsifier.sh`, outcomes **FALSIFIER LIVE / VACUOUS / MIXED /
+   VOID**. ★ It prints `b5_ch_trees` beside the predicate because
+   `ch_cancel_clean` is `ch_aabb.is_some_and(..)` — so "cancel missed" and "no
+   tree found" both render `false`, and a red scored without the precondition
+   would be scoring a coincidence. Runs locally; no VM.
 
 6. ~~**★ Colonists claim work headlessly and NEVER ARRIVE.**~~ **CLOSED
    2026-08-19 — REFUTED. See `HEADLESS-ARRIVAL-REFUTED.md` (`21a0f3321a`).**
