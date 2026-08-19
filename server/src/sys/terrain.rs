@@ -131,6 +131,24 @@ impl<'a> System<'a> for Sys {
         // Submit requests for chunks right before receiving finished chunks so that we
         // don't create duplicate work for chunks that just finished but are not
         // yet added to the terrain.
+        // ROW #89 ARM e (DEMAND): the request KEY SET per tick. Client timing
+        // and join tick are already excluded; this asks the orthogonal
+        // question -- does the client demand the SAME CHUNKS in the same
+        // order run-to-run? Emitted as a sorted set AND a raw order so
+        // "different chunks" and "same chunks, different order" cannot render
+        // identically. Gated on the row's existing diag; no new env.
+        if terrain_provision_diag() && !data.chunk_requests.is_empty() {
+            let mut keys: Vec<_> = data.chunk_requests.iter().map(|r| (r.key.x, r.key.y)).collect();
+            let raw = format!("{keys:?}");
+            keys.sort_unstable();
+            tracing::info!(
+                tick = data.tick.0,
+                n = keys.len(),
+                sorted = ?keys,
+                order = %raw,
+                "bastion: row89 demand census"
+            );
+        }
         data.chunk_requests.drain(..).for_each(|request| {
             data.chunk_generator.generate_chunk(
                 Some(request.entity),
@@ -489,6 +507,19 @@ impl<'a> System<'a> for Sys {
                 })
             })
             .collect::<Vec<_>>();
+        // ROW #89 ARM d (UNLOAD): the removed-chunk SET. `chunks_to_remove` is
+        // collected from a RAYON PARALLEL iterator over a HashMap, so its Vec
+        // ORDER is not guaranteed run-to-run. Reading the code says the
+        // downstream ops are commutative on an identical set -- this MEASURES
+        // whether the set really is identical rather than trusting that read.
+        if terrain_provision_diag() {
+            let mut rk: Vec<_> = data.terrain_changes.removed_chunks.iter().map(|k| (k.x, k.y)).collect();
+            rk.sort_unstable();
+            if !rk.is_empty() {
+                tracing::info!(tick = data.tick.0, n = rk.len(), set = ?rk,
+                    "bastion: row89 unload census");
+            }
+        }
         if !chunks_to_remove.is_empty() {
             // Drop chunks in a background thread.
             data.slow_jobs.spawn("CHUNK_DROP", move || {
