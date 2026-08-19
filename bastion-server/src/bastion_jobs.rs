@@ -432,6 +432,16 @@ fn emergency_escape_shaft(
     if to_z <= from.z {
         return None;
     }
+    // ★ ITEM 11 (2026-08-19): why does the shaft refuse on some seeds?
+    // The pre-existing BASTION_EGRESS_DIAG instruments the FINAL approach
+    // check only -- it emitted ZERO lines across 17-19 shaft calls, proving the
+    // function bails earlier, here in the column search. An existing lamp is
+    // not automatically the right lamp: check that it FIRES before believing
+    // it answers. These four counters cover every `continue` in the search.
+    let mut rej_no_cells = 0u32;
+    let mut rej_blocked = 0u32;
+    let mut rej_no_wall = 0u32;
+    let mut rej_no_approach = 0u32;
     let mut best: Option<(
         i32,
         i32,
@@ -459,6 +469,7 @@ fn emergency_escape_shaft(
                     })
                     .collect();
                 if cells.is_empty() {
+                    rej_no_cells += 1;
                     continue;
                 }
                 // A candidate is valid only if every filled cell in the
@@ -470,6 +481,7 @@ fn emergency_escape_shaft(
                         && (!in_access_mask(mask, cell) || protected_jobs.contains(&cell))
                 });
                 if blocked {
+                    rej_blocked += 1;
                     continue;
                 }
                 // A mined air column is executable only when the existing
@@ -491,6 +503,7 @@ fn emergency_escape_shaft(
                     })
                 });
                 let Some(wall_dir) = wall_dir else {
+                    rej_no_wall += 1;
                     continue;
                 };
                 let entry = Vec3::new(column.x, column.y, from.z);
@@ -579,6 +592,7 @@ fn emergency_escape_shaft(
                     )
                 });
                 let Some(approach) = approach else {
+                    rej_no_approach += 1;
                     continue;
                 };
                 let score = (
@@ -594,6 +608,20 @@ fn emergency_escape_shaft(
                 }
             }
         }
+    }
+    if best.is_none() && std::env::var_os("BASTION_SHAFT_DIAG").is_some() {
+        // Emitted ONLY on refusal, naming WHICH precondition ran out. A bare
+        // `None` from this function previously carried no information at all.
+        info!(
+            ?from,
+            to_z,
+            climb = to_z - from.z,
+            rej_no_cells,
+            rej_blocked,
+            rej_no_wall,
+            rej_no_approach,
+            "bastion: SHAFT-DIAG refused — no column qualified"
+        );
     }
     best.map(|(_, _, _, _, _, _, cells, wall_dir, approach)| (cells, wall_dir, approach))
 }
