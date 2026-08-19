@@ -31,6 +31,7 @@ impl<'a> System<'a> for Sys {
         ReadStorage<'a, Presence>,
         WriteStorage<'a, Client>,
         ReadExpect<'a, SemanticIngressMetricsV1>,
+        Read<'a, common::resources::Tick>,
     );
 
     const NAME: &'static str = "msg::terrain";
@@ -51,9 +52,47 @@ impl<'a> System<'a> for Sys {
             presences,
             mut clients,
             semantic_metrics,
+            tick,
         ): Self::SystemData,
     ) {
         job.cpu_stats.measure(ParMode::Rayon);
+        // ★★★ REQUEST-SIDE BARRIER (BASTION_REQUEST_BARRIER_TICKS=<n>, inert unset).
+        //
+        // MEASURED CAUSE OF CERTIFICATION BAR 2. Classifying the FIRST
+        // divergence in every provtrav twin pair in the corpus: 38 of 38 differ
+        // first on `pending` -- the client's chunk request ARRIVING ON A
+        // DIFFERENT TICK -- and 0 of 38 on `promoted`. The server's promotion
+        // machinery is not the source; the deterministic release barrier does
+        // exactly what its doc claims. The uncontrolled half is the INPUT, and
+        // #89 said so before I measured it.
+        //
+        // Client and server are separate processes with independent tick loops,
+        // so no server-side change can make a request LAND on a chosen tick.
+        // What a server CAN do is choose when to LOOK: holding reads until a
+        // fixed boundary collapses arrival jitter -- a request that lands at
+        // tick 125 and one that lands at 130 are both consumed at 150, and
+        // everything downstream re-aligns.
+        //
+        // Symmetric to `recv_new_chunks_deterministic`, which already does this
+        // for RELEASE. Messages simply wait in the socket; the per-tick recv cap
+        // is 5 per client, so a small boundary costs at most a few ticks of
+        // latency and nothing is dropped.
+        //
+        // DEFAULT OFF: every banked run stays byte-reproducible until an A/B
+        // says otherwise.
+        let barrier: u64 = std::env::var("BASTION_REQUEST_BARRIER_TICKS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
+        if barrier > 0 && tick.0 % barrier != 0 {
+            // Not a boundary tick: leave the messages queued and read nothing.
+            // Emitted at INFO on the boundary itself (below) so "the barrier did
+            // not help" can never render the same as "the barrier never ran".
+            return;
+        }
+        if barrier > 0 {
+            tracing::info!(tick = tick.0, barrier, "bastion: request barrier OPEN");
+        }
         let mut new_chunk_requests = (&entities, &mut clients, (&presences).maybe())
             .join()
             // NOTE: Required because Specs has very poor work splitting for sparse joins.
