@@ -1,4 +1,6 @@
-# THE DRIVER ANCHORED 60% OF RUNS AT THE WORLD ORIGIN
+# THE DIAGNOSTIC MADE THE DRIVER ANCHOR AT THE WORLD ORIGIN
+
+**Fires in 55% of terrain-census runs and in 0% of everything else.**
 
 **Found while scoring certification BAR 1 on banked data. No new VM spend.**
 
@@ -49,7 +51,32 @@ around chunk (0, 0). **There is no neutral position to fall back to**: the origi
 is not a degraded answer, it is a different condition. The `warn!` fired into a
 log nothing scored, so both outcomes rendered identically.
 
-**Exposure: 41 of 68 runs (60%) anchored at the world origin.**
+## Exposure — and the correction to my own first number
+
+My first count was "41 of 68 runs (60%)". That was true of the fan I was holding
+and **wrong as a corpus claim**: the scan behind it was capped at 400 files by a
+`head` I added myself, so it reported a truncated population. Over all **702**
+driver logs (694 carrying a start-pos line):
+
+| population | origin-anchored |
+|---|---|
+| **`provtrav*` arms — terrain census ON** | **59 / 108 = 55%** |
+| &nbsp;&nbsp;`provtravuncap` | 6 / 6 = **100%** |
+| &nbsp;&nbsp;`provtravcap` | 49 / 85 = 58% |
+| &nbsp;&nbsp;`provtravdet` | 2 / 7 = 29% |
+| **every other arm in the corpus** | **0 / 586 = 0%** |
+| runs that founded a colony while origin-anchored | **0** |
+
+**The separation is total — there is no overlap.** The defect fires only when the
+terrain provisioning census is enabled, which emits ~11,400 lines and slows the
+server enough that `Pos` misses the driver's fixed 60-tick window. Uncapped TPS
+makes it certain (6/6), because the client spins faster against the same server.
+
+★ So this is [[the-instrument-changes-what-it-sees]] in its sharpest form: **the
+instrument built to measure terrain determinism was itself introducing a terrain
+input difference**, and only in the arms it was built for — #89 and the
+tick-loading certification. Every non-terrain conclusion in the corpus is
+untouched (0/586), and no colony was ever founded at the wrong place (0 runs).
 
 ## What the measurement did to my own alarm
 

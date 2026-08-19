@@ -555,8 +555,22 @@ fn main() {
         ));
         std::process::exit(3);
     };
+    // SELF-SCORING WITNESS. The old code spun a fixed `TPS * 2` and then read
+    // once, so it had `Pos` exactly when it arrived within that window. That
+    // makes `warmed > TPS * 2` the precise counterfactual: those are the runs
+    // the old driver would have anchored at the world origin. Emitting it here
+    // means every future run carries its own red-demonstration and the defect
+    // rate is countable without re-deriving it from geometry.
+    let old_would_have_failed = warmed > TPS * 2;
     log.log(&format!(
-        "Pos arrived after {warmed} ticks (ceiling {POS_WAIT_TICKS}); anchor is the colony, not the origin"
+        "anchor precondition: Pos arrived after {warmed} ticks (old fixed spin was {}, ceiling {POS_WAIT_TICKS}); \
+         OLD BEHAVIOUR WOULD HAVE {}",
+        TPS * 2,
+        if old_would_have_failed {
+            "ANCHORED AT THE WORLD ORIGIN -- this run is one the old driver got wrong"
+        } else {
+            "matched this run"
+        }
     ));
     // Terrain warm-up, unchanged in length: Pos arriving early must not shorten
     // the settle the painting path depends on.
