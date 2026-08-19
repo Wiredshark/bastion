@@ -9983,7 +9983,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // B5.8: carve-steps self-rescue requests gathered during upkeep
         // (from-feet, to-job, parent job id) — processed after the loop
         // (the board can't be restructured mid-borrow).
-        let mut carve_requests: Vec<(Vec3<i32>, Vec3<i32>, JobId)> = Vec::new();
+        // The 4th element carries the REQUESTING colonist's uid (banked item 9,
+        // axis 2). The self_rescue call site passes `None` for
+        // `emergency_owner` while the emergency site passes `Some(uid)` — one
+        // of the three differences between a caller that has NEVER succeeded
+        // (0/55) and one that does (46/478). Carrying it here costs nothing
+        // when the probe is off and makes the axis testable at all.
+        let mut carve_requests: Vec<(Vec3<i32>, Vec3<i32>, JobId, Option<common::uid::Uid>)> =
+            Vec::new();
         // B5.8-E3: unreachable releases feed the claim-churn detector
         // (entity, pos, feet, reach) — processed post-loop (same borrow
         // constraint as carve_requests).
@@ -14480,7 +14487,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     && !job.is_access
                                     && job.pos.z - feet.z > reach
                                 {
-                                    carve_requests.push((feet, job.pos, active.job));
+                                    carve_requests.push((
+                                        feet,
+                                        job.pos,
+                                        active.job,
+                                        uids.get(entity).copied(),
+                                    ));
                                 } else if matches!(job.kind, common::bastion::JobKind::Haul { .. })
                                     && job.stuck_strikes >= PERSIST_ESCALATE_STRIKES
                                 {
@@ -16595,7 +16607,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // deterministic route selection was applied to whichever pocket the
         // producer happened to surface first. Sort by (target cell, parent job
         // id) so the winning request is a pure function of the pending set.
-        carve_requests.sort_by_key(|(_from, to, parent)| (to.x, to.y, to.z, *parent));
+        carve_requests.sort_by_key(|(_from, to, parent, _owner)| (to.x, to.y, to.z, *parent));
         let access_pending = board.jobs.values().any(|j| j.is_access);
         if access_pending {
             board.access_pending_true_ticks += 1;
@@ -16603,7 +16615,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 board.self_rescue_starved_by_access_pending += 1;
             }
         }
-        for (from, to, parent) in
+        for (from, to, parent, owner) in
             carve_requests
                 .into_iter()
                 .take(if access_pending { 0 } else { 1 })
@@ -16664,8 +16676,43 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 } else {
                     &mask
                 };
+            // ★ AXIS-2 PROBE (banked item 9). Axis 1 (mask) was ELIMINATED by
+            // measurement on 2026-08-19: bubble geometry on 36 of 36 calls,
+            // still 0 emissions. Two differences remain between this caller
+            // and the one that succeeds — `emergency_owner` and
+            // `emergency_approach`. This gate varies ONLY the first.
+            //
+            // Born with its witness this time: the axis-1 probe shipped
+            // without one and its first run was VOID, because "passed the
+            // owner and it changed nothing" and "the flag never arrived" are
+            // the same evidence otherwise.
+            let ctx_owner = if std::env::var_os("BASTION_SELFRESCUE_CTX").is_some() {
+                if let Some(u) = owner {
+                    *board
+                        .access_plan_calls
+                        .entry("self_rescue_ctx_active")
+                        .or_insert(0) += 1;
+                    info!(
+                        parent,
+                        uid = u.0.get(),
+                        "bastion: AXIS-2 self_rescue passing OWNER (probe active)"
+                    );
+                    owner
+                } else {
+                    // The flag is on but this request has no uid: that is a
+                    // THIRD state, and it must not be silently scored as
+                    // "owner passed, no effect".
+                    info!(
+                        parent,
+                        "bastion: AXIS-2 probe ON but request carries NO uid — not scoreable"
+                    );
+                    None
+                }
+            } else {
+                None
+            };
             *board.access_plan_calls.entry("self_rescue").or_insert(0) += 1;
-            match plan_access(board, &terrain, plan_mask, from, to, false, None, None) {
+            match plan_access(board, &terrain, plan_mask, from, to, false, ctx_owner, None) {
                 Some((kind, steps)) => {
                     *board
                         .access_plan_emissions

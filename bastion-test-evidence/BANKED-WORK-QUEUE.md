@@ -104,6 +104,16 @@ empty queue is itself a finding — refill from `readme/BUILD-ROADMAP.md`.
    `Some(uid)` at the call site. Small, not deep.
    Registered outcomes **CONTEXT / BOTH-REQUIRED / NEITHER**; witness pattern,
    scorer and falsifier all already exist. Runs locally.
+   **★ AXIS 2 BUILT 2026-08-19** — `BASTION_SELFRESCUE_CTX` passes the
+   requesting colonist's uid as `emergency_owner`. `carve_requests` now carries
+   `Option<Uid>` (pushed from `uids.get(entity).copied()` at the per-entity
+   loop, exactly as the producer read predicted). **Born with its witness this
+   time** (`self_rescue_ctx_active` counter + emit) — the axis-1 probe shipped
+   without one and its first run was VOID for exactly that reason. A third
+   state is handled explicitly: *flag on but the request carries no uid* emits
+   its own line rather than being scored as "owner passed, no effect".
+   **Batched into the next build** rather than triggering its own — three
+   harness rebuilds today cost ~30 min, and two were avoidable.
 
 10. **★ Isolate WHICH of the three call-site axes blocks `self_rescue`** — the
    two live sites differ on mask (`designated_regions()` vs a synthesised
