@@ -69,3 +69,48 @@ before every run, so twin2 is not a restart of twin1.
 3. **The certification's failure is not an edge case.** Non-determinism with the
    barrier on does not merely perturb timing; it selects between two colony
    outcomes that differ by 20×.
+
+---
+
+# ★★ THE REGIME SELECTOR IS THE MATERIALS BLOCKAGE — 14/14
+
+Chasing what picks the regime, on the driver's `COLONY` samples.
+
+**Predictor: does `blocked_materials` reach 0 before the final sample?**
+
+| | cleared | never cleared |
+|---|---|---|
+| **THRIVE** (n=7) | **7** | 0 |
+| **COLLAPSE** (n=7) | 0 | **7** |
+
+**14 of 14.** Collapsed runs sit pinned at **28–30 blocked jobs for the entire
+271,000 ticks**; thriving runs drop to **0 and stay there**.
+
+The *starting* backlog does **not** decide it — `start=8` gives 3 THRIVE / 1
+COLLAPSE, `start=28` gives 4 / 6. **What matters is whether the backlog ever
+clears, not how big it begins.**
+
+## ★ This RELOCATES the question; it does not answer it
+
+The correlation is partly **definitional** and I am not going to dress it up as
+a mechanism: sowing consumes a seed, a seed is a material, so "materials stay
+blocked" and "no crops mature" are close to two descriptions of one state.
+
+What it genuinely buys is a **named resource and a named event**. The question
+moves from the useless *"why does the colony collapse?"* to the sharp
+*"why does the materials blockage clear in exactly half of otherwise identical
+runs?"* — and it puts the answer in the job/materials path rather than in
+farming, pathing, or the food economy.
+
+★ It also partly **rehabilitates #114**. Its hypothesis — seed starvation drives
+the materials refusals — points at the right subsystem. Its **bar** was wrong:
+`maturations > 32` measures the *downstream consequence*, so it reports which
+regime a run landed in rather than whether starvation is causal. Right
+subsystem, wrong observable.
+
+## The next question, stated for whoever takes it
+
+`blocked_materials` sits at 28–30 in collapsed runs across the whole run. **What
+are those ~30 jobs blocked on, and what does the clearing event look like in the
+7 runs where it happens?** That is a single-log read on a banked corpus, and the
+runs to read are named above.
