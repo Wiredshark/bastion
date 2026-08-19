@@ -145,6 +145,33 @@ defensible "timing out of scope". **That scoping call is his, not mine.**
 
 ---
 
+# ★★ ANSWERED — the row FAILS, on evidence (`DETERMINISM-WITH-LIVE-GAMEPLAY-RESULT.md`)
+
+The measurement this document said would decide the scoping question has run.
+`endurseed` twin pair — barrier ON **and** live colony observables, the
+combination no arm had ever carried. All four preconditions held, including
+identical colonist name-hash (`d6a994cb04e6`), so the founding RNG matched.
+
+**Game state diverges, and it does not reconverge:** `preempt_attempts` differs
+on **816 of 905** tick-aligned samples, to the **final tick**;
+`designated_sweep_reaps` on 291; `crop MATURE` **8 vs 26**.
+
+And across four identically-seeded runs the outcome is **bimodal**: maturations
+**1,948 / 1,325 / 26 / 8** — a **243×** spread, two regimes, not a distribution.
+
+⇒ **Option A ("accept the roadmap criterion, certify membership, timing out of
+scope") is not available.** The schedule difference reaches the observable a
+player cares about. **The row FAILS**, for a measured reason.
+
+⇒ Compressed mode stays **not** default, and now that is a finding rather than a
+withheld default.
+
+★ `food_stock` alone said the opposite — 0 differences across 818 samples after
+tick 26,100 — because both runs saturate at zero. Agreement at a bound is not
+convergence, and one observable would have certified this row.
+
+---
+
 # ★ TWO DIFFERENT BARS ARE IN PLAY, AND THEY DISAGREE
 
 This row is being judged against two criteria written at different times. They
