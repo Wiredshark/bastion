@@ -121,6 +121,9 @@ case "$ARM" in
   # endurance: the LONG arm (687c7a7b78). Autofound colony creates
   # stockpile+farm+bed, so E2 has its subject by construction.
   endurance) SCRIPT="script-endurance.txt" ;;
+  # endurseed: #114 successor. IDENTICAL to `endurance` -- same env, same
+  # 270k ticks -- except the script supplies 200 wheat seeds. One axis.
+  endurseed) SCRIPT="script-endurseed.txt" ;;
   shaft)   PITVAR=" BASTION_FLAT_ARENA_SHAFT=1 BASTION_ACCESS_CLAIM_DIAG=1 BASTION_STATUS_STAMP_DIAG=1 BASTION_EGRESS_DIAG=1"
            SCRIPT="script-shaft.txt" ;;
   # shaftctl: #34's MATCHED CONTROL. env BYTE-IDENTICAL to `shaft` -- the

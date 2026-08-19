@@ -1,0 +1,52 @@
+note ENDURSEED -- #114 successor: the ENDURANCE arm with ONE axis changed, SEEDS.
+note   E1 compression at endurance length; E2 farm maturation over a long
+note   window (#114's successor); E3 claim->arrival join at scale (#85).
+note
+note THE WAITS ARE TICK-BASED (item 5 / #75 made `wait` server-authoritative),
+note so this fixture's LENGTH is a tick count and not a wall-clock guess --
+note which is exactly what makes it comparable to the short arms it extends.
+note
+note Samples are spaced so the farm's 84-game-second crop cycle (14 stages x
+note 6s, FARM_STAGE_SECS) completes MANY times inside the window: 270k ticks
+note = ~9000 game-seconds = ~107 crop generations, against ~1 in a fixture arm.
+note ★ THE ONE AXIS IS SEED STOCK. Identical to script-endurance.txt in every
+note   other respect -- same 270,000 wait ticks, same six samples, same arm env --
+note   so a difference in maturation is attributable to seeds and nothing else.
+note
+note ★★ WHY THIS ARM EXISTS (measured, 4c91023384): the endurance run ended with
+note   EVERY candidate refused (considered=280 refused=280) and 210 of those 280
+note   refusals were `materials`. Sowing consumes a seed; 32 harvests in 2.5
+note   game-hours cannot restock it. So sow jobs were created, refused, and
+note   re-created ~11x per cell while the cells sat idle.
+note
+note REGISTERED PREDICTION, both directions, before this arm has ever run:
+note   materials refusals COLLAPSE and maturations rise WELL ABOVE 32
+note     -> seed starvation is the binding constraint; #114 has its cause.
+note   maturations stay ~32 WITH seeds supplied
+note     -> starvation is a SYMPTOM and the real cap is elsewhere; the seed
+note        story is refuted and I say so.
+note   VOID if the give_item does not land: `count_items` must show a nonzero
+note     seed count before the first wait, else no bar is scored.
+anchor
+inspect_colony
+count_items
+cmd give_item common.items.bastion.wheat_seeds 200
+count_items
+note SEED PRECONDITION -- the two count_items above BRACKET the give. If they
+note   read the same number the item never arrived and this arm is VOID.
+note ENDURANCE SAMPLE 0 -- baseline at spawn.
+wait 30000
+inspect_colony
+note ENDURANCE SAMPLE 1 -- 1000 game-seconds (~12 crop generations).
+wait 60000
+inspect_colony
+note ENDURANCE SAMPLE 2 -- 3000 game-seconds.
+wait 60000
+inspect_colony
+note ENDURANCE SAMPLE 3 -- 5000 game-seconds.
+wait 60000
+inspect_colony
+note ENDURANCE SAMPLE 4 -- 7000 game-seconds.
+wait 60000
+inspect_colony
+note ENDURANCE SAMPLE 5 -- 9000 game-seconds, ~270k ticks. TARGET REACHED.
