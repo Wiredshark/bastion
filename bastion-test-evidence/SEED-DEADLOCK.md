@@ -150,6 +150,28 @@ makes farming the *detector*, not the defect's boundary.
 ★ The fix below matches on `required_item` **generically**, not on `Farm`, so it
 covers all four kinds without naming any of them.
 
+## ★★★ THE DEADLOCK BREAKS A DOCUMENTED CONTRACT — the fix RESTORES it
+
+`FARM_SEED_ITEM`'s own doc states the intended path:
+
+> *"the sow verb's consumed item — a REAL item (**the B6 fetch contract:
+> `required_item` + the material-haul machinery deliver stockpiled seeds to sow
+> jobs for free**)."*
+
+The design is **harvest → haul to stockpile → machinery delivers to the sow job**.
+The `occupied` skip severs the middle step: seeds never reach the stockpile, so
+the delivery machinery has nothing to deliver, and `required_item` can never be
+satisfied.
+
+**So this is not a patch bolted onto working behaviour — the documented contract
+is already broken, and the exemption restores the path the contract names.**
+
+★ And **no test asserts the skip as intended.** The only haul tests are
+`canonical_haul_pickup_order_is_join_order_independent` (ordering) and
+`surface_teleport_skips_occupied_column` (unrelated). The behaviour is unguarded,
+so the fix contradicts nothing pinned — which also means nothing would have
+caught this.
+
 ## The fix shape (not applied — a live-path change)
 
 The exclusion exists to stop hauling items *out of a cell that is itself a work
