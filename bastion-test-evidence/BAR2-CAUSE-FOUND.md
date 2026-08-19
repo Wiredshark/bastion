@@ -1,5 +1,35 @@
 # BAR 2's CAUSE: the chunk SEND path is a thread race, and #89 never tested it
 
+> # ★★★ WITHDRAWN 2026-08-19 BY ITS OWN REGISTERED A/B
+>
+> The fix was built, ran on ~11,400 sends per run, harmed nothing — **and changed
+> nothing.**
+>
+> | arm | witness | membership | first tick-sequence difference |
+> |---|---|---|---|
+> | CONTROL | 0 | identical | 154, 129 |
+> | **FIX** | **11,438 / 11,411** | identical | **135, 154** |
+>
+> Registered outcome: *"control DIFFERS + fix unchanged ⇒ BAR2-CAUSE-FOUND.md is
+> WITHDRAWN."* Control mean 141.5, fix mean 144.5. **It fires.**
+>
+> **What is refuted:** that ordering the chunk send *within a tick* contributes
+> to the tick-sequence divergence. It does not, measurably, at all.
+>
+> **What remains untested:** the fix orders within a tick and cannot pin *which
+> tick* a chunk lands in — a limit recorded here before the data. So the
+> cross-tick assignment race is neither confirmed nor refuted; it was simply not
+> what this experiment could reach.
+>
+> **What survives as fact, independent of the mechanism:** `SerializedChunk` did
+> carry no key, the consumer *could* not sort, and the send order *is*
+> thread-dependent. All true, all now demonstrably **not the cause of bar 2**.
+> A true observation about the code is not a mechanism.
+>
+> The document below is kept intact because the reasoning is where the error is,
+> and a withdrawn chain is only useful with its argument attached.
+
+
 Found by reading, with the mechanism class learned from the haul deadlock:
 **a race between two asynchronous producers feeding an order-sensitive consumer.**
 
