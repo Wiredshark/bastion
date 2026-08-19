@@ -103,6 +103,33 @@ contains 47% columns that cannot move independently, and that correcting for
 that can only move the answer in one direction. Recomputing needs the wave pair,
 which is separately owed.
 
+## ★★ ALL THREE UNEXPLAINED TIES RESOLVED — they are SHARED-PRECONDITION ties
+
+Producer read, no VM. None is a duplicate measurement; each is two fields gated
+on the same upstream event.
+
+| tie | why |
+|---|---|
+| `ch_jobs` ≡ `ch_trees` | **one call** — `bastion_place_chop_area` returns `(t, cl, j, aabb)` assigned together. Equal because **one job is placed per tree**. Producer semantics |
+| `ch_cancel_clean` ≡ `ch_engaged` | both gated on *"a tree was found"* — `ch_aabb` is `Some` only when `t >= 1`, and `ch_engaged` needs `ch_trees >= 1` |
+| `any_needs_materials` ≡ `build_placed` | both gated on *"the build phase engaged"* — no build ⇒ no block placed **and** no build job to want materials |
+
+**So the instrument is not double-counting the same quantity. It is correctly
+reporting that a whole subsystem either ran or did not**, and a mover tally that
+treats those as independent columns overstates its resolution — which is exactly
+what the 63-vs-119 count says, for a better reason than I first gave.
+
+### ★ One real sub-finding falls out: an assertion that has never fired
+
+`ch_cancel_clean` is `true` on **every one of the 41 seeds where it ran** and
+`false` only on the 7 where no tree was found (so the cancel never executed).
+**The cancel check has never once gone red when exercised.**
+
+That is not a defect — but it is an **unexercised falsifier**: a check that has
+never failed has never demonstrated it *can*. It carries no information beyond
+its own precondition until something makes it go red by name.
+[[a-falsifier-needs-its-own-control]]
+
 ## Recommended, not applied
 
 Do **not** delete the dead fields — a field that is constant across 48 seeds of
