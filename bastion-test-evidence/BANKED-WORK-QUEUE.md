@@ -22,12 +22,21 @@ empty queue is itself a finding — refill from `readme/BUILD-ROADMAP.md`.
    it ran, false only where it could not run. A check that has never gone red
    has never shown it can.
 
-6. **★ Colonists claim work headlessly and NEVER ARRIVE.** In a driverless run:
-   **93 jobs claimed, `colonist arrived at job site` = 0**, across 7,112 ticks.
-   The same emit fires **985–1,009** times in driven endurance runs. Candidate:
-   pathing depends on terrain outside the presence radius, so a VD=1 colony can
-   claim work it cannot reach. **The VD=6 re-run tests that for free** — if
-   arrivals appear at VD=6, the dependency is confirmed and the cause is named.
+6. ~~**★ Colonists claim work headlessly and NEVER ARRIVE.**~~ **CLOSED
+   2026-08-19 — REFUTED. See `HEADLESS-ARRIVAL-REFUTED.md` (`21a0f3321a`).**
+   A genuinely driverless run (**zero** client connections) arrives fine:
+   `server-headless-nd1` 58 claims → **61 arrivals**. Census of all 260 logs
+   with claims>0 found **exactly one** zero-arrival run (`wave34/s37`), whose
+   own wave-mates arrive normally — an outlier in a matched population, not a
+   headless mode. **The cause was instrumented all along:** `auto-access
+   refused (no in-claim route) — job unreachable`, emitted **13 times** in the
+   run whose note said "the cause is still unnamed". No spend.
+
+7. **★ Why does `auto-access` find no in-claim route on some seeds?** — the
+   successor filed by item 6, and better posed than it was. Corpus is ready
+   (**48 seeds graded 0→21 refusals**), matched control is ready (**s37 vs s35**,
+   same wave and config), and the witness already exists to score against.
+   **Needs no new runs.** Not chartered — needs Ben's go or a quiet slot.
 
 ## Blocked / needs a decision (Ben)
 
