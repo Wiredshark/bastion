@@ -3592,7 +3592,21 @@ impl Client {
                                 // once; vanilla's walking-pace throttle takes
                                 // ages to fill it, so allow more in flight.
                                 let (total_limit, tick_limit) =
-                                    if self.bastion_terrain_anchor.is_some() {
+                                    if std::env::var_os("BASTION_BURST_UNCAPPED")
+                                        .is_some()
+                                    {
+                                        // ROW #89 candidate 2 (registered
+                                        // 7d0758d101): the per-CLIENT-tick send
+                                        // cap dribbles the burst across several
+                                        // client ticks, and the client's tick is
+                                        // wall-clock paced while the server's is
+                                        // not. Shipping the whole burst in one
+                                        // client tick removes the dribble. The
+                                        // retry gate (candidate 1) was excluded
+                                        // by A/B; this is the other half of the
+                                        // request path.
+                                        (usize::MAX, usize::MAX)
+                                    } else if self.bastion_terrain_anchor.is_some() {
                                         (TOTAL_PENDING_CHUNKS_LIMIT * 4, 8)
                                     } else {
                                         (
