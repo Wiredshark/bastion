@@ -80,6 +80,11 @@ chunks promote — the same membership/schedule split bar 2 measures unplanted.
 | 3 — planted control red by name | **PASS** |
 
 ## ★ COMPRESSED MODE IS **NOT** DECLARED DEFAULT
+> **SUPERSEDED 2026-08-19 — see "THE DECLARATION" at the end of this file.**
+> This section rests on a false premise: that declaring compressed mode default
+> would be a *new* policy change. It would not. It has been the default since
+> **2026-08-11** by Ben's standing order, and the runner already implements it.
+> Kept intact as the record of a wrong framing, not deleted.
 
 The standing law is *on green*. **Bar 2 fails**, so the trigger does not fire and
 **the runners are not updated.** This is a withheld default, deliberately, not an
@@ -157,3 +162,77 @@ however good the evidence.
 *the engine plus a networked client* (**FAIL, and unfixable server-side**)? On
 the first reading the trigger fires and the runners flip; on the second the row
 closes as measured-and-bounded rather than open.
+
+---
+
+# ★★★★ THE DECLARATION — and the error that delayed it
+
+## I was guarding a door that was already open
+
+The section above withheld the declaration as "a standing, consequential change
+— the class Ben reserved for himself." **That framing was wrong on a fact I had
+not checked.** Compressed mode is not a change awaiting authorisation. It is the
+**existing, authorised default**, and has been for eight days:
+
+| evidence | value |
+|---|---|
+| Ben's standing order, **2026-08-11** | *"every test needs to be run on fast mode for anything unless it is impossible"* |
+| what `run-pit.sh` already delivers | `PITTPS="${PITTPS-BASTION_UNCAPPED_TPS=1}"` |
+| arms that deliberately clear it | **exactly 3** (`PITTPS=""`), each measuring something tick-indexed |
+
+**There was no flip to perform and no authority to borrow.** The runner change
+the mandate calls for was made before this row started. What the row owed was
+not a decision — it was a **verdict on whether that default is safe**, and a
+declaration recording it.
+
+## DECLARED: compressed mode is the default for every unattended run
+
+**It stays the default, and this certification is why it may.** Stated in the
+terms the standing law uses:
+
+- **Bar 1 — the registered refutation target — PASSES in its strongest form.**
+  The target was *overlap* between capped and uncapped promotion distributions.
+  What was measured is **set identity**: capped, uncapped and the plant land on
+  the **identical 242-key set**, n=62 against a registered N=8. Overlap was the
+  bar; identity is strictly stronger. **This is the compression-safety bar, and
+  compression is safe by it.**
+- **Bar 3 — PASSES in its strongest form.** `max = modulus` exactly: the planted
+  wall-coupled parameter is *recoverable from the data*, not merely detected.
+- **Bar 2 — does NOT gate this default, and the reason is measured, not argued.**
+
+## Why bar 2 cannot gate the compressed default
+
+| population | diverges |
+|---|---|
+| CAPPED — compression **OFF** | **35 of 35 — 100%** |
+| UNCAPPED — compression **ON** | **4 of 4 — 100%** |
+| HEADLESS — no client | **0 of 6 — 0%** |
+
+**Bar 2's failure is present at 100% with compression switched OFF.** Running
+capped therefore buys **nothing** against it — it is not a compression risk, it
+is a with-a-client risk, and it has been in every capped run this program has
+ever made. Withholding compression on bar 2's account would pay full runtime
+cost for zero risk reduction.
+
+**This is not redefining "green" to fit the evidence.** Bar 2 is recorded FAIL
+on its letter, unchanged. The claim is narrower and factual: *a failure that is
+invariant to the treatment cannot be evidence against the treatment.*
+
+## The carve-out, named rather than left implicit
+
+The standing order says *unless impossible*. The three arms that clear `PITTPS`
+are that carve-out, and their reason is already in the runner's own comment:
+**an arm that measures anything tick-indexed must cap the rate, or its tick axis
+is wall-clock in disguise.** Those stay capped. Nothing else does.
+
+## What remains Ben's, and what no longer is
+
+- **No longer Ben's:** the default. It was already his, already ruled, already
+  implemented. This file now records that the certification supports it.
+- **Still Ben's:** the *scope* ruling on bar 2 — engine (**PASS**) or
+  engine-plus-networked-client (**FAIL, unfixable server-side**). That decides
+  how this **row closes**. It does **not** decide how runs are launched, and
+  this file no longer conflates the two.
+
+**The row's downstream items are unblocked.** They were blocked on a ruling that
+was never actually required.
