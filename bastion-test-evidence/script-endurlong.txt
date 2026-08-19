@@ -1,0 +1,92 @@
+note ENDURSEED -- #114 successor: the ENDURANCE arm with ONE axis changed, SEEDS.
+note   E1 compression at endurance length; E2 farm maturation over a long
+note   window (#114's successor); E3 claim->arrival join at scale (#85).
+note
+note THE WAITS ARE TICK-BASED (item 5 / #75 made `wait` server-authoritative),
+note so this fixture's LENGTH is a tick count and not a wall-clock guess --
+note which is exactly what makes it comparable to the short arms it extends.
+note
+note Samples are spaced so the farm's 84-game-second crop cycle (14 stages x
+note 6s, FARM_STAGE_SECS) completes MANY times inside the window: 270k ticks
+note = ~9000 game-seconds = ~107 crop generations, against ~1 in a fixture arm.
+note ★ THE ONE AXIS IS SEED STOCK. Identical to script-endurance.txt in every
+note   other respect -- same 270,000 wait ticks, same six samples, same arm env --
+note   so a difference in maturation is attributable to seeds and nothing else.
+note
+note ★★ WHY THIS ARM EXISTS (measured, 4c91023384): the endurance run ended with
+note   EVERY candidate refused (considered=280 refused=280) and 210 of those 280
+note   refusals were `materials`. Sowing consumes a seed; 32 harvests in 2.5
+note   game-hours cannot restock it. So sow jobs were created, refused, and
+note   re-created ~11x per cell while the cells sat idle.
+note
+note REGISTERED PREDICTION, both directions, before this arm has ever run:
+note   materials refusals COLLAPSE and maturations rise WELL ABOVE 32
+note     -> seed starvation is the binding constraint; #114 has its cause.
+note   maturations stay ~32 WITH seeds supplied
+note     -> starvation is a SYMPTOM and the real cap is elsewhere; the seed
+note        story is refuted and I say so.
+note   VOID if the give_item does not land: `count_items` must show a nonzero
+note     seed count before the first wait, else no bar is scored.
+note
+note ★★ ENDURLONG -- IDENTICAL to script-endurseed.txt except the RUN IS 2x
+note   LONGER (540,000 ticks vs 270,000). ONE AXIS.
+note
+note ★ WHY, sized rather than guessed. 26 identically-seeded endurseed runs give
+note   a perfectly BIMODAL outcome -- 15 THRIVE (936..2015 maturations), 11
+note   COLLAPSE (8..46), and NOTHING in between across a 20x span. Two models fit
+note   that equally well at this length:
+note     CONSTANT HAZARD  escape keeps happening; late escapes yield mid-range
+note                      totals, so a longer run FILLS the gap
+note     EARLY-OR-NEVER   trapped colonies stay trapped; the gap never fills
+note
+note   Fitting a constant hazard to the 7 observed escapes (10.2k..117.9k ticks)
+note   against 7 censored at 271k gives lambda = 2.99e-6/tick. Under it, 2.57
+note   late escapes were expected and 0 were seen -- p = 0.077, NOT significant.
+note   More runs AT THIS LENGTH cannot separate the models: both predict the gap.
+note   RUN LENGTH is the discriminating axis, and 2x is where they diverge --
+note   ~5 expected mid-range outcomes under constant hazard, ZERO under
+note   early-or-never.
+note
+note ★ REGISTERED BEFORE THE RUN:
+note     any run finishing with 50..500 maturations  => CONSTANT HAZARD supported,
+note        the gap is a run-length artifact, and "bimodal" is withdrawn as a
+note        description of the mechanism
+note     zero such runs at 2x length                 => EARLY-OR-NEVER supported;
+note        the gap is real and trapped colonies do not recover
+note   Precondition: the two count_items must BRACKET the give, as in endurseed.
+anchor
+inspect_colony
+count_items
+cmd give_item common.items.bastion.wheat_seeds 200
+count_items
+note ENDURLONG SAMPLE 0 -- baseline at spawn.
+wait 30000
+inspect_colony
+note ENDURLONG SAMPLE 1 -- 1000 game-seconds.
+wait 60000
+inspect_colony
+note ENDURLONG SAMPLE 2 -- 3000 game-seconds.
+wait 60000
+inspect_colony
+note ENDURLONG SAMPLE 3 -- 5000 game-seconds.
+wait 60000
+inspect_colony
+note ENDURLONG SAMPLE 4 -- 7000 game-seconds.
+wait 60000
+inspect_colony
+note ENDURLONG SAMPLE 5 -- 9000 game-seconds, 270k ticks (endurseed's END).
+wait 60000
+inspect_colony
+note ENDURLONG SAMPLE 6 -- 11000 game-seconds. PAST endurseed's horizon.
+wait 60000
+inspect_colony
+note ENDURLONG SAMPLE 7 -- 13000 game-seconds.
+wait 60000
+inspect_colony
+note ENDURLONG SAMPLE 8 -- 15000 game-seconds.
+wait 60000
+inspect_colony
+note ENDURLONG SAMPLE 9 -- 17000 game-seconds.
+wait 60000
+inspect_colony
+note ENDURLONG SAMPLE 10 -- 18000 game-seconds, 540k ticks. TARGET REACHED.

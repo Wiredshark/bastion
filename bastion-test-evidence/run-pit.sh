@@ -134,6 +134,13 @@ case "$ARM" in
   # endurseed: #114 successor. IDENTICAL to `endurance` -- same env, same
   # 270k ticks -- except the script supplies 200 wheat seeds. One axis.
   endurseed) SCRIPT="script-endurseed.txt" ;;
+  # endurlong: endurseed at 2x LENGTH (570k ticks), one axis. Exists because 26
+  # identically-seeded endurseed runs are perfectly bimodal -- 15 THRIVE
+  # (936..2015), 11 COLLAPSE (8..46), nothing between across a 20x span -- and
+  # TWO models fit that equally well at 271k ticks. More runs at this length
+  # cannot separate them, because BOTH predict the gap. Run length is the
+  # discriminating axis; the sizing is in script-endurlong.txt's own header.
+  endurlong) SCRIPT="script-endurlong.txt" ;;
   shaft)   PITVAR=" BASTION_FLAT_ARENA_SHAFT=1 BASTION_ACCESS_CLAIM_DIAG=1 BASTION_STATUS_STAMP_DIAG=1 BASTION_EGRESS_DIAG=1"
            SCRIPT="script-shaft.txt" ;;
   # shaftctl: #34's MATCHED CONTROL. env BYTE-IDENTICAL to `shaft` -- the
