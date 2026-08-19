@@ -57,6 +57,33 @@ construction, not evidence of a broken oracle. **Withdrawn.**
 
 Those three are worth a producer read. The other four are accounted for.
 
+## ★ Is a tie surprising? Testing my own claim against multiple comparisons
+
+Two booleans matching across 48 seeds is cheap evidence if both are lopsided,
+and there are **7,021** field pairs, so ties are expected by chance alone.
+Bonferroni threshold: **0.05 / 7021 = 7.1e-6**.
+
+| tie | balance | p(match by chance) | survives correction |
+|---|---|---|---|
+| `b5_ch_jobs` ≡ `b5_ch_trees` | 10 values | **2.2e-38** | ✅ |
+| `b5_any_needs_materials` ≡ `b5_build_placed` | 39/9 | **6.0e-10** | ✅ |
+| `b5_ch_cancel_clean` ≡ `ch_engaged` ≡ `ground_truth` | 41/7 | **1.4e-8** | ✅ |
+| `b5_tool_steel` ≡ `_measured` | **47/1** | **0.021** | ❌ |
+| `b5_tool_stone` ≡ `_measured` | **47/1** | **0.021** | ❌ |
+
+★ At 7,021 pairs, ~147 ties at p=0.021 are expected **by chance**. So the tool
+pairs are statistically unremarkable — and they are nonetheless genuinely
+redundant, because the code says `let tl_stone: Option<f32> = tl_stone_raw;`.
+
+**The statistics were weak exactly where the code was decisive, and decisive
+exactly where the code explains nothing.** Neither instrument alone would have
+got all seven right, and I would have trusted the wrong one: I reached for the
+p-values only after the code had already overturned two of my three headline
+claims.
+
+Every tie is therefore either statistically decisive **or** code-confirmed, and
+the independent-signal count of **63** stands.
+
 ## Why this matters to #84 — with the direction of bias named
 
 #84's concentration result is a **per-field tally**: movers observed against
