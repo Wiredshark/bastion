@@ -111,6 +111,10 @@ several are deliberate invariants. The fix is at the **scorer**: collapse
 identical columns before tallying, and report the independent-signal count beside
 the field count so a wave's denominator states what it actually resolves.
 
-The two "cannot fail" pairs are different: those are defects to fix at the
-**producer**, because a verification field that never disagrees with its subject
-is not measuring the subject.
+Nothing here is a producer defect to fix. The `_measured` twins are a **known,
+documented residual** the harness already declares, and the `ch_engaged` tie is
+**derived by construction**. The three unexplained ties
+(`ch_cancel_clean`, `ch_jobs`≡`ch_trees`, `any_needs_materials`≡`build_placed`)
+are worth a producer read before anyone calls them anything — each survives
+multiple-comparison correction, so there **is** something to explain, but
+"unexplained" is not "wrong".
