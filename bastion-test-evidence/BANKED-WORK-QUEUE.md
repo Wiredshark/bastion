@@ -84,52 +84,33 @@ empty queue is itself a finding — refill from `readme/BUILD-ROADMAP.md`.
    478** in the same runs. Counter pair verified against the emit on 48/48
    seeds. Not a per-seed effect: corpus-wide and total. No spend.
 
-8. **IN FLIGHT 2026-08-19 — axis 1 (mask) built, first run VOID, re-running
-   with a witness.** Probe `BASTION_SELFRESCUE_BUBBLE` swaps
-   `designated_regions()` for the emergency site's bubble geometry
-   (`6d87fef84d`), runs **locally** via `bastion-harness --b5-scenario` — no
-   VM, the row was chartered as a fan and is a laptop job.
-   **Run 1 reproduced the banked corpus exactly** (calls 37→11, 3→7, 29→6,
-   16→6, 11→6, matching wave34) with **emissions 0 in BOTH arms** — which
-   *looks* like NEITHER but is **VOID**: exactly one field differed across the
+8. ~~**Axis 1 (mask)**~~ **CLOSED 2026-08-19 — NEITHER, mask EXONERATED**
+   (`1330233787`, `SELF-RESCUE-NEVER-SUCCEEDS.md`). `BASTION_SELFRESCUE_BUBBLE`
+   gave `self_rescue` the emergency site's exact bubble geometry: **36 calls, 0
+   emissions**, witness confirming the bubble branch on **36 of 36**. Call
+   counts reproduced banked wave34 exactly (37→11, 3→7, 29→6, 16→6, 11→6).
+   **Within-run positive control:** on seeds 3/29/16 the *same run* got `Some`
+   from `plan_access` via `emergency` (27 calls, 4 emissions) and `None` via
+   `self_rescue` every time — so the failure is specific to the CALL SITE.
+   ★ **Run 1 of this was VOID, not NEITHER** — one field differed across the
    whole payload (`b5_soak_avg_tick_ms`, wall-clock noise), so "bubble used,
-   changed nothing" and "flag never arrived" were indistinguishable. Witness
-   added (`self_rescue_bubble_active` counter + emit); a NEITHER verdict is
-   only meaningful once that counter is nonzero.
+   changed nothing" and "flag never arrived" were the same evidence. The probe
+   had shipped without a witness. **A probe is born with its witness.**
 
-9. **★ AXIS 1 DONE (mask ELIMINATED). Axes 2–3 remain — and they are CHEAPER
-   than I said.** Axis 1 scored **NEITHER** on 2026-08-19 (`1330233787`): 36
-   calls, **0 emissions in both arms**, with the witness confirming the bubble
-   branch on **36 of 36** calls. `designated_regions()` is exonerated; the
-   leading hypothesis is refuted.
-   **★ Correction to my own cost estimate:** I wrote that axes 2–3 need a
-   claimant uid "not in scope — plumbing, not a flag". **Read the producer:**
-   the request is pushed at `bastion_jobs.rs:14483` as
-   `carve_requests.push((feet, job.pos, active.job))` from **inside the
-   per-entity loop**, where `entity` is already in scope (used at 14262–14286).
-   So it is a **3-tuple → 4-tuple change** carrying `uids.get(entity)`, then
-   `Some(uid)` at the call site. Small, not deep.
-   Registered outcomes **CONTEXT / BOTH-REQUIRED / NEITHER**; witness pattern,
-   scorer and falsifier all already exist. Runs locally.
-   **★ AXIS 2 BUILT 2026-08-19** — `BASTION_SELFRESCUE_CTX` passes the
-   requesting colonist's uid as `emergency_owner`. `carve_requests` now carries
-   `Option<Uid>` (pushed from `uids.get(entity).copied()` at the per-entity
-   loop, exactly as the producer read predicted). **Born with its witness this
-   time** (`self_rescue_ctx_active` counter + emit) — the axis-1 probe shipped
-   without one and its first run was VOID for exactly that reason. A third
-   state is handled explicitly: *flag on but the request carries no uid* emits
-   its own line rather than being scored as "owner passed, no effect".
-   **Batched into the next build** rather than triggering its own — three
-   harness rebuilds today cost ~30 min, and two were avoidable.
-
-10. **★ Isolate WHICH of the three call-site axes blocks `self_rescue`** — the
-   two live sites differ on mask (`designated_regions()` vs a synthesised
-   egress bubble), `emergency_owner`, and `emergency_approach` **all at once**,
-   so the emergency site proves `plan_access` *can* succeed but isolates
-   nothing. Vary one axis at a time at the self_rescue site; score on the
-   existing verified counter pair. Registered outcomes **MASK / CONTEXT /
-   BOTH-REQUIRED / NEITHER**. **Cost: one seed, no fan** (s37 has 11 calls,
-   s3 has 7, s29 has 6). Not chartered.
+9. **IN FLIGHT — axes 2 and 3, both built, ONE build, FOUR arms.** Two
+   differences remain: `emergency_owner` and `emergency_approach`.
+   `BASTION_SELFRESCUE_CTX` passes the requesting colonist's uid;
+   `BASTION_SELFRESCUE_APPROACH` passes the approach context. `carve_requests`
+   carries `Option<Uid>` and `Option<(Vec3<f32>,(f32,f32,f32))>`, both built at
+   the **push** site where `pos`/`entity`/`scales`/`colliders` are already in
+   hand — the 3→5-tuple change the producer read predicted, not the deep
+   plumbing I first claimed. Both **born with witnesses**, both handling the
+   third state (*flag on, nothing to pass*) as its own named line rather than a
+   silent untreated arm. Scorer `score-selfrescue-axes23.sh`, arms
+   A/B/C/D = baseline/owner/approach/both, registered outcomes **CONTEXT /
+   APPROACH / EITHER / BOTH-REQUIRED / NEITHER / VOID**. Runs locally, no VM.
+   ★ Batched deliberately: three rebuilds today cost ~30 min and two were
+   avoidable, so axes 2 and 3 ride a single build and a single run.
 
 ## Blocked / needs a decision (Ben)
 
