@@ -5253,7 +5253,31 @@ impl Server {
                 std::env::var("BASTION_AUTOFOUND_COLONY")
                     .ok()
                     .and_then(|s| s.parse::<u8>().ok())
-                    .filter(|&n| n > 0 && bastion_flat_arena::enabled())
+                    // ★ REAL-TERRAIN AUTOFOUND (BASTION_AUTOFOUND_REAL_TERRAIN=1).
+                    //
+                    // This filter required the FLAT ARENA, which made a headless
+                    // terrain-determinism run impossible: the arena is
+                    // PRE-GENERATED so nothing is ever promoted, and real
+                    // terrain has something to generate but no requester,
+                    // because without the arena no colony is founded and so no
+                    // `Presence` exists to ask for chunks. Measured: a headless
+                    // real-terrain arm emitted 7,200 census lines and promoted
+                    // ZERO, with `autofound colony founded` appearing 0 times.
+                    //
+                    // Neither half of the machinery is actually arena-specific.
+                    // `world_center_wpos` is `sim().get_size() / 2 * RECT_SIZE`
+                    // -- the WORLD centre, deterministic for any world -- and
+                    // the founding preset resolves its datum from TERRAIN. Only
+                    // `spawn_wpos`'s hardcoded FLAT_ARENA_Z is, and the branch
+                    // below resolves ground height instead when the arena is off.
+                    //
+                    // Default unchanged: without the new flag the arena
+                    // requirement stands exactly as before, byte-for-byte.
+                    .filter(|&n| {
+                        n > 0
+                            && (bastion_flat_arena::enabled()
+                                || std::env::var_os("BASTION_AUTOFOUND_REAL_TERRAIN").is_some())
+                    })
             });
             if let Some(n) = n {
                 use std::sync::atomic::{AtomicBool, Ordering};
@@ -5281,7 +5305,56 @@ impl Server {
                     if dtick >= 30 {
                         SPAWNED.store(true, Ordering::Relaxed);
                         let center = bastion_flat_arena::world_center_wpos(&self.world);
-                        let sp = bastion_flat_arena::spawn_wpos(center);
+                        // On the flat arena the spawn z is the slab constant. On
+                        // REAL terrain that constant is meaningless, so resolve
+                        // the ground from the terrain the force-load above just
+                        // brought in. A colony spawned at the wrong z either
+                        // falls or is entombed, and either way promotes nothing
+                        // -- which would reproduce the very VOID this branch
+                        // exists to remove.
+                        let sp_opt = if bastion_flat_arena::enabled() {
+                            Some(bastion_flat_arena::spawn_wpos(center))
+                        } else {
+                            use bastion_server::bastion_founding_preset as preset;
+                            let xy = Vec2::new(center.x as i32, center.y as i32);
+                            let ground = {
+                                let ecs = self.state.ecs();
+                                let terrain =
+                                    ecs.read_resource::<common::terrain::TerrainGrid>();
+                                preset::resolve_datum(&terrain, xy, 0)
+                            };
+                            match ground {
+                                Some(z) => Some(Vec3::new(
+                                    center.x as f32 + 0.5,
+                                    center.y as f32 + 0.5,
+                                    z as f32 + 1.0,
+                                )),
+                                None => {
+                                    // LOUD: an unresolved datum means the
+                                    // force-load did not deliver the centre
+                                    // chunk. Spawning anyway would produce a
+                                    // silent zero-promotion run that looks
+                                    // deterministic for the wrong reason.
+                                    //
+                                    // ★ `None` here, NOT an early return: the
+                                    // first version returned from `tick()`,
+                                    // which would have skipped the ENTIRE
+                                    // remaining tick -- a far wider blast
+                                    // radius than "do not found a colony". The
+                                    // compiler caught it (tick returns Result),
+                                    // and the narrow form is what was wanted
+                                    // anyway.
+                                    tracing::warn!(
+                                        ?center,
+                                        "bastion: real-terrain autofound could not resolve ground                                          datum -- SKIPPING the spawn rather than founding at a                                          guessed z"
+                                    );
+                                    None
+                                },
+                            }
+                        };
+                        if let Some(sp) = sp_opt {
+                        tracing::info!(?sp, arena = bastion_flat_arena::enabled(),
+                            "bastion: autofound spawn resolved");
                         self.bastion_spawn_colony_seeded(sp, n, 0);
                         // THE PRESET, TOO — otherwise this path spawns
                         // colonists into a world with NO WORK, and every
@@ -5339,6 +5412,7 @@ impl Server {
                             pos = ?sp,
                             "bastion: autofound colony presence created (no client needed)"
                         );
+                        }
                     }
                 }
             }
