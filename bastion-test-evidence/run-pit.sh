@@ -418,7 +418,16 @@ sed "s/:14005\"/:$WEB\"/" "$WT/userdata-$TAG/server-cli/settings.template.ron" \
     exec env $BASTION_ENV \
     "$B/veloren-server-cli$EXE" --no-auth > "$EV/server-$TAG.log" 2>&1 ) &
 SRV=$!
+# ★ THE ENV IS A PRECONDITION FOR EVERY PLANT ARM, AND IT WAS INVISIBLE.
+# `BASTION_DROP_TOSS_DIAG=1` was routed correctly by the fan (the ATTEST line
+# proves `extra=` carried it) and the built tip contained the instrument, and the
+# emit still never fired -- and NOTHING IN ANY LOG COULD SAY WHETHER THE SERVER
+# PROCESS ACTUALLY RECEIVED IT. Two fans were spent on that ambiguity.
+# Now every run states the exact env string its server was launched with, so
+# "the plant did not fire" and "the plant was never delivered" stop rendering
+# identically.
 echo "server pid=$SRV arm=$ARM (started by this script)" > "$EV/$TAG.log"
+echo "BASTION_ENV=[$BASTION_ENV]" >> "$EV/$TAG.log"
 
 # DECLARED WINDOW, fixed before launch: 300s wall for the port, then the
 # driver script's own budget -- four `inspect_colonists` samples 600 apart.
