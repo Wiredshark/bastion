@@ -3652,8 +3652,20 @@ impl Client {
             // else; unset = today's behaviour, byte-for-byte.
             if std::env::var_os("BASTION_TICK_GATED_REQUESTS").is_none() {
                 let now = Instant::now();
+                let before = self.pending_chunks.len();
                 self.pending_chunks
                     .retain(|_, created| now.duration_since(*created) < Duration::from_secs(3));
+                // PLANT-FIRED WITNESS (ff2e8e8b0e): the A/B that "excluded" this
+                // retry never checked whether it ACTED. A retain that expires
+                // nothing makes treatment and control behaviourally identical,
+                // so "no difference" was uninterpretable -- the strongest
+                // verdict from the weakest evidence. Count real expiries so the
+                // arm can declare itself VOID instead.
+                let expired = before - self.pending_chunks.len();
+                if expired > 0 {
+                    tracing::info!(expired, remaining = self.pending_chunks.len(),
+                        "bastion: row89 chunk-request retry EXPIRED");
+                }
             }
         }
 
