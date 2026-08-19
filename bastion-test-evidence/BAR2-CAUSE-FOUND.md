@@ -66,6 +66,34 @@ cause is upstream of the request, in the send path.
 
 Bounded, and gated like every other determinism control here.
 
+## ★★ THE DOWNSTREAM PREDICTION HOLDS — measured on banked data, before the fan lands
+
+The chain claims: send order (thread race) → what the client HAS → what the
+client REQUESTS. So the client's **demand** should diverge between twins. The
+demand census is already in the corpus, so this costs nothing:
+
+| | |
+|---|---|
+| twin pairs with a demand census | **34** |
+| **demand DIVERGES** | **31** |
+| genuinely identical | **0** |
+| **VACUOUS** (zero shared ticks — no comparison possible) | 3 |
+
+★ My first summary line counted those 3 as "identical". **They are not** — zero
+shared ticks means the two censuses never overlapped, so nothing was compared.
+Calling that agreement is the same error as reading an unloaded chunk as air.
+**31 of 31 comparable pairs diverge.**
+
+And the first divergence lands at ticks **128–218** in most pairs — the same
+window as the promotion-schedule divergence (126–193). **Demand and promotion
+come apart at the same moment**, which is what a shared upstream cause looks
+like.
+
+★ What this does NOT establish: that send order *causes* the demand divergence.
+Both could descend from a common upstream. It establishes that the chain's
+predicted signature **is present**, which is the most a banked read can do — the
+A/B now running is what separates cause from correlate.
+
 ## ★ Stated limits
 
 This is a **READ**, not a measurement. What is established: the send order is
