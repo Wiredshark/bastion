@@ -46,6 +46,29 @@ the promoted **set** must stay 304, matching every banked capped run. **A fix
 that pins the schedule by changing what loads is a regression, however green the
 fingerprint looks.**
 
+## ★ DECLARED SIDE EFFECT — the barrier gates the whole terrain stream
+
+The gate is an early `return` from `sys/msg/terrain.rs`, so on non-boundary ticks
+it defers **every** message on that stream — including `LodZoneRequest` — not
+only `TerrainChunkRequest`.
+
+**Declaring it rather than letting it be found in the results.** Two readings,
+and I am not going to pick the flattering one after the fact:
+
+- **Defensible:** LOD requests are also client inputs whose arrival tick varies
+  between runs. If the goal is a deterministic input boundary, gating the whole
+  stream is *more* correct than gating one message type.
+- **A confound:** if deferring LOD changes behaviour, a difference in the fix arm
+  is not attributable to the chunk-request gate alone.
+
+Nothing is dropped — messages wait in the socket and the recv cap is 5 per client
+per tick — so the cost is bounded latency, not loss.
+
+★ If the fix arm comes back identical, this side effect does not change the
+verdict (the divergence is gone either way). **If it comes back different, this
+is the first thing to rule out** before concluding the barrier failed: a
+narrower gate on `TerrainChunkRequest` alone is the follow-up, not a new theory.
+
 ## Preconditions above every verdict
 
 1. Both twins boot and carry a terminator.
