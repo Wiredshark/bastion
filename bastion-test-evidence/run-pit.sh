@@ -123,6 +123,11 @@ case "$ARM" in
   endurance) SCRIPT="script-endurance.txt" ;;
   shaft)   PITVAR=" BASTION_FLAT_ARENA_SHAFT=1 BASTION_ACCESS_CLAIM_DIAG=1 BASTION_STATUS_STAMP_DIAG=1 BASTION_EGRESS_DIAG=1"
            SCRIPT="script-shaft.txt" ;;
+  # shaftctl: #34's MATCHED CONTROL. env BYTE-IDENTICAL to `shaft` -- the
+  # ONLY difference is the script's designation z-origin (surface, no
+  # overburden) vs the shaft wall (undercut). Same 12x12x4 volume.
+  shaftctl) PITVAR=" BASTION_FLAT_ARENA_SHAFT=1 BASTION_ACCESS_CLAIM_DIAG=1 BASTION_STATUS_STAMP_DIAG=1 BASTION_EGRESS_DIAG=1"
+            SCRIPT="script-shaftctl.txt" ;;
   # contend: LADDER CONTENTION (LADDER-CONTENTION-PREREG.md). Identical env
   # to `shaft` -- the ONLY difference is the script, which widens the mine
   # box across the shaft floor and walls so several colonists need the one

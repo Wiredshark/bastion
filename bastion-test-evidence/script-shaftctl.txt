@@ -1,0 +1,46 @@
+note SHAFTCTL -- #34's MATCHED CONTROL, the arm the row has been parked on.
+note
+note ★ THE ONE AXIS IS THE Z-ORIGIN, AND NOTHING ELSE. The treatment
+note   (script-shaft.txt) designates 16358,16378,391 -> 16370,16390,395: a
+note   12x12x4 box cut into the shaft wall, UNDER overburden. This control
+note   designates a box of IDENTICAL dimensions -- 12x12x4, same x/y span, same
+note   command, same colonist count, same env -- raised to z 400..404, at the
+note   surface, where there is NO MASS ABOVE IT.
+note
+note   A cave-in is "floating chunk collapsed": a mass left unsupported when the
+note   material beneath it is removed. If undercutting is what causes it, an
+note   identical excavation with nothing overhead must produce ZERO.
+note
+note ★★ WHY NOT "mine one layer instead of five": that would change the VOLUME
+note   as well as the exposure, and a difference could then be attributed to
+note   how much was mined rather than to what was above it. Volume, shape,
+note   block count and command are all held; only the overburden differs.
+note
+note REGISTERED PREDICTION, both directions:
+note   ZERO cave-ins here + nonzero in the treatment -> undercutting is the
+note     cause, and #34 finally has the A/B it was parked for.
+note   NONZERO cave-ins here -> cave-ins do NOT require overburden, the row's
+note     premise is wrong, and that is the finding.
+note   ZERO in BOTH -> the control is VOID, not green: this fixture length does
+note     not reach a cave-in at all and no comparison exists. The treatment's 7
+note     is the precondition that keeps this honest.
+anchor
+inspect_cell 16364 16384 400
+inspect_cell 16364 16384 404
+note PRECONDITION -- 400 should be SOLID ground surface, 404 AIR above it. If
+note   404 reads solid this is not a surface box and the arm is VOID.
+designate mine 16358 16378 400 16370 16390 404
+list_designations
+inspect_colonists
+wait 600
+inspect_colonists
+inspect_colony
+wait 600
+inspect_colonists
+inspect_colony
+wait 600
+inspect_colonists
+inspect_colony
+wait 600
+inspect_colonists
+inspect_colony
