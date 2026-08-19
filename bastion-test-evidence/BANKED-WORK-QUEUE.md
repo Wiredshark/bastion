@@ -229,6 +229,28 @@ air with no column to carve?
 
 ## Open, and each needs a decision rather than a build
 
+**Nothing below is blocked on work I can do.** Each has its measurement beside
+it; what is missing is a choice. Items 12 and 14 above are CLOSED, not pending —
+14 was built to completion, refuted by its own edge-cut, and reverted forward.
+
+### ★ Bar 2 is no longer an open search — its cause is NAMED
+
+`BAR2-CAUSE-IS-STRUCTURAL.md`: the client and server are **two independently
+wall-paced loops**, so the mapping spin → server-tick is a function of the wall
+clock. That explains why **all four** eliminated candidates returned nulls —
+every one was a wall-clock *read inside* a loop, and the coupling is the loop's
+*period*. It also predicts the corpus shape (100% divergence with a client,
+capped and uncapped alike; **0% headless**).
+
+Three options, priced:
+
+| option | cost | who |
+|---|---|---|
+| 1. make the driver tick-driven | **11 pacing + 9 `dt` sites, all-or-nothing** — a partial build leaves half the coupling and manufactures an encouraging number | design |
+| 2. scope bar 2 to the engine | membership identical 30/30, robust even under a deliberate wall-clock plant | redefines a bar |
+| 3. retire the timing clause; re-register headless | already passes 6/6 there, and now `work_units` 5/5 | redefines a bar |
+
+
 1. **bar-2 scope** — engine PASS vs engine+client FAIL. Decides how the row closes.
 2. **haul-deadlock default** — `BASTION_FIX_HAUL_STARVED_CELL` on by default?
 3. **`self_rescue` egress semantics** — measured necessary; adopting them is design.
