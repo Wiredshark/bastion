@@ -4090,6 +4090,19 @@ impl Server {
         (flattened, truncated)
     }
 
+    /// PRECONDITION for the eat/stack pair (instrument debt, ebc2b5a053).
+    /// `b5_eat_completions_distinct` and `b5_stack_reserved_units_max` are ZERO
+    /// on all 48 seeds, which reads two ways the fields cannot separate: the
+    /// stack path RAN and nothing stacked, or NO RESERVATION WAS EVER MADE.
+    /// `next_reservation` is a monotonic id counter -- it already answers this
+    /// and only needed exposing. 0 => the zeros are VACUOUS.
+    pub fn bastion_reservation_total(&self) -> u64 {
+        self.state
+            .ecs()
+            .read_resource::<bastion_jobs::JobBoard>()
+            .reservation_total()
+    }
+
     pub fn bastion_eat_stack_stats(&self) -> (u32, u32) {
         let board = self
             .state

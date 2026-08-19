@@ -4623,6 +4623,7 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // #89 (ROW69-OPTION-B-PACKET): captured once, same reason -- the
     // reservation-capacity row's feature-acceptance measures.
     let eat_stack = server.bastion_eat_stack_stats();
+    let reservation_total = server.bastion_reservation_total();
     // ROW-ITEM6-WITNESS-PACKET: captured once, same reason -- item 6's
     // pickup-refusal witness, board accumulators so the fan (stdout JSON
     // only) can see it at all.
@@ -5048,6 +5049,10 @@ fn b5_scenario(args: &Args) -> ExitCode {
         // ever be added to the `clauses` vec above (review check: `grep
         // '"b5_eat_completions_distinct\|b5_stack_reserved_units_max' `
         // over that region must return zero).
+        // PRECONDITION for the two fields below (instrument debt). Both are
+        // ZERO on all 48 seeds; this says whether the stack path RAN at all.
+        // 0 => those zeros are VACUOUS, not real.
+        "b5_reservation_total": reservation_total,
         "b5_eat_completions_distinct": eat_stack.0,
         "b5_stack_reserved_units_max": eat_stack.1,
         "b5_pickup_refused_pile_protected": item6_witness.0,

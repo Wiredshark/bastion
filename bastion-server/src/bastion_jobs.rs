@@ -5587,6 +5587,7 @@ pub struct JobBoard {
     /// still enforced by `reserve`'s capacity `debug_assert`).
     reservations_by_item: HashMap<Uid, Vec<common::bastion::ReservationId>>,
     next_reservation: common::bastion::ReservationId,
+
     /// bastion (R10): the authoritative per-link fencing-epoch store —
     /// `link_id → current epoch` (absent = 0). Advanced ONLY at release-
     /// class events (release/abort/reacquire/re-election/teardown/despawn
@@ -5730,6 +5731,14 @@ pub fn canonical_cell_drop_order(cells: impl IntoIterator<Item = Vec3<i32>>) -> 
 }
 
 impl JobBoard {
+    /// PRECONDITION accessor for the eat/stack pair (instrument debt). The
+    /// monotonic reservation id doubles as "how many reservations were EVER
+    /// made" -- zero means the stack path never ran, so b5_stack_reserved_units_max
+    /// and b5_eat_completions_distinct being zero is VACUOUS, not a real zero.
+    pub fn reservation_total(&self) -> common::bastion::ReservationId {
+        self.next_reservation
+    }
+
     /// Stage-1 single reservation authority. A live task's reserved member is
     /// authoritative. Before a task exists, the head of the link's FAIR
     /// queue (`(enqueue_tick, uid)` — M3, replacing the R9-named
