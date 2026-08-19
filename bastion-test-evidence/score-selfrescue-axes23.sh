@@ -30,6 +30,8 @@
 #
 # Usage: sh score-selfrescue-axes23.sh <outdir> <seed> [seed...]
 set -u
+# ★ corpus-first, enforced for LOCAL runs too (see corpus-first.sh)
+. "$(dirname "$0")/corpus-first.sh"
 OUT="${1:?usage: score-selfrescue-axes23.sh <outdir> <seed> [seed...]}"; shift
 [ $# -ge 1 ] || { echo "REFUSED: no seeds given" >&2; exit 2; }
 

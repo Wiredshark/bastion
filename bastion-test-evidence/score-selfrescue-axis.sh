@@ -33,6 +33,8 @@
 #   Default seeds should be ones with known-nonzero self_rescue calls in
 #   wave34: 37 (11 calls), 3 (7), 29 (6), 16 (6), 11 (6).
 set -u
+# ★ corpus-first, enforced for LOCAL runs too (see corpus-first.sh)
+. "$(dirname "$0")/corpus-first.sh"
 OUT="${1:?usage: score-selfrescue-axis.sh <outdir> <seed> [seed...]}"; shift
 [ $# -ge 1 ] || { echo "REFUSED: no seeds given" >&2; exit 2; }
 
