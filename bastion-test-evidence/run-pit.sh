@@ -330,6 +330,15 @@ case "$ARM" in
               PITTPS=""
               PITDRIVERENV="BASTION_PLANT_POS_DELAY=90"
               SCRIPT="script-provtraverse.txt" ;;
+  # ★ THE ENGINE-ONLY DETERMINISM ARM. provtravcap's env exactly -- real terrain,
+  # capped TPS, provisioning census -- but NO CLIENT. The colony's own Presence
+  # requests terrain, so the cross-process arrival race that bar 2 always trips
+  # on cannot occur. Identical twins here isolate the engine from the client.
+  provheadless) PITVAR=" BASTION_TERRAIN_PROVISION_DIAG=1"
+              PITARENA=""
+              PITTPS=""
+              PITHEADLESS=1
+              SCRIPT="script-provtraverse.txt" ;;
   wall2)   PITVAR=" BASTION_FLAT_ARENA_WALLED=1 BASTION_HOSTILE_PROXIMITY_DIAG=1"
               SCRIPT="script-wall2.txt" ;;
   wallctl) PITVAR=""
@@ -483,8 +492,31 @@ echo "port $GAME open after ${t}s" >> "$EV/$TAG.log"
 # ONLY `env $BASTION_ENV veloren-server-cli` -- so a DRIVER-side flag
 # (BASTION_JOIN_HOLD_TICKS, BASTION_DRIVER_*) was silently dropped and its
 # arm ran IDENTICALLY to its control. #89 first A/B was VOID on this.
+# ★★★ HEADLESS MODE (PITHEADLESS=1): run the server with NO CLIENT AT ALL.
+#
+# WHY IT EXISTS. Bar 2 asks whether twin runs are state-identical INCLUDING
+# chunk timing. Measured across 38 twin pairs, the FIRST divergence is ALWAYS
+# the client's chunk request arriving on a different tick -- never server-side
+# promotion. Client and server are separate processes with independent tick
+# loops, so no server-side change fixes it: the chunk-send ordering fix ran
+# 11,400 times and changed nothing, and the request-side modulus barrier only
+# moved the divergence onto a boundary.
+#
+# This removes the cause BY CONSTRUCTION. BASTION_AUTOFOUND_COLONY creates a
+# colony carrying its OWN Presence (COLONY_PRESENCE_VIEW_DISTANCE = 1, see
+# `bastion_found_colony_presence`), so the SERVER requests terrain for itself
+# and no second process exists to race with.
+#
+# It answers the scoping question with a MEASUREMENT rather than an opinion:
+# does bar 2 fail because the ENGINE is nondeterministic, or because a
+# networked client is in the loop?
+if [ -n "${PITHEADLESS:-}" ]; then
+  echo "HEADLESS: no driver spawned; the colony's own Presence drives terrain" >> "$EV/$TAG.log"
+  sleep "${PITHEADLESS_SECS:-240}"
+else
 env $PITDRIVERENV "$B/bastion_playtest$EXE" "127.0.0.1:$GAME" "$TAG" \
     "$EV/$SCRIPT" "$EV/driver-$TAG.log" > "$EV/driverout-$TAG.log" 2>&1
 echo "driver exited rc=$?" >> "$EV/$TAG.log"
+fi
 
 . "$EV/launch-postamble.sh"
