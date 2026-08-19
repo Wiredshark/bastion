@@ -26,19 +26,36 @@ wave34 corpus, 48 seeds, no spend.
 A pair of *constants* would be dead, not redundant — these all move, and move
 **together, on every seed**.
 
-### ★ Two of these are checks that cannot fail
+### ★ I called two of these "checks that cannot fail". Reading the producer, they are not
 
-**`b5_tool_steel` vs `b5_tool_steel_measured`.** The entire point of a
-`_measured` twin is to verify the declared value independently. It has **never
-once disagreed** across 48 seeds. A verification that cannot disagree verifies
-nothing — it is a comment wearing a field's clothes.
-[[a-field-cannot-calibrate-its-own-bound]]
+**`b5_tool_steel` / `_measured` — ALREADY DOCUMENTED, not a discovery.** The
+harness says so at the assignment, in full:
 
-**`b5_ch_ground_truth_tree_present` ≡ `b5_ch_engaged`.** A field named *ground
-truth* exists to contradict the engine's own claim when the world disagrees. It
-is element-identical to the claim on all 48 seeds. Either the world never
-disagrees, or both read the same source — and the field as it stands cannot tell
-those apart.
+> *"`b5_tool_stone_measured`/`_steel_measured` (added earlier, additive-only, as
+> a workaround before this mutating window was eligible) now carry the **SAME
+> information** as these — left in place since removing them isn't part of this
+> registered delta, **not because they're still doing independent work**."*
+
+`let tl_stone: Option<f32> = tl_stone_raw;` — identical **by assignment**. My
+measurement reproduced a residual its authors had already registered in a
+comment, which is the good case: the corpus agreed with the code.
+[[sufficiency-claims-must-name-their-case]]
+
+**`b5_ch_engaged` ≡ `b5_ch_ground_truth_tree_present` — derived, not
+independent.** `ch_engaged` is *computed from* that field via `ch_oracle_class`
+(`match (ch_trees >= 1, ch_ground_truth_tree_present, ch_scan_incomplete)`), and
+`b5_ch_scan_incomplete` is constant `false` corpus-wide. Their agreement is
+construction, not evidence of a broken oracle. **Withdrawn.**
+
+### What is NOT explained by reading the producer
+
+| tie | status |
+|---|---|
+| `b5_ch_cancel_clean` ≡ the other two | `ch_cancel_clean` is a **separate** AABB predicate (`main.rs:4433`), not derived from the oracle class — the identity is unexplained |
+| `b5_ch_jobs` ≡ `b5_ch_trees` | 10 distinct values, always equal — unexplained |
+| `b5_any_needs_materials` ≡ `b5_build_placed` | semantically unrelated names — unexplained |
+
+Those three are worth a producer read. The other four are accounted for.
 
 ## Why this matters to #84 — with the direction of bias named
 
