@@ -38,11 +38,22 @@ empty queue is itself a finding — refill from `readme/BUILD-ROADMAP.md`.
    refused (no in-claim route) — job unreachable`, emitted **13 times** in the
    run whose note said "the cause is still unnamed". No spend.
 
-7. **★ Why does `auto-access` find no in-claim route on some seeds?** — the
-   successor filed by item 6, and better posed than it was. Corpus is ready
-   (**48 seeds graded 0→21 refusals**), matched control is ready (**s37 vs s35**,
-   same wave and config), and the witness already exists to score against.
-   **Needs no new runs.** Not chartered — needs Ben's go or a quiet slot.
+7. ~~**★ Why does `auto-access` find no in-claim route on some seeds?**~~
+   **ANSWERED 2026-08-19 — bigger than "some seeds". See
+   `SELF-RESCUE-NEVER-SUCCEEDS.md` (`6ceb8ece43`).** The `self_rescue` entry
+   point to `plan_access` is **0 emissions in 55 calls across 48 seeds — 0%**,
+   while the `emergency` entry point to the *same function* succeeds **46 of
+   478** in the same runs. Counter pair verified against the emit on 48/48
+   seeds. Not a per-seed effect: corpus-wide and total. No spend.
+
+8. **★ Isolate WHICH of the three call-site axes blocks `self_rescue`** — the
+   two live sites differ on mask (`designated_regions()` vs a synthesised
+   egress bubble), `emergency_owner`, and `emergency_approach` **all at once**,
+   so the emergency site proves `plan_access` *can* succeed but isolates
+   nothing. Vary one axis at a time at the self_rescue site; score on the
+   existing verified counter pair. Registered outcomes **MASK / CONTEXT /
+   BOTH-REQUIRED / NEITHER**. **Cost: one seed, no fan** (s37 has 11 calls,
+   s3 has 7, s29 has 6). Not chartered.
 
 ## Blocked / needs a decision (Ben)
 
