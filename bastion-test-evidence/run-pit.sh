@@ -282,6 +282,16 @@ case "$ARM" in
   # tick axis means the same thing in every run. Without this the comparison
   # indexes two timelines running at different rates -- which is exactly how I
   # produced a false "loading is not deterministic" verdict.
+  # provtravuncap: CERT BAR 1's matched partner for provtravcap. IDENTICAL in
+  # every respect -- same diag, same real terrain, same deterministic drain --
+  # except PITTPS is left at its DEFAULT (uncapped). One axis: the TPS cap.
+  #
+  # ★ The banked corpus had NO such pair: provtrav differs from provtravcap on
+  # TPS cap AND deterministic drain AND arena, so scoring bar 1 on it would
+  # have compared three axes and called it one.
+  provtravuncap) PITVAR=" BASTION_TERRAIN_PROVISION_DIAG=1"
+              PITARENA=""    # real terrain, same as provtravcap
+              SCRIPT="script-provtraverse.txt" ;;
   provtravcap) PITVAR=" BASTION_TERRAIN_PROVISION_DIAG=1"
               PITARENA=""    # real terrain
               PITTPS=""      # CAPPED: the tick axis is now comparable across runs
