@@ -459,6 +459,9 @@ pub struct Client {
     // DET-NET-011/012 (v6, stage 1): newest server sync tick seen across
     // the replication streams (the chronology witness).
     last_server_sync_tick: u64,
+    /// Tick of the last LoD zone request — the tick-based twin of
+    /// `lod_last_requested`, so the cadence can be made deterministic.
+    lod_last_requested_tick: u64,
     /// `APEX-T7.4` item A: correction-magnitude accounting, recorded on
     /// every `Replayed` reconciliation outcome. See
     /// `common_systems::reconciliation::CorrectionMagnitudeMetricsV1`'s
@@ -1587,6 +1590,7 @@ impl Client {
             ),
             was_mounted_last_tick: false,
             last_server_sync_tick: 0,
+            lod_last_requested_tick: 0,
             correction_magnitude_metrics: common_systems::reconciliation::CorrectionMagnitudeMetricsV1::new(),
 
             role,
@@ -3687,9 +3691,38 @@ impl Client {
             let lod_zone = lod_pos.map(|e| lod::from_wpos(e as i32));
 
             // Request LoD zones that are in range
-            if self
-                .lod_last_requested
-                .is_none_or(|i| i.elapsed() > Duration::from_secs(5))
+            // ★★ ROW #89, THE UNTRIED LEVER (2026-08-19). Bar 2 fails on the
+            // TIMING clause and three SERVER-side fixes were eliminated by
+            // measurement; the standing finding is that "the client's chunk
+            // demand is the uncontrolled half".
+            //
+            // BASTION_TICK_GATED_REQUESTS gated the chunk-request retain a few
+            // lines above, and its comment claimed that was "the only
+            // wall-clock read left in that chain". It was — in the CHUNK
+            // chain. This LoD request gate is a SECOND live wall-clock read in
+            // the same request path, five lines later, and it was never
+            // covered: `elapsed() > 5s` on an uncapped server has no fixed
+            // relationship to tick count, so LoD requests enter the message
+            // stream at wall-clock-determined moments and perturb it.
+            //
+            // Under the same flag the cadence becomes TICK-based (150 ticks =
+            // 5 s at SIM_TPS 30), so the arms differ by exactly this and
+            // nothing else. Unset = today's behaviour, byte-for-byte.
+            let lod_due = if std::env::var_os("BASTION_TICK_GATED_REQUESTS").is_some() {
+                let due = self.tick.saturating_sub(self.lod_last_requested_tick) >= 150
+                    || self.lod_last_requested_tick == 0;
+                if due {
+                    tracing::info!(
+                        tick = self.tick,
+                        "bastion: row89 LoD request TICK-GATED (probe active)"
+                    );
+                }
+                due
+            } else {
+                self.lod_last_requested
+                    .is_none_or(|i| i.elapsed() > Duration::from_secs(5))
+            };
+            if lod_due
                 && let Some(rpos) = Spiral2d::new()
                     .take((1 + self.lod_distance.ceil() as i32 * 2).pow(2) as usize)
                     .filter(|rpos| !self.lod_zones.contains_key(&(lod_zone + *rpos)))
@@ -3702,6 +3735,7 @@ impl Client {
                     key: lod_zone + rpos,
                 })?;
                 self.lod_last_requested = Some(Instant::now());
+                self.lod_last_requested_tick = self.tick;
             }
 
             // Cull LoD zones out of range
