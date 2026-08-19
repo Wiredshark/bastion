@@ -124,6 +124,15 @@ empty queue is itself a finding — refill from `readme/BUILD-ROADMAP.md`.
    witness proved delivery and told us nothing about which internal branch
    refuses. Runs locally, no VM. Not chartered.
 
+   **★ IN FLIGHT 2026-08-19** — `BASTION_PLAN_ACCESS_DIAG` built (default OFF)
+   and running on seeds **37, 3** (the refusers) plus **29** as a positive
+   control that DOES emit, all with both axes on. It separates three outcomes
+   that previously all rendered as a bare `None`: `ladder_pillar` returning
+   none (logging `owner_present`/`approach_present`), the silent
+   `emergency_approach?` early exit in the escape-shaft fallback, and the
+   owner-gated `emergency_reengage_exhausted` refusal — the counter-prediction
+   registered before the axes-2/3 run.
+
 ## Blocked / needs a decision (Ben)
 
 - **Tick-loading scope call** — roadmap criterion passes, mandate bar 2 fails.
