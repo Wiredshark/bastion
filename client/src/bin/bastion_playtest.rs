@@ -54,7 +54,6 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tokio::runtime::Runtime;
-use tracing::warn;
 use vek::Vec3;
 use veloren_client::{Client, ClientType, Event, WorldExt, addr::ConnectionArgs};
 
@@ -514,17 +513,64 @@ fn main() {
         client.state().ecs().read_resource::<Time>().0
     }
 
-    // Let terrain load a moment before reading position / painting.
-    for _ in 0..(TPS * 2) {
+    // bastion: WAIT ON THE CONDITION, NOT ON A CLOCK.
+    //
+    // This was a fixed `TPS * 2` spin followed by ONE read of `Pos` with a
+    // silent `unwrap_or_else(|| Vec3::zero())`. When the component had not
+    // arrived inside that fixed window the driver anchored the god-camera at
+    // the WORLD ORIGIN: the server then generated and streamed a 7x7 block of
+    // terrain at chunk (0, 0) that nothing ever looked at, while the colony
+    // itself got only its baseline chunks.
+    //
+    // Measured on the banked corpus: this fired in 41 of 68 runs, and one twin
+    // pair SPLIT across it -- twin1 anchored at the colony, twin2 at the
+    // origin, a 154-chunk difference in promoted terrain that had been read as
+    // engine nondeterminism. The two outcomes are indistinguishable in a
+    // scored log, so the corpus carried two populations under one label.
+    //
+    // There is no neutral position to fall back to: the origin is not a
+    // degraded answer, it is a DIFFERENT EXPERIMENT. So the failure path
+    // refuses rather than guesses, and exits non-zero so a run that could not
+    // be anchored can never be scored as one that was.
+    const POS_WAIT_TICKS: u64 = TPS * 15;
+    let mut warmed: u64 = 0;
+    let anchored = loop {
+        if let Some(p) = own_pos(&client) {
+            break Some(p);
+        }
+        if warmed >= POS_WAIT_TICKS {
+            break None;
+        }
+        let _ = client.tick(comp::ControllerInputs::default(), clock.game_dt());
+        client.cleanup();
+        clock.tick();
+        warmed += 1;
+    };
+    let Some(mut current_pos) = anchored else {
+        log.log(&format!(
+            "VOID: no Pos component after {POS_WAIT_TICKS} ticks ({}s) -- REFUSING to anchor at the \
+             world origin. Anchoring at Vec3::zero() streams terrain at chunk (0, 0) and silently \
+             makes this run a different condition from one anchored at the colony.",
+            POS_WAIT_TICKS / TPS
+        ));
+        std::process::exit(3);
+    };
+    log.log(&format!(
+        "Pos arrived after {warmed} ticks (ceiling {POS_WAIT_TICKS}); anchor is the colony, not the origin"
+    ));
+    // Terrain warm-up, unchanged in length: Pos arriving early must not shorten
+    // the settle the painting path depends on.
+    for _ in warmed..(TPS * 2) {
         let _ = client.tick(comp::ControllerInputs::default(), clock.game_dt());
         client.cleanup();
         clock.tick();
     }
-
-    let mut current_pos = own_pos(&client).unwrap_or_else(|| {
-        warn!("no Pos component readable yet; defaulting to origin");
-        Vec3::zero()
-    });
+    // Re-read after the settle so the anchor is the SETTLED position, exactly as
+    // before -- the wait above changed only whether `Pos` exists, not when it is
+    // sampled. Breaking out of the wait early must not sample a falling player.
+    if let Some(p) = own_pos(&client) {
+        current_pos = p;
+    }
     log.log(&format!("player pos at script start: {current_pos:?}"));
 
     for cmd in script {
