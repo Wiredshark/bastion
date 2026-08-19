@@ -533,10 +533,32 @@ fn main() {
     // refuses rather than guesses, and exits non-zero so a run that could not
     // be anchored can never be scored as one that was.
     const POS_WAIT_TICKS: u64 = TPS * 15;
+    // ★ PLANT, for the red-demonstration this fix owes. The race fires only
+    // when `Pos` arrives later than the old fixed `TPS * 2` spin, which depends
+    // on server boot speed -- on fresh hosts it arrived at tick 47-48 in 6 of 6
+    // runs, so a whole VM fan demonstrated nothing and was scored VOID rather
+    // than green. Waiting for the condition to occur by luck is not a test.
+    //
+    // `BASTION_PLANT_POS_DELAY=<ticks>` withholds `Pos` from the driver for the
+    // first N ticks -- the stage this fix protects -- so a value above TPS*2
+    // forces exactly the case the old code got wrong. INERT when unset.
+    let plant_pos_delay: u64 = std::env::var("BASTION_PLANT_POS_DELAY")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    if plant_pos_delay > 0 {
+        log.log(&format!(
+            "PLANT ACTIVE: BASTION_PLANT_POS_DELAY={plant_pos_delay} -- Pos is withheld from the \
+             driver for the first {plant_pos_delay} ticks. This run is PLANTED and must never be \
+             scored as a live measurement."
+        ));
+    }
     let mut warmed: u64 = 0;
     let anchored = loop {
-        if let Some(p) = own_pos(&client) {
-            break Some(p);
+        if warmed >= plant_pos_delay {
+            if let Some(p) = own_pos(&client) {
+                break Some(p);
+            }
         }
         if warmed >= POS_WAIT_TICKS {
             break None;
@@ -915,50 +937,92 @@ fn main() {
                 let mut candidates = Vec::new();
                 let mut columns_scanned = 0;
                 let mut columns_no_surface = 0;
+                // ★ AN UNLOADED CELL IS NOT AIR. Both scans below read the
+                // terrain with `.map(|b| b.is_filled()).unwrap_or(false)`, and
+                // `TerrainGrid::get` returns Err for a chunk that is not
+                // loaded. So "not filled" silently covered two different
+                // worlds: a cell the client has SEEN and found empty, and a
+                // cell the client has NEVER SEEN. The first is evidence; the
+                // second is absence of evidence, and they rendered identically
+                // in every one of the 94 banked logs carrying a survey.
+                //
+                // The consequence is not cosmetic: an unloaded column reports
+                // "no surface in range", and an unloaded run beneath a surface
+                // counts toward `empty_run`, which is what promotes a column to
+                // an OVERHANG CANDIDATE. Unloaded terrain could therefore
+                // manufacture the very finding the survey exists to make.
+                //
+                // Counted, not fixed by clamping: the survey still reports what
+                // it saw, but a reader can now tell which kind of nothing it
+                // was. [[null-needs-a-couldnt-happen-witness]]
+                let mut columns_unloaded = 0;
+                let mut cells_unloaded = 0;
                 for y in y0..=y1 {
                     for x in x0..=x1 {
                         columns_scanned += 1;
                         let mut surface = None;
                         let mut z = ztop;
+                        let mut column_saw_unloaded = false;
                         while z >= zbot {
-                            if terrain
-                                .get(Vec3::new(x, y, z))
-                                .map(|b| b.is_filled())
-                                .unwrap_or(false)
-                            {
-                                surface = Some(z);
-                                break;
+                            match terrain.get(Vec3::new(x, y, z)) {
+                                Ok(b) => {
+                                    if b.is_filled() {
+                                        surface = Some(z);
+                                        break;
+                                    }
+                                },
+                                Err(_) => {
+                                    cells_unloaded += 1;
+                                    column_saw_unloaded = true;
+                                },
                             }
                             z -= 1;
+                        }
+                        if column_saw_unloaded {
+                            columns_unloaded += 1;
                         }
                         let Some(sz) = surface else {
                             columns_no_surface += 1;
                             continue;
                         };
                         let mut empty_run = 0;
+                        let mut run_unloaded = 0;
                         let mut zz = sz - 1;
                         while zz >= zbot {
-                            let filled = terrain
-                                .get(Vec3::new(x, y, zz))
-                                .map(|b| b.is_filled())
-                                .unwrap_or(false);
-                            if filled {
-                                break;
+                            match terrain.get(Vec3::new(x, y, zz)) {
+                                Ok(b) if b.is_filled() => break,
+                                Ok(_) => {},
+                                Err(_) => {
+                                    run_unloaded += 1;
+                                    cells_unloaded += 1;
+                                },
                             }
                             empty_run += 1;
                             zz -= 1;
                         }
                         if empty_run >= gap {
-                            candidates.push((x, y, sz, empty_run));
+                            // Carry the unloaded count INTO the candidate, so a
+                            // candidate built out of unseen cells is visible as
+                            // such at the point it is quoted, not only in a
+                            // summary line further down.
+                            candidates.push((x, y, sz, empty_run, run_unloaded));
                         }
                     }
                 }
                 drop(terrain);
+                let tainted = candidates.iter().filter(|c| c.4 > 0).count();
                 log.log(&format!(
                     "survey [{x0},{y0}]-[{x1},{y1}] z[{zbot},{ztop}] gap>={gap}: \
                      {columns_scanned} columns, {columns_no_surface} with no surface \
-                     in range, {} overhang candidates: {candidates:?}",
-                    candidates.len()
+                     in range, {} overhang candidates: {candidates:?} \
+                     | UNLOADED: {columns_unloaded} columns touched unloaded terrain, \
+                     {cells_unloaded} cells unseen, {tainted} candidates rest on unseen cells{}",
+                    candidates.len(),
+                    if columns_unloaded > 0 || tainted > 0 {
+                        " <- READ THE UNLOADED FIGURES BEFORE THE CANDIDATES"
+                    } else {
+                        " (every cell in range was actually observed)"
+                    }
                 ));
             },
             ScriptCmd::Note(text) => {
