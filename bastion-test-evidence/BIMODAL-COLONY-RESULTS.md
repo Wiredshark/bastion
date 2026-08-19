@@ -114,3 +114,55 @@ subsystem, wrong observable.
 are those ~30 jobs blocked on, and what does the clearing event look like in the
 7 runs where it happens?** That is a single-log read on a banked corpus, and the
 runs to read are named above.
+
+---
+
+# ★★★ THE CHAIN, READ END TO END
+
+Both regimes start **identically**: 8 plots sown, 8 matured, 8 harvested. In the
+collapsed run that entire history spans **15 seconds of wall time**, and then the
+farm is dead for the remaining ~40 minutes of the run.
+
+| | COLLAPSE | THRIVE |
+|---|---|---|
+| sown | **8** | 1,975 |
+| matured / harvested | 8 / 8 | 1,948 / 1,948 |
+| **haul** | **5** | **9,167** |
+| job claimed | 48 | 6,664 |
+| designations swept unclaimed | **276** | 8 |
+| claim census (final) | considered 304, **eligible 0**, refused 304 | considered 54, eligible 7, assigned 2 |
+| refusal reasons | `self_job_kind` 64 + **`materials` 240** | `self_job_kind` 46, **`materials` 0** |
+
+★ The claim census reproduces **#114's original signature exactly** —
+*"every candidate refused, and most refusals were `materials`"*.
+
+## What is established
+
+The farm loop **runs exactly one cycle and stops**. Produce is harvested but the
+haul count is 5 against 8 harvests, so the crop never reliably reaches a
+stockpile, `materials` never becomes available, every subsequent claim is refused
+for `materials`, designations age out and are swept, and the colony never sows
+again.
+
+## ★ What is NOT established — the causal direction
+
+**Hauling is itself a job that must be claimed**, and claims are refused 304/304.
+So `haul = 5` may be the **cause** of the materials famine or a **symptom** of the
+same claim failure. The two are not separated by this data.
+
+There is one suggestive asymmetry worth the next read: a **haul job moves
+materials, so it should not itself be refused *for* materials**. If the 240
+`materials` refusals are all sow-type jobs while haul jobs are refused for some
+other reason — or not refused at all and simply never generated — those are
+different defects. **That is the next single-log read**, and it is on banked
+data.
+
+## ★ Consequence for #114's intervention
+
+`endurseed` exists to add **seed stock**. If the binding constraint is the
+**haul** loop rather than seed availability, then the arm's intervention is aimed
+one link away from the failure — the colony has seeds it cannot move. That would
+explain why adding seed stock produces a 50/50 outcome instead of a fix.
+
+**Stated as a consequence to test, not a conclusion:** it follows only if haul is
+causal, which is exactly what is not yet established.
