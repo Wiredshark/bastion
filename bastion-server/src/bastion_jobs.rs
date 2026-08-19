@@ -1525,7 +1525,31 @@ fn plan_access(
                         )
                     })
                     .or_else(|| {
+                        // ★ CONSUMPTION-SITE WITNESS (banked item 10,
+                        // 2026-08-19). The call-site witnesses proved the
+                        // arguments ARRIVED and said nothing about which
+                        // internal branch refuses — "delivered != used". With
+                        // both arguments, 3 of 5 seeds emit and seeds 37 and 3
+                        // still do not; this names the tier that gave up on
+                        // them. Env-gated, default OFF.
+                        if std::env::var_os("BASTION_PLAN_ACCESS_DIAG").is_some() {
+                            info!(
+                                ?from,
+                                ?to,
+                                owner_present = emergency_owner.is_some(),
+                                approach_present = emergency_approach.is_some(),
+                                "bastion: PLAN-DIAG ladder_pillar -> NONE, falling back to escape shaft"
+                            );
+                        }
                         emergency_owner.and_then(|_| {
+                            if emergency_approach.is_none()
+                                && std::env::var_os("BASTION_PLAN_ACCESS_DIAG").is_some()
+                            {
+                                info!(
+                                    ?from,
+                                    "bastion: PLAN-DIAG escape shaft SKIPPED — no approach"
+                                );
+                            }
                             let (approach_start, cylinder) = emergency_approach?;
                             emergency_escape_shaft(
                                 terrain,
@@ -1573,6 +1597,19 @@ fn plan_access(
     if let Some(owner) = emergency_owner
         && board.emergency_reengage_exhausted.contains(&owner)
     {
+        // ★ Item 10: this is the ONLY `return None` in `plan_access`, and it
+        // fires ONLY when an owner is passed — so supplying an owner can ADD a
+        // refusal. It was registered as the counter-prediction before the
+        // axes-2/3 run; if seeds 37/3 die here, that prediction was right for
+        // them even though arm D moved overall.
+        if std::env::var_os("BASTION_PLAN_ACCESS_DIAG").is_some() {
+            info!(
+                ?from,
+                ?to,
+                uid = owner.0.get(),
+                "bastion: PLAN-DIAG REFUSED by emergency_reengage_exhausted"
+            );
+        }
         return None;
     }
     if let Some(owner) = emergency_owner
