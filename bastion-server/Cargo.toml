@@ -11,7 +11,6 @@ workspace = true
 worldgen = []
 
 [dependencies]
-bastion-core = { path = "../bastion-core" }
 common = { package = "veloren-common", path = "../common" }
 common-ecs = { package = "veloren-common-ecs", path = "../common/ecs" }
 common-state = { package = "veloren-common-state", path = "../common/state" }

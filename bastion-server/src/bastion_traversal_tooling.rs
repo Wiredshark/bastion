@@ -1288,7 +1288,7 @@ mod tests {
     fn stage1_old_mount_owner_and_duplicate_reservation_are_absent() {
         let root = repo_root();
         let jobs = fs::read_to_string(root.join("bastion-server/src/bastion_jobs.rs")).unwrap();
-        let traversal = fs::read_to_string(root.join("bastion-core/src/bastion_traversal.rs")).unwrap();
+        let traversal = fs::read_to_string(root.join("bastion-server/src/bastion_traversal.rs")).unwrap();
         for legacy in [
             "EmergencyMountTransaction",
             "EmergencyMountPhase",
@@ -2373,16 +2373,11 @@ mod tests {
         for path in [
             "bastion-server/src/bastion_jobs.rs",
             "bastion-server/src/bastion_actions.rs",
-            // ★ Moved to `bastion-core` by the speed row (2026-08-19). The path
-            // FOLLOWS THE CODE rather than being deleted: this guard is keyed on
-            // file paths, so dropping the entry would have silently stopped
-            // enforcing T0.2 on this file the moment it moved. Every further
-            // module this row relocates must be re-pointed here too.
-            "bastion-core/src/bastion_mood.rs",
+            "bastion-server/src/bastion_mood.rs",
             "bastion-server/src/bastion_piles.rs",
             "bastion-server/src/bastion_chop.rs",
             "bastion-server/src/bastion_path.rs",
-            "bastion-core/src/bastion_traversal.rs",
+            "bastion-server/src/bastion_traversal.rs",
             "common/src/comp/loot_owner.rs",
             "server/src/sys/loot.rs",
             "server/src/sys/item.rs",

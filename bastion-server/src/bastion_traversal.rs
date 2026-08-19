@@ -6,7 +6,7 @@
 //! validated approach; Controller, CharacterState::Climb/Stand, contact and
 //! physics remain authoritative execution.
 
-use crate::bastion_jobs_core::EmergencyTraversalKind;
+use crate::bastion_jobs::EmergencyTraversalKind;
 use common::{
     bastion::JobId,
     comp::bastion::{BastionTraversalMode, BastionTraversalOwnership},
@@ -15,7 +15,7 @@ use common::{
 use vek::{Vec3, Vec3 as VekVec3};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BastionTraversalReject {
+pub(crate) enum BastionTraversalReject {
     LinkAlreadyReserved,
     StaleTerrainRevision,
     InvalidPhase,
@@ -108,7 +108,7 @@ pub fn fenced_movement_write(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BastionTraversalInterruption {
+pub(crate) enum BastionTraversalInterruption {
     ContactLost,
     ExternalRelocation,
     AgentInbox,
@@ -120,7 +120,7 @@ pub enum BastionTraversalInterruption {
 }
 
 impl BastionTraversalInterruption {
-    pub fn reason(self) -> &'static str {
+    pub(crate) fn reason(self) -> &'static str {
         match self {
             Self::ContactLost => "authoritative-contact-lost",
             Self::ExternalRelocation => "external-relocation",
@@ -151,7 +151,7 @@ pub enum BastionTraversalPhase {
 }
 
 impl BastionTraversalPhase {
-    pub fn mode(self) -> Option<BastionTraversalMode> {
+    pub(crate) fn mode(self) -> Option<BastionTraversalMode> {
         match self {
             Self::LinkApproach => Some(BastionTraversalMode::LinkApproach),
             Self::QueuedForLink => Some(BastionTraversalMode::QueuedForLink),
@@ -210,7 +210,7 @@ pub struct BastionTraversalTask {
 }
 
 impl BastionTraversalTask {
-    pub fn transition(
+    pub(crate) fn transition(
         &mut self,
         next: BastionTraversalPhase,
         tick: u64,
@@ -266,7 +266,7 @@ impl BastionTraversalTask {
         Ok(())
     }
 
-    pub fn reserve(&mut self, member: Uid, tick: u64) -> Result<(), BastionTraversalReject> {
+    pub(crate) fn reserve(&mut self, member: Uid, tick: u64) -> Result<(), BastionTraversalReject> {
         if self.phase != BastionTraversalPhase::QueuedForLink {
             return Err(BastionTraversalReject::InvalidPhase);
         }
@@ -278,7 +278,7 @@ impl BastionTraversalTask {
         Ok(())
     }
 
-    pub fn validate_terrain_revision(
+    pub(crate) fn validate_terrain_revision(
         &mut self,
         observed: u64,
         tick: u64,
@@ -291,16 +291,16 @@ impl BastionTraversalTask {
         }
     }
 
-    pub fn interrupt(&mut self, interruption: BastionTraversalInterruption, tick: u64) {
+    pub(crate) fn interrupt(&mut self, interruption: BastionTraversalInterruption, tick: u64) {
         self.abort(interruption.reason(), tick);
     }
 
-    pub fn complete(&mut self, tick: u64) {
+    pub(crate) fn complete(&mut self, tick: u64) {
         self.phase = BastionTraversalPhase::Complete;
         self.phase_tick = tick;
     }
 
-    pub fn ownership(self) -> Option<BastionTraversalOwnership> {
+    pub(crate) fn ownership(self) -> Option<BastionTraversalOwnership> {
         self.phase.mode().map(|mode| BastionTraversalOwnership {
             link_id: self.link_id,
             route_owner: self.owner,
@@ -317,7 +317,7 @@ impl BastionTraversalTask {
         })
     }
 
-    pub fn abort(&mut self, reason: &'static str, tick: u64) {
+    pub(crate) fn abort(&mut self, reason: &'static str, tick: u64) {
         // #110 gate 1: abort was SILENT -- state flipped with no emit, so a
         // run full of created-then-aborted transactions logged identically to
         // a run with none, and "never engages" could not be told from "engages
@@ -337,12 +337,12 @@ impl BastionTraversalTask {
         self.phase_tick = tick;
     }
 
-    pub fn reservation_matches(self, member: Uid) -> bool {
+    pub(crate) fn reservation_matches(self, member: Uid) -> bool {
         self.reserved_member == member && self.phase != BastionTraversalPhase::Abort
     }
 
     /// bastion (R10): the authority tuple this task's writers present.
-    pub fn authority(&self) -> TraversalAuthority {
+    pub(crate) fn authority(&self) -> TraversalAuthority {
         TraversalAuthority {
             link_id: self.link_id,
             epoch: self.epoch,
@@ -358,13 +358,13 @@ impl BastionTraversalTask {
 /// everyone behind it; with the tick-first key, a re-enqueue (which goes
 /// through the leave path first) gets a NEW tick and the back of the line.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct TraversalQueueTicket {
+pub(crate) struct TraversalQueueTicket {
     pub member: Uid,
     pub enqueue_tick: u64,
 }
 
 impl TraversalQueueTicket {
-    pub fn key(self) -> (u64, u64) {
+    fn key(self) -> (u64, u64) {
         (self.enqueue_tick, self.member.0.get())
     }
 }
@@ -378,7 +378,7 @@ impl TraversalQueueTicket {
 /// fencing epoch lives in the JobBoard's `link_epochs` store (R10), not
 /// here: an empty link container may be pruned, the epoch never resets.
 #[derive(Clone, Debug)]
-pub struct TraversalLink {
+pub(crate) struct TraversalLink {
     /// Simultaneous same-direction traversers allowed. M3: always 1.
     pub capacity: u8,
     /// Bumps on every HEAD identity change (election/handover) —
@@ -388,7 +388,7 @@ pub struct TraversalLink {
     pub reservation_generation: u64,
     /// Kept sorted by the fair key; insert is `partition_point` so equal
     /// ticks resolve by uid deterministically.
-    pub queue: Vec<TraversalQueueTicket>,
+    queue: Vec<TraversalQueueTicket>,
 }
 
 impl Default for TraversalLink {
@@ -405,7 +405,7 @@ impl TraversalLink {
     /// Idempotent: a member already queued keeps its ORIGINAL ticket
     /// (returns false). Fair re-enqueue semantics come from the caller
     /// dequeuing first (the single leave path), never from re-keying here.
-    pub fn enqueue(&mut self, member: Uid, tick: u64) -> bool {
+    pub(crate) fn enqueue(&mut self, member: Uid, tick: u64) -> bool {
         if self.queue.iter().any(|t| t.member == member) {
             return false;
         }
@@ -418,7 +418,7 @@ impl TraversalLink {
         true
     }
 
-    pub fn dequeue(&mut self, member: Uid) -> bool {
+    pub(crate) fn dequeue(&mut self, member: Uid) -> bool {
         match self.queue.iter().position(|t| t.member == member) {
             Some(at) => {
                 self.queue.remove(at);
@@ -428,33 +428,33 @@ impl TraversalLink {
         }
     }
 
-    pub fn head(&self) -> Option<Uid> {
+    pub(crate) fn head(&self) -> Option<Uid> {
         self.queue.first().map(|t| t.member)
     }
 
     /// 0 = head. `None` = not queued.
-    pub fn position(&self, member: Uid) -> Option<usize> {
+    pub(crate) fn position(&self, member: Uid) -> Option<usize> {
         self.queue.iter().position(|t| t.member == member)
     }
 
-    pub fn ticket(&self, member: Uid) -> Option<TraversalQueueTicket> {
+    pub(crate) fn ticket(&self, member: Uid) -> Option<TraversalQueueTicket> {
         self.queue.iter().copied().find(|t| t.member == member)
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.queue.is_empty()
     }
 
     /// Probe-shaped copy of the queue: `(member uid, enqueue_tick)` in
     /// fair order.
-    pub fn snapshot(&self) -> Vec<(u64, u64)> {
+    pub(crate) fn snapshot(&self) -> Vec<(u64, u64)> {
         self.queue
             .iter()
             .map(|t| (t.member.0.get(), t.enqueue_tick))
             .collect()
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.queue.len()
     }
 }
