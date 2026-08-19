@@ -133,6 +133,11 @@ impl<'a> System<'a> for Sys {
                         lossy_compression: meta.lossy_compression,
                         msg,
                         recipients: meta.recipients,
+                        // ★ carried so `chunk_send` can order by it -- see the
+                        // field's doc on SerializedChunk. Without this the
+                        // consumer had nothing to sort by and clients received
+                        // terrain in SlowJob completion order.
+                        key: chunk_key,
                     }) {
                         tracing::warn!(?e, "cannot send serialized chunk to sender");
                         break;
