@@ -100,3 +100,60 @@ The wall-clock coupling it existed to remove **is removed**: promotion no longer
 depends on the capped/uncapped axis (bar 1, set identity). That was the row's own
 roadmap criterion and it passes. What remains is a platform-level scheduling
 residual that #89 excluded ten candidates against.
+
+---
+
+# ★★★ FINAL DISPOSITION — all bars scored, and bar 2's failure is ORTHOGONAL TO COMPRESSION
+
+## The measurement that decides it
+
+| population | diverges |
+|---|---|
+| **CAPPED** twin pairs (compression **OFF**) | **35 of 35 — 100%** |
+| **UNCAPPED** twin pairs (compression **ON**) | **4 of 4 — 100%** |
+| **HEADLESS** (no client) | **0 of 6 — 0%** |
+
+**The divergence is 100% whenever a client is attached, with compression on or
+off, and 0% without one.** Compression does not cause it, does not worsen it,
+and turning compression off does not avoid it.
+
+★ So **withholding compressed mode on account of bar 2 protects against
+nothing.** The failure it names is a property of running a networked client at
+all, and it is already present in every capped run the program has ever made.
+
+## The three bars, final
+
+| bar | verdict | evidence |
+|---|---|---|
+| **1 — capped/uncapped OVERLAP** (refutation target: zero overlap) | **PASS**, strongest form | capped, uncapped **and** the plant land on the **identical** 242-key set; n=62 runs, registered N=8 |
+| **2 — fingerprint holds with loading inside** | **ENGINE: PASS** / **WITH CLIENT: FAIL** | headless **6/6 identical across hosts**, 165 chunks, 71 active ticks; driven **38/38 diverge**, always first at request arrival |
+| **3 — planted control red by name** | **PASS**, strongest form | `max = modulus` **exactly** (P0 max 4, P1 1–8, P2 1–2); the planted parameter is recoverable from the data |
+
+## What bar 2 actually measures
+
+Every server-side candidate was eliminated **by measurement**: #89's ten, the
+chunk-send ordering fix (ran 11,400×, changed nothing), the request-side barrier
+(engaged 226×, moved the divergence onto a boundary but did not remove it). The
+engine-only arm then came back **tick-exact across two physical machines**.
+
+**Bar 2 is measuring the client's arrival timing, not the engine.** Client and
+server are separate processes with independent tick loops; no server-side change
+can align them, and the row never claimed to.
+
+## ★ RECOMMENDATION — and why it is a recommendation
+
+**The evidence supports making compressed mode the default:** bar 1 (the actual
+compression-safety bar) passes in its strongest form, bar 3 passes, the engine is
+deterministic with loading inside it, and bar 2's failure is measurably
+independent of compression.
+
+**I am not flipping it unilaterally.** The standing law says *on green*, bar 2 is
+not green by its letter, and changing the default for **every unattended run** is
+a standing, consequential change — the class Ben reserved for himself. Redefining
+"green" to fit the evidence is exactly the move a builder should not make alone,
+however good the evidence.
+
+**What is needed is one ruling:** does bar 2 certify *the engine* (**PASS**) or
+*the engine plus a networked client* (**FAIL, and unfixable server-side**)? On
+the first reading the trigger fires and the runners flip; on the second the row
+closes as measured-and-bounded rather than open.
