@@ -149,6 +149,28 @@ empty queue is itself a finding — refill from `readme/BUILD-ROADMAP.md`.
    naming which of its own preconditions fails, **and a caller tag** — item
    10's run escaped the mixed-caller confound only because the arithmetic
    happened to close, which is luck, not design. Runs locally, no VM.
+   **★★ CLOSED 2026-08-19 (`8fb2bb94a7`, `ITEM11-SHAFT-CAUSE.md`).**
+   `cells.is_empty()` dominates on every seed — **1928 of 2026** rejections on
+   seed 37 (~95%), i.e. essentially every one of the 121 candidate columns.
+   The shaft finds **no mineable column within radius 5**: the span is already
+   open air, so there is no rock to carve. **`rej_no_approach = 0` everywhere**,
+   which explains by measurement why the pre-existing `EGRESS_DIAG` was silent.
+   My registered `rej_no_wall` candidate fires (882 on seed 3) but is only 56 on
+   seed 37 — real, secondary, **demoted**. Refusing to carve where there is
+   nothing to carve is CORRECT, so this is a terrain/position fact, not a logic
+   defect. **What the colonist should do instead is a DESIGN question.**
+
+## The self_rescue chain, complete and every link measured
+
+`self_rescue` **0/55** corpus-wide → the call site was missing two arguments its
+sibling passes (**BOTH-REQUIRED**: 0/36 baseline, 0/36 owner, 0/36 approach,
+**5/38 both**) → with both, the ladder tier still almost never succeeds
+(**2 of 65**, both to the `emergency` caller) → the escape-shaft fallback is
+what actually carries it → on seeds 37/3 the shaft finds **nothing to mine**.
+
+**Open, and Ben's:** (a) should `self_rescue` be given emergency-egress
+semantics at all, and (b) what should a colonist do when it is stranded in open
+air with no column to carve?
 
 ## Blocked / needs a decision (Ben)
 
