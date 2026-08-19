@@ -4,37 +4,46 @@
 Pull the top item at every launch. Refill whenever a row files a successor. An
 empty queue is itself a finding — refill from `readme/BUILD-ROADMAP.md`.
 
-★ Today's banked work produced the wave field audit, the status-surface census,
-the whole bimodality mechanism, the memory-index defect and three corrections to
-my own claims — **none of it needed a VM**.
-
 ## Ready now
 
-1. **The 3 unexplained field ties** (`WAVE-FIELD-INDEPENDENCE-AUDIT.md`) —
-   `ch_cancel_clean` ≡ the oracle pair, `ch_jobs` ≡ `ch_trees`,
-   `any_needs_materials` ≡ `build_placed`. All survive Bonferroni, none is
-   explained by construction. **Producer read, ~20 min.**
-2. **What are the ~30 blocked jobs waiting on?** (`BIMODAL-COLONY-RESULTS.md`) —
-   the refusal census says `materials 240 + self_job_kind 64`. Read the producer
-   of `self_job_kind`: 64 refusals is a fifth of the board and nobody has asked
-   what it means.
-3. **#84's `b5_mine_cell_diag` content mover** — needs two waves to diff; the
-   field census is done (`MINE-CELL-DIAG-FIELD-CENSUS.md`), the second wave is
-   not. Check whether `corpus-waves/wave22|23|24` can serve as the base.
-4. **`emit_drop` has no drop-position log** — the toss witness records velocity
-   only. If attempt 3 shows seeds ARE emitted, the next question is where they
-   land, and that needs the landing position, not the launch vector.
-5. **#110 gate 1** — instrument built, subject extinct at the current tip.
+1. **Run the `bastion-server` suite in full** once the `--all-targets` build
+   lands, to confirm the haul-predicate extraction broke nothing. ★ A filtered
+   `cargo test <name>` cannot see a guard in a crate it never compiles — the
+   whole suite has to run.
+2. **`b5_mine_cell_diag` content mover (#84)** — **BLOCKED on data**: no adjacent
+   wave pair exists, and wave24 vs wave34 is not comparable (75 vs 119 fields).
+   Needs a new wave pair at adjacent commits.
+3. **`emit_drop` has no landing-position log** — the toss witness records the
+   launch vector only. Low priority: the toss is 0.5 horizontal, so items land
+   within half a block and the landing site is unlikely to matter.
+4. **#110 gate 1** — instrument built, subject extinct at the current tip.
    Re-aim at a trait-pinned reckless population per the roadmap's rider.
+5. **`ch_cancel_clean` is an unexercised falsifier** — true on all 41 seeds where
+   it ran, false only where it could not run. A check that has never gone red
+   has never shown it can.
 
-## Blocked / needs a decision
+## Blocked / needs a decision (Ben)
 
-- **Tick-loading scope call** (Ben) — roadmap criterion passes, mandate bar 2 fails.
-- **Run-gait trigger** (Ben) — `running = true` appears nowhere; 2 of 4 status
-  variants never observed.
+- **Tick-loading scope call** — roadmap criterion passes, mandate bar 2 fails.
+- **Run-gait trigger** — `running = true` appears nowhere; 2 of 4 status
+  variants never observed in 33,926 samples.
 
 ## Done from this queue today
 
-wave field-independence audit · status-surface census · bimodality mechanism ·
-memory-index defect (10 live rules filed as retired) · speed-lever corrections ·
-`fan-shape-check.sh`
+**Item 1 — three field ties resolved.** All shared-precondition ties, not
+duplicate measurements.
+
+**Item 2 — the refusal census conflates blocks with correct skips.** Corrected my
+own figure *against* me: 100% of genuinely-blocked jobs are `materials`, not 79%.
+
+**★★ Item 2 led to the session's largest finding: THE HAUL DEADLOCK.** A blocked
+job's own presence prevents the haul that would unblock it. Four job kinds have
+the shape; it breaks a contract the code documents elsewhere; no test guarded it;
+and **it closes #114**, whose origin run *is* a deadlocked run and whose bar was
+calibrated on that run's own maturation count.
+
+Plus: wave field-independence audit · status-surface census · bimodality
+mechanism · memory-index defect (10 live rules filed as retired) · speed-lever
+corrections · `fan-shape-check.sh` · `score-hauldeadlock.sh`
+
+★ None of it needed a VM.
