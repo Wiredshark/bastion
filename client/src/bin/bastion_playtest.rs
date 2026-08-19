@@ -359,7 +359,13 @@ fn driver_dt(clock: &Clock) -> std::time::Duration {
     if tick_driven_driver() {
         std::time::Duration::from_secs_f64(1.0 / TPS as f64)
     } else {
-        driver_dt(&clock)
+        // ★ NOT `driver_dt(&clock)`. A blanket text replace rewrote this line
+        // into a self-call, making the DEFAULT path infinitely recursive — and
+        // `cargo check` passed, because unbounded recursion is not a compile
+        // error. Only running it would have found it. Scripted rewrites destroy
+        // meaning silently; this is the second time in one edit that the same
+        // replace corrupted the very helper it was introducing.
+        clock.game_dt()
     }
 }
 
