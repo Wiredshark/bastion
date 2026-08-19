@@ -6,10 +6,16 @@ empty queue is itself a finding — refill from `readme/BUILD-ROADMAP.md`.
 
 ## Ready now
 
-1. **Run the `bastion-server` suite in full** once the `--all-targets` build
-   lands, to confirm the haul-predicate extraction broke nothing. ★ A filtered
-   `cargo test <name>` cannot see a guard in a crate it never compiles — the
-   whole suite has to run.
+1. ~~**Run the `bastion-server` suite in full**~~ **DONE 2026-08-19 — GREEN.**
+   `cargo test --profile no_overflow -p bastion-server --all-targets` on
+   `76d714daa1`: **135 passed, 0 failed, exit 0**, 69 s. Includes
+   `bastion_jobs::tests::haul_skip_starves_a_job_on_its_own_required_item`, so
+   the haul-predicate extraction is covered and green.
+   **★ Denominator verified, not assumed:** only one "running N tests" line
+   appeared, which is the failure mode this item existed to catch — so the
+   inventory was checked. `#[test]` fns in source = **135**, exactly the number
+   run; the crate has **no** `tests/`, `benches/` or `examples/` dir and
+   declares no extra `[[target]]`, so the lib target *is* the whole suite.
 2. **`b5_mine_cell_diag` content mover (#84)** — **BLOCKED on data**: no adjacent
    wave pair exists, and wave24 vs wave34 is not comparable (75 vs 119 fields).
    Needs a new wave pair at adjacent commits.
