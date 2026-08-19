@@ -77,7 +77,22 @@ empty queue is itself a finding — refill from `readme/BUILD-ROADMAP.md`.
    added (`self_rescue_bubble_active` counter + emit); a NEITHER verdict is
    only meaningful once that counter is nonzero.
 
-9. **★ Isolate WHICH of the three call-site axes blocks `self_rescue`** — the
+9. **★ AXIS 1 DONE (mask ELIMINATED). Axes 2–3 remain — and they are CHEAPER
+   than I said.** Axis 1 scored **NEITHER** on 2026-08-19 (`1330233787`): 36
+   calls, **0 emissions in both arms**, with the witness confirming the bubble
+   branch on **36 of 36** calls. `designated_regions()` is exonerated; the
+   leading hypothesis is refuted.
+   **★ Correction to my own cost estimate:** I wrote that axes 2–3 need a
+   claimant uid "not in scope — plumbing, not a flag". **Read the producer:**
+   the request is pushed at `bastion_jobs.rs:14483` as
+   `carve_requests.push((feet, job.pos, active.job))` from **inside the
+   per-entity loop**, where `entity` is already in scope (used at 14262–14286).
+   So it is a **3-tuple → 4-tuple change** carrying `uids.get(entity)`, then
+   `Some(uid)` at the call site. Small, not deep.
+   Registered outcomes **CONTEXT / BOTH-REQUIRED / NEITHER**; witness pattern,
+   scorer and falsifier all already exist. Runs locally.
+
+10. **★ Isolate WHICH of the three call-site axes blocks `self_rescue`** — the
    two live sites differ on mask (`designated_regions()` vs a synthesised
    egress bubble), `emergency_owner`, and `emergency_approach` **all at once**,
    so the emergency site proves `plan_access` *can* succeed but isolates
