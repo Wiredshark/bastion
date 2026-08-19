@@ -118,6 +118,9 @@ case "$ARM" in
   # AMENDMENT 1: its own script. script-pit.txt's mine box is hardcoded to
   # the PIT floor (z 395..399), which sits ABOVE the shaft's outcrop
   # (392..394) -- the first shaft leg designated AIR and its zeros were VOID.
+  # endurance: the LONG arm (687c7a7b78). Autofound colony creates
+  # stockpile+farm+bed, so E2 has its subject by construction.
+  endurance) SCRIPT="script-endurance.txt" ;;
   shaft)   PITVAR=" BASTION_FLAT_ARENA_SHAFT=1 BASTION_ACCESS_CLAIM_DIAG=1 BASTION_STATUS_STAMP_DIAG=1 BASTION_EGRESS_DIAG=1"
            SCRIPT="script-shaft.txt" ;;
   # contend: LADDER CONTENTION (LADDER-CONTENTION-PREREG.md). Identical env
