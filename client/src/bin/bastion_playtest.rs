@@ -155,9 +155,9 @@ enum ScriptCmd {
 /// reply-matching had to learn.
 fn await_designation_rev(client: &mut Client, clock: &mut Clock, rev_before: u64) -> bool {
     for _ in 0..ACK_SPIN_CAP {
-        let _ = client.tick(comp::ControllerInputs::default(), clock.game_dt());
+        let _ = client.tick(comp::ControllerInputs::default(), driver_dt(clock));
         client.cleanup();
-        clock.tick();
+        driver_pace(clock, client);
         if client.bastion_designations_rev() != rev_before {
             return true;
         }
@@ -322,6 +322,84 @@ fn parse_script_text(text: &str) -> Vec<ScriptCmd> {
     cmds
 }
 
+
+// ═══ BASTION_TICK_DRIVEN_DRIVER — the OPT-IN arm for row #89 bar 2 ═══
+//
+// Bar 2 fails on its timing clause and four candidate causes were eliminated by
+// measurement, every one a wall-clock READ inside a loop. The cause is the loop
+// itself: this driver and the server are two independently WALL-PACED loops, so
+// the mapping spin -> server-tick is a function of the wall clock and no amount
+// of gating individual reads can remove it.
+//
+// This arm converts BOTH halves of the coupling, because converting one is
+// worse than converting neither -- a half-fix leaves the other half live and
+// produces a REDUCED-divergence number that reads like progress and proves
+// nothing (the same trap this file's own line-452 comment names for the
+// join-hold fix: "expected to REDUCE, not necessarily eliminate").
+//
+//   (a) STEP SIZE: `client.tick(.., dt)` gets a FIXED 1/TPS instead of
+//       `driver_dt(&clock)`, so the client's simulation advances in equal steps
+//       rather than wall-sized ones.
+//   (b) PACING: the loop waits for the server-derived sim clock to advance one
+//       tick instead of sleeping to a wall deadline.
+//
+// Default OFF: unset, every call is byte-identical to before and every banked
+// baseline stands.
+//
+// ★ SCOPED HONESTLY: a tick-driven driver is NOT what a real player runs. This
+// arm measures whether the ENGINE can hold a fingerprint when its client stops
+// being wall-paced -- it does not claim the shipped client behaves this way.
+fn tick_driven_driver() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("BASTION_TICK_DRIVEN_DRIVER").is_some())
+}
+
+/// Fixed step under the arm; wall-derived otherwise.
+fn driver_dt(clock: &Clock) -> std::time::Duration {
+    if tick_driven_driver() {
+        std::time::Duration::from_secs_f64(1.0 / TPS as f64)
+    } else {
+        driver_dt(&clock)
+    }
+}
+
+/// Last observed server sim time, in microseconds, for the tick-driven pace.
+static LAST_SIM_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Advance one step: wait on the SERVER's clock under the arm, the wall clock
+/// otherwise. Falls back to the wall pace if sim time does not advance within a
+/// bounded number of polls, so a stalled server cannot hang the driver
+/// silently -- and says so, because a silent fallback would make a wall-paced
+/// run indistinguishable from a tick-driven one.
+fn driver_pace(clock: &mut Clock, client: &Client) {
+    use std::sync::atomic::Ordering;
+    if !tick_driven_driver() {
+        clock.tick();
+        return;
+    }
+    let now_us = || (client.state().ecs().read_resource::<Time>().0 * 1_000_000.0) as u64;
+    let start = LAST_SIM_US.load(Ordering::Relaxed);
+    let target = start + (1_000_000.0 / TPS as f64) as u64;
+    for poll in 0..2_000u32 {
+        let t = now_us();
+        if t >= target || (start == 0 && t > 0) {
+            LAST_SIM_US.store(t, Ordering::Relaxed);
+            return;
+        }
+        if poll == 1_999 {
+            tracing::warn!(
+                start_us = start,
+                target_us = target,
+                "bastion: TICK-DRIVEN pace timed out waiting on server sim time;                  falling back to the WALL pace for this step"
+            );
+            clock.tick();
+            LAST_SIM_US.store(now_us(), Ordering::Relaxed);
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_micros(200));
+    }
+}
+
 fn main() {
     // ★★ WITHOUT THIS, EVERY `tracing::*` EMIT IN `client/src/lib.rs` IS
     // INVISIBLE (2026-08-19). This binary had no subscriber, so 14 client-side
@@ -431,7 +509,7 @@ fn main() {
     const JOIN_TIMEOUT_TICKS: u64 = TPS * 60;
 
     loop {
-        match client.tick(comp::ControllerInputs::default(), clock.game_dt()) {
+        match client.tick(comp::ControllerInputs::default(), driver_dt(&clock)) {
             Ok(events) => {
                 for event in events {
                     if let Event::Chat(m) = &event {
@@ -445,7 +523,7 @@ fn main() {
             },
         }
         client.cleanup();
-        clock.tick();
+        driver_pace(&mut clock, &client);
         ticks += 1;
 
         // #89 (1bcd1d251c): the JOIN is the session boundary where
@@ -579,9 +657,9 @@ fn main() {
         if warmed >= POS_WAIT_TICKS {
             break None;
         }
-        let _ = client.tick(comp::ControllerInputs::default(), clock.game_dt());
+        let _ = client.tick(comp::ControllerInputs::default(), driver_dt(&clock));
         client.cleanup();
-        clock.tick();
+        driver_pace(&mut clock, &client);
         warmed += 1;
     };
     let Some(mut current_pos) = anchored else {
@@ -613,9 +691,9 @@ fn main() {
     // Terrain warm-up, unchanged in length: Pos arriving early must not shorten
     // the settle the painting path depends on.
     for _ in warmed..(TPS * 2) {
-        let _ = client.tick(comp::ControllerInputs::default(), clock.game_dt());
+        let _ = client.tick(comp::ControllerInputs::default(), driver_dt(&clock));
         client.cleanup();
-        clock.tick();
+        driver_pace(&mut clock, &client);
     }
     // Re-read after the settle so the anchor is the SETTLED position, exactly as
     // before -- the wait above changed only whether `Pos` exists, not when it is
@@ -676,7 +754,7 @@ fn main() {
                         void_reason = Some(WaitVoidReason::SpinCeiling);
                         break;
                     }
-                    match client.tick(comp::ControllerInputs::default(), clock.game_dt()) {
+                    match client.tick(comp::ControllerInputs::default(), driver_dt(&clock)) {
                         Ok(events) => {
                             consecutive_tick_errors = 0;
                             for event in events {
@@ -696,7 +774,7 @@ fn main() {
                         },
                     }
                     client.cleanup();
-                    clock.tick();
+                    driver_pace(&mut clock, &client);
                     spins += 1;
                 }
                 if let Some(p) = own_pos(&client) {
@@ -757,9 +835,9 @@ fn main() {
             ScriptCmd::InspectCell(pos) => {
                 client.bastion_inspect_request(BastionInspectTarget::Cell(pos));
                 // One tick round-trip to receive the echoed reply.
-                let _ = client.tick(comp::ControllerInputs::default(), clock.game_dt());
+                let _ = client.tick(comp::ControllerInputs::default(), driver_dt(&clock));
                 client.cleanup();
-                clock.tick();
+                driver_pace(&mut clock, &client);
                 log.log(&format!("inspect_cell {pos:?} -> {:?}", client.bastion_inspect()));
             },
             ScriptCmd::InspectColonists => {
@@ -797,9 +875,9 @@ fn main() {
                     // order.
                     let mut matched = false;
                     for _ in 0..60 {
-                        let _ = client.tick(comp::ControllerInputs::default(), clock.game_dt());
+                        let _ = client.tick(comp::ControllerInputs::default(), driver_dt(&clock));
                         client.cleanup();
-                        clock.tick();
+                        driver_pace(&mut clock, &client);
                         if let Some((BastionInspectTarget::Entity(got), _)) =
                             client.bastion_inspect()
                             && *got == uid
@@ -901,9 +979,9 @@ fn main() {
                 client.bastion_inspect_request(BastionInspectTarget::Colony);
                 let mut got = None;
                 for _ in 0..60 {
-                    let _ = client.tick(comp::ControllerInputs::default(), clock.game_dt());
+                    let _ = client.tick(comp::ControllerInputs::default(), driver_dt(&clock));
                     client.cleanup();
-                    clock.tick();
+                    driver_pace(&mut clock, &client);
                     if let Some((BastionInspectTarget::Colony, payload)) = client.bastion_inspect()
                     {
                         got = Some(payload.clone());
@@ -1070,7 +1148,7 @@ fn main() {
                         ));
                         break;
                     }
-                    match client.tick(comp::ControllerInputs::default(), clock.game_dt()) {
+                    match client.tick(comp::ControllerInputs::default(), driver_dt(&clock)) {
                         Ok(events) => {
                             for event in events {
                                 if let Event::Chat(m) = &event {
@@ -1095,7 +1173,7 @@ fn main() {
                         },
                     }
                     client.cleanup();
-                    clock.tick();
+                    driver_pace(&mut clock, &client);
                     if acked {
                         break;
                     }
@@ -1109,7 +1187,7 @@ fn main() {
                     Err(()) => {},
                 }
                 client.cleanup();
-                clock.tick();
+                driver_pace(&mut clock, &client);
             },
         }
     }
