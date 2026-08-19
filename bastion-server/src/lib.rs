@@ -25,7 +25,6 @@ pub mod bastion_founding_preset;
 pub mod bastion_jobs;
 pub mod bastion_path;
 pub mod bastion_piles;
-pub mod bastion_traversal;
 pub mod bastion_traversal_tooling;
 // ★ SPEED ROW: these moved to `bastion-core` so `veloren-server` can depend
 // on that crate instead of this one. Re-exported so every existing
@@ -33,37 +32,15 @@ pub mod bastion_traversal_tooling;
 // ★ test_world keeps its ORIGINAL cfg gate — removing `pub mod test_world;`
 // orphaned the `#[cfg(not(feature = "worldgen"))]` that guarded it, which
 // would have silently compiled it into worldgen builds for the first time.
+pub use bastion_core::{RepositionToFreeSpace, SIM_TPS, Tick};
 pub use bastion_core::bastion_mood;
+pub use bastion_core::bastion_traversal;
 pub use bastion_core::bastion_flight_recorder;
 #[cfg(feature = "worldgen")]
 pub use bastion_core::bastion_assets;
 #[cfg(not(feature = "worldgen"))]
 pub use bastion_core::test_world;
 
-// Tick count used for throttling network updates
-// Note this doesn't account for dt (so update rate changes with tick rate)
-// (moved from veloren-server lib.rs in the crate-split; the field is `pub`
-// now that its server-side users live in a different crate)
-#[derive(Copy, Clone, Default)]
-pub struct Tick(pub u64);
 
-/// T0.3 (master build order; ledger #39): THE declared simulation clock —
-/// the fixed-step cadence (ticks per simulated second) every
-/// tick-denominated budget derives from. The server loop targets 30 tps
-/// (`Settings` tick rate; the headless harness runs the same fixed step
-/// uncapped), and before this constant existed the 30 was scattered as
-/// magic through mount/exit/stability/energy-wait/teleport budgets — a
-/// cadence change would have skewed every budget silently and
-/// independently.
-pub const SIM_TPS: u64 = 30;
 
-// (moved from veloren-server presence.rs in the crate-split; re-exported there)
-#[derive(Copy, Clone, Debug, Default, Serialize, Deserialize)]
-pub struct RepositionToFreeSpace {
-    pub needs_ground: bool,
-    pub modify_waypoints: bool,
-}
 
-impl Component for RepositionToFreeSpace {
-    type Storage = VecStorage<Self>;
-}

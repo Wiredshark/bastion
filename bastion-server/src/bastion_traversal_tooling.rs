@@ -1288,7 +1288,7 @@ mod tests {
     fn stage1_old_mount_owner_and_duplicate_reservation_are_absent() {
         let root = repo_root();
         let jobs = fs::read_to_string(root.join("bastion-server/src/bastion_jobs.rs")).unwrap();
-        let traversal = fs::read_to_string(root.join("bastion-server/src/bastion_traversal.rs")).unwrap();
+        let traversal = fs::read_to_string(root.join("bastion-core/src/bastion_traversal.rs")).unwrap();
         for legacy in [
             "EmergencyMountTransaction",
             "EmergencyMountPhase",
@@ -2382,7 +2382,7 @@ mod tests {
             "bastion-server/src/bastion_piles.rs",
             "bastion-server/src/bastion_chop.rs",
             "bastion-server/src/bastion_path.rs",
-            "bastion-server/src/bastion_traversal.rs",
+            "bastion-core/src/bastion_traversal.rs",
             "common/src/comp/loot_owner.rs",
             "server/src/sys/loot.rs",
             "server/src/sys/item.rs",
