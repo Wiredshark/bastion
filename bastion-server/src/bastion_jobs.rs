@@ -5691,6 +5691,30 @@ pub fn canonical_thought_drain_order(
     pending
 }
 
+/// THE HAUL SKIP DECISION, as a pure predicate so it can be pinned by a test.
+///
+/// ★ It was inline in an ECS join and therefore untestable, and it carried a
+/// deadlock nobody could see: `occupied` is EVERY job position on the board, so
+/// a loose item lying on a cell whose job is UNCLAIMED and blocked waiting for
+/// exactly that item was skipped — the job starved on the resource underneath
+/// it. Measured consequence: the colony dies in roughly half of otherwise
+/// identical runs (`SEED-DEADLOCK.md`). Four job kinds have that shape (Farm,
+/// Build, Bed, Ladder), because each carries a `required_item` whose def is also
+/// on the haul allow-list.
+///
+/// `starved_cell` is the narrow exemption: same cell, job **unclaimed**, and
+/// `required_item` equal to this item's def. An item under a CLAIMED job — a
+/// colonist actively working there — is still skipped, so the original
+/// protection (do not strip materials out of an active work site) is intact.
+pub fn haul_candidate_admitted(
+    cell_is_stockpile: bool,
+    item_reserved: bool,
+    cell_occupied: bool,
+    starved_cell: bool,
+) -> bool {
+    !(cell_is_stockpile || item_reserved || (cell_occupied && !starved_cell))
+}
+
 /// DET-COL-HAUL-001 / DET-AUT-004: admit eligible loose-drop pickups as haul
 /// jobs in a canonical total order — source cell (z, y, x), item def, stable
 /// item Uid — so that WHICH pickups become haul jobs, when more are eligible
@@ -10393,10 +10417,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 && j.claimed_by.is_none()
                                 && j.required_item == Some(static_def)
                         });
-                    if board.stockpile_at(cell).is_some()
-                        || board.is_reserved(*iuid)
-                        || (occupied.contains(&cell) && !starved_cell)
-                    {
+                    if !haul_candidate_admitted(
+                        board.stockpile_at(cell).is_some(),
+                        board.is_reserved(*iuid),
+                        occupied.contains(&cell),
+                        starved_cell,
+                    ) {
                         continue;
                     }
                     if starved_cell {
@@ -21463,6 +21489,55 @@ mod tests {
     /// LIVE path" gap (that the arbitration actually calls this order under adversarial
     /// iteration), which a unit test structurally cannot. Count as ONE domain
     /// (DET-COL-NEED-001) proven from two angles, not two domains closed.
+
+    #[test]
+    fn haul_skip_starves_a_job_on_its_own_required_item() {
+        // ★ THE DEADLOCK, PINNED. `occupied` is every job position on the
+        // board, so an item lying on a cell whose job is UNCLAIMED and blocked
+        // waiting for exactly that item was skipped -- the job starved on the
+        // resource underneath it, and the colony died in ~half of identical
+        // runs (SEED-DEADLOCK.md). Nothing tested this decision before: it was
+        // inline in an ECS join, so it was unreachable from a unit test.
+
+        // The plain cases are unchanged by the exemption.
+        assert!(
+            haul_candidate_admitted(false, false, false, false),
+            "a free, unreserved, unoccupied cell must admit its drop"
+        );
+        assert!(
+            !haul_candidate_admitted(true, false, false, false),
+            "an item already inside a stockpile must not be re-hauled"
+        );
+        assert!(
+            !haul_candidate_admitted(false, true, false, false),
+            "a reserved item must not be double-admitted"
+        );
+
+        // THE DEADLOCK ITSELF: occupied, and the job on that cell is starving
+        // for this very item.
+        assert!(
+            !haul_candidate_admitted(false, false, true, false),
+            "PRE-FIX BEHAVIOUR: an occupied cell is skipped -- this is the state              that starved the job waiting on the item beneath it"
+        );
+        assert!(
+            haul_candidate_admitted(false, false, true, true),
+            "THE FIX: a cell whose UNCLAIMED job requires exactly this item must              admit the haul, or the job can never be satisfied -- the B6 fetch              contract routes materials through the stockpile, so blocking the              haul severs the only path to the job"
+        );
+
+        // ★ The exemption must NOT override the other two guards. A starved
+        // cell that is also a stockpile, or whose item is reserved, stays
+        // skipped -- otherwise the fix would re-haul stockpiled items forever
+        // and double-spend reservations.
+        assert!(
+            !haul_candidate_admitted(true, false, true, true),
+            "the starved-cell exemption must not re-haul an item already stockpiled"
+        );
+        assert!(
+            !haul_candidate_admitted(false, true, true, true),
+            "the starved-cell exemption must not bypass the reservation guard"
+        );
+    }
+
     #[test]
     fn canonical_need_order_is_join_order_independent() {
         let uid = |n: u64| Uid(NonZeroU64::new(n).unwrap());
