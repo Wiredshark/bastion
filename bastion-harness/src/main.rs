@@ -4365,6 +4365,12 @@ fn b5_scenario(args: &Args) -> ExitCode {
     // reaches ~3x further out than the original 9-offset design. Tallied
     // across every ring tried, not just the last one, so a partial-scan
     // problem anywhere in the search is visible.
+    // PRECONDITION COUNTER (instrument debt, a0e665fa26). The three
+    // ch_scan_incomplete_* fields are ZERO on all 48 seeds, and that has two
+    // readings this loop cannot distinguish: every scanned ring was COMPLETE,
+    // or the loop BROKE on ring 0 and almost nothing was scanned. Counting
+    // rings actually visited separates them: 0 => the zeros are VACUOUS.
+    let mut ch_scan_rings_scanned: usize = 0;
     let mut ch_scan_incomplete_rings: usize = 0;
     let mut ch_scan_incomplete_unreachable: u32 = 0;
     let mut ch_scan_incomplete_total: u32 = 0;
@@ -4375,6 +4381,7 @@ fn b5_scenario(args: &Args) -> ExitCode {
         // predicate doesn't match until a later ring, that later ring was
         // never force-loaded by the primary loop's own early exit.
         server.bastion_force_load_area(c.map(|e| e as f32), 2);
+        ch_scan_rings_scanned += 1;
         let (witness, unreachable, total) =
             server.bastion_chop_ground_truth(c - Vec2::broadcast(32), c + Vec2::broadcast(32));
         if let Some((wood, leaves)) = witness {
@@ -5119,6 +5126,7 @@ fn b5_scenario(args: &Args) -> ExitCode {
         // review): if this is ever true, the ground-truth null for this
         // seed is unreliable and must not be read as confirmed absence.
         "b5_ch_scan_incomplete": ch_scan_incomplete,
+        "b5_ch_scan_rings_scanned": ch_scan_rings_scanned,
         "b5_ch_scan_incomplete_rings": ch_scan_incomplete_rings,
         "b5_ch_scan_incomplete_unreachable_columns": ch_scan_incomplete_unreachable,
         "b5_ch_scan_incomplete_total_columns": ch_scan_incomplete_total,
