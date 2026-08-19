@@ -59,6 +59,35 @@ sow job needs. [[a-comment-cannot-enforce]]
 | → seeds are yielded but never reach the stockpile | 0–1 `wheat_seeds` deposits vs 1,091 |
 | → the drop scatter is seeded on the **non-reproducible harvest tick** | code read |
 
+## ★★ THE SCATTER HYPOTHESIS IS REFUTED BY ARITHMETIC — before spending a run on it
+
+The toss is **tiny**: horizontal speed **0.5**, vertical **2.0–4.0**. Flight time
+is ~0.4–0.8 s, so the item lands **within about half a block** of the plot it was
+harvested from. **A 0.5 horizontal velocity cannot throw a seed out of reach**,
+whatever tick seeds it.
+
+So "the seeds scatter somewhere unrecoverable" — my own reading one step earlier
+— **does not survive the multiplication**, and no fan was spent finding that out.
+[[speed-levers §7: compute the maximum possible effect size before instrumenting]]
+
+**What the refusal census points at instead.** The collapsed run's final census
+accounts for every refusal exactly:
+
+```
+considered=304  eligible=0  refused=304  =  materials 240 + self_job_kind 64
+```
+
+`240 + 64 = 304`, with **no haul-specific refusal category at all**, while the
+run records only **3** `kind=Haul` job-sites reached against THRIVE's 9,167. That
+is consistent with **haul jobs never being generated for the loose seeds**,
+rather than with seeds landing out of reach.
+
+★ And this is why the instrument is still worth building — but for a **different
+reason than I first gave it**. Not to see where items scatter: to confirm the
+drops **happen at all**. `emit_drop` currently logs nothing, so a corpus cannot
+distinguish "16 seed items created and never collected" from "no seed items
+created", and the whole chain rests on assuming the first.
+
 ## ★ Stated limits — the last link is NOT measured
 
 That the scatter *position* is what makes the seeds unrecoverable is **inferred,
