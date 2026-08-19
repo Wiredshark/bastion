@@ -16,9 +16,14 @@ empty queue is itself a finding — refill from `readme/BUILD-ROADMAP.md`.
    inventory was checked. `#[test]` fns in source = **135**, exactly the number
    run; the crate has **no** `tests/`, `benches/` or `examples/` dir and
    declares no extra `[[target]]`, so the lib target *is* the whole suite.
-2. **`b5_mine_cell_diag` content mover (#84)** — **BLOCKED on data**: no adjacent
-   wave pair exists, and wave24 vs wave34 is not comparable (75 vs 119 fields).
-   Needs a new wave pair at adjacent commits.
+2. **`b5_mine_cell_diag` content mover (#84)** — ~~BLOCKED on data~~
+   **RECLASSIFIED 2026-08-19: PRODUCIBLE, not blocked.** The blocker was
+   "wave24 vs wave34 is not comparable (75 vs 119 fields)". A **current-tip**
+   payload carries **121** `b5_` fields — a **2-field** delta from wave34's 119,
+   not 75-vs-119 — and `aa-pair.sh` already emits wave-shaped JSONs. So the
+   missing pair is **data I can produce**, locally and free: ~48 seeds × 2 tips,
+   ≈40 min of local CPU at 5-way parallelism, no VM. Cost stated so the
+   scheduling call is informed; not started.
 3. ~~**`emit_drop` has no landing-position log**~~ **MIS-SPECIFIED — rewritten
    2026-08-19 after a producer read, not implemented.** The landing position
    **does not exist at `emit_drop`**: the site emits `CreateItemDropEvent` with
@@ -171,6 +176,33 @@ what actually carries it → on seeds 37/3 the shaft finds **nothing to mine**.
 **Open, and Ben's:** (a) should `self_rescue` be given emergency-egress
 semantics at all, and (b) what should a colonist do when it is stranded in open
 air with no column to carve?
+
+## Refilled from the roadmap 2026-08-19 (the queue's own rule)
+
+12. **★ Roadmap item 39 — sub-threshold tick degradation. OPENED, first result
+   banked** (`d92fce6af4`, `PERF39-GUARD-IS-BLIND.md`). Across 48 banked seeds
+   `b5_soak_avg_tick_ms` runs **1.90 … 4.44 ms** against a pass clause of
+   **`< 100.0`** — the guard sits **22–53×** above the operating range and
+   cannot see a 2.34× spread. ★ A workload correlation was computed and
+   **withdrawn**: the field is a *zero-input soak at step 8*, so `ch_cells`
+   describes work already finished before the clock starts. The number is the
+   **idle steady-state** cost, which makes the real question sharper — *which
+   residual state variable drives it*. **Next step is free**: correlate against
+   end-of-run state (colonists, live jobs, loaded chunks, job-board map sizes),
+   all already in the banked payloads.
+
+13. **★ Re-base the `avg_tick_ms` threshold** — 100.0 against a 1.9–4.4 ms
+   population should be argued from the observed distribution. **A BAR change,
+   so it needs Ben**; recorded here rather than applied.
+
+14. **★ SPEED ROW: invert the `veloren-server → bastion-server` edge**
+   (`SPEED-ROW-INVERT-THE-ARROW.md`, `afce3fc77e`). Feasibility read **DONE**:
+   the movable closure is **2,379 of 23,222 lines = 10.2%** (JobBoard 931 +
+   its single impl 1,165 + 9 types 156 + 7 helpers 127). Verdict **INVERT**,
+   predicted **~48%** off a warm iteration. Authorised in principle by the
+   SPEED OPPORTUNISM standing law, which routes a change this size to a
+   pre-registered row rather than an inline edit — **the build is the open
+   decision, the feasibility is not.**
 
 ## Blocked / needs a decision (Ben)
 
