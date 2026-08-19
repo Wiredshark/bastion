@@ -10370,11 +10370,41 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             "bastion: haul candidate SKIPPED, cell occupied by a job"
                         );
                     }
+                    // ★ THE FIX, ENV-GATED AND INERT BY DEFAULT
+                    // (BASTION_FIX_HAUL_STARVED_CELL=1).
+                    //
+                    // The `occupied` exclusion exists so hauling does not strip
+                    // items out of a cell that is itself an active work site.
+                    // But a loose item lying on a cell whose job is UNCLAIMED
+                    // and BLOCKED WAITING FOR EXACTLY THAT ITEM is not part of
+                    // that job -- it is the input the job is starving for, and
+                    // skipping it is a circular wait the colony never escapes.
+                    //
+                    // The exemption is deliberately NARROW: same cell, job
+                    // unclaimed, and `required_item` equal to this item's def.
+                    // An item under a CLAIMED job, or one the job does not
+                    // want, is still skipped exactly as before -- so the
+                    // original protection is intact and only the deadlock case
+                    // changes. Default-off keeps every banked run reproducible
+                    // and makes the A/B one env var wide.
+                    let starved_cell = std::env::var_os("BASTION_FIX_HAUL_STARVED_CELL").is_some()
+                        && board.jobs.values().any(|j| {
+                            j.pos == cell
+                                && j.claimed_by.is_none()
+                                && j.required_item == Some(static_def)
+                        });
                     if board.stockpile_at(cell).is_some()
                         || board.is_reserved(*iuid)
-                        || occupied.contains(&cell)
+                        || (occupied.contains(&cell) && !starved_cell)
                     {
                         continue;
+                    }
+                    if starved_cell {
+                        info!(
+                            ?cell,
+                            item = static_def,
+                            "bastion: haul ADMITTED onto a starved job's cell (fix active)"
+                        );
                     }
                     candidates.push((cell, static_def, *iuid));
                 }

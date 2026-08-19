@@ -95,6 +95,30 @@ If this is right, the `BASTION_DROP_TOSS_DIAG` runs must show:
 If instead the collapsed runs show **no seed drops at all**, this whole chain is
 wrong and the defect is upstream in the harvest.
 
+## ★★ IT IS NOT A FARM BUG — FOUR JOB KINDS HAVE THIS SHAPE
+
+Every job kind carrying a `required_item` whose def is also on the haul
+allow-list can starve on the resource lying underneath it:
+
+| job kind | `required_item` | dropped by | on the haul allow-list |
+|---|---|---|---|
+| **Farm** | `wheat_seeds` | harvest | ✓ |
+| **Build** | `crafting_ing.stones` | mining | ✓ |
+| **Bed** | `crafting_ing.stones` | mining | ✓ |
+| **Ladder** | `log.wood` | chopping | ✓ |
+
+★ `BUILD_MATERIAL_ITEM` and `MINE_DROP_ITEM` are **the same constant** —
+`common.items.crafting_ing.stones`. So a Build or Bed job sitting on a cell where
+mined stone has dropped is in exactly the same circular wait as the farm case,
+and a Ladder job is in it with wood.
+
+**The farm case is simply the one that showed up first**, because the endurance
+fixture runs the farm loop hundreds of times while building happens once. That
+makes farming the *detector*, not the defect's boundary.
+
+★ The fix below matches on `required_item` **generically**, not on `Farm`, so it
+covers all four kinds without naming any of them.
+
 ## The fix shape (not applied — a live-path change)
 
 The exclusion exists to stop hauling items *out of a cell that is itself a work
