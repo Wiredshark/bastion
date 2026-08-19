@@ -38,7 +38,17 @@ A="${PIT_A:-$WT/assets}"
 # Windows builds emit .exe; Linux does not. One definition, used everywhere.
 EXE="${PIT_EXE-.exe}"
 ARM="${1:?usage: run-pit.sh <pit|flat|pitdiag|pitwood|pitnowood|pitwood2|pitnowood2|pitwood3|pitplant|pitread|sweep|stamp|shaft|contend|queuewait|flee|fleecost|fleehealth|fleehealthctl|wallctl|wall|recr|recrctl|shaftwolf|hostile|wall2ctl|wall2|wallcheck|wallcheckctl|wallsurvey|wallsurveyctl|wallsurvey2|wallsurvey2ctl|wallverdict|wallverdictctl>}"
-TAG="pit-$ARM"; GAME=26024; WEB=26025; METRICS=18026
+TAG="pit-$ARM"
+# ★★★ PORT SLOTS (SPEED LEVER 2, measured: the full sweep puts EIGHT arms
+# back-to-back on one host purely because these were constants). PIT_SLOT picks
+# a non-overlapping port triple so several arms can run CONCURRENTLY on one
+# 16-core host. Unset => slot 0 => the historic 26024/26025/18026, byte-for-byte.
+#
+# ⚠ CONTENTION CAVEAT, measured by #89: concurrent arms share CPU, and
+# early-boot tick rate is contention-sensitive (1.27-1.54x). Parallel slots are
+# for COVERAGE sweeps; a timing-sensitive row must run slot 0 alone.
+PIT_SLOT="${PIT_SLOT:-0}"
+GAME=$((26024 + PIT_SLOT * 10)); WEB=$((26025 + PIT_SLOT * 10)); METRICS=$((18026 + PIT_SLOT * 10))
 # ONE DEFINITION. This was `E:/veloren-master/.engine-integration-wt/userdata-$TAG`
 # -- the SAME directory as `$WT/userdata-$TAG`, spelled a second way. On Windows
 # the two spellings resolve identically, so the duplication was invisible; on
