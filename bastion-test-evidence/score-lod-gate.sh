@@ -30,7 +30,14 @@
 #   VOID for exactly that reason.
 #
 # Usage: sh score-lod-gate.sh <dir-with-logs>
-#   Expects four server logs: off-a, off-b, on-a, on-b.
+#   Expects, per leg (off-a off-b on-a on-b): <leg>.log = the SERVER log
+#   (carries the provisioning census) and <leg>.drv = the DRIVER log.
+#
+# ★ THE WITNESS IS A CLIENT EMIT, so it lands in the DRIVER log. The first
+#   version of this scorer grepped the SERVER log for it and would have
+#   declared every run VOID -- "the probe never fired" -- while the probe was
+#   working perfectly. Caught by checking a live leg's logs before scoring
+#   rather than after. A witness is only a witness where it is actually written.
 set -u
 # ★ corpus-first, enforced for LOCAL runs too (see corpus-first.sh)
 . "$(dirname "$0")/corpus-first.sh"
@@ -42,14 +49,29 @@ seq_of() {  # (tick -> keys) sequence, the thing bar 2 compares
     | grep -oE 'tick=[0-9]+ promoted=[0-9]+' \
     | sed 's/ promoted=/:/'
 }
-keys_of() { # membership only, order-independent
+keys_of() { # MEMBERSHIP: the set of individual chunk keys, order-independent.
+  # ★ NOT the set of `keys=[...]` BATCH strings. A batch is "what promoted on
+  # THIS TICK", so comparing batch strings is SCHEDULE-SENSITIVE BY
+  # CONSTRUCTION: the same chunks regrouped across ticks produce different
+  # batch strings and read as a membership difference.
+  #
+  # The first version did exactly that and reported membership-diff 70/65
+  # against bar 2's banked "membership IDENTICAL 30/30" — a contradiction
+  # manufactured entirely by the extractor, not present in the data. Splitting
+  # the batches into individual (x,y) keys gives 304 distinct keys in BOTH off
+  # legs, which is what bar 2 found.
+  #
+  # A column that disagrees with a banked result is the extractor's fault until
+  # proven otherwise.
   sed 's/\x1b\[[0-9;]*m//g' "$1" 2>/dev/null \
     | grep "bastion: terrain provisioning census" \
-    | grep -oE 'keys=\[[^]]*\]' | tr -d ' ' | sort -u
+    | grep -oE 'keys=\[[^]]*\]' \
+    | grep -oE '\([-0-9]+, *[-0-9]+\)' | tr -d ' ' | sort -u
 }
 
 for f in off-a off-b on-a on-b; do
-  [ -s "$D/$f.log" ] || { echo "VOID: $D/$f.log missing or empty" >&2; exit 3; }
+  [ -s "$D/$f.log" ] || { echo "VOID: $D/$f.log (server) missing or empty" >&2; exit 3; }
+  [ -s "$D/$f.drv" ] || { echo "VOID: $D/$f.drv (driver) missing or empty" >&2; exit 3; }
 done
 
 # Precondition 1: the census emit must exist at all.
@@ -61,14 +83,14 @@ fi
 echo "census emits (off-a): $n"
 
 # Precondition 2: the probe must have ACTED in the ON arm.
-w=$(grep -c "row89 LoD request TICK-GATED" "$D/on-a.log" 2>/dev/null)
+w=$(grep -c "row89 LoD request TICK-GATED" "$D/on-a.drv" 2>/dev/null)
 echo "LoD tick-gate witness (on-a): $w"
 if [ "$w" -eq 0 ]; then
   echo "VOID: the LoD probe never fired in the ON arm. 'No effect' and 'never ran'" >&2
   echo "      are the same evidence without this witness." >&2
   exit 3
 fi
-wo=$(grep -c "row89 LoD request TICK-GATED" "$D/off-a.log" 2>/dev/null)
+wo=$(grep -c "row89 LoD request TICK-GATED" "$D/off-a.drv" 2>/dev/null)
 [ "$wo" -eq 0 ] || echo "!! WARNING: the witness fired in the OFF arm ($wo) — arms are not separated"
 echo
 
