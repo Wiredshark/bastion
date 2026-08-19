@@ -97,20 +97,32 @@ empty queue is itself a finding — refill from `readme/BUILD-ROADMAP.md`.
    changed nothing" and "flag never arrived" were the same evidence. The probe
    had shipped without a witness. **A probe is born with its witness.**
 
-9. **IN FLIGHT — axes 2 and 3, both built, ONE build, FOUR arms.** Two
-   differences remain: `emergency_owner` and `emergency_approach`.
-   `BASTION_SELFRESCUE_CTX` passes the requesting colonist's uid;
-   `BASTION_SELFRESCUE_APPROACH` passes the approach context. `carve_requests`
-   carries `Option<Uid>` and `Option<(Vec3<f32>,(f32,f32,f32))>`, both built at
-   the **push** site where `pos`/`entity`/`scales`/`colliders` are already in
-   hand — the 3→5-tuple change the producer read predicted, not the deep
-   plumbing I first claimed. Both **born with witnesses**, both handling the
-   third state (*flag on, nothing to pass*) as its own named line rather than a
-   silent untreated arm. Scorer `score-selfrescue-axes23.sh`, arms
-   A/B/C/D = baseline/owner/approach/both, registered outcomes **CONTEXT /
-   APPROACH / EITHER / BOTH-REQUIRED / NEITHER / VOID**. Runs locally, no VM.
-   ★ Batched deliberately: three rebuilds today cost ~30 min and two were
-   avoidable, so axes 2 and 3 ride a single build and a single run.
+9. ~~**Axes 2 and 3**~~ **CLOSED 2026-08-19 — BOTH-REQUIRED** (`5467e2f833`,
+   `SELF-RESCUE-NEVER-SUCCEEDS.md`). Four arms x 5 seeds, local, zero spend:
+   baseline **0/36**, owner-only **0/36**, approach-only **0/36**, **both
+   5/38**. Against 0/55 corpus-wide, `self_rescue` **succeeded for the first
+   time**. Mechanism matches the code exactly: `emergency_owner.is_some()` is
+   the only live disjunct opening the ladder tier for this caller, and
+   `emergency_approach` is consumed only inside that arm by `ladder_pillar` —
+   so the call site was missing two arguments its sibling passes and could
+   never have succeeded as written.
+   ★ **Registered predictions scored:** arm C ≡ arm A **CONFIRMED** (the
+   falsifiable one); "owner alone will move it" **REFUTED** — I read that owner
+   opens the tier and wrongly concluded it was sufficient. *Opening a path is
+   not traversing it.*
+   ★ **Two limits recorded, not buried:** denominators are not fixed (arm D
+   changed call counts in exactly the seeds that emitted, 6→7/6→9/6→4), and
+   **seeds 37 and 3 still emit zero with both arguments** — necessary, not
+   sufficient.
+
+10. **★ NEW: why do seeds 37 and 3 still refuse with BOTH arguments?** The
+   residual from item 9. 37 has 11 calls, 3 has 7, both 0 emissions in arm D
+   while 29/16/11 emit. Everything needed already exists — the four-arm scorer,
+   both probes, their witnesses, and a within-run positive control
+   (`emergency` succeeds in the same runs). **Next step is a consumption-site
+   witness inside `plan_access`**, not another call-site flag: the call-site
+   witness proved delivery and told us nothing about which internal branch
+   refuses. Runs locally, no VM. Not chartered.
 
 ## Blocked / needs a decision (Ben)
 
