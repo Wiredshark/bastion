@@ -278,6 +278,12 @@ case "$ARM" in
   # FLIP it. Seeded so hunger doesn't preempt the measured work.
   pintrait)     PITVAR=" BASTION_PIN_TRAIT=Adventurous BASTION_SEED_FOOD=64"
               SCRIPT="script-desires.txt" ;;
+  # Item 23 (morale events): thoughts sit behind need dips no short leg
+  # reaches. The decay multiplier (identity default 1.0) makes rest dip in
+  # minutes so owned-bed sleep completes and SleptInBed deposits a thought
+  # MOODX can read.
+  thoughts)     PITVAR=" BASTION_SEED_FOOD=64 BASTION_NEEDS_DECAY_MULT=20"
+              SCRIPT="script-thoughts.txt" ;;
   pintraitctl)  PITVAR=" BASTION_PIN_TRAIT=Closed BASTION_SEED_FOOD=64"
               SCRIPT="script-desires.txt" ;;
   indiv)        PITVAR=" BASTION_CULTURE_ALPHA=0.1"

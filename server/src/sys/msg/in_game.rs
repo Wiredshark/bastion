@@ -1775,6 +1775,55 @@ impl<'a> System<'a> for Sys {
                                                     .collect()
                                             },
                                             guard_bravery: colonist.0.guard_bravery,
+                                            // ITEM 22: same-source fill from
+                                            // Sentiments::iter_held — the
+                                            // record change_by writes. Npc
+                                            // targets resolve to colonist
+                                            // uids so pairs are namable in
+                                            // the driver log.
+                                            sentiments: insp_rtsim_entities
+                                                .get(e)
+                                                .map(|re| {
+                                                    let data = rtsim.state().data();
+                                                    data.npcs
+                                                        .get(*re)
+                                                        .map(|npc| {
+                                                            use ::rtsim::data::sentiment::Target;
+                                                            npc.sentiments
+                                                                .iter_held()
+                                                                .map(|(t, v)| {
+                                                                    let label = match t {
+                                                                        Target::Npc(id) => id_maps
+                                                                            .rtsim_entity(id)
+                                                                            .and_then(|te| {
+                                                                                insp_uids.get(te)
+                                                                            })
+                                                                            .map(|u| {
+                                                                                format!(
+                                                                                    "uid:{}",
+                                                                                    u.0.get()
+                                                                                )
+                                                                            })
+                                                                            .unwrap_or_else(|| {
+                                                                                format!(
+                                                                                    "npc:{:?}",
+                                                                                    id
+                                                                                )
+                                                                            }),
+                                                                        Target::Character(c) => {
+                                                                            format!("char:{:?}", c)
+                                                                        },
+                                                                        Target::Faction(f) => {
+                                                                            format!("faction:{:?}", f)
+                                                                        },
+                                                                    };
+                                                                    (label, v)
+                                                                })
+                                                                .collect()
+                                                        })
+                                                        .unwrap_or_default()
+                                                })
+                                                .unwrap_or_default(),
                                         })
                                     })
                                     .map(BastionInspectKind::Colonist),

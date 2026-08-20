@@ -237,10 +237,34 @@ impl Component for Mood {
 /// bastion (B7-0, row 44): decay all three meters by `dt` game-seconds,
 /// saturating at 0.0. Pure; the caller owns the cadence (per-tick,
 /// dt-scaled — decay is rate × time, cadence-independent).
+///
+/// ★ `BASTION_NEEDS_DECAY_MULT` is a FIXTURE lever (item 23's thought
+/// triggers sit behind need dips no short leg ever reaches: rest ~0.94
+/// after thousands of ticks, owned-bed sleep never fires, thoughts=0 in
+/// EVERY leg on record). The default is the ALGEBRAIC IDENTITY (1.0) —
+/// unset, the shipped balance is bit-identical; no balance number changed.
 pub fn decay_needs(needs: &mut Needs, dt: f32, cfg: &crate::bastion::MoodConfig) {
+    let dt = dt * needs_decay_mult();
     needs.hunger = (needs.hunger - cfg.hunger.decay_per_sec * dt).max(0.0);
     needs.rest = (needs.rest - cfg.rest.decay_per_sec * dt).max(0.0);
     needs.recreation = (needs.recreation - cfg.recreation.decay_per_sec * dt).max(0.0);
+}
+
+fn needs_decay_mult() -> f32 {
+    static MULT: std::sync::OnceLock<f32> = std::sync::OnceLock::new();
+    *MULT.get_or_init(|| {
+        let m = std::env::var("BASTION_NEEDS_DECAY_MULT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1.0);
+        if m != 1.0 {
+            tracing::warn!(
+                mult = m,
+                "bastion: BASTION_NEEDS_DECAY_MULT active — needs decay accelerated (FIXTURE lever; no balance number changed)"
+            );
+        }
+        m
+    })
 }
 
 /// bastion (ITEM 11 RESIDUAL, 2026-08-17): the SOURCE the recreation loop was
@@ -681,6 +705,12 @@ pub struct BastionInspectPayload {
     /// expected case — it is a signal that the population changed underneath
     /// this reading, and it is reported rather than averaged into a rate.
     pub health: Option<f32>,
+    /// bastion (ARC 5 item 22): every held sentiment as (target label,
+    /// value) — filled from `Sentiments::iter_held`, the SAME record
+    /// `change_by` writes and decay reads. Target label is the resolved
+    /// colonist uid when the target is a colony npc ("uid:N"), else the
+    /// Target's debug form. Tail-appended (wire rule).
+    pub sentiments: Vec<(String, f32)>,
 }
 
 /// bastion (STATUS-SURFACE): the inspector's colonist status line — the

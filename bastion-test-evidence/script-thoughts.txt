@@ -1,0 +1,16 @@
+note ITEM 23 (mood-thought breakdown) -- the thought triggers sit behind need
+note dips no short leg reaches (rest ~0.94 for thousands of ticks; thoughts=0
+note in EVERY leg on record). BASTION_NEEDS_DECAY_MULT=20 makes rest dip in
+note minutes, owned-bed sleep completes, and SleptInBed deposits the thought.
+note THE BAR: MOODX prints thoughts>0 with a label + value, and total moves
+note off base by exactly the thought's contribution (sum check client-side).
+anchor
+wait 3000
+note --- sample 1: needs should be visibly depressed by the multiplier ---
+inspect_colonists
+wait 4000
+note --- sample 2: sleep cycles should have completed; thoughts expected ---
+inspect_colonists
+wait 3000
+note --- sample 3: decay check -- a thought's value should shrink, not step ---
+inspect_colonists

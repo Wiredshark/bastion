@@ -1008,6 +1008,16 @@ fn main() {
                             p.desires,
                             p.guard_bravery
                         ));
+                        // ITEM 22 (relationships): the held-sentiment list on
+                        // its own line (the INSPECT line is at the format-trap
+                        // width already). Empty prints sentiments=0 so
+                        // no-sentiments and not-on-the-wire cannot conflate.
+                        log.log(&format!(
+                            "SENT uid={} sentiments={} {:?}",
+                            uid.0,
+                            p.sentiments.len(),
+                            p.sentiments
+                        ));
                         // ITEM 23 (morale events): the THOUGHT breakdown in
                         // full. mood_expl=SOME proved ARRIVAL; scoring item
                         // 23's bar ("a planted event produces a mood step")

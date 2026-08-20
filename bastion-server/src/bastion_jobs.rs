@@ -5689,6 +5689,19 @@ pub struct JobBoard {
         Vec3<i32>,
         ::rtsim::data::ChronicleKind,
     )>,
+    /// bastion (ITEM 22, relationships): co-work sentiment deltas —
+    /// (subject, object, change, cap) — queued under the same read-guard
+    /// constraint as `pending_thoughts` and drained by the rtsim tick,
+    /// which owns the data mutably. Both directions of a pair are pushed
+    /// explicitly so the drain stays a dumb applier; the drain sorts
+    /// (DET-MOOD-003's lesson) so persisted sentiment state is independent
+    /// of producer pass order.
+    pub pending_sentiments: Vec<(
+        common::rtsim::RtSimEntity,
+        common::rtsim::RtSimEntity,
+        f32,
+        f32,
+    )>,
     /// bastion (B7-1): the bed slots, keyed by block position — the
     /// reservations-table shape (capacity-1 occupancy). OWNERSHIP truth
     /// persists on the colonist record; this is the runtime table
@@ -10750,6 +10763,47 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             board.gen_mine_jobs += 1;
                             emitted += 1;
                         }
+                    }
+                }
+            }
+        }
+
+        // ── ITEM 22: the CO-WORK sentiment producer ──────────────────────
+        // The "countable interaction" the long-horizon bar names: two
+        // colonists BOTH holding jobs, within COWORK_R blocks, at a sampled
+        // window. Sampling IS the sustained-window test (a pair must
+        // co-occur across samples to accumulate), and the sample is keyed
+        // on tick cadence — deterministic by construction, never wall.
+        // Deltas ride pending_sentiments (the pending_thoughts seam: this
+        // system holds a long-lived rtsim READ guard); change_by saturates
+        // at the cap so repeated co-work converges instead of exploding.
+        if tick.0 % (ARBITRATION_INTERVAL as u64 * 5) == 13 {
+            const COWORK_R2: f32 = 16.0 * 16.0;
+            const COWORK_DELTA: f32 = 0.01;
+            const COWORK_CAP: f32 = 0.4;
+            let mut workers: Vec<(common::rtsim::RtSimEntity, Vec3<f32>, u64)> =
+                (&colonists, &positions, &active_jobs, &rtsim_entities, &uids)
+                    .join()
+                    .map(|(_, p, _, re, u)| (*re, p.0, u.0.get()))
+                    .collect();
+            // Sort by uid: pair enumeration (and therefore witness order)
+            // must not inherit specs' unspecified join order.
+            workers.sort_by_key(|(_, _, u)| *u);
+            for i in 0..workers.len() {
+                for j in (i + 1)..workers.len() {
+                    let (ra, pa, ua) = workers[i];
+                    let (rb, pb, ub) = workers[j];
+                    if pa.distance_squared(pb) <= COWORK_R2 {
+                        board.pending_sentiments.push((ra, rb, COWORK_DELTA, COWORK_CAP));
+                        board.pending_sentiments.push((rb, ra, COWORK_DELTA, COWORK_CAP));
+                        // Treatment beside outcome, per subject: WHO, toward
+                        // WHOM, WHY — the witness the chronicle can carry.
+                        info!(
+                            subject = ua,
+                            object = ub,
+                            cause = "co-work",
+                            "bastion: ITEM 22 sentiment delta queued"
+                        );
                     }
                 }
             }

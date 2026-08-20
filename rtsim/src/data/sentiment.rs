@@ -54,6 +54,13 @@ pub struct Sentiments {
 }
 
 impl Sentiments {
+    /// bastion (ITEM 22): read-only view of every held sentiment, in the
+    /// BTreeMap's deterministic order — the inspect display's same-source
+    /// fill. Values are the same `value()` scale gameplay consumes.
+    pub fn iter_held(&self) -> impl Iterator<Item = (Target, f32)> + '_ {
+        self.map.iter().map(|(t, s)| (*t, s.value()))
+    }
+
     /// Return the sentiment that is felt toward the given target.
     pub fn toward(&self, target: impl Into<Target>) -> &Sentiment {
         self.map.get(&target.into()).unwrap_or(&Sentiment::DEFAULT)

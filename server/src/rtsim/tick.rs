@@ -849,6 +849,21 @@ impl<'a> System<'a> for Sys {
             );
         }
 
+        // ITEM 22 (relationships): apply queued co-work sentiment deltas —
+        // the same one-tick deferral as thoughts (bastion_jobs can't write
+        // rtsim data under its read guard). Sorted before applying: deltas
+        // of one sign commute through change_by's saturation, but the
+        // persisted BTreeMap insert order must not inherit producer pass
+        // order (DET-MOOD-003's rule, applied at this second seam).
+        let mut pending_sentiments = std::mem::take(&mut job_board.pending_sentiments);
+        pending_sentiments
+            .sort_by_key(|(subj, obj, _, _)| (*subj, *obj));
+        for (subj, obj, change, cap) in pending_sentiments {
+            if let Some(npc) = data.npcs.get_mut(subj) {
+                npc.sentiments.toward_mut(obj).change_by(change, cap);
+            }
+        }
+
         let mut create_event = |id: NpcId, npc: &Npc, steering: Option<NpcBuilder>| match npc.body {
             Body::Ship(body) => {
                 create_ship_emitter.emit(CreateShipEvent {
