@@ -259,6 +259,14 @@ case "$ARM" in
   # ★ DESIRES/SOCIETAL AXIS paired A/B: identical script, same seed; ONLY
   # alpha differs. The charter's acceptance: merit = higher throughput AND
   # lower mood; indiv = the reverse; anything else = AXIS-FAILS-DECORATIVE.
+  # ★ ITEM 24 bar 1: same script/seed, ONLY the pinned season differs. The
+  # farm loop is active in the desires script (it paints work + the preset
+  # farms), and every stage-up emits its season -- so summer stage-ups > 0 and
+  # winter == 0 is directly countable.
+  sumfarm)      PITVAR=" BASTION_PIN_SEASON=summer BASTION_SEED_FOOD=64"
+              SCRIPT="script-desires.txt" ;;
+  winfarm)      PITVAR=" BASTION_PIN_SEASON=winter BASTION_SEED_FOOD=64"
+              SCRIPT="script-desires.txt" ;;
   merit)        PITVAR=" BASTION_CULTURE_ALPHA=0.9"
               SCRIPT="script-desires.txt" ;;
   indiv)        PITVAR=" BASTION_CULTURE_ALPHA=0.1"
