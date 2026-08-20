@@ -124,6 +124,8 @@ enum ScriptCmd {
     InspectCell(Vec3<i32>),
     InspectColonists,
     InspectColony,
+    /// ARC 2 item 12: request colonist chronicles (the entity-log player view).
+    InspectChronicle,
     CountItems,
     ListDesignations,
     Survey {
@@ -234,6 +236,7 @@ pub const SCRIPT_VERBS: &[&str] = &[
     "inspect_cell",
     "inspect_colonists",
     "inspect_colony",
+    "inspect_chronicle",
     "count_items",
     "list_designations",
     "survey",
@@ -301,6 +304,7 @@ fn parse_script_text(text: &str) -> Vec<ScriptCmd> {
             },
             "inspect_colonists" => ScriptCmd::InspectColonists,
             "inspect_colony" => ScriptCmd::InspectColony,
+            "inspect_chronicle" => ScriptCmd::InspectChronicle,
             "count_items" => ScriptCmd::CountItems,
             "list_designations" => ScriptCmd::ListDesignations,
             "survey" => {
@@ -1025,6 +1029,66 @@ fn main() {
                 drop(items);
                 drop(positions);
                 log.log(&format!("ITEMS count={n} {}", lines.join(" ")));
+            },
+            // ARC 2 item 12: chronicle round trip for EVERY colonist uid the
+            // client can see. Per the prereg: print enabled and truncated
+            // ALWAYS -- an empty row list with enabled=false says nothing
+            // about the entity, and the logger omitting the flag would
+            // recreate the exact conflation the payload exists to prevent.
+            ScriptCmd::InspectChronicle => {
+                let uids: Vec<common::uid::Uid> = {
+                    use specs::Join;
+                    let state = client.state();
+                    let ecs = state.ecs();
+                    let colonists = ecs.read_storage::<comp::Colonist>();
+                    let uid_storage = ecs.read_storage::<common::uid::Uid>();
+                    (&colonists, &uid_storage)
+                        .join()
+                        .map(|(_, uid)| *uid)
+                        .collect()
+                };
+                log.log(&format!("CHRONICLE requesting {} colonists", uids.len()));
+                for uid in uids {
+                    client.bastion_inspect_request(BastionInspectTarget::Chronicle(uid));
+                    let mut got = None;
+                    for _ in 0..60 {
+                        let _ =
+                            client.tick(comp::ControllerInputs::default(), driver_dt(&clock));
+                        client.cleanup();
+                        driver_pace(&mut clock, &mut client);
+                        if let Some((BastionInspectTarget::Chronicle(u), payload)) =
+                            client.bastion_inspect()
+                            && *u == uid
+                        {
+                            got = Some(payload.clone());
+                            break;
+                        }
+                    }
+                    match got {
+                        Some(Some(common::comp::bastion::BastionInspectKind::Chronicle(c))) => {
+                            log.log(&format!(
+                                "CHRONICLE uid={} enabled={} truncated={} rows={}",
+                                uid.0.get(),
+                                c.enabled,
+                                c.truncated,
+                                c.events.len()
+                            ));
+                            for row in &c.events {
+                                log.log(&format!(
+                                    "CHRONICLE-ROW uid={} tick={} kind={} actor={:?}",
+                                    uid.0.get(),
+                                    row.tick,
+                                    row.kind,
+                                    row.actor
+                                ));
+                            }
+                        },
+                        Some(other) => {
+                            log.log(&format!("CHRONICLE uid={} WRONG-KIND {other:?}", uid.0.get()))
+                        },
+                        None => log.log(&format!("CHRONICLE uid={} NO-REPLY", uid.0.get())),
+                    }
+                }
             },
             ScriptCmd::InspectColony => {
                 // ARC 2 item 10. Same protocol, same reply-matching

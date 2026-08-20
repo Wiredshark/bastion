@@ -1786,6 +1786,34 @@ impl<'a> System<'a> for Sys {
                                         },
                                     ))
                                 },
+                                // ARC 2 item 12: the chronicle — the entity
+                                // log's player view. READ-ONLY: only
+                                // events_for/truncated are called. `enabled`
+                                // and `truncated` ride the payload because an
+                                // empty list, a disabled log and an overflowed
+                                // ring are three different states, and the UI
+                                // can only distinguish states the payload
+                                // carries (item 12 prereg, bar 2).
+                                BastionInspectTarget::Chronicle(uid) => {
+                                    use bastion_server::bastion_entity_event_log as ev;
+                                    let events = ev::events_for(uid)
+                                        .into_iter()
+                                        .map(|e| {
+                                            common::comp::bastion::BastionChronicleRow {
+                                                tick: e.tick,
+                                                kind: format!("{:?}", e.kind),
+                                                actor: e.actor.map(|a| a.0.get()),
+                                            }
+                                        })
+                                        .collect();
+                                    Some(BastionInspectKind::Chronicle(
+                                        common::comp::bastion::BastionChronicleInspect {
+                                            enabled: ev::enabled(),
+                                            truncated: ev::truncated(uid),
+                                            events,
+                                        },
+                                    ))
+                                },
                             };
                             let _ =
                                 client.send(ServerGeneral::BastionInspectInfo { target, payload });

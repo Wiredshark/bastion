@@ -699,6 +699,9 @@ pub enum BastionInspectTarget {
     /// bastion (ARC 2 item 10): the colony itself — the one target that is not
     /// a thing you can point at, which is exactly why the dashboard needs it.
     Colony,
+    /// bastion (ARC 2 item 12): an entity's CHRONICLE — its event-log history
+    /// as the player view. Appended last (wire rule).
+    Chronicle(crate::uid::Uid),
 }
 
 /// bastion (UI-5, row 62.2): one inspected object's full internal state —
@@ -718,6 +721,9 @@ pub enum BastionInspectKind {
     /// "ask the server about a thing" channel — a second path would be a
     /// second authority over the same question.
     Colony(BastionColonyInspect),
+    /// bastion (ARC 2 item 12): the chronicle payload. Appended last (wire
+    /// rule as above).
+    Chronicle(BastionChronicleInspect),
 }
 
 /// bastion (ARC 2 item 10): the colony dashboard's payload.
@@ -777,6 +783,40 @@ pub struct BastionColonyInspect {
     /// failing, and 0 is distinguishable from any real post-boot tick.
     #[serde(default)]
     pub tick: u64,
+}
+
+/// bastion (ARC 2 item 12): one chronicle row — a wire-safe projection of the
+/// server-side `EntityEvent` (`common` cannot see `bastion-server`, so the
+/// kind travels as its label and the conversion lives server-side).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BastionChronicleRow {
+    pub tick: u64,
+    /// The event kind's label, e.g. "Claimed", "Stuck", "Despawned".
+    pub kind: String,
+    /// The second uid: the picker, the claimant, the killer. `None` when no
+    /// actor applies.
+    pub actor: Option<u64>,
+}
+
+/// bastion (ARC 2 item 12): an entity's chronicle — the event log's player
+/// view.
+///
+/// ★ `enabled` and `truncated` are NOT decoration. Without them "no events",
+/// "log disabled" and "ring overflowed" all render as an empty list — three
+/// different states, two of which say nothing about the entity. The UI can
+/// only distinguish states the payload carries. (Registered as bar 2 of the
+/// item 12 pre-registration.)
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BastionChronicleInspect {
+    /// Whether the entity event log is running at all. `false` means the
+    /// empty `events` says NOTHING about this entity.
+    pub enabled: bool,
+    /// Whether this entity's ring has ever dropped an event to make room —
+    /// design #99's per-entity truncation flag. `true` means `events` is a
+    /// SUFFIX of the history, not the history.
+    pub truncated: bool,
+    /// Tick-ascending event rows (ring-bounded by the producer).
+    pub events: Vec<BastionChronicleRow>,
 }
 
 /// bastion (UI-5): a job / designation-in-progress debug view. The claimant

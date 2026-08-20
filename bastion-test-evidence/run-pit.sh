@@ -231,6 +231,19 @@ case "$ARM" in
   # 0.8/0.2 the two MUST diverge: timid (0.5 < 0.8) stops holding, brave
   # (0.5 >= 0.2) keeps holding. A blanket exemption would hold BOTH; a broken
   # threshold would flee BOTH. Neither bar can pass by accident.
+  # ★ SPEED OPPORTUNISM: item 11's open question is REACHABILITY -- "is the
+  # census line executed at all?" -- which a SHORT script answers as well as the
+  # 92,000-tick recreation run. Same diag, ~3 min instead of ~22.
+  recrreach)    PITVAR=" BASTION_RECREATION=1 BASTION_RECREATION_GATE_DIAG=1"
+              SCRIPT="script-guard.txt" ;;
+  # ★ ITEM 12 (chronicle UI). Log ON: rows must match server-side events.
+  chron)        PITVAR=" BASTION_ENTITY_EVENT_LOG=1"
+              SCRIPT="script-chronicle.txt" ;;
+  # Bar 2's planted control: SAME script, log OFF. The payload must read
+  # enabled=false -- an empty-but-enabled reply and a disabled reply must
+  # never render identically.
+  chronctl)     PITVAR=""
+              SCRIPT="script-chronicle.txt" ;;
   guardwound)   PITVAR=" BASTION_ACCESS_CLAIM_DIAG=1 BASTION_GUARD_BRAVERY=0.8,0.2 BASTION_GUARD_HOLD_DIAG=1 BASTION_GUARD_PLANT_WOUND=0.5"
               SCRIPT="script-guard.txt" ;;
   recrabfedctl) PITVAR=" BASTION_SEED_FOOD=64"

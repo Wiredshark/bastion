@@ -1,0 +1,17 @@
+note ITEM 12 -- CHRONICLE UI: the entity log's player view, first live leg.
+note
+note BARS (ITEM12-CHRONICLE-PREREGISTRATION.md):
+note   1 round trip -- rows match the server's own log for that uid
+note   2 enabled/disabled distinction -- chronctl arm must read enabled=false
+note   3 ordering -- rows tick-ascending
+note   4 read-only -- handler only calls events_for/truncated
+note
+anchor
+note --- generate some events: jobs get claimed/worked near the colony ---
+wait 1200
+note --- first chronicle sweep ---
+inspect_chronicle
+wait 1200
+note --- second sweep: MORE events must have accrued (monotone growth) ---
+inspect_chronicle
+wait 300
