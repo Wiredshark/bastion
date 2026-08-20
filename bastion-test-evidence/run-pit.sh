@@ -554,6 +554,14 @@ VELOREN_USERDATA="$UD" VELOREN_ASSETS=$A "$B/veloren-server-cli$EXE" \
     --no-auth admin add "$TAG" admin > /dev/null 2>&1
 S=$WT/userdata-$TAG/server/server_config/settings.ron
 sed -i "s/:14004\"/:$GAME\"/g; s/:14006\"/:$METRICS\"/g" "$S"
+# Item 24 bar 2 (annual cycle): PIT_DAY_LENGTH rewrites the server's
+# day_length (minutes per game day; vanilla 30). Exact-key sed, and the
+# delivered value is printed from the FILE (print-what-you-delivered) so a
+# failed substitution cannot run silently at vanilla length.
+if [ -n "${PIT_DAY_LENGTH:-}" ]; then
+  sed -i "s/day_length: [0-9.]*/day_length: $PIT_DAY_LENGTH/" "$S"
+  echo "day_length delivered: $(grep -o 'day_length: [0-9.]*' "$S")"
+fi
 sed "s/:14005\"/:$WEB\"/" "$WT/userdata-$TAG/server-cli/settings.template.ron" \
     > "$WT/userdata-$TAG/server-cli/settings.ron"
 
