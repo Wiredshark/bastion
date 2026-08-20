@@ -195,14 +195,20 @@ air with no column to carve?
    population should be argued from the observed distribution. **A BAR change,
    so it needs Ben**; recorded here rather than applied.
 
-14. **★ SPEED ROW: invert the `veloren-server → bastion-server` edge**
-   (`SPEED-ROW-INVERT-THE-ARROW.md`, `afce3fc77e`). Feasibility read **DONE**:
-   the movable closure is **2,379 of 23,222 lines = 10.2%** (JobBoard 931 +
-   its single impl 1,165 + 9 types 156 + 7 helpers 127). Verdict **INVERT**,
-   predicted **~48%** off a warm iteration. Authorised in principle by the
-   SPEED OPPORTUNISM standing law, which routes a change this size to a
-   pre-registered row rather than an inline edit — **the build is the open
-   decision, the feasibility is not.**
+14. ~~**SPEED ROW: invert the `veloren-server → bastion-server` edge**~~
+   **REFUSED AND REVERTED 2026-08-19** (`d5de850603`, revert `d4ed8024c3`).
+   ★ **This entry is kept only so nobody rebuilds it.** It previously read
+   "feasibility DONE, verdict INVERT, predicted ~48%, the build is the open
+   decision" — that was the *pre-build* read, and the build refuted it. The
+   extraction was carried to completion (5,317 lines into `bastion-core`, both
+   crates green, 135/135 conserved) and then the edge-cut **refused to
+   compile**: `veloren-server` uses **31** symbols from `bastion_jobs`, of which
+   **26** live in the very logic the row had to leave behind. The 10.2%
+   "movable closure" was real; the *arrow* was not cuttable. Reverted forward,
+   tree clean.
+   **Do not re-open on the feasibility number.** A closure being movable is not
+   the same claim as an edge being cuttable, and that distinction is what cost
+   the row.
 
 ## Closed 2026-08-19 (later block)
 
