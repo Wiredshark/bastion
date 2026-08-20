@@ -568,7 +568,16 @@ export BASTION_LOGS="$EV/server-$TAG.log $EV/$TAG.log $EV/driver-$TAG.log $EV/dr
 
 . "$EV/launch-preamble.sh"
 
-rm -rf "$WT/userdata-$TAG"
+# PIT_KEEP_USERDATA (item 22 persistence leg, the a4-restart pattern): a
+# restart leg re-enters the SAME save; the wipe is the default because
+# every other leg needs a clean world, and keeping is opt-in per
+# invocation. The kept path is printed so a stale-save leg can never
+# masquerade as a fresh one.
+if [ -n "${PIT_KEEP_USERDATA:-}" ]; then
+  echo "userdata KEPT (restart leg): $WT/userdata-$TAG"
+else
+  rm -rf "$WT/userdata-$TAG"
+fi
 VELOREN_USERDATA="$UD" VELOREN_ASSETS=$A "$B/veloren-server-cli$EXE" \
     --no-auth admin add "$TAG" admin > /dev/null 2>&1
 S=$WT/userdata-$TAG/server/server_config/settings.ron
