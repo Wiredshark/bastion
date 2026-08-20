@@ -360,6 +360,15 @@ pub enum DesignationKind {
     /// completion. The rest-loop venue B7-2's preemption targets.
     /// Appended last (wire rule as above).
     Bed,
+    /// bastion (ITEM 14, axis 3 — POST): a guard station. A designation like
+    /// a [`Bed`](DesignationKind::Bed) — a named place a colonist is assigned
+    /// to hold, not a block to mine. Appended last (wire rule as above).
+    GuardPost,
+    /// bastion (ITEM 14, axis 3 — PATROL): one waypoint of a patrol route.
+    /// ★ Post and patrol are BOTH assignment types per Ben's ruling; shipping
+    /// only one would collapse a parameterised axis into a policy, which is
+    /// the exact thing the ruling forbids. Appended last (wire rule as above).
+    PatrolPoint,
     /// bastion (FARM/PROD-2, row 46): a PERSISTENT farm footprint — the
     /// paint registers the plot (the Stockpile-registration precedent)
     /// and generates NO jobs itself; the farm trigger pass reads each
@@ -447,6 +456,8 @@ pub enum AffordanceClass {
 impl DesignationKind {
     pub fn label(&self) -> &'static str {
         match self {
+            DesignationKind::GuardPost => "GuardPost",
+            DesignationKind::PatrolPoint => "PatrolPoint",
             DesignationKind::Mine => "Mine",
             DesignationKind::Chop => "Chop",
             DesignationKind::Build => "Build",
@@ -471,6 +482,8 @@ impl DesignationKind {
     /// MUST be `true` here.
     pub fn is_tool_paintable(&self) -> bool {
         match self {
+            // ITEM 14: both are player-painted assignments.
+            DesignationKind::GuardPost | DesignationKind::PatrolPoint => true,
             DesignationKind::Mine
             | DesignationKind::Chop
             | DesignationKind::Gather
@@ -503,6 +516,8 @@ impl DesignationKind {
     /// future Gather/Forage/surface-zone kind gets the branch free.
     pub fn footprint_mode(&self) -> FootprintMode {
         match self {
+            // ITEM 14: a station/waypoint is a SURFACE place, like a zone.
+            DesignationKind::GuardPost | DesignationKind::PatrolPoint => FootprintMode::Area2D,
             // ZONE-0: zones are surface activity areas — pure XY.
             // GATHER: forage sweeps a surface footprint (the branch this
             // doc-comment promised it would get free).
@@ -526,6 +541,8 @@ impl DesignationKind {
     /// the designation itself carries none.
     pub fn purpose(&self) -> Option<Purpose> {
         match self {
+            // ITEM 14: an assignment place carries no ASSET purpose.
+            DesignationKind::GuardPost | DesignationKind::PatrolPoint => None,
             DesignationKind::Mine
             | DesignationKind::Chop
             | DesignationKind::Gather
@@ -738,11 +755,17 @@ pub enum WorkType {
     /// bastion (FARM/PROD-2, row 46): field work — till, sow, harvest.
     /// Appended LAST (wire rule).
     Farm,
+    /// bastion (ITEM 14): standing watch. Its own work type because guarding
+    /// is neither hauling nor building — a guard occupies a colonist without
+    /// producing, which every throughput measure must be able to see
+    /// separately. Appended LAST (wire rule).
+    Guard,
 }
 
 impl WorkType {
     pub fn label(&self) -> &'static str {
         match self {
+            WorkType::Guard => "guard",
             WorkType::Mine => "mine",
             WorkType::Chop => "chop",
             WorkType::Build => "build",
@@ -759,6 +782,9 @@ impl DesignationKind {
     /// now so priorities are honored from day one.)
     pub fn work_type(&self) -> WorkType {
         match self {
+            // ITEM 14: both assignment types map to the same work; the
+            // DIFFERENCE between post and patrol is the job, not the labour.
+            DesignationKind::GuardPost | DesignationKind::PatrolPoint => WorkType::Guard,
             DesignationKind::Mine => WorkType::Mine,
             DesignationKind::Chop => WorkType::Chop,
             // B5.8: placing a ladder is construction work. B7-1: so is a
@@ -1306,6 +1332,9 @@ pub fn tool_factor(
 ) -> f32 {
     use crate::comp::item::{Quality, tool::ToolKind};
     let wanted = match work {
+        // ITEM 14 v1: no tool requirement. A weapon axis is a separate
+        // parameter and inventing one here would be a policy, not a value.
+        WorkType::Guard => None,
         WorkType::Mine => Some(ToolKind::Pick),
         WorkType::Chop => Some(ToolKind::Axe),
         WorkType::Build => Some(ToolKind::Hammer),
@@ -1419,6 +1448,9 @@ impl ColonistSkills {
     /// Route completion XP to the skill matching the work type (B5).
     pub fn grant_xp(&mut self, work: WorkType, xp: f32) {
         match work {
+            // ITEM 14: guarding trains MELEE — the skill already exists, so
+            // v1 adds no skill field it would have to justify.
+            WorkType::Guard => self.melee.add_xp(xp),
             WorkType::Mine => self.mining.add_xp(xp),
             WorkType::Chop => self.woodcutting.add_xp(xp),
             WorkType::Build => self.construction.add_xp(xp),
@@ -1432,6 +1464,7 @@ impl ColonistSkills {
     /// `skill_floor` on and B5's work rate scales by.
     pub fn level_for(&self, work: WorkType) -> u16 {
         match work {
+            WorkType::Guard => self.melee.level,
             WorkType::Mine => self.mining.level,
             WorkType::Chop => self.woodcutting.level,
             WorkType::Build => self.construction.level,
@@ -1445,6 +1478,7 @@ impl ColonistSkills {
     /// scenario tooling; gameplay progression goes through `grant_xp`).
     pub fn set_level_for(&mut self, work: WorkType, level: u16) {
         let s = match work {
+            WorkType::Guard => &mut self.melee,
             WorkType::Mine => &mut self.mining,
             WorkType::Chop => &mut self.woodcutting,
             WorkType::Build => &mut self.construction,
@@ -1468,6 +1502,12 @@ pub struct WorkPriorities {
     /// pre-row-46 saves farm at normal priority, not never.
     #[serde(default = "default_work_priority")]
     pub farm: u8,
+    /// bastion (ITEM 14): serde-defaulted to 3 so pre-item-14 saves guard at
+    /// normal priority rather than NEVER — a 0 default would make every
+    /// existing colony silently refuse guard work and read as "guards do not
+    /// work", which is the kind of default that gets diagnosed as a bug.
+    #[serde(default = "default_work_priority")]
+    pub guard: u8,
 }
 
 fn default_work_priority() -> u8 { 3 }
@@ -1481,6 +1521,8 @@ impl Default for WorkPriorities {
             haul: 3,
             cook: 3,
             farm: 3,
+            // ITEM 14: normal priority, not 0 — see the field doc.
+            guard: 3,
         }
     }
 }
@@ -1489,6 +1531,7 @@ impl WorkPriorities {
     /// Priority for a work type: 0 = never do this work, 1..=4 rising.
     pub fn get(&self, work: WorkType) -> u8 {
         match work {
+            WorkType::Guard => self.guard,
             WorkType::Mine => self.mine,
             WorkType::Chop => self.chop,
             WorkType::Build => self.build,
@@ -1501,6 +1544,7 @@ impl WorkPriorities {
     pub fn set(&mut self, work: WorkType, priority: u8) {
         let p = priority.min(4);
         match work {
+            WorkType::Guard => self.guard = p,
             WorkType::Mine => self.mine = p,
             WorkType::Chop => self.chop = p,
             WorkType::Build => self.build = p,
