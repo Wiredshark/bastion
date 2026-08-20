@@ -16,14 +16,16 @@ empty queue is itself a finding — refill from `readme/BUILD-ROADMAP.md`.
    inventory was checked. `#[test]` fns in source = **135**, exactly the number
    run; the crate has **no** `tests/`, `benches/` or `examples/` dir and
    declares no extra `[[target]]`, so the lib target *is* the whole suite.
-2. **`b5_mine_cell_diag` content mover (#84)** — ~~BLOCKED on data~~
-   **RECLASSIFIED 2026-08-19: PRODUCIBLE, not blocked.** The blocker was
-   "wave24 vs wave34 is not comparable (75 vs 119 fields)". A **current-tip**
-   payload carries **121** `b5_` fields — a **2-field** delta from wave34's 119,
-   not 75-vs-119 — and `aa-pair.sh` already emits wave-shaped JSONs. So the
-   missing pair is **data I can produce**, locally and free: ~48 seeds × 2 tips,
-   ≈40 min of local CPU at 5-way parallelism, no VM. Cost stated so the
-   scheduling call is informed; not started.
+2. ~~**`b5_mine_cell_diag` content mover (#84)**~~ **ANSWERED 2026-08-19 from
+   banked data — `30047a0593`, `ITEM2-CONTENT-MOVER-IS-PLAN-ACCESS.md`.**
+   The mover is **`plan_access`**: 120 of 126 blocked-cell entries (**95%**),
+   `route_exhausted` 3 (2%), 46% additionally flagged unreachable. Same subject
+   as the self_rescue thread — two independent lines converged on one function.
+   ★ **This entry carried TWO stale states before the answer** — first "BLOCKED
+   on data", then "PRODUCIBLE, ~40 min of local CPU". **Neither was true.** The
+   corpus already held it, and the ~40 min was nearly spent before the
+   corpus-first check was run. **Zero spend.**
+
 3. ~~**`emit_drop` has no landing-position log**~~ **MIS-SPECIFIED — rewritten
    2026-08-19 after a producer read, not implemented.** The landing position
    **does not exist at `emit_drop`**: the site emits `CreateItemDropEvent` with
