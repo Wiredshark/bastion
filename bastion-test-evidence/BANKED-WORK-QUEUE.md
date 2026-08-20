@@ -335,6 +335,25 @@ without crossing that routing.
 | Adopt-a-town | **bar 1 PASS** (5 plots → 1,519 designations, founded IN the town), bar 2 PARTIAL (access-work proven; production+eats pending one seeded leg). Three silent-fallback root causes found by successive witnesses |
 | Item 27 (cooking) | vocabulary + all arms landed (CookStation + JobKind::Cook); NEXT: station registry + generator + completion handler |
 
+## Item 27 (cooking) — banked at a PRECISE question (2026-08-20)
+
+**Three of four pipeline stages proven live in one leg:** 9 stations registered
+on completion, 9 Cook jobs generated (the idle-no-raw witness never fired —
+raw WAS available to the generator's scan), fetch machinery engaged. **Zero
+completions, and the census names the wall: `materials=136` — every Cook claim
+refused at the fetch gate.**
+
+**THE QUESTION: the generator's raw-availability scan and the claim gate's
+`stockpile_has_material` DISAGREE about the same seeded mushrooms.** Two
+availability checks, one item population, opposite answers — one of them is
+wrong about what "available" means (def-format mismatch, reservation state, or
+zone membership). This is a producer read of `stockpile_has_material` against
+the generator's scan, not a run.
+
+Also noted: a 3×3 station paint registered NINE stations (one per cell) — the
+granularity wants a v1 note (one station per paint, or dedupe by adjacency)
+once the pipeline completes at all.
+
 ## Blocked / needs a decision (Ben)
 
 - **Tick-loading scope call** — roadmap criterion passes, mandate bar 2 fails.
