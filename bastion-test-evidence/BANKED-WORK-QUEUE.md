@@ -443,10 +443,11 @@ note: NOT strictly monotone** — uid=3→9 dipped 0.262→0.254 in one window
 prereg's "monotonically" was written before reading decay's RNG semantics).
 Bar reading = net rise with saturation; the wording correction is disclosed,
 not smoothed. Null still vacuous (all pairs credited in the preset box).
-Remaining: determinism twin (NOTE: decay draws from an rtsim RNG — twin legs
-will test whether it is deterministic under BASTION_DETERMINISTIC; if not,
-that is a REAL determinism-by-construction violation to fix, not a test
-nuisance), persistence (save/load), and a non-vacuous null fixture.
+Remaining: determinism twin — RESOLVED BY CODE READ before the leg ran:
+decay draws `tick_rng(world_seed, tick, npc.seed ^ 0xC1EA)` (cleanup.rs,
+DETRNG/T0.34 per-NPC keyed streams), deterministic under
+BASTION_DETERMINISTIC by existing construction; a twin leg is confirmation.
+Persistence (save/load) and a non-vacuous null fixture remain.
 
 **Item 23 leg 2 (mult=20, post unit-gate): the fixture defeats its own
 precondition.** Treatment delivered (witness mult=20.0), needs collapse to
