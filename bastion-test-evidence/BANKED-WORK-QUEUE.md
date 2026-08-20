@@ -425,6 +425,15 @@ Producer+drain+display all proven; bars need ≥3 windows (pintrait legs carry
 3 inspects), the null (vacuous in the preset box — every pair co-works; name
 it or fixture a split), determinism twin, persistence leg.
 
+**Loop closure owed (bars 3–4 shape): the DISH is not in `FOOD_DEFS`** —
+cooked curry is invisible to the eat scan, so cooking currently produces
+inedible output. The v1.1 edit: add the dish def to the eat scan with a
+per-def restore (`food_restore(def)`: curry > raw mushroom — cooking must
+PAY, or it's decorative), and note the cook generator must NOT treat the
+dish as raw input (it matches FOOD_DEFS via its own list — keep RAW_DEFS
+and EDIBLE_DEFS distinct or the pot cooks its own output). Banked until the
+current legs land ( .rs frozen mid-chain).
+
 **Granularity note (owed from cookery3): a 3×3 CookStation paint registers
 NINE stations** — Area2D designations build per-cell, and each completed cell
 pushes to `cook_stations`. Harmless for the pipeline bars (the generator
