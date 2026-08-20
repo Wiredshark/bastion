@@ -30,6 +30,30 @@
 #
 # Usage: sh score-selfrescue-axes23.sh <outdir> <seed> [seed...]
 set -u
+
+# ★★ RETIRED 2026-08-19 — THIS SCORER MUST NOT RUN AGAIN AS WRITTEN.
+#
+# Ben's ruling 3 ADOPTED self-rescue's owner+approach as the DEFAULT
+# (`BASTION_NO_SELFRESCUE_CTX=1` is now the only switch). The four arms below
+# drive `BASTION_SELFRESCUE_CTX` / `BASTION_SELFRESCUE_APPROACH`, which no
+# longer exist in the code.
+#
+# Run unchanged it would set env vars nothing reads, leaving ALL FOUR ARMS
+# default-on and identical — and print a confident "NEITHER / no effect" that
+# is 100% artifact. That is worse than an error: it is a wrong answer wearing
+# the format of a right one, from a scorer whose verdicts are already cited in
+# committed evidence.
+#
+# Kept for provenance (the BOTH-REQUIRED result came from it) and REFUSES.
+# To re-run the axis comparison, drive the kill switch instead:
+#   A = BASTION_NO_SELFRESCUE_CTX=1 (the old baseline)   D = default (adopted)
+# Axes 2 and 3 can no longer be varied INDEPENDENTLY — the adoption gates them
+# together, because the measurement showed one without the other is inert.
+echo "REFUSING: this scorer drives retired flags (BASTION_SELFRESCUE_CTX /" >&2
+echo "  _APPROACH). Ruling 3 made them the default; setting them now does" >&2
+echo "  NOTHING and every arm would be identical. See the header for the" >&2
+echo "  kill-switch form. Refusing rather than printing an artifact." >&2
+exit 9
 # ★ corpus-first, enforced for LOCAL runs too (see corpus-first.sh)
 . "$(dirname "$0")/corpus-first.sh"
 OUT="${1:?usage: score-selfrescue-axes23.sh <outdir> <seed> [seed...]}"; shift

@@ -16826,7 +16826,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // without one and its first run was VOID, because "passed the
             // owner and it changed nothing" and "the flag never arrived" are
             // the same evidence otherwise.
-            let ctx_owner = if std::env::var_os("BASTION_SELFRESCUE_CTX").is_some() {
+            // ★★ BEN RULING 3 (2026-08-19), SELF-RESCUE ADOPTED AS FIRST LINE:
+            // "Self-rescue is the first line — a trapped colonist tries to get
+            // out; colony rescue is the fallback when self-rescue can't
+            // succeed."
+            //
+            // The ORDERING that ruling asks for already held: this site runs
+            // before the colony/emergency site in the same tick. What did NOT
+            // hold is that self-rescue could ever SUCCEED — it passed `None`
+            // for both `emergency_owner` and `emergency_approach`, which is why
+            // it was 0 emissions in 55 calls across 48 banked seeds while the
+            // colony path succeeded 46/478 through the SAME function.
+            //
+            // Measured (four arms x 5 seeds, `SELF-RESCUE-NEVER-SUCCEEDS.md`):
+            //   baseline 0/36 · owner only 0/36 · approach only 0/36 · BOTH 5/38
+            // BOTH-REQUIRED. `emergency_owner.is_some()` is the only live
+            // disjunct opening the ladder tier for this caller, and
+            // `emergency_approach` is consumed only INSIDE that arm by
+            // `ladder_pillar` — so one without the other is inert BY
+            // CONSTRUCTION, not by tuning. They are therefore adopted together
+            // and killed together.
+            //
+            // KILL SWITCH: `BASTION_NO_SELFRESCUE_CTX=1` restores the
+            // never-succeeds behaviour, for reproducing any run banked before
+            // today.
+            let selfrescue_ctx_on =
+                std::env::var_os("BASTION_NO_SELFRESCUE_CTX").is_none();
+            let ctx_owner = if selfrescue_ctx_on {
                 if let Some(u) = owner {
                     *board
                         .access_plan_calls
@@ -16855,7 +16881,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // between this caller and the one that succeeds. Independent of
             // axis 2, so the two flags together give the BOTH-REQUIRED cell of
             // the registered outcome table in a single run.
-            let ctx_approach = if std::env::var_os("BASTION_SELFRESCUE_APPROACH").is_some() {
+            let ctx_approach = if selfrescue_ctx_on {
                 if approach.is_some() {
                     *board
                         .access_plan_calls
