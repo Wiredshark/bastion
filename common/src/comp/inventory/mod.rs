@@ -1221,6 +1221,17 @@ impl Inventory {
         });
     }
 
+    /// bastion (ITEM 28): the slot-targeted wear twin of
+    /// [`Self::repair_item_at_slot`] — see the loadout method's doc.
+    pub fn damage_item_at_equip_slot(
+        &mut self,
+        equip_slot: EquipSlot,
+        ability_map: &item::tool::AbilityMap,
+        msm: &item::MaterialStatManifest,
+    ) {
+        self.loadout.damage_item_at_slot(equip_slot, ability_map, msm);
+    }
+
     /// Resets durability of item in specified slot
     pub fn repair_item_at_slot(
         &mut self,

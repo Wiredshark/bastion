@@ -1448,15 +1448,12 @@ impl Job {
 /// reuse, never fork). Deterministic and pure — the curve is unit-pinned
 /// below. TOOL-1 adds the material-tier ladder + min-tier gating on hard
 /// blocks; TOOL-2 adds auto-equip-best + craft-quality stamps.
-pub fn tool_factor(
-    work: WorkType,
-    tool: Option<(
-        crate::comp::item::tool::ToolKind,
-        crate::comp::item::Quality,
-    )>,
-) -> f32 {
-    use crate::comp::item::{Quality, tool::ToolKind};
-    let wanted = match work {
+/// bastion (ITEM 28): the ONE work→tool mapping — `tool_factor` (the rate
+/// bonus) and the wear site (one durability step per completion) both read
+/// it, so they cannot drift onto different tools.
+pub fn work_tool_kind(work: WorkType) -> Option<crate::comp::item::tool::ToolKind> {
+    use crate::comp::item::tool::ToolKind;
+    match work {
         // ITEM 14 v1: no tool requirement. A weapon axis is a separate
         // parameter and inventing one here would be a policy, not a value.
         WorkType::Guard => None,
@@ -1467,7 +1464,18 @@ pub fn tool_factor(
         // dedicated farm tool tier; a Hoe tier is TOOLS-UPGRADE data
         // when it lands.
         WorkType::Haul | WorkType::Cook | WorkType::Farm => None,
-    };
+    }
+}
+
+pub fn tool_factor(
+    work: WorkType,
+    tool: Option<(
+        crate::comp::item::tool::ToolKind,
+        crate::comp::item::Quality,
+    )>,
+) -> f32 {
+    use crate::comp::item::Quality;
+    let wanted = work_tool_kind(work);
     match (wanted, tool) {
         (Some(w), Some((k, q))) if k == w => {
             // Quality ladder: a crude matching tool is a real relief over

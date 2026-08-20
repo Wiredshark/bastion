@@ -385,6 +385,10 @@ pub enum ServerChatCommand {
     /// exercise the display bar; the EMITTER is synthetic, the consumption
     /// pipeline is the shipping one.
     BastionThought,
+    /// bastion (ITEM 31, POWER-0): the first god-power cast — server-side
+    /// favor gate + REAL damage + the VFX, per the dispatch spec's ★(f)
+    /// (an Outcome alone is a light show with no kill).
+    BastionSmite,
     BattleMode,
     BattleModeForce,
     Body,
@@ -1172,6 +1176,14 @@ impl ServerChatCommand {
                 ),
                 Some(Admin),
             ),
+            ServerChatCommand::BastionSmite => cmd(
+                vec![Any("colonist name (may contain spaces)", Required)],
+                Content::Plain(
+                    "bastion: POWER-0 Smite — favor-gated, real damage + lightning VFX"
+                        .to_string(),
+                ),
+                Some(Admin),
+            ),
             ServerChatCommand::Scale => cmd(
                 vec![
                     Float("factor", 1.0, Required),
@@ -1317,6 +1329,7 @@ impl ServerChatCommand {
             ServerChatCommand::BastionArena => "bastion_arena",
             ServerChatCommand::BastionPriority => "bastion_priority",
             ServerChatCommand::BastionThought => "bastion_thought",
+            ServerChatCommand::BastionSmite => "bastion_smite",
             ServerChatCommand::Scale => "scale",
             ServerChatCommand::RepairEquipment => "repair_equipment",
             ServerChatCommand::Tether => "tether",

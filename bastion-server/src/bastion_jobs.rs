@@ -7436,6 +7436,19 @@ pub struct PendingSeedItems(pub Vec<(Vec3<i32>, String, u32)>);
 #[derive(Default)]
 pub struct TradePriceBook(pub Vec<(Vec3<i32>, f32)>);
 
+/// bastion (ITEM 31, POWER-0): the colony's DIVINE FAVOR — the cast-cost
+/// pool. Placeholder trickle regen per the dispatch spec's (d) revision
+/// (devotion lands with DF-RELIGION; the pipeline must not gate on it).
+/// Server-side only: the favor gate is never client-trusted (spec ★(f)).
+/// Starts EMPTY — the first cast attempt exercises the refusal branch by
+/// construction. MANUALLY inserted (the measured auto-setup lesson).
+#[derive(Default)]
+pub struct DivineFavor(pub f32);
+pub const FAVOR_REGEN_PER_SEC: f32 = 0.2;
+pub const FAVOR_CAP: f32 = 20.0;
+/// One Smite's cost — 25 game-seconds of trickle.
+pub const SMITE_COST: f32 = 5.0;
+
 /// bastion (ITEM 29): mint a mission when colony food drops below this.
 /// A PAR, not a balance tweak — the par-stock pull the charter names.
 pub const TRADE_FOOD_PAR: u32 = 16;
@@ -7591,6 +7604,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 Write<'a, PendingSeedItems>,
                 // ITEM 29: the server-refreshed price book (read-only here).
                 Read<'a, TradePriceBook>,
+                // ITEM 31: the favor pool (trickle regen lives here).
+                Write<'a, DivineFavor>,
             ),
         ),
     );
@@ -7659,6 +7674,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     mut mine_readback,
                     mut pending_seed_items,
                     trade_price_book,
+                    mut divine_favor,
                 ),
             ),
         ): Self::SystemData,
@@ -7823,6 +7839,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let pending = std::mem::take(&mut pending_seed_items.0);
                 let mut still_waiting = Vec::new();
                 for (pos, def, count) in pending {
+                    // Deliver INTO the pantry, not the doorstep: when a
+                    // stockpile zone exists by delivery time, retarget to
+                    // its center — the adopted town's zone registered 36
+                    // blocks from the founding origin and origin-dropped
+                    // seeds sat outside every census forever.
+                    let pos = board
+                        .stockpiles
+                        .first()
+                        .map(|(_, r)| {
+                            let c = (r.min + r.max) / 2;
+                            Vec3::new(c.x, c.y, r.max.z)
+                        })
+                        .unwrap_or(pos);
                     if terrain.get(pos).is_ok() {
                         for i in 0..count {
                             item_drop_emitter.emit(CreateItemDropEvent {
@@ -11011,6 +11040,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 }
             }
         }
+
+        // ── ITEM 31: divine favor trickle (POWER-0's cost pool) ──────────
+        // Per-tick, dt-scaled, capped — the identity shape (no cast, no
+        // change beyond the trickle; casts deduct in the command handler).
+        divine_favor.0 = (divine_favor.0 + FAVOR_REGEN_PER_SEC * dt.0).min(FAVOR_CAP);
 
         // ── ITEM 29: the TRADE MISSION generator ─────────────────────────
         // Par-stock pull: when colony food drops below TRADE_FOOD_PAR and
@@ -16623,6 +16657,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     if !auton_work_ok {
                         continue;
                     }
+                    // ITEM 27 thief-tick watch (FETCH_DIAG-gated): the
+                    // required def was IN the bag at arrival (carried_req
+                    // 2–64 witnessed) and GONE at the completion consume one
+                    // work-second later, with no logged consumer between.
+                    // Print the count per working tick; the tick where it
+                    // drops names the thief by cross-reference.
+                    if std::env::var_os("BASTION_FETCH_DIAG").is_some()
+                        && let Some(req) = job.required_item
+                    {
+                        let n: u32 = inventories
+                            .get(entity)
+                            .map(|inv| {
+                                inv.slots()
+                                    .flatten()
+                                    .filter(|i| {
+                                        i.item_definition_id().itemdef_id() == Some(req)
+                                    })
+                                    .map(|i| i.amount())
+                                    .sum()
+                            })
+                            .unwrap_or(0);
+                        info!(
+                            job = active.job,
+                            carried_req = n,
+                            "bastion: FETCH_DIAG working-tick carried"
+                        );
+                    }
                     // B5: accumulate work, rate scaled by the relevant skill.
                     // TOOL-0 (TOOLS-UPGRADE §3): × the EQUIPPED-tool factor —
                     // bare hands/wrong tool = the slow base, a matching
@@ -16630,15 +16691,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // tool multiply (both axes pay). The factor itself is
                     // `common::bastion::tool_factor` (pure, unit-pinned).
                     let skill_level = colonist.0.skills.level_for(job.work);
+                    // ITEM 28: the durability multiplier rides along — a
+                    // worn tool pays at the SAME site the tool bonus pays
+                    // (vanilla's stats decay curve, floor 25%; bare hands
+                    // stay 1.0 — fallback is the identity).
+                    let mut dur_mult = 1.0f32;
                     let tool = inventories.get(entity).and_then(|inv| {
                         inv.equipped(comp::slot::EquipSlot::ActiveMainhand)
                             .and_then(|item| match &*item.kind() {
-                                comp::item::ItemKind::Tool(t) => Some((t.kind, item.quality())),
+                                comp::item::ItemKind::Tool(t) => {
+                                    dur_mult = item.stats_durability_multiplier().0;
+                                    Some((t.kind, item.quality()))
+                                },
                                 _ => None,
                             })
                     });
-                    job.progress +=
-                        crate::bastion_actions::work_progress(dt.0, skill_level, job.work, tool);
+                    job.progress += dur_mult
+                        * crate::bastion_actions::work_progress(dt.0, skill_level, job.work, tool);
                     // CHOP-FELLING (row 51.6): a base-cut completes at its
                     // SIZE-SCALED bar (CHOP_WORK_PER_BLOCK × Wood count,
                     // frozen at placement — bigger trees take longer, Ben's
@@ -17282,6 +17351,39 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // unification: shared with the Farm arm above via
                     // `grant_completion_xp` (see that function's doc).
                     grant_completion_xp(&mut colonist.0.skills, job.work, outcome.grant_xp);
+                    // ITEM 28 (tool WEAR — the half TOOL-0 left): the
+                    // MATCHING equipped tool takes one vanilla durability
+                    // step per real completion. Vanilla semantics kept
+                    // whole (reuse-first): stats decay to a 25% floor and
+                    // the tool NEVER breaks — "breakage" would be a new
+                    // rule, banked as design if wanted. The work-rate side
+                    // reads `stats_durability_multiplier` at the progress
+                    // site, so wear PAYS there without a second constant.
+                    if outcome.grant_xp
+                        && let Some(mut inv) = inventories.get_mut(entity)
+                        && common::bastion::work_tool_kind(job.work)
+                            .zip(inv.equipped(comp::slot::EquipSlot::ActiveMainhand).and_then(
+                                |item| match &*item.kind() {
+                                    comp::item::ItemKind::Tool(t) => Some(t.kind),
+                                    _ => None,
+                                },
+                            ))
+                            .is_some_and(|(want, have)| want == have)
+                    {
+                        inv.damage_item_at_equip_slot(
+                            comp::slot::EquipSlot::ActiveMainhand,
+                            &ability_map,
+                            &msm,
+                        );
+                        let lost = inv
+                            .equipped(comp::slot::EquipSlot::ActiveMainhand)
+                            .and_then(|i| i.durability_lost());
+                        info!(
+                            work = ?job.work,
+                            durability_lost = ?lost,
+                            "bastion: ITEM 28 tool wear — one step per completion"
+                        );
+                    }
                     match outcome.log_channel {
                         CompletionLogChannel::RealProduction => {
                             info!(

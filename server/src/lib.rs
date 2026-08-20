@@ -705,6 +705,7 @@ impl Server {
         state
             .ecs_mut()
             .insert(bastion_jobs::TradePriceBook::default());
+        state.ecs_mut().insert(bastion_jobs::DivineFavor::default());
         // bastion (PATH-0): the sequential path scheduler's state.
         state
             .ecs_mut()
