@@ -2387,6 +2387,20 @@ pub const ARBITRATION_INTERVAL: u64 = crate::SIM_TPS / 2;
 /// ★ REFUSES a malformed value rather than falling back to the default: a
 /// silent fallback would run the whole A/B unpinned and score "no difference"
 /// from an arm that was never treated.
+/// bastion (ITEM 14, axis 1): which [`GuardMode`] a painted assignment gets.
+///
+/// ★ HOW A PLAYER CHOOSES THE MODE IS A UI QUESTION, banked for Ben. Until
+/// then the fixture picks: `BASTION_GUARD_MODE=fight|alarm`, defaulting to
+/// `Alarm` — the DE-ESCALATED end, because a v1 that defaults to Fight would
+/// send colonists at hostiles on a paint the player may have meant as a watch
+/// post, and that is a gameplay decision I do not get to make by default.
+pub fn guard_mode_pin() -> common::bastion::GuardMode {
+    match std::env::var("BASTION_GUARD_MODE").as_deref() {
+        Ok("fight") | Ok("Fight") => common::bastion::GuardMode::Fight,
+        _ => common::bastion::GuardMode::Alarm,
+    }
+}
+
 pub fn guard_bravery_pins() -> Option<(f32, f32)> {
     let raw = std::env::var("BASTION_GUARD_BRAVERY").ok()?;
     let mut it = raw.split(',');
@@ -6092,6 +6106,83 @@ impl JobBoard {
         // duplicate would complete independently and drop loot from the same
         // single block: a free-item exploit reachable from the in-game paint
         // path, not just a bookkeeping wart.
+        // ★★ ITEM 14: a guard assignment is ONE job, not one per cell.
+        //
+        // Every other designation paints a VOLUME OF WORK — each cell is its
+        // own job. A guard post is a PLACE TO STAND. Falling through to the
+        // per-cell loop below would create one Guard job per painted block,
+        // so a 5x5 post would occupy 25 colonists, and `job_wanted` returning
+        // true unconditionally (correct: a post has no block precondition)
+        // makes that MAXIMALLY wrong rather than harmlessly wrong.
+        //
+        // Axis 3 falls out of the same paint: a GuardPost region yields a POST
+        // (one point); a PatrolPoint region yields a PATROL between its two
+        // opposite corners. One paint action per assignment type, and a patrol
+        // visits 2 distinct waypoints by construction -- which is what bar 2
+        // scores.
+        if matches!(
+            kind,
+            DesignationKind::GuardPost | DesignationKind::PatrolPoint
+        ) {
+            let post = Vec3::new(
+                (region.min.x + region.max.x) / 2,
+                (region.min.y + region.max.y) / 2,
+                region.min.z,
+            );
+            let patrol_to = if kind == DesignationKind::PatrolPoint {
+                let far = Vec3::new(region.max.x, region.max.y, region.min.z);
+                // A 1-cell "patrol" is a post wearing the wrong name. Refuse
+                // to record it as a patrol rather than silently degrade -- bar
+                // 2 would then pass on an assignment that never moves.
+                (far != post).then_some(far)
+            } else {
+                None
+            };
+            if kind == DesignationKind::PatrolPoint && patrol_to.is_none() {
+                tracing::warn!(
+                    ?region,
+                    "bastion: ITEM 14 -- PatrolPoint painted on a single cell; a patrol                      needs two distinct points. No job created."
+                );
+                return Vec::new();
+            }
+            let mode = guard_mode_pin();
+            let id = self.next_id;
+            self.next_id += 1;
+            self.jobs.insert(id, Job {
+                kind: common::bastion::JobKind::Guard {
+                    mode,
+                    post,
+                    patrol_to,
+                    at_far_end: false,
+                },
+                work: common::bastion::WorkType::Guard,
+                pos: post,
+                skill_floor: 0,
+                claimed_by: None,
+                suspended_for: None,
+                unreachable: false,
+                carve_attempted: false,
+                is_access: false,
+                required_item: None,
+                benched_until_tick: None,
+                depth: 0,
+                reservation: None,
+                affordance: AffordanceClass::Untargeted,
+                // A guard consumes nothing and completes nothing: it holds.
+                needs_materials: false,
+                progress: 0.0,
+                stuck_strikes: 0,
+            });
+            tracing::info!(
+                job = id,
+                ?post,
+                ?patrol_to,
+                ?mode,
+                kind = if patrol_to.is_some() { "patrol" } else { "post" },
+                "bastion: ITEM 14 guard assignment created"
+            );
+            return vec![id];
+        }
         let occupied: HashSet<Vec3<i32>> = self.jobs.values().map(|j| j.pos).collect();
         for z in region.min.z..=region.max.z {
             for y in region.min.y..=region.max.y {
