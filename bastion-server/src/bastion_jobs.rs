@@ -1160,6 +1160,8 @@ pub(crate) fn colony_terminal_scan(
 pub(crate) fn job_kind_label(kind: &common::bastion::JobKind) -> &'static str {
     match kind {
         common::bastion::JobKind::Designated(d) => match d {
+            DesignationKind::GuardPost => "Designated:GuardPost",
+            DesignationKind::PatrolPoint => "Designated:PatrolPoint",
             DesignationKind::Mine => "Designated:Mine",
             DesignationKind::Chop => "Designated:Chop",
             DesignationKind::Build => "Designated:Build",
@@ -1871,6 +1873,9 @@ fn emergency_route_base_reachable(
 /// (placing blocks, not removing); Stockpile = none yet (B6 zones).
 fn job_wanted(kind: DesignationKind, block: &Block) -> bool {
     match kind {
+        // ITEM 14: a guard assignment has NO block precondition — it is a
+        // place to stand, not a block to change. Always "wanted" once painted.
+        DesignationKind::GuardPost | DesignationKind::PatrolPoint => true,
         DesignationKind::Mine => block.is_filled(),
         // CHOP redesign (FR10): a fell-set covers the WHOLE tree — trunk
         // (Wood) AND canopy (Leaves; cleared, no drop — the drop branch keys
@@ -1931,6 +1936,11 @@ fn job_wanted(kind: DesignationKind, block: &Block) -> bool {
 /// deleted, for whichever of Build/Bed earns its own evidence-gated row.
 fn designation_affordance(kind: DesignationKind) -> AffordanceClass {
     match kind {
+        // ITEM 14: untargeted — the colonist occupies the place, it does not
+        // reach INTO a target block the way Mine/Chop/Gather do.
+        DesignationKind::GuardPost | DesignationKind::PatrolPoint => {
+            AffordanceClass::Untargeted
+        },
         DesignationKind::Mine | DesignationKind::Chop | DesignationKind::Gather => {
             AffordanceClass::SolidTarget
         },
@@ -15765,6 +15775,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let completed_kind = terrain.get(job.pos).ok().map(|b| b.kind());
                     let still_valid = completed_kind.is_some_and(|k| match job.kind {
                         common::bastion::JobKind::Designated(d) => match d {
+                            // ITEM 14: no terrain precondition to re-check —
+                            // `still_valid` is about a designation's target
+                            // block, and an assignment place has none.
+                            DesignationKind::GuardPost
+                            | DesignationKind::PatrolPoint => true,
                             DesignationKind::Mine => {
                                 terrain.get(job.pos).ok().is_some_and(|b| b.is_filled())
                             },

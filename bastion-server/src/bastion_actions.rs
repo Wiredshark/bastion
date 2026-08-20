@@ -56,6 +56,9 @@ pub fn work_progress(
 pub fn completion_block(kind: JobKind) -> Option<Block> {
     match kind {
         JobKind::Designated(d) => match d {
+            // ITEM 14: a guard assignment places NO block. Returning None keeps
+            // it out of the completion-block path entirely.
+            DesignationKind::GuardPost | DesignationKind::PatrolPoint => None,
             DesignationKind::Mine | DesignationKind::Chop => Some(Block::empty()),
             DesignationKind::Build => Some(Block::new(BlockKind::Rock, Rgb::new(150, 150, 150))),
             // B5.8: the native climbable ladder sprite — the vertical link
