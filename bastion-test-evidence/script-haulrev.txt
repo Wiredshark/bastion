@@ -13,7 +13,12 @@ note   which is what makes "a control that hauls reliably" plausible at all.
 note
 anchor
 note --- phase 1: BASELINE, hauls accumulate ---
-wait 1500
+note VOID-fix #2 (2026-08-20): two runs (unseeded AND seeded) both delivered
+note   only in the final third -- hauling starts after colony setup regardless
+note   of loose-item supply. The baseline must OUTLAST that ramp, so phase 1
+note   is 4500 ticks. If deliveries STILL cluster post-restore, the next probe
+note   is WHY hauling ramps late, not another window guess.
+wait 4500
 note --- phase 2: priority Haul -> 0. The witness line is window marker A ---
 cmd bastion_priority haul 0
 wait 1500
