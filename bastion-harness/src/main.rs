@@ -40,6 +40,37 @@ use std::{
 };
 use tracing::{info, warn};
 
+
+/// bastion (ROADMAP ITEM 39 / Ben ruling 5, 2026-08-19): the soak tick-time
+/// budget, RE-BASED FROM MEASUREMENT. It was `100.0` — a round number nothing
+/// approached, sitting **22–53× above** the operating range, so it could only
+/// fire on a catastrophic regression and "the gate is green" carried almost no
+/// information. *A guard that cannot fire protects nothing.*
+///
+/// PRODUCING MEASUREMENTS, named as the ruling requires:
+///   * banked wave34, n=48 seeds: min 1.90, median 2.82, p90 3.69, **p99 4.44,
+///     max 4.44** ms.
+///   * local twin/axis runs 2026-08-19, 5-way parallel (contended): **max
+///     5.87** ms — ABOVE the banked max, which is why the bound is not set from
+///     the banked corpus alone. A guard calibrated on one machine's quiet
+///     hardware false-fires on another's busy hardware.
+///   * the instrument's own within-seed repeatability floor: **1.21×**
+///     (seed 37 run 13× the same day, 3.97…4.81 ms).
+///
+/// BOUND = widest observed (5.87) × noise floor (1.21) ≈ 7.10, then rounded up
+/// to **12.0** for a ~2× margin over that. Rationale: it must never fire on
+/// observed variation — a false red on a soak clause would be charged to
+/// whatever row happened to be running — while still catching a doubling of the
+/// worst honestly-observed cost.
+///
+/// ★ WHAT IT STILL CANNOT DO, stated rather than implied: this is a WALL-CLOCK
+/// statistic whose own spread is 1.90…5.87 (3.1×) across machines and
+/// contention. It therefore cannot resolve sub-2× drift, and no re-basing of it
+/// can. Finer degradation detection belongs to the DETERMINISTIC proxy
+/// (`b5_work_units` / `b5_work_deltas`), which is identical across twin runs
+/// where this field differs on every one.
+const SOAK_TICK_MS_BUDGET: f64 = 12.0;
+
 #[derive(Parser)]
 #[command(name = "bastion-harness", about)]
 struct Args {
@@ -3008,7 +3039,7 @@ fn b4_scenario(args: &Args) -> ExitCode {
         && ever_unreachable
         && audit_after_cancel.total == 0
         && all_idle_after_cancel
-        && avg_tick_ms < 100.0;
+        && avg_tick_ms < SOAK_TICK_MS_BUDGET;
     println!("{}", result);
     println!(
         "B4 SCENARIO: {}",
@@ -4795,7 +4826,7 @@ fn b5_scenario(args: &Args) -> ExitCode {
         // this scenario's exact prior pass/fail behavior (a missing
         // measurement failed the old sentinel-`false` gate too).
         ("tl_ok", tl_ok.unwrap_or(false)),
-        ("avg_tick_ms_budget", avg_tick_ms < 100.0),
+        ("avg_tick_ms_budget", avg_tick_ms < SOAK_TICK_MS_BUDGET),
     ];
     // RULING (Fable, 2026-07-30 chop-oracle row): `precondition_unmet`
     // stops being a gate failure -- these 6 clauses only mean anything
@@ -5538,7 +5569,7 @@ fn b55_scenario(args: &Args) -> ExitCode {
         && stone_sum_after_soak == 200
         // Aggregation bound: nowhere near 200 loose entities.
         && stone_entities <= 48
-        && avg_tick_ms < 100.0;
+        && avg_tick_ms < SOAK_TICK_MS_BUDGET;
     println!("{}", result);
     println!("B5.5 SCENARIO: {}", if pass { "PASS" } else { "FAIL" });
 
@@ -9485,7 +9516,7 @@ fn b58_scenario(args: &Args) -> ExitCode {
         ("e_out", e_out),
         ("f_cleared", f_cleared),
         ("orphans_final_zero", orphans_final == 0),
-        ("soak_tick_ms_ok", avg_tick_ms < 100.0),
+        ("soak_tick_ms_ok", avg_tick_ms < SOAK_TICK_MS_BUDGET),
     ];
     let pass = verdict.iter().all(|(_, ok)| *ok);
     let failed_clauses: Vec<&str> = verdict
@@ -9520,7 +9551,7 @@ fn b58_scenario(args: &Args) -> ExitCode {
         && e_out
         && f_cleared
         && orphans_final == 0
-        && avg_tick_ms < 100.0;
+        && avg_tick_ms < SOAK_TICK_MS_BUDGET;
     let verdict_matches_legacy = pass == legacy_pass;
     debug_assert!(
         verdict_matches_legacy,
