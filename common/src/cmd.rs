@@ -379,6 +379,12 @@ pub enum ServerChatCommand {
     /// were exercised only by the harness — this is the LIVE route, so an
     /// owner can actually say "stop hauling".
     BastionPriority,
+    /// bastion (ITEM 23): deposit a chronicle THOUGHT for a named colonist
+    /// through the real queue→chronicle→mood path — the harness hook
+    /// (`bastion_deposit_thought`) exposed on the wire so the pit driver can
+    /// exercise the display bar; the EMITTER is synthetic, the consumption
+    /// pipeline is the shipping one.
+    BastionThought,
     BattleMode,
     BattleModeForce,
     Body,
@@ -1154,6 +1160,18 @@ impl ServerChatCommand {
                 ),
                 Some(Admin),
             ),
+            ServerChatCommand::BastionThought => cmd(
+                vec![
+                    Any("kind (Death|CaveIn|SleptInBed|SleptOnGround)", Required),
+                    Any("colonist name (may contain spaces)", Required),
+                ],
+                Content::Plain(
+                    "bastion: deposit a chronicle thought for a named colonist \
+                     (harness hook — synthetic emitter, real mood pipeline)"
+                        .to_string(),
+                ),
+                Some(Admin),
+            ),
             ServerChatCommand::Scale => cmd(
                 vec![
                     Float("factor", 1.0, Required),
@@ -1298,6 +1316,7 @@ impl ServerChatCommand {
             ServerChatCommand::Lightning => "lightning",
             ServerChatCommand::BastionArena => "bastion_arena",
             ServerChatCommand::BastionPriority => "bastion_priority",
+            ServerChatCommand::BastionThought => "bastion_thought",
             ServerChatCommand::Scale => "scale",
             ServerChatCommand::RepairEquipment => "repair_equipment",
             ServerChatCommand::Tether => "tether",

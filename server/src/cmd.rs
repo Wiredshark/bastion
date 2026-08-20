@@ -155,6 +155,7 @@ fn do_command(
         ServerChatCommand::BanLog => handle_ban_log,
         ServerChatCommand::BastionArena => handle_bastion_arena,
         ServerChatCommand::BastionPriority => handle_bastion_priority,
+        ServerChatCommand::BastionThought => handle_bastion_thought,
         ServerChatCommand::BattleMode => handle_battlemode,
         ServerChatCommand::BattleModeForce => handle_battlemode_force,
         ServerChatCommand::Body => handle_body,
@@ -6312,6 +6313,38 @@ fn handle_lightning(
 /// ONLY from the harness. This command is the missing player-facing half, and
 /// it routes to that same setter rather than growing a second write — a
 /// duplicate here would drift from the one the harness proves.
+/// bastion (ITEM 23): the deposit-thought harness hook on the wire — kind
+/// first, then the name (names carry spaces, so the tail is joined). The
+/// EMITTER is synthetic; everything downstream (queue → chronicle → mood
+/// recompute → inspect payload) is the shipping path.
+fn handle_bastion_thought(
+    server: &mut Server,
+    _client: EcsEntity,
+    _target: EcsEntity,
+    args: Vec<String>,
+    action: &ServerChatCommand,
+) -> CmdResult<()> {
+    let Some(kind) = args.first().cloned() else {
+        return Err(action.help_content());
+    };
+    let name = args[1..].join(" ");
+    if name.is_empty() {
+        return Err(action.help_content());
+    }
+    if server.bastion_deposit_thought(&name, &kind) {
+        tracing::info!(
+            name = %name,
+            kind = %kind,
+            "bastion: ITEM 23 thought deposited via command (harness hook)"
+        );
+        Ok(())
+    } else {
+        // Unknown kind or unknown colonist — refuse loudly, never silently
+        // (the unpinned-run-indistinguishable lesson).
+        Err(action.help_content())
+    }
+}
+
 fn handle_bastion_priority(
     server: &mut Server,
     client: EcsEntity,

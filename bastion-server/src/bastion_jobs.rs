@@ -2277,9 +2277,35 @@ pub const SLEEP_MARGIN: f32 = 0.1;
 // designed extension point ("extends as food"), and the death-spiral
 // recovery's load-bearing line: without it the farm's whole output is
 // inedible and no shortage can recover through production.
-pub const FOOD_DEFS: &[&str] = &["common.items.food.mushroom", FARM_WHEAT_ITEM];
+pub const FOOD_DEFS: &[&str] = &[
+    "common.items.food.mushroom",
+    FARM_WHEAT_ITEM,
+    // ITEM 27 (2026-08-20): the cooked dish is FOOD — without this entry
+    // cooking produced output no eat scan could see (decorative industry).
+    COOKED_DISH_ITEM,
+];
+/// bastion (ITEM 27): RAW inputs the cook generator scans — a strict subset
+/// of `FOOD_DEFS`. Kept separate so the pot can never cook its own output
+/// (the dish matching a raw scan would loop curry→curry forever).
+pub const RAW_FOOD_DEFS: &[&str] = &["common.items.food.mushroom", FARM_WHEAT_ITEM];
+/// bastion (ITEM 27): the cook completion's output item.
+pub const COOKED_DISH_ITEM: &str = "common.items.food.apple_mushroom_curry";
 /// bastion (B7-3): hunger restored per food item eaten.
 pub const FOOD_RESTORE: f32 = 0.5;
+/// bastion (ITEM 27): cooking must PAY — the dish restores more than raw.
+/// Consumed by `food_restore_for`; the raw value stays `FOOD_RESTORE`.
+pub const COOKED_RESTORE: f32 = 0.9;
+
+/// Per-def hunger restore: the ONE mapping both eat sites read, so the
+/// cooked premium cannot drift between the inventory path and the ground
+/// path.
+pub fn food_restore_for(def: &str) -> f32 {
+    if def == COOKED_DISH_ITEM {
+        COOKED_RESTORE
+    } else {
+        FOOD_RESTORE
+    }
+}
 
 /// bastion (FARM/PROD-2, row 46): the sow verb's consumed item — a REAL
 /// item (the B6 fetch contract: required_item + the material-haul
@@ -10875,7 +10901,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         {
                             return None;
                         }
-                        FOOD_DEFS.iter().find(|f| **f == def).copied()
+                        RAW_FOOD_DEFS.iter().find(|f| **f == def).copied()
                     });
                 let Some(raw_def) = raw else {
                     // The couldn't-happen witness for the broken-link bar:
@@ -10890,7 +10916,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 it.item()
                                     .item_definition_id()
                                     .itemdef_id()
-                                    .is_some_and(|d| FOOD_DEFS.contains(&d))
+                                    .is_some_and(|d| RAW_FOOD_DEFS.contains(&d))
                                     && board
                                         .stockpile_at(ip.0.map(|e| e.floor() as i32))
                                         .is_some()
@@ -13213,6 +13239,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     .any(|i| i.item_definition_id().itemdef_id() == Some(req))
                             })
                         });
+                        // ITEM 27 FETCH_DIAG: a Cook claimant with a live
+                        // reservation reached Arrived 280ms after claim and
+                        // stalled empty-handed while every static read of
+                        // this block says that is impossible. Print the
+                        // ACTUAL branch state per tick (gated: per-tick
+                        // per-fetching-colonist volume).
+                        if std::env::var_os("BASTION_FETCH_DIAG").is_some() {
+                            info!(
+                                job = active.job,
+                                kind = ?job.kind,
+                                carrying,
+                                rid,
+                                "bastion: FETCH_DIAG traveling-with-reservation"
+                            );
+                        }
                         if !carrying {
                             let item_uid = board.reservations.get(&rid).copied();
                             let ipos = item_uid
@@ -13222,12 +13263,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 (Some(u), Some(ip)) => {
                                     // The Chaser parks 1.5-2.5 out — emit
                                     // within the whole band.
-                                    if pos.0.distance(ip) < 2.8 {
+                                    let d = pos.0.distance(ip);
+                                    if d < 2.8 {
                                         crate::bastion_actions::emit_pickup(
                                             &mut inv_manip_emitter,
                                             entity,
                                             u,
                                         );
+                                        if std::env::var_os("BASTION_FETCH_DIAG").is_some() {
+                                            info!(
+                                                job = active.job,
+                                                item = u.0.get(),
+                                                dist = d,
+                                                "bastion: FETCH_DIAG pickup emitted"
+                                            );
+                                        }
                                     }
                                     fetch_steer = Some(ip);
                                 },
@@ -14558,6 +14608,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             colonist = uids.get(entity).map(|uid| uid.0.get()),
                             kind = ?job.kind,
                             pos = ?job.pos,
+                            // ITEM 27: arrival with a live reservation should
+                            // be impossible while un-carrying (the fetch leg
+                            // suppresses it) — print the fact so the
+                            // impossible state is visible the tick it occurs.
+                            held_reservation = job.reservation.is_some(),
                             "bastion: colonist arrived at job site, working (B5)"
                         );
                     } else {
@@ -15758,30 +15813,54 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // forage-carried food too. The decrement is the
                         // Build-material pattern (stack -1 in place, lone
                         // item removed — never the whole stack).
-                        let ate = inventories.get_mut(entity).and_then(|mut inv| {
-                            let slot = inv.slots_with_id().find_map(|(slot, it)| {
-                                it.as_ref()
-                                    .is_some_and(|i| {
-                                        i.item_definition_id()
-                                            .itemdef_id()
-                                            .is_some_and(|d| FOOD_DEFS.contains(&d))
-                                    })
-                                    .then_some(slot)
+                        //
+                        // ITEM 27 (2026-08-20): EXCEPT defs some in-flight
+                        // material job requires — a hungry carrier was free
+                        // to eat the very ingredient a claimed Cook job had
+                        // fetched (a guard-starves-its-protectee shape, but
+                        // inverted: no guard at all). Survival still wins:
+                        // this only filters the INVENTORY shortcut — the
+                        // EatFrom job's own ground-pile path is untouched.
+                        let protected: std::collections::HashSet<&str> = board
+                            .jobs
+                            .values()
+                            .filter(|j| j.claimed_by.is_some() || j.reservation.is_some())
+                            .filter_map(|j| j.required_item)
+                            .collect();
+                        let ate: Option<&'static str> =
+                            inventories.get_mut(entity).and_then(|mut inv| {
+                                // The def rides out as the FOOD_DEFS
+                                // &'static (the cook generator's borrow
+                                // lesson) so the restore can be per-def.
+                                let found = inv.slots_with_id().find_map(|(slot, it)| {
+                                    it.as_ref()
+                                        .and_then(|i| {
+                                            i.item_definition_id()
+                                                .itemdef_id()
+                                                .and_then(|d| {
+                                                    FOOD_DEFS
+                                                        .iter()
+                                                        .find(|f| **f == d && !protected.contains(&d))
+                                                        .copied()
+                                                })
+                                        })
+                                        .map(|d| (slot, d))
+                                });
+                                found.and_then(|(slot, d)| match inv.slot_mut(slot) {
+                                    Some(Some(it)) if it.amount() > 1 => {
+                                        it.decrease_amount(1).ok().map(|_| d)
+                                    },
+                                    Some(Some(_)) => inv.remove(slot).map(|_| d),
+                                    _ => None,
+                                })
                             });
-                            slot.and_then(|slot| match inv.slot_mut(slot) {
-                                Some(Some(it)) if it.amount() > 1 => {
-                                    it.decrease_amount(1).ok().map(|_| ())
-                                },
-                                Some(Some(_)) => inv.remove(slot).map(|_| ()),
-                                _ => None,
-                            })
-                        });
-                        if ate.is_some() {
+                        if let Some(eaten_def) = ate {
                             if std::env::var_os("BASTION_SELFJOB_COMPLETION_DIAG").is_some() {
                                 info!(kind = "EatFrom", "bastion SELFJOB-COMPLETED-DIAG");
                             }
                             if let Some(needs) = needs_storage.get_mut(entity) {
-                                needs.hunger = (needs.hunger + FOOD_RESTORE).min(1.0);
+                                needs.hunger =
+                                    (needs.hunger + food_restore_for(eaten_def)).min(1.0);
                             }
                             // #89 diagnostic: the planted-failure measure
                             // -- distinct colonists who ever completed an
@@ -15849,7 +15928,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             let split = pickup_items
                                 .get_mut(item_entity)
                                 .and_then(|mut pi| pi.split_off_one(&ability_map, &msm));
-                            if split.is_some() {
+                            if let Some(ref split_item) = split {
+                                // ITEM 27: per-def restore on the ground
+                                // path too — the split single names its
+                                // own def (the dish premium must not
+                                // depend on WHERE the food was eaten).
+                                let eaten_def: String = split_item
+                                    .item_definition_id()
+                                    .itemdef_id()
+                                    .unwrap_or(FOOD_DEFS[0])
+                                    .to_string();
                                 // ITEM8-CRASH-FINDING.md fix acceptance:
                                 // the precondition witness -- see the
                                 // field's own doc for why a silent
@@ -15860,7 +15948,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     info!(kind = "EatFrom", "bastion SELFJOB-COMPLETED-DIAG");
                                 }
                                 if let Some(needs) = needs_storage.get_mut(entity) {
-                                    needs.hunger = (needs.hunger + FOOD_RESTORE).min(1.0);
+                                    needs.hunger =
+                                        (needs.hunger + food_restore_for(&eaten_def)).min(1.0);
                                 }
                                 let eater_uid = uids.get(entity).copied();
                                 if let Some(u) = eater_uid {
@@ -16750,9 +16839,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             crate::bastion_actions::emit_drop(
                                 &mut item_drop_emitter,
                                 station,
-                                Item::new_from_asset_expect(
-                                    "common.items.food.apple_mushroom_curry",
-                                ),
+                                Item::new_from_asset_expect(COOKED_DISH_ITEM),
                                 *program_time,
                                 &mut rng,
                             );

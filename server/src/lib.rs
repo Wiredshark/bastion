@@ -6666,6 +6666,7 @@ impl Server {
                                 );
                                 // ITEM 11 fixture lever (see the fn's doc).
                                 Self::bastion_seed_food(ecs, origin);
+                                Self::bastion_seed_materials(ecs, origin);
                             } else {
                                 tracing::warn!(
                                     ?origin_xy,
@@ -6798,6 +6799,7 @@ impl Server {
         // The survival window still needs food: the fixture lever applies
         // identically here.
         Self::bastion_seed_food(ecs, Vec3::new(town_origin.x, town_origin.y, hint_z));
+        Self::bastion_seed_materials(ecs, Vec3::new(town_origin.x, town_origin.y, hint_z));
     }
 
     /// bastion (ADOPT-A-TOWN mode A, 2026-08-20): find the nearest worldgen
@@ -6880,6 +6882,48 @@ impl Server {
     /// protects the ORDER of tick phases, and a long fixture block near the top
     /// of `tick()` degrades it silently. (Outside `tick()` this doc is safe —
     /// the test only scans that function's window.)
+    /// bastion (ADOPT bar 2): FIXTURE lever — seed building materials the
+    /// way `bastion_seed_food` seeds food. An adopted town's 1,519
+    /// designations refused 12,152/12,152 claim checks at the materials
+    /// gate (the colony arrives with NOTHING and even access-job generation
+    /// starves behind the refusals). Whether adoption SHIPS with a starter
+    /// cache is a design ruling (banked for Ben); this env unblocks the
+    /// "colonists work adopted infrastructure" bar meanwhile.
+    fn bastion_seed_materials(ecs: &specs::World, origin: Vec3<i32>) {
+        let Ok(n) = std::env::var("BASTION_SEED_MATERIALS") else {
+            return;
+        };
+        let n: usize = n.parse().unwrap_or(0);
+        let bus = ecs.read_resource::<common::event::EventBus<common::event::CreateItemDropEvent>>();
+        let program_time = *ecs.read_resource::<common::resources::ProgramTime>();
+        for i in 0..n {
+            bus.emit_now(common::event::CreateItemDropEvent {
+                pos: comp::Pos(
+                    origin.map(|e| e as f32)
+                        + Vec3::new(
+                            2.5 + (i % 2) as f32,
+                            0.5 + ((i / 2) % 2) as f32,
+                            1.0,
+                        ),
+                ),
+                vel: comp::Vel(Vec3::zero()),
+                ori: comp::Ori::default(),
+                item: comp::PickupItem::new(
+                    comp::Item::new_from_asset_expect(common::bastion::BUILD_MATERIAL_ITEM),
+                    program_time,
+                    true,
+                ),
+                loot_owner: None,
+                persistent: true,
+            });
+        }
+        tracing::warn!(
+            seeded = n,
+            ?origin,
+            "bastion: BASTION_SEED_MATERIALS active — build economy supplied (FIXTURE lever; no balance number changed)"
+        );
+    }
+
     fn bastion_seed_food(ecs: &specs::World, origin: Vec3<i32>) {
         let Ok(n) = std::env::var("BASTION_SEED_FOOD") else {
             return;
