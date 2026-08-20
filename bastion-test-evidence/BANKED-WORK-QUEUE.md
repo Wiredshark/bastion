@@ -350,6 +350,16 @@ without crossing that routing.
 | Item 22 (relationships) | BUILT + bar 1 landed (net rise, symmetric, cap-saturating); persistence + null fixture remain |
 | Item 30 (typed zones) | BUILT (FoodStore typed stockpile + selector preference + refusal witness); zones leg in chain10 |
 
+## Item 29 build plan (post-prereg, 2026-08-20)
+
+Architecture: bastion-server is a leaf crate and cannot see `world::site`
+economy — mirror the `RtSimAccess` seam (a one-method `SitePricesAccess`
+trait the server implements; `Sys<R>` already demonstrates the registration
+shape). Mission = `JobKind::TradeMission` riding the ActiveJob state
+machine (Traveling → exchange-at-site → Traveling home → deposit); site
+travel reuses the Goto machinery the adopt eject used. Sequence AFTER item
+27 scores (the fetch/deposit machinery it exercises is the mission's own).
+
 ## Item 24 bars 2–3 — SHAPES COMPUTED, legs banked (2026-08-20)
 
 **Bar 2 (annual cycle, unpinned ≥1 year)**: `day_length` is a server SETTING
