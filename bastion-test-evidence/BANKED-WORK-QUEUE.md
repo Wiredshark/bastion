@@ -353,10 +353,21 @@ identical in both checks; the generator omits the reservation test. Leading
 hypothesis: the seeded raws end up RESERVED (EatFrom reservations from the
 colony's continuous eating, or a reservation leak on released claims — six
 `reservations.remove` sites exist, unaudited).
-**NEXT ACTION (first thing, next iteration): add `reserved_raw=` to the cook
-idle witness and `materials_reserved=` to the claim census** — one line each,
-then ONE leg decides between "eaten/reserved legitimately" and "leaked". Do
-not audit the six release paths by eye first; the instrument is cheaper.
+**INSTRUMENT RAN (2026-08-20): the refusal is RESERVATION-ONLY on 34,813 of
+34,813 counted refusals** — the raws are present and stockpiled all run; every
+unit is reserved, permanently. With 8 eaters legitimately holding ≤8 of 64,
+this is a LEAK, not load.
+**Suspect, narrowed by producer reads:** hauls release correctly (T1.15,
+`remove_job` releases on deposit — verified in-code). **EatFrom reserves
+capacity at preempt time (`board.reserve(item, amount)`, ~12745)** — and the
+recreation saga proved eat cycles stall. Each stalled/abandoned EatFrom that
+skips its release leaks one reservation; 8 colonists × dozens of hunger
+preempts ≈ all 64 gone.
+**NEXT ACTION: audit the EatFrom rid's release on every exit path**
+(completion, colonist release/preempt, job removal) — the release sites are
+6691 / 6781 / 6902 / 13107; find which exit path skips them. A leaked-rid
+counter beside `preempt_attempts` makes it visible in one leg if the audit
+stalls.
 
 Also noted: a 3×3 station paint registered NINE stations (one per cell) — the
 granularity wants a v1 note (one station per paint, or dedupe by adjacency)
