@@ -303,7 +303,7 @@ uninformative for the same reason.
 | Arc 4 item 17 (skills) | **BUILT** — payload visible half + felt-curve test green. Live leg shares item 12's arm |
 | Arc 4 item 16 (P2+P3) | fixture + in-window scorer ready (`haulrev`); blockers dissolved by today's fixes |
 | Adopt-a-town mode A | **BUILT** (search/re-anchor/placement via shipping paths); live leg queued |
-| Arc 5 desires + societal axis | **BUILT (a–d)** + A/B arms and scorer; verdict table includes AXIS-FAILS-DECORATIVE per the charter |
+| Arc 5 desires + societal axis | **★ PASS (070e9e1e34)** — merit 106>101 throughput AND 0.5944<0.5997 mood, same-seed deterministic arms, causally attributable; margins thin (stated) |
 | Arcs 5–8 bars | `LONG-HORIZON-ACCEPTANCE-BARS.md` written assuming compressed mode |
 
 **Instrument catches today, each disclosed in its commit:** the attestation
