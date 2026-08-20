@@ -19254,6 +19254,35 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         access_jobs_pending,
                         terminal_cause,
                     });
+                    // ★★ BEN RULING 4 (2026-08-19), STRANDING MUST NEVER BE
+                    // SILENT: "No magic. No teleports. Unreachable colonist = a
+                    // rescue job for the colony; truly unreachable = death,
+                    // once the death band ships (Arc 8). Until then the
+                    // existing ultimate fail-safe stays, but it must emit as a
+                    // flagged instrument event — never silently normalize a
+                    // stranding."
+                    //
+                    // Until today this site moved a colonist's body and bumped
+                    // a counter with NO EMIT AT ALL. A counter records that
+                    // strandings happened; it cannot say WHO, WHERE, or FROM
+                    // WHAT, so no run could ever be read back to find out.
+                    //
+                    // `warn!`, not `info!`, deliberately: this is the design
+                    // being violated to keep the sim moving, and it should read
+                    // as an exception in any log it appears in. When the Arc-8
+                    // death band ships, THIS is the call site that becomes a
+                    // death — the emit marks the seam.
+                    tracing::warn!(
+                        uid = uid.0.get(),
+                        from_x = pos.0.x,
+                        from_y = pos.0.y,
+                        from_z = pos.0.z,
+                        to_x = d.x,
+                        to_y = d.y,
+                        to_z = d.z,
+                        failsafe_teleports_now = board.failsafe_teleports + 1,
+                        "bastion: STRANDING — ultimate fail-safe teleport (design violation,                          kept until the Arc-8 death band; a colonist was moved by magic                          because nothing else could reach it)"
+                    );
                     pos.0 = d.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
                     vel.0 = Vec3::zero();
                     record_assist_write(
