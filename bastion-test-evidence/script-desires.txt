@@ -6,6 +6,13 @@ note THE CHARTER'S OWN BAR: meritocratic arm must show HIGHER throughput AND
 note   LOWER mood; individualist the reverse -- BOTH directions, or the axis
 note   is decorative and FAILS.
 anchor
+wait 300
+note --- WORK EXISTS OR NOTHING CAN MEASURE (VOID-fix 2026-08-20): the first
+note   run painted nothing, so completions=0 in BOTH arms and mood sat at base.
+note   Chop near the colony (real coords, the item-14 lesson) gives claimable,
+note   completable work whose kind colonists can desire or resent.
+designate chop 16370 16370 399 16382 16382 400
+designate mine 16386 16388 398 16392 16394 400
 wait 1500
 note --- sample 1: mood mid-run ---
 inspect_colonists
