@@ -5375,165 +5375,7 @@ impl Server {
                             }
                         };
                         if let Some(sp) = sp_opt {
-                        // ★ ADOPT-A-TOWN (mode A). The town search runs BEFORE
-                        // the spawn so the whole founding re-anchors to the
-                        // town: adopting structures 300 blocks from where the
-                        // colonists stand would make bar 2 ("survive on the
-                        // adopted infrastructure") fail for a distance reason
-                        // that looks like a binding failure. Owned data only —
-                        // the IndexRef borrow must die before
-                        // `bastion_spawn_colony_seeded(&mut self)`.
-                        #[cfg(feature = "worldgen")]
-                        let adoption = if std::env::var_os("BASTION_ADOPT_TOWN").is_some() {
-                            Self::bastion_adoptable_town_plots(
-                                self.index.as_index_ref(),
-                                sp.xy().map(|e| e as i32),
-                                1024,
-                            )
-                        } else {
-                            None
-                        };
-                        #[cfg(not(feature = "worldgen"))]
-                        let adoption: Option<(Vec2<i32>, Vec<(common::bastion::DesignationKind, Vec2<i32>, Vec2<i32>)>)> = {
-                            if std::env::var_os("BASTION_ADOPT_TOWN").is_some() {
-                                // A named refusal, not silence: the test_world
-                                // shim has no sites, so adoption CANNOT run.
-                                tracing::warn!(
-                                    "bastion: BASTION_ADOPT_TOWN set but this build has no                                      worldgen — adoption is impossible here, falling back to                                      the founding preset"
-                                );
-                            }
-                            None
-                        };
-                        let sp = if let Some((town_origin, _)) = &adoption {
-                            // Re-anchor at the town. The datum resolve is the
-                            // same call mode B uses on real terrain.
-                            let ecs = self.state.ecs();
-                            let terrain =
-                                ecs.read_resource::<common::terrain::TerrainGrid>();
-                            let tz = bastion_server::bastion_founding_preset::resolve_datum(
-                                &terrain,
-                                *town_origin,
-                                sp.z.floor() as i32,
-                            );
-                            drop(terrain);
-                            match tz {
-                                Some(z) => Vec3::new(
-                                    town_origin.x as f32 + 0.5,
-                                    town_origin.y as f32 + 0.5,
-                                    z as f32 + 1.0,
-                                ),
-                                None => sp,
-                            }
-                        } else {
-                            sp
-                        };
-                        tracing::info!(?sp, arena = bastion_flat_arena::enabled(),
-                            adopted = adoption.is_some(),
-                            "bastion: autofound spawn resolved");
-                        self.bastion_spawn_colony_seeded(sp, n, 0);
-                        // THE PRESET, TOO — otherwise this path spawns
-                        // colonists into a world with NO WORK, and every
-                        // scored counter reads zero. Two deterministic runs
-                        // then "match" at 0 == 0, which is vacuous on exactly
-                        // the numbers a determinism capture exists to compare.
-                        //
-                        // Same placement authority the live handler uses
-                        // (`place_preset`), so the captured colony is the one
-                        // an overseer would found rather than a lookalike.
-                        // ★ MODE A: adopted designations REPLACE the preset.
-                        // That is the charter's point — feature tests exercise
-                        // USE without first building BUILD — and it keeps mode
-                        // B byte-identical when the flag is absent (bar 4).
-                        if let Some((town_origin, plots)) = adoption {
-                            let ecs = self.state.ecs();
-                            let terrain =
-                                ecs.read_resource::<common::terrain::TerrainGrid>();
-                            let mut board = ecs
-                                .write_resource::<bastion_server::bastion_jobs::JobBoard>();
-                            let (mut farms, mut beds, mut stocks) = (0u32, 0u32, 0u32);
-                            let hint_z = sp.z.floor() as i32;
-                            for (kind, min, max) in &plots {
-                                let created = board.place_designation_surface(
-                                    &terrain,
-                                    *min,
-                                    *max,
-                                    hint_z,
-                                    common::bastion::ZExtent::default_for(*kind),
-                                    *kind,
-                                );
-                                match kind {
-                                    common::bastion::DesignationKind::Farm => {
-                                        farms += created.len() as u32
-                                    },
-                                    common::bastion::DesignationKind::Bed => {
-                                        beds += created.len() as u32
-                                    },
-                                    _ => stocks += created.len() as u32,
-                                }
-                            }
-                            tracing::info!(
-                                ?town_origin,
-                                plots = plots.len(),
-                                farm_jobs = farms,
-                                bed_jobs = beds,
-                                stockpile_jobs = stocks,
-                                "bastion: ADOPT-A-TOWN founded into an existing settlement"
-                            );
-                            // The survival window still needs food available:
-                            // the fixture lever applies identically here.
-                            Self::bastion_seed_food(
-                                ecs,
-                                Vec3::new(town_origin.x, town_origin.y, hint_z),
-                            );
-                        } else {
-                            use bastion_server::bastion_founding_preset as preset;
-                            let origin_xy = preset::origin_xy(sp);
-                            let ecs = self.state.ecs();
-                            let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
-                            let datum =
-                                preset::resolve_datum(&terrain, origin_xy, sp.z.floor() as i32);
-                            if let Some(datum_z) = datum {
-                                let origin = Vec3::new(origin_xy.x, origin_xy.y, datum_z);
-                                let mut board =
-                                    ecs.write_resource::<bastion_server::bastion_jobs::JobBoard>();
-                                let (roles, jobs) =
-                                    preset::place_preset(&mut board, &terrain, origin);
-                                tracing::info!(
-                                    ?origin,
-                                    elements = %preset::roles_summary(&roles),
-                                    complete = preset::preset_is_complete(&roles),
-                                    jobs,
-                                    "bastion: autofound colony founded (deterministic path)"
-                                );
-                                // ITEM 11 fixture lever (see the fn's doc).
-                                Self::bastion_seed_food(ecs, origin);
-                            } else {
-                                tracing::warn!(
-                                    ?origin_xy,
-                                    "bastion: autofound could not resolve a datum -- no preset \
-                                     placed"
-                                );
-                            }
-                        }
-                        // AND THE PRESENCE — the last uncontrolled input.
-                        //
-                        // Without it, the ONLY thing keeping the colony's
-                        // chunks loaded is a connected client, and work
-                        // cannot proceed on unloaded terrain. The client
-                        // arrives at a wall-clock-dependent tick (measured:
-                        // `Accepting Tcp` at log line 262 vs 246 across two
-                        // otherwise byte-identical runs), so the whole work
-                        // trajectory started from a different offset and no
-                        // determinism comparison was possible.
-                        //
-                        // A server-owned presence loads them with no client
-                        // at all, which is what makes a driverless
-                        // determinism capture possible.
-                        self.bastion_found_colony_presence(sp);
-                        tracing::info!(
-                            pos = ?sp,
-                            "bastion: autofound colony presence created (no client needed)"
-                        );
+                            self.bastion_autofound_found(sp, n);
                         }
                     }
                 }
@@ -6769,6 +6611,187 @@ pub fn remove_admin(
 }
 
 impl Server {
+    /// bastion: the WHOLE autofound founding — spawn, adoption/preset
+    /// placement, seed-food — EXTRACTED from `tick()` after the frozen-phase
+    /// guard (t0_27, fixed 20,000-char window) failed FOUR times today on
+    /// founding-side additions (seed-food inline, its explanatory comment, the
+    /// comment spelling a landmark, adoption inline). With the block out of
+    /// `tick()` entirely, founding edits can never consume that window again.
+    fn bastion_autofound_found(&mut self, sp: Vec3<f32>, n: u8) {
+
+                        // ADOPT-A-TOWN (mode A): all logic lives in the
+                        // helper (t0_27 window discipline).
+                        let adoption = self.bastion_adoption(sp);
+                        let sp = adoption.as_ref().map(|(asp, ..)| *asp).unwrap_or(sp);
+                        tracing::info!(?sp, arena = bastion_flat_arena::enabled(),
+                            adopted = adoption.is_some(),
+                            "bastion: autofound spawn resolved");
+                        self.bastion_spawn_colony_seeded(sp, n, 0);
+                        // THE PRESET, TOO — otherwise this path spawns
+                        // colonists into a world with NO WORK, and every
+                        // scored counter reads zero. Two deterministic runs
+                        // then "match" at 0 == 0, which is vacuous on exactly
+                        // the numbers a determinism capture exists to compare.
+                        //
+                        // Same placement authority the live handler uses
+                        // (`place_preset`), so the captured colony is the one
+                        // an overseer would found rather than a lookalike.
+                        // MODE A placement in a helper (t0_27 discipline).
+                        if let Some((_, town_origin, plots)) = adoption {
+                            Self::bastion_adopt_place(
+                                self.state.ecs(),
+                                town_origin,
+                                &plots,
+                                sp.z.floor() as i32,
+                            );
+                        } else {
+                            use bastion_server::bastion_founding_preset as preset;
+                            let origin_xy = preset::origin_xy(sp);
+                            let ecs = self.state.ecs();
+                            let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
+                            let datum =
+                                preset::resolve_datum(&terrain, origin_xy, sp.z.floor() as i32);
+                            if let Some(datum_z) = datum {
+                                let origin = Vec3::new(origin_xy.x, origin_xy.y, datum_z);
+                                let mut board =
+                                    ecs.write_resource::<bastion_server::bastion_jobs::JobBoard>();
+                                let (roles, jobs) =
+                                    preset::place_preset(&mut board, &terrain, origin);
+                                tracing::info!(
+                                    ?origin,
+                                    elements = %preset::roles_summary(&roles),
+                                    complete = preset::preset_is_complete(&roles),
+                                    jobs,
+                                    "bastion: autofound colony founded (deterministic path)"
+                                );
+                                // ITEM 11 fixture lever (see the fn's doc).
+                                Self::bastion_seed_food(ecs, origin);
+                            } else {
+                                tracing::warn!(
+                                    ?origin_xy,
+                                    "bastion: autofound could not resolve a datum -- no preset \
+                                     placed"
+                                );
+                            }
+                        }
+                        // AND THE PRESENCE — the last uncontrolled input.
+                        //
+                        // Without it, the ONLY thing keeping the colony's
+                        // chunks loaded is a connected client, and work
+                        // cannot proceed on unloaded terrain. The client
+                        // arrives at a wall-clock-dependent tick (measured:
+                        // `Accepting Tcp` at log line 262 vs 246 across two
+                        // otherwise byte-identical runs), so the whole work
+                        // trajectory started from a different offset and no
+                        // determinism comparison was possible.
+                        //
+                        // A server-owned presence loads them with no client
+                        // at all, which is what makes a driverless
+                        // determinism capture possible.
+                        self.bastion_found_colony_presence(sp);
+                        tracing::info!(
+                            pos = ?sp,
+                            "bastion: autofound colony presence created (no client needed)"
+                        );
+                        
+    }
+
+    /// bastion (ADOPT-A-TOWN): the full mode-A decision — flag check, site
+    /// search, datum re-anchor — EXTRACTED from `tick()` because the previous
+    /// inline version pushed `before_state_tick` past t0_27's 20,000-char
+    /// window, exactly as the seed-food block did before it. Returns the
+    /// re-anchored spawn, the town origin, and the mapped plots; `None` =
+    /// mode B, byte-identical founding.
+    fn bastion_adoption(
+        &self,
+        sp: Vec3<f32>,
+    ) -> Option<(
+        Vec3<f32>,
+        Vec2<i32>,
+        Vec<(common::bastion::DesignationKind, Vec2<i32>, Vec2<i32>)>,
+    )> {
+        if std::env::var_os("BASTION_ADOPT_TOWN").is_none() {
+            return None;
+        }
+        #[cfg(not(feature = "worldgen"))]
+        {
+            // A named refusal, not silence: the test_world shim has no sites.
+            tracing::warn!(
+                "bastion: BASTION_ADOPT_TOWN set but this build has no worldgen —                  adoption is impossible here, falling back to the founding preset"
+            );
+            None
+        }
+        #[cfg(feature = "worldgen")]
+        {
+            let (town_origin, plots) = Self::bastion_adoptable_town_plots(
+                self.index.as_index_ref(),
+                sp.xy().map(|e| e as i32),
+                1024,
+            )?;
+            // Re-anchor the WHOLE founding at the town: adopting structures
+            // 300 blocks from the colonists would fail bar 2 for a distance
+            // reason that looks like a binding failure.
+            let ecs = self.state.ecs();
+            let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
+            let asp = bastion_server::bastion_founding_preset::resolve_datum(
+                &terrain,
+                town_origin,
+                sp.z.floor() as i32,
+            )
+            .map(|z| {
+                Vec3::new(
+                    town_origin.x as f32 + 0.5,
+                    town_origin.y as f32 + 0.5,
+                    z as f32 + 1.0,
+                )
+            })
+            .unwrap_or(sp);
+            Some((asp, town_origin, plots))
+        }
+    }
+
+    /// bastion (ADOPT-A-TOWN): mode-A placement — adopted designations
+    /// replace the preset, through the SAME `place_designation_surface`
+    /// authority the paint path uses. Extracted for the same t0_27 reason.
+    fn bastion_adopt_place(
+        ecs: &specs::World,
+        town_origin: Vec2<i32>,
+        plots: &[(common::bastion::DesignationKind, Vec2<i32>, Vec2<i32>)],
+        hint_z: i32,
+    ) {
+        let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
+        let mut board = ecs.write_resource::<bastion_server::bastion_jobs::JobBoard>();
+        let (mut farms, mut beds, mut stocks) = (0u32, 0u32, 0u32);
+        for (kind, min, max) in plots {
+            let created = board.place_designation_surface(
+                &terrain,
+                *min,
+                *max,
+                hint_z,
+                common::bastion::ZExtent::default_for(*kind),
+                *kind,
+            );
+            match kind {
+                common::bastion::DesignationKind::Farm => farms += created.len() as u32,
+                common::bastion::DesignationKind::Bed => beds += created.len() as u32,
+                _ => stocks += created.len() as u32,
+            }
+        }
+        tracing::info!(
+            ?town_origin,
+            plots = plots.len(),
+            farm_jobs = farms,
+            bed_jobs = beds,
+            stockpile_jobs = stocks,
+            "bastion: ADOPT-A-TOWN founded into an existing settlement"
+        );
+        drop(board);
+        drop(terrain);
+        // The survival window still needs food: the fixture lever applies
+        // identically here.
+        Self::bastion_seed_food(ecs, Vec3::new(town_origin.x, town_origin.y, hint_z));
+    }
+
     /// bastion (ADOPT-A-TOWN mode A, 2026-08-20): find the nearest worldgen
     /// site holding at least one MAPPED plot (FarmField/House/Barn — the
     /// charter's own mapping) within `radius` of `near`, and return OWNED
