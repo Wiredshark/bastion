@@ -344,6 +344,11 @@ without crossing that routing.
 | Desires/societal axis | **PASS** — tradeoff measures both directions, deterministic same-seed |
 | Adopt-a-town | **bar 1 PASS** (5 plots → 1,519 designations, founded IN the town), bar 2 PARTIAL (access-work proven; production+eats pending one seeded leg). Three silent-fallback root causes found by successive witnesses |
 | Item 27 (cooking) | vocabulary + all arms landed (CookStation + JobKind::Cook); NEXT: station registry + generator + completion handler |
+| Item 21 (personalities) | **PASS 3/3** (pin renders + matches record; opposite pin flips; behaviour-blind finding attached) |
+| Item 23 (morale events) | **display bar PASS** (deposited thoughts exact-magnitude, decaying; flat controls); live-emitter banked behind the materials wall |
+| Item 24 bar 2 | **PASS** — unpinned annual cycle: Spring 224 → Autumn 569 → Winter 0.0 flat, colony alive; terminal sentinel fired organically (bar-3 mechanism witnessed) |
+| Item 22 (relationships) | BUILT + bar 1 landed (net rise, symmetric, cap-saturating); persistence + null fixture remain |
+| Item 30 (typed zones) | BUILT (FoodStore typed stockpile + selector preference + refusal witness); zones leg in chain10 |
 
 ## Item 24 bars 2–3 — SHAPES COMPUTED, legs banked (2026-08-20)
 
