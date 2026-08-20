@@ -1231,6 +1231,20 @@ pub enum JobKind {
         /// The registered station this job cooks at.
         station: vek::Vec3<i32>,
     },
+    /// bastion (ARC 6 item 29): one priced exchange with a vanilla site.
+    /// `job.pos` IS the site (the standard steer walks there); the B6
+    /// fetch contract delivers the sold lot (`required_item`) for free;
+    /// the completion drops the bought goods at the site and the standard
+    /// haul pipeline carries them home. Tail-appended (wire rule).
+    TradeMission {
+        /// The trade site's position (from the price book, z resolved at
+        /// book refresh where world data is reachable).
+        site: vek::Vec3<i32>,
+        /// Food received per unit sold, frozen at MINT time from the
+        /// site's own `SitePrices` — the witness prints it, and bar 2
+        /// (the ratio is the SITE's, not a constant) audits it.
+        ratio: f32,
+    },
 }
 
 impl JobKind {
@@ -1242,6 +1256,9 @@ impl JobKind {
             // ITEM 27: a Cook job works AT a station; the designation was the
             // station's build, already completed.
             JobKind::Cook { .. } => None,
+            // ITEM 29: a mission's target is a WORLD SITE, not a painted
+            // designation.
+            JobKind::TradeMission { .. } => None,
             // ITEM 14: a Guard JOB carries its own place (post/patrol_to), so
             // it is not "a job on a designation" the way Mine/Build are. The
             // GuardPost/PatrolPoint DESIGNATIONS are what the player paints;
