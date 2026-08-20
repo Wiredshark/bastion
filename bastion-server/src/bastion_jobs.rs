@@ -5735,6 +5735,10 @@ pub struct JobBoard {
     /// explicitly so the drain stays a dumb applier; the drain sorts
     /// (DET-MOOD-003's lesson) so persisted sentiment state is independent
     /// of producer pass order.
+    /// bastion (#107, colony mind v1): the current colony drive + the tick
+    /// it last TRANSITIONED (hysteresis reads the age; the claim selector
+    /// reads the drive). Session state — recomputed from live producers.
+    pub colony_drive: (common::bastion::ColonyDrive, u64),
     pub pending_sentiments: Vec<(
         common::rtsim::RtSimEntity,
         common::rtsim::RtSimEntity,
@@ -11045,6 +11049,64 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // Per-tick, dt-scaled, capped — the identity shape (no cast, no
         // change beyond the trickle; casts deduct in the command handler).
         divine_favor.0 = (divine_favor.0 + FAVOR_REGEN_PER_SEC * dt.0).min(FAVOR_CAP);
+
+        // ── #107 COLONY MIND v1: the reactive drive arbiter ──────────────
+        // Four LIVE producers, fixed thresholds, strict precedence
+        // (Sustain > Defend > Grow > Expand), hysteresis so satisfied
+        // colonies do not churn. The ONE consumer is the claim-score tilt
+        // (drive_work_factor) — a relief on aligned work, never a veto and
+        // never a second WorkPriorities writer.
+        if tick.0 % (ARBITRATION_INTERVAL as u64 * 10) == 29 {
+            let pop = (&colonists, &positions).join().count().max(1) as u32;
+            let food = colony_food_stock((&pickup_items, &positions).join(), &board);
+            let food_per_cap = food as f32 / pop as f32;
+            let beds = board.beds.len() as u32;
+            // Threat: perception-independent — non-colonist AGENTS within
+            // 48 of any colonist (the #93 census's pass-3 shape; v1 counts
+            // wildlife too — arena fixtures have none, and a false Defend
+            // is a tilt, not a break).
+            let colony_pos: Vec<Vec3<f32>> =
+                (&colonists, &positions).join().map(|(_, p)| p.0).collect();
+            let mut threats = 0u32;
+            for (a_ent, _, a_pos) in (&entities, &agents, &positions).join() {
+                if colonists.get(a_ent).is_some() {
+                    continue;
+                }
+                if colony_pos
+                    .iter()
+                    .any(|c| c.distance_squared(a_pos.0) < 48.0 * 48.0)
+                {
+                    threats += 1;
+                }
+            }
+            use common::bastion::ColonyDrive as D;
+            let (want, deciding, value) = if food_per_cap < 2.0 {
+                (D::Sustain, "food_per_cap", food_per_cap)
+            } else if threats > 0 {
+                (D::Defend, "threats", threats as f32)
+            } else if beds < pop {
+                (D::Grow, "beds_short", (pop - beds) as f32)
+            } else {
+                (D::Expand, "satisfied", 0.0)
+            };
+            let (cur, since) = board.colony_drive;
+            if want != cur
+                && tick.0.saturating_sub(since) >= ARBITRATION_INTERVAL as u64 * 20
+            {
+                board.colony_drive = (want, tick.0);
+                info!(
+                    from = ?cur,
+                    to = ?want,
+                    deciding,
+                    value,
+                    food_per_cap,
+                    threats,
+                    beds,
+                    pop,
+                    "bastion: #107 colony drive TRANSITION"
+                );
+            }
+        }
 
         // ── ITEM 29: the TRADE MISSION generator ─────────────────────────
         // Par-stock pull: when colony food drops below TRADE_FOOD_PAR and
@@ -22265,8 +22327,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     },
                     None => 1.0,
                 };
-                let score =
-                    (dist + depth_score + clump_penalty + sat_penalty) / claim_weight;
+                let score = (dist + depth_score + clump_penalty + sat_penalty)
+                    / (claim_weight
+                        // #107: the colony drive's tilt — aligned work
+                        // scores as if closer; a relief, never a veto.
+                        * common::bastion::drive_work_factor(
+                            board.colony_drive.0,
+                            job.work,
+                        ));
                 let better = match &best {
                     None => true,
                     Some((_, bp, bs)) => priority > *bp || (priority == *bp && score < *bs),
