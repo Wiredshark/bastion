@@ -1591,7 +1591,7 @@ impl<'a> System<'a> for Sys {
                                     .and_then(|e| {
                                         let colonist = insp_colonists.get(e)?;
                                         let needs = insp_needs.get(e)?;
-                                        let (p4, consc, neur) = insp_rtsim_entities
+                                        let (p4, consc, neur, trait_list) = insp_rtsim_entities
                                             .get(e)
                                             .and_then(|re| {
                                                 let data = rtsim.state().data();
@@ -1609,6 +1609,36 @@ impl<'a> System<'a> for Sys {
                                                         ),
                                                         npc.personality.is(PT::Conscientious),
                                                         npc.personality.is(PT::Neurotic),
+                                                        // ITEM 21: every satisfied
+                                                        // trait, same source.
+                                                        // PersonalityTrait has
+                                                        // no Debug (same wall
+                                                        // the pin hit):
+                                                        // parallel labels.
+                                                        [
+                                                            (PT::Open, "Open"),
+                                                            (PT::Adventurous, "Adventurous"),
+                                                            (PT::Closed, "Closed"),
+                                                            (PT::Conscientious, "Conscientious"),
+                                                            (PT::Busybody, "Busybody"),
+                                                            (PT::Unconscientious, "Unconscientious"),
+                                                            (PT::Extroverted, "Extroverted"),
+                                                            (PT::Introverted, "Introverted"),
+                                                            (PT::Agreeable, "Agreeable"),
+                                                            (PT::Sociable, "Sociable"),
+                                                            (PT::Disagreeable, "Disagreeable"),
+                                                            (PT::Neurotic, "Neurotic"),
+                                                            (PT::Seeker, "Seeker"),
+                                                            (PT::Worried, "Worried"),
+                                                            (PT::SadLoner, "SadLoner"),
+                                                            (PT::Stable, "Stable"),
+                                                        ]
+                                                        .into_iter()
+                                                        .filter(|(t, _)| {
+                                                            npc.personality.is(*t)
+                                                        })
+                                                        .map(|(_, l)| l.to_string())
+                                                        .collect::<Vec<_>>(),
                                                     )
                                                 })
                                             })
@@ -1616,6 +1646,7 @@ impl<'a> System<'a> for Sys {
                                                 (false, false, false, false),
                                                 false,
                                                 false,
+                                                Vec::new(),
                                             ));
                                         let arb = insp_arbiters.get(e);
                                         // engine-list T3.54: mood
@@ -1730,6 +1761,20 @@ impl<'a> System<'a> for Sys {
                                                     })
                                                     .collect()
                                             },
+                                            traits: trait_list,
+                                            desires: {
+                                                use common::bastion::WorkType as W;
+                                                [W::Mine, W::Chop, W::Build, W::Haul, W::Cook, W::Farm, W::Guard]
+                                                    .into_iter()
+                                                    .map(|w| {
+                                                        (
+                                                            w.label().to_string(),
+                                                            colonist.0.desires.get(w),
+                                                        )
+                                                    })
+                                                    .collect()
+                                            },
+                                            guard_bravery: colonist.0.guard_bravery,
                                         })
                                     })
                                     .map(BastionInspectKind::Colonist),

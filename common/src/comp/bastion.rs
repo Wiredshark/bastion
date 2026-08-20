@@ -655,6 +655,16 @@ pub struct BastionInspectPayload {
     /// — the SAME source the claim gate and work-rate read, so the display
     /// cannot drift from what the sim charges. Tail-appended (wire rule).
     pub skills: Vec<(String, u16)>,
+    /// bastion (ARC 5 item 21): every satisfied `PersonalityTrait`, filled
+    /// from `Personality::is` — the same source gameplay reads. Tail-appended.
+    pub traits: Vec<String>,
+    /// bastion (ARC 5 item 21): the desire vector, same labels as `skills`,
+    /// so desire-vs-trait TENSION (the cowardly aspiring guard) is visible —
+    /// the desires charter names this integration. Tail-appended.
+    pub desires: Vec<(String, f32)>,
+    /// bastion (ARC 5 item 21): axis 2's hold-vs-flee point (LOWER = braver),
+    /// so tension is computable client-side. Tail-appended.
+    pub guard_bravery: f32,
     /// ITEM 13 (health branch): current health as a fraction of maximum, or
     /// `None` when the entity carries no `Health` component at all.
     ///
