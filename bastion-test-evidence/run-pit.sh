@@ -272,6 +272,14 @@ case "$ARM" in
               SCRIPT="script-cook.txt" ;;
   merit)        PITVAR=" BASTION_CULTURE_ALPHA=0.9"
               SCRIPT="script-desires.txt" ;;
+  # Item 21 bars 1+2 (+ #110 gate-1 re-aim): the pinned archetype and its
+  # planted OPPOSITE. The pin refuses loudly on a bad name; the display leg
+  # must show traits=[pinned...] on EVERY colonist, and the control arm must
+  # FLIP it. Seeded so hunger doesn't preempt the measured work.
+  pintrait)     PITVAR=" BASTION_PIN_TRAIT=Adventurous BASTION_SEED_FOOD=64"
+              SCRIPT="script-desires.txt" ;;
+  pintraitctl)  PITVAR=" BASTION_PIN_TRAIT=Closed BASTION_SEED_FOOD=64"
+              SCRIPT="script-desires.txt" ;;
   indiv)        PITVAR=" BASTION_CULTURE_ALPHA=0.1"
               SCRIPT="script-desires.txt" ;;
   # VOID-fix 2026-08-20: the arm ran real terrain WITHOUT the real-terrain
