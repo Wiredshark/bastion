@@ -252,6 +252,13 @@ case "$ARM" in
   # arena). Added BEFORE the batch chain launches, because editing this file
   # while a chain is running it re-corrupts the running shell at a stale
   # offset -- which is exactly what mangled the i11long postamble.
+  # ★ DESIRES/SOCIETAL AXIS paired A/B: identical script, same seed; ONLY
+  # alpha differs. The charter's acceptance: merit = higher throughput AND
+  # lower mood; indiv = the reverse; anything else = AXIS-FAILS-DECORATIVE.
+  merit)        PITVAR=" BASTION_CULTURE_ALPHA=0.9"
+              SCRIPT="script-desires.txt" ;;
+  indiv)        PITVAR=" BASTION_CULTURE_ALPHA=0.1"
+              SCRIPT="script-desires.txt" ;;
   adopt)        PITVAR=" BASTION_ADOPT_TOWN=1"
               PITARENA=""
               SCRIPT="script-adopt.txt" ;;
