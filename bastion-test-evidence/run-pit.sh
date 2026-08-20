@@ -248,6 +248,13 @@ case "$ARM" in
   # own server-side witness lines (fixes the unwindowed-grep retraction).
   haulrev)      PITVAR=""
               SCRIPT="script-haulrev.txt" ;;
+  # ★ ADOPT-A-TOWN mode A (real terrain -- towns do not exist in the flat
+  # arena). Added BEFORE the batch chain launches, because editing this file
+  # while a chain is running it re-corrupts the running shell at a stale
+  # offset -- which is exactly what mangled the i11long postamble.
+  adopt)        PITVAR=" BASTION_ADOPT_TOWN=1"
+              PITARENA=""
+              SCRIPT="script-adopt.txt" ;;
   guardwound)   PITVAR=" BASTION_ACCESS_CLAIM_DIAG=1 BASTION_GUARD_BRAVERY=0.8,0.2 BASTION_GUARD_HOLD_DIAG=1 BASTION_GUARD_PLANT_WOUND=0.5"
               SCRIPT="script-guard.txt" ;;
   recrabfedctl) PITVAR=" BASTION_SEED_FOOD=64"

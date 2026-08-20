@@ -1,0 +1,12 @@
+note ADOPT-A-TOWN mode A -- first live leg (ADOPT-A-TOWN-PREREGISTRATION.md).
+note Real terrain; the server logs carry the adoption witness (site chosen,
+note designations per kind) or the VOID witness (no town in radius).
+anchor
+wait 1200
+note --- what did adoption place, and are colonists using it? ---
+inspect_colonists
+list_designations
+wait 1500
+note --- survival window: eat/sleep/work emits accumulate server-side ---
+inspect_colonists
+wait 900
