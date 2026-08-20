@@ -353,6 +353,30 @@ fn tick_driven_driver() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| {
         let on = std::env::var_os("BASTION_TICK_DRIVEN_DRIVER").is_some();
+        // ★★ KNOWN BROKEN, TWICE MEASURED — REFUSES rather than yielding data.
+        //
+        // Attempt 1 (sleep until server Time advances): starved its own message
+        // pump — Time only advances in the client when the client is ticked.
+        // Attempt 2 (PUMP while waiting): fixed the starvation (0 pace-exhaustion
+        // warns) and the leg STILL died at the join — 86 census emits vs 11,317,
+        // anchor-origin guard fired.
+        //
+        // THE MECHANISM, and it is the one I briefly talked myself out of:
+        // this file's budgets are SPIN COUNTS that silently encode WALL-TIME
+        // assumptions. `POS_WAIT_TICKS = TPS * 15` means "15 seconds" only
+        // because each spin sleeps ~1/TPS of WALL time. Slave the spin to the
+        // SERVER's clock and 450 spins no longer span 15 wall seconds, so a
+        // network-timed arrival (the `Pos` component) misses a budget that was
+        // never really counting spins.
+        //
+        // Every such budget (POS_WAIT_TICKS, ACK_SPIN_CAP, WAIT_SPIN_CAP_
+        // MULTIPLIER, ...) would have to be re-expressed in sim time. THAT is
+        // why option 1 is a restructure and not a flag — confirmed by two
+        // attempts, not asserted.
+        assert!(
+            !on,
+            "BASTION_TICK_DRIVEN_DRIVER is KNOWN BROKEN (twice measured) and refuses              to run: this driver's spin-count budgets encode WALL-TIME assumptions              (POS_WAIT_TICKS = TPS*15 means 15s only because each spin sleeps 1/TPS              of wall time). Slaving spins to the server clock makes network-timed              arrivals miss those budgets — the join fails with the anchor-origin              guard. A correct arm must re-express every budget in SIM TIME. See              BAR2-CAUSE-IS-STRUCTURAL.md."
+        );
         on
     })
 }
