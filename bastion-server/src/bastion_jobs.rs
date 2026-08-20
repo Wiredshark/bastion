@@ -1078,7 +1078,15 @@ pub fn stockpile_has_material<'a>(
             && board
                 .stockpile_at(ipos.0.map(|e| e.floor() as i32))
                 .is_some()
-            && !board.is_reserved(*iuid)
+            // ITEM 27 (2026-08-20): UNIT-aware, not entity-aware. Items
+            // MERGE into piles, so `!is_reserved` let ONE eater's
+            // reservation lock the colony's entire 64-unit larder — 31,910
+            // consecutive materials refusals with stocked=1 reserved=1
+            // (failures composing through shared exclusive state; the fix
+            // is this decoupling). Amounts were already tracked
+            // (`reserve(item, amount)` / `reserved_count`); this gate was
+            // the blunt consumer.
+            && board.reserved_count(*iuid) < pi.amount()
     })
 }
 
@@ -10809,6 +10817,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             }
         }
 
+        // ── ITEM 27: the reservation-holder census ───────────────────────
+        // `reserved=1` persisted for an ENTIRE leg and nothing named the
+        // holder. For each item with live reservations: how many, and WHICH
+        // jobs hold them — a rid held by NO job is a leak by definition,
+        // and a job kind names the locking mechanism.
+        if tick.0 % (ARBITRATION_INTERVAL as u64 * 40) == 17 {
+            for (item, rids) in board.reservations_by_item.iter() {
+                let holders: Vec<String> = board
+                    .jobs
+                    .values()
+                    .filter(|j| j.reservation.is_some_and(|r| rids.contains(&r)))
+                    .map(|j| format!("{:?}", j.kind))
+                    .collect();
+                info!(
+                    item = item.0.get(),
+                    live = rids.len(),
+                    held_by_jobs = holders.len(),
+                    holders = ?holders,
+                    "bastion: ITEM 27 reservation census"
+                );
+            }
+        }
+
         // ── B6 HAUL: job generation (arbitration cadence, own offset) ────
         // Scan loose bastion-output drops (stone/log — the two defs the
         // colony produces; required_item is &'static so the def rides
@@ -16603,11 +16634,28 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // -MINE-CELL.md 2b, an instrument requirement --
                             // this stall was indistinguishable from an idle
                             // colonist in every prior capture).
+                            // ITEM 27: print what the claimant DOES carry —
+                            // "not found" alone cannot separate ate-my-own-
+                            // ingredient from never-had-it from wrong-def.
+                            let carried_now: Vec<String> = inventories
+                                .get(entity)
+                                .map(|inv| {
+                                    inv.slots()
+                                        .flatten()
+                                        .filter_map(|i| {
+                                            i.item_definition_id()
+                                                .itemdef_id()
+                                                .map(|s| s.to_string())
+                                        })
+                                        .collect()
+                                })
+                                .unwrap_or_default();
                             info!(
                                 job = active.job,
                                 kind = ?job.kind,
                                 pos = ?job.pos,
                                 required_item = required,
+                                carried_now = ?carried_now,
                                 "bastion: job stalled on materials -- required item not found in colonist inventory"
                             );
                             job.progress = 0.0;
@@ -21721,6 +21769,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 if let Some(job) = board.jobs.get_mut(&job_id) {
                     job.claimed_by = Some(*uid);
                     job.reservation = job.reservation.or(fetch_rid);
+                    // ITEM 27 claim-commit witness: the stall (arrive
+                    // empty-handed) can only come from one of THESE
+                    // branches — print which. carried= names the claim
+                    // eligibility path; fetch_rid= names whether a fetch
+                    // leg will run. (Two Cook claims arrived unfed with
+                    // every story still fitting; this line kills the wrong
+                    // ones.)
+                    if let Some(req) = job.required_item {
+                        info!(
+                            job = job_id,
+                            kind = ?job.kind,
+                            colonist = uid.0.get(),
+                            required_item = req,
+                            carried = carried_defs.contains(req),
+                            fetch = fetch_rid.is_some(),
+                            held_reservation = job.reservation.is_some(),
+                            "bastion: ITEM 27 material-job claim committed"
+                        );
+                    }
                     claimed_pos.push(job.pos);
                     claimed_cell = Some(coord_cell(job.pos));
                     claimed_job_pos = Some(job.pos);
