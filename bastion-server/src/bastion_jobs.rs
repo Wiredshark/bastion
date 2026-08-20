@@ -2403,6 +2403,30 @@ pub fn guard_hold_diag() -> bool {
     *ON.get_or_init(|| std::env::var_os("BASTION_GUARD_HOLD_DIAG").is_some())
 }
 
+/// bastion (DESIRES v1 / SOCIETAL AXIS): the colony CULTURE DIAL alpha,
+/// meritocracy (1.0) <-> individualism (0.0). `None` (unset) = the axis is
+/// OFF and claim scoring reduces EXACTLY to today's — prereg bar 4, which is
+/// what keeps every banked run comparable.
+///
+/// REFUSES a malformed value rather than defaulting: a silent fallback would
+/// run an A/B arm untreated and score "no difference" from an arm that never
+/// carried the treatment (the same rule as the bravery pin).
+pub fn culture_alpha() -> Option<f32> {
+    static A: std::sync::OnceLock<Option<f32>> = std::sync::OnceLock::new();
+    *A.get_or_init(|| {
+        std::env::var("BASTION_CULTURE_ALPHA").ok().map(|v| {
+            let a: f32 = v.parse().unwrap_or_else(|_| {
+                panic!("BASTION_CULTURE_ALPHA={v:?} is not a float in [0,1]")
+            });
+            assert!(
+                (0.0..=1.0).contains(&a),
+                "BASTION_CULTURE_ALPHA={a} outside [0,1]"
+            );
+            a
+        })
+    })
+}
+
 pub fn guard_mode_pin() -> common::bastion::GuardMode {
     match std::env::var("BASTION_GUARD_MODE").as_deref() {
         Ok("fight") | Ok("Fight") => common::bastion::GuardMode::Fight,
@@ -7675,7 +7699,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let table = crate::bastion_mood::ThoughtTable::current();
                 let affinities = crate::bastion_mood::ValueAffinityTable::current();
                 let data = rtsim.rt_state().data();
-                for (colonist, needs, mood, re) in (
+                for (entity, colonist, needs, mood, re) in (
+                    &entities,
                     &colonists,
                     &needs_storage,
                     &mut moods,
@@ -7708,7 +7733,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             )
                         })
                         .unwrap_or(0.0);
-                    mood.0 = comp::bastion::mood_formula(&mood_cfg, needs, thought_sum);
+                    // ★ SOCIETAL AXIS (DESIRES v1, step d): desire
+                    // suppression. Working a kind you do not want, in a colony
+                    // whose culture made you, costs mood -- scaled by α, so a
+                    // meritocracy (which assigns against desire) pays the
+                    // charter's price and an individualist colony (α→0) pays
+                    // ~nothing. Rides the thought channel at the CALL SITE so
+                    // `mood_formula`'s exact-pin test stays untouched. 0.3 is
+                    // a v1 calibration in shortfall-weight range; whether the
+                    // whole tradeoff is REAL is exactly what the paired A/B
+                    // measures.
+                    let suppression = match culture_alpha() {
+                        Some(a) => active_jobs
+                            .get(entity)
+                            .and_then(|aj| board.jobs.get(&aj.job))
+                            .map(|j| {
+                                let d = colonist.0.desires.get(j.work);
+                                if d < 1.0 { -(1.0 - d) * a * 0.3 } else { 0.0 }
+                            })
+                            .unwrap_or(0.0),
+                        None => 0.0,
+                    };
+                    mood.0 = comp::bastion::mood_formula(
+                        &mood_cfg,
+                        needs,
+                        thought_sum + suppression,
+                    );
                 }
             }
         }
@@ -21167,7 +21217,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // acceptance test it was always owed -- a deliberately
                 // constructed starvation case, fanned before merge, not
                 // after.
-                let score = dist + depth_score + clump_penalty + sat_penalty;
+                // ★ DESIRES v1 / SOCIETAL AXIS. The charter's formula is
+                // "priority × [α·skill_fit + (1−α)·desire]", but `priority`
+                // here is a TIER (u8, compared before score) — multiplying it
+                // by a float would change tier semantics for every banked
+                // run. The weight therefore acts WITHIN the tier, as a
+                // divisor on the tiebreak score: higher weight ⇒ lower
+                // (better) score. α unset ⇒ weight is EXACTLY 1.0 and this
+                // line is today's line (prereg bar 4). Whether this
+                // realization produces the charter's tradeoff is precisely
+                // what the paired A/B measures — if it does not separate,
+                // the axis fails as decorative BY THE CHARTER'S OWN WORDS.
+                //
+                // skill_fit is calibrated to desire's range (neutral 1.0,
+                // max 2.0): 1.0 + level × 0.2. A mismatched range would bias
+                // α invisibly.
+                let claim_weight = match culture_alpha() {
+                    Some(a) => {
+                        let skill_fit =
+                            1.0 + colonist.0.skills.level_for(job.work) as f32 * 0.2;
+                        let desire = colonist.0.desires.get(job.work);
+                        (a * skill_fit + (1.0 - a) * desire).max(0.1)
+                    },
+                    None => 1.0,
+                };
+                let score =
+                    (dist + depth_score + clump_penalty + sat_penalty) / claim_weight;
                 let better = match &best {
                     None => true,
                     Some((_, bp, bs)) => priority > *bp || (priority == *bp && score < *bs),

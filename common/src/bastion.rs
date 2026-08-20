@@ -1577,6 +1577,99 @@ pub struct WorkPriorities {
 
 fn default_work_priority() -> u8 { 3 }
 
+/// bastion (DESIRES v1, Ben 2026-08-18): the per-colonist DESIRE VECTOR over
+/// work kinds — SEPARATE from the trait roll by charter: *"the roll determines
+/// personality, but the job taken needs to be weighted by the DESIRES of the
+/// colonist — a coward could still want to be guard."* Traits govern HOW a
+/// colonist executes; desires weight WHAT work it claims.
+///
+/// Weights are multiplicative claim-scoring factors around a NEUTRAL 1.0 —
+/// serde-defaulted so every pre-desires save parses and scores exactly as
+/// before (prereg bar 4: with the culture dial unset, scoring reduces to board
+/// priority).
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct WorkDesires {
+    #[serde(default = "default_desire")]
+    pub mine: f32,
+    #[serde(default = "default_desire")]
+    pub chop: f32,
+    #[serde(default = "default_desire")]
+    pub build: f32,
+    #[serde(default = "default_desire")]
+    pub haul: f32,
+    #[serde(default = "default_desire")]
+    pub cook: f32,
+    #[serde(default = "default_desire")]
+    pub farm: f32,
+    #[serde(default = "default_desire")]
+    pub guard: f32,
+}
+
+fn default_desire() -> f32 { 1.0 }
+
+impl Default for WorkDesires {
+    fn default() -> Self {
+        Self {
+            mine: 1.0,
+            chop: 1.0,
+            build: 1.0,
+            haul: 1.0,
+            cook: 1.0,
+            farm: 1.0,
+            guard: 1.0,
+        }
+    }
+}
+
+impl WorkDesires {
+    pub fn get(&self, work: WorkType) -> f32 {
+        match work {
+            WorkType::Mine => self.mine,
+            WorkType::Chop => self.chop,
+            WorkType::Build => self.build,
+            WorkType::Haul => self.haul,
+            WorkType::Cook => self.cook,
+            WorkType::Farm => self.farm,
+            WorkType::Guard => self.guard,
+        }
+    }
+
+    /// v1 origin per the charter: rolled at spawn, INDEPENDENT of traits.
+    /// One kind is loved (2.0), one is disliked (0.5), the rest neutral —
+    /// the smallest shape that makes two colonists demonstrably differ
+    /// (prereg bar 1) without inventing a distribution the charter did not
+    /// specify beyond independence.
+    pub fn roll(rng: &mut impl rand::Rng) -> Self {
+        let mut d = Self::default();
+        let kinds = [
+            WorkType::Mine,
+            WorkType::Chop,
+            WorkType::Build,
+            WorkType::Haul,
+            WorkType::Cook,
+            WorkType::Farm,
+            WorkType::Guard,
+        ];
+        let loved = kinds[rng.gen_range(0..kinds.len())];
+        let disliked = kinds[rng.gen_range(0..kinds.len())];
+        let set = |d: &mut Self, w: WorkType, v: f32| match w {
+            WorkType::Mine => d.mine = v,
+            WorkType::Chop => d.chop = v,
+            WorkType::Build => d.build = v,
+            WorkType::Haul => d.haul = v,
+            WorkType::Cook => d.cook = v,
+            WorkType::Farm => d.farm = v,
+            WorkType::Guard => d.guard = v,
+        };
+        set(&mut d, loved, 2.0);
+        if disliked != loved {
+            set(&mut d, disliked, 0.5);
+        }
+        d
+    }
+}
+
+
 impl Default for WorkPriorities {
     fn default() -> Self {
         Self {
@@ -1645,6 +1738,10 @@ pub struct BastionColonist {
     /// serde-defaulted so pre-item-14 saves parse.
     #[serde(default = "default_guard_bravery")]
     pub guard_bravery: f32,
+    /// bastion (DESIRES v1): what this colonist WANTS to work. serde-default
+    /// = all-neutral so pre-desires saves parse and score unchanged.
+    #[serde(default)]
+    pub desires: WorkDesires,
     /// bastion (B6 SOFT-0): transient SOFT-COLLISION state — while sim
     /// `Time` < this, the phys colonist↔colonist push is SOFTENED so this
     /// colonist can squeeze past another in a chokepoint (terrain stays
@@ -2327,6 +2424,10 @@ impl BastionColonist {
             // to invent one. Banked for Ben instead; the fixture pins two
             // distinct values via BASTION_GUARD_BRAVERY to score bar 1.
             guard_bravery: default_guard_bravery(),
+            // DESIRES v1: the roll IS chartered here ("rolled at spawn with
+            // distribution independent of traits") -- unlike guard_bravery
+            // above, where the distribution was banked as a design call.
+            desires: WorkDesires::roll(rng),
             skills: ColonistSkills {
                 mining: skill(rng),
                 woodcutting: skill(rng),

@@ -1,0 +1,18 @@
+note DESIRES v1 / SOCIETAL AXIS -- the paired A/B's shared script.
+note Two arms run this identically; ONLY BASTION_CULTURE_ALPHA differs
+note (0.9 meritocratic vs 0.1 individualist). Same seed, same map.
+note
+note THE CHARTER'S OWN BAR: meritocratic arm must show HIGHER throughput AND
+note   LOWER mood; individualist the reverse -- BOTH directions, or the axis
+note   is decorative and FAILS.
+anchor
+wait 1500
+note --- sample 1: mood mid-run ---
+inspect_colonists
+wait 1500
+note --- sample 2 ---
+inspect_colonists
+wait 1500
+note --- sample 3: throughput = completions counted server-side in-window ---
+inspect_colonists
+wait 300
