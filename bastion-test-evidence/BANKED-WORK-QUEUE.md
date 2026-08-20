@@ -293,6 +293,25 @@ no fixture change can reach an unreachable branch.
 been spent on this item (`recrab`, `recrabfed`, `recrgate`) and every one was
 uninformative for the same reason.
 
+## Arc sweep, 2026-08-20 (grand mandate day 1)
+
+| row | state |
+|---|---|
+| Arc 3 item 14 (guards) | **3 of 4 bars PASS** (final disposition); bar 1b banked on colonist target-acquisition |
+| Arc 2 item 11 (recreation) | **ROOT CAUSE FIXED** — the gate's `contains_key` treated expired cooldowns as active (34,720-row census; every clause open except that one). Post-fix leg queued |
+| Arc 2 item 12 (chronicle UI) | **BUILT** — universal inspect channel, payload carries enabled+truncated. Live legs queued |
+| Arc 4 item 17 (skills) | **BUILT** — payload visible half + felt-curve test green. Live leg shares item 12's arm |
+| Arc 4 item 16 (P2+P3) | fixture + in-window scorer ready (`haulrev`); blockers dissolved by today's fixes |
+| Adopt-a-town mode A | **BUILT** (search/re-anchor/placement via shipping paths); live leg queued |
+| Arc 5 desires + societal axis | **BUILT (a–d)** + A/B arms and scorer; verdict table includes AXIS-FAILS-DECORATIVE per the charter |
+| Arcs 5–8 bars | `LONG-HORIZON-ACCEPTANCE-BARS.md` written assuming compressed mode |
+
+**Instrument catches today, each disclosed in its commit:** the attestation
+guard refused FOUR legs over a stale driver; the suite gate read a piped exit
+and sailed past a red floor (rebuilt unpiped); t0_27 fired four times on
+founding-side bloat until the whole founding block left `tick()`; the
+run-pit-while-running edit corrupted one postamble (data unaffected).
+
 ## Blocked / needs a decision (Ben)
 
 - **Tick-loading scope call** — roadmap criterion passes, mandate bar 2 fails.
