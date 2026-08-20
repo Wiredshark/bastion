@@ -1650,8 +1650,8 @@ impl WorkDesires {
             WorkType::Farm,
             WorkType::Guard,
         ];
-        let loved = kinds[rng.gen_range(0..kinds.len())];
-        let disliked = kinds[rng.gen_range(0..kinds.len())];
+        let loved = kinds[rng.random_range(0..kinds.len())];
+        let disliked = kinds[rng.random_range(0..kinds.len())];
         let set = |d: &mut Self, w: WorkType, v: f32| match w {
             WorkType::Mine => d.mine = v,
             WorkType::Chop => d.chop = v,
