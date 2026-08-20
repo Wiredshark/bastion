@@ -348,7 +348,12 @@ without crossing that routing.
 | Item 23 (morale events) | **display bar PASS** (deposited thoughts exact-magnitude, decaying; flat controls); live-emitter banked behind the materials wall |
 | Item 24 bar 2 | **PASS** — unpinned annual cycle: Spring 224 → Autumn 569 → Winter 0.0 flat, colony alive; terminal sentinel fired organically (bar-3 mechanism witnessed) |
 | Item 22 (relationships) | BUILT + bar 1 landed (net rise, symmetric, cap-saturating); persistence + null fixture remain |
-| Item 30 (typed zones) | BUILT (FoodStore typed stockpile + selector preference + refusal witness); zones leg in chain10 |
+| Item 30 (typed zones) | **bars 1/2/4 PASS** (refusal discriminates exactly on class; 5/5 hauls to the typed store; wheat delivered inside); twin banked |
+| Adopt bar 2 | **colonists WORK adopted infrastructure**: 89 claims / 67 arrivals / 64 completions after root #4 (surface zone registration); eats pending the pantry-retarget leg |
+| Item 29 (trade) | BUILT + price book LIVE (194 sites); first mint blocked only on wood-outside-zone (the retarget fixes it — chain15) |
+| Item 28 (tool wear) | BUILT (slot-targeted wear + durability pays at the progress site); witness leg rides any working chain |
+| Item 31 (god POWER-0) | BUILT (favor pool + trickle + bastion_smite: gate-first refusal, real damage, VFX); smite leg scripted, arm pending run-pit idle |
+| Item 27 | thief WINDOW closed to the work second (carried 2-64 at arrival, 0 at consume); per-tick watch lands in chain15 |
 
 ## YEAR-LEG FINDING — starved beside a full larder (2026-08-20, NEW ROW)
 
