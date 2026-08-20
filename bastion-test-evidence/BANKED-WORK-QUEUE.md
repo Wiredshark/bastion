@@ -363,11 +363,18 @@ capacity at preempt time (`board.reserve(item, amount)`, ~12745)** — and the
 recreation saga proved eat cycles stall. Each stalled/abandoned EatFrom that
 skips its release leaks one reservation; 8 colonists × dozens of hunger
 preempts ≈ all 64 gone.
-**NEXT ACTION: audit the EatFrom rid's release on every exit path**
-(completion, colonist release/preempt, job removal) — the release sites are
-6691 / 6781 / 6902 / 13107; find which exit path skips them. A leaked-rid
-counter beside `preempt_attempts` makes it visible in one leg if the audit
-stalls.
+**LEAK FOUND AND FIXED (2026-08-20, three structural fixes, suite 136/136):**
+released self-jobs never reached `remove_job` (the sole releaser) — the drain
+only cleared `claimed_by` and the reap sweep covers `Designated(_)` only. A
+released self-job now DIES through remove_job; both direct `.jobs.remove`
+bypasses (one of which dropped emergency-access fetch reservations) also
+routed through it. **Verified: 34,813 → 1,255 reservation-only refusals
+(27×).**
+**Cooked still 0. Remaining suspect:** the seed toss scatters most mushrooms
+OUTSIDE the stockpile zone, leaving a small stockpiled population saturated by
+live eater reservations. **NEXT: add `stocked=/reserved=` counts to the
+RESERVATION-ONLY emit** (the idle witness has them; the refusal emit does not)
+— one line, one leg, decides between "small population" and "second reserver".
 
 Also noted: a 3×3 station paint registered NINE stations (one per cell) — the
 granularity wants a v1 note (one station per paint, or dedupe by adjacency)
