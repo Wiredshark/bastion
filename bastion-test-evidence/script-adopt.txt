@@ -2,11 +2,16 @@ note ADOPT-A-TOWN mode A -- first live leg (ADOPT-A-TOWN-PREREGISTRATION.md).
 note Real terrain; the server logs carry the adoption witness (site chosen,
 note designations per kind) or the VOID witness (no town in radius).
 anchor
-wait 1200
+note Window-fix (2026-08-20): the first deferred-placement leg drained all 5
+note   designations ONE SECOND after founding, claimed 3 jobs -- and the run
+note   ended 44 wall-seconds later with 0 arrivals. Real-terrain pathing plus
+note   eat cycles need thousands of ticks; the survival window must OUTLAST
+note   them (the haulrev ramp lesson, third appearance).
+wait 3000
 note --- what did adoption place, and are colonists using it? ---
 inspect_colonists
 list_designations
-wait 1500
+wait 6000
 note --- survival window: eat/sleep/work emits accumulate server-side ---
 inspect_colonists
-wait 900
+wait 3000
