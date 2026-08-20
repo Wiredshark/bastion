@@ -7843,6 +7843,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let pending = std::mem::take(&mut pending_seed_items.0);
                 let mut still_waiting = Vec::new();
                 for (pos, def, count) in pending {
+                    // RACE FIX (chain15): the origin chunk loads BEFORE the
+                    // adopted zone's plot corners, so retargeting at
+                    // origin-load found stockpiles EMPTY and delivered to
+                    // the doorstep anyway. While surface placements are
+                    // still pending and no zone exists yet, HOLD — the
+                    // zone is coming; founded presets register instantly
+                    // so flat-arena legs never wait.
+                    if board.stockpiles.is_empty()
+                        && !board.pending_adopt_surface.is_empty()
+                    {
+                        if tick.0 % 300 == 0 {
+                            info!(
+                                ?pos,
+                                def = %def,
+                                "bastion: deferred seed items HOLDING for zone registration"
+                            );
+                        }
+                        still_waiting.push((pos, def, count));
+                        continue;
+                    }
                     // Deliver INTO the pantry, not the doorstep: when a
                     // stockpile zone exists by delivery time, retarget to
                     // its center — the adopted town's zone registered 36
