@@ -702,6 +702,9 @@ impl Server {
         state
             .ecs_mut()
             .insert(bastion_jobs::PendingSeedItems::default());
+        state
+            .ecs_mut()
+            .insert(bastion_jobs::TradePriceBook::default());
         // bastion (PATH-0): the sequential path scheduler's state.
         state
             .ecs_mut()
@@ -5265,6 +5268,14 @@ impl Server {
         #[cfg(feature = "worldgen")]
         self.bastion_arena_tick();
 
+        // bastion (ITEM 29): refresh the trade price book — the leaf crate
+        // cannot see world's site economies, so the SERVER mirrors
+        // (site pos, food-per-wood ratio) into an ECS resource at a slow
+        // cadence. Prices move with the economy sim; 600 ticks keeps the
+        // book honest without paying the site walk per tick.
+        #[cfg(feature = "worldgen")]
+        self.bastion_trade_price_tick();
+
         // bastion (det-capture): env-gated AUTO-FOUND a colony for NON-INTERACTIVE
         // determinism runs. server-cli has no client to found a colony via the
         // normal command, so on a flat-arena boot with BASTION_AUTOFOUND_COLONY=N
@@ -6887,6 +6898,62 @@ impl Server {
     /// protects the ORDER of tick phases, and a long fixture block near the top
     /// of `tick()` degrades it silently. (Outside `tick()` this doc is safe —
     /// the test only scans that function's window.)
+    /// bastion (ITEM 29): mirror each priced site's (position, food-per-wood
+    /// ratio) into the `TradePriceBook` ECS resource the mission generator
+    /// reads. The ratio is the site's OWN `SitePrices` (bar 2's audit); z
+    /// comes from sim alt (terrain-independent — the adoption lesson).
+    #[cfg(feature = "worldgen")]
+    fn bastion_trade_price_tick(&mut self) {
+        let tick = self.state.ecs().read_resource::<Tick>().0;
+        if tick % 600 != 23 {
+            return;
+        }
+        let entries: Vec<(Vec3<i32>, f32)> = {
+            let ecs = self.state.ecs();
+            let rtsim = ecs.read_resource::<rtsim::RtSim>();
+            let data = rtsim.state().data();
+            let index = self.index.as_index_ref();
+            data.sites
+                .iter()
+                .filter_map(|(_, site)| {
+                    let ws = site.world_site?;
+                    let prices = index.get_site_prices(ws.id())?;
+                    let food = prices
+                        .values
+                        .get(&common::trade::Good::Food)
+                        .copied()
+                        .unwrap_or(0.0);
+                    let wood = prices
+                        .values
+                        .get(&common::trade::Good::Wood)
+                        .copied()
+                        .unwrap_or(0.0);
+                    // Degenerate prices are REPORTED by exclusion, never
+                    // normalised (the prereg's VOID branch).
+                    if food <= 0.0 || wood <= 0.0 {
+                        return None;
+                    }
+                    let wpos = site.wpos;
+                    let alt = self.world.sim().get_alt_approx(wpos)?;
+                    Some((Vec3::new(wpos.x, wpos.y, alt as i32 + 1), wood / food))
+                })
+                .collect()
+        };
+        if !entries.is_empty() {
+            let mut book = self
+                .state
+                .ecs()
+                .write_resource::<bastion_jobs::TradePriceBook>();
+            if book.0.len() != entries.len() {
+                tracing::info!(
+                    sites = entries.len(),
+                    "bastion: ITEM 29 trade price book refreshed"
+                );
+            }
+            book.0 = entries;
+        }
+    }
+
     /// bastion (ADOPT bar 2): FIXTURE lever — seed building materials the
     /// way `bastion_seed_food` seeds food. An adopted town's 1,519
     /// designations refused 12,152/12,152 claim checks at the materials

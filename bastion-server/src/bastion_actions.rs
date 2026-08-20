@@ -58,6 +58,8 @@ pub fn completion_block(kind: JobKind) -> Option<Block> {
         // ITEM 27: cooking edits no terrain — the cooked item spawns via the
         // completion handler; the pot stays.
         JobKind::Cook { .. } => None,
+        // ITEM 29: a trade exchange edits no terrain.
+        JobKind::TradeMission { .. } => None,
         JobKind::Designated(d) => match d {
             // ITEM 14: a guard assignment places NO block. Returning None keeps
             // it out of the completion-block path entirely.

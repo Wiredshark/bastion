@@ -1168,6 +1168,7 @@ pub(crate) fn colony_terminal_scan(
 pub(crate) fn job_kind_label(kind: &common::bastion::JobKind) -> &'static str {
     match kind {
         common::bastion::JobKind::Cook { .. } => "Cook",
+        common::bastion::JobKind::TradeMission { .. } => "TradeMission",
         common::bastion::JobKind::Designated(d) => match d {
             DesignationKind::GuardPost => "Designated:GuardPost",
             DesignationKind::PatrolPoint => "Designated:PatrolPoint",
@@ -1983,6 +1984,10 @@ fn job_still_wanted(kind: &common::bastion::JobKind, block: &Block) -> bool {
     match kind {
         // ITEM 27: a Cook job's validity is its station's, not a block's.
         common::bastion::JobKind::Cook { .. } => true,
+        // ITEM 29: a mission's validity is its own (site positions carry no
+        // block precondition -- without this arm the moot-check reads the
+        // site's arbitrary block and kills the mission instantly).
+        common::bastion::JobKind::TradeMission { .. } => true,
         common::bastion::JobKind::Designated(DesignationKind::Farm) => true,
         common::bastion::JobKind::Designated(d) => job_wanted(*d, block),
         common::bastion::JobKind::Haul { .. }
@@ -6485,13 +6490,68 @@ impl JobBoard {
             }
         }
         if let Some((z_min, z_max)) = mask_z {
-            self.designated.push((
-                Region {
-                    min: Vec3::new(min_xy.x, min_xy.y, z_min),
-                    max: Vec3::new(max_xy.x, max_xy.y, z_max),
-                },
-                kind,
-            ));
+            let region = Region {
+                min: Vec3::new(min_xy.x, min_xy.y, z_min),
+                max: Vec3::new(max_xy.x, max_xy.y, z_max),
+            };
+            self.designated.push((region, kind));
+            // ADOPT wall root #4 (2026-08-20): the surface path never
+            // inherited `place_designation`'s ZONE arms — an adopted
+            // Stockpile painted a region and registered NOTHING (jobs=0
+            // because `job_wanted` is false for zones, AND no zone: a
+            // fully inert paint), so the adopted colony could never
+            // stockpile anything and every material claim refused for an
+            // entire leg EVEN AFTER the seed items were delivered. Farms
+            // likewise never registered plots (sowing into no zone).
+            // Mirror all three arms.
+            if kind == DesignationKind::Stockpile {
+                let id = self.next_zone;
+                self.next_zone += 1;
+                self.stockpiles.push((id, region));
+                info!(zone = id, ?region, "bastion: stockpile zone registered (surface)");
+            }
+            if let DesignationKind::Zone(zk) = kind {
+                let id = self.next_zone;
+                self.next_zone += 1;
+                self.activity_zones.push((id, zk, region));
+                info!(zone = id, kind = ?zk, ?region, "bastion: activity zone registered (surface)");
+                if zk == common::bastion::ZoneKind::FoodStore {
+                    let sid = self.next_zone;
+                    self.next_zone += 1;
+                    self.stockpiles.push((sid, region));
+                    self.zone_types.insert(sid, zk);
+                    info!(zone = sid, kind = ?zk, ?region, "bastion: ITEM 30 typed stockpile zone registered (surface)");
+                }
+            }
+            if kind == DesignationKind::Farm {
+                let id = self.next_zone;
+                self.next_zone += 1;
+                self.farms.push((id, region));
+                let mut resolved = 0u32;
+                let mut unresolved = 0u32;
+                for y in region.min.y..=region.max.y {
+                    for x in region.min.x..=region.max.x {
+                        match column_surface_z(terrain, x, y, hint_z) {
+                            Some(z) => {
+                                self.farm_column_z.insert((x, y), z);
+                                resolved += 1;
+                            },
+                            None => unresolved += 1,
+                        }
+                    }
+                }
+                info!(
+                    zone = id,
+                    ?region,
+                    resolved,
+                    unresolved,
+                    "bastion: farm plot registered (surface), per-column surface resolved"
+                );
+            }
+        } else {
+            // No column resolved: the paint delivered NOTHING — say so
+            // (a zone that silently fails to register is this exact bug).
+            info!(?kind, "bastion: surface designation resolved ZERO columns — nothing registered");
         }
         info!(
             ?kind,
@@ -7367,6 +7427,19 @@ pub struct MineReadbackQueue(pub Vec<MineReadbackEntry>);
 #[derive(Default)]
 pub struct PendingSeedItems(pub Vec<(Vec3<i32>, String, u32)>);
 
+/// bastion (ITEM 29): the trade price book — (site position, food received
+/// per wood sold), refreshed by the SERVER (which can see `world`'s site
+/// economies; this leaf crate cannot) and READ by the mission generator.
+/// The ratio is each site's own `SitePrices` (bar 2: the ratio is the
+/// SITE's, not a constant). MANUALLY inserted at server construction (the
+/// measured auto-setup lesson).
+#[derive(Default)]
+pub struct TradePriceBook(pub Vec<(Vec3<i32>, f32)>);
+
+/// bastion (ITEM 29): mint a mission when colony food drops below this.
+/// A PAR, not a balance tweak — the par-stock pull the charter names.
+pub const TRADE_FOOD_PAR: u32 = 16;
+
 fn mine_readback_diag() -> bool {
     static MINE_READBACK_DIAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *MINE_READBACK_DIAG
@@ -7516,6 +7589,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // resource — see its doc for the double-borrow panic that
                 // put it here).
                 Write<'a, PendingSeedItems>,
+                // ITEM 29: the server-refreshed price book (read-only here).
+                Read<'a, TradePriceBook>,
             ),
         ),
     );
@@ -7583,6 +7658,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     msm,
                     mut mine_readback,
                     mut pending_seed_items,
+                    trade_price_book,
                 ),
             ),
         ): Self::SystemData,
@@ -10932,6 +11008,77 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             "bastion: ITEM 22 sentiment delta queued"
                         );
                     }
+                }
+            }
+        }
+
+        // ── ITEM 29: the TRADE MISSION generator ─────────────────────────
+        // Par-stock pull: when colony food drops below TRADE_FOOD_PAR and
+        // stockpiled wood exists to sell, mint ONE mission against the
+        // nearest priced site. The ratio freezes at mint from the site's
+        // own book entry (bar 2's audit line); the B6 fetch contract
+        // delivers the sold log; the completion drops the bought food at
+        // the site and the standard haul pipeline carries it home.
+        if tick.0 % ARBITRATION_INTERVAL as u64 == 19
+            && !trade_price_book.0.is_empty()
+            && !board
+                .jobs
+                .values()
+                .any(|j| matches!(j.kind, common::bastion::JobKind::TradeMission { .. }))
+        {
+            let food_stock =
+                colony_food_stock((&pickup_items, &positions).join(), &board);
+            if food_stock < TRADE_FOOD_PAR
+                && stockpile_has_material(
+                    CHOP_DROP_ITEM,
+                    (&pickup_items, &positions, &uids).join(),
+                    &board,
+                )
+            {
+                // Nearest site by colony center (deterministic: stable
+                // book order breaks ties by index).
+                let center = board
+                    .stockpiles
+                    .first()
+                    .map(|(_, r)| (r.min + r.max) / 2)
+                    .unwrap_or(Vec3::zero());
+                if let Some((site, ratio)) = trade_price_book
+                    .0
+                    .iter()
+                    .min_by_key(|(s, _)| {
+                        let d = *s - center;
+                        (d.x as i64).pow(2) + (d.y as i64).pow(2)
+                    })
+                    .copied()
+                {
+                    let id = board.next_id;
+                    board.next_id += 1;
+                    board.jobs.insert(id, Job {
+                        kind: common::bastion::JobKind::TradeMission { site, ratio },
+                        work: common::bastion::WorkType::Haul,
+                        pos: site,
+                        skill_floor: 0,
+                        claimed_by: None,
+                        suspended_for: None,
+                        unreachable: false,
+                        progress: 0.0,
+                        required_item: Some(CHOP_DROP_ITEM),
+                        needs_materials: false,
+                        carve_attempted: false,
+                        is_access: false,
+                        stuck_strikes: 0,
+                        benched_until_tick: None,
+                        depth: 0,
+                        reservation: None,
+                        affordance: common::bastion::AffordanceClass::Untargeted,
+                    });
+                    info!(
+                        job = id,
+                        ?site,
+                        ratio,
+                        food_stock,
+                        "bastion: ITEM 29 trade mission minted (food below par, wood to sell)"
+                    );
                 }
             }
         }
@@ -14777,6 +14924,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // suppresses it) — print the fact so the
                             // impossible state is visible the tick it occurs.
                             held_reservation = job.reservation.is_some(),
+                            // ITEM 27 thief-window instrument: the required
+                            // def's carried AMOUNT at the arrival instant.
+                            // The mushroom is present here (carrying gated
+                            // the arrival) and gone at the consume one
+                            // second later — this bound plus the stall dump
+                            // brackets the thief.
+                            carried_req = job.required_item.map(|req| {
+                                inventories
+                                    .get(entity)
+                                    .map(|inv| {
+                                        inv.slots()
+                                            .flatten()
+                                            .filter(|i| {
+                                                i.item_definition_id().itemdef_id()
+                                                    == Some(req)
+                                            })
+                                            .map(|i| i.amount())
+                                            .sum::<u32>()
+                                    })
+                                    .unwrap_or(0)
+                            }),
                             "bastion: colonist arrived at job site, working (B5)"
                         );
                     } else {
@@ -16698,6 +16866,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let still_valid = completed_kind.is_some_and(|k| match job.kind {
                         // ITEM 27: completion validity owned by the cook arm.
                         common::bastion::JobKind::Cook { .. } => true,
+                        // ITEM 29: same — the exchange arm owns validity.
+                        common::bastion::JobKind::TradeMission { .. } => true,
                         common::bastion::JobKind::Designated(d) => match d {
                             // ITEM 14: no terrain precondition to re-check —
                             // `still_valid` is about a designation's target
@@ -17004,47 +17174,59 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // at the station. Conservation is the bar: one consumed,
                     // one produced, both witnessed, or nothing at all.
                     if let common::bastion::JobKind::Cook { station } = job.kind {
-                        let want = job.required_item;
-                        let taken = inventories.get_mut(entity).and_then(|mut inv| {
-                            let slot = inv.slots_with_id().find_map(|(slot, it)| {
-                                it.as_ref()
-                                    .is_some_and(|it| {
-                                        it.item_definition_id().itemdef_id() == want
-                                    })
-                                    .then_some(slot)
-                            });
-                            slot.and_then(|slot| match inv.slot_mut(slot) {
-                                Some(Some(it)) if it.amount() > 1 => {
-                                    it.decrease_amount(1).ok().map(|_| ())
-                                },
-                                Some(Some(_)) => inv.remove(slot).map(|_| ()),
-                                _ => None,
-                            })
-                        });
-                        if taken.is_some() {
-                            let mut rng = toss_scatter_rng(tick.0, station, 0x30E_0003);
+                        // CONSERVATION FIX (2026-08-20): the ARRIVAL-stage
+                        // consume already took the raw (its stall branch
+                        // guards completion), so this arm re-consuming was
+                        // a 2-raw-per-dish double-charge. The completion
+                        // PRODUCES only; the arrival consume IS the
+                        // "raw consumed" half of the conservation pair.
+                        let mut rng = toss_scatter_rng(tick.0, station, 0x30E_0003);
+                        crate::bastion_actions::emit_drop(
+                            &mut item_drop_emitter,
+                            station,
+                            Item::new_from_asset_expect(COOKED_DISH_ITEM),
+                            *program_time,
+                            &mut rng,
+                        );
+                        info!(
+                            ?station,
+                            raw = ?job.required_item,
+                            "bastion: ITEM 27 cooked — raw consumed (at arrival), dish produced"
+                        );
+                    }
+                    // ITEM 29: a completed TRADE MISSION — the arrival-side
+                    // consume already took the sold log (the generic
+                    // material path); the exchange drops the bought food AT
+                    // THE SITE at the mint-frozen ratio, and the standard
+                    // haul pipeline carries it home. Both sides witnessed
+                    // (treatment beside outcome); a completion whose log
+                    // was already consumed upstream refuses to produce
+                    // (conservation, the cook arm's rule).
+                    if let common::bastion::JobKind::TradeMission { site, ratio } = job.kind {
+                        // The ARRIVAL-stage consume already took the sold
+                        // lot (a completion cannot be reached with the
+                        // material unconsumed — the stall branch guards
+                        // it), so the exchange PRODUCES only. Re-consuming
+                        // here would double-charge — the same defect just
+                        // fixed in the cook arm.
+                        let bought = (ratio.floor() as u32).max(1);
+                        let mut rng = toss_scatter_rng(tick.0, site, 0x30E_0004);
+                        for _ in 0..bought {
                             crate::bastion_actions::emit_drop(
                                 &mut item_drop_emitter,
-                                station,
-                                Item::new_from_asset_expect(COOKED_DISH_ITEM),
+                                site,
+                                Item::new_from_asset_expect(FOOD_DEFS[0]),
                                 *program_time,
                                 &mut rng,
                             );
-                            info!(
-                                ?station,
-                                raw = ?want,
-                                "bastion: ITEM 27 cooked — raw consumed, dish produced"
-                            );
-                        } else {
-                            // The couldn't-happen witness: completion without
-                            // the raw in hand names the upstream fetch failure
-                            // instead of silently producing from nothing.
-                            info!(
-                                ?station,
-                                raw = ?want,
-                                "bastion: ITEM 27 cook completed WITHOUT raw in hand — nothing produced"
-                            );
                         }
+                        info!(
+                            ?site,
+                            sold = ?job.required_item,
+                            received = bought,
+                            ratio,
+                            "bastion: ITEM 29 exchange complete — lot sold (consumed at arrival), food received at the site"
+                        );
                     }
 
                     // ROW-COMPLETION-SIGNAL-SPLIT.md / F8: the drop/XP/log
