@@ -359,9 +359,14 @@ capacity), so the wall is elsewhere: candidates (preempt cooldown? the
 need-order gate? eat-claim scoring? reach?). This is the guard-starves-
 its-protectee shape again, colony-scale, and it is invisible in short legs
 (hunger never dips inside them — every prior eat evidence came from
-recr-style legs with pre-dipped need pins). INSTRUMENT FIRST: the
-need-preempt path needs a refusal census like the claim gate's (reason
-counters beside the preempt_attempts counter that already exists).
+recr-style legs with pre-dipped need pins). NARROWED BY THE LEG'S OWN
+NUMBERS: 635 preempts fired → 135 EatFrom jobs created → **33 completions**
+— the wall is BETWEEN creation and completion, and the targets are
+high-churn crop-drop entities (item uids in the 900–9,600 range at the farm
+cell) — the reserved eat target VANISHES mid-walk (merge/haul/re-drop) and
+the job dies. The vanish branch is SHARED with the cook fetch, so this
+batch's vanish WITNESS + the convergent-retry pattern already instrument
+it: the next long leg counts "fetch target vanished" per job kind for free.
 
 ## Item 29 build plan (post-prereg, 2026-08-20)
 
