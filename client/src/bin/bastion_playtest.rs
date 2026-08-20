@@ -351,7 +351,35 @@ fn parse_script_text(text: &str) -> Vec<ScriptCmd> {
 // being wall-paced -- it does not claim the shipped client behaves this way.
 fn tick_driven_driver() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("BASTION_TICK_DRIVEN_DRIVER").is_some())
+    *ON.get_or_init(|| {
+        let on = std::env::var_os("BASTION_TICK_DRIVEN_DRIVER").is_some();
+        // ★★ KNOWN BROKEN — REFUSES RATHER THAN PRODUCING HYBRID DATA.
+        //
+        // Measured 2026-08-19: this arm STARVES ITS OWN MESSAGE PUMP. The pace
+        // waits for the server-derived `Time` to advance, but `Time` only
+        // advances IN THE CLIENT when the driver ticks the client and pumps the
+        // network -- so it waits on a value its own waiting prevents from
+        // arriving. Evidence: one leg died on the anchor-origin guard ("no Pos
+        // after 450 ticks"), 128 census emits against 11,317; a second leg fell
+        // back to the wall pace 326 times and was therefore a HYBRID of both
+        // pacings.
+        //
+        // A correct version must PUMP WHILE WAITING, which means interleaving
+        // the pace with `client.tick()` rather than sitting between ticks --
+        // and that decouples spins from ticks, breaking every spin-count budget
+        // in this file (ACK_SPIN_CAP, POS_WAIT_TICKS, ...). It is a main-loop
+        // restructure, not a flag.
+        //
+        // It PANICS instead of running because a hybrid-paced leg is worse than
+        // no leg: it produces a plausible reduced-divergence number that reads
+        // like progress. Leaving a silently-broken arm in the tree is how a
+        // future run gets scored on garbage.
+        assert!(
+            !on,
+            "BASTION_TICK_DRIVEN_DRIVER is KNOWN BROKEN and refuses to run: the              tick-driven pace starves its own message pump (it waits on server              sim time, which only advances when this loop pumps the network).              Measured VOID on 2026-08-19 -- see BAR2-CAUSE-IS-STRUCTURAL.md. A              correct implementation must interleave the pace with client.tick(),              which is a main-loop restructure, not a flag."
+        );
+        on
+    })
 }
 
 /// Fixed step under the arm; wall-derived otherwise.
