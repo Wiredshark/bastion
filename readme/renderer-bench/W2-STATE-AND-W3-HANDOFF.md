@@ -62,8 +62,8 @@ golden CLI).
 
 ## Merge-gate ledger for THIS fork (owed before merge to wip-batch-verify)
 - [x] W1 vector suite GREEN (13/13, first run, 2026-08-20 02:59).
-- [ ] common-net sync suite + harness reference suite green.
-- [ ] `cargo check -p bastion-server -p veloren-server` clean (W2 compile).
+- [x] common-net sync suite GREEN (2/2, 2026-08-20 03:2x). Harness reference suite: in flight (first attempt died to DISK FULL — 37GB freed, deletion recorded in MAINTENANCE.md).
+- [x] `cargo check -p bastion-server -p veloren-server` CLEAN (W2 compiles; 4 first-pass errors fixed: crate-name import, bincode-2 API, two data. leftovers, height_scale field).
 - [ ] Planted red-demo: flip one tag-table discriminant → vector suite RED
       by name → restore.
 - [ ] Twin smoke via `run-renderer-bench.sh`: tape arrives on both legs,

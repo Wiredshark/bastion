@@ -31,8 +31,9 @@ fn sync_policy_is_any_entity() {
 #[test]
 fn payload_round_trips_and_is_stable() {
     let id = RendererBenchEntityId(42);
-    let ser = bincode::serialize(&id).expect("serializes");
-    let de: RendererBenchEntityId = bincode::deserialize(&ser).expect("deserializes");
+    let ser = bincode::serde::encode_to_vec(id, bincode::config::legacy()).expect("serializes");
+    let (de, _): (RendererBenchEntityId, usize) =
+        bincode::serde::decode_from_slice(&ser, bincode::config::legacy()).expect("deserializes");
     assert_eq!(de, id);
     // The wire payload is exactly the u32 (no hidden fields drifting in).
     assert_eq!(ser.len(), 4, "RendererBenchEntityId must stay a bare u32");

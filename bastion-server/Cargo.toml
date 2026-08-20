@@ -27,6 +27,7 @@ ron = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
 hashbrown = { workspace = true }
+sha2 = { workspace = true }
 enum-map = { workspace = true }
 
 [dev-dependencies]

@@ -117,7 +117,7 @@ fn build_body(b: &BenchBodyV1) -> Option<comp::Body> {
             hair_color,
             skin,
             eye_color,
-            height_scale: _,
+            height_scale,
         } => {
             use comp::body::humanoid;
             let species = *humanoid::ALL_SPECIES.get(*species as usize)?;
@@ -132,6 +132,7 @@ fn build_body(b: &BenchBodyV1) -> Option<comp::Body> {
                 hair_color: *hair_color,
                 skin: *skin,
                 eye_color: *eye_color,
+                height_scale: *height_scale,
             }))
         },
         BenchBodyV1::QuadrupedSmall { species, body_type } => {
@@ -359,8 +360,7 @@ impl<'a> System<'a> for Sys {
                     if let Some(&i) = unresolved.get(name.as_str()) {
                         let sid = run.slots[i].semantic_id;
                         run.slots[i].entity = Some(entity);
-                        let _ = data
-                            .bench_ids
+                        let _ = bench_ids
                             .insert(entity, comp::bastion::RendererBenchEntityId(sid));
                     }
                 }
@@ -374,8 +374,7 @@ impl<'a> System<'a> for Sys {
                 ordinals.insert(s.semantic_id, 0);
                 continue;
             };
-            let pos = data
-                .positions
+            let pos = positions
                 .get(entity)
                 .map(|p| p.0)
                 .unwrap_or_default();

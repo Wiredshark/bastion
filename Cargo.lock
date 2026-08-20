@@ -641,6 +641,7 @@ dependencies = [
  "ron",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "slotmap",
  "specs",
  "tracing",
