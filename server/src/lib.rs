@@ -5407,62 +5407,8 @@ impl Server {
                                     jobs,
                                     "bastion: autofound colony founded (deterministic path)"
                                 );
-                                // ★★ BASTION_SEED_FOOD=<n> — a FIXTURE lever for
-                                // item 11 (2026-08-19). Default OFF: absent the
-                                // var this is byte-identical to before, so every
-                                // banked run stays reproducible.
-                                //
-                                // WHY IT EXISTS. Item 11's registered bar is "net
-                                // positive across a whole break". It has never been
-                                // scored, and NOT because it failed —
-                                // `ITEM11-AB-RESULTS.md` records it as **UNSCOREABLE:
-                                // there were no breaks**. Hunger pinned at 0.0000
-                                // from sample 4 onward and owned every preempt for
-                                // ~1,000 sim-seconds, so recreation never got a turn.
-                                // A bar whose precondition never occurs is untested,
-                                // not passed.
-                                //
-                                // This supplies the colony so hunger is not the
-                                // binding constraint. It changes NO balance number —
-                                // `decay_per_sec`, the comfort band and the mood
-                                // penalty are Ben's per ruling 3's scope, and are
-                                // untouched. It is the same class of lever as
-                                // `pitwood`'s stockpiled wood drop.
-                                if let Ok(n) = std::env::var("BASTION_SEED_FOOD") {
-                                    let n: usize = n.parse().unwrap_or(0);
-                                    let bus = ecs
-                                        .read_resource::<common::event::EventBus<
-                                            common::event::CreateItemDropEvent,
-                                        >>();
-                                    for i in 0..n {
-                                        bus.emit_now(common::event::CreateItemDropEvent {
-                                            pos: comp::Pos(
-                                                origin.map(|e| e as f32)
-                                                    + Vec3::new(
-                                                        0.5 + (i % 4) as f32,
-                                                        0.5 + (i / 4) as f32,
-                                                        1.0,
-                                                    ),
-                                            ),
-                                            vel: comp::Vel(Vec3::zero()),
-                                            ori: comp::Ori::default(),
-                                            item: comp::PickupItem::new(
-                                                comp::Item::new_from_asset_expect(
-                                                    "common.items.food.mushroom",
-                                                ),
-                                                *ecs.read_resource::<common::resources::ProgramTime>(),
-                                                true,
-                                            ),
-                                            loot_owner: None,
-                                            persistent: true,
-                                        });
-                                    }
-                                    tracing::warn!(
-                                        seeded = n,
-                                        ?origin,
-                                        "bastion: BASTION_SEED_FOOD active — colony supplied so                                          hunger is not the binding constraint (FIXTURE lever;                                          no balance number changed)"
-                                    );
-                                }
+                                // ITEM 11 fixture lever (see the fn's doc).
+                                Self::bastion_seed_food(ecs, origin);
                             } else {
                                 tracing::warn!(
                                     ?origin_xy,
@@ -6721,5 +6667,59 @@ pub fn remove_admin(
             );
             None
         },
+    }
+}
+
+impl Server {
+    /// bastion (ITEM 11 fixture lever, 2026-08-20): `BASTION_SEED_FOOD=<n>`
+    /// drops `n` food items at a founding colony so hunger is not the binding
+    /// constraint. Default OFF — absent the var this is never called into.
+    ///
+    /// ★★ EXTRACTED FROM `tick()`, AND ITS COMMENT KEPT OUT OF `tick()` TOO.
+    /// The frozen-phase-order test scans a FIXED 20,000-char window of that
+    /// function, so anything there — code OR comments — can push a later
+    /// landmark out of view. This block cost the guard twice before it moved:
+    /// once as ~60 lines of code, then again as the ~15-line comment
+    /// explaining the first fix. A third failure came from the comment
+    /// SPELLING a landmark's name, which a plain `find(needle)` cannot tell
+    /// from the landmark itself.
+    ///
+    /// So: inside `tick()`, one line. Everything else lives here, where
+    /// length is free.
+    ///
+    /// EXTRACTED from `tick()` deliberately: inline, it pushed a phase landmark
+    /// out of the frozen-phase-order test's fixed 20,000-char window. That test
+    /// protects the ORDER of tick phases, and a long fixture block near the top
+    /// of `tick()` degrades it silently. (Outside `tick()` this doc is safe —
+    /// the test only scans that function's window.)
+    fn bastion_seed_food(ecs: &specs::World, origin: Vec3<i32>) {
+        let Ok(n) = std::env::var("BASTION_SEED_FOOD") else {
+            return;
+        };
+        let n: usize = n.parse().unwrap_or(0);
+        let bus = ecs.read_resource::<common::event::EventBus<common::event::CreateItemDropEvent>>();
+        let program_time = *ecs.read_resource::<common::resources::ProgramTime>();
+        for i in 0..n {
+            bus.emit_now(common::event::CreateItemDropEvent {
+                pos: comp::Pos(
+                    origin.map(|e| e as f32)
+                        + Vec3::new(0.5 + (i % 4) as f32, 0.5 + (i / 4) as f32, 1.0),
+                ),
+                vel: comp::Vel(Vec3::zero()),
+                ori: comp::Ori::default(),
+                item: comp::PickupItem::new(
+                    comp::Item::new_from_asset_expect("common.items.food.mushroom"),
+                    program_time,
+                    true,
+                ),
+                loot_owner: None,
+                persistent: true,
+            });
+        }
+        tracing::warn!(
+            seeded = n,
+            ?origin,
+            "bastion: BASTION_SEED_FOOD active — colony supplied so hunger is not the              binding constraint (FIXTURE lever; no balance number changed)"
+        );
     }
 }

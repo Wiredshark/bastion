@@ -217,6 +217,16 @@ case "$ARM" in
   # another absence to the pile.
   recrgate)     PITVAR=" BASTION_RECREATION=1 BASTION_SEED_FOOD=64 BASTION_RECREATION_GATE_DIAG=1"
               SCRIPT="script-recr-ab.txt" ;;
+  # ★ ITEM 14 (guards). Flat arena so the question is GUARD BEHAVIOUR, not
+  # terrain reachability -- the same reasoning item 13's `flee` arm used.
+  # BASTION_GUARD_BRAVERY pins TWO values in ONE run (timid,brave), which is
+  # what bar 1 requires: a parameter with one exercised value is a constant.
+  guard)        PITVAR=" BASTION_ACCESS_CLAIM_DIAG=1 BASTION_GUARD_BRAVERY=0.8,0.2"
+              SCRIPT="script-guard.txt" ;;
+  # Matched control for axis 1: identical except the mode. Both arms paint the
+  # same posts and patrols, so the ONLY moving variable is Alarm vs Fight.
+  guardfight)   PITVAR=" BASTION_ACCESS_CLAIM_DIAG=1 BASTION_GUARD_BRAVERY=0.8,0.2 BASTION_GUARD_MODE=fight"
+              SCRIPT="script-guard.txt" ;;
   recrabfedctl) PITVAR=" BASTION_SEED_FOOD=64"
               SCRIPT="script-recr-ab.txt" ;;
   recrabctl) PITVAR=""
