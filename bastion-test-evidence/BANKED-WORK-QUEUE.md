@@ -391,7 +391,15 @@ Cook jobs.** Same join shape, opposite answers across legs. Candidates: items
 absent (spawn/despawn), fell/moved out of the z-band, or def drift. CENSUS
 INSTRUMENT LANDED (commit 0691a51ee3): idle witness now dumps the actual
 loose-item table (total, per-food pos + in_zone + reserved). cookery6 leg
-launched; its census decides.
+launched; its census decides. **REGISTERED READINGS (before the leg lands):**
+(a) food present + in_zone=true + unreserved ⇒ the generator scan itself is
+wrong (would contradict the shared join — strongest surprise); (b) food
+present + in_zone=false ⇒ the items MOVED/fell — the pos says which way;
+(c) food_any=0 while total>0 ⇒ mushrooms never spawned or were despawned
+(the CreateItemDropEvent path or a chunk sweep); (d) total=0 ⇒ the census
+join is itself filtered (join-as-filter, instrument defect). cookery6 VOIDED
+once already on PIT_EV defaulting to the main checkout (script not found);
+the relaunched chain exports it.
 
 **Granularity note (owed from cookery3): a 3×3 CookStation paint registers
 NINE stations** — Area2D designations build per-cell, and each completed cell
