@@ -401,6 +401,30 @@ join is itself filtered (join-as-filter, instrument defect). cookery6 VOIDED
 once already on PIT_EV defaulting to the main checkout (script not found);
 the relaunched chain exports it.
 
+**cookery7 (2026-08-20, census-instrumented leg) RESOLVED the census question
+and found the NEXT two walls:** the mushroom pile IS visible (stocked=1 —
+reading (b)-adjacent: present, in-zone, merged to ONE entity), but (1) it sat
+RESERVED all leg — 31,910 mushroom + 1,154 wheat refusals off ONE standing
+whole-entity reservation each (`!is_reserved` era design; items merging broke
+its premise) — FIXED unit-aware (`reserved_count < pi.amount()`); (2) the two
+Cook claims that DID land arrived at the station EMPTY-HANDED ("stalled on
+materials"), released, looped. Fetch-flow layers read: claim eligibility uses
+the COLONY-wide `needs_materials` flag; `needs_fetch` uses the CLAIMANT's own
+carried set; the fetch leg steers at the reserved item and suppresses arrival
+while un-carrying — so an empty-handed arrival requires carried-at-claim +
+lost-before-arrival (eat consumes inventory food!) or a mid-fetch reservation
+vanish. THREE INSTRUMENTS landed (claim-commit witness carried=/fetch=, stall
+carried_now= dump, reservation-holder census naming holder job kinds); the
+chain8 cookery leg decides. **The reservation wall is COLONY-WIDE: bed builds
+starved on it too (thoughts leg: 0 of 8 bed jobs built ⇒ item 23's SleptInBed
+unreachable) — this row unblocks item 23 as well.**
+
+**Item 22 free evidence (same leg): SENT lines live — uid=3 held SEVEN
+sentiments toward named colonists, rising between samples (0.135→0.175).**
+Producer+drain+display all proven; bars need ≥3 windows (pintrait legs carry
+3 inspects), the null (vacuous in the preset box — every pair co-works; name
+it or fixture a split), determinism twin, persistence leg.
+
 **Granularity note (owed from cookery3): a 3×3 CookStation paint registers
 NINE stations** — Area2D designations build per-cell, and each completed cell
 pushes to `cook_stations`. Harmless for the pipeline bars (the generator
