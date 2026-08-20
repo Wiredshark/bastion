@@ -320,6 +320,10 @@ case "$ARM" in
   # Item 27 fetch forensics: the FETCH_DIAG leg (per-tick branch state).
   cookdiag)     PITVAR=" BASTION_SEED_FOOD=64 BASTION_NEED_SKIP_DIAG=1 BASTION_FETCH_DIAG=1"
               SCRIPT="script-cook.txt" ;;
+  # Item 30 (typed zones): the script gives the items (controlled
+  # treatment) -- no seed food, so every loose item's route is attributable.
+  zones)        PITVAR=""
+              SCRIPT="script-zones.txt" ;;
   guardwound)   PITVAR=" BASTION_ACCESS_CLAIM_DIAG=1 BASTION_GUARD_BRAVERY=0.8,0.2 BASTION_GUARD_HOLD_DIAG=1 BASTION_GUARD_PLANT_WOUND=0.5"
               SCRIPT="script-guard.txt" ;;
   recrabfedctl) PITVAR=" BASTION_SEED_FOOD=64"
