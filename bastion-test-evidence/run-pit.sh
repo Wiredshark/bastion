@@ -324,6 +324,12 @@ case "$ARM" in
   # treatment) -- no seed food, so every loose item's route is attributable.
   zones)        PITVAR=""
               SCRIPT="script-zones.txt" ;;
+  # Item 29 (trade): adopted town = priced sites IN WALKING DISTANCE.
+  # SEED_FOOD=8 sits BELOW the trade par (16) so the mission mints at
+  # once; SEED_MATERIALS also drops logs (the sellable lot).
+  tradefed)     PITVAR=" BASTION_ADOPT_TOWN=1 BASTION_AUTOFOUND_REAL_TERRAIN=1 BASTION_COLONY_PRESENCE_VD=3 BASTION_SEED_FOOD=8 BASTION_SEED_MATERIALS=64"
+              PITARENA=""
+              SCRIPT="script-adopt.txt" ;;
   guardwound)   PITVAR=" BASTION_ACCESS_CLAIM_DIAG=1 BASTION_GUARD_BRAVERY=0.8,0.2 BASTION_GUARD_HOLD_DIAG=1 BASTION_GUARD_PLANT_WOUND=0.5"
               SCRIPT="script-guard.txt" ;;
   recrabfedctl) PITVAR=" BASTION_SEED_FOOD=64"
