@@ -244,6 +244,10 @@ case "$ARM" in
   # never render identically.
   chronctl)     PITVAR=""
               SCRIPT="script-chronicle.txt" ;;
+  # ★ ITEM 16 P2+P3: priority bite + reversibility, windowed by the command's
+  # own server-side witness lines (fixes the unwindowed-grep retraction).
+  haulrev)      PITVAR=""
+              SCRIPT="script-haulrev.txt" ;;
   guardwound)   PITVAR=" BASTION_ACCESS_CLAIM_DIAG=1 BASTION_GUARD_BRAVERY=0.8,0.2 BASTION_GUARD_HOLD_DIAG=1 BASTION_GUARD_PLANT_WOUND=0.5"
               SCRIPT="script-guard.txt" ;;
   recrabfedctl) PITVAR=" BASTION_SEED_FOOD=64"

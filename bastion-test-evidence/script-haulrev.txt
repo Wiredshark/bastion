@@ -1,0 +1,23 @@
+note ITEM 16 P2+P3 -- does the priority command BITE, and does it REVERSE?
+note
+note THE RETRACTION THIS FIXES: P2's earlier PASS was counted with an unwindowed
+note   grep over logs that kept growing after the driver disconnected. Here the
+note   priority command's own witness lines (work=Haul priority=N changed=..)
+note   are the WINDOW MARKERS in the server log, so the three phases are
+note   delimited by server-side events, not wall-clock guesses.
+note
+note BARS: baseline window hauls>0 (precondition -- else VOID, not pass);
+note   zero window hauls==0 (P2, the bite); restored window hauls>0 (P3,
+note   reversibility). The haul-deadlock fix is DEFAULT-ON since ruling 2,
+note   which is what makes "a control that hauls reliably" plausible at all.
+note
+anchor
+note --- phase 1: BASELINE, hauls accumulate ---
+wait 1500
+note --- phase 2: priority Haul -> 0. The witness line is window marker A ---
+cmd bastion_priority haul 0
+wait 1500
+note --- phase 3: priority Haul -> 3. The witness line is window marker B ---
+cmd bastion_priority haul 3
+wait 1500
+note --- done; scorer counts haul deliveries in the three windows ---
