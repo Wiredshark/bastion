@@ -256,3 +256,67 @@ is wall-clock in disguise.** Those stay capped. Nothing else does.
 
 **The row's downstream items are unblocked.** They were blocked on a ruling that
 was never actually required.
+
+---
+
+# ★★★★★ CERTIFICATION CLOSED — Ben's ruling 1, 2026-08-19: **SCOPE IS THE ENGINE**
+
+> **"Bar-2 scope: ENGINE. Certify server-side determinism; the client's
+> wall-paced loop is by design — it's the human's window, and humans live in
+> real time."**
+
+## The scope boundary, stated as design and not as debt
+
+**The client's wall-paced loop is CORRECT.** A human's window onto the world
+advances in human time; a client that advanced in server ticks would stutter
+against the person watching it. The two-loop structure that makes
+spin→server-tick a function of wall speed is **the intended architecture**, not
+an unfixed defect.
+
+Therefore: **chunk-arrival timing under a live client is OUT OF SCOPE BY
+DESIGN.** It is not carried as debt, not queued for a fix, and not a known
+residual. Nothing is owed on it.
+
+★ This retires the "restructure the driver" option entirely. Two attempts at it
+(both measured, both VOID) were work spent proving a property the design never
+asked for. **Recorded so no future row re-opens it as a bug.**
+
+## The three bars, on engine scope — ALL PASS
+
+| bar | verdict on engine scope | evidence |
+|---|---|---|
+| **1** — capped/uncapped overlap | **PASS, strongest form** | not overlap but **set identity**: the same 242 keys, n=62 vs a registered N=8 |
+| **2** — fingerprint holds with loading inside it | **PASS** | headless: **6 of 6 identical, tick-exact, across two physical machines**, 165 chunks, 71 active ticks |
+| **3** — planted wall-coupled read goes red by name | **PASS, two independent instruments** | promotion-shape (92% pinned at the cap vs a 1..8 spread) **and** schedule-divergence doubling (184 → 373) |
+
+**The certification is GREEN on the scope Ben has ruled.**
+
+## What the failing measurement becomes
+
+The 31/31 and 38/38 client-attached divergences are **not** a failure of the
+engine. They are the measured, expected consequence of an intentionally
+wall-paced observer, and they are now the **quantified characterisation** of
+that boundary rather than an open defect:
+
+- divergence with a client: **100%** — capped *and* uncapped alike
+- divergence without a client: **0%** — 6/6 identical
+- membership: **identical in every population**, including under a deliberate
+  wall-clock plant
+
+**Membership is the property the release barrier pins** (its own doc says
+so), and membership never moved — not across compression, not across hosts, not
+under attack.
+
+## THE TRIGGER FIRES
+
+The standing law reads *"on green, compressed mode becomes the default for
+every unattended run."* **It is green on the ruled scope.** Declared:
+
+> **Compressed mode (`BASTION_UNCAPPED_TPS=1`) is the default for every
+> unattended run.** It already was in practice — `run-pit.sh` has defaulted
+> `PITTPS` to it since 2026-08-11 — and it is now **certified** rather than
+> merely conventional. The three arms that clear `PITTPS` remain the
+> "unless impossible" carve-out: an arm measuring anything tick-indexed must
+> cap the rate, or its tick axis is wall-clock in disguise.
+
+**Row #89 / tick-driven world loading: CLOSED, GREEN, on engine scope.**
