@@ -10819,6 +10819,31 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             reserved,
                             "bastion: ITEM 27 cook station idle — no raw food in any stockpile"
                         );
+                        // Census of the ACTUAL item table: the zero above
+                        // only says "no food inside a zone" — absent, fell,
+                        // and def-mismatch all render as that same zero.
+                        // Print where the food entities really are (or the
+                        // defs of whatever exists instead).
+                        let mut total = 0u32;
+                        let mut food_any = 0u32;
+                        for (it, ip, iuid) in (&pickup_items, &positions, &uids).join() {
+                            total += 1;
+                            let Some(d) = it.item().item_definition_id().itemdef_id().map(str::to_owned)
+                            else { continue };
+                            if FOOD_DEFS.contains(&d.as_str()) {
+                                food_any += 1;
+                                if food_any > 6 { continue; }
+                                let cell = ip.0.map(|e| e.floor() as i32);
+                                info!(
+                                    def = %d,
+                                    pos = ?ip.0,
+                                    in_zone = board.stockpile_at(cell).is_some(),
+                                    reserved = board.is_reserved(*iuid),
+                                    "bastion: ITEM 27 census — food item"
+                                );
+                            }
+                        }
+                        info!(total, food_any, "bastion: ITEM 27 census — loose item table");
                     }
                     continue;
                 };
