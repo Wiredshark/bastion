@@ -989,7 +989,18 @@ impl<'a> System<'a> for Sys {
                             {
                                 let n = PINNED_SO_FAR
                                     .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                                mirrored.guard_bravery = if n == 0 { timid } else { brave };
+                                // ★ ALTERNATE, don't pin only the first.
+                                // Leg 3 wounded guards to 0.5 and every
+                                // evaluation read bravery=0.8: the ONE timid
+                                // colonist happened to be the only guard
+                                // claimant, so the brave contrast never
+                                // existed. Which colonist CLAIMS a guard job is
+                                // independent of promotion order, so pinning
+                                // "the first" cannot guarantee both values
+                                // reach the guard population. Alternating puts
+                                // half the colony at each value.
+                                mirrored.guard_bravery =
+                                    if n % 2 == 0 { timid } else { brave };
                                 tracing::info!(
                                     name = mirrored.name.as_str(),
                                     guard_bravery = mirrored.guard_bravery,

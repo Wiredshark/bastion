@@ -22,6 +22,12 @@ designate guardpost 16390 16384 399 16392 16386 399
 wait 600
 note --- axis 3: a PATROL (region -> two distinct ends) ---
 designate patrol 16375 16375 399 16381 16381 399
+wait 300
+note --- MORE assignments: bar 3 needs BOTH bravery values among CLAIMANTS, and
+note   which colonist claims is arbitrary. Four posts raise the chance both
+note   values are represented; one post could only ever sample one colonist.
+designate guardpost 16386 16390 399 16388 16392 399
+designate guardpost 16378 16390 399 16380 16392 399
 wait 900
 note --- who claimed what, and where are they? ---
 inspect_colonists

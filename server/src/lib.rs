@@ -5375,7 +5375,60 @@ impl Server {
                             }
                         };
                         if let Some(sp) = sp_opt {
+                        // ★ ADOPT-A-TOWN (mode A). The town search runs BEFORE
+                        // the spawn so the whole founding re-anchors to the
+                        // town: adopting structures 300 blocks from where the
+                        // colonists stand would make bar 2 ("survive on the
+                        // adopted infrastructure") fail for a distance reason
+                        // that looks like a binding failure. Owned data only —
+                        // the IndexRef borrow must die before
+                        // `bastion_spawn_colony_seeded(&mut self)`.
+                        #[cfg(feature = "worldgen")]
+                        let adoption = if std::env::var_os("BASTION_ADOPT_TOWN").is_some() {
+                            Self::bastion_adoptable_town_plots(
+                                self.index.as_index_ref(),
+                                sp.xy().map(|e| e as i32),
+                                1024,
+                            )
+                        } else {
+                            None
+                        };
+                        #[cfg(not(feature = "worldgen"))]
+                        let adoption: Option<(Vec2<i32>, Vec<(common::bastion::DesignationKind, Vec2<i32>, Vec2<i32>)>)> = {
+                            if std::env::var_os("BASTION_ADOPT_TOWN").is_some() {
+                                // A named refusal, not silence: the test_world
+                                // shim has no sites, so adoption CANNOT run.
+                                tracing::warn!(
+                                    "bastion: BASTION_ADOPT_TOWN set but this build has no                                      worldgen — adoption is impossible here, falling back to                                      the founding preset"
+                                );
+                            }
+                            None
+                        };
+                        let sp = if let Some((town_origin, _)) = &adoption {
+                            // Re-anchor at the town. The datum resolve is the
+                            // same call mode B uses on real terrain.
+                            let ecs = self.state.ecs();
+                            let terrain =
+                                ecs.read_resource::<common::terrain::TerrainGrid>();
+                            let tz = bastion_server::bastion_founding_preset::resolve_datum(
+                                &terrain,
+                                *town_origin,
+                                sp.z.floor() as i32,
+                            );
+                            drop(terrain);
+                            match tz {
+                                Some(z) => Vec3::new(
+                                    town_origin.x as f32 + 0.5,
+                                    town_origin.y as f32 + 0.5,
+                                    z as f32 + 1.0,
+                                ),
+                                None => sp,
+                            }
+                        } else {
+                            sp
+                        };
                         tracing::info!(?sp, arena = bastion_flat_arena::enabled(),
+                            adopted = adoption.is_some(),
                             "bastion: autofound spawn resolved");
                         self.bastion_spawn_colony_seeded(sp, n, 0);
                         // THE PRESET, TOO — otherwise this path spawns
@@ -5387,7 +5440,52 @@ impl Server {
                         // Same placement authority the live handler uses
                         // (`place_preset`), so the captured colony is the one
                         // an overseer would found rather than a lookalike.
-                        {
+                        // ★ MODE A: adopted designations REPLACE the preset.
+                        // That is the charter's point — feature tests exercise
+                        // USE without first building BUILD — and it keeps mode
+                        // B byte-identical when the flag is absent (bar 4).
+                        if let Some((town_origin, plots)) = adoption {
+                            let ecs = self.state.ecs();
+                            let terrain =
+                                ecs.read_resource::<common::terrain::TerrainGrid>();
+                            let mut board = ecs
+                                .write_resource::<bastion_server::bastion_jobs::JobBoard>();
+                            let (mut farms, mut beds, mut stocks) = (0u32, 0u32, 0u32);
+                            let hint_z = sp.z.floor() as i32;
+                            for (kind, min, max) in &plots {
+                                let created = board.place_designation_surface(
+                                    &terrain,
+                                    *min,
+                                    *max,
+                                    hint_z,
+                                    common::bastion::ZExtent::default_for(*kind),
+                                    *kind,
+                                );
+                                match kind {
+                                    common::bastion::DesignationKind::Farm => {
+                                        farms += created.len() as u32
+                                    },
+                                    common::bastion::DesignationKind::Bed => {
+                                        beds += created.len() as u32
+                                    },
+                                    _ => stocks += created.len() as u32,
+                                }
+                            }
+                            tracing::info!(
+                                ?town_origin,
+                                plots = plots.len(),
+                                farm_jobs = farms,
+                                bed_jobs = beds,
+                                stockpile_jobs = stocks,
+                                "bastion: ADOPT-A-TOWN founded into an existing settlement"
+                            );
+                            // The survival window still needs food available:
+                            // the fixture lever applies identically here.
+                            Self::bastion_seed_food(
+                                ecs,
+                                Vec3::new(town_origin.x, town_origin.y, hint_z),
+                            );
+                        } else {
                             use bastion_server::bastion_founding_preset as preset;
                             let origin_xy = preset::origin_xy(sp);
                             let ecs = self.state.ecs();
@@ -6671,6 +6769,65 @@ pub fn remove_admin(
 }
 
 impl Server {
+    /// bastion (ADOPT-A-TOWN mode A, 2026-08-20): find the nearest worldgen
+    /// site holding at least one MAPPED plot (FarmField/House/Barn — the
+    /// charter's own mapping) within `radius` of `near`, and return OWNED
+    /// data: the site's origin plus each mapped plot as
+    /// (colony designation kind, world-space min XY, world-space max XY).
+    ///
+    /// OWNED on purpose: the caller must drop the `IndexRef` borrow before
+    /// `bastion_spawn_colony_seeded(&mut self)` — returning references here
+    /// would wedge the founding sequence into a borrow conflict.
+    ///
+    /// "Adoptable = has ≥1 mapped plot" deliberately sidesteps site-kind
+    /// taxonomy: the bars care about structures a colony can USE, not about
+    /// what worldgen calls the settlement.
+    #[cfg(feature = "worldgen")]
+    fn bastion_adoptable_town_plots(
+        index: world::IndexRef,
+        near: Vec2<i32>,
+        radius: i32,
+    ) -> Option<(Vec2<i32>, Vec<(common::bastion::DesignationKind, Vec2<i32>, Vec2<i32>)>)>
+    {
+        use common::bastion::DesignationKind as D;
+        use world::site::plot::PlotKind;
+        let map_kind = |k: &PlotKind| match k {
+            PlotKind::FarmField(_) => Some(D::Farm),
+            PlotKind::House(_) => Some(D::Bed),
+            PlotKind::Barn(_) => Some(D::Stockpile),
+            _ => None,
+        };
+        let (site, d2) = index
+            .sites
+            .iter()
+            .filter_map(|(_, site)| {
+                let has_mapped = site.plots().any(|p| map_kind(p.kind()).is_some());
+                has_mapped.then(|| (site, site.origin.distance_squared(near)))
+            })
+            .min_by_key(|(_, d2)| *d2)?;
+        if d2 > radius * radius {
+            tracing::warn!(
+                ?near,
+                radius,
+                nearest_d = (d2 as f32).sqrt() as i32,
+                "bastion: ADOPT-A-TOWN VOID — nearest adoptable site is outside                  the search radius (a worldgen fact, not a feature failure)"
+            );
+            return None;
+        }
+        let plots = site
+            .plots()
+            .filter_map(|p| {
+                let kind = map_kind(p.kind())?;
+                let b = p.find_bounds();
+                // Tile-space -> world-space; +1/-1 keeps the max INCLUSIVE.
+                let min = site.tile_wpos(b.min);
+                let max = site.tile_wpos(b.max + 1) - 1;
+                Some((kind, min, max))
+            })
+            .collect::<Vec<_>>();
+        Some((site.origin, plots))
+    }
+
     /// bastion (ITEM 11 fixture lever, 2026-08-20): `BASTION_SEED_FOOD=<n>`
     /// drops `n` food items at a founding colony so hunger is not the binding
     /// constraint. Default OFF — absent the var this is never called into.
