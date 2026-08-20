@@ -11118,6 +11118,40 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             .get(entity)
                             .is_some_and(|h| h.fraction() >= c.0.guard_bravery)
                     });
+                // ★★ ITEM 14 AXIS 1 — THE CONSUMER. `GuardMode` was written at
+                // creation and read nowhere, which is the other half of leg 1's
+                // bar-1 failure.
+                //
+                // A guard that PERCEIVES a hostile responds by its assignment's
+                // mode: Fight engages, Alarm does not. v1 makes that difference
+                // observable and REAL -- Alarm clears the aggro target so the
+                // colonist does not close on the hostile, Fight leaves it for
+                // the vanilla agent to act on.
+                //
+                // The two modes must differ in BEHAVIOUR, not only in a log
+                // line: an emit-only difference would pass a naive bar while
+                // both guards did the same thing.
+                if guarding && flee_target {
+                    let mode = active_jobs.get(entity).and_then(|aj| {
+                        board.jobs.get(&aj.job).and_then(|j| match j.kind {
+                            common::bastion::JobKind::Guard { mode, .. } => Some(mode),
+                            _ => None,
+                        })
+                    });
+                    if let Some(mode) = mode {
+                        if mode == common::bastion::GuardMode::Alarm
+                            && let Some(ag) = agents.get_mut(entity)
+                        {
+                            ag.target = None;
+                        }
+                        info!(
+                            colonist = uids.get(entity).map(|u| u.0.get()),
+                            ?mode,
+                            engaged = mode == common::bastion::GuardMode::Fight,
+                            "bastion: ITEM 14 axis 1 -- guard responded to a hostile BY MODE"
+                        );
+                    }
+                }
                 if guarding && guard_hold_diag() {
                     info!(
                         colonist = uids.get(entity).map(|u| u.0.get()),
