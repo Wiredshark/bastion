@@ -15946,11 +15946,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 } else {
                                     // Zone died mid-haul (the cancel path
                                     // also sweeps these — defensive).
-                                    let rid = job.reservation;
-                                    if let Some(rid) = rid {
-                                        board.reservations.remove(&rid);
-                                    }
-                                    board.jobs.remove(&active.job);
+                                    // remove_job releases the reservation
+                                    // structurally; the hand-rolled release
+                                    // this replaces was one of two direct
+                                    // `.jobs.remove` sites found while
+                                    // hunting the mushroom-reservation leak.
+                                    board.remove_job(active.job);
                                     to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
                                 }
                             } else {
@@ -16938,7 +16939,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     if job.unreachable {
                         board.claim_expiry_releases += 1;
                     }
+                    // ★ THE MUSHROOM-RESERVATION LEAK (2026-08-20, found at
+                    // 34,813 RESERVATION-ONLY refusals in one leg): a
+                    // SELF-JOB is pre-claimed for exactly one colonist and
+                    // means nothing without them — but this drain only
+                    // CLEARED the claim, the reap sweep covers Designated(_)
+                    // only, and remove_job (the sole reservation releaser)
+                    // was therefore never reached. Every abandoned EatFrom
+                    // held its capacity reservation FOREVER, and dozens of
+                    // stalled eat cycles locked the colony's entire food
+                    // supply out of both cooking and fetching.
+                    //
+                    // A released self-job now DIES with its claim, through
+                    // remove_job, so the release is structural.
+                    let self_job = matches!(
+                        job.kind,
+                        common::bastion::JobKind::EatFrom { .. }
+                            | common::bastion::JobKind::RestAt { .. }
+                            | common::bastion::JobKind::Despond { .. }
+                            | common::bastion::JobKind::Recreate { .. }
+                    );
                     job.claimed_by = None;
+                    if self_job {
+                        board.remove_job(job_id);
+                    }
                 }
             }
             active_jobs.remove(*entity);
@@ -19558,7 +19582,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         }
                     }
                     for id in &owned_jobs {
-                        board.jobs.remove(id);
+                        // ★ LEAK CLASS FIXED STRUCTURALLY: this direct
+                        // `.jobs.remove` dropped emergency-access jobs WITHOUT
+                        // releasing their fetch reservations (dig-provisioned
+                        // rungs carry one), permanently shrinking the
+                        // reservable item pool. Found while hunting the
+                        // 34,813-refusal mushroom wall: every removal now goes
+                        // through `remove_job`, whose release is structural —
+                        // per-call-site release discipline is exactly the
+                        // shared-exclusive-state failure the law forbids.
+                        board.remove_job(*id);
                         board.emergency_access_jobs.remove(id);
                     }
                 }
