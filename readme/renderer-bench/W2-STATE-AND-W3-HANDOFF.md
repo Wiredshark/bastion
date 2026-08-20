@@ -69,6 +69,10 @@ golden CLI).
       hierarchy_mutation_changes_every_root), 11 non-consumers stayed green →
       restored → 13/13 green again. Harness reference suite also GREEN 2/2
       (pin enforcement + recomputation).
-- [ ] Twin smoke via `run-renderer-bench.sh`: tape arrives on both legs,
-      golden CLI exit 0 (run_root identical).
+- [x] TWIN SMOKE GREEN (2026-08-20 13:1x): both legs' tapes arrived (~176s/
+      ~178s), golden CLI **PASS — run_root identical** on independent boots.
+      The stack's determinism witness. Two runner defects found+fixed on the
+      way: WSL-bash resolution trap (PowerShell `bash`≠Git Bash) and Git
+      Bash `kill` not terminating Windows servers (leg-1 squatting the port
+      → AddrInUse; fixed with taskkill + identity-scoped cleanup).
 - [ ] R2b container visuals: unit tests + one live look.

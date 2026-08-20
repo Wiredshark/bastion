@@ -701,6 +701,11 @@ impl Server {
         state
             .ecs_mut()
             .insert(bastion_path::PathScheduler::default());
+        // renderer-bench W2: the run-state resource (None = inert; the
+        // system arms it lazily from the env gate on its first tick).
+        state
+            .ecs_mut()
+            .insert(None::<bastion_renderer_bench::RendererBenchRun>);
         state
             .ecs_mut()
             .insert(common::bastion::ActivityZones::default());

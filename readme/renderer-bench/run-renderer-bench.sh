@@ -51,8 +51,13 @@ leg() {
     if [ -s "$EV/tape-$N.json" ]; then break; fi
     sleep 2; t=$((t+2))
   done
-  kill "$SRV" 2>/dev/null
+  # Git Bash `kill` does not reliably terminate Windows processes; use
+  # taskkill on the pid Git Bash reports (it maps to the Windows pid for
+  # direct children). Fall back to kill for portability.
+  taskkill //F //PID "$SRV" >/dev/null 2>&1 || kill -9 "$SRV" 2>/dev/null
   wait "$SRV" 2>/dev/null
+  # Belt-and-braces: if the port is still held by OUR binary, name+path kill.
+  powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='veloren-server-cli.exe'\" | Where-Object { \$_.CommandLine -match 'renderer-wt' } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }" >/dev/null 2>&1
   if [ -s "$EV/tape-$N.json" ]; then
     echo "leg $N: TAPE ARRIVED after ~${t}s"
   else
