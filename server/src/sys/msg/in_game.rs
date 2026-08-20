@@ -1715,6 +1715,21 @@ impl<'a> System<'a> for Sys {
                                             ),
                                             mood_explanation,
                                             ownership,
+                                            // ITEM 17 (VISIBLE): filled from
+                                            // level_for -- the same source the
+                                            // claim gate and work rate read.
+                                            skills: {
+                                                use common::bastion::WorkType as W;
+                                                [W::Mine, W::Chop, W::Build, W::Haul, W::Cook, W::Farm, W::Guard]
+                                                    .into_iter()
+                                                    .map(|w| {
+                                                        (
+                                                            w.label().to_string(),
+                                                            colonist.0.skills.level_for(w),
+                                                        )
+                                                    })
+                                                    .collect()
+                                            },
                                         })
                                     })
                                     .map(BastionInspectKind::Colonist),

@@ -650,6 +650,11 @@ pub struct BastionInspectPayload {
     /// `None` if not requested/available. Tail-appended per the wire
     /// discipline.
     pub ownership: Option<InspectorOwnershipV1>,
+    /// bastion (ARC 4 item 17, VISIBLE half): per-work skill levels as
+    /// (work-type label, level) pairs, filled from `ColonistSkills::level_for`
+    /// — the SAME source the claim gate and work-rate read, so the display
+    /// cannot drift from what the sim charges. Tail-appended (wire rule).
+    pub skills: Vec<(String, u16)>,
     /// ITEM 13 (health branch): current health as a fraction of maximum, or
     /// `None` when the entity carries no `Health` component at all.
     ///

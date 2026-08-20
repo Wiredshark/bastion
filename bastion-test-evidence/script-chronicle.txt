@@ -9,9 +9,12 @@ note
 anchor
 note --- generate some events: jobs get claimed/worked near the colony ---
 wait 1200
-note --- first chronicle sweep ---
+note --- first chronicle sweep (+ ITEM 17 visible bar: skills in INSPECT) ---
+inspect_colonists
 inspect_chronicle
 wait 1200
-note --- second sweep: MORE events must have accrued (monotone growth) ---
+note --- second sweep: MORE events must have accrued (monotone growth);
+note   and ITEM 17 bar 3: xp accrual must have MOVED a level or xp is inert ---
+inspect_colonists
 inspect_chronicle
 wait 300

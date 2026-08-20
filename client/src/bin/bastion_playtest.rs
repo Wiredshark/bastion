@@ -981,7 +981,7 @@ fn main() {
                             "INSPECT uid={} name={} hunger={:.4} rest={:.4} recreation={:.4} \
                              energy={:.4} health={:?} mood={:.4} drive={:?} scores={:?} \
                              activity={:?} status={:?} ownership={} mood_expl={} \
-                             consc={} neur={}",
+                             consc={} neur={} skills={:?}",
                             uid.0,
                             p.name,
                             p.hunger,
@@ -1001,7 +1001,8 @@ fn main() {
                                 "NONE"
                             },
                             p.conscientious,
-                            p.neurotic
+                            p.neurotic,
+                            p.skills
                         ));
                     }
                 }
