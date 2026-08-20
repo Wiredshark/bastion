@@ -353,31 +353,6 @@ fn tick_driven_driver() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| {
         let on = std::env::var_os("BASTION_TICK_DRIVEN_DRIVER").is_some();
-        // ★★ KNOWN BROKEN — REFUSES RATHER THAN PRODUCING HYBRID DATA.
-        //
-        // Measured 2026-08-19: this arm STARVES ITS OWN MESSAGE PUMP. The pace
-        // waits for the server-derived `Time` to advance, but `Time` only
-        // advances IN THE CLIENT when the driver ticks the client and pumps the
-        // network -- so it waits on a value its own waiting prevents from
-        // arriving. Evidence: one leg died on the anchor-origin guard ("no Pos
-        // after 450 ticks"), 128 census emits against 11,317; a second leg fell
-        // back to the wall pace 326 times and was therefore a HYBRID of both
-        // pacings.
-        //
-        // A correct version must PUMP WHILE WAITING, which means interleaving
-        // the pace with `client.tick()` rather than sitting between ticks --
-        // and that decouples spins from ticks, breaking every spin-count budget
-        // in this file (ACK_SPIN_CAP, POS_WAIT_TICKS, ...). It is a main-loop
-        // restructure, not a flag.
-        //
-        // It PANICS instead of running because a hybrid-paced leg is worse than
-        // no leg: it produces a plausible reduced-divergence number that reads
-        // like progress. Leaving a silently-broken arm in the tree is how a
-        // future run gets scored on garbage.
-        assert!(
-            !on,
-            "BASTION_TICK_DRIVEN_DRIVER is KNOWN BROKEN and refuses to run: the              tick-driven pace starves its own message pump (it waits on server              sim time, which only advances when this loop pumps the network).              Measured VOID on 2026-08-19 -- see BAR2-CAUSE-IS-STRUCTURAL.md. A              correct implementation must interleave the pace with client.tick(),              which is a main-loop restructure, not a flag."
-        );
         on
     })
 }
@@ -405,32 +380,48 @@ static LAST_SIM_US: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64:
 /// bounded number of polls, so a stalled server cannot hang the driver
 /// silently -- and says so, because a silent fallback would make a wall-paced
 /// run indistinguishable from a tick-driven one.
-fn driver_pace(clock: &mut Clock, client: &Client) {
+fn driver_pace(clock: &mut Clock, client: &mut Client) {
     use std::sync::atomic::Ordering;
     if !tick_driven_driver() {
         clock.tick();
         return;
     }
-    let now_us = || (client.state().ecs().read_resource::<Time>().0 * 1_000_000.0) as u64;
+    // ★ PUMP WHILE WAITING. The first version SLEPT until the server-derived
+    // `Time` advanced -- but `Time` only advances IN THE CLIENT when the client
+    // is ticked and the network pumped, so it waited on a value its own waiting
+    // prevented from arriving (measured: one leg died on the anchor guard with
+    // 128 census emits vs 11,317; another fell back 326 times).
+    //
+    // Ticking inside the wait breaks that circularity: the loop advances the
+    // client until the SERVER's clock has moved one tick, so a driver spin is
+    // slaved to a server tick instead of to a wall deadline. Spin-count budgets
+    // (ACK_SPIN_CAP, ...) still count OUTER spins and simply cover more client
+    // ticks each -- more generous, not broken.
+    let now_us = |c: &Client| (c.state().ecs().read_resource::<Time>().0 * 1_000_000.0) as u64;
     let start = LAST_SIM_US.load(Ordering::Relaxed);
+    let t0 = now_us(client);
+    if start == 0 {
+        LAST_SIM_US.store(t0, Ordering::Relaxed);
+        return;
+    }
     let target = start + (1_000_000.0 / TPS as f64) as u64;
-    for poll in 0..2_000u32 {
-        let t = now_us();
-        if t >= target || (start == 0 && t > 0) {
-            LAST_SIM_US.store(t, Ordering::Relaxed);
+    let dt = std::time::Duration::from_secs_f64(1.0 / TPS as f64);
+    for pump in 0..600u32 {
+        if now_us(client) >= target {
+            LAST_SIM_US.store(now_us(client), Ordering::Relaxed);
             return;
         }
-        if poll == 1_999 {
+        let _ = client.tick(comp::ControllerInputs::default(), dt);
+        client.cleanup();
+        if pump == 599 {
             tracing::warn!(
                 start_us = start,
                 target_us = target,
-                "bastion: TICK-DRIVEN pace timed out waiting on server sim time;                  falling back to the WALL pace for this step"
+                "bastion: TICK-DRIVEN pace exhausted 600 pumps without the server                  clock advancing; this leg is NOT tick-driven and must be scored VOID"
             );
-            clock.tick();
-            LAST_SIM_US.store(now_us(), Ordering::Relaxed);
+            LAST_SIM_US.store(now_us(client), Ordering::Relaxed);
             return;
         }
-        std::thread::sleep(std::time::Duration::from_micros(200));
     }
 }
 
@@ -557,7 +548,7 @@ fn main() {
             },
         }
         client.cleanup();
-        driver_pace(&mut clock, &client);
+        driver_pace(&mut clock, &mut client);
         ticks += 1;
 
         // #89 (1bcd1d251c): the JOIN is the session boundary where
@@ -693,7 +684,7 @@ fn main() {
         }
         let _ = client.tick(comp::ControllerInputs::default(), driver_dt(&clock));
         client.cleanup();
-        driver_pace(&mut clock, &client);
+        driver_pace(&mut clock, &mut client);
         warmed += 1;
     };
     let Some(mut current_pos) = anchored else {
@@ -727,7 +718,7 @@ fn main() {
     for _ in warmed..(TPS * 2) {
         let _ = client.tick(comp::ControllerInputs::default(), driver_dt(&clock));
         client.cleanup();
-        driver_pace(&mut clock, &client);
+        driver_pace(&mut clock, &mut client);
     }
     // Re-read after the settle so the anchor is the SETTLED position, exactly as
     // before -- the wait above changed only whether `Pos` exists, not when it is
@@ -808,7 +799,7 @@ fn main() {
                         },
                     }
                     client.cleanup();
-                    driver_pace(&mut clock, &client);
+                    driver_pace(&mut clock, &mut client);
                     spins += 1;
                 }
                 if let Some(p) = own_pos(&client) {
@@ -871,7 +862,7 @@ fn main() {
                 // One tick round-trip to receive the echoed reply.
                 let _ = client.tick(comp::ControllerInputs::default(), driver_dt(&clock));
                 client.cleanup();
-                driver_pace(&mut clock, &client);
+                driver_pace(&mut clock, &mut client);
                 log.log(&format!("inspect_cell {pos:?} -> {:?}", client.bastion_inspect()));
             },
             ScriptCmd::InspectColonists => {
@@ -911,7 +902,7 @@ fn main() {
                     for _ in 0..60 {
                         let _ = client.tick(comp::ControllerInputs::default(), driver_dt(&clock));
                         client.cleanup();
-                        driver_pace(&mut clock, &client);
+                        driver_pace(&mut clock, &mut client);
                         if let Some((BastionInspectTarget::Entity(got), _)) =
                             client.bastion_inspect()
                             && *got == uid
@@ -1015,7 +1006,7 @@ fn main() {
                 for _ in 0..60 {
                     let _ = client.tick(comp::ControllerInputs::default(), driver_dt(&clock));
                     client.cleanup();
-                    driver_pace(&mut clock, &client);
+                    driver_pace(&mut clock, &mut client);
                     if let Some((BastionInspectTarget::Colony, payload)) = client.bastion_inspect()
                     {
                         got = Some(payload.clone());
@@ -1207,7 +1198,7 @@ fn main() {
                         },
                     }
                     client.cleanup();
-                    driver_pace(&mut clock, &client);
+                    driver_pace(&mut clock, &mut client);
                     if acked {
                         break;
                     }
@@ -1221,7 +1212,7 @@ fn main() {
                     Err(()) => {},
                 }
                 client.cleanup();
-                driver_pace(&mut clock, &client);
+                driver_pace(&mut clock, &mut client);
             },
         }
     }
