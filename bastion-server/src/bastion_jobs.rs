@@ -12699,14 +12699,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         recreation = needs.recreation,
                         comfort = mood_cfg.recreation.comfort,
                         below_comfort = needs.recreation < mood_cfg.recreation.comfort,
-                        in_cooldown = board.preempt_cooldown.contains_key(uid),
+                        in_cooldown = board
+                            .preempt_cooldown
+                            .get(uid)
+                            .is_some_and(|until| time.0 < *until),
                         "bastion: RECREATION GATE census (item 11 — which clause blocks?)"
                     );
                 }
                 if !serviced
                     && recreation_enabled()
                     && needs.recreation < mood_cfg.recreation.comfort
-                    && !board.preempt_cooldown.contains_key(uid)
+                    // ★★ ITEM 11 ROOT CAUSE (2026-08-20, 34,720-row census):
+                    // this line used `contains_key`, but NOTHING prunes
+                    // `preempt_cooldown` — expiry is checked AT READ TIME by
+                    // every other consumer (`get + time.0 < *until`, lines
+                    // ~12059/12250). `contains_key` therefore treats an
+                    // EXPIRED cooldown as active, so one cooldown insertion
+                    // locked a colonist out of recreation FOREVER. The census
+                    // read in_cooldown=true on 100% of rows while recreation
+                    // sat below comfort on 18,158 of them: every clause open
+                    // except this one, every time.
+                    && !board
+                        .preempt_cooldown
+                        .get(uid)
+                        .is_some_and(|until| time.0 < *until)
                 {
                     let until = time.0 + RECREATION_BREAK_SECS;
                     info!(
@@ -21886,6 +21902,26 @@ mod tests {
     /// pins the transition SHAPE the caller relies on: a fresh flee
     /// signal preempts, a repeated one (already fleeing) is a no-op.
     #[test]
+    /// ITEM 17 bar 2 (FELT, curve): the work rate must STRICTLY increase
+    /// with skill level. The planted control is the second assert -- if the
+    /// bonus is ever zeroed (or inverted), rate(5) == rate(0) and this test
+    /// goes red BY NAME, rather than "skills feel flat" surfacing as a vague
+    /// play report months later.
+    #[test]
+    fn item17_work_rate_strictly_increases_with_level() {
+        let r0 = work_rate(0);
+        let r1 = work_rate(1);
+        let r5 = work_rate(5);
+        assert!(r1 > r0, "level 1 must out-rate level 0: {r1} vs {r0}");
+        assert!(r5 > r1, "level 5 must out-rate level 1: {r5} vs {r1}");
+        // Planted control: equality anywhere on the curve means the skill
+        // bonus is dead and FELT is a fiction.
+        assert!(
+            (r5 - r0) > f32::EPSILON,
+            "the curve is FLAT -- WORK_SKILL_BONUS is not being applied"
+        );
+    }
+
     fn flee_preempt_transition_shape() {
         use comp::bastion::Drive;
         assert_eq!(flee_preempt_transition(true, Drive::Work), Some(Drive::Flee));
