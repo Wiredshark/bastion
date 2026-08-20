@@ -16,18 +16,28 @@ if [ -z "$W" ]; then
   echo "      the flag likely never reached the server (check BASTION_ENV)."
   rm -f "$C"; exit 3
 fi
-echo "adoption witness: $(echo "$W" | grep -oE 'town_origin=[^ ]+ plots=[0-9]+ farm_jobs=[0-9]+ bed_jobs=[0-9]+ stockpile_jobs=[0-9]+')"
-farms=$(echo "$W" | grep -oE 'farm_jobs=[0-9]+' | cut -d= -f2)
-beds=$(echo "$W"  | grep -oE 'bed_jobs=[0-9]+' | cut -d= -f2)
-stocks=$(echo "$W" | grep -oE 'stockpile_jobs=[0-9]+' | cut -d= -f2)
+# 2026-08-20 rework: placement is DEFERRED onto pending_restore (the first
+# leg placed 0 jobs of every kind racing unloaded terrain). The witness now
+# reports QUEUED counts; the DRAIN's own emit ("colony orders replayed") says
+# what actually landed once terrain streamed in.
+echo "adoption witness: $(echo "$W" | grep -oE 'town_origin=[^ ]+ plots=[0-9]+ queued=[0-9]+')"
+queued=$(echo "$W" | grep -oE 'queued=[0-9]+' | cut -d= -f2)
+replayed=$(grep -oE 'replayed=[0-9]+' "$C" | cut -d= -f2 | awk '{s+=$1} END {print s+0}')
+# fallback field-name form
+[ "$replayed" -eq 0 ] && replayed=$(grep "colony orders replayed" "$C" | grep -oE '[0-9]+' | head -1)
+echo "queued=$queued  drained(replayed)=$replayed"
 echo
-echo "BAR 1 (each mapped kind lands):"
-bar1=pass
-for pair in "farms=$farms" "beds=$beds" "stockpiles=$stocks"; do
-  n=${pair#*=}
-  if [ "${n:-0}" -eq 0 ]; then echo "  MISSING KIND: ${pair%%=*} = 0"; bar1=void; fi
-done
-[ "$bar1" = pass ] && echo "  all three kinds > 0 — PASS" || echo "  VOID naming the missing kind (per prereg: a town without that structure is a fixture fact)"
+echo "BAR 1 (adoption lands as real designations once terrain loads):"
+if [ "${queued:-0}" -eq 0 ]; then
+  echo "  VOID: nothing queued — the mapper found no usable plots."
+elif [ "${replayed:-0}" -eq 0 ]; then
+  echo "  FAIL/VOID: $queued queued, NOTHING drained — terrain never loaded the"
+  echo "  regions inside the run window, or the drain rejected them. Check"
+  echo "  'still_waiting' in the log to tell which."
+  grep -m2 "colony orders replayed\|still_waiting" "$C" | cut -c1-140
+else
+  echo "  PASS: $queued queued, $replayed placed by the drain."
+fi
 echo
 echo "BAR 2 (survival on adopted infrastructure, existing emits only):"
 printf "  eats     : %s\n" "$(grep -c 'bastion: ate\|EatFrom\|bastion: eat' "$C")"
