@@ -6893,34 +6893,22 @@ impl Server {
         let Ok(n) = std::env::var("BASTION_SEED_MATERIALS") else {
             return;
         };
-        let n: usize = n.parse().unwrap_or(0);
-        let bus = ecs.read_resource::<common::event::EventBus<common::event::CreateItemDropEvent>>();
-        let program_time = *ecs.read_resource::<common::resources::ProgramTime>();
-        for i in 0..n {
-            bus.emit_now(common::event::CreateItemDropEvent {
-                pos: comp::Pos(
-                    origin.map(|e| e as f32)
-                        + Vec3::new(
-                            2.5 + (i % 2) as f32,
-                            0.5 + ((i / 2) % 2) as f32,
-                            1.0,
-                        ),
-                ),
-                vel: comp::Vel(Vec3::zero()),
-                ori: comp::Ori::default(),
-                item: comp::PickupItem::new(
-                    comp::Item::new_from_asset_expect(common::bastion::BUILD_MATERIAL_ITEM),
-                    program_time,
-                    true,
-                ),
-                loot_owner: None,
-                persistent: true,
-            });
-        }
+        let n: u32 = n.parse().unwrap_or(0);
+        // Deferred: at an adopted town the origin chunk is UNLOADED at
+        // founding — direct emits landed in the void (food_stock=0 all
+        // leg while the witness said seeded=64). The board drain delivers
+        // when the chunk loads; on a loaded flat arena that's ~same tick.
+        ecs.write_resource::<crate::bastion_jobs::JobBoard>()
+            .pending_seed_items
+            .push((
+                origin + Vec3::new(2, 0, 0),
+                common::bastion::BUILD_MATERIAL_ITEM.to_string(),
+                n,
+            ));
         tracing::warn!(
             seeded = n,
             ?origin,
-            "bastion: BASTION_SEED_MATERIALS active — build economy supplied (FIXTURE lever; no balance number changed)"
+            "bastion: BASTION_SEED_MATERIALS active — QUEUED for chunk-load delivery (FIXTURE lever; no balance number changed)"
         );
     }
 
@@ -6928,35 +6916,12 @@ impl Server {
         let Ok(n) = std::env::var("BASTION_SEED_FOOD") else {
             return;
         };
-        let n: usize = n.parse().unwrap_or(0);
-        let bus = ecs.read_resource::<common::event::EventBus<common::event::CreateItemDropEvent>>();
-        let program_time = *ecs.read_resource::<common::resources::ProgramTime>();
-        for i in 0..n {
-            bus.emit_now(common::event::CreateItemDropEvent {
-                pos: comp::Pos(
-                    // 2×2, not 4×16: the wide spread put 63 of 64 seeds
-                    // OUTSIDE the preset stockpile zone (measured: stocked=1
-                    // at every cook refusal), starving every consumer that
-                    // requires STOCKPILED raw. Items merge into piles, so
-                    // tight stacking costs nothing.
-                    origin.map(|e| e as f32)
-                        + Vec3::new(
-                            0.5 + (i % 2) as f32,
-                            0.5 + ((i / 2) % 2) as f32,
-                            1.0,
-                        ),
-                ),
-                vel: comp::Vel(Vec3::zero()),
-                ori: comp::Ori::default(),
-                item: comp::PickupItem::new(
-                    comp::Item::new_from_asset_expect("common.items.food.mushroom"),
-                    program_time,
-                    true,
-                ),
-                loot_owner: None,
-                persistent: true,
-            });
-        }
+        let n: u32 = n.parse().unwrap_or(0);
+        // Deferred via the board queue (see bastion_seed_materials — the
+        // adopted-origin unloaded-chunk lesson applies identically here).
+        ecs.write_resource::<crate::bastion_jobs::JobBoard>()
+            .pending_seed_items
+            .push((origin, "common.items.food.mushroom".to_string(), n));
         tracing::warn!(
             seeded = n,
             ?origin,

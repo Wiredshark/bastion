@@ -5736,6 +5736,15 @@ pub struct JobBoard {
         f32,
         f32,
     )>,
+    /// bastion (ADOPT bar 2, 2026-08-20): seed items (pos, def, count)
+    /// queued until the target chunk LOADS — items seeded at an adopted
+    /// town's founding spawned into unloaded space and never counted
+    /// (food_stock=0 an entire leg while the emit's own witness said
+    /// seeded=64: print-what-you-delivered's exact failure). Drained on
+    /// the pending_adopt_surface cadence; on a loaded flat arena the
+    /// drain fires within a tick, so founded-colony behavior is
+    /// unchanged in effect.
+    pub pending_seed_items: Vec<(Vec3<i32>, String, u32)>,
     /// bastion (B7-1): the bed slots, keyed by block position — the
     /// reservations-table shape (capacity-1 occupancy). OWNERSHIP truth
     /// persists on the colonist record; this is the runtime table
@@ -7695,6 +7704,58 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     );
                 }
                 board.pending_adopt_surface = still_waiting;
+            }
+
+            // ── ADOPT bar 2: the deferred seed-item drain ────────────────
+            // Same contract as the surface queue above: deliver only into
+            // LOADED terrain, witness the delivery with the count, and keep
+            // waiting entries. `terrain.get` Ok is the load probe (the
+            // surface drain's own test).
+            if !board.pending_seed_items.is_empty() {
+                let pending = std::mem::take(&mut board.pending_seed_items);
+                let mut still_waiting = Vec::new();
+                for (pos, def, count) in pending {
+                    if terrain.get(pos).is_ok() {
+                        for i in 0..count {
+                            item_drop_emitter.emit(CreateItemDropEvent {
+                                pos: comp::Pos(
+                                    pos.map(|e| e as f32)
+                                        + Vec3::new(
+                                            0.5 + (i % 2) as f32,
+                                            0.5 + ((i / 2) % 2) as f32,
+                                            1.0,
+                                        ),
+                                ),
+                                vel: comp::Vel(Vec3::zero()),
+                                ori: comp::Ori::default(),
+                                item: comp::PickupItem::new(
+                                    comp::Item::new_from_asset_expect(&def),
+                                    *program_time,
+                                    true,
+                                ),
+                                loot_owner: None,
+                                persistent: true,
+                            });
+                        }
+                        info!(
+                            ?pos,
+                            def = %def,
+                            count,
+                            "bastion: deferred seed items DELIVERED (chunk loaded)"
+                        );
+                    } else {
+                        if tick.0 % 300 == 0 {
+                            info!(
+                                ?pos,
+                                def = %def,
+                                count,
+                                "bastion: deferred seed items WAITING (chunk not loaded)"
+                            );
+                        }
+                        still_waiting.push((pos, def, count));
+                    }
+                }
+                board.pending_seed_items = still_waiting;
             }
 
             let mut decay_join_count: u32 = 0;
@@ -13286,7 +13347,37 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // grabbed it, a merge consumed it):
                                     // release reservation + claim; next
                                     // arbitration re-evaluates materials.
-                                    board.reservations.remove(&rid);
+                                    //
+                                    // ITEM 27 (2026-08-20): through the ONE
+                                    // releaser — the raw `.remove` left the
+                                    // `reservations_by_item` cache holding
+                                    // orphaned rids (census: `live=1
+                                    // held_by_jobs=0`), permanently
+                                    // inflating reserved_count for that
+                                    // item. Also WITNESSED now: this branch
+                                    // was silent, and a silent release is
+                                    // indistinguishable from the fetch leg
+                                    // never engaging.
+                                    // Field-split inline of
+                                    // `release_reservation` — `job` holds
+                                    // a live &mut into board.jobs, so the
+                                    // &mut self method can't be called
+                                    // here (E0499); the two reservation
+                                    // tables are disjoint fields.
+                                    if let Some(item) = board.reservations.remove(&rid)
+                                        && let hashbrown::hash_map::Entry::Occupied(mut e) =
+                                            board.reservations_by_item.entry(item)
+                                    {
+                                        e.get_mut().retain(|&r| r != rid);
+                                        if e.get().is_empty() {
+                                            e.remove();
+                                        }
+                                    }
+                                    info!(
+                                        job = active.job,
+                                        rid,
+                                        "bastion: ITEM 27 fetch target vanished — reservation released, claim dropped"
+                                    );
                                     job.reservation = None;
                                     job.needs_materials = true;
                                     to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
@@ -16747,6 +16838,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 carried_now = ?carried_now,
                                 "bastion: job stalled on materials -- required item not found in colonist inventory"
                             );
+                            // ITEM 27 CONVERGENT RETRY (2026-08-20): a job
+                            // still holding a LIVE fetch reservation has a
+                            // designed way to get the item — the fetch leg.
+                            // Releasing here abandoned that contract, and
+                            // the claim→instant-arrival→stall→release loop
+                            // burned 8 Cook claims per leg with cooked=0.
+                            // Revert to Traveling instead; the fetch steer
+                            // walks to the reserved item, the pickup flips
+                            // `carrying`, and the NEXT arrival consumes.
+                            // The stuck/strike machinery still bounds a
+                            // fetch that can never complete.
+                            if let Some(rid) = job.reservation
+                                && board.reservations.contains_key(&rid)
+                            {
+                                info!(
+                                    job = active.job,
+                                    kind = ?job.kind,
+                                    "bastion: ITEM 27 stall with live fetch reservation — reverting to fetch leg"
+                                );
+                                job.progress = 0.0;
+                                active.state = ActiveJobState::Traveling;
+                                continue;
+                            }
                             job.progress = 0.0;
                             job.needs_materials = true;
                             to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
@@ -21864,12 +21978,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // every story still fitting; this line kills the wrong
                     // ones.)
                     if let Some(req) = job.required_item {
+                        // carried_amount: the COUNT, not the bool — the
+                        // carried-then-vanished stalls need the starting
+                        // quantity to separate "had 1, ate it" from
+                        // "had 64, all gone" (very different removers).
+                        let carried_amount: u32 = inventories
+                            .get(entity)
+                            .map(|inv| {
+                                inv.slots()
+                                    .flatten()
+                                    .filter(|i| {
+                                        i.item_definition_id().itemdef_id() == Some(req)
+                                    })
+                                    .map(|i| i.amount())
+                                    .sum()
+                            })
+                            .unwrap_or(0);
                         info!(
                             job = job_id,
                             kind = ?job.kind,
                             colonist = uid.0.get(),
                             required_item = req,
                             carried = carried_defs.contains(req),
+                            carried_amount,
                             fetch = fetch_rid.is_some(),
                             held_reservation = job.reservation.is_some(),
                             "bastion: ITEM 27 material-job claim committed"
