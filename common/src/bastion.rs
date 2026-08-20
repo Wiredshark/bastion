@@ -377,6 +377,15 @@ pub enum DesignationKind {
     /// Gather cells, a farm cell never completes out of the footprint).
     /// Appended LAST (wire rule).
     Farm,
+    /// bastion (ITEM 27): a COOKING STATION — built like a Bed (completion
+    /// registers a station), then Cook jobs generate at it whenever raw food
+    /// sits in a stockpile. Appended at DesignationKind's REAL tail — the
+    /// first draft went mid-enum, and the second landed inside
+    /// AffordanceClass entirely (SolidTarget/AdjacentToBase belong to it,
+    /// not here), where it compiled clean precisely because nothing matched
+    /// it. A green check on a wrong-enum insert is the trap: the five
+    /// non-exhaustive errors are the SUCCESS signal for this edit.
+    CookStation,
 }
 
 /// bastion (task #64, KindAffordance): what `Job::pos` PHYSICALLY MEANS —
@@ -467,6 +476,7 @@ impl DesignationKind {
             DesignationKind::Gather => "Gather",
             DesignationKind::Bed => "Bed",
             DesignationKind::Farm => "Farm",
+            DesignationKind::CookStation => "CookStation",
         }
     }
 
@@ -482,6 +492,8 @@ impl DesignationKind {
     /// MUST be `true` here.
     pub fn is_tool_paintable(&self) -> bool {
         match self {
+            // ITEM 27: painted like a Bed.
+            DesignationKind::CookStation => true,
             // ITEM 14: both are player-painted assignments.
             DesignationKind::GuardPost | DesignationKind::PatrolPoint => true,
             DesignationKind::Mine
@@ -516,6 +528,8 @@ impl DesignationKind {
     /// future Gather/Forage/surface-zone kind gets the branch free.
     pub fn footprint_mode(&self) -> FootprintMode {
         match self {
+            // ITEM 27: a station is a surface placement.
+            DesignationKind::CookStation => FootprintMode::Area2D,
             // ITEM 14: a station/waypoint is a SURFACE place, like a zone.
             DesignationKind::GuardPost | DesignationKind::PatrolPoint => FootprintMode::Area2D,
             // ZONE-0: zones are surface activity areas — pure XY.
@@ -541,6 +555,8 @@ impl DesignationKind {
     /// the designation itself carries none.
     pub fn purpose(&self) -> Option<Purpose> {
         match self {
+            // ITEM 27: the station itself carries no asset purpose.
+            DesignationKind::CookStation => None,
             // ITEM 14: an assignment place carries no ASSET purpose.
             DesignationKind::GuardPost | DesignationKind::PatrolPoint => None,
             DesignationKind::Mine
@@ -785,6 +801,9 @@ impl DesignationKind {
             // ITEM 14: both assignment types map to the same work; the
             // DIFFERENCE between post and patrol is the job, not the labour.
             DesignationKind::GuardPost | DesignationKind::PatrolPoint => WorkType::Guard,
+            // ITEM 27: BUILDING the station is construction — Cook is the
+            // labour at the finished station, generated separately.
+            DesignationKind::CookStation => WorkType::Build,
             DesignationKind::Mine => WorkType::Mine,
             DesignationKind::Chop => WorkType::Chop,
             // B5.8: placing a ladder is construction work. B7-1: so is a
