@@ -357,6 +357,26 @@ colony's continuous eating, or a reservation leak on released claims — six
 34,813 counted refusals** — the raws are present and stockpiled all run; every
 unit is reserved, permanently. With 8 eaters legitimately holding ≤8 of 64,
 this is a LEAK, not load.
+
+**LEAK FIXED structurally (2026-08-20): abandoned self-jobs (EatFrom/RestAt/
+Despond/Recreate) never reached `remove_job` — the sole reservation releaser.**
+Release drain now removes self-jobs outright; both direct `.jobs.remove`
+bypasses routed through `remove_job`. Verified 27× refusal reduction.
+
+**DISCLOSURE (2026-08-20, cookery5): the "63/64 seeds outside the zone" claim
+was WRONG.** The `stocked=1 reserved=1` refusal lines were req=`wheat_seeds`
+(sow jobs starving on one reserved seed stack) — read-the-content-not-the-label.
+The 2×2-spread commit's causal claim is retracted; the spread change is
+harmless but was aimed at a phantom.
+
+**CURRENT PRECISE QUESTION (cookery5): the generator's own witness says
+`stocked=0` mushrooms — zero FOOD_DEFS items inside any zone — while cookery3
+(older binary, 4×16 spread) had the SAME generator seeing raw and minting 9
+Cook jobs.** Same join shape, opposite answers across legs. Candidates: items
+absent (spawn/despawn), fell/moved out of the z-band, or def drift. CENSUS
+INSTRUMENT LANDED (commit 0691a51ee3): idle witness now dumps the actual
+loose-item table (total, per-food pos + in_zone + reserved). cookery6 leg
+launched; its census decides.
 **Suspect, narrowed by producer reads:** hauls release correctly (T1.15,
 `remove_job` releases on deposit — verified in-code). **EatFrom reserves
 capacity at preempt time (`board.reserve(item, amount)`, ~12745)** — and the

@@ -285,6 +285,12 @@ case "$ARM" in
   adopt)        PITVAR=" BASTION_ADOPT_TOWN=1 BASTION_AUTOFOUND_REAL_TERRAIN=1 BASTION_COLONY_PRESENCE_VD=3"
               PITARENA=""
               SCRIPT="script-adopt.txt" ;;
+  # adoptfed (bar 2): same adoption shape + seeded food, so the survival
+  # window outlasts the eat cycle and production completions + eats can
+  # accumulate (bar 1's leg proved access-work only).
+  adoptfed)     PITVAR=" BASTION_ADOPT_TOWN=1 BASTION_AUTOFOUND_REAL_TERRAIN=1 BASTION_COLONY_PRESENCE_VD=3 BASTION_SEED_FOOD=64"
+              PITARENA=""
+              SCRIPT="script-adopt.txt" ;;
   guardwound)   PITVAR=" BASTION_ACCESS_CLAIM_DIAG=1 BASTION_GUARD_BRAVERY=0.8,0.2 BASTION_GUARD_HOLD_DIAG=1 BASTION_GUARD_PLANT_WOUND=0.5"
               SCRIPT="script-guard.txt" ;;
   recrabfedctl) PITVAR=" BASTION_SEED_FOOD=64"
