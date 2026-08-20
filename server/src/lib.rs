@@ -6973,13 +6973,22 @@ impl Server {
         // Its OWN resource, never the JobBoard: the founding caller holds
         // the board mutably and a second borrow here panicked the server
         // on boot (atomic_refcell, chain10 cookdiag VOID).
-        ecs.write_resource::<crate::bastion_jobs::PendingSeedItems>()
-            .0
-            .push((
+        {
+            let mut q = ecs.write_resource::<crate::bastion_jobs::PendingSeedItems>();
+            q.0.push((
                 origin + Vec3::new(2, 0, 0),
                 common::bastion::BUILD_MATERIAL_ITEM.to_string(),
                 n,
             ));
+            // ITEM 29: half as many LOGS beside the stones — the trade
+            // mission's sellable lot (CHOP_DROP_ITEM), so a trade leg can
+            // fixture "wood to sell" the same way builds fixture stone.
+            q.0.push((
+                origin + Vec3::new(4, 0, 0),
+                common::bastion::CHOP_DROP_ITEM.to_string(),
+                (n / 2).max(1) as u32,
+            ));
+        }
         tracing::warn!(
             seeded = n,
             ?origin,
