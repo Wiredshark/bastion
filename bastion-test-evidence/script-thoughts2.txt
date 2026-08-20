@@ -1,0 +1,18 @@
+note ITEM 23 display bar -- the deposit-thought hook (synthetic EMITTER, real
+note queue -> chronicle -> mood recompute -> payload path; the hook's own doc
+note blesses exactly this framing). Names are deterministic (same seed).
+note BAR: MOODX for the named colonists shows the deposited thought with its
+note table magnitude, and total moves off the needs-only value by that term.
+note The un-deposited colonists are the in-leg control.
+anchor
+wait 2000
+note --- baseline sample (no thoughts anywhere) ---
+inspect_colonists
+cmd bastion_thought SleptInBed Osric of the Vale
+cmd bastion_thought CaveIn Awen the Wary
+wait 600
+note --- post-deposit: Osric +0.08 SleptInBed, Awen -0.2 CaveIn, others flat ---
+inspect_colonists
+wait 3000
+note --- decay sample: both thoughts should have decayed toward zero ---
+inspect_colonists
