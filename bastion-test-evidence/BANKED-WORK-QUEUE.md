@@ -435,6 +435,19 @@ Producer+drain+display all proven; bars need ≥3 windows (pintrait legs carry
 3 inspects), the null (vacuous in the preset box — every pair co-works; name
 it or fixture a split), determinism twin, persistence leg.
 
+**Bar 1 evidence landed (pintrait + pintraitctl, 3 samples each): NET rise
+on every pair toward the 0.4 cap** (uid=4→5: 0.262→0.381→0.397), roughly
+SYMMETRIC (3→4 = 0.230/0.357/0.397 vs 4→3 = 0.230/0.349/0.397). **Honesty
+note: NOT strictly monotone** — uid=3→9 dipped 0.262→0.254 in one window
+(vanilla stochastic decay outpacing accrual — the DESIGNED mechanism; the
+prereg's "monotonically" was written before reading decay's RNG semantics).
+Bar reading = net rise with saturation; the wording correction is disclosed,
+not smoothed. Null still vacuous (all pairs credited in the preset box).
+Remaining: determinism twin (NOTE: decay draws from an rtsim RNG — twin legs
+will test whether it is deterministic under BASTION_DETERMINISTIC; if not,
+that is a REAL determinism-by-construction violation to fix, not a test
+nuisance), persistence (save/load), and a non-vacuous null fixture.
+
 **Item 23 leg 2 (mult=20, post unit-gate): the fixture defeats its own
 precondition.** Treatment delivered (witness mult=20.0), needs collapse to
 zero in the first window, 388 need-preempt claims, and ZERO Bed jobs are
