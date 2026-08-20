@@ -119,3 +119,8 @@ readme/loop-sessions/
 
 ## Python bytecode cache (apex tooling)
 __pycache__/
+
+# renderer-bench smoke run artifacts (never source)
+userdata-rbench-*/
+readme/renderer-bench/smoke/
+*.log

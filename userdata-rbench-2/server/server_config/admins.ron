@@ -1,7 +1,0 @@
-V1({
-    "f23d5275-be65-9bb2-7218-edb5c33031d2": (
-        username_when_admined: Some("rbench-2"),
-        date: "2026-08-20T17:12:47.638028600Z",
-        role: Admin,
-    ),
-})

@@ -1,8 +1,0 @@
-(
-    update_shutdown_grace_period_secs: 120,
-    update_shutdown_message: "The server is restarting for an update",
-    web_address: "127.0.0.1:14005",
-    web_chat_secret: None,
-    ui_api_secret: None,
-    shutdown_signals: [],
-)
