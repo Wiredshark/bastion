@@ -1170,6 +1170,7 @@ pub(crate) fn job_kind_label(kind: &common::bastion::JobKind) -> &'static str {
             DesignationKind::Zone(_) => "Designated:Zone",
             DesignationKind::Gather => "Designated:Gather",
             DesignationKind::Bed => "Designated:Bed",
+            DesignationKind::CookStation => "Designated:CookStation",
             DesignationKind::Farm => "Designated:Farm",
         },
         common::bastion::JobKind::Haul { .. } => "Haul",
@@ -1886,9 +1887,11 @@ fn job_wanted(kind: DesignationKind, block: &Block) -> bool {
         },
         // B5.8: a ladder rung, like Build, goes into currently-open space.
         // B7-1: a bed too.
-        DesignationKind::Build | DesignationKind::Ladder | DesignationKind::Bed => {
-            !block.is_filled()
-        },
+        // ITEM 27: a station, like a bed, goes into open space.
+        DesignationKind::Build
+        | DesignationKind::Ladder
+        | DesignationKind::Bed
+        | DesignationKind::CookStation => !block.is_filled(),
         DesignationKind::Stockpile | DesignationKind::Zone(_) => false,
         // GATHER (row 38): forage — one job per collectible PLANT sprite
         // (the TerrainResource food allowlist; Stones/Wood/Gem/Ore stay
@@ -1945,9 +1948,11 @@ fn designation_affordance(kind: DesignationKind) -> AffordanceClass {
         DesignationKind::Mine | DesignationKind::Chop | DesignationKind::Gather => {
             AffordanceClass::SolidTarget
         },
-        DesignationKind::Build | DesignationKind::Bed | DesignationKind::Ladder => {
-            AffordanceClass::OnTopAlways
-        },
+        // ITEM 27: the station builds like a bed.
+        DesignationKind::Build
+        | DesignationKind::Bed
+        | DesignationKind::Ladder
+        | DesignationKind::CookStation => AffordanceClass::OnTopAlways,
         DesignationKind::Stockpile | DesignationKind::Zone(_) | DesignationKind::Farm => {
             AffordanceClass::Untargeted
         },
@@ -5028,6 +5033,14 @@ pub struct JobBoard {
     /// DRAINS it (it can see the terrain). Neither system can do both, which
     /// is why the queue exists rather than a direct restore.
     pub pending_restore: Vec<(Region, DesignationKind)>,
+    /// bastion (ADOPT-A-TOWN): deferred SURFACE placements — (min_xy, max_xy,
+    /// hint_z, kind), drained like `pending_restore` but through
+    /// `place_designation_surface`. Exists because draining adopted plots
+    /// through the VOLUME path buried their jobs (my z-band put cells
+    /// underground, the enclosure sweep marked every one unreachable, and
+    /// the whole colony sat idle refusing them: not_candidate=8,
+    /// unreachable_job=8, eligible=0 for 12,000 ticks).
+    pub pending_adopt_surface: Vec<(vek::Vec2<i32>, vek::Vec2<i32>, i32, DesignationKind)>,
     /// Whether the one-shot seed has run this server lifetime. Without it
     /// the seed would re-add orders every tick, and a cancelled designation
     /// would resurrect itself.
@@ -7573,6 +7586,41 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     );
                 }
                 board.pending_restore = still_waiting;
+            }
+            // ADOPT-A-TOWN: drain deferred SURFACE placements the same way.
+            if !board.pending_adopt_surface.is_empty() {
+                let pending = std::mem::take(&mut board.pending_adopt_surface);
+                let mut still_waiting = Vec::new();
+                let mut placed = 0usize;
+                for (min_xy, max_xy, hint_z, kind) in pending {
+                    let ready = terrain
+                        .get(vek::Vec3::new(min_xy.x, min_xy.y, hint_z))
+                        .is_ok()
+                        && terrain
+                            .get(vek::Vec3::new(max_xy.x, max_xy.y, hint_z))
+                            .is_ok();
+                    if ready {
+                        let created = board.place_designation_surface(
+                            &terrain,
+                            min_xy,
+                            max_xy,
+                            hint_z,
+                            common::bastion::ZExtent::default_for(kind),
+                            kind,
+                        );
+                        placed += created.len();
+                    } else {
+                        still_waiting.push((min_xy, max_xy, hint_z, kind));
+                    }
+                }
+                if placed > 0 {
+                    info!(
+                        placed,
+                        still_waiting = still_waiting.len(),
+                        "bastion: ADOPT-A-TOWN surface designations placed as terrain loaded"
+                    );
+                }
+                board.pending_adopt_surface = still_waiting;
             }
 
             let mut decay_join_count: u32 = 0;
@@ -16179,6 +16227,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // block, and an assignment place has none.
                             DesignationKind::GuardPost
                             | DesignationKind::PatrolPoint => true,
+                            // ITEM 27: same still-valid rule as Bed — the
+                            // completion re-check below covers construction.
+                            DesignationKind::CookStation => !terrain
+                                .get(job.pos)
+                                .ok()
+                                .is_some_and(|b| b.is_filled()),
                             DesignationKind::Mine => {
                                 terrain.get(job.pos).ok().is_some_and(|b| b.is_filled())
                             },

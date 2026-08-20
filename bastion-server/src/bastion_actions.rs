@@ -68,6 +68,10 @@ pub fn completion_block(kind: JobKind) -> Option<Block> {
             // designation with its own named-sprite completion; frames
             // are the BedKind data extension).
             DesignationKind::Bed => Some(Block::air(SpriteKind::Bedroll)),
+            // ITEM 27: the station is a vanilla cooking pot — the Bed
+            // pattern exactly (a designation whose completion places a
+            // named sprite the game already ships).
+            DesignationKind::CookStation => Some(Block::air(SpriteKind::CookingPot)),
             // GATHER: the sprite is consumed by the authoritative
             // interaction (`into_collected` in the manip handler) — never
             // deleted here (the doc-comment above promised exactly this).

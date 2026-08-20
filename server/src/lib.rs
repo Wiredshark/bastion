@@ -6763,34 +6763,35 @@ impl Server {
         plots: &[(common::bastion::DesignationKind, Vec2<i32>, Vec2<i32>)],
         hint_z: i32,
     ) {
-        let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
+        // ★ DEFERRED, not immediate (2026-08-20). The first live leg found the
+        // town, mapped 5 plots — and placed ZERO jobs of every kind, because
+        // placement ran at founding tick against terrain that had not streamed
+        // in yet ("unloaded" and "unsuitable" render identically to a surface
+        // resolve). Item 18 solved this exact problem for save-restore:
+        // `pending_restore` holds (Region, kind) rows and the bastion tick
+        // drains each once BOTH its corners are loaded, through
+        // `place_designation` — the same authority everything else uses. The
+        // adopted plots ride that path; the z-band brackets the town datum so
+        // the volume covers each plot's actual surface.
         let mut board = ecs.write_resource::<bastion_server::bastion_jobs::JobBoard>();
-        let (mut farms, mut beds, mut stocks) = (0u32, 0u32, 0u32);
+        let mut queued = 0usize;
         for (kind, min, max) in plots {
-            let created = board.place_designation_surface(
-                &terrain,
-                *min,
-                *max,
-                hint_z,
-                common::bastion::ZExtent::default_for(*kind),
-                *kind,
-            );
-            match kind {
-                common::bastion::DesignationKind::Farm => farms += created.len() as u32,
-                common::bastion::DesignationKind::Bed => beds += created.len() as u32,
-                _ => stocks += created.len() as u32,
-            }
+            // SURFACE queue, not the volume one: the volume z-band buried the
+            // jobs (unreachable_job=8, colony idle 12,000 ticks). The surface
+            // drain resolves each column's own top, which is what a town plot
+            // actually is.
+            board
+                .pending_adopt_surface
+                .push((*min, *max, hint_z, *kind));
+            queued += 1;
         }
         tracing::info!(
             ?town_origin,
             plots = plots.len(),
-            farm_jobs = farms,
-            bed_jobs = beds,
-            stockpile_jobs = stocks,
-            "bastion: ADOPT-A-TOWN founded into an existing settlement"
+            queued,
+            "bastion: ADOPT-A-TOWN founded into an existing settlement              (designations QUEUED, placed as terrain loads)"
         );
         drop(board);
-        drop(terrain);
         // The survival window still needs food: the fixture lever applies
         // identically here.
         Self::bastion_seed_food(ecs, Vec3::new(town_origin.x, town_origin.y, hint_z));
