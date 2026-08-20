@@ -7436,6 +7436,19 @@ pub struct PendingSeedItems(pub Vec<(Vec3<i32>, String, u32)>);
 #[derive(Default)]
 pub struct TradePriceBook(pub Vec<(Vec3<i32>, f32)>);
 
+/// bastion (ITEM 31, POWER-0): the colony's DIVINE FAVOR — the cast-cost
+/// pool. Placeholder trickle regen per the dispatch spec's (d) revision
+/// (devotion lands with DF-RELIGION; the pipeline must not gate on it).
+/// Server-side only: the favor gate is never client-trusted (spec ★(f)).
+/// Starts EMPTY — the first cast attempt exercises the refusal branch by
+/// construction. MANUALLY inserted (the measured auto-setup lesson).
+#[derive(Default)]
+pub struct DivineFavor(pub f32);
+pub const FAVOR_REGEN_PER_SEC: f32 = 0.2;
+pub const FAVOR_CAP: f32 = 20.0;
+/// One Smite's cost — 25 game-seconds of trickle.
+pub const SMITE_COST: f32 = 5.0;
+
 /// bastion (ITEM 29): mint a mission when colony food drops below this.
 /// A PAR, not a balance tweak — the par-stock pull the charter names.
 pub const TRADE_FOOD_PAR: u32 = 16;
@@ -7591,6 +7604,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 Write<'a, PendingSeedItems>,
                 // ITEM 29: the server-refreshed price book (read-only here).
                 Read<'a, TradePriceBook>,
+                // ITEM 31: the favor pool (trickle regen lives here).
+                Write<'a, DivineFavor>,
             ),
         ),
     );
@@ -7659,6 +7674,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     mut mine_readback,
                     mut pending_seed_items,
                     trade_price_book,
+                    mut divine_favor,
                 ),
             ),
         ): Self::SystemData,
@@ -11011,6 +11027,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 }
             }
         }
+
+        // ── ITEM 31: divine favor trickle (POWER-0's cost pool) ──────────
+        // Per-tick, dt-scaled, capped — the identity shape (no cast, no
+        // change beyond the trickle; casts deduct in the command handler).
+        divine_favor.0 = (divine_favor.0 + FAVOR_REGEN_PER_SEC * dt.0).min(FAVOR_CAP);
 
         // ── ITEM 29: the TRADE MISSION generator ─────────────────────────
         // Par-stock pull: when colony food drops below TRADE_FOOD_PAR and

@@ -156,6 +156,7 @@ fn do_command(
         ServerChatCommand::BastionArena => handle_bastion_arena,
         ServerChatCommand::BastionPriority => handle_bastion_priority,
         ServerChatCommand::BastionThought => handle_bastion_thought,
+        ServerChatCommand::BastionSmite => handle_bastion_smite,
         ServerChatCommand::BattleMode => handle_battlemode,
         ServerChatCommand::BattleModeForce => handle_battlemode_force,
         ServerChatCommand::Body => handle_body,
@@ -6313,6 +6314,93 @@ fn handle_lightning(
 /// ONLY from the harness. This command is the missing player-facing half, and
 /// it routes to that same setter rather than growing a second write — a
 /// duplicate here would drift from the one the harness proves.
+/// bastion (ITEM 31, POWER-0): the first god-power CAST, server-authoritative
+/// end to end per the dispatch spec's FR5 revisions — the favor gate runs
+/// HERE (a client cannot self-grant), the effect is REAL damage through the
+/// same `HealthChange` seam every other damage uses (★(f): an Outcome alone
+/// is a light show), the VFX is `Outcome::Lightning`, and the no-command
+/// invariant holds by construction (nothing here touches jobs, the arbiter,
+/// or any destination — a smitten colonist decides afresh). An unaffordable
+/// cast refuses LOUDLY with the price beside the balance.
+fn handle_bastion_smite(
+    server: &mut Server,
+    _client: EcsEntity,
+    _target: EcsEntity,
+    args: Vec<String>,
+    action: &ServerChatCommand,
+) -> CmdResult<()> {
+    let name = args.join(" ");
+    if name.is_empty() {
+        return Err(action.help_content());
+    }
+    use specs::Join;
+    let ecs = server.state.ecs();
+    // The favor gate FIRST — before any target work, so an unaffordable
+    // cast has exactly one observable effect: the refusal line.
+    {
+        let favor = ecs.read_resource::<crate::bastion_jobs::DivineFavor>();
+        if favor.0 < crate::bastion_jobs::SMITE_COST {
+            tracing::info!(
+                favor = favor.0,
+                cost = crate::bastion_jobs::SMITE_COST,
+                "bastion: ITEM 31 smite REFUSED — insufficient favor"
+            );
+            return Err(Content::Plain(format!(
+                "bastion: smite refused — favor {:.1} < cost {:.1}",
+                favor.0,
+                crate::bastion_jobs::SMITE_COST
+            )));
+        }
+    }
+    let target = {
+        let entities = ecs.entities();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let positions = ecs.read_storage::<comp::Pos>();
+        (&entities, &colonists, &positions)
+            .join()
+            .find(|(_, c, _)| c.0.name == name)
+            .map(|(e, _, p)| (e, p.0))
+    };
+    let Some((entity, pos)) = target else {
+        return Err(action.help_content());
+    };
+    let time = *ecs.read_resource::<common::resources::Time>();
+    let mut healths = ecs.write_storage::<comp::Health>();
+    let uids = ecs.read_storage::<Uid>();
+    if let Some(mut health) = healths.get_mut(entity) {
+        let before = health.fraction();
+        let dmg = health.maximum() * 0.6;
+        let instance = uids.get(entity).map_or(0, |target_uid| {
+            combat::derive_attack_instance("bastion/smite/v1", None, *target_uid, time, 0)
+        });
+        health.change_by(comp::HealthChange {
+            amount: -dmg,
+            by: None,
+            cause: None,
+            precise: false,
+            time,
+            instance,
+        });
+        let after = health.fraction();
+        drop(healths);
+        ecs.read_resource::<EventBus<Outcome>>()
+            .emit_now(Outcome::Lightning { pos });
+        let mut favor = ecs.write_resource::<crate::bastion_jobs::DivineFavor>();
+        favor.0 -= crate::bastion_jobs::SMITE_COST;
+        tracing::info!(
+            target = %name,
+            health_before = before,
+            health_after = after,
+            cost = crate::bastion_jobs::SMITE_COST,
+            favor_after = favor.0,
+            "bastion: ITEM 31 SMITE cast — real damage applied, VFX emitted, favor paid"
+        );
+        Ok(())
+    } else {
+        Err(action.help_content())
+    }
+}
+
 /// bastion (ITEM 23): the deposit-thought harness hook on the wire — kind
 /// first, then the name (names carry spaces, so the tail is joined). The
 /// EMITTER is synthetic; everything downstream (queue → chronicle → mood
