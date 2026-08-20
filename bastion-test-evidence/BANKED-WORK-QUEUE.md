@@ -350,6 +350,19 @@ without crossing that routing.
 | Item 22 (relationships) | BUILT + bar 1 landed (net rise, symmetric, cap-saturating); persistence + null fixture remain |
 | Item 30 (typed zones) | BUILT (FoodStore typed stockpile + selector preference + refusal witness); zones leg in chain10 |
 
+## YEAR-LEG FINDING — starved beside a full larder (2026-08-20, NEW ROW)
+
+The year leg's colony hit hunger=0.0 on every colonist WHILE food_stock
+read 559 (autumn peak) — **33 eats in 161 days for 8 colonists**. The eat
+generator's candidate filter has NO zone clause (any FOOD_DEFS item with
+capacity), so the wall is elsewhere: candidates (preempt cooldown? the
+need-order gate? eat-claim scoring? reach?). This is the guard-starves-
+its-protectee shape again, colony-scale, and it is invisible in short legs
+(hunger never dips inside them — every prior eat evidence came from
+recr-style legs with pre-dipped need pins). INSTRUMENT FIRST: the
+need-preempt path needs a refusal census like the claim gate's (reason
+counters beside the preempt_attempts counter that already exists).
+
 ## Item 29 build plan (post-prereg, 2026-08-20)
 
 Architecture: bastion-server is a leaf crate and cannot see `world::site`
