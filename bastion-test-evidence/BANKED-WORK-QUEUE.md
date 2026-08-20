@@ -368,6 +368,17 @@ the job dies. The vanish branch is SHARED with the cook fetch, so this
 batch's vanish WITNESS + the convergent-retry pattern already instrument
 it: the next long leg counts "fetch target vanished" per job kind for free.
 
+## Item 22 persistence leg — SHAPE (2026-08-20)
+
+The a4-restart pattern is the precedent (script-a4-restart-found.txt: a
+second server invocation on the SAME USERDATA). Needs one run-pit hook:
+`PIT_KEEP_USERDATA=1` skips the `rm -rf userdata-$TAG` wipe. Leg A =
+pintrait-style co-work accumulation + graceful shutdown (rtsim saves per
+60s + on shutdown); leg B = same tag with the keep-flag, script inspects —
+SENT values must survive the reload (sentiments ride the persisted npc
+record; the leg validates the ride, both directions compared). Implement
+the hook at the next run-pit idle window.
+
 ## Item 29 build plan (post-prereg, 2026-08-20)
 
 Architecture: bastion-server is a leaf crate and cannot see `world::site`
