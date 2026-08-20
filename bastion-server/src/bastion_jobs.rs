@@ -10794,9 +10794,31 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     });
                 let Some(raw_def) = raw else {
                     // The couldn't-happen witness for the broken-link bar:
-                    // station idle BECAUSE no raw input, said by name.
+                    // station idle BECAUSE no raw input, said by name — and
+                    // the RESERVED count beside it, because the claim gate's
+                    // only extra clause is is_reserved and "all reserved" vs
+                    // "none stockpiled" must not render identically.
                     if tick.0 % (ARBITRATION_INTERVAL as u64 * 40) == 11 {
-                        info!(station = ?st, "bastion: ITEM 27 cook station idle — no raw food in any stockpile");
+                        let (stocked, reserved) = (&pickup_items, &positions, &uids)
+                            .join()
+                            .filter(|(it, ip, _)| {
+                                it.item()
+                                    .item_definition_id()
+                                    .itemdef_id()
+                                    .is_some_and(|d| FOOD_DEFS.contains(&d))
+                                    && board
+                                        .stockpile_at(ip.0.map(|e| e.floor() as i32))
+                                        .is_some()
+                            })
+                            .fold((0u32, 0u32), |(s, r), (_, _, iuid)| {
+                                (s + 1, r + u32::from(board.is_reserved(*iuid)))
+                            });
+                        info!(
+                            station = ?st,
+                            stocked,
+                            reserved,
+                            "bastion: ITEM 27 cook station idle — no raw food in any stockpile"
+                        );
                     }
                     continue;
                 };
@@ -21381,6 +21403,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         &board,
                     )
                 {
+                    // ITEM 27 instrument: is the refusal RESERVATION-only?
+                    // (def present + stockpiled, but every unit reserved.)
+                    let reserved_only = (&pickup_items, &positions, &uids)
+                        .join()
+                        .any(|(pi, ipos, _)| {
+                            pi.item().item_definition_id().itemdef_id() == Some(req)
+                                && board
+                                    .stockpile_at(ipos.0.map(|e| e.floor() as i32))
+                                    .is_some()
+                        });
+                    if reserved_only
+                        && std::env::var_os("BASTION_NEED_SKIP_DIAG").is_some()
+                    {
+                        info!(colonist = %uid, req, "bastion: ITEM 27 materials refusal is RESERVATION-ONLY");
+                    }
                     { census.materials += 1; continue; }
                 }
                 if colonist.0.skills.level_for(job.work) < job.skill_floor {
