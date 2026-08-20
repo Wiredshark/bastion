@@ -55,6 +55,9 @@ pub fn work_progress(
 /// authoritative interaction, never deleted here).
 pub fn completion_block(kind: JobKind) -> Option<Block> {
     match kind {
+        // ITEM 27: cooking edits no terrain — the cooked item spawns via the
+        // completion handler; the pot stays.
+        JobKind::Cook { .. } => None,
         JobKind::Designated(d) => match d {
             // ITEM 14: a guard assignment places NO block. Returning None keeps
             // it out of the completion-block path entirely.

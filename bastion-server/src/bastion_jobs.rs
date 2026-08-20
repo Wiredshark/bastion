@@ -1159,6 +1159,7 @@ pub(crate) fn colony_terminal_scan(
 /// kinds).
 pub(crate) fn job_kind_label(kind: &common::bastion::JobKind) -> &'static str {
     match kind {
+        common::bastion::JobKind::Cook { .. } => "Cook",
         common::bastion::JobKind::Designated(d) => match d {
             DesignationKind::GuardPost => "Designated:GuardPost",
             DesignationKind::PatrolPoint => "Designated:PatrolPoint",
@@ -1972,6 +1973,8 @@ fn designation_affordance(kind: DesignationKind) -> AffordanceClass {
 /// -- their validity is owned by their own arms, not the block state.
 fn job_still_wanted(kind: &common::bastion::JobKind, block: &Block) -> bool {
     match kind {
+        // ITEM 27: a Cook job's validity is its station's, not a block's.
+        common::bastion::JobKind::Cook { .. } => true,
         common::bastion::JobKind::Designated(DesignationKind::Farm) => true,
         common::bastion::JobKind::Designated(d) => job_wanted(*d, block),
         common::bastion::JobKind::Haul { .. }
@@ -7618,6 +7621,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         placed,
                         still_waiting = still_waiting.len(),
                         "bastion: ADOPT-A-TOWN surface designations placed as terrain loaded"
+                    );
+                } else if tick.0 % 300 == 0
+                    && let Some((min_xy, max_xy, hint_z, _)) = still_waiting.first()
+                {
+                    // ★ The WAITING witness. The first run of this drain was
+                    // silent while nothing drained, making "corners never
+                    // loaded" and "the block never ran" indistinguishable —
+                    // the exact null this program keeps paying for. Sample the
+                    // first waiter's corner reads so the blocker is visible.
+                    info!(
+                        waiting = still_waiting.len(),
+                        ?min_xy,
+                        ?max_xy,
+                        hint_z,
+                        min_loaded = terrain
+                            .get(vek::Vec3::new(min_xy.x, min_xy.y, *hint_z))
+                            .is_ok(),
+                        max_loaded = terrain
+                            .get(vek::Vec3::new(max_xy.x, max_xy.y, *hint_z))
+                            .is_ok(),
+                        "bastion: ADOPT-A-TOWN surface queue WAITING"
                     );
                 }
                 board.pending_adopt_surface = still_waiting;
@@ -16221,6 +16245,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // free — so capture it with the validity read.
                     let completed_kind = terrain.get(job.pos).ok().map(|b| b.kind());
                     let still_valid = completed_kind.is_some_and(|k| match job.kind {
+                        // ITEM 27: completion validity owned by the cook arm.
+                        common::bastion::JobKind::Cook { .. } => true,
                         common::bastion::JobKind::Designated(d) => match d {
                             // ITEM 14: no terrain precondition to re-check —
                             // `still_valid` is about a designation's target

@@ -22,7 +22,9 @@ fi
 # what actually landed once terrain streamed in.
 echo "adoption witness: $(echo "$W" | grep -oE 'town_origin=[^ ]+ plots=[0-9]+ queued=[0-9]+')"
 queued=$(echo "$W" | grep -oE 'queued=[0-9]+' | cut -d= -f2)
-replayed=$(grep -oE 'replayed=[0-9]+' "$C" | cut -d= -f2 | awk '{s+=$1} END {print s+0}')
+replayed=$(grep "surface designations placed" "$C" | grep -oE 'placed=[0-9]+' | cut -d= -f2 | awk '{s+=$1} END {print s+0}')
+# waiting diagnosis, if the drain never fired
+grep -m2 "surface queue WAITING" "$C" | cut -c1-160
 # fallback field-name form
 [ "$replayed" -eq 0 ] && replayed=$(grep "colony orders replayed" "$C" | grep -oE '[0-9]+' | head -1)
 echo "queued=$queued  drained(replayed)=$replayed"

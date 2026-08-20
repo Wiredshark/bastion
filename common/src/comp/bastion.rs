@@ -1555,6 +1555,8 @@ pub enum JobKindTagV1 {
     Recreate,
     /// bastion (ITEM 14): appended last (wire rule).
     Guard,
+    /// bastion (ITEM 27): appended last (wire rule).
+    Cook,
 }
 
 impl From<&crate::bastion::JobKind> for JobKindTagV1 {
@@ -1563,6 +1565,7 @@ impl From<&crate::bastion::JobKind> for JobKindTagV1 {
         match k {
             J::Designated(d) => JobKindTagV1::Designated(*d),
             J::Guard { .. } => JobKindTagV1::Guard,
+            J::Cook { .. } => JobKindTagV1::Cook,
             J::Haul { .. } => JobKindTagV1::Haul,
             J::DepositRun { .. } => JobKindTagV1::DepositRun,
             J::RestAt { .. } => JobKindTagV1::RestAt,

@@ -1210,6 +1210,16 @@ pub enum JobKind {
         /// `true` = `patrol_to`. Ignored for a post.
         at_far_end: bool,
     },
+    /// bastion (ITEM 27): a generated COOK job at a registered station.
+    /// `work` is stored per-job, so this carries `WorkType::Cook` while the
+    /// painted CookStation designation's own build-job stays `Build` — the
+    /// station is CONSTRUCTED as construction and WORKED as cooking.
+    /// Uses the same `required_item` fetch machinery Farm sow jobs use.
+    /// Appended last (wire rule).
+    Cook {
+        /// The registered station this job cooks at.
+        station: vek::Vec3<i32>,
+    },
 }
 
 impl JobKind {
@@ -1218,6 +1228,9 @@ impl JobKind {
     pub fn designation(&self) -> Option<DesignationKind> {
         match self {
             JobKind::Designated(d) => Some(*d),
+            // ITEM 27: a Cook job works AT a station; the designation was the
+            // station's build, already completed.
+            JobKind::Cook { .. } => None,
             // ITEM 14: a Guard JOB carries its own place (post/patrol_to), so
             // it is not "a job on a designation" the way Mine/Build are. The
             // GuardPost/PatrolPoint DESIGNATIONS are what the player paints;
