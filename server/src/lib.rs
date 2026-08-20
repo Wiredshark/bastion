@@ -697,6 +697,11 @@ impl Server {
         state
             .ecs_mut()
             .insert(bastion_jobs::MineReadbackQueue::default());
+        // Same measured lesson, second instance (chain11 cookdiag panicked
+        // identically on PendingSeedItems one leg after the resource split).
+        state
+            .ecs_mut()
+            .insert(bastion_jobs::PendingSeedItems::default());
         // bastion (PATH-0): the sequential path scheduler's state.
         state
             .ecs_mut()

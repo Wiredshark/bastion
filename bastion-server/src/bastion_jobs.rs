@@ -7361,7 +7361,9 @@ pub struct MineReadbackQueue(pub Vec<MineReadbackEntry>);
 /// founding while the JobBoard is already mutably borrowed, and a
 /// `write_resource::<JobBoard>` there panicked the server on boot
 /// (`atomic_refcell: already mutably borrowed` — cookdiag chain10 VOID).
-/// `Write<'a, _>` auto-inserts the Default.
+/// MANUALLY inserted at server construction beside `MineReadbackQueue` —
+/// `Write`'s auto-setup does not run under this dispatcher (measured
+/// twice now: pitread for the readback queue, chain11 cookdiag for this).
 #[derive(Default)]
 pub struct PendingSeedItems(pub Vec<(Vec3<i32>, String, u32)>);
 
