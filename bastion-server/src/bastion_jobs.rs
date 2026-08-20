@@ -21438,18 +21438,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 {
                     // ITEM 27 instrument: is the refusal RESERVATION-only?
                     // (def present + stockpiled, but every unit reserved.)
-                    let reserved_only = (&pickup_items, &positions, &uids)
+                    // Counts, not a boolean: "small stockpiled population,
+                    // eater-saturated" and "second bulk reserver" are the two
+                    // live hypotheses and only the numbers separate them.
+                    let (stocked, reserved) = (&pickup_items, &positions, &uids)
                         .join()
-                        .any(|(pi, ipos, _)| {
+                        .filter(|(pi, ipos, _)| {
                             pi.item().item_definition_id().itemdef_id() == Some(req)
                                 && board
                                     .stockpile_at(ipos.0.map(|e| e.floor() as i32))
                                     .is_some()
+                        })
+                        .fold((0u32, 0u32), |(st, rs), (_, _, iuid)| {
+                            (st + 1, rs + u32::from(board.is_reserved(*iuid)))
                         });
-                    if reserved_only
+                    if stocked > 0
                         && std::env::var_os("BASTION_NEED_SKIP_DIAG").is_some()
                     {
-                        info!(colonist = %uid, req, "bastion: ITEM 27 materials refusal is RESERVATION-ONLY");
+                        info!(
+                            colonist = %uid,
+                            req,
+                            stocked,
+                            reserved,
+                            "bastion: ITEM 27 materials refusal is RESERVATION-ONLY"
+                        );
                     }
                     { census.materials += 1; continue; }
                 }
