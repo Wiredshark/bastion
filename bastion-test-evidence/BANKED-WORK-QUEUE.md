@@ -335,6 +335,21 @@ without crossing that routing.
 | Adopt-a-town | **bar 1 PASS** (5 plots → 1,519 designations, founded IN the town), bar 2 PARTIAL (access-work proven; production+eats pending one seeded leg). Three silent-fallback root causes found by successive witnesses |
 | Item 27 (cooking) | vocabulary + all arms landed (CookStation + JobKind::Cook); NEXT: station registry + generator + completion handler |
 
+## Item 24 bars 2–3 — SHAPES COMPUTED, legs banked (2026-08-20)
+
+**Bar 2 (annual cycle, unpinned ≥1 year)**: `day_length` is a server SETTING
+(`settings/mod.rs::day_cycle_coefficient = 1440/day_length`, minutes per game
+day). At `day_length=0.5` a 160-day year = 80 wall-min at 1×; headless
+compression (4.1×) ⇒ **~20 min declared leg**. Needs: how run-pit's per-leg
+`VELOREN_USERDATA` seeds `settings.ron` (write day_length there), plus a
+food-stock time-series read (census already emits it). DECLARE RUN LENGTH
+BEFORE LAUNCH.
+
+**Bar 3 (winter lethal-capable)**: autumn founding pin + `BASTION_SEED_FOOD`
+unset + no-stockpile plant; Autumn→deep Winter ≈ 40 days ⇒ **~5 min** at the
+same day_length. PASS = food-stock terminal path fires in winter; VOID if the
+colony feeds itself another way (report the source — mushroom forage exists).
+
 ## Item 27 (cooking) — banked at a PRECISE question (2026-08-20)
 
 **Three of four pipeline stages proven live in one leg:** 9 stations registered
