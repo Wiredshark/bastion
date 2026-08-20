@@ -5736,6 +5736,11 @@ pub struct JobBoard {
         f32,
         f32,
     )>,
+    /// bastion (ITEM 30): the type of each TYPED stockpile zone — absent =
+    /// untyped (the pre-item-30 zones, byte-identical behavior). Keyed by
+    /// the zone's `stockpiles` id; the haul selector and deposit gate are
+    /// the only readers.
+    pub zone_types: HashMap<common::bastion::ZoneId, common::bastion::ZoneKind>,
     /// bastion (ADOPT bar 2, 2026-08-20): seed items (pos, def, count)
     /// queued until the target chunk LOADS — items seeded at an adopted
     /// town's founding spawned into unloaded space and never counted
@@ -6207,6 +6212,22 @@ impl JobBoard {
             self.next_zone += 1;
             self.activity_zones.push((id, zk, region));
             info!(zone = id, kind = ?zk, ?region, "bastion: activity zone registered");
+            // ITEM 30: a TYPED STORE is also a stockpile (haul
+            // destination + materials-gate membership) with its kind
+            // recorded — the haul selector prefers it for matching item
+            // classes and refuses non-matching deposits into it.
+            if zk == common::bastion::ZoneKind::FoodStore {
+                let sid = self.next_zone;
+                self.next_zone += 1;
+                self.stockpiles.push((sid, region));
+                self.zone_types.insert(sid, zk);
+                info!(
+                    zone = sid,
+                    kind = ?zk,
+                    ?region,
+                    "bastion: ITEM 30 typed stockpile zone registered"
+                );
+            }
         }
         // FARM-PAINT (row 2026-08-08, supersedes the old "v1 farms are
         // FLAT plots, region.min.z is the field's ground level" note):
@@ -11168,16 +11189,51 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     if pending >= cap {
                         break;
                     }
+                    // ITEM 30: typed-zone routing. A zone with a recorded
+                    // type accepts ONLY its matching item class (FoodStore
+                    // ⇄ FOOD_DEFS); untyped zones accept anything (the
+                    // pre-item-30 behavior, byte-identical when no typed
+                    // zone exists). Preference: a MATCHING typed zone wins
+                    // over untyped at equal footing (sorted first), and a
+                    // mismatched typed zone is EXCLUDED — with a witness
+                    // when the exclusion leaves nothing, because a refusal
+                    // and an absence must not render identically.
+                    let item_is_food = FOOD_DEFS.contains(&static_def);
                     let Some(dest) = board
                         .stockpiles
                         .iter()
-                        .min_by_key(|(_, r)| {
+                        .filter(|(z, _)| match board.zone_types.get(z) {
+                            Some(common::bastion::ZoneKind::FoodStore) => item_is_food,
+                            Some(_) => false,
+                            None => true,
+                        })
+                        .min_by_key(|(z, r)| {
                             let c = (r.min + r.max) / 2;
                             let d = c - cell;
-                            (d.x as i64).pow(2) + (d.y as i64).pow(2) + (d.z as i64).pow(2)
+                            let typed_match = board.zone_types.contains_key(z);
+                            (
+                                // Matching typed store first (0 sorts
+                                // before 1), then distance.
+                                u8::from(!typed_match),
+                                (d.x as i64).pow(2) + (d.y as i64).pow(2) + (d.z as i64).pow(2),
+                            )
                         })
                         .map(|(z, _)| *z)
                     else {
+                        // ITEM 30 refusal witness: zones EXIST but every
+                        // one is a typed store this item class cannot
+                        // enter. Throttled to the census cadence — one
+                        // mismatched pebble must not flood the log.
+                        if !board.stockpiles.is_empty()
+                            && tick.0 % (ARBITRATION_INTERVAL as u64 * 40) == 3
+                        {
+                            info!(
+                                item = static_def,
+                                zones = board.stockpiles.len(),
+                                typed = board.zone_types.len(),
+                                "bastion: ITEM 30 typed-zone refusal — no store accepts this item class"
+                            );
+                        }
                         continue;
                     };
                     // #89: whole-entity haul reservation -- the unchanged

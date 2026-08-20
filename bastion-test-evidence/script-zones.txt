@@ -1,0 +1,23 @@
+note ITEM 30 (typed stockpile zones) -- bars 1+2 in one leg.
+note Shape: cancel the preset's untyped stockpile, paint a FoodStore, then
+note drop FOOD (routes INTO the typed store: bar 2) and STONES (no zone
+note accepts them: the bar-1 refusal witness fires; they must never enter).
+anchor
+wait 1500
+note --- kill the untyped zone so the typed store is the only destination ---
+cancel 16378 16376 395 16390 16390 405
+note --- the typed store, painted clear of the old footprint ---
+designate foodstore 16392 16392 399 16396 16396 400
+wait 300
+note --- the treatment: loose food + loose stones, both OUTSIDE any zone ---
+cmd give_item common.items.food.mushroom 50
+cmd dropall
+cmd give_item common.items.crafting_ing.stones 20
+cmd dropall
+wait 6000
+note --- routing window done: food should sit in the FoodStore, stones on
+note     the ground with the refusal witness in the server log ---
+count_items
+list_designations
+wait 2000
+count_items

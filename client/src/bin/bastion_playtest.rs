@@ -190,6 +190,9 @@ fn parse_kind(s: &str) -> Option<DesignationKind> {
         "gather" => DesignationKind::Gather,
         "bed" => DesignationKind::Bed,
         "cookstation" => DesignationKind::CookStation,
+        // ITEM 30: the typed food store (paints as a Zone; registers as a
+        // typed stockpile server-side).
+        "foodstore" => DesignationKind::Zone(common::bastion::ZoneKind::FoodStore),
         "farm" => DesignationKind::Farm,
         // ITEM 14: both guard assignment types are paintable from a script,
         // because bar 2 requires BOTH to land in a live run and a fixture that

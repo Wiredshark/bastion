@@ -274,18 +274,29 @@ pub enum ZoneKind {
     // enumerate). Meaningless as a "default zone" — only the iterator uses it.
     #[default]
     Meeting,
+    /// bastion (ARC 6 item 30): v1's ONE typed store — food, because the
+    /// food loop (EatFrom, seed-food, colony_food_stock) is the consumer
+    /// that already exists. Registers as BOTH an activity zone (paint
+    /// machinery) and a TYPED stockpile (haul destination); the haul
+    /// selector prefers it for `FOOD_DEFS` items and refuses non-matching
+    /// deposits. Tail-appended (wire rule).
+    FoodStore,
 }
 
 impl ZoneKind {
     pub fn purpose(&self) -> Purpose {
         match self {
             ZoneKind::Meeting => Purpose::Social,
+            // A store is logistics, not leisure — the agent magnet must
+            // not gather colonists to the pantry.
+            ZoneKind::FoodStore => Purpose::Production,
         }
     }
 
     pub fn label(&self) -> &'static str {
         match self {
             ZoneKind::Meeting => "Meeting",
+            ZoneKind::FoodStore => "FoodStore",
         }
     }
 }
