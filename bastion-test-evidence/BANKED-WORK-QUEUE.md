@@ -312,6 +312,17 @@ and sailed past a red floor (rebuilt unpiped); t0_27 fired four times on
 founding-side bloat until the whole founding block left `tick()`; the
 run-pit-while-running edit corrupted one postamble (data unaffected).
 
+## Item 18's remaining half — determination (2026-08-20, read-only)
+
+**PARKED BY DESIGN, not open work.** The "entity-log promoted-set migration" is
+the log's stage 3 (persistence across the retention boundary), and the module
+doc *deliberately excludes it* pending: (a) the promotion→RETENTION rename
+(Opus ruling 2026-08-10, packet `55cdeb003c`) — done in doc, to be applied at
+stage-3 open; (b) the `PickupItem` identity gap (uid re-minted per re-drop, so
+in-inventory events have no stable subject) — **routed to Fable as its own
+row**. Wake condition: Fable's identity ruling. Nothing here is buildable
+without crossing that routing.
+
 ## Blocked / needs a decision (Ben)
 
 - **Tick-loading scope call** — roadmap criterion passes, mandate bar 2 fails.
