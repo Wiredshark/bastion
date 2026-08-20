@@ -6726,7 +6726,11 @@ impl Server {
             let (town_origin, plots) = Self::bastion_adoptable_town_plots(
                 self.index.as_index_ref(),
                 sp.xy().map(|e| e as i32),
-                1024,
+                // 4096: the first live leg MEASURED the nearest adoptable
+                // site at 1,224 blocks against a 1,024 radius — 200 short.
+                // The re-anchor moves the whole founding to the town, so a
+                // wide radius costs nothing but the scan.
+                4096,
             )?;
             // Re-anchor the WHOLE founding at the town: adopting structures
             // 300 blocks from the colonists would fail bar 2 for a distance
