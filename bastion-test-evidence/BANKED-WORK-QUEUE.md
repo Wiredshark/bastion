@@ -368,6 +368,20 @@ the job dies. The vanish branch is SHARED with the cook fetch, so this
 batch's vanish WITNESS + the convergent-retry pattern already instrument
 it: the next long leg counts "fetch target vanished" per job kind for free.
 
+## BIOME-SEASONS rider (Ben direct, 2026-08-20 — "not now", banked)
+
+*"shouldn't we factor in biomes, like desert will be wet and dry season,
+mountains will have less summer (need some other benefit)"* — carried
+verbatim. Substrate note: worldgen already computes per-chunk temperature
++ humidity (the sim fields biome generation reads), and `farm_season` /
+`season_stage_factor` currently ignore both — one global calendar. The
+cheap shape: the growth factor becomes f(calendar, local temp, local
+humidity) sampled at the farm column — desert reads as wet/dry, mountains
+as short-summer, tundra as near-none, WITHOUT new world data. The paired
+design question is Ben's: what compensates harsh-biome colonies (ore
+density? defensibility? herds?) — goes to DECISIONS-FOR-BEN when the row
+activates. Bars would mirror item 24's A/B shape per biome.
+
 ## Item 22 persistence leg — SHAPE (2026-08-20)
 
 The a4-restart pattern is the precedent (script-a4-restart-found.txt: a
