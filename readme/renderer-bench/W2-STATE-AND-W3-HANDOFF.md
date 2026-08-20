@@ -64,8 +64,11 @@ golden CLI).
 - [x] W1 vector suite GREEN (13/13, first run, 2026-08-20 02:59).
 - [x] common-net sync suite GREEN (2/2, 2026-08-20 03:2x). Harness reference suite: in flight (first attempt died to DISK FULL — 37GB freed, deletion recorded in MAINTENANCE.md).
 - [x] `cargo check -p bastion-server -p veloren-server` CLEAN (W2 compiles; 4 first-pass errors fixed: crate-name import, bincode-2 API, two data. leftovers, height_scale field).
-- [ ] Planted red-demo: flip one tag-table discriminant → vector suite RED
-      by name → restore.
+- [x] Planted red-demo DONE (2026-08-20 03:5x): WireType::Enum 12→99 → EXACTLY
+      the two hierarchy tests failed by name (canonical_schema_hash_and_hierarchy,
+      hierarchy_mutation_changes_every_root), 11 non-consumers stayed green →
+      restored → 13/13 green again. Harness reference suite also GREEN 2/2
+      (pin enforcement + recomputation).
 - [ ] Twin smoke via `run-renderer-bench.sh`: tape arrives on both legs,
       golden CLI exit 0 (run_root identical).
 - [ ] R2b container visuals: unit tests + one live look.
