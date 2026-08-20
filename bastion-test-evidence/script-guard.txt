@@ -1,0 +1,29 @@
+note ITEM 14 -- GUARDS: the behavior-space ruling's first LIVE test.
+note
+note Ben's ruling: guarding is a BEHAVIOR SPACE, not a policy. All three axes
+note are PARAMETERS. This fixture must exercise all three IN ONE RUN, because a
+note parameter with one observed value is a constant wearing a parameter's name.
+note
+note BARS (pre-registered, ITEM14-GUARD-PREREGISTRATION.md):
+note   1 parameterisation is REAL -- both bravery values live, mode by name
+note   2 BOTH assignment types land; patrol visits >= 2 distinct waypoints
+note   3 axis 2 bites against item 13's flee (needs a hostile)
+note   4 planted control -- force the clamp, the hold goes red BY NAME
+note
+anchor
+wait 300
+note --- axis 3: a POST (one point) ---
+designate guardpost 8 8 1 10 10 1
+wait 600
+note --- axis 3: a PATROL (region -> two distinct ends) ---
+designate patrol 20 8 1 30 18 1
+wait 900
+note --- who claimed what, and where are they? ---
+inspect_colonists
+wait 600
+inspect_colonists
+wait 900
+note --- a second look after the patrol has had time to switch legs ---
+inspect_colonists
+list_designations
+wait 300
