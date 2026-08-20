@@ -16630,15 +16630,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // tool multiply (both axes pay). The factor itself is
                     // `common::bastion::tool_factor` (pure, unit-pinned).
                     let skill_level = colonist.0.skills.level_for(job.work);
+                    // ITEM 28: the durability multiplier rides along — a
+                    // worn tool pays at the SAME site the tool bonus pays
+                    // (vanilla's stats decay curve, floor 25%; bare hands
+                    // stay 1.0 — fallback is the identity).
+                    let mut dur_mult = 1.0f32;
                     let tool = inventories.get(entity).and_then(|inv| {
                         inv.equipped(comp::slot::EquipSlot::ActiveMainhand)
                             .and_then(|item| match &*item.kind() {
-                                comp::item::ItemKind::Tool(t) => Some((t.kind, item.quality())),
+                                comp::item::ItemKind::Tool(t) => {
+                                    dur_mult = item.stats_durability_multiplier().0;
+                                    Some((t.kind, item.quality()))
+                                },
                                 _ => None,
                             })
                     });
-                    job.progress +=
-                        crate::bastion_actions::work_progress(dt.0, skill_level, job.work, tool);
+                    job.progress += dur_mult
+                        * crate::bastion_actions::work_progress(dt.0, skill_level, job.work, tool);
                     // CHOP-FELLING (row 51.6): a base-cut completes at its
                     // SIZE-SCALED bar (CHOP_WORK_PER_BLOCK × Wood count,
                     // frozen at placement — bigger trees take longer, Ben's
@@ -17282,6 +17290,39 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // unification: shared with the Farm arm above via
                     // `grant_completion_xp` (see that function's doc).
                     grant_completion_xp(&mut colonist.0.skills, job.work, outcome.grant_xp);
+                    // ITEM 28 (tool WEAR — the half TOOL-0 left): the
+                    // MATCHING equipped tool takes one vanilla durability
+                    // step per real completion. Vanilla semantics kept
+                    // whole (reuse-first): stats decay to a 25% floor and
+                    // the tool NEVER breaks — "breakage" would be a new
+                    // rule, banked as design if wanted. The work-rate side
+                    // reads `stats_durability_multiplier` at the progress
+                    // site, so wear PAYS there without a second constant.
+                    if outcome.grant_xp
+                        && let Some(mut inv) = inventories.get_mut(entity)
+                        && common::bastion::work_tool_kind(job.work)
+                            .zip(inv.equipped(comp::slot::EquipSlot::ActiveMainhand).and_then(
+                                |item| match &*item.kind() {
+                                    comp::item::ItemKind::Tool(t) => Some(t.kind),
+                                    _ => None,
+                                },
+                            ))
+                            .is_some_and(|(want, have)| want == have)
+                    {
+                        inv.damage_item_at_equip_slot(
+                            comp::slot::EquipSlot::ActiveMainhand,
+                            &ability_map,
+                            &msm,
+                        );
+                        let lost = inv
+                            .equipped(comp::slot::EquipSlot::ActiveMainhand)
+                            .and_then(|i| i.durability_lost());
+                        info!(
+                            work = ?job.work,
+                            durability_lost = ?lost,
+                            "bastion: ITEM 28 tool wear — one step per completion"
+                        );
+                    }
                     match outcome.log_channel {
                         CompletionLogChannel::RealProduction => {
                             info!(

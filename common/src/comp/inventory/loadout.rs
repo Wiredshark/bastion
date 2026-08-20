@@ -500,6 +500,26 @@ impl Loadout {
             .for_each(|item| item.increment_damage(ability_map, msm));
     }
 
+    /// bastion (ITEM 28): one durability step for the item in ONE equip
+    /// slot — the per-completion tool-wear site. `damage_items` is the
+    /// whole-loadout on-death path and would wear armor from mining.
+    pub(super) fn damage_item_at_slot(
+        &mut self,
+        equip_slot: EquipSlot,
+        ability_map: &item::tool::AbilityMap,
+        msm: &item::MaterialStatManifest,
+    ) {
+        if let Some(item) = self
+            .slots
+            .iter_mut()
+            .find(|slot| slot.equip_slot == equip_slot)
+            .and_then(|slot| slot.slot.as_mut())
+            .filter(|item| item.has_durability())
+        {
+            item.increment_damage(ability_map, msm);
+        }
+    }
+
     /// Resets durability of item in specified slot
     pub(super) fn repair_item_at_slot(
         &mut self,
