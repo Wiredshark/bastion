@@ -6898,8 +6898,11 @@ impl Server {
         // founding — direct emits landed in the void (food_stock=0 all
         // leg while the witness said seeded=64). The board drain delivers
         // when the chunk loads; on a loaded flat arena that's ~same tick.
-        ecs.write_resource::<crate::bastion_jobs::JobBoard>()
-            .pending_seed_items
+        // Its OWN resource, never the JobBoard: the founding caller holds
+        // the board mutably and a second borrow here panicked the server
+        // on boot (atomic_refcell, chain10 cookdiag VOID).
+        ecs.write_resource::<crate::bastion_jobs::PendingSeedItems>()
+            .0
             .push((
                 origin + Vec3::new(2, 0, 0),
                 common::bastion::BUILD_MATERIAL_ITEM.to_string(),
@@ -6919,8 +6922,8 @@ impl Server {
         let n: u32 = n.parse().unwrap_or(0);
         // Deferred via the board queue (see bastion_seed_materials — the
         // adopted-origin unloaded-chunk lesson applies identically here).
-        ecs.write_resource::<crate::bastion_jobs::JobBoard>()
-            .pending_seed_items
+        ecs.write_resource::<crate::bastion_jobs::PendingSeedItems>()
+            .0
             .push((origin, "common.items.food.mushroom".to_string(), n));
         tracing::warn!(
             seeded = n,

@@ -5741,15 +5741,6 @@ pub struct JobBoard {
     /// the zone's `stockpiles` id; the haul selector and deposit gate are
     /// the only readers.
     pub zone_types: HashMap<common::bastion::ZoneId, common::bastion::ZoneKind>,
-    /// bastion (ADOPT bar 2, 2026-08-20): seed items (pos, def, count)
-    /// queued until the target chunk LOADS — items seeded at an adopted
-    /// town's founding spawned into unloaded space and never counted
-    /// (food_stock=0 an entire leg while the emit's own witness said
-    /// seeded=64: print-what-you-delivered's exact failure). Drained on
-    /// the pending_adopt_surface cadence; on a loaded flat arena the
-    /// drain fires within a tick, so founded-colony behavior is
-    /// unchanged in effect.
-    pub pending_seed_items: Vec<(Vec3<i32>, String, u32)>,
     /// bastion (B7-1): the bed slots, keyed by block position — the
     /// reservations-table shape (capacity-1 occupancy). OWNERSHIP truth
     /// persists on the colonist record; this is the runtime table
@@ -7361,6 +7352,19 @@ pub struct MineReadbackEntry {
 #[derive(Default)]
 pub struct MineReadbackQueue(pub Vec<MineReadbackEntry>);
 
+/// bastion (ADOPT bar 2, 2026-08-20): seed items (pos, def, count) queued
+/// until the target chunk LOADS — items seeded at an adopted town's
+/// founding spawned into unloaded space and never counted (food_stock=0 an
+/// entire leg while the emit's own witness said seeded=64). Its own ECS
+/// resource, NOT a JobBoard field, for the same two reasons as
+/// [`MineReadbackQueue`] — plus one this row PAID FOR: the seed fns run at
+/// founding while the JobBoard is already mutably borrowed, and a
+/// `write_resource::<JobBoard>` there panicked the server on boot
+/// (`atomic_refcell: already mutably borrowed` — cookdiag chain10 VOID).
+/// `Write<'a, _>` auto-inserts the Default.
+#[derive(Default)]
+pub struct PendingSeedItems(pub Vec<(Vec3<i32>, String, u32)>);
+
 fn mine_readback_diag() -> bool {
     static MINE_READBACK_DIAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *MINE_READBACK_DIAG
@@ -7506,6 +7510,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // innermost tuple because the outer ones sit at specs' arity
                 // ceiling (the nesting comment above).
                 Write<'a, MineReadbackQueue>,
+                // ADOPT bar 2: the chunk-load-deferred seed queue (own
+                // resource — see its doc for the double-borrow panic that
+                // put it here).
+                Write<'a, PendingSeedItems>,
             ),
         ),
     );
@@ -7572,6 +7580,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     ability_map,
                     msm,
                     mut mine_readback,
+                    mut pending_seed_items,
                 ),
             ),
         ): Self::SystemData,
@@ -7732,8 +7741,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // LOADED terrain, witness the delivery with the count, and keep
             // waiting entries. `terrain.get` Ok is the load probe (the
             // surface drain's own test).
-            if !board.pending_seed_items.is_empty() {
-                let pending = std::mem::take(&mut board.pending_seed_items);
+            if !pending_seed_items.0.is_empty() {
+                let pending = std::mem::take(&mut pending_seed_items.0);
                 let mut still_waiting = Vec::new();
                 for (pos, def, count) in pending {
                     if terrain.get(pos).is_ok() {
@@ -7776,7 +7785,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         still_waiting.push((pos, def, count));
                     }
                 }
-                board.pending_seed_items = still_waiting;
+                pending_seed_items.0 = still_waiting;
             }
 
             let mut decay_join_count: u32 = 0;
@@ -11224,8 +11233,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // one is a typed store this item class cannot
                         // enter. Throttled to the census cadence — one
                         // mismatched pebble must not flood the log.
+                        // Throttle offset MUST match the enclosing
+                        // generator's own gate (==7): the first version
+                        // used ==3, which a tick ≡7 (mod interval) can
+                        // NEVER satisfy — a witness that could not fire,
+                        // caught because the zones leg's stones were
+                        // refused with zero refusal lines.
                         if !board.stockpiles.is_empty()
-                            && tick.0 % (ARBITRATION_INTERVAL as u64 * 40) == 3
+                            && tick.0 % (ARBITRATION_INTERVAL as u64 * 40) == 7
                         {
                             info!(
                                 item = static_def,
