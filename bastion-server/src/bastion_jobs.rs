@@ -16623,6 +16623,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     if !auton_work_ok {
                         continue;
                     }
+                    // ITEM 27 thief-tick watch (FETCH_DIAG-gated): the
+                    // required def was IN the bag at arrival (carried_req
+                    // 2–64 witnessed) and GONE at the completion consume one
+                    // work-second later, with no logged consumer between.
+                    // Print the count per working tick; the tick where it
+                    // drops names the thief by cross-reference.
+                    if std::env::var_os("BASTION_FETCH_DIAG").is_some()
+                        && let Some(req) = job.required_item
+                    {
+                        let n: u32 = inventories
+                            .get(entity)
+                            .map(|inv| {
+                                inv.slots()
+                                    .flatten()
+                                    .filter(|i| {
+                                        i.item_definition_id().itemdef_id() == Some(req)
+                                    })
+                                    .map(|i| i.amount())
+                                    .sum()
+                            })
+                            .unwrap_or(0);
+                        info!(
+                            job = active.job,
+                            carried_req = n,
+                            "bastion: FETCH_DIAG working-tick carried"
+                        );
+                    }
                     // B5: accumulate work, rate scaled by the relevant skill.
                     // TOOL-0 (TOOLS-UPGRADE §3): × the EQUIPPED-tool factor —
                     // bare hands/wrong tool = the slow base, a matching
