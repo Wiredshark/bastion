@@ -6,6 +6,10 @@ note favor ~10 >= 5 -> real damage + lightning + favor deducted.
 note BAR 4 (no-command): the target's job state is untouched by the cast --
 note the inspects bracket it.
 anchor
+note --- cast IMMEDIATELY: favor (0.2/s from zero) cannot have reached 5
+note     yet at compressed rates -- chain15 measured both casts landing
+note     because wait 300 + inspect time already out-trickled the cost ---
+cmd bastion_smite Osric of the Vale
 wait 300
 inspect_colonists
 cmd bastion_smite Osric of the Vale
