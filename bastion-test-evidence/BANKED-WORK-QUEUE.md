@@ -377,6 +377,13 @@ absent (spawn/despawn), fell/moved out of the z-band, or def drift. CENSUS
 INSTRUMENT LANDED (commit 0691a51ee3): idle witness now dumps the actual
 loose-item table (total, per-food pos + in_zone + reserved). cookery6 leg
 launched; its census decides.
+
+**Granularity note (owed from cookery3): a 3×3 CookStation paint registers
+NINE stations** — Area2D designations build per-cell, and each completed cell
+pushes to `cook_stations`. Harmless for the pipeline bars (the generator
+de-dupes per station), but a design ruling on "station = painted region vs
+cell" belongs to the UI/UX pass; park until then, script paints 1×1 in future
+arms if single-station evidence is wanted.
 **Suspect, narrowed by producer reads:** hauls release correctly (T1.15,
 `remove_job` releases on deposit — verified in-code). **EatFrom reserves
 capacity at preempt time (`board.reserve(item, amount)`, ~12745)** — and the
