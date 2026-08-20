@@ -3432,6 +3432,11 @@ impl Server {
                 common::bastion::WorkType::Haul => s.hauling,
                 common::bastion::WorkType::Cook => s.cooking,
                 common::bastion::WorkType::Farm => s.farming,
+                // ITEM 14: guarding reads the MELEE skill, matching
+                // `ColonistSkills::level_for` — the two must agree or a
+                // harness query and the arbitration gate would disagree about
+                // the same colonist's competence.
+                common::bastion::WorkType::Guard => s.melee,
             }
         })
     }

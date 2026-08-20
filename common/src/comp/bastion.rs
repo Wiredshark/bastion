@@ -1498,6 +1498,8 @@ pub enum JobKindTagV1 {
     /// self-jobs would renumber `Despond` and move every hash that has
     /// ever included one.
     Recreate,
+    /// bastion (ITEM 14): appended last (wire rule).
+    Guard,
 }
 
 impl From<&crate::bastion::JobKind> for JobKindTagV1 {
@@ -1505,6 +1507,7 @@ impl From<&crate::bastion::JobKind> for JobKindTagV1 {
         use crate::bastion::JobKind as J;
         match k {
             J::Designated(d) => JobKindTagV1::Designated(*d),
+            J::Guard { .. } => JobKindTagV1::Guard,
             J::Haul { .. } => JobKindTagV1::Haul,
             J::DepositRun { .. } => JobKindTagV1::DepositRun,
             J::RestAt { .. } => JobKindTagV1::RestAt,

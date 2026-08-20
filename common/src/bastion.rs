@@ -825,6 +825,38 @@ pub struct NeedTuning {
 
 fn default_need_interrupt() -> f32 { 0.2 }
 
+/// bastion (ITEM 14, AXIS 2 — HOLD-vs-FLEE). Ben's ruling: *"a per-colonist
+/// threshold (bravery), not a global rule: guarding outranks flee up to a
+/// breaking point that varies by the individual"*.
+///
+/// Deliberately the SAME shape as [`default_need_interrupt`] — the ruling names
+/// that pattern by hand ("the same per-colonist clamp pattern
+/// `default_need_interrupt()` already uses"), and matching it means personality
+/// and veterancy can move this later without a second mechanism.
+///
+/// Semantics: a guarding colonist holds while `health.fraction() >= bravery`.
+/// **Lower = braver** (holds down to a worse wound), so the field reads the
+/// same direction as `flee_health`, which it competes with.
+///
+/// serde-defaulted so pre-item-14 saves parse and get the neutral value.
+pub fn default_guard_bravery() -> f32 { 0.5 }
+
+/// bastion (ITEM 14, AXIS 1 — RESPONSE MODE). Ben's ruling: *"none of these are
+/// mutually exclusive, it just depends on the situation, NPCs, civs"* — so the
+/// mode is a **parameter carried by the assignment**, never a global policy.
+///
+/// v1 ships the two ENDS of the escalation the ruling describes
+/// (watch → alarm → fight). Two values, because a parameter with ONE exercised
+/// value is a constant wearing a parameter's name — and the row's bar 1 is
+/// exactly that both are observed live, each changing behaviour by name.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GuardMode {
+    /// Watch and raise the alarm; do NOT engage. The de-escalated end.
+    Alarm,
+    /// Engage the hostile. The escalated end.
+    Fight,
+}
+
 /// T0.4 (master build order; ledger #54): a SIM-clock duration in seconds —
 /// the units-of-measure boundary for tuning fields. Transparent for RON
 /// compat; arithmetic goes through [`crate::resources::Time`] explicitly so
@@ -1131,6 +1163,34 @@ pub enum JobKind {
         /// Sim time when the break ends.
         until: f64,
     },
+    /// bastion (ITEM 14): a GUARD assignment. Carries its own
+    /// [`GuardMode`] (axis 1) rather than reading a global setting, so two
+    /// guards in one colony can hold different postures — which is the
+    /// ruling's whole point and is what bar 1 scores.
+    ///
+    /// `route` is axis 3: a POST is a route of length 1, a PATROL is length
+    /// >= 2. Representing both in ONE variant keeps them the same kind of
+    /// thing, so nothing downstream can grow a post-only assumption.
+    /// Appended last (wire rule).
+    Guard {
+        /// Axis 1 — this assignment's response mode.
+        mode: GuardMode,
+        /// Axis 3 — the station, and the patrol's first point.
+        post: Vec3<i32>,
+        /// Axis 3 — `Some` makes this a PATROL between `post` and here;
+        /// `None` makes it a POST. Two points, not an arbitrary route:
+        /// `JobKind` is `Copy` (a wire type matched in dozens of places), so a
+        /// `Vec` here would strip `Copy` from the whole enum for a v1 that
+        /// only has to prove patrol is a real assignment TYPE, not that routes
+        /// can be long. The ruling asks for "the smallest value set that
+        /// EXERCISES it" — two points visit >= 2 distinct waypoints, which is
+        /// exactly what bar 2 scores. A longer route becomes a board-side
+        /// list keyed by `JobId` when something needs one.
+        patrol_to: Option<Vec3<i32>>,
+        /// Which end the colonist is currently heading for: `false` = `post`,
+        /// `true` = `patrol_to`. Ignored for a post.
+        at_far_end: bool,
+    },
 }
 
 impl JobKind {
@@ -1139,6 +1199,11 @@ impl JobKind {
     pub fn designation(&self) -> Option<DesignationKind> {
         match self {
             JobKind::Designated(d) => Some(*d),
+            // ITEM 14: a Guard JOB carries its own place (post/patrol_to), so
+            // it is not "a job on a designation" the way Mine/Build are. The
+            // GuardPost/PatrolPoint DESIGNATIONS are what the player paints;
+            // the JOB is what a colonist holds.
+            JobKind::Guard { .. } => None,
             JobKind::Haul { .. }
             | JobKind::DepositRun { .. }
             | JobKind::RestAt { .. }
