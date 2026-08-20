@@ -275,7 +275,11 @@ case "$ARM" in
   # autofound gate, so the FOUNDING never fired and adoption was never
   # evaluated -- 0 founding events, neither witness. The flag was delivered;
   # the code it gates was upstream-blocked.
-  adopt)        PITVAR=" BASTION_ADOPT_TOWN=1 BASTION_AUTOFOUND_REAL_TERRAIN=1"
+  # VD=3 (2026-08-20): the WAITING witness measured the adopted plots' corners
+  # 48 blocks from the town origin with min_loaded=false for an ENTIRE leg --
+  # outside the default presence radius, so the surface drain starved. A town
+  # is bigger than a founding preset; the presence must cover what it adopts.
+  adopt)        PITVAR=" BASTION_ADOPT_TOWN=1 BASTION_AUTOFOUND_REAL_TERRAIN=1 BASTION_COLONY_PRESENCE_VD=3"
               PITARENA=""
               SCRIPT="script-adopt.txt" ;;
   guardwound)   PITVAR=" BASTION_ACCESS_CLAIM_DIAG=1 BASTION_GUARD_BRAVERY=0.8,0.2 BASTION_GUARD_HOLD_DIAG=1 BASTION_GUARD_PLANT_WOUND=0.5"
