@@ -1105,7 +1105,7 @@ pub(crate) fn colony_terminal_step(streak: &mut u32, food_stock: u32, threshold:
 /// same fn, so a green cannot mean a different machine from the one that
 /// ships).
 ///
-/// Food-only cells read as a woven basket; any material presence reads as a
+/// Food-only cells read as a grain basket; any material presence reads as a
 /// crate (mixed cells hold materials, and the crate is the honest majority
 /// read); empty cells show nothing. Both kinds are deliberately NON-SOLID
 /// (neither appears in `SpriteKind`'s solid-height table — verified by read
@@ -1114,8 +1114,8 @@ pub(crate) fn colony_terminal_step(streak: &mut u32, food_stock: u32, threshold:
 pub(crate) fn stockpile_container_sprite(food: u32, other: u32) -> Option<SpriteKind> {
     match (food, other) {
         (0, 0) => None,
-        (_, 0) => Some(SpriteKind::BasketWovenM),
-        _ => Some(SpriteKind::CrateBlock),
+        (_, 0) => Some(SpriteKind::BastionBasketStock),
+        _ => Some(SpriteKind::BastionCrateStock),
     }
 }
 
@@ -1132,7 +1132,7 @@ mod stockpile_container_sprite_tests {
     fn food_only_reads_as_basket() {
         assert_eq!(
             stockpile_container_sprite(3, 0),
-            Some(SpriteKind::BasketWovenM)
+            Some(SpriteKind::BastionBasketStock)
         );
     }
 
@@ -1140,11 +1140,11 @@ mod stockpile_container_sprite_tests {
     fn materials_read_as_crate_even_mixed_with_food() {
         assert_eq!(
             stockpile_container_sprite(0, 5),
-            Some(SpriteKind::CrateBlock)
+            Some(SpriteKind::BastionCrateStock)
         );
         assert_eq!(
             stockpile_container_sprite(9, 1),
-            Some(SpriteKind::CrateBlock)
+            Some(SpriteKind::BastionCrateStock)
         );
     }
 
@@ -1153,8 +1153,8 @@ mod stockpile_container_sprite_tests {
     /// returning None IS the walkability claim the doc comment makes.
     #[test]
     fn chosen_sprites_are_non_solid() {
-        assert!(SpriteKind::BasketWovenM.solid_height().is_none());
-        assert!(SpriteKind::CrateBlock.solid_height().is_none());
+        assert!(SpriteKind::BastionBasketStock.solid_height().is_none());
+        assert!(SpriteKind::BastionCrateStock.solid_height().is_none());
     }
 }
 

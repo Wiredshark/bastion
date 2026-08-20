@@ -75,4 +75,16 @@ golden CLI).
       way: WSL-bash resolution trap (PowerShell `bash`≠Git Bash) and Git
       Bash `kill` not terminating Windows servers (leg-1 squatting the port
       → AddrInUse; fixed with taskkill + identity-scoped cleanup).
-- [ ] R2b container visuals: unit tests + one live look.
+- [x] R2b container visuals GREEN 4/4 (2026-08-20 13:4x) — and the non-solid
+      assertion CAUGHT A REAL DESIGN ERROR first: every base-game container
+      sprite (CrateBlock 1.0, BasketWovenM 0.909, Barrel 1.0, SackLeatherM
+      1.091) is SOLID, so the reuse plan would have obstructed stockpile
+      cells. Fixed the right way: asset-lab Batch-A models registered as
+      first-class sprites (BastionCrateStock 0xD4 / BastionBasketStock 0xD5,
+      manifest + vox in assets/), non-solid BY CONSTRUCTION — also the first
+      real asset-lab → engine sprite graduation. Live look rides the next
+      arena session (visual-only; machinery live-proven by the twin legs'
+      identical tapes over item-bearing stockpiles).
+
+**LEDGER COMPLETE — the fork is merge-ready.** Merge = fast-forward/merge to
+wip-batch-verify + rerun the three suites there + one arena eyeball.
