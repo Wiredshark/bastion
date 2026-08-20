@@ -6732,24 +6732,27 @@ impl Server {
                 // wide radius costs nothing but the scan.
                 4096,
             )?;
-            // Re-anchor the WHOLE founding at the town: adopting structures
-            // 300 blocks from the colonists would fail bar 2 for a distance
-            // reason that looks like a binding failure.
-            let ecs = self.state.ecs();
-            let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
-            let asp = bastion_server::bastion_founding_preset::resolve_datum(
-                &terrain,
-                town_origin,
-                sp.z.floor() as i32,
-            )
-            .map(|z| {
-                Vec3::new(
-                    town_origin.x as f32 + 0.5,
-                    town_origin.y as f32 + 0.5,
-                    z as f32 + 1.0,
-                )
-            })
-            .unwrap_or(sp);
+            // Re-anchor the WHOLE founding at the town — via worldgen's own
+            // APPROXIMATE altitude, never loaded terrain. The first version
+            // called `resolve_datum` at the town, where no chunk exists at
+            // founding tick, got None, and silently fell back to the ORIGINAL
+            // spawn: colonists, presence and chunk-loading all stayed 1,100
+            // blocks from the adopted plots, which therefore waited forever
+            // (the WAITING witness read min_loaded=false for an entire leg).
+            // `get_alt_approx` is sim data — terrain-independent by
+            // construction, which is the property this decision needs.
+            let asp = self
+                .world()
+                .sim()
+                .get_alt_approx(town_origin)
+                .map(|alt| {
+                    Vec3::new(
+                        town_origin.x as f32 + 0.5,
+                        town_origin.y as f32 + 0.5,
+                        alt + 2.0,
+                    )
+                })
+                .unwrap_or(sp);
             Some((asp, town_origin, plots))
         }
     }
