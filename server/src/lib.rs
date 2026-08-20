@@ -6890,8 +6890,17 @@ impl Server {
         for i in 0..n {
             bus.emit_now(common::event::CreateItemDropEvent {
                 pos: comp::Pos(
+                    // 2×2, not 4×16: the wide spread put 63 of 64 seeds
+                    // OUTSIDE the preset stockpile zone (measured: stocked=1
+                    // at every cook refusal), starving every consumer that
+                    // requires STOCKPILED raw. Items merge into piles, so
+                    // tight stacking costs nothing.
                     origin.map(|e| e as f32)
-                        + Vec3::new(0.5 + (i % 4) as f32, 0.5 + (i / 4) as f32, 1.0),
+                        + Vec3::new(
+                            0.5 + (i % 2) as f32,
+                            0.5 + ((i / 2) % 2) as f32,
+                            1.0,
+                        ),
                 ),
                 vel: comp::Vel(Vec3::zero()),
                 ori: comp::Ori::default(),
