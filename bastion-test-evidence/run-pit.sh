@@ -210,6 +210,13 @@ case "$ARM" in
   # break can actually occur. No balance number is touched.
   recrabfed)    PITVAR=" BASTION_RECREATION=1 BASTION_SEED_FOOD=64"
               SCRIPT="script-recr-ab.txt" ;;
+  # ★ The gate census arm. The fed A/B reached 96,900 ticks -- past the ~84,000
+  # the calibration says is needed to cross comfort -- and STILL emitted no
+  # recreation preempt. Four gate clauses, no way to tell which blocked. This
+  # arm turns the census on so the next run answers that instead of adding
+  # another absence to the pile.
+  recrgate)     PITVAR=" BASTION_RECREATION=1 BASTION_SEED_FOOD=64 BASTION_RECREATION_GATE_DIAG=1"
+              SCRIPT="script-recr-ab.txt" ;;
   recrabfedctl) PITVAR=" BASTION_SEED_FOOD=64"
               SCRIPT="script-recr-ab.txt" ;;
   recrabctl) PITVAR=""

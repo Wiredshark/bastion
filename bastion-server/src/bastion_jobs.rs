@@ -12419,6 +12419,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // wired and testable, but turning boredom into scheduled
                 // behaviour changes colony throughput, and that deserves a
                 // measured A/B rather than arriving switched on.
+                // ★★ COULDN'T-HAPPEN WITNESS (item 11, 2026-08-19).
+                // This gate has FOUR conditions and, until now, no way to tell
+                // which one blocked. `ITEM11-AB-RESULTS.md` scored the bar
+                // UNSCOREABLE from the ABSENCE of Recreate jobs — but "never
+                // got low enough", "flag off", "already serviced" and "still in
+                // cooldown" all render identically as nothing-happened, and
+                // they call for different fixes. I built a food fixture for one
+                // reading without the witness that distinguishes them; the run
+                // reached 96,900 ticks (past the ~84,000 the calibration says
+                // is needed to cross comfort) and still emitted nothing.
+                //
+                // Env-gated so the default corpus is byte-identical.
+                if std::env::var_os("BASTION_RECREATION_GATE_DIAG").is_some()
+                    && tick.0 % (ARBITRATION_INTERVAL * 20) == 0
+                {
+                    info!(
+                        colonist = %uid,
+                        tick = tick.0,
+                        serviced,
+                        enabled = recreation_enabled(),
+                        recreation = needs.recreation,
+                        comfort = mood_cfg.recreation.comfort,
+                        below_comfort = needs.recreation < mood_cfg.recreation.comfort,
+                        in_cooldown = board.preempt_cooldown.contains_key(uid),
+                        "bastion: RECREATION GATE census (item 11 — which clause blocks?)"
+                    );
+                }
                 if !serviced
                     && recreation_enabled()
                     && needs.recreation < mood_cfg.recreation.comfort
