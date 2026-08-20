@@ -265,6 +265,34 @@ Three options, priced:
 5. **`avg_tick_ms` threshold re-base** — a BAR change.
 6. **which `PersonalityTrait` stands in for "reckless"** — one word; `Adventurous` is nearest.
 
+## ★ ITEM 11 — banked at a PRECISE question (2026-08-19)
+
+**Not "does recreation restore work?" — that is unanswerable until this is
+settled.** The recreation gate at `bastion_jobs.rs:12460` is **never evaluated**:
+
+| emit | line | fired in `recrgate` |
+|---|---|---|
+| hunger preempt | 12244 (inside the `'candidates` loop) | **40** |
+| gate census (mine) | 12446 | **0** |
+| recreation preempt | 12460 | **0** |
+
+Flag delivered (`BASTION_ENV` confirms), binary contains the census (built
+23:32, committed 23:29), `'candidates` loop demonstrably runs.
+
+**The census sits AFTER the `if !serviced && struck_out` block at 12397, at the
+same nesting level as the recreation gate** — so on the face of it, anything
+reaching 12244 should reach 12446. It does not.
+
+**THE QUESTION:** what path leaves the per-colonist iteration between 12244 and
+12446? Candidates: a `break 'candidates` that exits further than it appears, an
+outer-loop `continue`, or an enclosing binding that filters the population.
+**This is a producer read, not a run** — and it is the whole of item 11, because
+no fixture change can reach an unreachable branch.
+
+★ **Do not re-run any recreation arm before answering it.** Three runs have now
+been spent on this item (`recrab`, `recrabfed`, `recrgate`) and every one was
+uninformative for the same reason.
+
 ## Blocked / needs a decision (Ben)
 
 - **Tick-loading scope call** — roadmap criterion passes, mandate bar 2 fails.
