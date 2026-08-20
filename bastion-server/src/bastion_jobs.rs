@@ -2394,6 +2394,15 @@ pub const ARBITRATION_INTERVAL: u64 = crate::SIM_TPS / 2;
 /// `Alarm` — the DE-ESCALATED end, because a v1 that defaults to Fight would
 /// send colonists at hostiles on a paint the player may have meant as a watch
 /// post, and that is a gameplay decision I do not get to make by default.
+/// bastion (ITEM 14, axis 2): witness for the hold-vs-flee evaluation. Without
+/// it, "the guard held" and "no hostile was ever near" produce the same silence
+/// — the didn't-happen / couldn't-happen ambiguity that has cost this program
+/// several rows. Env-gated so the default corpus is unchanged.
+pub fn guard_hold_diag() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("BASTION_GUARD_HOLD_DIAG").is_some())
+}
+
 pub fn guard_mode_pin() -> common::bastion::GuardMode {
     match std::env::var("BASTION_GUARD_MODE").as_deref() {
         Ok("fight") | Ok("Fight") => common::bastion::GuardMode::Fight,
@@ -11083,6 +11092,43 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .is_some_and(|h| h.fraction() < ag.psyche.flee_health)
                 });
                 let flee_sig = flee_target || flee_hurt;
+                // ★★ ITEM 14 AXIS 2 — THE CONSUMER. Until this existed,
+                // `guard_bravery` was a field nothing read: a parameter in name
+                // only, which is why leg 1 scored bar 1 FAIL.
+                //
+                // Ben's ruling: "guarding outranks flee up to a breaking point
+                // that varies by the individual". So a colonist HOLDING A GUARD
+                // ASSIGNMENT suppresses the flee preempt while its health is at
+                // or above its own `guard_bravery` — and stops suppressing below
+                // it. LOWER bravery = holds through a worse wound.
+                //
+                // Deliberately NOT a blanket exemption. The base game exempts
+                // guards from flee entirely (`with_no_flee_if(mark == Guard)`),
+                // and copying that would make axis 2 unobservable: every guard
+                // would hold at every health, and the "breaking point that
+                // varies by the individual" would have no way to differ.
+                let guarding = active_jobs.get(entity).is_some_and(|aj| {
+                    board.jobs.get(&aj.job).is_some_and(|j| {
+                        matches!(j.kind, common::bastion::JobKind::Guard { .. })
+                    })
+                });
+                let guard_holds = guarding
+                    && colonists.get(entity).is_some_and(|c| {
+                        healths
+                            .get(entity)
+                            .is_some_and(|h| h.fraction() >= c.0.guard_bravery)
+                    });
+                if guarding && guard_hold_diag() {
+                    info!(
+                        colonist = uids.get(entity).map(|u| u.0.get()),
+                        flee_sig,
+                        guard_holds,
+                        health = healths.get(entity).map(|h| h.fraction()),
+                        bravery = colonists.get(entity).map(|c| c.0.guard_bravery),
+                        "bastion: ITEM 14 axis 2 -- guard hold-vs-flee evaluated"
+                    );
+                }
+                let flee_sig = flee_sig && !guard_holds;
                 let Some(arb) = arbiters.get_mut(entity) else {
                     continue;
                 };

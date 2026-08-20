@@ -1,3 +1,5 @@
+static PINNED_SO_FAR: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 use super::*;
 use crate::{ServerConstants, persistence::DatabaseSettings, sys::terrain::SpawnEntityData};
 use common::{
@@ -975,7 +977,27 @@ impl<'a> System<'a> for Sys {
                         if let Some(colonist) = &npc.bastion_colonist
                             && !colonists.contains(entity)
                         {
-                            let _ = colonists.insert(entity, comp::Colonist(colonist.clone()));
+                            // ★ ITEM 14 axis 2: pin on the ECS MIRROR, which is
+                            // what the flee site reads (`colonists.get(entity)`).
+                            // The rtsim record behind `colonist` is a `&` here,
+                            // and pinning it would also outlive the fixture by
+                            // persisting into the save — a fixture lever must
+                            // not rewrite the world's stored state.
+                            let mut mirrored = colonist.clone();
+                            if let Some((timid, brave)) =
+                                bastion_server::bastion_jobs::guard_bravery_pins()
+                            {
+                                let n = PINNED_SO_FAR
+                                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                mirrored.guard_bravery = if n == 0 { timid } else { brave };
+                                tracing::info!(
+                                    name = mirrored.name.as_str(),
+                                    guard_bravery = mirrored.guard_bravery,
+                                    nth = n,
+                                    "bastion: ITEM 14 axis 2 -- guard_bravery PINNED at promotion"
+                                );
+                            }
+                            let _ = colonists.insert(entity, comp::Colonist(mirrored));
                             // Entity-event-log stage 3 (2026-08-10, Opus's
                             // ruling): retain every colonist -- no
                             // significance criterion at this population (a
