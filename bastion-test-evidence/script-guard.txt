@@ -13,10 +13,15 @@ note
 anchor
 wait 300
 note --- axis 3: a POST (one point) ---
-designate guardpost 8 8 1 10 10 1
+note COORDS: the colony autofounds at (16384,16384,400) and live jobs sit
+note   around (16379,16385,399). The first version of this script painted at
+note   (8,8,1) -- flat-arena-style coords -- so both assignments landed in
+note   UNLOADED terrain and the phantom sweep retired them. Nothing was wrong
+note   with the guard code; the fixture was pointing at empty space.
+designate guardpost 16390 16384 399 16392 16386 399
 wait 600
 note --- axis 3: a PATROL (region -> two distinct ends) ---
-designate patrol 20 8 1 30 18 1
+designate patrol 16375 16375 399 16381 16381 399
 wait 900
 note --- who claimed what, and where are they? ---
 inspect_colonists
@@ -27,3 +32,20 @@ note --- a second look after the patrol has had time to switch legs ---
 inspect_colonists
 list_designations
 wait 300
+note
+note --- BARS 3 and 4: the HOSTILE. /spawn places it AT THE DRIVER, so the
+note   driver must stand near the guards for the hostile to reach them. This is
+note   the precondition bars 3/4 were blocked on, cleared from banked evidence
+note   (item 15's wall rows used the same mechanism).
+note   The verb is `cmd spawn enemy wolf`, NOT `spawn wolf` -- the driver's own
+note   `spawn` verb takes a COUNT and makes COLONISTS. Copied from item 15's
+note   wall rows, which is the mechanism already proven to put a hostile in a
+note   fixture.
+cmd goto 16390 16384 399
+wait 300
+cmd spawn enemy wolf
+wait 900
+inspect_colonists
+wait 900
+inspect_colonists
+wait 600

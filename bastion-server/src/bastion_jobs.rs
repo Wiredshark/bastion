@@ -11112,6 +11112,41 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         matches!(j.kind, common::bastion::JobKind::Guard { .. })
                     })
                 });
+                // ★★ BAR 3 + BAR 4 IN ONE LEVER (item 14).
+                // `BASTION_GUARD_PLANT_WOUND=<fraction>` wounds every
+                // guard-holding colonist to that health fraction, driving
+                // `flee_hurt` -- the branch axis 2 ACTUALLY gates on
+                // (guard_bravery is compared against health.fraction()).
+                //
+                // With the pins at 0.8 (timid) and 0.2 (brave) and a wound to
+                // 0.5, the two MUST diverge in the same run:
+                //   timid  0.5 <  0.8  -> does NOT hold -> flees
+                //   brave  0.5 >= 0.2  -> HOLDS
+                // That is bar 3 (axis 2 bites) and bar 4 (the hold goes red BY
+                // NAME under a planted value) simultaneously, and neither can
+                // pass by accident: a blanket exemption would hold BOTH, and a
+                // broken threshold would flee BOTH.
+                if guarding
+                    && let Ok(w) = std::env::var("BASTION_GUARD_PLANT_WOUND")
+                    && let Ok(frac) = w.parse::<f32>()
+                    && let Some(mut h) = healths.get_mut(entity)
+                    && h.fraction() > frac
+                {
+                    let delta = (h.maximum() * frac) - h.current();
+                    h.change_by(comp::HealthChange {
+                        amount: delta,
+                        by: None,
+                        cause: None,
+                        time: *time,
+                        precise: false,
+                        instance: 0,
+                    });
+                    info!(
+                        colonist = uids.get(entity).map(|u| u.0.get()),
+                        frac,
+                        "bastion: ITEM 14 PLANTED WOUND applied to a guard"
+                    );
+                }
                 let guard_holds = guarding
                     && colonists.get(entity).is_some_and(|c| {
                         healths

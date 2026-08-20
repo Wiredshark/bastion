@@ -227,6 +227,12 @@ case "$ARM" in
   # same posts and patrols, so the ONLY moving variable is Alarm vs Fight.
   guardfight)   PITVAR=" BASTION_ACCESS_CLAIM_DIAG=1 BASTION_GUARD_BRAVERY=0.8,0.2 BASTION_GUARD_MODE=fight"
               SCRIPT="script-guard.txt" ;;
+  # ★ BARS 3 + 4 IN ONE ARM. Wound every guard to 0.5 health. With pins at
+  # 0.8/0.2 the two MUST diverge: timid (0.5 < 0.8) stops holding, brave
+  # (0.5 >= 0.2) keeps holding. A blanket exemption would hold BOTH; a broken
+  # threshold would flee BOTH. Neither bar can pass by accident.
+  guardwound)   PITVAR=" BASTION_ACCESS_CLAIM_DIAG=1 BASTION_GUARD_BRAVERY=0.8,0.2 BASTION_GUARD_HOLD_DIAG=1 BASTION_GUARD_PLANT_WOUND=0.5"
+              SCRIPT="script-guard.txt" ;;
   recrabfedctl) PITVAR=" BASTION_SEED_FOOD=64"
               SCRIPT="script-recr-ab.txt" ;;
   recrabctl) PITVAR=""
