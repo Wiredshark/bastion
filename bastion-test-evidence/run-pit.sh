@@ -330,6 +330,9 @@ case "$ARM" in
   tradefed)     PITVAR=" BASTION_ADOPT_TOWN=1 BASTION_AUTOFOUND_REAL_TERRAIN=1 BASTION_COLONY_PRESENCE_VD=3 BASTION_SEED_FOOD=8 BASTION_SEED_MATERIALS=64"
               PITARENA=""
               SCRIPT="script-adopt.txt" ;;
+  # Item 31 (POWER-0): both favor-gate branches in one flat-arena leg.
+  smite)        PITVAR=" BASTION_SEED_FOOD=64"
+              SCRIPT="script-smite.txt" ;;
   guardwound)   PITVAR=" BASTION_ACCESS_CLAIM_DIAG=1 BASTION_GUARD_BRAVERY=0.8,0.2 BASTION_GUARD_HOLD_DIAG=1 BASTION_GUARD_PLANT_WOUND=0.5"
               SCRIPT="script-guard.txt" ;;
   recrabfedctl) PITVAR=" BASTION_SEED_FOOD=64"
