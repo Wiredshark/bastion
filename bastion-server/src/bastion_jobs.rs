@@ -1178,6 +1178,7 @@ pub(crate) fn job_kind_label(kind: &common::bastion::JobKind) -> &'static str {
         common::bastion::JobKind::EatFrom { .. } => "EatFrom",
         common::bastion::JobKind::Despond { .. } => "Despond",
         common::bastion::JobKind::Recreate { .. } => "Recreate",
+        common::bastion::JobKind::Guard { .. } => "Guard",
     }
 }
 
@@ -1975,7 +1976,10 @@ fn job_still_wanted(kind: &common::bastion::JobKind, block: &Block) -> bool {
         | common::bastion::JobKind::Despond { .. }
         // bastion (ITEM 11): Recreate is a self-job like the four above —
         // pre-claimed FOR one colonist, never drawn from the open board.
-        | common::bastion::JobKind::Recreate { .. } => true,
+        | common::bastion::JobKind::Recreate { .. }
+        // ITEM 14: a guard assignment is a self-job -- pre-claimed, held at a
+        // place the job itself carries.
+        | common::bastion::JobKind::Guard { .. } => true,
     }
 }
 
@@ -2369,6 +2373,38 @@ fn tightdig_measure(
 /// Arbitration cadence in server ticks (~0.5s at 30 tps): "a few Hz, not
 /// every tick".
 pub const ARBITRATION_INTERVAL: u64 = crate::SIM_TPS / 2;
+
+/// bastion (ITEM 14, axis 2): FIXTURE PIN for `guard_bravery`. Two distinct
+/// values must be proven live for the axis to be a parameter rather than a
+/// constant (bar 1), and the colony generator currently emits one neutral
+/// value because the DISTRIBUTION is banked for Ben.
+///
+/// `BASTION_GUARD_BRAVERY=0.8,0.2` pins the FIRST guard-assigned colonist to
+/// 0.8 (timid) and every subsequent one to 0.2 (brave) — the smallest shape
+/// that puts two values in ONE run, which is what the bar requires. A single
+/// value pins all of them.
+///
+/// ★ REFUSES a malformed value rather than falling back to the default: a
+/// silent fallback would run the whole A/B unpinned and score "no difference"
+/// from an arm that was never treated.
+pub fn guard_bravery_pins() -> Option<(f32, f32)> {
+    let raw = std::env::var("BASTION_GUARD_BRAVERY").ok()?;
+    let mut it = raw.split(',');
+    let first: f32 = it
+        .next()
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or_else(|| {
+            panic!("BASTION_GUARD_BRAVERY={raw:?} is not a float or `timid,brave` pair")
+        });
+    let rest: f32 = match it.next() {
+        Some(v) => v.trim().parse().unwrap_or_else(|_| {
+            panic!("BASTION_GUARD_BRAVERY={raw:?}: second value is not a float")
+        }),
+        None => first,
+    };
+    Some((first, rest))
+}
+
 /// A colonist counts as arrived within this 3D distance of the job's
 /// stand-at target (`block + (0.5, 0.5, 1.0)`).
 // AUTON-2 unification (site 4/6 C1, 2026-08-09): widened pub -- the
@@ -15801,7 +15837,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         },
                         // Self-jobs complete in their own arms above —
                         // defensive.
-                        common::bastion::JobKind::Haul { .. }
+                        // ITEM 14: a guard assignment has no terrain
+                        // precondition to re-check, exactly like the self-jobs
+                        // below it.
+                        common::bastion::JobKind::Guard { .. }
+                        | common::bastion::JobKind::Haul { .. }
                         | common::bastion::JobKind::DepositRun { .. }
                         | common::bastion::JobKind::RestAt { .. }
                         | common::bastion::JobKind::EatFrom { .. }

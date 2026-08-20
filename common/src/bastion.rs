@@ -1629,6 +1629,22 @@ pub struct BastionColonist {
     pub backstory: String,
     pub skills: ColonistSkills,
     pub work_priorities: WorkPriorities,
+    /// bastion (ITEM 14, AXIS 2 — HOLD-vs-FLEE). Ben's ruling: guarding
+    /// outranks flee **up to a breaking point that varies by the
+    /// individual**. This is that point, PER COLONIST.
+    ///
+    /// A guarding colonist holds while `health.fraction() >= guard_bravery`.
+    /// **Lower = braver.** Same direction as `Psyche::flee_health`, which it
+    /// competes with, so the two can be compared without a sign flip — a
+    /// reversed sense here would make the "brave" pin flee FIRST while every
+    /// number still looked plausible.
+    ///
+    /// Lives on the PERSISTED colonist record (not the ECS mirror) so it
+    /// survives promote/demote — a bravery that reset when a colonist
+    /// unloaded would make axis 2 unmeasurable across a long run.
+    /// serde-defaulted so pre-item-14 saves parse.
+    #[serde(default = "default_guard_bravery")]
+    pub guard_bravery: f32,
     /// bastion (B6 SOFT-0): transient SOFT-COLLISION state — while sim
     /// `Time` < this, the phys colonist↔colonist push is SOFTENED so this
     /// colonist can squeeze past another in a chokepoint (terrain stays
@@ -2304,6 +2320,13 @@ impl BastionColonist {
         Self {
             name,
             backstory,
+            // ITEM 14 axis 2: the NEUTRAL default, not an invented spread.
+            // The ruling says bravery varies by the individual
+            // (personality/veterancy) — but the DISTRIBUTION is a balance
+            // choice, and `rng` is right here, so it would have been one line
+            // to invent one. Banked for Ben instead; the fixture pins two
+            // distinct values via BASTION_GUARD_BRAVERY to score bar 1.
+            guard_bravery: default_guard_bravery(),
             skills: ColonistSkills {
                 mining: skill(rng),
                 woodcutting: skill(rng),
