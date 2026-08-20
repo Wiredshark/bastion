@@ -1,0 +1,17 @@
+note ITEM 31 (POWER-0) -- both branches of the favor gate in one leg.
+note Favor starts EMPTY (the resource's Default), trickles 0.2/s, Smite
+note costs 5.0. Cast #1 fires ~10s in: REFUSED (favor ~2 < 5), witnessed
+note with price beside balance. Cast #2 fires after ~40 more game-seconds:
+note favor ~10 >= 5 -> real damage + lightning + favor deducted.
+note BAR 4 (no-command): the target's job state is untouched by the cast --
+note the inspects bracket it.
+anchor
+wait 300
+inspect_colonists
+cmd bastion_smite Osric of the Vale
+wait 1500
+inspect_colonists
+cmd bastion_smite Osric of the Vale
+wait 600
+note --- post-cast: Osric's health should be ~0.4; nobody else touched ---
+inspect_colonists
