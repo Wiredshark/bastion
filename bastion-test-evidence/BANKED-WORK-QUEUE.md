@@ -51,6 +51,16 @@ empty queue is itself a finding — refill from `readme/BUILD-ROADMAP.md`.
    pinned population is actually trap-prone, and report it if it is merely
    well-travelled. A proxy that is never checked against the behaviour it
    proxies is an assumption wearing a measurement's clothes.
+   **BEHAVIOURAL CHECK RUN (2026-08-20, pintrait leg + code read): the pin
+   REACHES the record and the display (8/8 witnesses, traits cluster exact)
+   but personality is BEHAVIOUR-BLIND today** — vanilla `Psyche::flee_health`
+   derives from BODY (`agent.rs:286`), never personality; `guard_bravery` is
+   a separate uncoupled axis (24/24 samples at 0.50 under the pin). Per Ben's
+   caveat: saying so rather than forcing it — **Adventurous is currently
+   neither reckless NOR exploration-seeking; it is inert outside desires/
+   display.** #110 gate 1 therefore needs the personality→behaviour coupling
+   (the banked guard-bravery-distribution ruling is the natural vehicle)
+   BEFORE a trap-prone-population leg can measure anything.
 
 5. **`ch_cancel_clean` is an unexercised falsifier** — true on all 41 seeds where
    it ran, false only where it could not run. A check that has never gone red
