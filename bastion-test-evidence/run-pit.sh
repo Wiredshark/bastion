@@ -246,7 +246,11 @@ case "$ARM" in
               SCRIPT="script-chronicle.txt" ;;
   # ★ ITEM 16 P2+P3: priority bite + reversibility, windowed by the command's
   # own server-side witness lines (fixes the unwindowed-grep retraction).
-  haulrev)      PITVAR=""
+  # VOID-fix 2026-08-20: the unseeded arm's baseline window hauled NOTHING --
+  # the colony had produced no loose items in 1,500 ticks (deliveries appeared
+  # only later). BASTION_SEED_FOOD drops 64 items at founding, so haul work
+  # exists from tick 1 and the baseline window can bite.
+  haulrev)      PITVAR=" BASTION_SEED_FOOD=64"
               SCRIPT="script-haulrev.txt" ;;
   # ★ ADOPT-A-TOWN mode A (real terrain -- towns do not exist in the flat
   # arena). Added BEFORE the batch chain launches, because editing this file
@@ -259,7 +263,11 @@ case "$ARM" in
               SCRIPT="script-desires.txt" ;;
   indiv)        PITVAR=" BASTION_CULTURE_ALPHA=0.1"
               SCRIPT="script-desires.txt" ;;
-  adopt)        PITVAR=" BASTION_ADOPT_TOWN=1"
+  # VOID-fix 2026-08-20: the arm ran real terrain WITHOUT the real-terrain
+  # autofound gate, so the FOUNDING never fired and adoption was never
+  # evaluated -- 0 founding events, neither witness. The flag was delivered;
+  # the code it gates was upstream-blocked.
+  adopt)        PITVAR=" BASTION_ADOPT_TOWN=1 BASTION_AUTOFOUND_REAL_TERRAIN=1"
               PITARENA=""
               SCRIPT="script-adopt.txt" ;;
   guardwound)   PITVAR=" BASTION_ACCESS_CLAIM_DIAG=1 BASTION_GUARD_BRAVERY=0.8,0.2 BASTION_GUARD_HOLD_DIAG=1 BASTION_GUARD_PLANT_WOUND=0.5"

@@ -2411,6 +2411,49 @@ pub fn guard_hold_diag() -> bool {
 /// REFUSES a malformed value rather than defaulting: a silent fallback would
 /// run an A/B arm untreated and score "no difference" from an arm that never
 /// carried the treatment (the same rule as the bravery pin).
+/// bastion (ITEM 24, SEASONS THAT BITE): the season's multiplier on
+/// `FARM_STAGE_SECS`. Directions are the charter's (winter must be capable of
+/// killing an unprepared colony); magnitudes are v1 calibration, measured by
+/// the pinned-season A/B -- the same stance as the desires weights. `None` =
+/// winter: growth is PAUSED, not slowed, so the bite cannot be tuned away by
+/// accident.
+pub fn season_stage_factor(season: common::time::Season) -> Option<f64> {
+    use common::time::Season as S;
+    match season {
+        S::Spring => Some(1.0),
+        S::Summer => Some(0.75),
+        S::Autumn => Some(1.5),
+        S::Winter => None,
+    }
+}
+
+/// bastion (ITEM 24): the season the FARM ARM consumes -- pinnable for the
+/// A/B (`BASTION_PIN_SEASON=spring|summer|autumn|winter`), REFUSING malformed
+/// values (the bravery-pin rule: a silent fallback runs an arm untreated and
+/// scores "no difference" from an arm that never carried the treatment).
+/// Unpinned, it is the real derivation over the loaded RON config.
+pub fn farm_season(time_of_day: f64) -> common::time::Season {
+    use common::time::Season as S;
+    static PIN: std::sync::OnceLock<Option<S>> = std::sync::OnceLock::new();
+    let pin = PIN.get_or_init(|| {
+        std::env::var("BASTION_PIN_SEASON").ok().map(|v| {
+            match v.to_ascii_lowercase().as_str() {
+                "spring" => S::Spring,
+                "summer" => S::Summer,
+                "autumn" => S::Autumn,
+                "winter" => S::Winter,
+                other => panic!("BASTION_PIN_SEASON={other:?} is not a season"),
+            }
+        })
+    });
+    pin.unwrap_or_else(|| {
+        S::at(
+            time_of_day,
+            common::time::SeasonConfig::current().days_in_year,
+        )
+    })
+}
+
 pub fn culture_alpha() -> Option<f32> {
     static A: std::sync::OnceLock<Option<f32>> = std::sync::OnceLock::new();
     *A.get_or_init(|| {
@@ -11680,8 +11723,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     let ck = (cpos.x, cpos.y, cpos.z);
                                     let last =
                                         board.farm_growth.get(&ck).copied().unwrap_or(time.0);
-                                    if time.0 - last >= FARM_STAGE_SECS {
+                                    // ITEM 24: the season BITES here. Winter
+                                    // pauses growth entirely (None); other
+                                    // seasons scale the stage interval.
+                                    let season =
+                                        farm_season(rtsim.rt_state().data().time_of_day.0);
+                                    let stage_secs = season_stage_factor(season)
+                                        .map(|f| FARM_STAGE_SECS * f);
+                                    if stage_secs.is_some_and(|ss| time.0 - last >= ss) {
                                         if let Ok(nb) = crop.with_attr(Growth(g + 1)) {
+                                            // Treatment beside outcome, per
+                                            // subject (the standing lesson).
+                                            info!(
+                                                pos = ?cpos,
+                                                stage = g + 1,
+                                                ?season,
+                                                "bastion: ITEM 24 crop stage-up under season"
+                                            );
                                             stage_ups.push((cpos, nb, g + 1));
                                         }
                                     } else {
