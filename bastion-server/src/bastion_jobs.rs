@@ -10517,8 +10517,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             "bastion: haul candidate SKIPPED, cell occupied by a job"
                         );
                     }
-                    // ★ THE FIX, ENV-GATED AND INERT BY DEFAULT
-                    // (BASTION_FIX_HAUL_STARVED_CELL=1).
+                    // ★ THE FIX — **ON BY DEFAULT** since Ben's ruling 2
+                    // (2026-08-19): "the passing endurance A/B is exactly what
+                    // defaults are for. Keep the env kill-switch, name it in
+                    // the manifest."
+                    //
+                    // KILL SWITCH: `BASTION_NO_FIX_HAUL_STARVED_CELL=1` restores
+                    // the pre-fix behaviour — kept because every banked run
+                    // before 2026-08-19 was made without the fix, so
+                    // reproducing one needs the old path available BY NAME
+                    // rather than by checking out an old tip.
                     //
                     // The `occupied` exclusion exists so hauling does not strip
                     // items out of a cell that is itself an active work site.
@@ -10534,7 +10542,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // original protection is intact and only the deadlock case
                     // changes. Default-off keeps every banked run reproducible
                     // and makes the A/B one env var wide.
-                    let starved_cell = std::env::var_os("BASTION_FIX_HAUL_STARVED_CELL").is_some()
+                    let starved_cell = std::env::var_os("BASTION_NO_FIX_HAUL_STARVED_CELL")
+                        .is_none()
                         && board.jobs.values().any(|j| {
                             j.pos == cell
                                 && j.claimed_by.is_none()
