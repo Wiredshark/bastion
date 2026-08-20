@@ -12683,9 +12683,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // is needed to cross comfort) and still emitted nothing.
                 //
                 // Env-gated so the default corpus is byte-identical.
-                if std::env::var_os("BASTION_RECREATION_GATE_DIAG").is_some()
-                    && tick.0 % (ARBITRATION_INTERVAL * 20) == 0
-                {
+                // ★ MODULO REMOVED (2026-08-20). The first version fired only
+                // on `tick % 300 == 0`. That made "the line was never reached"
+                // and "reached, but never on a multiple of 300" produce the
+                // SAME zero — the didn't-happen / couldn't-happen ambiguity
+                // this census exists to resolve, rebuilt inside the census.
+                // It now fires whenever the line is REACHED, which is the only
+                // question it was ever meant to answer.
+                if std::env::var_os("BASTION_RECREATION_GATE_DIAG").is_some() {
                     info!(
                         colonist = %uid,
                         tick = tick.0,
