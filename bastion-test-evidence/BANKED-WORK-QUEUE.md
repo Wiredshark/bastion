@@ -347,8 +347,16 @@ refused at the fetch gate.**
 `stockpile_has_material` DISAGREE about the same seeded mushrooms.** Two
 availability checks, one item population, opposite answers — one of them is
 wrong about what "available" means (def-format mismatch, reservation state, or
-zone membership). This is a producer read of `stockpile_has_material` against
-the generator's scan, not a run.
+zone membership). **NARROWED by the producer read (2026-08-20): the ONLY
+differing clause is `is_reserved`** — def-match and stockpile-membership are
+identical in both checks; the generator omits the reservation test. Leading
+hypothesis: the seeded raws end up RESERVED (EatFrom reservations from the
+colony's continuous eating, or a reservation leak on released claims — six
+`reservations.remove` sites exist, unaudited).
+**NEXT ACTION (first thing, next iteration): add `reserved_raw=` to the cook
+idle witness and `materials_reserved=` to the claim census** — one line each,
+then ONE leg decides between "eaten/reserved legitimately" and "leaked". Do
+not audit the six release paths by eye first; the instrument is cheaper.
 
 Also noted: a 3×3 station paint registered NINE stations (one per cell) — the
 granularity wants a v1 note (one station per paint, or dedupe by adjacency)
