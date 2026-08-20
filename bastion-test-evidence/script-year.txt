@@ -1,0 +1,27 @@
+note ITEM 24 bar 2 -- THE ANNUAL CYCLE, unpinned. PIT_DAY_LENGTH=0.5 makes a
+note game day 30 wall-seconds at 1x; headless compression shrinks a 160-day
+note year to a declared ~20-40 min leg. THE BAR: food stock rises through
+note Spring/Summer and falls through Winter -- the census's food_stock series
+note is the instrument (the same producer the terminal check reads).
+note DECLARED RUN LENGTH: the waits below total ~170 game-days; the leg ends
+note when the script ends. Extending because it looks good is NOT allowed
+note (declare-run-length-before-launch).
+anchor
+wait 3000
+inspect_colonists
+note --- the year: long holds, periodic samples (the census logs server-side
+note     each arbitration window; inspects add the client-side view) ---
+wait 20000
+inspect_colonists
+wait 20000
+inspect_colonists
+wait 20000
+inspect_colonists
+wait 20000
+inspect_colonists
+wait 20000
+inspect_colonists
+wait 20000
+inspect_colonists
+wait 20000
+inspect_colonists
