@@ -31,3 +31,17 @@ Design note: cheese/potion (non-FOOD_DEFS loadout junk) sat where dropped —
 no zone accepts them and no haul was minted; when more classes get typed
 stores (item 26's chains will want a materials store), the class map is the
 only edit (the selector is already class-generic).
+
+## Bar 1 completed (chain14 zones leg, 2026-08-20): **PASS both halves**
+
+The fixed-offset witness fired throttled all leg: `typed-zone refusal — no
+store accepts this item class` for `wheat_seeds` (×27 windows) and `stones`
+(×13) — and NEVER for wheat proper (the one FOOD_DEFS item in play), so the
+filter discriminates exactly on class. Behavior matched: wheat came to rest
+INSIDE the FoodStore (16393.9, 16393.4); stones ended OUTSIDE its boundary;
+all five minted hauls carried `destination: 3` (the typed store). In-store
+cheese/potion are driver-drop artifacts (the player stood in the store for
+dropall), not routing — named so the item table reads honestly.
+
+**Item 30 standing: bars 1, 2, 4 PASS; bar 3 (twin determinism) rides the
+standing twin queue.**
