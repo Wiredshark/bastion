@@ -7839,6 +7839,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let pending = std::mem::take(&mut pending_seed_items.0);
                 let mut still_waiting = Vec::new();
                 for (pos, def, count) in pending {
+                    // Deliver INTO the pantry, not the doorstep: when a
+                    // stockpile zone exists by delivery time, retarget to
+                    // its center — the adopted town's zone registered 36
+                    // blocks from the founding origin and origin-dropped
+                    // seeds sat outside every census forever.
+                    let pos = board
+                        .stockpiles
+                        .first()
+                        .map(|(_, r)| {
+                            let c = (r.min + r.max) / 2;
+                            Vec3::new(c.x, c.y, r.max.z)
+                        })
+                        .unwrap_or(pos);
                     if terrain.get(pos).is_ok() {
                         for i in 0..count {
                             item_drop_emitter.emit(CreateItemDropEvent {
