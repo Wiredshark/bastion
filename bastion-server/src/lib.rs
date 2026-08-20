@@ -28,6 +28,7 @@ pub mod bastion_jobs;
 pub mod bastion_mood;
 pub mod bastion_path;
 pub mod bastion_piles;
+pub mod bastion_renderer_bench;
 pub mod bastion_traversal;
 pub mod bastion_traversal_tooling;
 #[cfg(not(feature = "worldgen"))] pub mod test_world;

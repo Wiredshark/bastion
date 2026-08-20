@@ -58,6 +58,9 @@ pub fn add_server_systems(dispatch_builder: &mut DispatcherBuilder) {
         &crate::bastion_path::Sys::sys_name(),
     ]);
     dispatch::<crate::bastion_piles::Sys>(dispatch_builder, &[]);
+    // renderer-bench W2 (fork): fixture loader + scripted driver + semantic
+    // tape. Env-gated; inert (one Option check) without the gate.
+    dispatch::<crate::bastion_renderer_bench::Sys>(dispatch_builder, &[]);
     dispatch::<terrain::Sys>(dispatch_builder, &[&msg::terrain::Sys::sys_name()]);
     dispatch::<waypoint::Sys>(dispatch_builder, &[]);
     dispatch::<teleporter::Sys>(dispatch_builder, &[]);

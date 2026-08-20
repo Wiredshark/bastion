@@ -1938,6 +1938,29 @@ impl PlayState for SessionState {
 
     fn tick(&mut self, global_state: &mut GlobalState, events: Vec<Event>) -> PlayStateResult {
         span!(_guard, "tick", "<Session as PlayState>::tick");
+        // renderer-bench W2 visual_capture (fork build): env-gated periodic
+        // screenshot through the EXISTING capture path. Interface note (W0):
+        // "background completion is not semantic authority" — these captures
+        // are the human-eyeball sidecar of a bench run, keyed by wall-named
+        // files; the SEMANTIC record is the server-side tape. Gate read once.
+        {
+            use std::sync::OnceLock;
+            static CAPTURE_EVERY: OnceLock<Option<u64>> = OnceLock::new();
+            let every = *CAPTURE_EVERY.get_or_init(|| {
+                std::env::var("BASTION_RENDERER_BENCH_CAPTURE")
+                    .ok()
+                    .and_then(|v| v.parse::<u64>().ok())
+                    .filter(|n| *n > 0)
+            });
+            if let Some(every) = every {
+                let tick = self.client.borrow().get_tick();
+                if tick % every == 0 {
+                    global_state
+                        .window
+                        .take_screenshot(&global_state.settings);
+                }
+            }
+        }
         // TODO: let mut client = self.client.borrow_mut();
         // TODO: can this be a method on the session or are there borrowcheck issues?
         let (client_presence, client_type, client_registered) = {

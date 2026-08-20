@@ -4,7 +4,7 @@
 //! encoder never regenerates or blesses expected bytes; these files are the
 //! authority and Python produced them).
 
-use common::renderer_bench::*;
+use veloren_common::renderer_bench::*;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
