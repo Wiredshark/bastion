@@ -323,6 +323,18 @@ in-inventory events have no stable subject) — **routed to Fable as its own
 row**. Wake condition: Fable's identity ruling. Nothing here is buildable
 without crossing that routing.
 
+## Block 3 closures (2026-08-20, later)
+
+| row | state |
+|---|---|
+| Item 16 P2+P3 | **PASS in-window** (baseline 10 / zeroed 0 / restored 15) — the retraction honestly re-scored |
+| Item 17 | **PASS 4/4** — bar 3 from banked sweeps (farm 3→4 mid-run) |
+| Item 24 bar 1 | **PASS** — summer 1,151 stage-ups vs winter 0 with the winter colony fully alive (30 tills, 8 sows, 213 claims) |
+| Item 12 | **PASS 4/4**, Arc 2 complete |
+| Desires/societal axis | **PASS** — tradeoff measures both directions, deterministic same-seed |
+| Adopt-a-town | **bar 1 PASS** (5 plots → 1,519 designations, founded IN the town), bar 2 PARTIAL (access-work proven; production+eats pending one seeded leg). Three silent-fallback root causes found by successive witnesses |
+| Item 27 (cooking) | vocabulary + all arms landed (CookStation + JobKind::Cook); NEXT: station registry + generator + completion handler |
+
 ## Blocked / needs a decision (Ben)
 
 - **Tick-loading scope call** — roadmap criterion passes, mandate bar 2 fails.
