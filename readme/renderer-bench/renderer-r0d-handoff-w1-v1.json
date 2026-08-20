@@ -1,0 +1,106 @@
+{
+  "allowed_existing_files": [
+    "common/src/lib.rs",
+    "common/src/comp/bastion.rs",
+    "common/state/src/state.rs",
+    "common/net/src/synced_components.rs"
+  ],
+  "allowed_new_files": [
+    "common/src/renderer_bench.rs",
+    "common/src/renderer_bench/**",
+    "common/tests/renderer_bench_vectors.rs",
+    "common/net/tests/renderer_bench_sync.rs",
+    "bastion-harness/tests/renderer_bench_reference.rs",
+    "readme/renderer-bench/**"
+  ],
+  "contract_rules": [
+    "explicit exhaustive matches for every current projected enum; no wildcard, debug-string, or source-order cast",
+    "sort manifest entities and equipment slots by stable semantic identity",
+    "preserve recursive modular/compound item component Vec order",
+    "unknown tags and trailing bytes fail closed",
+    "shared wire types are always compiled and runtime-inert; no renderer-bench Cargo feature",
+    "production encoder cannot regenerate or bless expected vector bytes"
+  ],
+  "corrected_scope_notes": [
+    "common/src/comp/mod.rs is read-only because comp::bastion is already exported",
+    "use bastion-harness/tests/renderer_bench_reference.rs, not src/renderer_bench_reference.rs"
+  ],
+  "downstream_state": {
+    "ARCHITECTURE_SELECTION": "BLOCKED",
+    "GOLDEN_PROMOTION": "BLOCKED",
+    "R0P": "BLOCKED",
+    "W2_PLUS": "BLOCKED_UNTIL_W1_PASS_AND_CHECKSUM_BOUND_W2_HANDOFF"
+  },
+  "forbidden_files": [
+    "common/src/comp/mod.rs",
+    "bastion-harness/src/main.rs",
+    "common/net/src/sync/net_sync.rs",
+    "server/**",
+    "client/**",
+    "voxygen/**"
+  ],
+  "freshness_refusal": "any source, parent, branch, dirty-state, package, collision, lease, or base-blob mismatch invalidates this handoff and requires a new W0 admission",
+  "interfaces": {
+    "artifact_transaction": 1,
+    "common_contract": 1,
+    "fixture_manifest": 1,
+    "golden_policy": 1,
+    "r0d_admission": 1,
+    "readback_terminal": 1,
+    "replication_projection_ack": 1,
+    "script_protocol": 1,
+    "semantic_frame_token": 1,
+    "semantic_tape": 1,
+    "synced_entity_id": 1,
+    "visual_capture": 1
+  },
+  "launch_state": "W1_LAUNCHABLE_AFTER_IMMEDIATE_REATTESTATION",
+  "prerequisite_artifact_sha256": {
+    "renderer-r0d-canonical-vectors-v1.json": "af1c295c4659c8eab0bcac1c746a74f7b1c2af8d5c74a3145c0df6ff7ebbc313",
+    "renderer-r0d-contradiction-ledger-v1.json": "344d922dfa6235f75a9a4b137b992a16fd307a0a5b6182a5a52ba8ae3914d703",
+    "renderer-r0d-independent-reference-attestation-v1.json": "18c8728368e1b7607af2fe95c796251f7e45173d2c1e2798d2adff29cbabb8b3",
+    "renderer-r0d-interface-manifest-v1.json": "8ba2b069b2484fccb37a14bb467baa347834273d2bd331859959899ca5f27961",
+    "renderer-r0d-ownership-leases-v1.json": "154cc068947e89df8f1747f718d9a59d0f889c08686ca702bf428409b28345ab",
+    "renderer-r0d-preflight-manifest-v1.json": "3f44db360de2b01b7920bd4ccb857344c4d0f36e6e12a8a670750ad8c425f912",
+    "renderer-r0d-w1-base-blobs-v1.json": "422b10dfa77525e9d2b10a5a268244a90902701de10b6e9a27369f482f9344bc",
+    "renderer-r0d-w1-reviewed-vectors-v1.json": "da6dd3e6f5c62c36d7223ca11d1ce2a73ab9a3665d130ed460b1c18487817b3a",
+    "renderer-r0d-w1-rollback-manifest-v1.json": "cc78c62f64e89f2ab820681a8ce94a1cdca7080edf9ff8cf6a16ea3e545d3d3d"
+  },
+  "required_immediate_freshness_commands": [
+    "git rev-parse HEAD",
+    "git rev-parse HEAD^",
+    "git symbolic-ref --short HEAD",
+    "git status --porcelain=v1 --untracked-files=all",
+    "git diff --check",
+    "git diff-index --quiet HEAD --",
+    "git submodule status --recursive",
+    "rustc -Vv",
+    "cargo -V",
+    "sha256sum Cargo.lock",
+    "cargo metadata --locked --no-deps --format-version 1"
+  ],
+  "required_test_commands": [
+    "cargo test -p veloren-common renderer_bench --locked",
+    "cargo test -p veloren-common renderer_bench --locked --no-default-features",
+    "cargo test -p veloren-common-state renderer_bench --locked",
+    "cargo test -p veloren-common-net renderer_bench --locked",
+    "cargo test -p veloren-common-net renderer_bench --locked --no-default-features",
+    "cargo test -p bastion-harness renderer_bench --locked",
+    "cargo check -p veloren-server -p veloren-client -p veloren-voxygen --locked"
+  ],
+  "required_w1_verdicts": [
+    "W1_PASS",
+    "W1_FAIL_CONTRACT",
+    "W1_FAIL_VECTOR",
+    "W1_FAIL_SYNC",
+    "W1_FAIL_SCOPE",
+    "W1_FAIL_ROLLBACK",
+    "INVALID_EVIDENCE"
+  ],
+  "schema": "renderer-r0d-handoff-w1-v1",
+  "source_authority": {
+    "branch": "bastion/block-B6HAUL",
+    "commit": "5de5361bc53cdac252c30c43cc979512550ae5e9",
+    "parent": "d7e161a914168c8288bb3b9322f99187be08020b"
+  }
+}

@@ -1,0 +1,107 @@
+{
+  "schema": "renderer-r0d-canonical-vectors-v1",
+  "tag_tables": {
+    "domain": {
+      "ArtifactLifecycle": 15,
+      "AssetMeshContent": 11,
+      "CameraFrame": 6,
+      "ClientProjection": 5,
+      "FigureDecision": 10,
+      "FigureIdentity": 9,
+      "FigureSourceProjection": 8,
+      "ManifestIdentity": 1,
+      "PassDraw": 12,
+      "ReadbackLifecycle": 14,
+      "ReplicationProjection": 4,
+      "RunTerminal": 16,
+      "SceneEnvironment": 7,
+      "ServerFixture": 2,
+      "ServerScriptState": 3,
+      "VisualStructure": 13
+    },
+    "owner_kind": {
+      "Artifact": 8,
+      "AssetRequest": 5,
+      "FigureKey": 4,
+      "Frame": 2,
+      "Pass": 6,
+      "Readback": 7,
+      "Run": 1,
+      "StableEntity": 3
+    },
+    "type": {
+      "BOOL": 2,
+      "BYTES": 8,
+      "ENUM": 12,
+      "FINITE_F32": 14,
+      "FIXED_I32": 16,
+      "I32": 6,
+      "I64": 7,
+      "OPTION": 10,
+      "SEQUENCE": 11,
+      "SHA256": 13,
+      "STRUCT": 15,
+      "U16": 3,
+      "U32": 4,
+      "U64": 5,
+      "U8": 1,
+      "UTF8": 9
+    }
+  },
+  "vectors": {
+    "diagnostic_callback_ordinal_mutation": {
+      "changed_root_mask": []
+    },
+    "frame_token_v1": {
+      "hex": "5242465401000000000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f070000007b0000000000000009000000000000000900000000000000202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f505152535455565758595a5b5c5d5e5f606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f",
+      "length": 164,
+      "sha256": "dc15d91c86ec15d57d7ee62b78a4399b51336c6ccb2bbd4ba9120ffe368e4426"
+    },
+    "manifest_empty_corrected_v1": {
+      "domain_sha256": "785c20354a533ca711ca7af172260f92ec7c799a8fa396ac4b16274e072b7214",
+      "hex": "5242444d0100000008000000656d7074792d76310100000000000000020000000000000003000000000000001e0000000000000000000000000000000d0000007374617469632d6f726967696e020000000200000000000000",
+      "length": 89,
+      "payload_sha256": "9a93d62f62bb6cc749e2ac06a973fbdfeeb004be06d404d5c67a54b226943b49"
+    },
+    "primitive_f32_1_5": {
+      "hex": "0000c03f"
+    },
+    "primitive_f32_negative_zero_normalized": {
+      "hex": "00000000"
+    },
+    "primitive_nonzero_u32_42": {
+      "hex": "2a000000"
+    },
+    "primitive_option_none": {
+      "hex": "00"
+    },
+    "primitive_option_some_u32_42": {
+      "hex": "012a000000"
+    },
+    "primitive_sequence_u32_1_2": {
+      "hex": "020000000100000002000000"
+    },
+    "single_leaf_hierarchy_entity_42": {
+      "domain": "94881c4ede486e458c065e972c270e2127205818eaf8d74d23e0b5042ab9add8",
+      "frame": "08aa00db2ae3ea6392aed3a9424ceb89dccf4906538f9c292db08aeebe149839",
+      "leaf": "8dbc07bae829f2ba94256a6a71392a370add6163198c91af14df8d10e313f266",
+      "owner": "6a083c5c7399cb71ca73262eae05a0f0afec1ab7a3768a904f60fce968a816cf",
+      "run": "93ec7b073b0862d7dcdfb54ee1cba31398d1e79dc68a9692fdefe27c873863a9"
+    },
+    "single_leaf_hierarchy_entity_43_mutation": {
+      "changed_root_mask": [
+        "leaf",
+        "owner",
+        "domain",
+        "frame",
+        "run"
+      ],
+      "domain": "1117d42fbcd3d548731ae891bd2ad58260c6a0ad61146ca4df443e22718d5238",
+      "frame": "c5dc5d304cc950aca74de7fca7977e1a23d3b22dc18076211474dfb802ced5a2",
+      "leaf": "a540fb1f8535ba98b26b1ad62d5a8eab429547d12551728e966cb2d4a4a86389",
+      "owner": "9cf9a3a04cf0013749c8e53b79c3199d11e8653b85f18b05adbd8d9e34e99a89",
+      "run": "299d0cd75b5aaf939ef0de5647948eefce34508ab153e7426077468cbbbfa1b8"
+    },
+    "synthetic_oracle_schema_hash": "417f547ebc28afaa1c4a6939f6bead591abc1756d14f4baabed3a6c08c3145e2"
+  }
+}

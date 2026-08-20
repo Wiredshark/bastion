@@ -14,6 +14,21 @@ impl Component for BastionSelected {
     type Storage = NullStorage<Self>;
 }
 
+/// renderer-bench (R0D W1, interface `synced_entity_id`): the STABLE
+/// semantic entity id a bench fixture assigns — nonzero, unique per run,
+/// identical on every replay of the same manifest. Synced to clients so the
+/// client-side projection can key its captures by semantic identity rather
+/// than by ECS entity ids (which are allocation-order artifacts). Lives here
+/// (not `comp/mod.rs`) per the W1 handoff's contradiction resolution
+/// R0D-CONTRA-003; the sync registration re-exports it explicitly.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RendererBenchEntityId(pub u32);
+
+impl Component for RendererBenchEntityId {
+    // Synced to clients → change-tracked storage (the Colonist pattern).
+    type Storage = specs::DerefFlaggedStorage<Self, specs::DenseVecStorage<Self>>;
+}
+
 /// A colony member (B3): the ECS mirror of the rtsim-side
 /// [`crate::bastion::BastionColonist`], attached when the NPC promotes to a
 /// loaded entity. Synced to clients (overhead markers, box-select, roster).

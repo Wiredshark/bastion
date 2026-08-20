@@ -452,6 +452,12 @@ impl State {
         // bastion (B3): colonists + god-anchor. `Colonist` is synced (see
         // common-net synced_components); the rest are server-side.
         ecs.register::<comp::Colonist>();
+        // renderer-bench (R0D W1): stable semantic id (synced) + the
+        // exactly-once readback registry ("one exactly-once readback
+        // registry" — W0 invariant; a duplicate completion is a contract
+        // violation, not a duplicate to ignore).
+        ecs.register::<comp::bastion::RendererBenchEntityId>();
+        ecs.insert(common::renderer_bench::RendererBenchReadbacks::default());
         ecs.register::<comp::PlayerColony>();
         ecs.register::<comp::bastion::Needs>();
         ecs.register::<comp::bastion::Mood>();
