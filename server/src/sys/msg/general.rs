@@ -34,9 +34,22 @@ impl Sys {
         uids: &ReadStorage<'_, Uid>,
         chat_modes: &ReadStorage<'_, ChatMode>,
         groups: &ReadStorage<'_, Group>,
+        bench_signals: &common::renderer_bench::RendererBenchClientSignals,
         msg: ClientGeneral,
     ) -> Result<(), crate::error::Error> {
         match msg {
+            // W3 renderer-bench (out-of-band diagnostics; interior
+            // mutability because this handler par_joins clients).
+            ClientGeneral::RendererBenchReady => {
+                bench_signals
+                    .ready_count
+                    .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            },
+            ClientGeneral::RendererBenchProjectionAck(ack) => {
+                if let Ok(mut acks) = bench_signals.acks.lock() {
+                    acks.push(ack);
+                }
+            },
             ClientGeneral::ChatMsg(message) => {
                 if !client.client_type.can_send_message() {
                     client.send_fallible(ServerGeneral::ChatMsg(
@@ -131,6 +144,7 @@ impl<'a> System<'a> for Sys {
         ReadStorage<'a, Group>,
         WriteStorage<'a, Client>,
         ReadExpect<'a, SemanticIngressMetricsV1>,
+        Read<'a, common::renderer_bench::RendererBenchClientSignals>,
     );
 
     const NAME: &'static str = "msg::general";
@@ -139,7 +153,7 @@ impl<'a> System<'a> for Sys {
 
     fn run(
         _job: &mut Job<Self>,
-        (entities, events, program_time, uids, chat_modes, players, groups, mut clients, semantic_metrics): Self::SystemData,
+        (entities, events, program_time, uids, chat_modes, players, groups, mut clients, semantic_metrics, bench_signals): Self::SystemData,
     ) {
         (&entities, &mut clients, players.maybe())
             .par_join()
@@ -155,6 +169,7 @@ impl<'a> System<'a> for Sys {
                             &uids,
                             &chat_modes,
                             &groups,
+                            &bench_signals,
                             msg,
                         )
                     });
@@ -192,6 +207,25 @@ mod semantic {
         assert_eq!(ClientGeneral::Terminate.semantic_stream(), SemanticStreamIdV1::General);
         assert_eq!(
             ClientGeneral::Command("test".to_string(), vec![]).semantic_stream(),
+            SemanticStreamIdV1::General
+        );
+        // W3 renderer-bench: both bench signals must arrive on the stream
+        // this system drains, or the wildcard arm would kick the client.
+        assert_eq!(
+            ClientGeneral::RendererBenchReady.semantic_stream(),
+            SemanticStreamIdV1::General
+        );
+        assert_eq!(
+            ClientGeneral::RendererBenchProjectionAck(
+                common::renderer_bench::BenchProjectionAckV1 {
+                    frame_index: 0,
+                    sim_tick: 0,
+                    frame_root_echo: [0; 32],
+                    client_projection_root: [0; 32],
+                    entities_resolved: 0,
+                }
+            )
+            .semantic_stream(),
             SemanticStreamIdV1::General
         );
     }

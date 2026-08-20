@@ -1087,7 +1087,12 @@ impl SemanticRouteV1 for ClientGeneral {
             | C::RequestPluginArtifacts(_)
             // T3.4.19: the commit ack rides the General stream, which is
             // never itself blocked by a checkpoint's own data fence.
-            | C::CheckpointCommitAck(_) => SemanticStreamIdV1::General,
+            | C::CheckpointCommitAck(_)
+            // W3 renderer-bench: out-of-band diagnostics ride General for
+            // the same reason the commit ack does — the bench channel must
+            // never sit behind an in-game data fence.
+            | C::RendererBenchReady
+            | C::RendererBenchProjectionAck(_) => SemanticStreamIdV1::General,
         }
     }
 
@@ -1162,7 +1167,10 @@ impl SemanticRouteV1 for ServerGeneral {
             // APEX MERGE: T2.5.10's PluginArtifactData joins the General
             // stream, mirroring server/src/client.rs::prepare's own
             // physical routing for it.
-            | S::PluginArtifactData(_) => SemanticStreamIdV1::General,
+            | S::PluginArtifactData(_)
+            // W3 renderer-bench: same out-of-band reasoning as the client
+            // side — announces never wait behind an in-game data fence.
+            | S::RendererBenchFrame(_) => SemanticStreamIdV1::General,
             // `T4.1` chunk 2a: rides the SAME stream as `GameSync`
             // (`SemanticRouteV1 for ServerInit` below) on purpose --
             // this row's whole point is a guaranteed pre-`GameSync`

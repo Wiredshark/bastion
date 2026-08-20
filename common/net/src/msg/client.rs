@@ -234,6 +234,15 @@ pub enum ClientGeneral {
     /// deployment root. `RequestPlugins` remains for explicit legacy mode
     /// only.
     RequestPluginArtifacts(crate::msg::plugin_artifact::PluginArtifactRequestV1),
+    /// W3 renderer-bench (`readme/renderer-bench/W3-LAUNCH-PACKET.md`):
+    /// the client is in-session and able to receive bench announces. With
+    /// `BASTION_RENDERER_BENCH_WAIT_CLIENT=1` the server holds the run
+    /// start for the first one.
+    RendererBenchReady,
+    /// W3 renderer-bench: per-announce reply — the announced frame_root
+    /// echoed verbatim plus the client's own ClientProjection root over
+    /// its replicated bench entities. Observational; never run identity.
+    RendererBenchProjectionAck(common::renderer_bench::BenchProjectionAckV1),
 }
 
 impl ClientMsg {
@@ -283,7 +292,11 @@ impl ClientMsg {
                         | ClientGeneral::BastionContextAction { .. }
                         | ClientGeneral::BastionSpawnColony { .. }
                         | ClientGeneral::BastionCancelDesignation { .. }
-                        | ClientGeneral::BastionInspect { .. } => {
+                        | ClientGeneral::BastionInspect { .. }
+                        // W3 renderer-bench: in-session only; spectators
+                        // (who have presence) are valid bench observers.
+                        | ClientGeneral::RendererBenchReady
+                        | ClientGeneral::RendererBenchProjectionAck(_) => {
                             c_type == ClientType::Game && presence.is_some()
                         },
                         ClientGeneral::SpectatePosition(_) | ClientGeneral::SpectateEntity(_) => {

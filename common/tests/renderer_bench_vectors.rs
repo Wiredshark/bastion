@@ -587,3 +587,74 @@ fn readback_registry_is_exactly_once() {
     assert!(r.is_claimed(7));
     assert!(!r.is_claimed(8));
 }
+
+// ── W3: ClientProjection vectors (independent Python producer:
+// readme/renderer-bench/w3_client_projection_vectors_v1.py) ──
+
+#[test]
+fn w3_client_projection_reproduces_python_vectors() {
+    let v = vectors("w3-client-projection-vectors-v1.json");
+    let schema = oracle_schema_hash();
+
+    // The contractual tags themselves, pinned against the JSON.
+    let tags = &v["tags"];
+    assert_eq!(Domain::ClientProjection as u64, tags["domain"].as_u64().unwrap());
+    assert_eq!(CLIENT_PROJECTION_LEAF as u64, tags["leaf_id"].as_u64().unwrap());
+    assert_eq!(WireType::FixedI32 as u64, tags["wire_type"].as_u64().unwrap());
+    assert_eq!(OwnerKind::StableEntity as u64, tags["owner_kind"].as_u64().unwrap());
+
+    // Single entity: leaf, owner root, composite, one-entry domain root.
+    let s = &v["single"];
+    let id = s["semantic_id"].as_u64().unwrap() as u32;
+    let mm: Vec<i64> = s["mm"].as_array().unwrap().iter().map(|x| x.as_i64().unwrap()).collect();
+    let mm = [mm[0] as i32, mm[1] as i32, mm[2] as i32];
+    let (composite, oroot) = client_projection_owner(&schema, id, mm);
+    assert_eq!(hex(&composite), s["composite"].as_str().unwrap(), "composite");
+    assert_eq!(hex(&oroot), s["owner_root"].as_str().unwrap(), "owner_root");
+    let leaf = leaf_hash(
+        &schema,
+        Domain::ClientProjection,
+        CLIENT_PROJECTION_LEAF,
+        WireType::FixedI32,
+        OwnerKind::StableEntity,
+        &id.to_le_bytes(),
+        &{
+            let mut p = Vec::new();
+            for c in mm {
+                p.extend_from_slice(&c.to_le_bytes());
+            }
+            p
+        },
+    );
+    assert_eq!(hex(&leaf), s["leaf"].as_str().unwrap(), "leaf");
+    let droot = domain_root(&schema, Domain::ClientProjection, &[(composite, oroot)]);
+    assert_eq!(hex(&droot), s["domain_root"].as_str().unwrap(), "single domain_root");
+
+    // Three entities, sorted by semantic id (incl i32 extremes).
+    let t = &v["triple"];
+    let owners: Vec<(Vec<u8>, [u8; 32])> = t["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| {
+            let id = e["semantic_id"].as_u64().unwrap() as u32;
+            let mm: Vec<i64> =
+                e["mm"].as_array().unwrap().iter().map(|x| x.as_i64().unwrap()).collect();
+            client_projection_owner(&schema, id, [mm[0] as i32, mm[1] as i32, mm[2] as i32])
+        })
+        .collect();
+    let droot = domain_root(&schema, Domain::ClientProjection, &owners);
+    assert_eq!(hex(&droot), t["domain_root"].as_str().unwrap(), "triple domain_root");
+
+    // The empty domain (a client that resolved nothing yet).
+    let droot = domain_root(&schema, Domain::ClientProjection, &[]);
+    assert_eq!(hex(&droot), v["empty_domain_root"].as_str().unwrap(), "empty domain_root");
+}
+
+#[test]
+fn w3_shared_composite_matches_python_shape() {
+    // The ONE owner-key implementation both sides call: kind byte then
+    // length-prefixed LE id — pinned against the independent producer.
+    let c = stable_entity_composite(0x01020304);
+    assert_eq!(c, vec![3u8, 4, 0, 0, 0, 0x04, 0x03, 0x02, 0x01]);
+}

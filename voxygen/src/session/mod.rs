@@ -1960,6 +1960,15 @@ impl PlayState for SessionState {
                         .take_screenshot(&global_state.settings);
                 }
             }
+            // W3: the session readiness hook — once per process, tell the
+            // server this client can receive bench announces (the ack path
+            // itself lives in the client crate, same env gate).
+            static READY_SENT: OnceLock<()> = OnceLock::new();
+            if std::env::var("BASTION_RENDERER_BENCH_ACK").as_deref() == Ok("1") {
+                READY_SENT.get_or_init(|| {
+                    self.client.borrow_mut().renderer_bench_ready();
+                });
+            }
         }
         // TODO: let mut client = self.client.borrow_mut();
         // TODO: can this be a method on the session or are there borrowcheck issues?

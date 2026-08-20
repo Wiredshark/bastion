@@ -364,6 +364,11 @@ pub enum ServerGeneral {
     /// doc notes no live client requests anything but the `Legacy`
     /// semantic protocol yet, and this message rides the same gate.
     BootstrapManifest(crate::msg::bootstrap_manifest_wire::BootstrapManifestWireV1),
+    /// W3 renderer-bench (`readme/renderer-bench/W3-LAUNCH-PACKET.md`):
+    /// one cadence frame's announce, sent to every in-game client
+    /// (spectators included). Always compiled — no feature gate — and
+    /// inert unless a bench run is armed on the server.
+    RendererBenchFrame(common::renderer_bench::BenchFrameAnnounceV1),
 }
 
 impl ServerGeneral {
@@ -599,7 +604,10 @@ impl ServerMsg {
                         | ServerGeneral::Gizmos(_)
                         | ServerGeneral::BastionDesignation { .. }
                         | ServerGeneral::BastionDesignationRemoved { .. }
-                        | ServerGeneral::BastionInspectInfo { .. } => {
+                        | ServerGeneral::BastionInspectInfo { .. }
+                        // W3 renderer-bench: announces reach any in-game
+                        // observer, spectators included.
+                        | ServerGeneral::RendererBenchFrame(_) => {
                             c_type == ClientType::Game && presence.is_some()
                         },
                         // Always possible

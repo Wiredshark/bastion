@@ -2044,7 +2044,11 @@ impl Client {
                     | ClientGeneral::RequestPluginArtifacts(_)
                     // T3.4.19: the commit ack rides General, mirroring its
                     // semantic routing.
-                    | ClientGeneral::CheckpointCommitAck(_) => &mut self.general_stream,
+                    | ClientGeneral::CheckpointCommitAck(_)
+                    // W3 renderer-bench: out-of-band diagnostics ride
+                    // General, mirroring their semantic routing.
+                    | ClientGeneral::RendererBenchReady
+                    | ClientGeneral::RendererBenchProjectionAck(_) => &mut self.general_stream,
                 };
                 #[cfg(feature = "tracy")]
                 {
@@ -2061,6 +2065,68 @@ impl Client {
         self.send_msg(ClientGeneral::RequestPlayerPhysics {
             server_authoritative,
         })
+    }
+
+    /// W3 renderer-bench: tell the server this client is in-session and
+    /// able to receive bench announces (voxygen calls this from the
+    /// session readiness hook; the headless ackbot after spectate).
+    pub fn renderer_bench_ready(&mut self) {
+        self.send_msg(ClientGeneral::RendererBenchReady);
+    }
+
+    /// W3 renderer-bench: one announce → one ack. The projection root is
+    /// computed from the CLIENT's replicated ECS at receipt time (a
+    /// wall-coupled observation — recorded beside the tape, never inside
+    /// run identity), keyed by the synced semantic id, never runtime ids.
+    fn handle_renderer_bench_announce(
+        &mut self,
+        ann: common::renderer_bench::BenchFrameAnnounceV1,
+    ) {
+        use common::renderer_bench as rb;
+        use std::sync::OnceLock;
+        static ACK_ENABLED: OnceLock<bool> = OnceLock::new();
+        let enabled = *ACK_ENABLED.get_or_init(|| {
+            std::env::var("BASTION_RENDERER_BENCH_ACK").as_deref() == Ok("1")
+        });
+        if !enabled {
+            return;
+        }
+        let schema = rb::oracle_schema_hash();
+        // Mirror the server's arena-origin math (mm_to_blocks).
+        let origin = Vec3::new(
+            ann.arena_origin_mm[0] as f32,
+            ann.arena_origin_mm[1] as f32,
+            ann.arena_origin_mm[2] as f32,
+        ) / 1000.0;
+        let mut owners: Vec<(u32, (Vec<u8>, [u8; 32]))> = {
+            use specs::Join;
+            let ecs = self.state.ecs();
+            let bench_ids = ecs.read_storage::<comp::bastion::RendererBenchEntityId>();
+            let positions = ecs.read_storage::<comp::Pos>();
+            (&bench_ids, &positions)
+                .join()
+                .map(|(id, pos)| {
+                    let mm_v = (pos.0 - origin) * 1000.0;
+                    let mm = [mm_v.x as i32, mm_v.y as i32, mm_v.z as i32];
+                    (id.0, rb::client_projection_owner(&schema, id.0, mm))
+                })
+                .collect()
+        };
+        owners.sort_by_key(|(id, _)| *id);
+        let entities_resolved = owners.len() as u32;
+        let owner_entries: Vec<(Vec<u8>, [u8; 32])> =
+            owners.into_iter().map(|(_, e)| e).collect();
+        let client_projection_root =
+            rb::domain_root(&schema, rb::Domain::ClientProjection, &owner_entries);
+        self.send_msg(ClientGeneral::RendererBenchProjectionAck(
+            rb::BenchProjectionAckV1 {
+                frame_index: ann.frame_index,
+                sim_tick: ann.sim_tick,
+                frame_root_echo: ann.frame_root,
+                client_projection_root,
+                entities_resolved,
+            },
+        ));
     }
 
     pub fn request_lossy_terrain_compression(&mut self, lossy_terrain_compression: bool) {
@@ -3985,6 +4051,12 @@ impl Client {
             ServerGeneral::SetPlayerRole(role) => {
                 debug!(?role, "Updating client role");
                 self.role = role;
+            },
+            // W3 renderer-bench: compute this client's ClientProjection
+            // root from ITS replicated view and ack. Gated per-process on
+            // BASTION_RENDERER_BENCH_ACK=1; inert otherwise.
+            ServerGeneral::RendererBenchFrame(ann) => {
+                self.handle_renderer_bench_announce(ann);
             },
             _ => unreachable!("Not a general msg"),
         }

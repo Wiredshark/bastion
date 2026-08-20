@@ -706,6 +706,14 @@ impl Server {
         state
             .ecs_mut()
             .insert(None::<bastion_renderer_bench::RendererBenchRun>);
+        // renderer-bench W3: the client-signal inbox and announce outbox
+        // (msg handlers fill / bench sys drains, and vice versa).
+        state
+            .ecs_mut()
+            .insert(common::renderer_bench::RendererBenchClientSignals::default());
+        state
+            .ecs_mut()
+            .insert(common::renderer_bench::RendererBenchNetOutbox::default());
         state
             .ecs_mut()
             .insert(common::bastion::ActivityZones::default());

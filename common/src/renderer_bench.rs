@@ -1320,3 +1320,97 @@ impl RendererBenchReadbacks {
 
     pub fn is_empty(&self) -> bool { self.claimed.is_empty() }
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// W3 — replication_projection_ack v1 (`readme/renderer-bench/
+// W3-LAUNCH-PACKET.md`). Shared wire payloads + the ONE implementation of
+// the ClientProjection owner shape (client and server both call it).
+// ─────────────────────────────────────────────────────────────────────────
+
+/// The ClientProjection leaf: mm position resolved from the CLIENT's
+/// replicated view, FixedI32×3 under the StableEntity owner (semantic id).
+pub const CLIENT_PROJECTION_LEAF: u32 = 0x0500_0001;
+
+/// Per-cadence-frame announce, server → every in-game client. Ack content
+/// is wall-coupled observation; nothing here feeds run_root.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BenchFrameAnnounceV1 {
+    pub run_id: [u8; 32],
+    pub frame_index: u32,
+    pub sim_tick: u64,
+    pub frame_root: [u8; 32],
+    pub cadence: u32,
+    pub run_ticks: u32,
+    pub arena_origin_mm: [i32; 3],
+    pub entity_count: u32,
+}
+
+/// Client → server reply to one announce.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BenchProjectionAckV1 {
+    pub frame_index: u32,
+    pub sim_tick: u64,
+    /// The announced frame_root echoed verbatim (channel proof).
+    pub frame_root_echo: [u8; 32],
+    /// ClientProjection domain root over the client's replicated bench
+    /// entities (study data — never asserted equal to the server's).
+    pub client_projection_root: [u8; 32],
+    pub entities_resolved: u32,
+}
+
+/// The composite owner key `u8(kind) ‖ lp(key)` used at the domain level.
+pub fn stable_entity_composite(semantic_id: u32) -> Vec<u8> {
+    let key = semantic_id.to_le_bytes();
+    let mut v = vec![OwnerKind::StableEntity as u8];
+    v.extend_from_slice(&(key.len() as u32).to_le_bytes());
+    v.extend_from_slice(&key);
+    v
+}
+
+/// One bench entity's ClientProjection owner entry from its replicated mm
+/// position. Returns `(composite_owner_key, owner_root)` ready for
+/// [`domain_root`] under [`Domain::ClientProjection`].
+pub fn client_projection_owner(
+    schema: &[u8; 32],
+    semantic_id: u32,
+    mm: [i32; 3],
+) -> (Vec<u8>, [u8; 32]) {
+    let owner_key = semantic_id.to_le_bytes();
+    let mut payload = Vec::with_capacity(12);
+    for c in mm {
+        payload.extend_from_slice(&c.to_le_bytes());
+    }
+    let leaf = leaf_hash(
+        schema,
+        Domain::ClientProjection,
+        CLIENT_PROJECTION_LEAF,
+        WireType::FixedI32,
+        OwnerKind::StableEntity,
+        &owner_key,
+        &payload,
+    );
+    (
+        stable_entity_composite(semantic_id),
+        owner_root(schema, OwnerKind::StableEntity, &owner_key, &[(
+            CLIENT_PROJECTION_LEAF,
+            leaf,
+        )]),
+    )
+}
+
+/// Server-side inbox for client bench signals (filled by the General-
+/// stream msg handlers — which par_join clients, hence the interior
+/// mutability — drained by the bench system at the run terminal).
+#[derive(Default, Debug)]
+pub struct RendererBenchClientSignals {
+    pub ready_count: std::sync::atomic::AtomicU32,
+    pub acks: std::sync::Mutex<Vec<BenchProjectionAckV1>>,
+}
+
+/// Server-side outbox: announces the bench system queues for the net layer
+/// (bastion-server cannot see the server crate's `Client` type, so a thin
+/// sys in the server crate drains this to all in-game clients).
+#[derive(Default, Debug)]
+pub struct RendererBenchNetOutbox {
+    pub announces: Vec<BenchFrameAnnounceV1>,
+}

@@ -66,11 +66,88 @@ leg() {
   fi
 }
 
-rm -f "$EV/tape-1.json" "$EV/tape-2.json"
+rm -f "$EV/tape-1.json" "$EV/tape-2.json" "$EV/tape-A.json"
 leg 1 || exit 1
 leg 2 || exit 1
 
 "$B/bastion-harness.exe" --renderer-bench-golden "$EV/tape-1.json" "$EV/tape-2.json"
 RC=$?
 echo "TWIN VERDICT exit=$RC (0 = run_root identical = determinism witness GREEN)"
-exit $RC
+[ $RC -eq 0 ] || exit $RC
+
+# ── W3 leg A: server WAITS for a client, ackbot spectates + acks. ──
+# The wave's integrated proof (W3-LAUNCH-PACKET.md): tape A must carry
+# >=2 acks, all echo_match, entities_resolved=3 — and run_root(A) must
+# equal run_root(clientless leg 1): observing through the net does not
+# perturb the tape.
+echo "PRECONDITION ackbot=$(sha256sum "$B/rbench_ackbot.exe" | cut -c1-16)"
+leg_a() {
+  local TAG="rbench-A"
+  local UD="$WT/userdata-$TAG"
+  rm -rf "$UD"
+  VELOREN_USERDATA="$UD" VELOREN_ASSETS="$A" "$B/veloren-server-cli.exe" \
+      --no-auth admin add "$TAG" admin > /dev/null 2>&1
+  local S="$UD/server/server_config/settings.ron"
+  sed -i "s/:14004\"/:$GAME\"/g; s/:14006\"/:$METRICS\"/g" "$S"
+  if [ -f "$UD/server-cli/settings.template.ron" ]; then
+    sed "s/:14005\"/:$WEB\"/" "$UD/server-cli/settings.template.ron" \
+        > "$UD/server-cli/settings.ron"
+  fi
+  ( cd "$WT" && VELOREN_USERDATA="$UD" VELOREN_ASSETS="$A" \
+      BASTION_FLAT_ARENA=1 BASTION_DETERMINISTIC=1 \
+      BASTION_RENDERER_BENCH_MANIFEST="$FIX" \
+      BASTION_RENDERER_BENCH_OUT="$EV/tape-A.json" \
+      BASTION_RENDERER_BENCH_TICKS="$TICKS" \
+      BASTION_RENDERER_BENCH_CADENCE="$CADENCE" \
+      BASTION_RENDERER_BENCH_WAIT_CLIENT=1 \
+      "$B/veloren-server-cli.exe" --no-auth > "$EV/server-A.log" 2>&1 ) &
+  local SRV=$!
+  echo "leg A: server pid=$SRV (WAIT_CLIENT=1)"
+  sleep 20  # let the server bind before the bot dials
+  ( cd "$WT" && BASTION_RENDERER_BENCH_ACK=1 VELOREN_ASSETS="$A" \
+      "$B/rbench_ackbot.exe" "localhost:$GAME" "$TAG" 0 0 40 420 \
+      > "$EV/ackbot-A.log" 2>&1 ) &
+  local BOT=$!
+  echo "leg A: ackbot pid=$BOT"
+  local t=0
+  while [ $t -lt 420 ]; do
+    if [ -s "$EV/tape-A.json" ]; then break; fi
+    sleep 2; t=$((t+2))
+  done
+  taskkill //F //PID "$BOT" >/dev/null 2>&1 || kill -9 "$BOT" 2>/dev/null
+  taskkill //F //PID "$SRV" >/dev/null 2>&1 || kill -9 "$SRV" 2>/dev/null
+  wait "$SRV" 2>/dev/null; wait "$BOT" 2>/dev/null
+  powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='veloren-server-cli.exe'\" | Where-Object { \$_.CommandLine -match 'renderer-wt' } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }" >/dev/null 2>&1
+  powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"Name='rbench_ackbot.exe'\" | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }" >/dev/null 2>&1
+  if [ -s "$EV/tape-A.json" ]; then
+    echo "leg A: TAPE ARRIVED after ~${t}s"
+  else
+    echo "leg A: TAPE MISSING after ${t}s — leg VOID (see server-A.log + ackbot-A.log)"
+    return 1
+  fi
+}
+leg_a || exit 1
+
+"$B/bastion-harness.exe" --renderer-bench-golden "$EV/tape-A.json" "$EV/tape-1.json"
+RCA=$?
+echo "NEUTRALITY VERDICT exit=$RCA (0 = client presence did not perturb run_root)"
+
+python - "$EV/tape-A.json" <<'PYEOF'
+import json, sys
+d = json.load(open(sys.argv[1]))
+acks = d.get("client_acks", [])
+ready = d.get("ready_count", 0)
+ok = (len(acks) >= 2
+      and all(a.get("echo_match") is True for a in acks)
+      and all(a.get("entities_resolved") == 3 for a in acks)
+      and ready >= 1)
+print(f"ACK VERDICT acks={len(acks)} ready_count={ready} "
+      f"echo_all={all(a.get('echo_match') is True for a in acks) if acks else False} "
+      f"resolved3_all={all(a.get('entities_resolved') == 3 for a in acks) if acks else False} "
+      f"=> {'GREEN' if ok else 'RED'}")
+sys.exit(0 if ok else 1)
+PYEOF
+RCB=$?
+[ $RCA -eq 0 ] && [ $RCB -eq 0 ] && { echo "W3 INTEGRATED VERDICT GREEN"; exit 0; }
+echo "W3 INTEGRATED VERDICT RED (neutrality=$RCA acks=$RCB)"
+exit 1

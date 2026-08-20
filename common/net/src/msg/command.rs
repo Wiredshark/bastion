@@ -342,7 +342,11 @@ impl CommandParticipantV1 for super::ClientGeneral {
             | C::RequestPlugins(_)
             | C::RequestPluginArtifacts(_)
             | C::BastionInspect { .. }
-            | C::CheckpointCommitAck(_) => A::ReadOnly,
+            | C::CheckpointCommitAck(_)
+            // W3 renderer-bench: a readiness signal and a per-frame
+            // acknowledgement — out-of-band observation, never journaled.
+            | C::RendererBenchReady
+            | C::RendererBenchProjectionAck(_) => A::ReadOnly,
         }
     }
 }

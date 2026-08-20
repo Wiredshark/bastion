@@ -564,6 +564,23 @@ pub const WIRE_SHAPE_GOLDENS: &[WireShapeGoldenV1] = &[
         variant: "BootstrapManifest",
         digest_hex: "sha256:595809ef3f70cc71dc5124ff08e4200054d1ced2aafac04eafb15fa329f39fad",
     },
+    // W3 renderer-bench (readme/renderer-bench/W3-LAUNCH-PACKET.md): the
+    // three bench-observation messages, covered the day they landed.
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "RendererBenchReady",
+        digest_hex: "sha256:dcd1430b981b4550707e196a4954598d6bd8a4f078fd0ab883eb9e857242811d",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "RendererBenchProjectionAck",
+        digest_hex: "sha256:b80863e438de9ec98703f40fe08032a2881f73a250edec350c92823faaaa4eae",
+    },
+    WireShapeGoldenV1 {
+        payload_schema: "ServerGeneral",
+        variant: "RendererBenchFrame",
+        digest_hex: "sha256:36df6c3a462715d9615492f296c654569ad31e0d93baf172274246517af2f561",
+    },
 ];
 
 include!("wire_shape_uncovered.rs");
@@ -717,6 +734,32 @@ mod wire_shape_goldens_v1 {
     }
 
     fn client_exit_in_game() -> ClientGeneral { ClientGeneral::ExitInGame }
+
+    // W3 renderer-bench (fixed, deterministic payloads).
+    fn client_renderer_bench_ready() -> ClientGeneral { ClientGeneral::RendererBenchReady }
+
+    fn client_renderer_bench_projection_ack() -> ClientGeneral {
+        ClientGeneral::RendererBenchProjectionAck(common::renderer_bench::BenchProjectionAckV1 {
+            frame_index: 7,
+            sim_tick: 4242,
+            frame_root_echo: [0xAB; 32],
+            client_projection_root: [0xCD; 32],
+            entities_resolved: 3,
+        })
+    }
+
+    fn server_renderer_bench_frame() -> ServerGeneral {
+        ServerGeneral::RendererBenchFrame(common::renderer_bench::BenchFrameAnnounceV1 {
+            run_id: [0x11; 32],
+            frame_index: 7,
+            sim_tick: 4242,
+            frame_root: [0x22; 32],
+            cadence: 30,
+            run_ticks: 600,
+            arena_origin_mm: [1_000_000, 2_000_000, 300_000],
+            entity_count: 3,
+        })
+    }
 
     fn client_terminate() -> ClientGeneral { ClientGeneral::Terminate }
 
@@ -1241,6 +1284,11 @@ mod wire_shape_goldens_v1 {
             ("ClientGeneral", "RequestCharacterList") => golden_digest_v1(&client_request_character_list()),
             ("ClientGeneral", "DeleteCharacter") => golden_digest_v1(&client_delete_character()),
             ("ClientGeneral", "ExitInGame") => golden_digest_v1(&client_exit_in_game()),
+            ("ClientGeneral", "RendererBenchReady") => golden_digest_v1(&client_renderer_bench_ready()),
+            ("ClientGeneral", "RendererBenchProjectionAck") => {
+                golden_digest_v1(&client_renderer_bench_projection_ack())
+            },
+            ("ServerGeneral", "RendererBenchFrame") => golden_digest_v1(&server_renderer_bench_frame()),
             ("ClientGeneral", "Terminate") => golden_digest_v1(&client_terminate()),
             ("ClientGeneral", "BreakBlock") => golden_digest_v1(&client_break_block()),
             ("ClientGeneral", "SpectatePosition") => golden_digest_v1(&client_spectate_position()),
@@ -1357,15 +1405,16 @@ mod wire_shape_goldens_v1 {
     /// ServerGeneral, counted from the enums at 71b1c87ca7).
     #[test]
     fn coverage_is_all_covered() {
-        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 89, "the covered set changed");
+        // W3 renderer-bench: +2 ClientGeneral, +1 ServerGeneral.
+        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 92, "the covered set changed");
         assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 0, "WSG-2 closed this at zero");
         assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 0, "WSG-2 closed this at zero");
         let covered_client =
             WIRE_SHAPE_GOLDENS.iter().filter(|g| g.payload_schema == "ClientGeneral").count();
         let covered_server =
             WIRE_SHAPE_GOLDENS.iter().filter(|g| g.payload_schema == "ServerGeneral").count();
-        assert_eq!(covered_client, 37, "every ClientGeneral variant must have a golden");
-        assert_eq!(covered_server, 52, "every ServerGeneral variant must have a golden");
+        assert_eq!(covered_client, 39, "every ClientGeneral variant must have a golden");
+        assert_eq!(covered_server, 53, "every ServerGeneral variant must have a golden");
     }
 
     /// A variant may not be in BOTH lists, and the uncovered lists carry
@@ -1438,14 +1487,14 @@ mod wire_shape_goldens_v1 {
 
         assert_eq!(
             count_variants("common/net/src/msg/client.rs", "ClientGeneral"),
-            37,
+            39, // W3 renderer-bench: Ready + ProjectionAck
             "ClientGeneral gained or lost a variant. Add it to WIRE_SHAPE_GOLDENS or to \
              UNCOVERED_CLIENTGENERAL_V1 — a variant in neither is a message whose shape nothing \
              is watching."
         );
         assert_eq!(
             count_variants("common/net/src/msg/server.rs", "ServerGeneral"),
-            52,
+            53, // W3 renderer-bench: RendererBenchFrame
             "ServerGeneral gained or lost a variant. Add it to WIRE_SHAPE_GOLDENS or to \
              UNCOVERED_SERVERGENERAL_V1."
         );

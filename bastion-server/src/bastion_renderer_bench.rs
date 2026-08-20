@@ -39,9 +39,9 @@ use common::{
     comp,
     event::{CreateNpcEvent, EventBus, NpcBuilder},
     renderer_bench::{
-        AnimationV1, BenchBodyV1, Domain, FixtureManifestV1, MovementV1, OwnerKind,
-        SemanticFrameTokenV1, WireType, domain_root, frame_root, leaf_hash, oracle_schema_hash,
-        owner_root, run_root,
+        AnimationV1, BenchBodyV1, BenchFrameAnnounceV1, Domain, FixtureManifestV1, MovementV1,
+        OwnerKind, RendererBenchClientSignals, RendererBenchNetOutbox, SemanticFrameTokenV1,
+        WireType, domain_root, frame_root, leaf_hash, oracle_schema_hash, owner_root, run_root,
     },
 };
 use hashbrown::HashMap;
@@ -211,6 +211,8 @@ impl<'a> System<'a> for Sys {
         Entities<'a>,
         specs::Read<'a, Tick>,
         specs::Write<'a, Option<RendererBenchRun>>,
+        specs::Read<'a, RendererBenchClientSignals>,
+        specs::Write<'a, RendererBenchNetOutbox>,
         specs::Read<'a, EventBus<CreateNpcEvent>>,
         ReadStorage<'a, comp::Stats>,
         ReadStorage<'a, comp::Pos>,
@@ -224,7 +226,18 @@ impl<'a> System<'a> for Sys {
 
     fn run(
         _job: &mut EcsJob<Self>,
-        (entities, tick, mut run_res, create_npc_bus, stats, positions, mut velocities, mut bench_ids): Self::SystemData,
+        (
+            entities,
+            tick,
+            mut run_res,
+            signals,
+            mut outbox,
+            create_npc_bus,
+            stats,
+            positions,
+            mut velocities,
+            mut bench_ids,
+        ): Self::SystemData,
     ) {
         let tick = tick.0;
         // ── Lazy init (once): read + decode the manifest, fail closed. ──
@@ -232,6 +245,20 @@ impl<'a> System<'a> for Sys {
             let Some((mpath, out_path, run_ticks, cadence)) = env_config() else {
                 return; // ungated: inert
             };
+            // W3: with WAIT_CLIENT=1 the run does not START (init, spawn,
+            // frame 0) until at least one client sent RendererBenchReady —
+            // so a client leg covers the whole run. Default off: the
+            // headless twin legs are byte-identical to W2.
+            if std::env::var("BASTION_RENDERER_BENCH_WAIT_CLIENT").as_deref() == Ok("1")
+                && signals.ready_count.load(std::sync::atomic::Ordering::Relaxed) == 0
+            {
+                use std::sync::atomic::{AtomicBool, Ordering};
+                static WAIT_LOGGED: AtomicBool = AtomicBool::new(false);
+                if !WAIT_LOGGED.swap(true, Ordering::Relaxed) {
+                    info!("bastion: renderer-bench WAITING for client readiness");
+                }
+                return;
+            }
             // A once-latched sentinel so a bad manifest logs ONCE, not per
             // tick: a poisoned run entry with `finished = true`.
             let poisoned = |reason: &str| {
@@ -397,7 +424,12 @@ impl<'a> System<'a> for Sys {
             let token = SemanticFrameTokenV1 {
                 run_id: run.manifest_domain_sha,
                 frame_index,
-                sim_tick: tick,
+                // W3 revision (reserved by the W2 doc): run identity is
+                // RUN-RELATIVE. An absolute boot tick would make two
+                // otherwise-identical runs differ by operator timing —
+                // exactly the wall-coupling the project law forbids in
+                // deterministic identity.
+                sim_tick: rel_tick,
                 script_cursor: 0,
                 readback_cursor: 0,
                 manifest_sha256: run.manifest_payload_sha,
@@ -410,12 +442,10 @@ impl<'a> System<'a> for Sys {
             let mut script_owners: Vec<(Vec<u8>, [u8; 32])> = vec![];
             for s in &run.slots {
                 let owner_key = s.semantic_id.to_le_bytes();
-                let composite = |key: &[u8]| {
-                    let mut v = vec![OwnerKind::StableEntity as u8];
-                    v.extend_from_slice(&(key.len() as u32).to_le_bytes());
-                    v.extend_from_slice(key);
-                    v
-                };
+                // W3: the composite shape moved to the ONE shared
+                // implementation client and server both call.
+                let composite =
+                    |_key: &[u8]| common::renderer_bench::stable_entity_composite(s.semantic_id);
                 // FigureIdentity: body family (the W0 leaf shape verbatim).
                 let family: u16 = match &run.manifest.entities[s.manifest_index].body {
                     BenchBodyV1::Humanoid { .. } => 0,
@@ -505,7 +535,21 @@ impl<'a> System<'a> for Sys {
             ];
             let froot = frame_root(&run.schema, &token, &domains);
             run.parent_frame_root = froot;
-            run.frames.push((tick, token, froot));
+            run.frames.push((rel_tick, token, froot));
+            // W3: announce the frame to every in-game client (drained by
+            // the server crate's net sys — bastion-server cannot see
+            // `Client`). Ack content is observational; run_root is closed
+            // over server frames only.
+            outbox.announces.push(BenchFrameAnnounceV1 {
+                run_id: run.manifest_domain_sha,
+                frame_index,
+                sim_tick: rel_tick,
+                frame_root: froot,
+                cadence: run.cadence as u32,
+                run_ticks: run.run_ticks as u32,
+                arena_origin_mm: run.manifest.arena_origin_mm,
+                entity_count: run.manifest.entities.len() as u32,
+            });
         }
 
         // ── Terminal: run root + atomic artifact write. ──
@@ -528,13 +572,39 @@ impl<'a> System<'a> for Sys {
                     )
                 })
                 .collect();
+            // W3 sidecar: client acks (wall-coupled observations; NEVER
+            // part of run_root). echo_match verifies the announced root
+            // came back verbatim for the frame index it names.
+            let acks = std::mem::take(
+                &mut *signals.acks.lock().expect("bench signals mutex never poisons"),
+            );
+            let acks_json: Vec<String> = acks
+                .iter()
+                .map(|a| {
+                    let echo_match = run
+                        .frames
+                        .get(a.frame_index as usize)
+                        .map(|(_, _, fr)| *fr == a.frame_root_echo)
+                        .unwrap_or(false);
+                    format!(
+                        "{{\"frame_index\":{},\"sim_tick\":{},\"echo_match\":{},\"client_projection_root\":\"{}\",\"entities_resolved\":{}}}",
+                        a.frame_index,
+                        a.sim_tick,
+                        echo_match,
+                        hex(&a.client_projection_root),
+                        a.entities_resolved
+                    )
+                })
+                .collect();
             let body = format!(
-                "{{\n\"schema\":\"renderer-bench-tape-v1\",\n\"scenario_id\":\"{}\",\n\"manifest_payload_sha256\":\"{}\",\n\"manifest_domain_sha256\":\"{}\",\n\"cadence\":{},\n\"frames\":[\n{}\n],\n\"run_root\":\"{}\",\n\"terminal_count\":0\n}}\n",
+                "{{\n\"schema\":\"renderer-bench-tape-v1\",\n\"scenario_id\":\"{}\",\n\"manifest_payload_sha256\":\"{}\",\n\"manifest_domain_sha256\":\"{}\",\n\"cadence\":{},\n\"frames\":[\n{}\n],\n\"client_acks\":[{}],\n\"ready_count\":{},\n\"run_root\":\"{}\",\n\"terminal_count\":0\n}}\n",
                 run.manifest.scenario_id,
                 hex(&run.manifest_payload_sha),
                 hex(&run.manifest_domain_sha),
                 run.cadence,
                 frames_json.join(",\n"),
+                acks_json.join(",\n"),
+                signals.ready_count.load(std::sync::atomic::Ordering::Relaxed),
                 hex(&rroot),
             );
             // artifact_transaction: tmp + rename (atomic on one filesystem).

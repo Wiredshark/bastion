@@ -84,6 +84,9 @@ required-features = ["bin_bot"]
 name = "bastion_playtest"
 
 [[bin]]
+name = "rbench_ackbot"
+
+[[bin]]
 name = "bot"
 required-features = ["bin_bot"]
 
