@@ -14006,6 +14006,34 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             controller.inputs.move_z = 0.0;
                             controller.push_action(comp::ControlAction::Stand);
                         }
+                        // ★★ ITEM 14, AXIS 3 — THE PATROL LEG SWITCH.
+                        // Arriving at a patrol waypoint is not completion: it
+                        // is the cue to head for the OTHER end. Without this a
+                        // patrol arrives once and stands there forever, which
+                        // is a post — and bar 2 ("visits >= 2 distinct points")
+                        // would fail for a reason no one could see, because the
+                        // job would look perfectly healthy.
+                        // Uses the `job` borrow already live from the enclosing
+                        // scope — re-borrowing `board.jobs` here is an E0499.
+                        if let common::bastion::JobKind::Guard {
+                            post,
+                            patrol_to: Some(far),
+                            at_far_end,
+                            ..
+                        } = &mut job.kind
+                        {
+                            *at_far_end = !*at_far_end;
+                            let next = if *at_far_end { *far } else { *post };
+                            job.pos = next;
+                            active.state = ActiveJobState::Traveling;
+                            info!(
+                                job = active.job,
+                                colonist = uids.get(entity).map(|uid| uid.0.get()),
+                                ?next,
+                                at_far_end = *at_far_end,
+                                "bastion: ITEM 14 patrol leg switch — heading for the other end"
+                            );
+                        }
                         info!(
                             job = active.job,
                             // The arrival emit named the JOB but never the
