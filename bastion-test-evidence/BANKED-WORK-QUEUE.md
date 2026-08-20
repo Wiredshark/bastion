@@ -425,6 +425,16 @@ Producer+drain+display all proven; bars need ≥3 windows (pintrait legs carry
 3 inspects), the null (vacuous in the preset box — every pair co-works; name
 it or fixture a split), determinism twin, persistence leg.
 
+**Item 23 leg 2 (mult=20, post unit-gate): the fixture defeats its own
+precondition.** Treatment delivered (witness mult=20.0), needs collapse to
+zero in the first window, 388 need-preempt claims, and ZERO Bed jobs are
+ever claimed — the collapse starves the build economy, so no bed, no sleep,
+no thought, at ANY mult strong enough to force sleep inside a short leg.
+REVISED SHAPE: (a) display bar via the `bastion_deposit_thought` harness
+hook (its own doc: synthetic EMITTER, real queue→chronicle→mood→payload
+path) exposed as a Bastion chat command; (b) the live-emitter bar rides the
+cave-in arm or a normal-decay long leg AFTER the materials wall falls.
+
 **Loop closure owed (bars 3–4 shape): the DISH is not in `FOOD_DEFS`** —
 cooked curry is invisible to the eat scan, so cooking currently produces
 inedible output. The v1.1 edit: add the dish def to the eat scan with a
