@@ -189,6 +189,7 @@ fn parse_kind(s: &str) -> Option<DesignationKind> {
         "ladder" => DesignationKind::Ladder,
         "gather" => DesignationKind::Gather,
         "bed" => DesignationKind::Bed,
+        "cookstation" => DesignationKind::CookStation,
         "farm" => DesignationKind::Farm,
         // ITEM 14: both guard assignment types are paintable from a script,
         // because bar 2 requires BOTH to land in a live run and a fixture that

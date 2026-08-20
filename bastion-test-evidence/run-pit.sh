@@ -267,6 +267,9 @@ case "$ARM" in
               SCRIPT="script-desires.txt" ;;
   winfarm)      PITVAR=" BASTION_PIN_SEASON=winter BASTION_SEED_FOOD=64"
               SCRIPT="script-desires.txt" ;;
+  # ★ ITEM 27: cooking pipeline. Seed food = the raw input; flat colony.
+  cookery)      PITVAR=" BASTION_SEED_FOOD=64"
+              SCRIPT="script-cook.txt" ;;
   merit)        PITVAR=" BASTION_CULTURE_ALPHA=0.9"
               SCRIPT="script-desires.txt" ;;
   indiv)        PITVAR=" BASTION_CULTURE_ALPHA=0.1"

@@ -1,0 +1,17 @@
+note ITEM 27 -- COOKING: first live leg (ITEM27-COOKING-PREREGISTRATION.md).
+note Bars: pipeline conserves (consumed==produced, witnessed both ends);
+note   broken-link refusal named; skill routes; colonists eat the output.
+note Seed food supplies the raw input; the station is painted below.
+anchor
+wait 600
+note --- paint the station near the colony (real coords) ---
+designate cookstation 16388 16384 399 16390 16386 400
+wait 2400
+note --- the station should be BUILT and registered; cook jobs generating ---
+inspect_colonists
+list_designations
+wait 4500
+note --- conservation window: cooked events accumulate ---
+inspect_colonists
+count_items
+wait 1500

@@ -5044,6 +5044,9 @@ pub struct JobBoard {
     /// the whole colony sat idle refusing them: not_candidate=8,
     /// unreachable_job=8, eligible=0 for 12,000 ticks).
     pub pending_adopt_surface: Vec<(vek::Vec2<i32>, vek::Vec2<i32>, i32, DesignationKind)>,
+    /// bastion (ITEM 27): registered cooking stations — completion of a
+    /// CookStation designation pushes here (the Bed registration pattern).
+    pub cook_stations: Vec<vek::Vec3<i32>>,
     /// Whether the one-shot seed has run this server lifetime. Without it
     /// the seed would re-add orders every tick, and a cancelled designation
     /// would resurrect itself.
@@ -10760,6 +10763,68 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // guard starts before any claim); throttled per colonist.
         // AUTON-1: registered under the generator policy gate (const-true
         // today — the POL hook point).
+        // ITEM 27: the COOK generator — one job per idle station when raw
+        // food sits in a stockpile. Runs on the haul cadence (the item scan
+        // is already paid for there). required_item rides the same fetch
+        // machinery Farm sow uses.
+        if tick.0 % ARBITRATION_INTERVAL as u64 == 11 && !board.cook_stations.is_empty() {
+            let stations: Vec<vek::Vec3<i32>> = board.cook_stations.clone();
+            for st in stations {
+                let already = board
+                    .jobs
+                    .values()
+                    .any(|j| matches!(j.kind, common::bastion::JobKind::Cook { station } if station == st));
+                if already {
+                    continue;
+                }
+                // Raw input available? Any FOOD_DEFS item inside a stockpile.
+                // Return the &'static str FROM FOOD_DEFS, not the item's own
+                // borrowed id — the item borrow must not escape the closure.
+                let raw: Option<&'static str> =
+                    (&pickup_items, &positions).join().find_map(|(it, ip)| {
+                        let def = it.item().item_definition_id();
+                        let def = def.itemdef_id()?;
+                        if board
+                            .stockpile_at(ip.0.map(|e| e.floor() as i32))
+                            .is_none()
+                        {
+                            return None;
+                        }
+                        FOOD_DEFS.iter().find(|f| **f == def).copied()
+                    });
+                let Some(raw_def) = raw else {
+                    // The couldn't-happen witness for the broken-link bar:
+                    // station idle BECAUSE no raw input, said by name.
+                    if tick.0 % (ARBITRATION_INTERVAL as u64 * 40) == 11 {
+                        info!(station = ?st, "bastion: ITEM 27 cook station idle — no raw food in any stockpile");
+                    }
+                    continue;
+                };
+                let id = board.next_id;
+                board.next_id += 1;
+                board.jobs.insert(id, Job {
+                    kind: common::bastion::JobKind::Cook { station: st },
+                    work: common::bastion::WorkType::Cook,
+                    pos: st,
+                    skill_floor: 0,
+                    claimed_by: None,
+                    suspended_for: None,
+                    unreachable: false,
+                    carve_attempted: false,
+                    progress: 0.0,
+                    needs_materials: false,
+                    required_item: Some(raw_def),
+                    is_access: false,
+                    stuck_strikes: 0,
+                    benched_until_tick: None,
+                    depth: 0,
+                    reservation: None,
+                    // The colonist stands AT the pot, on the ground beside it.
+                    affordance: AffordanceClass::Untargeted,
+                });
+                info!(station = ?st, raw = raw_def, "bastion: ITEM 27 cook job created");
+            }
+        }
         if tick.0 % ARBITRATION_INTERVAL as u64 == 7
             && !board.stockpiles.is_empty()
             && generator_enabled(GeneratorKind::Haul)
@@ -16502,6 +16567,60 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             occupant: None,
                         });
                         info!(pos = ?job.pos, "bastion: bed registered (built)");
+                    }
+                    // ITEM 27: a completed station registers (Bed pattern).
+                    if job.kind.is(DesignationKind::CookStation) {
+                        board.cook_stations.push(job.pos);
+                        info!(pos = ?job.pos, "bastion: cook station registered (built)");
+                    }
+                    // ITEM 27: a completed COOK job — consume the carried raw
+                    // (the sow `taken` pattern) and produce the vanilla dish
+                    // at the station. Conservation is the bar: one consumed,
+                    // one produced, both witnessed, or nothing at all.
+                    if let common::bastion::JobKind::Cook { station } = job.kind {
+                        let want = job.required_item;
+                        let taken = inventories.get_mut(entity).and_then(|mut inv| {
+                            let slot = inv.slots_with_id().find_map(|(slot, it)| {
+                                it.as_ref()
+                                    .is_some_and(|it| {
+                                        it.item_definition_id().itemdef_id() == want
+                                    })
+                                    .then_some(slot)
+                            });
+                            slot.and_then(|slot| match inv.slot_mut(slot) {
+                                Some(Some(it)) if it.amount() > 1 => {
+                                    it.decrease_amount(1).ok().map(|_| ())
+                                },
+                                Some(Some(_)) => inv.remove(slot).map(|_| ()),
+                                _ => None,
+                            })
+                        });
+                        if taken.is_some() {
+                            let mut rng = toss_scatter_rng(tick.0, station, 0x30E_0003);
+                            crate::bastion_actions::emit_drop(
+                                &mut item_drop_emitter,
+                                station,
+                                Item::new_from_asset_expect(
+                                    "common.items.food.apple_mushroom_curry",
+                                ),
+                                *program_time,
+                                &mut rng,
+                            );
+                            info!(
+                                ?station,
+                                raw = ?want,
+                                "bastion: ITEM 27 cooked — raw consumed, dish produced"
+                            );
+                        } else {
+                            // The couldn't-happen witness: completion without
+                            // the raw in hand names the upstream fetch failure
+                            // instead of silently producing from nothing.
+                            info!(
+                                ?station,
+                                raw = ?want,
+                                "bastion: ITEM 27 cook completed WITHOUT raw in hand — nothing produced"
+                            );
+                        }
                     }
 
                     // ROW-COMPLETION-SIGNAL-SPLIT.md / F8: the drop/XP/log
