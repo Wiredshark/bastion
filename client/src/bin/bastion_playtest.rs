@@ -1007,6 +1007,24 @@ fn main() {
                             p.desires,
                             p.guard_bravery
                         ));
+                        // ITEM 23 (morale events): the THOUGHT breakdown in
+                        // full. mood_expl=SOME proved ARRIVAL; scoring item
+                        // 23's bar ("a planted event produces a mood step")
+                        // needs the CONTENTS -- which thought, what magnitude.
+                        // One line per colonist, empty printed as thoughts=0,
+                        // so no-thoughts and not-requested cannot conflate.
+                        if let Some(me) = &p.mood_explanation {
+                            log.log(&format!(
+                                "MOODX uid={} total={:.4} thoughts={} {:?}",
+                                uid.0,
+                                me.total_mood,
+                                me.thoughts.len(),
+                                me.thoughts
+                                    .iter()
+                                    .map(|t| (t.thought_id, t.base_magnitude))
+                                    .collect::<Vec<_>>()
+                            ));
+                        }
                     }
                 }
                 log.log(&format!("inspect_colonists -> {found} colonist payload(s)"));
