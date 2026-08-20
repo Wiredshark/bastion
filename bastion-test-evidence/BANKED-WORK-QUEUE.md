@@ -298,7 +298,7 @@ uninformative for the same reason.
 | row | state |
 |---|---|
 | Arc 3 item 14 (guards) | **3 of 4 bars PASS** (final disposition); bar 1b banked on colonist target-acquisition |
-| Arc 2 item 11 (recreation) | **ROOT CAUSE FIXED** — the gate's `contains_key` treated expired cooldowns as active (34,720-row census; every clause open except that one). Post-fix leg queued |
+| Arc 2 item 11 (recreation) | **★ PASS, FINAL (823da4bc1b)** — 8/8 crossings→preempts at the exact tick; the restore REFILLS (0.40→~1.0 across breaks); previously: ROOT CAUSE FIXED — the gate's `contains_key` treated expired cooldowns as active (34,720-row census; every clause open except that one). Post-fix leg queued |
 | Arc 2 item 12 (chronicle UI) | **BUILT** — universal inspect channel, payload carries enabled+truncated. Live legs queued |
 | Arc 4 item 17 (skills) | **BUILT** — payload visible half + felt-curve test green. Live leg shares item 12's arm |
 | Arc 4 item 16 (P2+P3) | fixture + in-window scorer ready (`haulrev`); blockers dissolved by today's fixes |
