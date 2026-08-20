@@ -202,6 +202,16 @@ case "$ARM" in
   # applies => recreation strictly non-increasing. That is the control.
   recrab)  PITVAR=" BASTION_RECREATION=1"
               SCRIPT="script-recr-ab.txt" ;;
+  # ★ ITEM 11's BAR HAS NEVER BEEN SCORED, and not because it failed:
+  # ITEM11-AB-RESULTS.md records bar 2 (net across a break) as UNSCOREABLE --
+  # "there were no breaks". Hunger pinned at 0.0000 from sample 4 and owned
+  # every preempt, so recreation never got a turn. These two arms supply the
+  # colony (BASTION_SEED_FOOD) so hunger is not the binding constraint and a
+  # break can actually occur. No balance number is touched.
+  recrabfed)    PITVAR=" BASTION_RECREATION=1 BASTION_SEED_FOOD=64"
+              SCRIPT="script-recr-ab.txt" ;;
+  recrabfedctl) PITVAR=" BASTION_SEED_FOOD=64"
+              SCRIPT="script-recr-ab.txt" ;;
   recrabctl) PITVAR=""
               SCRIPT="script-recr-ab.txt" ;;
   # ARC 3 SHARED BLOCKER (unblocks items 14 AND 15): the SHAFT removes the

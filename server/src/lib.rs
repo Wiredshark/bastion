@@ -5402,6 +5402,62 @@ impl Server {
                                     jobs,
                                     "bastion: autofound colony founded (deterministic path)"
                                 );
+                                // ★★ BASTION_SEED_FOOD=<n> — a FIXTURE lever for
+                                // item 11 (2026-08-19). Default OFF: absent the
+                                // var this is byte-identical to before, so every
+                                // banked run stays reproducible.
+                                //
+                                // WHY IT EXISTS. Item 11's registered bar is "net
+                                // positive across a whole break". It has never been
+                                // scored, and NOT because it failed —
+                                // `ITEM11-AB-RESULTS.md` records it as **UNSCOREABLE:
+                                // there were no breaks**. Hunger pinned at 0.0000
+                                // from sample 4 onward and owned every preempt for
+                                // ~1,000 sim-seconds, so recreation never got a turn.
+                                // A bar whose precondition never occurs is untested,
+                                // not passed.
+                                //
+                                // This supplies the colony so hunger is not the
+                                // binding constraint. It changes NO balance number —
+                                // `decay_per_sec`, the comfort band and the mood
+                                // penalty are Ben's per ruling 3's scope, and are
+                                // untouched. It is the same class of lever as
+                                // `pitwood`'s stockpiled wood drop.
+                                if let Ok(n) = std::env::var("BASTION_SEED_FOOD") {
+                                    let n: usize = n.parse().unwrap_or(0);
+                                    let bus = ecs
+                                        .read_resource::<common::event::EventBus<
+                                            common::event::CreateItemDropEvent,
+                                        >>();
+                                    for i in 0..n {
+                                        bus.emit_now(common::event::CreateItemDropEvent {
+                                            pos: comp::Pos(
+                                                origin.map(|e| e as f32)
+                                                    + Vec3::new(
+                                                        0.5 + (i % 4) as f32,
+                                                        0.5 + (i / 4) as f32,
+                                                        1.0,
+                                                    ),
+                                            ),
+                                            vel: comp::Vel(Vec3::zero()),
+                                            ori: comp::Ori::default(),
+                                            item: comp::PickupItem::new(
+                                                comp::Item::new_from_asset_expect(
+                                                    "common.items.food.mushroom",
+                                                ),
+                                                *ecs.read_resource::<common::resources::ProgramTime>(),
+                                                true,
+                                            ),
+                                            loot_owner: None,
+                                            persistent: true,
+                                        });
+                                    }
+                                    tracing::warn!(
+                                        seeded = n,
+                                        ?origin,
+                                        "bastion: BASTION_SEED_FOOD active — colony supplied so                                          hunger is not the binding constraint (FIXTURE lever;                                          no balance number changed)"
+                                    );
+                                }
                             } else {
                                 tracing::warn!(
                                     ?origin_xy,
