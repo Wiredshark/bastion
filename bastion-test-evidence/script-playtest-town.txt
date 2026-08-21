@@ -1,0 +1,197 @@
+note THREE-MODE PLAYTEST -- modes 1+2, ADOPTED VILLAGE deep dive.
+note Sibling of script-playtest-arena.txt, same rhythm, DIFFERENT question.
+note The arena asks "is the colony alive?" on ground the colony built itself.
+note This asks the harder one: given a village it did NOT build, does the
+note colony USE it -- sleep in the houses' beds, work the existing fields,
+note walk the existing streets -- or does it ignore the town and re-found its
+note own habits beside it? A colony camped in a field next to eleven empty
+note beds is the specific failure this leg exists to catch.
+note
+note Run on the adoption arms (BASTION_ADOPT_TOWN=1 + real-terrain autofound +
+note presence VD=3). Real terrain, so NO absolute coordinates appear below:
+note the server picks the site, and a script that hard-coded a plot would be
+note measuring its own guess. Everything here is relative to where the player
+note anchors, which is the same rule script-adopt.txt follows.
+note
+note DECLARED RUN LENGTH (declare-run-length-before-launch):
+note   3,000 settle + 8 x 2,000 cycle = 19,000 ticks
+note   = ~633 game-seconds = ~10.5 game-minutes. Wall time is NOT declared
+note   here. The settle is 3,000 and not 600 on purpose: the first adoption
+note   leg with deferred placement drained all 5 designations one second
+note   after founding and ended 44 wall-seconds later with ZERO arrivals --
+note   an outcome its own window caused, because real-terrain pathing plus
+note   eat cycles need thousands of ticks. EXPECT the same shape here; a
+note   short window would score ordinary travel as failure.
+note
+note VOID CONDITIONS, named BEFORE the run:
+note   V1 unloaded cells render `?` and never as ground. If the radius-60
+note      frames stay mostly `?`, the presence radius is too small for a town
+note      (the VD=3 lesson: adopted plot corners sat 48 blocks from origin
+note      with min_loaded=false for an entire leg). Every "they ignore the
+note      village" reading is then VOID -- the village was never loaded.
+note   V2 if `count_items` shows zero materials throughout, the materials gate
+note      refuses every claim (12,152/12,152 in the adoptfed forensics) and
+note      "do they use the village" cannot be asked at all. Report VOID and
+note      name the gate; do NOT report that the colonists ignored the town.
+note   V3 ROOF OCCLUSION, the instrument limit that decides bar 2: a colonist
+note      indoors may be UNDER a roof block and therefore invisible to a
+note      surface renderer. If indoor colonists vanish from the frames, mode 2
+note      CANNOT answer the bed question and it falls to `inspect_colonists`
+note      alone -- absence of a glyph is then absence of EVIDENCE, not
+note      evidence of absence, and the report must say which one it has.
+note
+note NOT AVAILABLE, so not asked for below: there is no verb to ask "which
+note   building is this colonist inside", none to list the village's own
+note   structures as the worldgen laid them down, and none to diff two ascii
+note   frames. Structure-use is therefore inferred by cross-reading a frame
+note   against the payload beside it. If that inference proves untrustworthy
+note   in practice, THAT is the headline finding, ahead of any bar below.
+anchor
+note
+note --- FRAME 0 (t=0) -- THE BASELINE PICTURE ------------------------------
+note Q: how much of the radius-60 disc is `?` at anchor? EXPECT a loaded
+note   centre and an unloaded fringe. This frame exists to make the fringe
+note   MEASURABLE, so that a later empty-looking quarter can be attributed to
+note   loading or to the town genuinely ending there -- not guessed at.
+ascii 60
+wait 3000
+note
+note --- FRAME 1 (t=3000, 100 game-seconds) -- THE VILLAGE LAYOUT -----------
+note Q: does the village read as ARCHITECTURE -- house footprints as enclosed
+note   rectangles with a door gap, fields as regular blocks, paths between
+note   them -- or as noise? A reader who cannot find a single house on this
+note   frame cannot score any structure-use question that follows, and should
+note   stop here and report the renderer, not the colony.
+note Q: did adoption place the colony INSIDE the village footprint or on its
+note   edge? EXPECT inside or adjacent. A colony centred well outside the
+note   houses predicts every later "they ignore the village" answer for a
+note   trivial reason -- distance -- and that must be stated up front rather
+note   than discovered at cycle 8.
+note Q: does `list_designations` show designations placed ON existing village
+note   structures (beds where houses are, farm plots where fields are), or on
+note   bare ground beside them? This is the adoption mechanism's own claim,
+note   and it is checkable in one frame.
+ascii 60
+inspect_colony
+list_designations
+count_items
+note
+note --- CYCLE 1 (t=5000, 167 game-seconds) -- DO THEY GO IN? ---------------
+note Q: are colonist glyphs moving TOWARD the village or hugging the anchor?
+note   EXPECT net movement inward across frames 1 -> 2. The adoption legs have
+note   a measured history of zero arrivals; this is the sample that catches it
+note   early enough to say so rather than reporting a silent nothing.
+note Q: does any glyph sit ON a house footprint rather than beside it? Even
+note   one is enough to answer "can they enter buildings at all", which every
+note   bed question below depends on.
+wait 2000
+ascii 60
+inspect_colonists
+count_items
+note
+note --- CYCLE 2 (t=7000, 233 game-seconds) -- BEDS INSIDE HOUSES ----------
+note Q: does `inspect_colonists` report anyone asleep or resting? EXPECT at
+note   least one by now if the energy need decays at all; nobody resting after
+note   233 game-seconds means either needs are inert or sleep is unreachable,
+note   and those two are distinguishable from the payload's own fields.
+note Q: for anyone resting -- is their glyph INSIDE a house footprint, or in
+note   the open? A colonist asleep in the open with an adopted bed indoors is
+note   THE failure this script was written for; name the uid and the cell.
+note   If nobody renders indoors at all, apply V3 above before concluding.
+wait 2000
+ascii 60
+inspect_colonists
+count_items
+note
+note --- CYCLE 3 (t=9000, 300 game-seconds) -- THE EXISTING FIELDS ----------
+note Q: is any colonist standing on a village field two frames running? The
+note   town ships tilled ground; EXPECT adopted farm work to be served there
+note   rather than on fresh dirt the colony broke itself.
+note Q: has `count_items` gained a CROP line without the player painting a
+note   single farm? That would be the cleanest possible evidence that existing
+note   fields are in production. A crop count flat at zero while colonists do
+note   stand in the fields separates "they go there" from "they work there",
+note   and only the pair of observations can tell those apart.
+wait 2000
+ascii 60
+inspect_colonists
+count_items
+note
+note --- CYCLE 4 (t=11000, 367 game-seconds) -- WHAT DOES THE LOG SAY? -----
+note Q: is the chronicle GROWING, and do its rows name work at the village --
+note   builds, harvests, sleeps -- rather than only travel and access jobs?
+note   EXPECT a mix. A chronicle that is all pathing after 367 game-seconds
+note   says the colony is commuting and never arriving, which is the same
+note   story the frames should be showing; if log and frames DISAGREE, the
+note   disagreement outranks both and gets reported as such.
+note Q: do the chronicle's rows and the frame agree about WHERE things happen?
+note   This is the one cheap cross-check between mode 1 and mode 2 available
+note   in this driver, and it is worth its own line in the report either way.
+wait 2000
+ascii 60
+inspect_colonists
+inspect_chronicle
+count_items
+note
+note --- CYCLE 5 (t=13000, 433 game-seconds) -- THE MATERIALS GATE ---------
+note Q: does `count_items` hold a nonzero MATERIAL stock? EXPECT nonzero on a
+note   seeded arm and possibly zero on an unseeded one; zero is V2 and voids
+note   the structure-use reading rather than failing it. Check this BEFORE
+note   drawing any conclusion from cycles 6-8.
+note Q: has the stock moved at all since frame 1? A stock frozen across 10,000
+note   ticks in a village full of resources means nothing is being gathered,
+note   hauled, or consumed -- and that is a colony-wide stall, not a
+note   village-use finding.
+wait 2000
+ascii 60
+inspect_colonists
+count_items
+note
+note --- CYCLE 6 (t=15000, 500 game-seconds) -- SPREAD ACROSS THE TOWN -----
+note Q: are the colonists SPREAD across several village structures or queued
+note   at one? EXPECT spread proportional to the designation kinds adopted. A
+note   single queue means one structure is out-scoring every other in
+note   arbitration, and the town is decoration around a one-job colony.
+note Q: is any glyph fixed in the same cell for cycles 4, 5 and 6? Three
+note   frames is the threshold this project uses to call idle rather than
+note   mid-path; a colonist stuck in a doorway is a pathing report with a
+note   cell reference, and it outranks every aggregate here.
+wait 2000
+ascii 60
+inspect_colonists
+count_items
+note
+note --- CYCLE 7 (t=17000, 567 game-seconds) -- STREETS OR STRAIGHT LINES --
+note Q: do repeated positions trace the village's PATHS, or do colonists cut
+note   across house interiors and fields? EXPECT routes that respect walls,
+note   because a path that ignores them means the village geometry is invisible
+note   to the navigator, and every structure-use answer above is then luck.
+note Q: has anyone eaten or slept in-window (a need field reset upward between
+note   payloads)? EXPECT at least one of each by 567 game-seconds. Neither ever
+note   resetting says the colony is surviving on its founding stock and using
+note   the village for nothing at all.
+wait 2000
+ascii 60
+inspect_colonists
+count_items
+note
+note --- CYCLE 8 (t=19000, 633 game-seconds) -- THE VERDICT FRAME ----------
+note Q: put frame 8 beside frame 1. Has the VILLAGE changed -- stock moved,
+note   fields worked, colonists distributed through the buildings? EXPECT
+note   visible difference. Two frames a reader cannot tell apart across 16,000
+note   ticks is the most damning outcome available, and it should be reported
+note   in exactly those words.
+note Q: compare this `inspect_colony` against the one at frame 1. Did the
+note   aggregate MOVE -- population, stock, anything? Two identical colony
+note   payloads 19,000 ticks apart mean the colony is frozen and every frame
+note   above was showing motion without consequence; that contradiction is the
+note   report's first line if it happens.
+note Q: final scoring question for the whole leg: name ONE thing the colony
+note   did that it could only have done BECAUSE the village was there. If no
+note   such thing can be named, adoption is placement without use, and this
+note   script's whole purpose is to have said so on the record.
+wait 2000
+ascii 60
+inspect_colonists
+count_items
+inspect_colony
