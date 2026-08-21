@@ -24580,7 +24580,27 @@ pub fn colony_drive_for(
 }
 
 pub fn job_bills_stone_unclaimed(job: &Job) -> bool {
-    job.required_item == Some(BUILD_MATERIAL_ITEM) && job.claimed_by.is_none()
+    // ★ CORRECTED 2026-08-21, and the correction is a lesson about the fix
+    // that preceded it. The first version was `claimed_by.is_none()` alone,
+    // reasoned like this: `supply` already counts stone in colonists' bags, so
+    // counting claimed jobs too would double-order and the miner would dig
+    // forever. That reasoning holds ONLY IF a claimant actually carries the
+    // stone. A colonist who claims a bed job and has nothing is still waiting
+    // on stone that nobody has ordered.
+    //
+    // EACH SUFFICIENT BLOCKER MUST BE CLEARED, and clearing one revealed the
+    // next by ABSORBING it: widening the mine radius let the colony claim its
+    // bed jobs, which flipped them out of "unclaimed", which dropped demand to
+    // zero, which silenced the generator — so the leg after the radius fix
+    // showed FEWER mine jobs, not more, and the witness stopped firing because
+    // quota was 0 rather than because anything had been satisfied. Measured:
+    // `already_claimed=13` beside `materials=8` in the same refusal census.
+    //
+    // The honest predicate is "bills stone and is not yet supplied": unclaimed
+    // (nobody is on it) OR flagged `needs_materials` (someone is on it and is
+    // stuck for exactly this).
+    job.required_item == Some(BUILD_MATERIAL_ITEM)
+        && (job.claimed_by.is_none() || job.needs_materials)
 }
 
 fn toss_scatter_rng(tick: u64, pos: Vec3<i32>, domain: u64) -> rand_chacha::ChaCha8Rng {
@@ -24854,8 +24874,24 @@ mod tests {
             Some(common::uid::Uid(NonZeroU64::new(7).expect("7 is nonzero")));
         assert!(
             !job_bills_stone_unclaimed(&claimed),
-            "a CLAIMED job is already being supplied; counting it as demand double-orders and \
-             the mine generator never reaches quiescence"
+            "a claimed job that is progressing is already supplied; counting it as demand \
+             double-orders and the mine generator never reaches quiescence"
+        );
+
+        // But claimed AND STUCK FOR MATERIALS *is* demand — the case that
+        // broke the leg after the radius fix. Widening the mine radius let
+        // colonists claim their bed jobs, which flipped every one of them out
+        // of "unclaimed", which dropped demand to zero and SILENCED the
+        // generator. The leg read as FEWER mine jobs after a fix meant to
+        // produce more, and the witness stopped firing because quota was 0
+        // rather than because anything had been satisfied.
+        let mut stuck = claimed.clone();
+        stuck.needs_materials = true;
+        assert!(
+            job_bills_stone_unclaimed(&stuck),
+            "a colonist standing on a bed job with no stone is the clearest statement of demand \
+             this board can make — if it does not count, clearing one blocker just hands the \
+             deadlock to the next"
         );
 
         // A job that bills no material is not stone demand at all.
