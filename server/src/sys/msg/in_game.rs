@@ -1851,6 +1851,35 @@ impl<'a> System<'a> for Sys {
                                         .filter(|j| j.claimed_by.is_some())
                                         .count()
                                         as u32;
+                                    // ★ F19 (found by an adversarial play
+                                    // session, 2026-08-21): a refusal reason
+                                    // with no dashboard category is INVISIBLE
+                                    // BY CONSTRUCTION. The session watched 8
+                                    // colonists stand idle beside 4 jobs while
+                                    // the player-facing counters read
+                                    // `jobs_unreachable=0 blocked_materials=0`
+                                    // -- every one of 32 considerations had
+                                    // been refused on AFFORDANCE (no cell a
+                                    // colonist can stand in to work the job),
+                                    // and the dashboard had no bucket for it.
+                                    // The player sees four healthy-looking
+                                    // jobs, zero claimed, eight idle people,
+                                    // and no explanation anywhere.
+                                    //
+                                    // Same predicate the claim gate uses, for
+                                    // the same reason blocked_materials does:
+                                    // the dashboard must not disagree with the
+                                    // selector about why work is stuck.
+                                    let jobs_blocked_stance = job_board
+                                        .jobs
+                                        .values()
+                                        .filter(|j| {
+                                            j.claimed_by.is_none()
+                                                && crate::bastion_jobs::job_stance_missing(
+                                                    &terrain, j,
+                                                )
+                                        })
+                                        .count() as u32;
                                     let jobs_unreachable = job_board
                                         .jobs
                                         .values()
@@ -1891,6 +1920,7 @@ impl<'a> System<'a> for Sys {
                                             food_stock,
                                             jobs_total,
                                             jobs_claimed,
+                                            jobs_blocked_stance,
                                             jobs_unreachable,
                                             designations: job_board.designated_regions().count() as u32,
                                             jobs_blocked_materials,

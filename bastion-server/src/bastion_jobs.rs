@@ -3225,6 +3225,17 @@ fn at_target_stance(terrain: &TerrainGrid, pos: Vec3<i32>) -> Option<Vec3<i32>> 
 /// broke the (now-deleted) conditional Ladder rule at the emergency
 /// rescue's rung-chaining call site — a two-hour diagnosis the first time;
 /// don't re-earn it.
+/// F19: does this job have NO cell a colonist could stand in to work it?
+///
+/// The dashboard's public form of `job_stance`. It exists so the player-facing
+/// counter and the claim gate answer the same question with the same code — a
+/// refusal reason with no dashboard category is invisible by construction, and
+/// a dashboard category computed a second way is a disagreement waiting to
+/// happen (this file has spent a whole session paying for exactly that shape).
+pub fn job_stance_missing(terrain: &TerrainGrid, job: &Job) -> bool {
+    job.affordance != AffordanceClass::Untargeted && job_stance(terrain, job).is_none()
+}
+
 fn job_stance(terrain: &TerrainGrid, job: &Job) -> Option<Vec3<i32>> {
     match job.affordance {
         AffordanceClass::SolidTarget => has_standable_stance(terrain, job.pos),

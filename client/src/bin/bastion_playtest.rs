@@ -1198,7 +1198,7 @@ fn main() {
                             // the server never sent, and this session has hit
                             // that exact shape three times (ownership,
                             // mood_explanation, and this one).
-                            "COLONY tick={} colonists={} food_stock={} jobs_total={} jobs_claimed={} jobs_unreachable={} designations={} blocked_materials={} favor={:.1}",
+                            "COLONY tick={} colonists={} food_stock={} jobs_total={} jobs_claimed={} jobs_unreachable={} designations={} blocked_materials={} blocked_stance={} favor={:.1}",
                             c.tick,
                             c.colonists,
                             c.food_stock,
@@ -1207,6 +1207,11 @@ fn main() {
                             c.jobs_unreachable,
                             c.designations,
                             c.jobs_blocked_materials,
+                            // F19: printed ALWAYS, beside blocked_materials.
+                            // A colony with idle colonists and no stated
+                            // reason is the exact thing this pair exists to
+                            // make impossible.
+                            c.jobs_blocked_stance,
                             c.favor
                         ));
                     },

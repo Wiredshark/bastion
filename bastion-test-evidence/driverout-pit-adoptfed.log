@@ -1,289 +1,284 @@
-=== bastion_playtest starting: server=127.0.0.1:26094 username=pit-adoptfed script=E:/veloren-master/.item29-wt/bastion-test-evidence/script-adopt.txt ===
-driver build=fc4c29fc built_at=1787283450 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,inspect_colonists,inspect_colony,inspect_chronicle,count_items,list_designations,survey,note,cmd,ascii
+=== bastion_playtest starting: server=127.0.0.1:26024 username=pit-adoptfed script=E:/veloren-master/.item29-wt/bastion-test-evidence/script-adopt.txt ===
+driver build=2a2cdec1 built_at=1787290172 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,inspect_colonists,inspect_colony,inspect_chronicle,count_items,list_designations,survey,note,cmd,ascii
 parsed 17 script commands
 [init] ConnectionEstablish
-[2m2026-08-21T03:48:51.045788Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mHHK3Sq[1m}[0m[2m:[0m [2mveloren_network::channel[0m[2m:[0m Connecting Tcp to: 127.0.0.1:26094
-[2m2026-08-21T03:48:51.050599Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mHHK3Sq[1m}[0m[2m:[0m[1m[0m[2m:[0m[1mhandshake[0m[1m{[0m[3mcid[0m[2m=[0m0[1m}[0m[2m:[0m [2mveloren_network_protocol::handshake[0m[2m:[0m This Handshake is now configured! [3mpid[0m[2m=[0mMHyIti
+[2m2026-08-21T08:33:16.594878Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mUy9AQ2[1m}[0m[2m:[0m [2mveloren_network::channel[0m[2m:[0m Connecting Tcp to: 127.0.0.1:26024
+[2m2026-08-21T08:33:16.595346Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mUy9AQ2[1m}[0m[2m:[0m[1m[0m[2m:[0m[1mhandshake[0m[1m{[0m[3mcid[0m[2m=[0m0[1m}[0m[2m:[0m [2mveloren_network_protocol::handshake[0m[2m:[0m This Handshake is now configured! [3mpid[0m[2m=[0mnyJO+E
 [init] WatingForServerVersion
+[2m2026-08-21T08:33:18.969026Z[0m [33m WARN[0m [2mveloren_client[0m[2m:[0m Server is running 73299059 [2026-08-21], you are running 2a2cdec1 [2026-08-21], versions might be incompatible!
 [init] Authentication
 [init] LoadingInitData
 [init] StartingClient
-connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/54805e16-ca37-43fd-b2d4-8639bf26db60), name: "Veloren Server", git_hash: 4232849916, git_timestamp: 1787283450, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
-[2m2026-08-21T03:49:02.343353Z[0m [32m INFO[0m [2mveloren_common_assets[0m[2m:[0m Assets found path=E:\veloren-master\.item29-wt\assets
+connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/229d4f8e-3bab-48a2-96c8-948da7564d55), name: "Veloren Server", git_hash: 1932103769, git_timestamp: 1787300376, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[2m2026-08-21T08:33:22.545601Z[0m [32m INFO[0m [2mveloren_common_assets[0m[2m:[0m Assets found path=E:\veloren-master\.item29-wt\assets
 requesting view distance terrain=6 entity=6
 requested character join id=CharacterId(2)
 in-game. entity=Entity(0, Generation(1))
-[2m2026-08-21T03:49:02.595798Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m2
+[2m2026-08-21T08:33:22.791340Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m2
 anchor precondition: Pos arrived after 3 ticks (old fixed spin was 60, ceiling 450); OLD BEHAVIOUR WOULD HAVE matched this run
-[2m2026-08-21T03:49:02.600641Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
-[2m2026-08-21T03:49:02.631080Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
-[2m2026-08-21T03:49:02.663737Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
-[2m2026-08-21T03:49:02.697116Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
-[2m2026-08-21T03:49:02.730355Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
-[2m2026-08-21T03:49:02.773432Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
-[2m2026-08-21T03:49:02.806365Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
-[2m2026-08-21T03:49:02.830229Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
-[2m2026-08-21T03:49:02.863838Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
-[2m2026-08-21T03:49:02.897440Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
-[2m2026-08-21T03:49:02.946264Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
-[2m2026-08-21T03:49:02.971567Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
-[2m2026-08-21T03:49:02.997569Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
-[2m2026-08-21T03:49:03.031184Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
-[2m2026-08-21T03:49:03.069255Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
-[2m2026-08-21T03:49:03.102741Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m11
-[2m2026-08-21T03:49:03.138968Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
-[2m2026-08-21T03:49:03.164064Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
-[2m2026-08-21T03:49:03.201133Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
-[2m2026-08-21T03:49:03.233620Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
-[2m2026-08-21T03:49:03.278202Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
-[2m2026-08-21T03:49:03.300795Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
-[2m2026-08-21T03:49:03.331993Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
-[2m2026-08-21T03:49:03.364079Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
-[2m2026-08-21T03:49:03.397315Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
-[2m2026-08-21T03:49:03.641320Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m5
-[2m2026-08-21T03:49:03.664597Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m7
-[2m2026-08-21T03:49:03.697236Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m9
-[2m2026-08-21T03:49:03.730443Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m11
-[2m2026-08-21T03:49:03.765067Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m1 [3mpending_total[0m[2m=[0m12
-[2m2026-08-21T03:49:04.401232Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m11
-[2m2026-08-21T03:49:04.431775Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m1 [3mpending_total[0m[2m=[0m12
-player pos at script start: Vec3 { x: 15216.658, y: 16016.563, z: 419.0 }
+[2m2026-08-21T08:33:22.792475Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T08:33:22.826214Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T08:33:22.859191Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T08:33:22.892702Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
+[2m2026-08-21T08:33:22.938517Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T08:33:22.959140Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T08:33:22.992771Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T08:33:23.026040Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
+[2m2026-08-21T08:33:23.069916Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T08:33:23.093338Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T08:33:23.126935Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T08:33:23.166461Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T08:33:23.193344Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T08:33:23.226840Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T08:33:23.267684Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T08:33:23.292961Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T08:33:23.326346Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T08:33:23.369382Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T08:33:23.392651Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T08:33:23.426407Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T08:33:23.459935Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
+[2m2026-08-21T08:33:23.493380Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
+[2m2026-08-21T08:33:23.538935Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T08:33:23.559840Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T08:33:23.592852Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T08:33:23.626244Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
+[2m2026-08-21T08:33:23.659118Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
+[2m2026-08-21T08:33:23.897398Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m9
+[2m2026-08-21T08:33:23.926158Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m11
+[2m2026-08-21T08:33:23.959174Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m1 [3mpending_total[0m[2m=[0m12
+[2m2026-08-21T08:33:24.367641Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m7
+[2m2026-08-21T08:33:24.392922Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m9
+[2m2026-08-21T08:33:24.425946Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m11
+[2m2026-08-21T08:33:24.459153Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m1 [3mpending_total[0m[2m=[0m12
+player pos at script start: Vec3 { x: 15216.392, y: 16016.36, z: 419.0 }
 [note] ADOPT-A-TOWN mode A -- first live leg (ADOPT-A-TOWN-PREREGISTRATION.md).
 [note] Real terrain; the server logs carry the adoption witness (site chosen,
 [note] designations per kind) or the VOID witness (no town in radius).
-sent BastionCameraAnchor at Vec3 { x: 15216.658, y: 16016.563, z: 419.0 }
+sent BastionCameraAnchor at Vec3 { x: 15216.392, y: 16016.36, z: 419.0 }
 [note] Window-fix (2026-08-20): the first deferred-placement leg drained all 5
 [note] designations ONE SECOND after founding, claimed 3 jobs -- and the run
 [note] ended 44 wall-seconds later with 0 arrivals. Real-terrain pathing plus
 [note] eat cycles need thousands of ticks; the survival window must OUTLAST
 [note] them (the haulrev ramp lesson, third appearance).
-[2m2026-08-21T03:49:04.498717Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m20
-[2m2026-08-21T03:49:04.530454Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m28
-[2m2026-08-21T03:49:04.564400Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m36
-[2m2026-08-21T03:49:04.597171Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m44
-[2m2026-08-21T03:49:04.630699Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m4 [3mpending_total[0m[2m=[0m48
-[2m2026-08-21T03:49:06.664466Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 chunk-request retry EXPIRED [3mexpired[0m[2m=[0m2 [3mremaining[0m[2m=[0m46
-[2m2026-08-21T03:49:06.697434Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m48
-[2m2026-08-21T03:49:06.697481Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 chunk-request retry EXPIRED [3mexpired[0m[2m=[0m4 [3mremaining[0m[2m=[0m44
-[2m2026-08-21T03:49:06.732462Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m4 [3mpending_total[0m[2m=[0m48
-[2m2026-08-21T03:49:06.732516Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 chunk-request retry EXPIRED [3mexpired[0m[2m=[0m2 [3mremaining[0m[2m=[0m46
-[2m2026-08-21T03:49:06.764547Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m48
-[2m2026-08-21T03:49:06.797918Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 chunk-request retry EXPIRED [3mexpired[0m[2m=[0m1 [3mremaining[0m[2m=[0m47
-[2m2026-08-21T03:49:06.831001Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m1 [3mpending_total[0m[2m=[0m48
-[2m2026-08-21T03:49:06.878933Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m47
-[2m2026-08-21T03:49:06.897796Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m1 [3mpending_total[0m[2m=[0m48
-[2m2026-08-21T03:49:07.432245Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 chunk-request retry EXPIRED [3mexpired[0m[2m=[0m3 [3mremaining[0m[2m=[0m45
-[2m2026-08-21T03:49:07.464725Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m3 [3mpending_total[0m[2m=[0m48
-[2m2026-08-21T03:49:07.531222Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 chunk-request retry EXPIRED [3mexpired[0m[2m=[0m16 [3mremaining[0m[2m=[0m32
-[2m2026-08-21T03:49:07.580685Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m32
-[2m2026-08-21T03:49:07.580734Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 chunk-request retry EXPIRED [3mexpired[0m[2m=[0m7 [3mremaining[0m[2m=[0m25
-[2m2026-08-21T03:49:07.611167Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m29
-[2m2026-08-21T03:49:07.611221Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 chunk-request retry EXPIRED [3mexpired[0m[2m=[0m4 [3mremaining[0m[2m=[0m25
-[2m2026-08-21T03:49:07.657940Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m18
-[2m2026-08-21T03:49:07.665110Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m26
-[2m2026-08-21T03:49:07.698335Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m34
-[2m2026-08-21T03:49:07.731245Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m42
-[2m2026-08-21T03:49:07.764529Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m6 [3mpending_total[0m[2m=[0m48
-[2m2026-08-21T03:49:09.580541Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m5 [3mpending_total[0m[2m=[0m48
-[2m2026-08-21T03:49:09.611513Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m4 [3mpending_total[0m[2m=[0m48
-[chat] GenericChatMsg { chat_type: Npc(Uid(37)), content: Localized { key: "npc-speech-menacing", seed: 62369, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-villager_conscientious", seed: 40678, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-villager_extroverted", seed: 11763, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-tell_monster", seed: 42212, args: {"body": Content(Localized { key: "noun-wendigo", seed: 14012, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 51749, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 769, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-site", seed: 48396, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(34)), content: Localized { key: "npc-speech-tell_site", seed: 16761, args: {"dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 7484, args: {} }), "site": Content(Plain("Greabrien Glider Course")), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 36348, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-villager_unconscientious", seed: 23861, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(36)), content: Localized { key: "npc-speech-tell_monster", seed: 11178, args: {"dir": Content(Localized { key: "npc-speech-dir_north", seed: 28439, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 16304, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 29384, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-tell_site", seed: 37969, args: {"site": Content(Plain("Nzitaka")), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 39225, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_west", seed: 52875, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(35)), content: Localized { key: "npc-speech-villager_closed", seed: 47840, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(36)), content: Localized { key: "npc-speech-tell_monster", seed: 42184, args: {"body": Content(Localized { key: "noun-wendigo", seed: 30940, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 9214, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 12021, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(31)), content: Localized { key: "npc-speech-tell_site", seed: 11288, args: {"site": Content(Plain("Greabrien Glider Course")), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 53209, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 44983, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(32)), content: Localized { key: "npc-speech-site", seed: 23163, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(32)), content: Localized { key: "npc-speech-villager_open", seed: 52068, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-tell_site", seed: 42841, args: {"site": Content(Plain("Pinton")), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 52660, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_very_far", seed: 51170, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-villager_closed", seed: 23734, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(34)), content: Localized { key: "npc-speech-tell_site", seed: 16694, args: {"dist": Content(Localized { key: "npc-speech-dist_very_far", seed: 55451, args: {} }), "site": Content(Plain("Pinton")), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 15846, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(35)), content: Localized { key: "npc-speech-site", seed: 27574, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(33)), content: Localized { key: "npc-speech-tell_site", seed: 37546, args: {"site": Content(Plain("Phreoraros")), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 44654, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 42522, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(34)), content: Localized { key: "npc-speech-villager_conscientious", seed: 39772, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-tell_site", seed: 55667, args: {"dist": Content(Localized { key: "npc-speech-dist_very_far", seed: 48817, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 43892, args: {} }), "site": Content(Plain("Pinton"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(34)), content: Localized { key: "npc-speech-tell_monster", seed: 29181, args: {"body": Content(Localized { key: "noun-wendigo", seed: 26631, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 56052, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 64662, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(33)), content: Localized { key: "npc-speech-site", seed: 12805, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(36)), content: Localized { key: "npc-speech-villager_neurotic", seed: 28331, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-tell_monster", seed: 51947, args: {"body": Content(Localized { key: "noun-wendigo", seed: 21245, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 19123, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 29541, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-site", seed: 43409, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-tell_site", seed: 64258, args: {"site": Content(Plain("Pinton")), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 55099, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_very_far", seed: 27325, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(35)), content: Localized { key: "npc-speech-site", seed: 429, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(11)), content: Localized { key: "npc-speech-site", seed: 50303, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(33)), content: Localized { key: "npc-speech-tell_monster", seed: 15217, args: {"body": Content(Localized { key: "noun-wendigo", seed: 60671, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 33082, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 6613, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(29)), content: Localized { key: "npc-speech-tell_monster", seed: 43895, args: {"dir": Content(Localized { key: "npc-speech-dir_north", seed: 61757, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 56054, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 40011, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(34)), content: Localized { key: "npc-speech-villager_conscientious", seed: 49462, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(34)), content: Localized { key: "npc-speech-site", seed: 48472, args: {"site": Content(Plain("Strach"))} } }
-waited 3000 ticks -> sim 7.50..113.37 in 1110 client spins; pos now Vec3 { x: 15216.694, y: 16016.577, z: 419.0 }
+[2m2026-08-21T08:33:24.692941Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m20
+[2m2026-08-21T08:33:24.726247Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m28
+[2m2026-08-21T08:33:24.759652Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m36
+[2m2026-08-21T08:33:24.792850Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m44
+[2m2026-08-21T08:33:24.825979Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m4 [3mpending_total[0m[2m=[0m48
+[2m2026-08-21T08:33:26.633569Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m5 [3mpending_total[0m[2m=[0m48
+[2m2026-08-21T08:33:27.130881Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m26
+[2m2026-08-21T08:33:27.132175Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m34
+[2m2026-08-21T08:33:27.181270Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m33
+[2m2026-08-21T08:33:27.198638Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m41
+[2m2026-08-21T08:33:27.232207Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m7 [3mpending_total[0m[2m=[0m48
+[2m2026-08-21T08:33:27.765671Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 chunk-request retry EXPIRED [3mexpired[0m[2m=[0m1 [3mremaining[0m[2m=[0m47
+[2m2026-08-21T08:33:27.798875Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m1 [3mpending_total[0m[2m=[0m48
+[2m2026-08-21T08:33:27.798920Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 chunk-request retry EXPIRED [3mexpired[0m[2m=[0m2 [3mremaining[0m[2m=[0m46
+[2m2026-08-21T08:33:27.832781Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m48
+[2m2026-08-21T08:33:27.832833Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 chunk-request retry EXPIRED [3mexpired[0m[2m=[0m1 [3mremaining[0m[2m=[0m47
+[2m2026-08-21T08:33:27.866219Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m1 [3mpending_total[0m[2m=[0m48
+[2m2026-08-21T08:33:28.843430Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m47
+[2m2026-08-21T08:33:28.865662Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m1 [3mpending_total[0m[2m=[0m48
+[chat] GenericChatMsg { chat_type: Npc(Uid(197)), content: Localized { key: "npc-speech-menacing", seed: 21184, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-tell_monster", seed: 36790, args: {"body": Content(Localized { key: "noun-wendigo", seed: 46649, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 7209, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 6745, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(185)), content: Localized { key: "npc-speech-tell_site", seed: 29130, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 61840, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 48691, args: {} }), "site": Content(Plain("Greabrien Glider Course"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-site", seed: 9960, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(191)), content: Localized { key: "npc-speech-villager_unconscientious", seed: 28188, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-site", seed: 12632, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(186)), content: Localized { key: "npc-speech-tell_monster", seed: 44559, args: {"body": Content(Localized { key: "noun-wendigo", seed: 12505, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 3456, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 46633, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(195)), content: Localized { key: "npc-speech-tell_site", seed: 48227, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 46769, args: {} }), "site": Content(Plain("Himore")), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 31998, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(193)), content: Localized { key: "npc-speech-site", seed: 48667, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-villager_adventurous", seed: 2481, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(185)), content: Localized { key: "npc-speech-site", seed: 51501, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(196)), content: Localized { key: "npc-speech-tell_site", seed: 33360, args: {"dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 42215, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 14440, args: {} }), "site": Content(Plain("Greabrien Glider Course"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-site", seed: 6816, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(186)), content: Localized { key: "npc-speech-villager_disagreeable", seed: 57525, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(193)), content: Localized { key: "npc-speech-site", seed: 33160, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(195)), content: Localized { key: "npc-speech-tell_site", seed: 41989, args: {"site": Content(Plain("Greabrien Glider Course")), "dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 38399, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 5664, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-site", seed: 11380, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(189)), content: Localized { key: "npc-speech-tell_monster", seed: 24404, args: {"body": Content(Localized { key: "noun-wendigo", seed: 27492, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 2255, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 45221, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-villager_conscientious", seed: 25752, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(197)), content: Localized { key: "npc-speech-villager_under_attack", seed: 4098, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-tell_monster", seed: 32498, args: {"dir": Content(Localized { key: "npc-speech-dir_north", seed: 22272, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 6898, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 11237, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(12)), content: Localized { key: "npc-speech-tell_site", seed: 45145, args: {"dir": Content(Localized { key: "npc-speech-dir_west", seed: 34547, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 49524, args: {} }), "site": Content(Plain("Nzitaka"))} } }
+[chat] GenericChatMsg { chat_type: Meta, content: Plain("A designation is blocked — obstruction at (15233, 16000, 421) can't be reached.") }
+[chat] GenericChatMsg { chat_type: Npc(Uid(196)), content: Localized { key: "npc-speech-site", seed: 44724, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(189)), content: Localized { key: "npc-speech-tell_site", seed: 54216, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 25687, args: {} }), "site": Content(Plain("Greabrien Glider Course")), "dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 29811, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(194)), content: Localized { key: "npc-speech-villager_conscientious", seed: 9799, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(14)), content: Localized { key: "npc-speech-site", seed: 29819, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-villager_unconscientious", seed: 5286, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(196)), content: Localized { key: "npc-speech-tell_site", seed: 1852, args: {"dir": Content(Localized { key: "npc-speech-dir_west", seed: 4987, args: {} }), "site": Content(Plain("Nzitaka")), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 23926, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(197)), content: Localized { key: "npc-speech-villager_under_attack", seed: 23270, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(195)), content: Localized { key: "npc-speech-villager_closed", seed: 19251, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(197)), content: Localized { key: "npc-speech-villager_under_attack", seed: 54720, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(193)), content: Localized { key: "npc-speech-villager_adventurous", seed: 8467, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(197)), content: Localized { key: "npc-speech-villager_under_attack", seed: 52615, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(196)), content: Localized { key: "npc-speech-tell_monster", seed: 61112, args: {"body": Content(Localized { key: "noun-wendigo", seed: 37155, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 27547, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 19691, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(193)), content: Localized { key: "npc-speech-site", seed: 8560, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-site", seed: 40044, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(197)), content: Localized { key: "npc-speech-villager_under_attack", seed: 26335, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-site", seed: 24846, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(196)), content: Localized { key: "npc-speech-villager_conscientious", seed: 65211, args: {} } }
+[chat] GenericChatMsg { chat_type: Meta, content: Plain("A designation is blocked — obstruction at (15229, 15970, 416) can't be reached.") }
+waited 3000 ticks -> sim 7.94..107.94 in 977 client spins; pos now Vec3 { x: 15216.392, y: 16016.36, z: 419.0 }
 [note] --- what did adoption place, and are colonists using it? ---
-INSPECT uid=25 name=Osric of the Vale hunger=0.8981 rest=0.9491 recreation=0.9770 energy=0.9993 health=Some(1.0) mood=0.6000 drive=Work scores=(0.578, 0.0, 0.094000004) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 0), ("chop", 2), ("build", 5), ("haul", 0), ("cook", 0), ("farm", 2), ("guard", 4)] traits=["Closed", "Extroverted"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 0.5), ("haul", 1.0), ("cook", 2.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
-SENT uid=25 sentiments=0 []
-MOODX uid=25 total=0.6000 thoughts=0 []
-INSPECT uid=26 name=Awen the Wary hunger=0.8978 rest=0.9490 recreation=0.9770 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.478, 0.0, 0.0992) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 0), ("chop", 3), ("build", 3), ("haul", 1), ("cook", 0), ("farm", 3), ("guard", 0)] traits=["Busybody", "Unconscientious", "Disagreeable"]                              desires=[("mine", 0.5), ("chop", 2.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
-SENT uid=26 sentiments=0 []
-MOODX uid=26 total=0.6000 thoughts=0 []
-INSPECT uid=27 name=Peri Ironhand hunger=0.8977 rest=0.9489 recreation=0.9769 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.492, 0.0, 0.0828) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 2), ("chop", 5), ("build", 5), ("haul", 3), ("cook", 0), ("farm", 4), ("guard", 5)] traits=["Closed", "Busybody", "Introverted", "Disagreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 2.0), ("haul", 0.5), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
-SENT uid=27 sentiments=0 []
-MOODX uid=27 total=0.6000 thoughts=0 []
-INSPECT uid=28 name=Eira Longstride hunger=0.8975 rest=0.9488 recreation=0.9769 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.556, 0.0, 0.0916) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 2), ("chop", 2), ("build", 4), ("haul", 5), ("cook", 1), ("farm", 1), ("guard", 1)] traits=["Introverted", "Agreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
-SENT uid=28 sentiments=0 []
-MOODX uid=28 total=0.6000 thoughts=0 []
-INSPECT uid=29 name=Quill Longstride hunger=0.8973 rest=0.9487 recreation=0.9768 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.594, 0.0, 0.0844) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 0), ("chop", 0), ("build", 5), ("haul", 0), ("cook", 0), ("farm", 1), ("guard", 2)] traits=["Unconscientious"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 2.0), ("haul", 1.0), ("cook", 0.5), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
-SENT uid=29 sentiments=0 []
-MOODX uid=29 total=0.6000 thoughts=0 []
-INSPECT uid=30 name=Yara the Quiet hunger=0.8970 rest=0.9486 recreation=0.9768 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.426, 0.0, 0.089200005) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 4), ("chop", 5), ("build", 5), ("haul", 5), ("cook", 4), ("farm", 5), ("guard", 0)] traits=["Introverted"]                              desires=[("mine", 1.0), ("chop", 0.5), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 2.0)] bravery=0.50
-SENT uid=30 sentiments=0 []
-MOODX uid=30 total=0.6000 thoughts=0 []
-INSPECT uid=31 name=Yara the Steady hunger=0.8969 rest=0.9485 recreation=0.9768 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.59, 0.0, 0.0908) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=true skills=[("mine", 0), ("chop", 3), ("build", 2), ("haul", 3), ("cook", 3), ("farm", 0), ("guard", 2)] traits=["Unconscientious", "Agreeable", "Neurotic", "Worried", "SadLoner"]                              desires=[("mine", 2.0), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
-SENT uid=31 sentiments=0 []
-MOODX uid=31 total=0.6000 thoughts=0 []
-INSPECT uid=32 name=Wynn Ironhand hunger=0.8967 rest=0.9484 recreation=0.9767 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.504, 0.0, 0.0908) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 4), ("chop", 4), ("build", 3), ("haul", 0), ("cook", 0), ("farm", 3), ("guard", 4)] traits=["Open"]                              desires=[("mine", 0.5), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
-SENT uid=32 sentiments=0 []
-MOODX uid=32 total=0.6000 thoughts=0 []
+INSPECT uid=185 name=Osric of the Vale hunger=0.8991 rest=0.9497 recreation=0.9773 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.578, 0.0, 0.094000004) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 0), ("chop", 2), ("build", 5), ("haul", 0), ("cook", 0), ("farm", 2), ("guard", 4)] traits=["Closed", "Extroverted"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 0.5), ("haul", 1.0), ("cook", 2.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=185 sentiments=7 [("uid:186", 0.05555556), ("uid:187", 0.08730159), ("uid:188", 0.023809526), ("uid:189", 0.05555556), ("uid:190", 0.015873017), ("uid:191", 0.047619052), ("uid:192", 0.12698413)]
+MOODX uid=185 total=0.6000 thoughts=0 []
+INSPECT uid=186 name=Awen the Wary hunger=0.8989 rest=0.9496 recreation=0.9772 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.478, 0.0, 0.0992) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 0), ("chop", 3), ("build", 3), ("haul", 1), ("cook", 0), ("farm", 3), ("guard", 0)] traits=["Busybody", "Unconscientious", "Disagreeable"]                              desires=[("mine", 0.5), ("chop", 2.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=186 sentiments=7 [("uid:185", 0.05555556), ("uid:187", 0.08730159), ("uid:188", 0.015873017), ("uid:189", 0.031746034), ("uid:190", 0.031746034), ("uid:191", 0.023809526), ("uid:192", 0.023809526)]
+MOODX uid=186 total=0.6000 thoughts=0 []
+INSPECT uid=187 name=Peri Ironhand hunger=0.8987 rest=0.9495 recreation=0.9772 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.492, 0.0, 0.0828) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 2), ("chop", 5), ("build", 5), ("haul", 3), ("cook", 0), ("farm", 4), ("guard", 5)] traits=["Closed", "Busybody", "Introverted", "Disagreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 2.0), ("haul", 0.5), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=187 sentiments=7 [("uid:185", 0.07936508), ("uid:186", 0.07936508), ("uid:188", 0.071428575), ("uid:189", 0.03968254), ("uid:190", 0.05555556), ("uid:191", 0.031746034), ("uid:192", 0.06349207)]
+MOODX uid=187 total=0.6000 thoughts=0 []
+INSPECT uid=188 name=Eira Longstride hunger=0.8986 rest=0.9494 recreation=0.9771 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.556, 0.0, 0.0916) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 2), ("chop", 2), ("build", 4), ("haul", 5), ("cook", 1), ("farm", 1), ("guard", 1)] traits=["Introverted", "Agreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
+SENT uid=188 sentiments=6 [("uid:185", 0.031746034), ("uid:186", 0.015873017), ("uid:187", 0.07936508), ("uid:189", 0.031746034), ("uid:190", 0.08730159), ("uid:191", 0.015873017)]
+MOODX uid=188 total=0.6000 thoughts=0 []
+INSPECT uid=189 name=Quill Longstride hunger=0.8984 rest=0.9493 recreation=0.9771 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.594, 0.0, 0.0844) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 0), ("chop", 0), ("build", 5), ("haul", 0), ("cook", 0), ("farm", 1), ("guard", 2)] traits=["Unconscientious"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 2.0), ("haul", 1.0), ("cook", 0.5), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=189 sentiments=6 [("uid:185", 0.047619052), ("uid:186", 0.031746034), ("uid:187", 0.023809526), ("uid:188", 0.03968254), ("uid:190", 0.007936508), ("uid:192", 0.031746034)]
+MOODX uid=189 total=0.6000 thoughts=0 []
+INSPECT uid=190 name=Yara the Quiet hunger=0.8981 rest=0.9492 recreation=0.9770 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.0, 0.0, 0.089200005) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 4), ("chop", 5), ("build", 5), ("haul", 5), ("cook", 4), ("farm", 5), ("guard", 0)] traits=["Introverted"]                              desires=[("mine", 1.0), ("chop", 0.5), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 2.0)] bravery=0.50
+SENT uid=190 sentiments=7 [("uid:185", 0.015873017), ("uid:186", 0.031746034), ("uid:187", 0.03968254), ("uid:188", 0.11111112), ("uid:189", 0.015873017), ("uid:191", 0.023809526), ("uid:192", 0.007936508)]
+MOODX uid=190 total=0.6000 thoughts=0 []
+INSPECT uid=191 name=Yara the Steady hunger=0.8980 rest=0.9491 recreation=0.9770 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.0, 0.0, 0.0908) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=true skills=[("mine", 0), ("chop", 3), ("build", 2), ("haul", 3), ("cook", 3), ("farm", 0), ("guard", 2)] traits=["Unconscientious", "Agreeable", "Neurotic", "Worried", "SadLoner"]                              desires=[("mine", 2.0), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=191 sentiments=7 [("uid:185", 0.06349207), ("uid:186", 0.031746034), ("uid:187", 0.03968254), ("uid:188", 0.007936508), ("uid:189", 0.015873017), ("uid:190", 0.007936508), ("uid:192", 0.05555556)]
+MOODX uid=191 total=0.6000 thoughts=0 []
+INSPECT uid=192 name=Wynn Ironhand hunger=0.8979 rest=0.9490 recreation=0.9770 energy=0.7913 health=Some(1.0) mood=0.6000 drive=Work scores=(0.0, 0.0, 0.0908) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 4), ("chop", 4), ("build", 3), ("haul", 0), ("cook", 0), ("farm", 3), ("guard", 4)] traits=["Open"]                              desires=[("mine", 0.5), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
+SENT uid=192 sentiments=5 [("uid:185", 0.14285715), ("uid:186", 0.03968254), ("uid:187", 0.05555556), ("uid:189", 0.03968254), ("uid:191", 0.05555556)]
+MOODX uid=192 total=0.6000 thoughts=0 []
 inspect_colonists -> 8 colonist payload(s)
 designations (rev=0): []
-[chat] GenericChatMsg { chat_type: Npc(Uid(33)), content: Localized { key: "npc-speech-site", seed: 7054, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(19)), content: Localized { key: "npc-speech-villager_extroverted", seed: 44114, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(35)), content: Localized { key: "npc-speech-site", seed: 49712, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(34)), content: Localized { key: "npc-speech-villager_conscientious", seed: 44457, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-tell_site", seed: 6628, args: {"dir": Content(Localized { key: "npc-speech-dir_east", seed: 26671, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_very_far", seed: 3199, args: {} }), "site": Content(Plain("Pinton"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(11)), content: Localized { key: "npc-speech-villager_agreeable", seed: 11749, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(35)), content: Localized { key: "npc-speech-tell_site", seed: 54317, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 41077, args: {} }), "site": Content(Plain("Nzitaka")), "dir": Content(Localized { key: "npc-speech-dir_west", seed: 11124, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-villager_agreeable", seed: 26759, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(12)), content: Localized { key: "npc-speech-tell_site", seed: 10993, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 15412, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 39329, args: {} }), "site": Content(Plain("Himore"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(36)), content: Localized { key: "npc-speech-site", seed: 4630, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(19)), content: Localized { key: "npc-speech-site", seed: 65491, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(34)), content: Localized { key: "npc-speech-tell_site", seed: 57089, args: {"dir": Content(Localized { key: "npc-speech-dir_east", seed: 23196, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_very_far", seed: 39569, args: {} }), "site": Content(Plain("Pinton"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(35)), content: Localized { key: "npc-speech-villager_stable", seed: 14502, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(19)), content: Localized { key: "npc-speech-villager_stable", seed: 34142, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-villager_closed", seed: 63425, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(33)), content: Localized { key: "npc-speech-tell_site", seed: 56074, args: {"dir": Content(Localized { key: "npc-speech-dir_north", seed: 17857, args: {} }), "site": Content(Plain("Phreoraros")), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 52761, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(12)), content: Localized { key: "npc-speech-villager_neurotic", seed: 52294, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-tell_site", seed: 59310, args: {"dir": Content(Localized { key: "npc-speech-dir_east", seed: 28282, args: {} }), "site": Content(Plain("Himore")), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 56383, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-site", seed: 38822, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-tell_monster", seed: 59290, args: {"body": Content(Localized { key: "noun-wendigo", seed: 63672, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 38125, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 18772, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-tell_site", seed: 12381, args: {"site": Content(Plain("Greabrien Glider Course")), "dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 45930, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 12392, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-villager_neurotic", seed: 5299, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(32)), content: Localized { key: "npc-speech-tell_site", seed: 35340, args: {"site": Content(Plain("Greabrien Glider Course")), "dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 5827, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 33823, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(11)), content: Localized { key: "npc-speech-tell_site", seed: 27412, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 42048, args: {} }), "site": Content(Plain("Nzitaka")), "dir": Content(Localized { key: "npc-speech-dir_west", seed: 63471, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(35)), content: Localized { key: "npc-speech-villager_closed", seed: 35997, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(28)), content: Localized { key: "npc-speech-villager_agreeable", seed: 11199, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(14)), content: Localized { key: "npc-speech-tell_site", seed: 1366, args: {"dir": Content(Localized { key: "npc-speech-dir_east", seed: 5096, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_very_far", seed: 43889, args: {} }), "site": Content(Plain("Pinton"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(33)), content: Localized { key: "npc-speech-tell_site", seed: 6843, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 59664, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 19035, args: {} }), "site": Content(Plain("Greabrien Glider Course"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-villager_sociable", seed: 45567, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(19)), content: Localized { key: "npc-speech-villager_sociable", seed: 5552, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(34)), content: Localized { key: "npc-speech-tell_site", seed: 35218, args: {"dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 55486, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 61073, args: {} }), "site": Content(Plain("Greabrien Glider Course"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(12)), content: Localized { key: "npc-speech-villager_conscientious", seed: 6657, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-villager_sociable", seed: 2154, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-tell_monster", seed: 44154, args: {"body": Content(Localized { key: "noun-wendigo", seed: 13933, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 45914, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 20314, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-villager_closed", seed: 964, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-villager_stable", seed: 51181, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(35)), content: Localized { key: "npc-speech-site", seed: 54069, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(19)), content: Localized { key: "npc-speech-tell_monster", seed: 7488, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 53709, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 17553, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 28002, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(12)), content: Localized { key: "npc-speech-site", seed: 47772, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-tell_site", seed: 14309, args: {"dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 31291, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 54662, args: {} }), "site": Content(Plain("Greabrien Glider Course"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-villager_adventurous", seed: 7035, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(36)), content: Localized { key: "npc-speech-villager_neurotic", seed: 59937, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-tell_monster", seed: 11102, args: {"dir": Content(Localized { key: "npc-speech-dir_north", seed: 34015, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 23785, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 48652, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-villager_busybody", seed: 51100, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-villager_agreeable", seed: 5413, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(19)), content: Localized { key: "npc-speech-tell_monster", seed: 6474, args: {"body": Content(Localized { key: "noun-wendigo", seed: 24300, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 27283, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 34597, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(35)), content: Localized { key: "npc-speech-tell_site", seed: 26679, args: {"site": Content(Plain("Greabrien Glider Course")), "dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 8817, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 44041, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(12)), content: Localized { key: "npc-speech-tell_site", seed: 13666, args: {"dir": Content(Localized { key: "npc-speech-dir_west", seed: 11904, args: {} }), "site": Content(Plain("Nzitaka")), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 59280, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(14)), content: Localized { key: "npc-speech-villager_adventurous", seed: 9515, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(33)), content: Localized { key: "npc-speech-site", seed: 44366, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-tell_site", seed: 36479, args: {"dist": Content(Localized { key: "npc-speech-dist_very_far", seed: 14395, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 5086, args: {} }), "site": Content(Plain("Pinton"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-villager_open", seed: 11513, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-villager_busybody", seed: 34520, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-villager_closed", seed: 56909, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-site", seed: 1450, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(14)), content: Localized { key: "npc-speech-site", seed: 18950, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(34)), content: Localized { key: "npc-speech-tell_site", seed: 42777, args: {"dir": Content(Localized { key: "npc-speech-dir_east", seed: 14138, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_very_far", seed: 3419, args: {} }), "site": Content(Plain("Pinton"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(33)), content: Localized { key: "npc-speech-villager_stable", seed: 38305, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-tell_site", seed: 55720, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 19620, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 30427, args: {} }), "site": Content(Plain("Himore"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(19)), content: Localized { key: "npc-speech-villager_agreeable", seed: 49262, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(35)), content: Localized { key: "npc-speech-tell_site", seed: 29143, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 63644, args: {} }), "site": Content(Plain("Himore")), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 43355, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-site", seed: 5846, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(33)), content: Localized { key: "npc-speech-tell_site", seed: 12771, args: {"site": Content(Plain("Himore")), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 54001, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 1063, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(19)), content: Localized { key: "npc-speech-villager_extroverted", seed: 43953, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(36)), content: Localized { key: "npc-speech-villager_seeker", seed: 54075, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(19)), content: Localized { key: "npc-speech-tell_monster", seed: 42890, args: {"body": Content(Localized { key: "noun-wendigo", seed: 53172, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 57230, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 45993, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(14)), content: Localized { key: "npc-speech-villager_agreeable", seed: 64622, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-seeking_shelter_rain", seed: 13530, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-seeking_shelter_rain", seed: 6729, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-seeking_shelter_rain", seed: 57477, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-seeking_shelter_rain", seed: 37185, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(19)), content: Localized { key: "npc-speech-seeking_shelter_rain", seed: 18671, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(33)), content: Localized { key: "npc-speech-seeking_shelter_rain", seed: 60962, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(34)), content: Localized { key: "npc-speech-seeking_shelter_rain", seed: 39321, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-tell_site", seed: 33011, args: {"site": Content(Plain("Himore")), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 55273, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 28068, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(34)), content: Localized { key: "npc-speech-tell_monster", seed: 60302, args: {"body": Content(Localized { key: "noun-wendigo", seed: 4155, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 48503, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 46464, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(36)), content: Localized { key: "npc-speech-villager_neurotic", seed: 37449, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(12)), content: Localized { key: "npc-speech-tell_site", seed: 28808, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 56608, args: {} }), "site": Content(Plain("Phreoraros")), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 29514, args: {} })} } }
-waited 6000 ticks -> sim 125.98..326.01 in 2088 client spins; pos now Vec3 { x: 15216.694, y: 16016.577, z: 419.0 }
+[chat] GenericChatMsg { chat_type: Npc(Uid(194)), content: Localized { key: "npc-speech-villager_under_attack", seed: 36462, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(187)), content: Localized { key: "npc-speech-villager_under_attack", seed: 13060, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(189)), content: Localized { key: "npc-speech-villager_unconscientious", seed: 58223, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(179)), content: Localized { key: "npc-speech-villager_stable", seed: 8072, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(195)), content: Localized { key: "npc-speech-villager_stable", seed: 34739, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(193)), content: Localized { key: "npc-speech-villager_adventurous", seed: 6069, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-tell_site", seed: 42516, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 63253, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_west", seed: 50205, args: {} }), "site": Content(Plain("Nzitaka"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(185)), content: Localized { key: "npc-speech-tell_monster", seed: 3132, args: {"dir": Content(Localized { key: "npc-speech-dir_north", seed: 63247, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 54340, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 55066, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(189)), content: Localized { key: "npc-speech-villager_unconscientious", seed: 48116, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(196)), content: Localized { key: "npc-speech-villager_neurotic", seed: 64215, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(187)), content: Localized { key: "npc-speech-villager_under_attack", seed: 23550, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(187)), content: Localized { key: "npc-speech-villager_under_attack", seed: 52825, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-villager_closed", seed: 41161, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(179)), content: Localized { key: "npc-speech-tell_site", seed: 37068, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 46374, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_west", seed: 15885, args: {} }), "site": Content(Plain("Nzitaka"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(187)), content: Localized { key: "npc-speech-villager_under_attack", seed: 13527, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(196)), content: Localized { key: "npc-speech-tell_monster", seed: 19175, args: {"dir": Content(Localized { key: "npc-speech-dir_north", seed: 20306, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 2576, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 13479, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-tell_monster", seed: 35655, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 4795, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 49067, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 11695, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(187)), content: Localized { key: "npc-speech-thank_you", seed: 63423, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(187)), content: Localized { key: "npc-speech-thank_you", seed: 64371, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-tell_site", seed: 11857, args: {"site": Content(Plain("Greabrien Glider Course")), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 4780, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 62598, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(185)), content: Localized { key: "npc-speech-villager_closed", seed: 25896, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(195)), content: Localized { key: "npc-speech-villager_stable", seed: 43101, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(14)), content: Localized { key: "npc-speech-tell_monster", seed: 45931, args: {"body": Content(Localized { key: "noun-wendigo", seed: 3913, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 57148, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 2512, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(196)), content: Localized { key: "npc-speech-villager_conscientious", seed: 34476, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(11)), content: Localized { key: "npc-speech-villager_neurotic", seed: 3568, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-site", seed: 41673, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(189)), content: Localized { key: "npc-speech-site", seed: 6667, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(195)), content: Localized { key: "npc-speech-site", seed: 2844, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-site", seed: 13366, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-site", seed: 44387, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(196)), content: Localized { key: "npc-speech-tell_monster", seed: 47256, args: {"body": Content(Localized { key: "noun-wendigo", seed: 43033, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 17699, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 13369, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(179)), content: Localized { key: "npc-speech-site", seed: 40660, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(185)), content: Localized { key: "npc-speech-villager_extroverted", seed: 63500, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(193)), content: Localized { key: "npc-speech-villager_stable", seed: 33388, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(179)), content: Localized { key: "npc-speech-tell_site", seed: 33306, args: {"dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 60139, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 55092, args: {} }), "site": Content(Plain("Greabrien Glider Course"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(193)), content: Localized { key: "npc-speech-tell_site", seed: 63595, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 57423, args: {} }), "site": Content(Plain("Phreoraros")), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 48296, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-menacing", seed: 5105, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(193)), content: Localized { key: "npc-speech-menacing", seed: 37481, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-villager_closed", seed: 13934, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(193)), content: Localized { key: "npc-speech-tell_site", seed: 30204, args: {"site": Content(Plain("Greabrien Glider Course")), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 24466, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 27736, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(179)), content: Localized { key: "npc-speech-site", seed: 57300, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-villager_closed", seed: 44988, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-villager_sociable", seed: 42421, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(196)), content: Localized { key: "npc-speech-villager_neurotic", seed: 47791, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-site", seed: 35411, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-villager_sociable", seed: 59215, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-tell_site", seed: 32517, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 25658, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 2164, args: {} }), "site": Content(Plain("Phreoraros"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(189)), content: Localized { key: "npc-speech-villager_unconscientious", seed: 43692, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(195)), content: Localized { key: "npc-speech-tell_site", seed: 44533, args: {"site": Content(Plain("Nzitaka")), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 40384, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_west", seed: 45045, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(179)), content: Localized { key: "npc-speech-tell_site", seed: 2149, args: {"site": Content(Plain("Pinton")), "dist": Content(Localized { key: "npc-speech-dist_very_far", seed: 4695, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 19601, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-site", seed: 2369, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(11)), content: Localized { key: "npc-speech-site", seed: 36959, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(196)), content: Localized { key: "npc-speech-villager_conscientious", seed: 37209, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(179)), content: Localized { key: "npc-speech-site", seed: 11667, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(11)), content: Localized { key: "npc-speech-tell_site", seed: 4631, args: {"dist": Content(Localized { key: "npc-speech-dist_very_far", seed: 29206, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 23225, args: {} }), "site": Content(Plain("Pinton"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(195)), content: Localized { key: "npc-speech-menacing", seed: 46468, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(12)), content: Localized { key: "npc-speech-menacing", seed: 58285, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(14)), content: Localized { key: "npc-speech-menacing", seed: 42679, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-tell_monster", seed: 56071, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 33989, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 53958, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 15971, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(179)), content: Localized { key: "npc-speech-menacing", seed: 53658, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-seeking_shelter_rain", seed: 16408, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-seeking_shelter_rain", seed: 25146, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-seeking_shelter_rain", seed: 63929, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-seeking_shelter_rain", seed: 51851, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(179)), content: Localized { key: "npc-speech-seeking_shelter_rain", seed: 8718, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(193)), content: Localized { key: "npc-speech-seeking_shelter_rain", seed: 6585, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(196)), content: Localized { key: "npc-speech-site", seed: 22573, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-site", seed: 56559, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(179)), content: Localized { key: "npc-speech-villager_agreeable", seed: 15180, args: {} } }
+waited 6000 ticks -> sim 125.75..325.78 in 1887 client spins; pos now Vec3 { x: 15216.166, y: 16014.528, z: 419.0 }
 [note] --- survival window: eat/sleep/work emits accumulate server-side ---
-INSPECT uid=25 name=Osric of the Vale hunger=0.7063 rest=0.8534 recreation=0.9338 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.578, 0.0, 0.094000004) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 0), ("chop", 2), ("build", 5), ("haul", 0), ("cook", 0), ("farm", 2), ("guard", 4)] traits=["Closed", "Extroverted"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 0.5), ("haul", 1.0), ("cook", 2.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
-SENT uid=25 sentiments=0 []
-MOODX uid=25 total=0.6000 thoughts=0 []
-INSPECT uid=26 name=Awen the Wary hunger=0.7061 rest=0.8534 recreation=0.9338 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.478, 0.0, 0.0992) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 0), ("chop", 3), ("build", 3), ("haul", 1), ("cook", 0), ("farm", 3), ("guard", 0)] traits=["Busybody", "Unconscientious", "Disagreeable"]                              desires=[("mine", 0.5), ("chop", 2.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
-SENT uid=26 sentiments=0 []
-MOODX uid=26 total=0.6000 thoughts=0 []
-INSPECT uid=27 name=Peri Ironhand hunger=0.7060 rest=0.8533 recreation=0.9338 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.492, 0.0, 0.0828) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 2), ("chop", 5), ("build", 5), ("haul", 3), ("cook", 0), ("farm", 4), ("guard", 5)] traits=["Closed", "Busybody", "Introverted", "Disagreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 2.0), ("haul", 0.5), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
-SENT uid=27 sentiments=0 []
-MOODX uid=27 total=0.6000 thoughts=0 []
-INSPECT uid=28 name=Eira Longstride hunger=0.7059 rest=0.8533 recreation=0.9337 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.556, 0.0, 0.0916) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 2), ("chop", 2), ("build", 4), ("haul", 5), ("cook", 1), ("farm", 1), ("guard", 1)] traits=["Introverted", "Agreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
-SENT uid=28 sentiments=0 []
-MOODX uid=28 total=0.6000 thoughts=0 []
-INSPECT uid=29 name=Quill Longstride hunger=0.7058 rest=0.8532 recreation=0.9337 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.594, 0.0, 0.0844) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 0), ("chop", 0), ("build", 5), ("haul", 0), ("cook", 0), ("farm", 1), ("guard", 2)] traits=["Unconscientious"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 2.0), ("haul", 1.0), ("cook", 0.5), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
-SENT uid=29 sentiments=0 []
-MOODX uid=29 total=0.6000 thoughts=0 []
-INSPECT uid=30 name=Yara the Quiet hunger=0.7057 rest=0.8531 recreation=0.9337 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.426, 0.0, 0.089200005) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 4), ("chop", 5), ("build", 5), ("haul", 5), ("cook", 4), ("farm", 5), ("guard", 0)] traits=["Introverted"]                              desires=[("mine", 1.0), ("chop", 0.5), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 2.0)] bravery=0.50
-SENT uid=30 sentiments=0 []
-MOODX uid=30 total=0.6000 thoughts=0 []
-INSPECT uid=31 name=Yara the Steady hunger=0.7056 rest=0.8531 recreation=0.9337 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.59, 0.0, 0.0908) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=true skills=[("mine", 0), ("chop", 3), ("build", 2), ("haul", 3), ("cook", 3), ("farm", 0), ("guard", 2)] traits=["Unconscientious", "Agreeable", "Neurotic", "Worried", "SadLoner"]                              desires=[("mine", 2.0), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
-SENT uid=31 sentiments=0 []
-MOODX uid=31 total=0.6000 thoughts=0 []
-INSPECT uid=32 name=Wynn Ironhand hunger=0.7054 rest=0.8530 recreation=0.9336 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.504, 0.0, 0.0908) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 4), ("chop", 4), ("build", 3), ("haul", 0), ("cook", 0), ("farm", 3), ("guard", 4)] traits=["Open"]                              desires=[("mine", 0.5), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
-SENT uid=32 sentiments=0 []
-MOODX uid=32 total=0.6000 thoughts=0 []
+INSPECT uid=185 name=Osric of the Vale hunger=0.7075 rest=0.8541 recreation=0.9341 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.578, 0.0, 0.094000004) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 0), ("chop", 2), ("build", 5), ("haul", 0), ("cook", 0), ("farm", 2), ("guard", 4)] traits=["Closed", "Extroverted"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 0.5), ("haul", 1.0), ("cook", 2.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=185 sentiments=7 [("uid:186", 0.047619052), ("uid:187", 0.08730159), ("uid:188", 0.21428573), ("uid:189", 0.03968254), ("uid:190", 0.015873017), ("uid:191", 0.03968254), ("uid:192", 0.11111112)]
+MOODX uid=185 total=0.6000 thoughts=0 []
+INSPECT uid=186 name=Awen the Wary hunger=0.7074 rest=0.8540 recreation=0.9341 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.478, 0.0, 0.0992) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 0), ("chop", 3), ("build", 3), ("haul", 1), ("cook", 0), ("farm", 3), ("guard", 0)] traits=["Busybody", "Unconscientious", "Disagreeable"]                              desires=[("mine", 0.5), ("chop", 2.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=186 sentiments=7 [("uid:185", 0.03968254), ("uid:187", 0.06349207), ("uid:188", 0.08730159), ("uid:189", 0.023809526), ("uid:190", 0.023809526), ("uid:191", 0.007936508), ("uid:192", 0.07936508)]
+MOODX uid=186 total=0.6000 thoughts=0 []
+INSPECT uid=187 name=Peri Ironhand hunger=0.7072 rest=0.8539 recreation=0.9340 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.492, 0.0, 0.0828) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 2), ("chop", 5), ("build", 5), ("haul", 3), ("cook", 0), ("farm", 4), ("guard", 5)] traits=["Closed", "Busybody", "Introverted", "Disagreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 2.0), ("haul", 0.5), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=187 sentiments=9 [("uid:185", 0.07936508), ("uid:186", 0.071428575), ("uid:188", 0.24603176), ("uid:189", 0.26190478), ("uid:190", 0.22222224), ("uid:191", 0.3015873), ("uid:192", 0.24603176), ("uid:9", 0.2936508), ("uid:10", 0.2857143)]
+MOODX uid=187 total=0.6000 thoughts=0 []
+INSPECT uid=188 name=Eira Longstride hunger=0.7071 rest=0.8538 recreation=0.9340 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.556, 0.0, 0.0916) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 2), ("chop", 2), ("build", 4), ("haul", 5), ("cook", 1), ("farm", 1), ("guard", 1)] traits=["Introverted", "Agreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
+SENT uid=188 sentiments=7 [("uid:185", 0.21428573), ("uid:186", 0.08730159), ("uid:187", 0.23809525), ("uid:189", 0.03968254), ("uid:190", 0.20634922), ("uid:191", 0.11904763), ("uid:192", 0.21428573)]
+MOODX uid=188 total=0.6000 thoughts=0 []
+INSPECT uid=189 name=Quill Longstride hunger=0.7069 rest=0.8537 recreation=0.9339 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.594, 0.0, 0.0844) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 0), ("chop", 0), ("build", 5), ("haul", 0), ("cook", 0), ("farm", 1), ("guard", 2)] traits=["Unconscientious"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 2.0), ("haul", 1.0), ("cook", 0.5), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=189 sentiments=7 [("uid:185", 0.03968254), ("uid:186", 0.015873017), ("uid:187", 0.25396827), ("uid:188", 0.05555556), ("uid:190", 0.031746034), ("uid:191", 0.10317461), ("uid:192", 0.095238104)]
+MOODX uid=189 total=0.6000 thoughts=0 []
+INSPECT uid=190 name=Yara the Quiet hunger=0.7068 rest=0.8537 recreation=0.9339 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.426, 0.0, 0.089200005) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 4), ("chop", 5), ("build", 5), ("haul", 5), ("cook", 5), ("farm", 5), ("guard", 0)] traits=["Introverted"]                              desires=[("mine", 1.0), ("chop", 0.5), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 2.0)] bravery=0.50
+SENT uid=190 sentiments=7 [("uid:185", 0.031746034), ("uid:186", 0.023809526), ("uid:187", 0.19047621), ("uid:188", 0.23809525), ("uid:189", 0.047619052), ("uid:191", 0.19841272), ("uid:192", 0.19047621)]
+MOODX uid=190 total=0.6000 thoughts=0 []
+INSPECT uid=191 name=Yara the Steady hunger=0.7066 rest=0.8536 recreation=0.9339 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.59, 0.0, 0.0908) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=true skills=[("mine", 0), ("chop", 3), ("build", 2), ("haul", 3), ("cook", 3), ("farm", 0), ("guard", 2)] traits=["Unconscientious", "Agreeable", "Neurotic", "Worried", "SadLoner"]                              desires=[("mine", 2.0), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=191 sentiments=7 [("uid:185", 0.047619052), ("uid:186", 0.015873017), ("uid:187", 0.2936508), ("uid:188", 0.11111112), ("uid:189", 0.10317461), ("uid:190", 0.18253969), ("uid:192", 0.19841272)]
+MOODX uid=191 total=0.6000 thoughts=0 []
+INSPECT uid=192 name=Wynn Ironhand hunger=0.7064 rest=0.8535 recreation=0.9338 energy=0.3815 health=Some(1.0) mood=0.6000 drive=Work scores=(0.504, 0.0, 0.0908) activity=None status=Some(Replanning) ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 4), ("chop", 4), ("build", 3), ("haul", 0), ("cook", 0), ("farm", 3), ("guard", 4)] traits=["Open"]                              desires=[("mine", 0.5), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
+SENT uid=192 sentiments=7 [("uid:185", 0.11111112), ("uid:186", 0.10317461), ("uid:187", 0.26190478), ("uid:188", 0.19841272), ("uid:189", 0.08730159), ("uid:190", 0.19841272), ("uid:191", 0.21428573)]
+MOODX uid=192 total=0.6000 thoughts=0 []
 inspect_colonists -> 8 colonist payload(s)
-[chat] GenericChatMsg { chat_type: Npc(Uid(36)), content: Localized { key: "npc-speech-villager_conscientious", seed: 19933, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-tell_monster", seed: 56898, args: {"body": Content(Localized { key: "noun-wendigo", seed: 5238, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 51421, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 13856, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(34)), content: Localized { key: "npc-speech-tell_site", seed: 7007, args: {"dist": Content(Localized { key: "npc-speech-dist_very_far", seed: 63248, args: {} }), "site": Content(Plain("Pinton")), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 48700, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(19)), content: Localized { key: "npc-speech-site", seed: 27176, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(19)), content: Localized { key: "npc-speech-villager_sociable", seed: 34238, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-tell_monster", seed: 669, args: {"dir": Content(Localized { key: "npc-speech-dir_north", seed: 7847, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 32705, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 11486, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-villager_unconscientious", seed: 11737, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(33)), content: Localized { key: "npc-speech-site", seed: 30834, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(36)), content: Localized { key: "npc-speech-tell_monster", seed: 34274, args: {"dir": Content(Localized { key: "npc-speech-dir_north", seed: 59189, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 28593, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 42727, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-tell_site", seed: 1504, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 57276, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 48289, args: {} }), "site": Content(Plain("Phreoraros"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(19)), content: Localized { key: "npc-speech-tell_site", seed: 41616, args: {"dir": Content(Localized { key: "npc-speech-dir_east", seed: 18623, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 36672, args: {} }), "site": Content(Plain("Himore"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-site", seed: 58329, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-tell_monster", seed: 14851, args: {"body": Content(Localized { key: "noun-wendigo", seed: 50141, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 36871, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 59639, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-villager_unconscientious", seed: 18948, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-rain_stopped", seed: 29301, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-rain_stopped", seed: 7115, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-rain_stopped", seed: 47518, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-rain_stopped", seed: 24729, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(19)), content: Localized { key: "npc-speech-rain_stopped", seed: 33298, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(33)), content: Localized { key: "npc-speech-rain_stopped", seed: 55389, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(34)), content: Localized { key: "npc-speech-rain_stopped", seed: 20426, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-villager_adventurous", seed: 858, args: {} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(34)), content: Localized { key: "npc-speech-tell_site", seed: 28540, args: {"site": Content(Plain("Nzitaka")), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 32048, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_west", seed: 15530, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(33)), content: Localized { key: "npc-speech-tell_monster", seed: 48687, args: {"dir": Content(Localized { key: "npc-speech-dir_north", seed: 24028, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 53701, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 10691, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(36)), content: Localized { key: "npc-speech-site", seed: 10629, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(12)), content: Localized { key: "npc-speech-site", seed: 44221, args: {"site": Content(Plain("Strach"))} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(19)), content: Localized { key: "npc-speech-tell_monster", seed: 18361, args: {"body": Content(Localized { key: "noun-wendigo", seed: 18784, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 30404, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 17835, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-tell_monster", seed: 60851, args: {"body": Content(Localized { key: "noun-wendigo", seed: 40902, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 58281, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 29272, args: {} })} } }
-[chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-site", seed: 48031, args: {"site": Content(Plain("Strach"))} } }
-waited 3000 ticks -> sim 337.79..443.37 in 1236 client spins; pos now Vec3 { x: 15216.539, y: 16016.746, z: 419.0 }
+[chat] GenericChatMsg { chat_type: Npc(Uid(179)), content: Localized { key: "npc-speech-tell_monster", seed: 41865, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 50954, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 699, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 14289, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(12)), content: Localized { key: "npc-speech-tell_monster", seed: 54100, args: {"body": Content(Localized { key: "noun-wendigo", seed: 53559, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 37641, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 16594, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-menacing", seed: 61931, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-villager_closed", seed: 7796, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(195)), content: Localized { key: "npc-speech-villager_stable", seed: 26566, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-tell_site", seed: 4087, args: {"dir": Content(Localized { key: "npc-speech-dir_east", seed: 2621, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 17218, args: {} }), "site": Content(Plain("Himore"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-tell_monster", seed: 15467, args: {"body": Content(Localized { key: "noun-wendigo", seed: 50777, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 42515, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 39217, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(196)), content: Localized { key: "npc-speech-villager_neurotic", seed: 25493, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(179)), content: Localized { key: "npc-speech-tell_site", seed: 43881, args: {"site": Content(Plain("Nzitaka")), "dir": Content(Localized { key: "npc-speech-dir_west", seed: 21247, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 24459, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-tell_site", seed: 40764, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 21383, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 55808, args: {} }), "site": Content(Plain("Phreoraros"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(179)), content: Localized { key: "npc-speech-villager_extroverted", seed: 44477, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(12)), content: Localized { key: "npc-speech-villager_sad_loner", seed: 13812, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-tell_site", seed: 11966, args: {"site": Content(Plain("Phreoraros")), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 2734, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 47805, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(195)), content: Localized { key: "npc-speech-tell_site", seed: 31703, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 61741, args: {} }), "site": Content(Plain("Himore")), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 225, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-tell_site", seed: 7831, args: {"dir": Content(Localized { key: "npc-speech-dir_east", seed: 61863, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_very_far", seed: 15311, args: {} }), "site": Content(Plain("Pinton"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-rain_stopped", seed: 54789, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-rain_stopped", seed: 63773, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-rain_stopped", seed: 47699, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-rain_stopped", seed: 59290, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(179)), content: Localized { key: "npc-speech-rain_stopped", seed: 968, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(193)), content: Localized { key: "npc-speech-rain_stopped", seed: 41844, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(196)), content: Localized { key: "npc-speech-tell_site", seed: 31743, args: {"dir": Content(Localized { key: "npc-speech-dir_west", seed: 27150, args: {} }), "site": Content(Plain("Nzitaka")), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 17015, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(11)), content: Localized { key: "npc-speech-tell_site", seed: 10973, args: {"dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 65300, args: {} }), "site": Content(Plain("Greabrien Glider Course")), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 59696, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(193)), content: Localized { key: "npc-speech-tell_monster", seed: 27757, args: {"body": Content(Localized { key: "noun-wendigo", seed: 2270, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 55024, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 39289, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(185)), content: Localized { key: "npc-speech-tell_monster", seed: 65349, args: {"body": Content(Localized { key: "noun-wendigo", seed: 48192, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 63846, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 41820, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-menacing", seed: 19879, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(193)), content: Localized { key: "npc-speech-menacing", seed: 21572, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-menacing", seed: 18167, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(186)), content: Localized { key: "npc-speech-menacing", seed: 47665, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-site", seed: 42134, args: {"site": Content(Plain("Strach"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-villager_neurotic", seed: 32229, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(12)), content: Localized { key: "npc-speech-tell_site", seed: 46875, args: {"site": Content(Plain("Himore")), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 38819, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 30224, args: {} })} } }
+waited 3000 ticks -> sim 344.23..444.23 in 959 client spins; pos now Vec3 { x: 15216.166, y: 16014.528, z: 419.0 }
 === script complete, disconnecting ===
-[2m2026-08-21T03:51:44.255316Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mHHK3Sq[1m}[0m[2m:[0m[1m[0m[2m:[0m[1mremote[0m[1m{[0m[3mp[0m[2m=[0mMHyIti[1m}[0m[2m:[0m[1mrecv[0m[2m:[0m [2mveloren_network::participant[0m[2m:[0m protocol failed, shutting down channel [3me[0m[2m=[0mCustom(Tcp(Custom { kind: BrokenPipe, error: "read returned 0 bytes" })) [3mcid[0m[2m=[0m0
-[2m2026-08-21T03:51:44.261391Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mHHK3Sq[1m}[0m[2m:[0m[1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mHHK3Sq[1m}[0m[2m:[0m[1mremote[0m[1m{[0m[3mp[0m[2m=[0mMHyIti[1m}[0m[2m:[0m [2mveloren_network::api[0m[2m:[0m Participant already has been shutdown gracefully
-[2m2026-08-21T03:51:44.261793Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mHHK3Sq[1m}[0m[2m:[0m [2mveloren_network::scheduler[0m[2m:[0m Shutdown of scheduler requested
-[2m2026-08-21T03:51:44.362068Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mHHK3Sq[1m}[0m[2m:[0m [2mveloren_network::api[0m[2m:[0m Network dropped gracefully
+[2m2026-08-21T08:35:44.124843Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mUy9AQ2[1m}[0m[2m:[0m[1m[0m[2m:[0m[1mremote[0m[1m{[0m[3mp[0m[2m=[0mnyJO+E[1m}[0m[2m:[0m[1mrecv[0m[2m:[0m [2mveloren_network::participant[0m[2m:[0m protocol failed, shutting down channel [3me[0m[2m=[0mCustom(Tcp(Custom { kind: BrokenPipe, error: "read returned 0 bytes" })) [3mcid[0m[2m=[0m0
+[2m2026-08-21T08:35:44.141819Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mUy9AQ2[1m}[0m[2m:[0m[1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mUy9AQ2[1m}[0m[2m:[0m[1mremote[0m[1m{[0m[3mp[0m[2m=[0mnyJO+E[1m}[0m[2m:[0m [2mveloren_network::api[0m[2m:[0m Participant already has been shutdown gracefully
+[2m2026-08-21T08:35:44.141983Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mUy9AQ2[1m}[0m[2m:[0m [2mveloren_network::scheduler[0m[2m:[0m Shutdown of scheduler requested
+[2m2026-08-21T08:35:44.242133Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mUy9AQ2[1m}[0m[2m:[0m [2mveloren_network::api[0m[2m:[0m Network dropped gracefully

@@ -64,9 +64,9 @@ DEFECT; the ruling picks the repair.
 
 | # | Broken thing | Root cause | State |
 |---|---|---|---|
-| F5 | Colonists stand in a ripe field and do nothing | Harvest fires only on `WheatYellow` at `Growth >= FARM_GROWTH_MAX` in a registered column; village fields are `WheatGreen`/`Flax`/`Corn`/`Tomato` at Growth 0, explicitly reserved by a code comment | BUILT (`3e28e7f71d`) — volunteer arm mints harvest jobs for WheatGreen/Tomato/Carrot/Lettuce and the yields joined FOOD_DEFS; **awaiting live confirmation** |
-| F6 | A furnished kitchen is invisible | `cook_stations` has exactly ONE writer: a completed CookStation *build* | BUILT (`623bf76b3f`) — and my FIRST version was on a path houses never take, with a vocabulary (`CookingPot`) worldgen never places in a house; now one shared scan keyed on `Ember`; **awaiting live confirmation** |
-| F7 | An adopted barn is a decorative rectangle | `stockpiles` only ever holds painted regions; no chest/container sprite is read | BUILT (`623bf76b3f`) — 1-block stockpile per container, vocabulary corrected to what house.rs actually places (`Crate`/`Drawer*`/`Wardrobe*`); **awaiting live confirmation** |
+| F5 | Colonists stand in a ripe field and do nothing | Harvest fires only on `WheatYellow` at `Growth >= FARM_GROWTH_MAX` in a registered column; village fields are `WheatGreen`/`Flax`/`Corn`/`Tomato` at Growth 0, explicitly reserved by a code comment | BUILT + PINNED (`3e28e7f71d`), **NO LIVE WITNESS**: the adoptfed hamlet is 4 houses + 1 barn with `farm plot registered = 0` — there was never a crop to glean. Needs a settlement with a FarmField; the new plot census will name one |
+| F6 | A furnished kitchen is invisible | `cook_stations` has exactly ONE writer: a completed CookStation *build* | **CONFIRMED LIVE** (`fb5c9305b5`): `adopted_pots=2` per house, 4 cook stations registered — against ZERO in the play session that found it. My first version was on a path houses never take, with a vocabulary worldgen never places in a house |
+| F7 | An adopted barn is a decorative rectangle | `stockpiles` only ever holds painted regions; no chest/container sprite is read | **CONFIRMED LIVE** (`fb5c9305b5`): `adopted_chests=3` per house, vocabulary corrected to what house.rs actually places (`Crate`/`Drawer*`/`Wardrobe*`) |
 | F8 | Colonists sleep on the ground beside made beds | *(was broken; the plot scan now registers village beds)* | FIXED — `adopted_beds=2`/house live |
 
 ## P2 — systems that exist but cannot be believed

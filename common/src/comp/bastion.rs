@@ -809,6 +809,17 @@ pub struct BastionColonyInspect {
     /// that would report candidate-evaluations as though they were jobs.
     #[serde(default)]
     pub jobs_blocked_materials: u32,
+    /// bastion (F19, found by an adversarial play session 2026-08-21): jobs
+    /// that are unclaimed because there is NO CELL A COLONIST CAN STAND IN to
+    /// work them.
+    ///
+    /// The session watched eight colonists idle beside four jobs while this
+    /// dashboard reported `jobs_unreachable=0 blocked_materials=0` — all 32
+    /// considerations had been refused on affordance, and no counter existed
+    /// to say so. A refusal reason with no player-facing category is invisible
+    /// by construction, which is worse than a wrong number: a wrong number
+    /// gets questioned.
+    pub jobs_blocked_stance: u32,
     /// bastion (COLONY-TICK row): the server `Tick` this sample was taken at.
     ///
     /// WHY: every other field here is a QUANTITY with no TIME. The blind-spot
