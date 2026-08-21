@@ -352,7 +352,9 @@ without crossing that routing.
 | Adopt bar 2 | **colonists WORK adopted infrastructure**: 89 claims / 67 arrivals / 64 completions after root #4 (surface zone registration); eats pending the pantry-retarget leg |
 | Item 29 (trade) | BUILT + price book LIVE (194 sites); first mint blocked only on wood-outside-zone (the retarget fixes it — chain15) |
 | Item 28 (tool wear) | BUILT (slot-targeted wear + durability pays at the progress site); witness leg rides any working chain |
-| Item 31 (god POWER-0) | BUILT (favor pool + trickle + bastion_smite: gate-first refusal, real damage, VFX); smite leg scripted, arm pending run-pit idle |
+| Item 31 (god POWER-0) | **bars 1+4 measured live** (health 1.0→0.39996 = exactly the specced 0.6 max-fraction; favor paid 5.16→0.16 and 15→10; lightning emitted; target's drive/activity untouched). Bar 2 rides the t=0-cast script in chain16; twin banked. Note: the target healed to full between casts (vanilla regen) — a Smite is a wound, not an execution, at current numbers |
+| #107 colony mind | **v1 BUILT** (four live producers, precedence + hysteresis, deciding-input transition witness, claim-score tilt consumer); first transitions expected in any chain16+ leg |
+| Item 40 (scale) | arms staged (scale16/scale32 vs the re-based tick guard; item 39 reads the same soak stats) — chain17 |
 | Item 27 | thief WINDOW closed to the work second (carried 2-64 at arrival, 0 at consume); per-tick watch lands in chain15 |
 
 ## YEAR-LEG FINDING — starved beside a full larder (2026-08-20, NEW ROW)
