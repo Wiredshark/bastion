@@ -457,17 +457,26 @@ fn ring_size_from_env() -> usize {
         .max(1)
 }
 
-/// Disabled unless `BASTION_ENTITY_EVENT_LOG` is set. Checking this must
-/// not itself initialize anything -- matches `bastion_flight_recorder
-/// ::enabled()`'s own contract (an `is_some()` read on the OS env, no lock
-/// taken unless the slot was already initialized by a prior call).
+/// ON by default since 2026-08-21; `BASTION_ENTITY_EVENT_LOG=0` (or
+/// `off`/`false`/`no`) is the kill switch. Checking this must not itself
+/// initialize anything -- matches `bastion_flight_recorder::enabled()`'s own
+/// contract (an env read, no lock taken unless a prior call already
+/// initialized the slot).
 pub fn enabled() -> bool {
-    if std::env::var_os("BASTION_ENTITY_EVENT_LOG").is_some() {
-        return true;
-    }
-    LOG.get()
-        .and_then(|slot| slot.lock().ok())
-        .is_some_and(|slot| slot.is_some())
+    // ★ DEFAULT-ON WITH A NAMED KILL SWITCH (2026-08-21, found by playing):
+    // two independent play sessions opened a colonist's story and got
+    // `CHRONICLE enabled=false rows=0` for every single colonist — the one
+    // surface that could tell a player WHY anything happened shipped switched
+    // off, so a smiting, a starvation and a night in a bed all recorded
+    // nothing. The cost is bounded and known: a 64-event ring per entity
+    // (DEFAULT_RING_SIZE), which is why default-on is affordable at all.
+    // `BASTION_ENTITY_EVENT_LOG=0` (or `off`/`false`) is the kill switch —
+    // the same on-by-default-with-a-named-switch shape the haul-deadlock fix
+    // was ruled into.
+    !matches!(
+        std::env::var("BASTION_ENTITY_EVENT_LOG").as_deref().map(str::trim),
+        Ok("0") | Ok("off") | Ok("false") | Ok("no")
+    )
 }
 
 fn with_store(f: impl FnOnce(&mut EntityStore)) {
