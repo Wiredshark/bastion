@@ -10763,6 +10763,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // (trailing, one producer at a time): replace `Other` with the
         // real reason at each site as it's read.
         let mut to_release: Vec<(specs::Entity, ReleaseReason)> = Vec::new();
+        // ★ EAT RE-TARGET queue (2026-08-21): (job, colonist feet) for an
+        // EatFrom whose meal vanished mid-walk. Deferred because the travel
+        // arm holds a &mut into board.jobs; the post-loop drain owns the board.
+        let mut eat_retargets: Vec<(JobId, Vec3<i32>)> = Vec::new();
         // AUTON-2 unification (site 4/6, row 50, 2026-08-09): self-job
         // (RestAt/EatFrom/Despond) travel-timeout releases SUSPEND rather
         // than fully release — same "the board can't be restructured
@@ -13867,6 +13871,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     );
                                     job.reservation = None;
                                     job.needs_materials = true;
+                                    // ★ EAT RE-TARGET (2026-08-21): an EatFrom
+                                    // job whose meal vanished must NOT die —
+                                    // its target is a loose ground item, and
+                                    // the colony's own haulers merge and move
+                                    // those constantly, so "my food moved" is
+                                    // the NORMAL case, not an error. Measured:
+                                    // 635 hunger preempts produced 135 eat
+                                    // jobs and 33 meals while colonists sat at
+                                    // hunger 0.00 — this branch is the 4:1
+                                    // loss. Re-aim at the nearest remaining
+                                    // food; a released eat job means the
+                                    // colonist stops trying until the next
+                                    // preempt window (60s cooldown).
+                                    if matches!(job.kind, common::bastion::JobKind::EatFrom { .. }) {
+                                        // Keep the claim; the post-loop drain
+                                        // re-aims it at the nearest remaining
+                                        // food. Releasing here is what made a
+                                        // moved meal cost the colonist a whole
+                                        // 60s preempt window.
+                                        eat_retargets
+                                            .push((active.job, pos.0.map(|e| e.floor() as i32)));
+                                        continue;
+                                    }
                                     to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
                                     continue;
                                 },
@@ -16445,10 +16472,36 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // inverted: no guard at all). Survival still wins:
                         // this only filters the INVENTORY shortcut — the
                         // EatFrom job's own ground-pile path is untouched.
+                        //
+                        // ★ SELF-CATCH (2026-08-21, found by an audit of the
+                        // 635 preempts → 135 eat jobs → 33 completions gap):
+                        // the first version of this guard collected EVERY
+                        // claimed job's `required_item` — INCLUDING THE EAT
+                        // JOB DOING THE EATING, which carries the food def as
+                        // its own required_item. The colonist's own meal was
+                        // therefore "protected" from the colonist, and the
+                        // inventory eat path died colony-wide for any def
+                        // with a live eat or haul job. A guard that starves
+                        // the thing it protects — the exact law this project
+                        // already wrote down, walked into while enforcing it.
+                        // Exclude jobs claimed BY THIS COLONIST, and exclude
+                        // the self-job family outright (their required_item
+                        // IS food someone is on their way to eat).
+                        let me = uids.get(entity).copied();
                         let protected: std::collections::HashSet<&str> = board
                             .jobs
                             .values()
                             .filter(|j| j.claimed_by.is_some() || j.reservation.is_some())
+                            .filter(|j| j.claimed_by != me)
+                            .filter(|j| {
+                                !matches!(
+                                    j.kind,
+                                    common::bastion::JobKind::EatFrom { .. }
+                                        | common::bastion::JobKind::RestAt { .. }
+                                        | common::bastion::JobKind::Despond { .. }
+                                        | common::bastion::JobKind::Recreate { .. }
+                                )
+                            })
                             .filter_map(|j| j.required_item)
                             .collect();
                         let ate: Option<&'static str> =
@@ -17859,6 +17912,58 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 },
             }
         }
+        // ★ EAT RE-TARGET drain (2026-08-21): re-aim every EatFrom whose meal
+        // was hauled/merged away mid-walk. The board is free here (the travel
+        // arm's &mut into board.jobs has ended), which is why this is deferred
+        // rather than inline. A colonist keeps its claim across the re-aim —
+        // releasing was costing a whole 60s preempt window per moved meal.
+        for (job_id, feet) in eat_retargets.drain(..) {
+            let next = (&pickup_items, &positions, &uids)
+                .join()
+                .filter(|(pi, _, iuid)| {
+                    pi.item()
+                        .item_definition_id()
+                        .itemdef_id()
+                        .is_some_and(|d| FOOD_DEFS.contains(&d))
+                        && board.has_capacity(**iuid, pi.amount())
+                })
+                .min_by_key(|(_, ipos, iuid)| {
+                    let c = ipos.0.map(|e| e.floor() as i32) - feet;
+                    (
+                        (c.x as i64).pow(2) + (c.y as i64).pow(2) + (c.z as i64).pow(2),
+                        iuid.0.get(),
+                    )
+                })
+                .map(|(_, ipos, iuid)| (*iuid, ipos.0.map(|e| e.floor() as i32)));
+            match next {
+                Some((item, ipos)) => {
+                    let rid = board.reserve(item, u32::MAX);
+                    if let Some(j) = board.jobs.get_mut(&job_id) {
+                        j.reservation = Some(rid);
+                        j.needs_materials = false;
+                        j.pos = ipos;
+                        j.kind = common::bastion::JobKind::EatFrom { item };
+                    }
+                    info!(
+                        job = job_id,
+                        new_item = item.0.get(),
+                        ?ipos,
+                        "bastion: EAT RE-TARGET — meal moved, re-aimed at the nearest remaining food"
+                    );
+                },
+                None => {
+                    // The couldn't-happen half: no food ANYWHERE the scan can
+                    // see. That is a famine, not a re-target failure, and it
+                    // must not read as one.
+                    info!(
+                        job = job_id,
+                        "bastion: EAT RE-TARGET found NO remaining food — the colony is genuinely out"
+                    );
+                    board.remove_job(job_id);
+                },
+            }
+        }
+
         for (entity, release_reason) in &to_release {
             *board.release_reason_counts.entry(*release_reason).or_insert(0) += 1;
             if let Some(active) = active_jobs.get(*entity) {
