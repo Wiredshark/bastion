@@ -2040,6 +2040,23 @@ pub fn tightdig_enabled() -> bool {
     *TIGHTDIG.get_or_init(|| std::env::var("BASTION_TIGHTDIG").is_ok_and(|v| v == "1"))
 }
 
+/// bastion (ITEM 29, wall-detour row): the VARIANT toggle for the stall
+/// detector + bounded one-shot detour, same shape and same reason as
+/// [`tightdig_enabled`] above — a new escalation path invalidates the
+/// stuck-economy's tuning by construction (FR15), so it needs a paired-A/B
+/// leg, not a silent default-on.
+///
+/// OFF = today's behavior, bit-for-bit, and the identity is structural, not
+/// intentional: `board.detours` and `board.travel_stall_watch` are never
+/// populated (every writer sits under this flag), so the steer expression
+/// falls through to the pre-existing value, `detour_active` is `false`, and
+/// the watchdog's `measure_steer` is the same binding `steer` always was.
+/// Read once.
+pub fn walldetour_enabled() -> bool {
+    static WALLDETOUR: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *WALLDETOUR.get_or_init(|| std::env::var("BASTION_WALLDETOUR").is_ok_and(|v| v == "1"))
+}
+
 /// bastion (ROW B, 2026-08-04): the VARIANT toggle for the amnesty-bench
 /// escalation, same shape and same reason as `tightdig_enabled` above --
 /// a new escalation path invalidates the stuck-economy's tuning by
@@ -2268,6 +2285,42 @@ pub const TIGHTDIG_MIN_PROGRESS: f32 = 1.5;
 /// stall or jump.
 pub const TIGHTDIG_STEER_SWITCH: f32 = 2.0;
 
+/// bastion (ITEM 29, wall-detour row): the stall window the detector judges
+/// over. Deliberately EQUAL to [`STUCK_TIMEOUT`] so a detour can never fire
+/// before the stall economy would have — the detour shadows the economy, it
+/// never pre-empts it (FR15's lesson: a new escalation path that runs
+/// earlier than the tuned one re-tunes the whole cascade by construction).
+pub const DETOUR_STALL_WINDOW: f64 = STUCK_TIMEOUT as f64;
+/// Net displacement over one window below which the colonist counts as not
+/// having moved. CONSERVATIVE GUESS, not derived — its own constant rather
+/// than a reuse of [`TIGHTDIG_MIN_PROGRESS`] so the two can be tuned apart
+/// even though they start at the same value.
+pub const DETOUR_MIN_DISPLACEMENT: f32 = 1.5;
+/// Beyond this distance to the steer, a stall is not the wall case this row
+/// is about (the observed defect is a colonist ~40 blocks from a reachable
+/// job). CONSERVATIVE GUESS, not derived.
+pub const DETOUR_MAX_TARGET_DIST: f32 = 96.0;
+/// How far ahead along the detour the steer is placed. The point of a leg
+/// this size is that the Chaser's own `PathLength::Small` search (500 total
+/// expansions) can trivially solve it, so the colonist gets a COMPLETE route
+/// — which is what resets `path_length` and drops it out of the scheduler's
+/// candidate set. CONSERVATIVE GUESS, not derived.
+pub const DETOUR_LEG: f32 = 12.0;
+/// Arrival band for a detour waypoint. Wider than the TIGHTDIG block's 1.2
+/// because that block steered one block ahead while this one steers a whole
+/// leg ahead, and a leg endpoint is approached, not landed on. CONSERVATIVE
+/// GUESS, not derived.
+pub const DETOUR_WAYPOINT_ARRIVE_XY: f32 = 2.0;
+pub const DETOUR_WAYPOINT_ARRIVE_Z: f32 = 2.5;
+/// Full-path searches a colonist may buy per claim before the ordinary
+/// unreachable/release cascade owns it again.
+pub const DETOUR_ATTEMPTS_MAX: u8 = 3;
+/// Hard per-tick ceiling on detour searches across the whole colony. This
+/// work runs in `bastion_jobs`, OUTSIDE `PATH_TICK_ITER_CAP` — the judges'
+/// sharpest objection to this row — so the ceiling is the only bound there
+/// is, and it is deliberately 1.
+pub const DETOUR_SEARCHES_PER_TICK: usize = 1;
+
 /// bastion (B7-1): rest restored per game-second of sleep at quality 1.0
 /// (a bedroll's 0.6 scales it down) — 0→comfort in ~40s on a bedroll.
 /// Tunable; the BedKind quality split is the design's lever.
@@ -2350,6 +2403,32 @@ pub const FOUNDING_SEED_STOCK: u32 = 8;
 /// bastion (B7-2): the preempt-attempt cooldown (game-seconds) — the
 /// anti-livelock (c) guard window.
 pub const PREEMPT_COOLDOWN_SECS: f64 = 60.0;
+
+/// bastion (ITEM 29): the leg-ahead cursor for a detour path — the farthest
+/// node at or after `from` still within [`DETOUR_LEG`] of `wps[from]`.
+///
+/// WHY A LEG AND NOT THE NEXT NODE: the steer becomes the Chaser's `Goto`
+/// target, and path nodes are single blocks. Steering one node ahead moves
+/// that target every block walked, and a target move of >√2 is exactly the
+/// scheduler's TGT-DRIFT trigger (`d2 > 2.0`) and `search_step_inner`'s own
+/// `last_search_tgt` wipe — the colonist would discard an in-flight search
+/// every block. A leg-sized target is stable for the whole leg and is short
+/// enough that the Chaser's own `PathLength::Small` tier solves it.
+///
+/// Always returns at least `from + 1`, so the cursor is strictly monotone
+/// even where consecutive nodes are further apart than a leg.
+fn detour_leg_end(wps: &[Vec3<i32>], from: usize) -> usize {
+    let anchor = wps[from].map(|e| e as f32);
+    let mut end = from + 1;
+    for (i, wp) in wps.iter().enumerate().skip(from + 1) {
+        if anchor.distance(wp.map(|e| e as f32)) <= DETOUR_LEG {
+            end = i;
+        } else {
+            break;
+        }
+    }
+    end.min(wps.len().saturating_sub(1))
+}
 
 /// bastion (FR15-TIGHTDIG): the INPUT-SWAP measure — a synthetic
 /// "distance" that drives the EXISTING watchdog branch structure
@@ -5717,6 +5796,35 @@ pub struct JobBoard {
     /// (re-expresses the old `sdist > best_dist + 4.0` rebase under the
     /// new metric, no dangling beeline reader).
     last_steer: HashMap<Uid, Vec3<f32>>,
+    /// bastion (ITEM 29, flag-gated): per-colonist displacement clock —
+    /// (window anchor, window start time). ALWAYS-ON for a Traveling
+    /// colonist while the flag is set, and deliberately STEER-AGNOSTIC: the
+    /// job watchdog is frozen outright while a fetch leg owns the trip
+    /// (`if auton_travel_ok && fetch_steer.is_none()`), so a colonist
+    /// wall-stalled mid-fetch accrues no `stuck_time` at all and is invisible
+    /// to `travel_timeouts` — its only bound is the 1860s generic claim
+    /// leak. This clock is the only instrument that sees that population.
+    /// Feeds the detour detector ONLY; it is never an input to
+    /// `best_dist`/`stuck_time` (FR15 law: change what the detector sees,
+    /// never the stall economy's inputs).
+    travel_stall_watch: HashMap<Uid, (Vec3<f32>, f64)>,
+    /// bastion (ITEM 29, flag-gated): per-colonist DETOUR — (waypoints, the
+    /// leg-ahead steer index, the final target it was computed for, searches
+    /// bought so far). Board-side and NOT on `ActiveJob`, which is
+    /// `Serialize`/`Deserialize`: keeping it here means no wire change and no
+    /// digest-payload change.
+    detours: HashMap<Uid, (Vec<Vec3<i32>>, usize, Vec3<f32>, u8)>,
+    /// bastion (ITEM 29): the treatment-reached-the-population witness. A
+    /// census improvement with `detours_installed == 0` is VOID, not a pass
+    /// — it belongs to something else. `unreachable` vs `budget_exhausted`
+    /// are kept apart for the reason `FullPathOutcome` exists at all.
+    pub detours_installed: u64,
+    pub detours_unreachable: u64,
+    pub detours_budget_exhausted: u64,
+    /// Waypoint advances actually walked out. Many advances per install =
+    /// the colonist is converging; installs with no advances = it is not
+    /// following the detour at all.
+    pub detour_waypoint_advances: u64,
     /// bastion (B7-0/B7-1, the thought queue): (who, where, what kind) of
     /// chronicle THOUGHT to record — drained by the rtsim tick next tick
     /// (this system holds a long-lived rtsim READ guard for the LOD gate,
@@ -6797,10 +6905,42 @@ impl JobBoard {
         // ITEM, not the zone — pos-based cancel below can't catch them)
         // and their reservations released.
         let before = self.stockpiles.len();
-        self.stockpiles.retain(|(_, r)| !r.intersects(&region));
-        // ZONE-0: activity zones erase with the same brush.
-        self.activity_zones
-            .retain(|(_, _, r)| !r.intersects(&region));
+        // ★ FOUND BY PLAYING (2026-08-21): this used to DELETE any zone the
+        // brush touched at all. A player cancelling a mine that overlapped
+        // their base lost the entire food store — `food_stock` fell 192 → 0
+        // and stayed there, the food still lying visibly on the ground, the
+        // only message being "Designations cancelled." A cancel brush is a
+        // subtraction, not a bomb: shrink the zone to what the brush did NOT
+        // cover (exactly what the `designated` mask five lines below has
+        // always done), and delete only a zone the brush fully swallowed.
+        // Pieces keep their ZoneId — a shrunken pantry is the same pantry.
+        let mut zones_shrunk = 0u32;
+        self.stockpiles = std::mem::take(&mut self.stockpiles)
+            .into_iter()
+            .flat_map(|(id, r)| {
+                if !r.intersects(&region) {
+                    return vec![(id, r)];
+                }
+                let pieces = r.subtract(&region);
+                if !pieces.is_empty() {
+                    zones_shrunk += 1;
+                }
+                pieces.into_iter().map(|p| (id, p)).collect::<Vec<_>>()
+            })
+            .collect();
+        // ZONE-0: activity zones shrink under the same rule.
+        self.activity_zones = std::mem::take(&mut self.activity_zones)
+            .into_iter()
+            .flat_map(|(id, k, r)| {
+                if !r.intersects(&region) {
+                    return vec![(id, k, r)];
+                }
+                r.subtract(&region)
+                    .into_iter()
+                    .map(|p| (id, k, p))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
         // AUTON-1: a plan any of whose cells the eraser touches dies whole —
         // otherwise the generator re-emits the jobs the player just erased
         // (the eraser-vs-generator fight; whole-plan removal because a
@@ -6825,6 +6965,18 @@ impl JobBoard {
             for id in dead {
                 self.remove_job(id);
             }
+        }
+        // ★ SAY WHAT THE BRUSH DID (2026-08-21): a cancel used to report only
+        // the thing the player INTENDED ("Designations cancelled.") and never
+        // the thing it destroyed. Zones lost/shrunk are the expensive half.
+        if zones_shrunk > 0 || self.stockpiles.len() != before {
+            info!(
+                zones_shrunk,
+                zones_before = before,
+                zones_after = self.stockpiles.len(),
+                ?region,
+                "bastion: CANCEL touched storage zones"
+            );
         }
         // B5.8: the claim mask shrinks with the cancellation (exact AABB
         // subtraction, ≤6 pieces per intersected region).
@@ -10802,6 +10954,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // (entity, pos, feet, reach) — processed post-loop (same borrow
         // constraint as carve_requests).
         let mut churn_events: Vec<(specs::Entity, Vec3<f32>, Vec3<i32>, i32)> = Vec::new();
+        // ITEM 29 (wall-detour, flag-gated): stalled colonists asking for a
+        // bounded one-shot full path — (uid, from, to, the colonist's own
+        // traversal config, searches bought so far, parent job). Same
+        // post-loop-drain constraint as carve_requests. The CONFIG is built
+        // in the loop rather than at the drain because `colonists` is
+        // mutably borrowed by the upkeep lend_join, and because the loop
+        // already has the body/scale/physics reads in hand.
+        #[allow(clippy::type_complexity)]
+        let mut detour_requests: Vec<(
+            Uid,
+            Vec3<f32>,
+            Vec3<f32>,
+            common::path::TraversalConfig,
+            u8,
+            JobId,
+        )> = Vec::new();
         // 49.2/B37: churning HAULS to drop post-loop (remove_job needs the
         // board while the loop holds a job borrow — the carve_requests
         // constraint).
@@ -12937,6 +13105,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         board.progress_watch.remove(uid);
                         board.path_cache.remove(uid);
                         board.last_steer.remove(uid);
+                        // ITEM 29: a detour is computed for ONE target; a
+                        // released claim must not leave the next claim
+                        // steering along the old one, and the stall clock
+                        // must re-anchor rather than carry a window opened
+                        // under a target that no longer exists.
+                        board.detours.remove(uid);
+                        board.travel_stall_watch.remove(uid);
                         if let Some(agent) = agents.get_mut(entity) {
                             agent.rtsim_controller.activity = None;
                         }
@@ -15487,6 +15662,182 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // B6: the FETCH override wins every steer — the
                         // reserved item IS the destination until carried.
                         let steer = fetch_steer.unwrap_or(steer);
+                        // ITEM 29 (wall-detour, flag-gated): the steer the
+                        // WATCHDOG measures against, captured BEFORE the
+                        // detour override below.
+                        //
+                        // THE DETOUR MOVES WHERE THE COLONIST WALKS; IT MUST
+                        // NOT MOVE WHAT THE STALL ECONOMY MEASURES. Feeding
+                        // the watchdog a leg-ahead waypoint collapses `sdist`
+                        // toward zero every time the colonist nears one,
+                        // which zeroes `stuck_time` through the existing
+                        // `sdist + STUCK_EPSILON < best_dist` branch. Then
+                        // `stuck_time > STUCK_TIMEOUT` never fires,
+                        // `travel_timeouts` never increments, and the bounded
+                        // `job.unreachable = true` release never runs — a
+                        // 10s-bounded stall becomes a hold to
+                        // `generic_claim_leak_secs` (2 × 930s) that the
+                        // census scores as progressing. `sdist` is also what
+                        // feeds `min_distance_to_target`, so keeping the
+                        // measure on the pre-detour steer keeps the
+                        // closest-approach tracker honest in the same stroke.
+                        //
+                        // The consequence is deliberate: a detour gets
+                        // exactly the patience the existing economy already
+                        // grants, and must show real progress toward the JOB
+                        // to keep it. On a fetch leg — the population with
+                        // the worst symptom, since the watchdog is frozen
+                        // there by `fetch_steer.is_none()` — it gets the
+                        // detour with no watchdog pressure at all, which is
+                        // that freeze's existing semantics, not a new grant.
+                        let measure_steer = steer;
+                        let (steer, detour_active) = if walldetour_enabled()
+                            && !staged_at_anchor
+                            && !is_emergency_access
+                            && let Some(u) = uids.get(entity).copied()
+                        {
+                            // Anchor staging and emergency routes own
+                            // movement exclusively by design
+                            // (`m3_promoted_corridor_waypoint` asserts it
+                            // with a debug_assert!), hence the exclusions
+                            // above: two owners must never fight over one
+                            // steer.
+                            //
+                            // Invalidate on target move — the same staleness
+                            // test `path_cache` uses.
+                            if board
+                                .detours
+                                .get(&u)
+                                .is_some_and(|(_, _, for_t, _)| for_t.distance_squared(steer) > 1.0)
+                            {
+                                board.detours.remove(&u);
+                            }
+                            // ARRIVAL-BASED leg advance, grafted from the
+                            // TIGHTDIG block above (which already advances a
+                            // committed path on arrival and falls back to the
+                            // plain steer once walked out). This row as
+                            // designed advanced its index only inside the
+                            // stall branch — one path node per stall window,
+                            // three times — which parks a colonist ON a
+                            // waypoint instead of walking it around the wall,
+                            // and never hands the steer back to the job.
+                            let (walked_out, new_idx) = match board.detours.get(&u) {
+                                Some((wps, idx, _, _)) => {
+                                    let arrived = wps.get(*idx).is_some_and(|wp| {
+                                        let wp =
+                                            wp.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
+                                        pos.0.xy().distance(wp.xy())
+                                            < DETOUR_WAYPOINT_ARRIVE_XY
+                                            && (pos.0.z - wp.z).abs() < DETOUR_WAYPOINT_ARRIVE_Z
+                                    });
+                                    if !arrived {
+                                        (false, None)
+                                    } else if *idx + 1 >= wps.len() {
+                                        (true, None)
+                                    } else {
+                                        (false, Some(detour_leg_end(wps, *idx)))
+                                    }
+                                },
+                                None => (false, None),
+                            };
+                            if walked_out {
+                                // Detour walked out — the steer returns to
+                                // the job and `arrive` owns the last leg,
+                                // exactly as the TIGHTDIG block does.
+                                board.detours.remove(&u);
+                            } else if let Some(i) = new_idx {
+                                if let Some((_, idx, _, _)) = board.detours.get_mut(&u) {
+                                    *idx = i;
+                                }
+                                board.detour_waypoint_advances += 1;
+                            }
+                            // The displacement clock: always on, steer- and
+                            // fetch-agnostic (see the field doc for why the
+                            // watchdog cannot serve here).
+                            let stalled = match board.travel_stall_watch.get(&u).copied() {
+                                None => {
+                                    board.travel_stall_watch.insert(u, (pos.0, time.0));
+                                    false
+                                },
+                                Some((anchor, since)) => {
+                                    if time.0 - since < DETOUR_STALL_WINDOW {
+                                        false
+                                    } else {
+                                        let displaced = pos.0.distance(anchor);
+                                        board.travel_stall_watch.insert(u, (pos.0, time.0));
+                                        displaced < DETOUR_MIN_DISPLACEMENT
+                                    }
+                                },
+                            };
+                            // The wall-face discriminator, TIGHTENED from
+                            // this row's design: the Chaser is following a
+                            // route it KNOWS is incomplete, or its last
+                            // search terminated Exhausted. The design's
+                            // `PathState::None` term is dropped because
+                            // `None` is also `PathState`'s Default — a
+                            // chaser that has never searched would qualify.
+                            // A genuine `PathResult::None` still qualifies
+                            // through `route_complete == Some(false)`, which
+                            // is what `search_step_inner` stores for it.
+                            // `Pending` stays excluded so a colonist
+                            // legitimately waiting on the PATH-0 scheduler
+                            // never buys a detour.
+                            let wall_face = agent.as_deref().is_some_and(|a| {
+                                let snap = a.chaser.diagnostic_snapshot();
+                                snap.route_complete == Some(false)
+                                    || matches!(
+                                        snap.path_state,
+                                        common::path::PathState::Exhausted
+                                    )
+                            });
+                            let tier =
+                                board.detours.get(&u).map(|(_, _, _, t)| *t).unwrap_or(0);
+                            if stalled
+                                && wall_face
+                                && tier < DETOUR_ATTEMPTS_MAX
+                                && pos.0.distance(steer) <= DETOUR_MAX_TARGET_DIST
+                                && let Some(phys) = physics_states.get(entity)
+                            {
+                                // The colonist's OWN body-derived config —
+                                // not the TIGHTDIG site's hardcoded
+                                // can_climb: true / scramble_reach: 2, which
+                                // disagree with what `traversal_config_for`
+                                // derives from the body and the colonist's
+                                // climbing skill, and not the corridor sites'
+                                // can_climb: false / scramble_reach: 0
+                                // either. A search run under admission rules
+                                // the colonist does not actually have returns
+                                // a route it cannot walk.
+                                // `goto_scheduled: false` for the same reason
+                                // the scheduler passes false: this call IS
+                                // the search context.
+                                let cfg = crate::bastion_path::traversal_config_for(
+                                    scales.get(entity).map_or(1.0, |s| s.0),
+                                    bodies.get(entity),
+                                    phys,
+                                    Some(&*colonist),
+                                    false,
+                                );
+                                detour_requests.push((u, pos.0, steer, cfg, tier, active.job));
+                            }
+                            match board.detours.get(&u) {
+                                Some((wps, idx, for_t, _))
+                                    if for_t.distance_squared(steer) <= 1.0 =>
+                                {
+                                    wps.get(*idx)
+                                        .map(|wp| {
+                                            (
+                                                wp.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0),
+                                                true,
+                                            )
+                                        })
+                                        .unwrap_or((steer, false))
+                                },
+                                _ => (steer, false),
+                            }
+                        } else {
+                            (steer, false)
+                        };
                         // R3 fix-2 (WAITING — single-file queue discipline):
                         // when staged at an anchor and ANOTHER colonist is
                         // meaningfully closer to it, WAIT — don't shove
@@ -15599,12 +15950,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 committed_active,
                                 u,
                                 pos.0,
-                                steer,
+                                // ITEM 29: `measure_steer`, not `steer` — the
+                                // pre-detour value. With the wall-detour flag
+                                // unset the two bindings are the same value,
+                                // so this is the identity; with it set, the
+                                // watchdog keeps measuring the destination it
+                                // always measured (see the `measure_steer`
+                                // binding for what feeding it a waypoint
+                                // would silently disable).
+                                measure_steer,
                                 time.0,
                                 active.best_dist,
                             )
                         } else {
-                            pos.0.distance(steer)
+                            pos.0.distance(measure_steer)
                         };
                         // T3.52b (E3, Fable-ruled 2026-07-27): FREEZE this
                         // whole watchdog update (best_dist/stuck_time and
@@ -15881,6 +16240,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         path_cached = uids
                                             .get(entity)
                                             .is_some_and(|u| board.path_cache.contains_key(u)),
+                                        // ITEM 29: a timeout that fires WHILE
+                                        // a detour is live is the specific
+                                        // finding "the detour installed and
+                                        // still did not deliver progress
+                                        // toward the job" — distinct from
+                                        // "no detour was ever installed".
+                                        detour_active,
                                         "bastion LEGC-DIAG: travel timeout firing"
                                     );
                                 }
@@ -18075,6 +18441,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 board.progress_watch.remove(u);
                 board.path_cache.remove(u);
                 board.last_steer.remove(u);
+                board.detours.remove(u);
+                board.travel_stall_watch.remove(u);
                 board.emergency_partial_route_entries.remove(u);
                 board.emergency_approach_corridors.remove(u);
                 board.emergency_frontier_reacquire.remove(u);
@@ -18121,6 +18489,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 board.progress_watch.remove(u);
                 board.path_cache.remove(u);
                 board.last_steer.remove(u);
+                board.detours.remove(u);
+                board.travel_stall_watch.remove(u);
             }
             if let Some(agent) = agents.get_mut(*entity) {
                 agent.rtsim_controller.activity = None;
@@ -18503,6 +18873,84 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             }
         }
 
+        // ITEM 29 (wall-detour, flag-gated): the post-loop detour drain —
+        // same "the board can't be restructured mid-borrow" constraint as
+        // `carve_requests` below, and the same determinism discipline as
+        // `PathScheduler`: Uid-sorted, a bounded take, remainder simply
+        // re-requests one stall window later. No rng, no hash-order read.
+        //
+        // WHERE THE COST LANDS, stated at the site that pays it: this search
+        // runs in `bastion_jobs`, so `PATH_TICK_ITER_CAP` never sees it and
+        // no harness bound reads it. Medium is up to 5000 expansions and Long
+        // up to 25_000 — 1.7× and 8.3× the whole colony's per-tick scheduler
+        // budget, spent in a single tick. `DETOUR_SEARCHES_PER_TICK` is the
+        // only bound that exists on it, which is why it is 1 and why
+        // `DETOUR_ATTEMPTS_MAX` caps the searches any one claim can buy.
+        detour_requests.sort_unstable_by_key(|(u, ..)| u.0.get());
+        for (u, from, to, cfg, tier, job) in
+            detour_requests.into_iter().take(DETOUR_SEARCHES_PER_TICK)
+        {
+            // Tier 0 is the first attempt; a repeat stall on the same claim
+            // buys the next rung rather than re-running a budget that has
+            // already been shown not to span this geometry.
+            let length = if tier == 0 {
+                common::path::PathLength::Medium
+            } else {
+                common::path::PathLength::Long
+            };
+            let (outcome, nodes, leg) =
+                match common::path::bastion_full_path_ext(&*terrain, from, to, &cfg, length) {
+                    common::path::FullPathOutcome::Path(path) if path.len() > 1 => {
+                        let leg = detour_leg_end(&path, 0);
+                        let nodes = path.len();
+                        board.detours.insert(u, (path, leg, to, tier + 1));
+                        board.detours_installed += 1;
+                        ("path", nodes, leg)
+                    },
+                    // A path of one node (or none) ends where the colonist
+                    // already stands — there is nothing to steer to, and
+                    // installing it would park the colonist on its own feet.
+                    common::path::FullPathOutcome::Path(path) => {
+                        board.detours.remove(&u);
+                        ("trivial", path.len(), 0)
+                    },
+                    // A PROOF of unreachability under this colonist's own
+                    // admission rules, not the displacement inference the
+                    // travel timeout makes. Stop buying detours for it; the
+                    // ordinary unreachable/release cascade owns it.
+                    common::path::FullPathOutcome::Unreachable => {
+                        board.detours_unreachable += 1;
+                        board.detours.remove(&u);
+                        ("unreachable", 0, 0)
+                    },
+                    // Says NOTHING about reachability — only that this tier
+                    // was too small. Counted apart for exactly that reason.
+                    common::path::FullPathOutcome::BudgetExhausted => {
+                        board.detours_budget_exhausted += 1;
+                        board.detours.remove(&u);
+                        ("budget_exhausted", 0, 0)
+                    },
+                };
+            info!(
+                tick = tick.0,
+                uid = u.0.get(),
+                job,
+                outcome,
+                tier,
+                path_length = ?length,
+                from = ?from,
+                to = ?to,
+                target_dist = from.distance(to),
+                nodes,
+                leg_idx = leg,
+                installed = board.detours_installed,
+                unreachable = board.detours_unreachable,
+                budget_exhausted = board.detours_budget_exhausted,
+                advances = board.detour_waypoint_advances,
+                "bastion: wall detour search"
+            );
+        }
+
         // ── B5.8: AUTONOMOUS ACCESS (self-rescue) ────────────────────────
         // A stuck ascent inside colony claims gets access that FITS THE
         // GEOMETRY (Ben's directive — autonomous access is the default):
@@ -18878,6 +19326,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         board.progress_watch.remove(&uid);
                         board.path_cache.remove(&uid);
                         board.last_steer.remove(&uid);
+                        board.detours.remove(&uid);
+                        board.travel_stall_watch.remove(&uid);
                         if let Some(agent) = agents.get_mut(entity) {
                             agent.rtsim_controller.activity = None;
                         }

@@ -1420,30 +1420,80 @@ pub fn bastion_full_path<V>(
 where
     V: BaseVol<Vox = Block> + ReadVol,
 {
+    match bastion_full_path_ext(vol, startf, endf, traversal_cfg, PathLength::Medium) {
+        FullPathOutcome::Path(nodes) => Some(nodes),
+        FullPathOutcome::Unreachable | FullPathOutcome::BudgetExhausted => None,
+    }
+}
+
+/// bastion (ITEM 29, wall-detour row): why the two failure arms are kept
+/// APART here. [`bastion_full_path`] collapses `PathResult::None` and
+/// `PathResult::Exhausted` into one `None`, so a search that merely ran out
+/// of this tier's `max_iters` is indistinguishable from a frontier that
+/// emptied — a budget failure recorded as a geography fact. The colony-side
+/// detour has to count those separately: `Unreachable` is a POSITIVE proof
+/// that no route exists at this tier's admission rules and the colonist
+/// should stop paying for detours, while `BudgetExhausted` says only that
+/// the tier was too small and the next rung is worth trying.
+pub enum FullPathOutcome {
+    Path(Vec<Vec3<i32>>),
+    /// The frontier emptied: `find_path` proved no route under this
+    /// config's `walkable`/`neighbors` admission.
+    Unreachable,
+    /// The tier's cumulative `max_iters` ran out before either terminal
+    /// result. Says NOTHING about reachability.
+    BudgetExhausted,
+}
+
+/// bastion (ITEM 29): [`bastion_full_path`] with the tier as a parameter and
+/// the failure arms separated. Same one-shot drive of the SAME [`find_path`]
+/// (B17 one-implementation), so walkable/transition semantics cannot drift
+/// between the incremental scheduler path and this one.
+pub fn bastion_full_path_ext<V>(
+    vol: &V,
+    startf: Vec3<f32>,
+    endf: Vec3<f32>,
+    traversal_cfg: &TraversalConfig,
+    path_length: PathLength,
+) -> FullPathOutcome
+where
+    V: BaseVol<Vox = Block> + ReadVol,
+{
     let mut astar = None;
-    // `find_path` polls a bounded slice per call (Medium = 400 iters); loop
-    // until terminal. The search's own `max_iters` (Medium = 5000) caps the
-    // total, so <= ceil(5000/400) + 1 calls always terminates.
-    for _ in 0..16 {
+    // `find_path` polls a bounded slice per call (250/400/500/750) against
+    // the tier's own cumulative `max_iters` (500/5000/25_000/75_000), so
+    // ceil(max_iters / slice) + 1 calls always reaches a terminal result.
+    // Kept as the same conservative over-estimates the Medium case has
+    // always used (16 where 14 would do) rather than tightened here — a
+    // too-small bound would silently report `BudgetExhausted` on a search
+    // that was one poll from a route.
+    let calls = match path_length {
+        PathLength::Small => 4,
+        PathLength::Medium => 16,
+        PathLength::Long => 52,
+        PathLength::Longest => 102,
+    };
+    for _ in 0..calls {
         match find_path(
             &mut astar,
             vol,
             startf,
             endf,
             traversal_cfg,
-            PathLength::Medium,
+            path_length,
             None,
         )
         .0
         {
             PathResult::Pending => continue,
             PathResult::Path(path, _cost) => {
-                return Some(path.nodes.into_iter().collect());
+                return FullPathOutcome::Path(path.nodes.into_iter().collect());
             },
-            PathResult::None(_) | PathResult::Exhausted(_) => return None,
+            PathResult::None(_) => return FullPathOutcome::Unreachable,
+            PathResult::Exhausted(_) => return FullPathOutcome::BudgetExhausted,
         }
     }
-    None
+    FullPathOutcome::BudgetExhausted
 }
 // Enable when airbraking/sensible flight is a thing
 #[cfg(feature = "rrt_pathfinding")]
