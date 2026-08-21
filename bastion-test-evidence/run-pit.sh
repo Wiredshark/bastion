@@ -351,6 +351,25 @@ case "$ARM" in
   # PASSED). This arm seeds enough that wealth clears the band at the FIRST
   # opportunity: 256 materials puts it in band 2 (256..=1023 -> 2 raiders), so
   # the arm tests the raider COUNT as well as the fact of raiding.
+  # ITEM 40 (colony scale). Three arms differing in ONE declared variable --
+  # the colonist count -- run SEQUENTIALLY on slot 0. The first attempt at this
+  # measurement was VOID because arms shared the host with other work, and cost
+  # is wall-coupled: a big colony on a quiet host can measure faster than a
+  # small one on a loaded host, and nothing in the numbers would say so.
+  scale8)       PITVAR=" BASTION_SEED_FOOD=64 BASTION_SEED_MATERIALS=64"
+              SCRIPT="script-injury.txt" ;;
+  # NOTE the PITFOUND mechanism, not PITVAR: PITFOUND already carries
+  # BASTION_AUTOFOUND_COLONY=8 by default and is PREPENDED, so setting the
+  # count in PITVAR would emit the variable TWICE and leave the arms' real
+  # population depending on which one the env application happens to honour.
+  # Comparability is the whole point of this row; a duplicated variable would
+  # break it silently.
+  scale16)      PITVAR=" BASTION_SEED_FOOD=128 BASTION_SEED_MATERIALS=128"
+              PITFOUND="BASTION_AUTOFOUND_COLONY=16 "
+              SCRIPT="script-injury.txt" ;;
+  scale32)      PITVAR=" BASTION_SEED_FOOD=256 BASTION_SEED_MATERIALS=256"
+              PITFOUND="BASTION_AUTOFOUND_COLONY=32 "
+              SCRIPT="script-injury.txt" ;;
   raidrich)     PITVAR=" BASTION_SEED_FOOD=128 BASTION_NEEDS_DECAY_MULT=6 BASTION_SEED_MATERIALS=256"
               SCRIPT="script-injury.txt" ;;
   matbeds)      PITVAR=" BASTION_SEED_FOOD=64 BASTION_NEEDS_DECAY_MULT=6 BASTION_SEED_MATERIALS=64"
