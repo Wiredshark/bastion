@@ -1221,6 +1221,9 @@ impl SessionState {
                         format!("Standing orders: {}", c.designations),
                         // The line that answers "why is nothing happening".
                         format!("Waiting on materials: {} job(s)", c.jobs_blocked_materials),
+                        // ITEM 32: the god-power pool. A player who can spend
+                        // a resource must be able to see it.
+                        format!("Divine favor: {:.1}", c.favor),
                     ],
                     Kind::Colonist(p) => {
                         let mut traits: Vec<&str> = Vec::new();
@@ -1349,6 +1352,18 @@ impl SessionState {
                     Kind::FellSet(fs) => vec![
                         "- Tree (marked to fell) -".to_string(),
                         format!("{} / {} cells standing", fs.remaining, fs.total),
+                    ],
+                    // ARC 2 item 12: the chronicle. The payload's own honesty
+                    // flags ride the line: an empty list with enabled=false
+                    // says NOTHING, and truncated means suffix-not-history.
+                    Kind::Chronicle(c) => vec![
+                        "- CHRONICLE -".to_string(),
+                        format!(
+                            "{} event(s){}{}",
+                            c.events.len(),
+                            if c.enabled { "" } else { " (log disabled)" },
+                            if c.truncated { " (truncated)" } else { "" },
+                        ),
                     ],
                 },
                 // Reply pending, stale, or an empty target (payload: None) —

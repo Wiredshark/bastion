@@ -828,6 +828,13 @@ pub struct BastionColonyInspect {
     /// failing, and 0 is distinguishable from any real post-boot tick.
     #[serde(default)]
     pub tick: u64,
+    /// bastion (ARC 7 item 32): the colony's DIVINE FAVOR — the pool god-
+    /// powers spend from. A resource a player pays with and cannot see is
+    /// its own defect: an adversarial play session cast five smites without
+    /// ever being shown the balance it was spending. Tail-appended (wire
+    /// rule).
+    #[serde(default)]
+    pub favor: f32,
 }
 
 /// bastion (ARC 2 item 12): one chronicle row — a wire-safe projection of the

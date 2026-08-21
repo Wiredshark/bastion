@@ -844,6 +844,9 @@ impl<'a> System<'a> for Sys {
             // sample and a branch transition can be placed on one timeline.
             // A parallel clock would align plausibly and wrongly.
             Read<'a, crate::Tick>,
+            // ITEM 32: the favor pool, so the colony panel can show the
+            // player the resource their god-powers spend.
+            Read<'a, crate::bastion_jobs::DivineFavor>,
         ),
         ReadStorage<'a, CanBuild>,
         WriteStorage<'a, ForceUpdate>,
@@ -916,7 +919,7 @@ impl<'a> System<'a> for Sys {
             entities,
             events,
             (terrain, slow_jobs, editable_settings, semantic_metrics, cohort_registry, cohort_metrics),
-            (id_maps, dt, settings, build_areas, bastion_tick),
+            (id_maps, dt, settings, build_areas, bastion_tick, insp_favor),
             can_build,
             mut force_updates,
             is_rider,
@@ -1891,6 +1894,11 @@ impl<'a> System<'a> for Sys {
                                             jobs_unreachable,
                                             designations: job_board.designated_regions().count() as u32,
                                             jobs_blocked_materials,
+                                            // ITEM 32: the pool the player
+                                            // spends on god-powers, from the
+                                            // same resource the cast gate
+                                            // reads — one number, not a copy.
+                                            favor: insp_favor.0,
                                             tick: bastion_tick.0,
                                         },
                                     ))

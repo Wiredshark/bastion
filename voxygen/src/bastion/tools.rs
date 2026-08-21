@@ -135,6 +135,12 @@ pub fn zone_rgb(kind: DesignationKind) -> [f32; 3] {
         // FARM (row 46): field wheat-straw — warmer than Ladder's tan,
         // dimmer than Zone's gold.
         DesignationKind::Farm => [0.8, 0.75, 0.2],
+        // ITEM 14: guard scarlet — the watch/threat family reads red; patrol
+        // a dimmer shade of the same hue (one family, two stops).
+        DesignationKind::GuardPost => [0.95, 0.2, 0.2],
+        DesignationKind::PatrolPoint => [0.7, 0.15, 0.15],
+        // ITEM 27: cook-fire ember, between Mine's orange and Bed's lavender.
+        DesignationKind::CookStation => [1.0, 0.4, 0.45],
     }
 }
 

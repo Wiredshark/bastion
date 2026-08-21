@@ -11521,8 +11521,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // casts landed including one at t=0) — the pin holds the pool at
         // zero so a refusal leg can exist at all.
         if !favor_zero_pin() {
-            divine_favor.0 =
-                (divine_favor.0 + FAVOR_REGEN_PER_SEC * dt.0).min(FAVOR_CAP);
+            // ★ ITEM 32 v1 — FAITH IS EARNED, NOT FREE (2026-08-21). Ruling
+            // #4 is "no FREE magic", and a favor pool that fills from nothing
+            // while powers cost from it is exactly free magic wearing a
+            // price tag. Favor now accrues only while the colony is NOT in
+            // crisis — the colony mind's own Sustain drive is the crisis
+            // signal, so faith and hunger cannot disagree about whether the
+            // colony is doing well. The RATE is unchanged (no balance number
+            // invented here); only the CONDITION is new. What faith should
+            // ultimately be EARNED BY — devotion, deeds, ritual — is the
+            // chartered DF-RELIGION question and is banked for Ben.
+            let in_crisis =
+                board.colony_drive.0 == common::bastion::ColonyDrive::Sustain;
+            if !in_crisis {
+                divine_favor.0 =
+                    (divine_favor.0 + FAVOR_REGEN_PER_SEC * dt.0).min(FAVOR_CAP);
+            }
+            if tick.0 % (ARBITRATION_INTERVAL as u64 * 40) == 8 {
+                info!(
+                    favor = divine_favor.0,
+                    earning = !in_crisis,
+                    drive = ?board.colony_drive.0,
+                    "bastion: ITEM 32 favor"
+                );
+            }
         }
 
         // ── #107 COLONY MIND v1: the reactive drive arbiter ──────────────

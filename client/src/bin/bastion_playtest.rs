@@ -1198,7 +1198,7 @@ fn main() {
                             // the server never sent, and this session has hit
                             // that exact shape three times (ownership,
                             // mood_explanation, and this one).
-                            "COLONY tick={} colonists={} food_stock={} jobs_total={} jobs_claimed={} jobs_unreachable={} designations={} blocked_materials={}",
+                            "COLONY tick={} colonists={} food_stock={} jobs_total={} jobs_claimed={} jobs_unreachable={} designations={} blocked_materials={} favor={:.1}",
                             c.tick,
                             c.colonists,
                             c.food_stock,
@@ -1206,7 +1206,8 @@ fn main() {
                             c.jobs_claimed,
                             c.jobs_unreachable,
                             c.designations,
-                            c.jobs_blocked_materials
+                            c.jobs_blocked_materials,
+                            c.favor
                         ));
                     },
                     Some(other) => log.log(&format!("COLONY WRONG-KIND {other:?}")),
