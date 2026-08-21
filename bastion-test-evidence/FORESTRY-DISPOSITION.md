@@ -73,3 +73,45 @@ twin never had the hole.
   Said in the pre-registration and repeated here so no green leg is ever read
   as proof of a floor that does not exist.
 - **Quiescence-while-supplied is unobserved** (see prediction 3).
+
+---
+
+# PAR-STOCK FLOOR — DISPOSITION: **PASS**
+
+Scored against the prediction in `FORESTRY-PREREGISTRATION.md`, registered
+before the leg ran. Arm `injury`, attested fresh, `dirty .rs 0`.
+
+```
+mine generator STATE demand=8 supply=8 pending_mine=0 quota=0   (x4, held)
+quota distribution across the run: quota=0 in 41 samples, quota=1 in 1
+bed registered (built): 8
+```
+
+1. **Stockpiles with nothing asking — PASS.** `supply=8` with every bed job
+   already satisfied. Before the floor the colony mined exactly what a job
+   demanded and held nothing.
+2. **IT STOPS — PASS, and this was the bar that mattered.** Demand and supply
+   converge exactly at the par level and `quota` sits at 0 for 41 of 42
+   samples. The single `quota=1` is the firing that ordered the last block. A
+   floor that kept digging would have been *worse than no floor*; it doesn't.
+3. **No F13 regression — PASS.** 8 beds still built.
+
+## The self-catch this row is really about
+
+The **first** version passed the safety bar too — `quota=0`, no runaway, beds
+intact — while parked at `demand=3 supply=5` against a floor of 8. I had
+written the floor as a *deficit* (`PAR_STOCK − on_hand`) when the quota
+arithmetic downstream already subtracts supply, so supply came off twice and
+the floor silently converged to about half its level.
+
+**The error's direction was safe**, which is exactly why it survived: it
+under-mined rather than strip-mined, so it sailed through the one failure mode
+I had pre-registered. A registered bar protects against the failure you
+predicted and is silent about the one you didn't. Nothing was red; the catch
+came from reading the numbers *beside* the verdict and noticing that
+`demand=3 supply=5` is not a sentence a floor of 8 can produce.
+
+This is the mirror of the session's other lesson. Earlier a silent instrument
+was mistaken for health; here a **green bar** was nearly mistaken for health.
+Neither is evidence on its own unless the numbers underneath agree with what
+the feature claims to do.
