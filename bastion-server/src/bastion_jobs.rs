@@ -3050,6 +3050,105 @@ pub fn column_flat_surface_z(terrain: &TerrainGrid, x: i32, y: i32, floor_z: i32
     })
 }
 
+/// bastion (ITEM 27 GRANULARITY, ruled 2026-08-21 off a play session): the
+/// ONE cell a painted `CookStation` region resolves to.
+///
+/// A STATION IS A THING, NOT A VOLUME OF WORK. `CookStation` already declares
+/// [`common::bastion::FootprintMode::Area2D`] ("a station is a surface
+/// placement"), but it was the only Area2D kind that still fell through
+/// [`JobBoard::place_designation`]'s per-cell loop — and that loop reads a
+/// z-range the client never meant. An Area2D paint sends the drag rect
+/// VERBATIM (voxygen `session/mod.rs` branches on `footprint_mode` and sends
+/// `z_extent: None`), so `region.min.z..=region.max.z` is nothing but
+/// wherever the two camera pick-plane endpoints happened to land. The
+/// measured consequence of one live 3×3×2 paint: FOURTEEN stations, pots
+/// stacked on pots in the columns where the ground stepped down, 172
+/// independent "station idle" lines in one run, and 13 cook events spread
+/// one-apiece over 13 coordinates so nothing in the log read as "the
+/// kitchen". The contrast in the same session decided it — a `FoodStore`
+/// paint registers ONE zone and played well.
+///
+/// The choice is ranked, not first-found, because the old per-cell behaviour
+/// put pots in cells no colonist can use: prefer a cell that is open, has
+/// something solid underfoot, and has headroom above (a place to stand a pot
+/// and work at it); then merely supported; then merely open (a balcony or
+/// scaffold still gets a kitchen rather than silently nothing). Ties break to
+/// the footprint's XY centre, then to the lowest cell — so a paint that
+/// straddles two pick planes lands the pot ON the ground, not floating over
+/// it. `None` only when the region holds no open cell at all.
+///
+/// DETERMINISM BY CONSTRUCTION: the scan is a fixed z/y/x walk and the key is
+/// integer throughout (the centre distance is measured in HALF-blocks, which
+/// keeps `2*x - (min+max)` exact), so no float rounding and no terrain
+/// iteration order can reach the result.
+fn station_cell(terrain: &TerrainGrid, region: Region) -> Option<Vec3<i32>> {
+    let mut best: Option<(u8, i64, Vec3<i32>)> = None;
+    for z in region.min.z..=region.max.z {
+        for y in region.min.y..=region.max.y {
+            for x in region.min.x..=region.max.x {
+                let pos = Vec3::new(x, y, z);
+                if !terrain.get(pos).is_ok_and(|b| !b.is_filled()) {
+                    continue;
+                }
+                let supported = terrain
+                    .get(pos - Vec3::unit_z())
+                    .is_ok_and(|b| b.is_filled());
+                let headroom = terrain
+                    .get(pos + Vec3::unit_z())
+                    .is_ok_and(|b| !b.is_filled());
+                let rank = match (supported, headroom) {
+                    (true, true) => 2u8,
+                    (true, false) => 1,
+                    _ => 0,
+                };
+                let dx = (2 * x - (region.min.x + region.max.x)) as i64;
+                let dy = (2 * y - (region.min.y + region.max.y)) as i64;
+                let dist = dx * dx + dy * dy;
+                // Strictly-better only: the z/y/x walk above already visits
+                // the lowest, then southmost, then westmost cell first, so
+                // equal keys keep the first-seen cell and the tie-break needs
+                // no extra terms.
+                let better = best.is_none_or(|(br, bd, _)| rank > br || (rank == br && dist < bd));
+                if better {
+                    best = Some((rank, dist, pos));
+                }
+            }
+        }
+    }
+    best.map(|(_, _, pos)| pos)
+}
+
+/// bastion (ITEM 27 GRANULARITY): record `pos` as a cooking station,
+/// ABSORBING it into an adjacent one rather than recording a second. Returns
+/// whether a NEW station was recorded.
+///
+/// The paint path yields one station per painted region by construction now,
+/// but it is not the only producer. The adopted-village furniture scan pushes
+/// one station per hearth BLOCK, and a worldgen fireplace is several `Ember`
+/// blocks side by side — so an adopted house would report N kitchens for its
+/// one fire, each with its own idle cadence: exactly the defect the paint path
+/// just lost, arriving through the other door. Chebyshev <= 1 is the "same
+/// fire" radius: touching blocks, including diagonally and one level up (a pot
+/// on a hearth), are ONE kitchen.
+///
+/// A FREE function over the registry vec, not a `&mut self` method, and that
+/// is forced rather than stylistic: the build-completion caller holds a
+/// `&mut` borrow of `board.jobs` across this call, so only a borrow of the
+/// `cook_stations` FIELD is disjoint enough to compile (the same reason the
+/// bed registration beside it touches `board.beds` directly). One function
+/// either way — the alternative was inlining the radius rule at one of the
+/// two sites, which is exactly the two-sequences-that-must-agree drift this
+/// file keeps paying for.
+fn register_cook_station(stations: &mut Vec<Vec3<i32>>, pos: Vec3<i32>) -> bool {
+    let absorbed = stations
+        .iter()
+        .any(|s| (*s - pos).map(|e| e.abs()).reduce_max() <= 1);
+    if !absorbed {
+        stations.push(pos);
+    }
+    !absorbed
+}
+
 /// THE per-column surface authority a designation resolves against — flat-floor
 /// mode ([`ZExtent::floor_z`] set) reaches the column's true crest
 /// ([`column_flat_surface_z`], the flatten-hill fix), relative mode uses the
@@ -6494,6 +6593,114 @@ impl JobBoard {
         self.designated.iter().map(|(region, _)| *region)
     }
 
+    /// bastion (ITEM 27 GRANULARITY): mint the ONE build job a painted
+    /// station region resolves to — see [`station_cell`] for the ruling and
+    /// the evidence behind it.
+    ///
+    /// ONE AUTHORITY, TWO CALLERS, for the same reason `place_preset` is one
+    /// function: `place_designation` and `place_designation_surface` are both
+    /// generic placement paths, and two of them disagreeing about what a
+    /// paint MEANS is the drift this file keeps paying for (the adopted-house
+    /// scan that ran on the path houses never take is the most recent bill).
+    /// Callers own their own claim-mask push, which is all that differs
+    /// between them.
+    fn place_single_station(
+        &mut self,
+        terrain: &TerrainGrid,
+        region: Region,
+        kind: DesignationKind,
+    ) -> Vec<JobId> {
+        let Some(pos) = station_cell(terrain, region) else {
+            tracing::warn!(
+                ?kind,
+                ?region,
+                "bastion: ITEM 27 -- station painted with no open cell in it (solid ground, or an \
+                 unloaded footprint). No job created."
+            );
+            return Vec::new();
+        };
+        // The per-cell loop's repaint guard (a job already standing at the
+        // cell), plus its station-level twin: a footprint that ALREADY holds a
+        // registered station is a repaint of that kitchen, not a second one.
+        // Matched by XY only — a designation's z-band comes from the paint-time
+        // pick plane, so the built pot's own z routinely falls outside a later
+        // drag's band (the same z-fragility `contains_point_xy` exists for).
+        // Two shapes of repaint, one refusal. (a) ANY job already standing at
+        // the chosen cell — the per-cell loop's own guard, kept because a
+        // station must not be minted on top of somebody else's Build/Ladder
+        // work. (b) A station of THIS kind anywhere in the painted footprint,
+        // which the per-cell guard cannot see: a player who re-paints the same
+        // spot while the first pot is still under construction would otherwise
+        // get a second kitchen at a different cell of the same overlap — the
+        // granularity complaint in miniature.
+        //
+        // `min_by_key` on the JobId, not `find`: `jobs` is a HashMap, so a
+        // first-match would name a different job on each run and the two logs
+        // of a deterministic pair would differ. The REFUSAL is the same either
+        // way; only the witness needed pinning.
+        if let Some((id, at)) = self
+            .jobs
+            .iter()
+            .filter(|(_, j)| j.pos == pos || (j.kind.is(kind) && region.contains_point_xy(j.pos)))
+            .min_by_key(|(id, _)| **id)
+            .map(|(id, j)| (*id, j.pos))
+        {
+            info!(
+                ?kind,
+                ?region,
+                job = id,
+                at = ?at,
+                "bastion: ITEM 27 station repaint -- a job already holds this footprint"
+            );
+            return Vec::new();
+        }
+        if let Some(existing) = self
+            .cook_stations
+            .iter()
+            .find(|s| region.contains_point_xy(**s))
+        {
+            info!(
+                ?kind,
+                ?region,
+                station = ?existing,
+                "bastion: ITEM 27 station repaint -- this footprint is already a kitchen"
+            );
+            return Vec::new();
+        }
+        let id = self.next_id;
+        self.next_id += 1;
+        self.jobs.insert(id, Job {
+            kind: common::bastion::JobKind::Designated(kind),
+            work: kind.work_type(),
+            pos,
+            skill_floor: 0,
+            claimed_by: None,
+            suspended_for: None,
+            unreachable: false,
+            progress: 0.0,
+            // A station costs no material today (the Bed/Build stone gate is
+            // the only `required_item` arm the per-cell loop applies, and
+            // CookStation is not in it) -- kept explicit rather than inherited
+            // so a future station recipe changes THIS line, not a `_ =>` arm.
+            required_item: None,
+            needs_materials: false,
+            carve_attempted: false,
+            is_access: false,
+            stuck_strikes: 0,
+            benched_until_tick: None,
+            depth: 0,
+            reservation: None,
+            affordance: designation_affordance(kind),
+        });
+        // The SHARED witness, not a private one: every bar that greps
+        // `designation placed kind=CookStation jobs=` keeps working and now
+        // reads the ruling directly (1, not 14). `station=` names the cell the
+        // rank in `station_cell` chose, so a bad choice is visible without a
+        // second log line.
+        info!(?kind, jobs = 1, ?region, station = ?pos, "bastion: designation placed");
+        vec![id]
+    }
+
     pub fn place_designation(
         &mut self,
         terrain: &TerrainGrid,
@@ -6580,6 +6787,22 @@ impl JobBoard {
                 unresolved,
                 "bastion: farm plot registered, per-column surface resolved"
             );
+        }
+        // ★★ ITEM 27 GRANULARITY: a KITCHEN is ONE station, not one per
+        // painted cell — the same ruling as the guard post below, forced by
+        // the same kind of evidence. A play session painted ONE 3×3×2 region
+        // and the colony built FOURTEEN cooking pots from it (see
+        // `station_cell` for why the painted z-range is not a volume of work).
+        // A player who paints an area has built ONE kitchen; a second kitchen
+        // is a second paint, exactly as a second guard post is.
+        //
+        // The idle-cadence symptom the session actually reported — 172 "cook
+        // station idle" lines, because all 14 stations report independently —
+        // is fixed HERE rather than by aggregating the report: an idle line
+        // per kitchen is the right cadence, and it was only ever wrong
+        // because "kitchen" was miscounted at the source.
+        if kind == DesignationKind::CookStation {
+            return self.place_single_station(terrain, region, kind);
         }
         // One job per block, regardless of kind: repainting a region — or
         // overlapping designations (Mine and Chop both match a Wood block,
@@ -6845,10 +7068,15 @@ impl JobBoard {
                     // fireplace — and is the reason a village kitchen was
                     // invisible: the scan was looking for a cooking pot that
                     // houses do not contain.
+                    // ITEM 27 GRANULARITY: `register_cook_station`, not a bare
+                    // push — a worldgen fireplace is SEVERAL `Ember` blocks
+                    // side by side, and one kitchen per BLOCK is the same
+                    // miscount the paint path was just cured of. `pots` counts
+                    // kitchens, so an adopted house with a 3-block hearth now
+                    // reports 1, not 3.
                     if matches!(sprite, Some(S::Ember | S::CookingPot | S::Cauldron))
-                        && !self.cook_stations.contains(&pos)
+                        && register_cook_station(&mut self.cook_stations, pos)
                     {
-                        self.cook_stations.push(pos);
                         pots += 1;
                     }
                     // Household storage, as the generator actually places it.
@@ -6892,6 +7120,50 @@ impl JobBoard {
     ) -> Vec<JobId> {
         let mut created = Vec::new();
         let work = kind.work_type();
+        // ★★ ITEM 27 GRANULARITY: the sibling authority rules a painted
+        // station to ONE cell, and this path must not disagree about what a
+        // paint means. Unreachable for CookStation TODAY (the paint sends
+        // `z_extent: None` for every Area2D kind, and adoption maps no plot to
+        // a station), which is exactly why the arm is written now: the
+        // adopted-house scan was a live defect precisely because a second
+        // placement path silently lacked what the first one had.
+        //
+        // Resolve the footprint's surface band, then hand the ONE-cell
+        // decision to the shared helper — the pot stands ON the ground, so
+        // each column contributes the air cell above its own surface.
+        if kind == DesignationKind::CookStation {
+            let mut band = None::<(i32, i32)>;
+            for y in min_xy.y..=max_xy.y {
+                for x in min_xy.x..=max_xy.x {
+                    if let Some(s) = resolve_column_surface(terrain, x, y, hint_z, &extent) {
+                        band = Some(band.map_or((s + 1, s + 1), |(lo, hi): (i32, i32)| {
+                            (lo.min(s + 1), hi.max(s + 1))
+                        }));
+                    }
+                }
+            }
+            let Some((z_lo, z_hi)) = band else {
+                tracing::warn!(
+                    ?kind,
+                    ?min_xy,
+                    ?max_xy,
+                    hint_z,
+                    "bastion: ITEM 27 -- no terrain surface under a station footprint. No job \
+                     created."
+                );
+                return Vec::new();
+            };
+            let region = Region {
+                min: Vec3::new(min_xy.x, min_xy.y, z_lo),
+                max: Vec3::new(max_xy.x, max_xy.y, z_hi),
+            };
+            // The claim mask, which the volume path pushes at its top and this
+            // path pushes after resolving — pushed here for the same reason it
+            // is pushed there: the CLAIM is the painted box, whether or not a
+            // job came of it.
+            self.designated.push((region, kind));
+            return self.place_single_station(terrain, region, kind);
+        }
         // B5.8: the resolved volume bounds join the claim mask (same tight
         // AABB the echo carries — computed inline as columns resolve).
         let mut mask_z = None::<(i32, i32)>;
@@ -19281,9 +19553,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         info!(pos = ?job.pos, "bastion: bed registered (built)");
                     }
                     // ITEM 27: a completed station registers (Bed pattern).
+                    // ITEM 27 GRANULARITY: through `register_cook_station`, so
+                    // a pot built beside an existing one joins that kitchen
+                    // instead of founding a second. BOTH branches emit: "no
+                    // new station" and "no registration ran at all" must not
+                    // render identically in the log.
                     if job.kind.is(DesignationKind::CookStation) {
-                        board.cook_stations.push(job.pos);
-                        info!(pos = ?job.pos, "bastion: cook station registered (built)");
+                        if register_cook_station(&mut board.cook_stations, job.pos) {
+                            info!(pos = ?job.pos, "bastion: cook station registered (built)");
+                        } else {
+                            info!(
+                                pos = ?job.pos,
+                                "bastion: cook station absorbed into the adjacent one (one kitchen)"
+                            );
+                        }
                     }
 
                     // ROW-COMPLETION-SIGNAL-SPLIT.md / F8: the drop/XP/log
