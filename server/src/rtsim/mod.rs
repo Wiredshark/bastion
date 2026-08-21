@@ -485,9 +485,12 @@ impl RtSim {
         &mut self,
         near: Vec2<i32>,
         seed_tick: u64,
+        house_plots: &[Vec3<f32>],
+        wanted: usize,
     ) -> Vec<String> {
         use common::rtsim::{Profession, Role};
-        use common::bastion::{ADOPTED_TRADE_XP, ADOPT_TOWN_RADIUS, WorkType};
+        use common::bastion::{ADOPTED_TRADE_XP, WorkType};
+        use rand::{RngExt as _, prelude::IndexedRandom};
 
         let data = self.state.get_data_mut();
         let mut rng = ::rtsim::tick_rng(self.world_seed, seed_tick, 0xBA57_C012);
@@ -510,49 +513,38 @@ impl RtSim {
             return Vec::new();
         };
 
-        // ★ COUNT THE REJECTIONS BY CLAUSE. The first version of this filter
-        // returned ZERO on a village a play session then proved was full of
-        // eligible residents -- same site id, Role::Civilised(Herbalist),
-        // homed to exactly the site adoption had named. Four clauses, all of
-        // which should have passed, and no way to tell which one did not.
+        // ★ ASK THE SITE WHO LIVES THERE (2026-08-21). Two predicate
+        // versions of this returned ZERO -- first `home == site_id`, then a
+        // position radius -- and a peer session found why BOTH had to fail:
+        // rtsim's worldgen creates NO villagers at boot. It records a WANTED
+        // population and the Architect rule spawns it progressively. The same
+        // boot logs "Registering 194 rtsim sites" and "Generated 2008 rtsim
+        // NPCs to be spawned", while adoption runs ~11 seconds later with only
+        // 252 alive, none of them this village's.
         //
-        // A filter that returns nothing is the same unreadable null this
-        // session has met all night: it cannot say whether the population is
-        // absent, or present and refused. So it now says.
+        // So no predicate could ever have worked: I was selecting from a
+        // population that did not exist yet. Swapping `home` for position was
+        // a second wrong fix for the same reason as the first, and I was one
+        // step from a third.
+        //
+        // `Site.population` is the authoritative membership AND the readiness
+        // signal in one: empty means "not populated yet, come back later",
+        // never "this village has nobody". The caller defers on empty rather
+        // than falling back to spawning strangers.
+        let population: Vec<::rtsim::data::npc::NpcId> = data
+            .sites
+            .get(site_id)
+            .map(|site| site.population.iter().copied().collect())
+            .unwrap_or_default();
+
         let mut total = 0u32;
-        let mut wrong_home = 0u32;
         let mut already = 0u32;
         let mut not_civilised = 0u32;
         let mut not_humanoid = 0u32;
         let mut residents: Vec<::rtsim::data::npc::NpcId> = Vec::new();
-        for (id, npc) in data.npcs.npcs.iter() {
+        for id in population.iter().copied() {
+            let Some(npc) = data.npcs.npcs.get(id) else { continue };
             total += 1;
-            // ★ POSITION, NOT `home` (2026-08-21). The first version required
-            // `npc.home == Some(site_id)` and adopted NOBODY: the census said
-            // `npcs_total=252 eligible=0 rej_wrong_home=252` — every single NPC
-            // in the world refused on that one clause, including the villagers
-            // a play session then confirmed WERE homed to exactly this site.
-            //
-            // The clause was not wrong, it was EARLY. Adoption runs at
-            // founding, ~10 seconds after boot; rtsim has not finished
-            // assigning homes yet. The session checked `home` minutes later
-            // and saw it populated, which is why the field looked reliable and
-            // the bug looked impossible.
-            //
-            // Position is true immediately and is also what a player MEANS by
-            // "the people in that town" — they are the ones standing in it.
-            // `home` is still accepted when it happens to be set, so a
-            // resident who has wandered out of the radius is not disowned.
-            let in_town = npc
-                .wpos
-                .xy()
-                .map(|e| e as i64)
-                .distance_squared(site_wpos.map(|e| e as i64))
-                < (ADOPT_TOWN_RADIUS as i64).pow(2);
-            if !in_town && npc.home != Some(site_id) {
-                wrong_home += 1;
-                continue;
-            }
             if npc.bastion_colonist.is_some() {
                 already += 1;
                 continue;
@@ -567,42 +559,94 @@ impl RtSim {
             }
             residents.push(id);
         }
-        // ★ WHY IS NOBODY NEAR THE TOWN? The position match ALSO returned
-        // zero, so the question is no longer "which clause" but "where is
-        // everyone". Printing the site's own position beside the nearest NPC's
-        // distance separates the two remaining candidates in one line: a
-        // COORDINATE-SPACE mismatch (site.wpos and npc.wpos in different
-        // units) shows an absurd nearest distance, while "rtsim has not placed
-        // them yet" shows a plausible one that is merely larger than the
-        // radius.
-        let nearest = data
-            .npcs
-            .npcs
-            .iter()
-            .map(|(_, n)| {
-                n.wpos
-                    .xy()
-                    .map(|e| e as i64)
-                    .distance_squared(site_wpos.map(|e| e as i64))
-            })
-            .min()
-            .map(|d2| (d2 as f64).sqrt() as i64)
-            .unwrap_or(-1);
         tracing::info!(
-            npcs_total = total,
+            site_population = total,
             eligible = residents.len(),
-            ?site_wpos,
-            nearest_npc_blocks = nearest,
-            radius = ADOPT_TOWN_RADIUS,
-            rej_wrong_home = wrong_home,
             rej_already_colonist = already,
             rej_not_civilised = not_civilised,
             rej_not_humanoid = not_humanoid,
             ?site_id,
-            "bastion: ADOPT-NPCS census — who is eligible to be adopted, and why not"
+            "bastion: ADOPT-NPCS census — the site's own roll, and who on it is eligible"
         );
-        // Sorted for determinism: a DenseSlotMap's order is not a promise.
+        // Sorted for determinism: a set's order is not a promise.
         residents.sort();
+
+        // ★ THE ARCHITECT WILL NEVER FILL THIS VILLAGE, SO FILL IT OURSELVES
+        // (2026-08-21). A peer traced the last hop of a bug three of us had
+        // each fixed wrongly. Every architect spawn path filters
+        // `!site.is_loaded()`, and founding creates the colony Presence AT the
+        // town, which loads its chunks. So the very act of adopting a town
+        // makes it PERMANENTLY ineligible for the only rule that would have
+        // populated it. Waiting for `Site.population` to fill -- the fix I was
+        // three lines into writing -- would have waited forever, on exactly
+        // the site our own founding disqualified.
+        //
+        // And at founding tick the architect has not run AT ALL: it fires on
+        // `tick % 32 == 0` and autofound founds at tick 30. The 252 NPCs alive
+        // then are airship crew (2 per spawning location, 2 x 126), and their
+        // `.with_home()` is commented out in rtsim's generator -- which is the
+        // whole of the old, baffling `rej_wrong_home=252`. No predicate could
+        // ever have selected a villager, because no villager existed.
+        //
+        // So we settle the village the way the architect would have: one
+        // resident per house plot, `with_home(site_id)` -- which registers
+        // them in `Site.population` through `spawn_npc` -- and the site's
+        // faction inherited. They are villagers by every test vanilla applies,
+        // and they live in the town's real houses instead of milling around a
+        // spawn point.
+        //
+        // HONESTY, because this is the line most likely to be misread later:
+        // these people are SETTLED, not adopted. They did not exist before we
+        // made them. The census reports the two counts SEPARATELY and never
+        // sums them, because on a world where the player walks to a town
+        // before founding, `adopted_existing` is the only number that says the
+        // feature did what Ben asked for.
+        let adopted_existing = residents.len();
+        // The plan is a PURE function with its own pins (`settle_plan`), so
+        // "adopt rather than manufacture" is asserted by a test rather than
+        // trusted to this loop: one house index per resident to create, empty
+        // when the village already has its own people.
+        let plan = common::bastion::settle_plan(adopted_existing, wanted, house_plots.len());
+        let settled = plan.len();
+        if !plan.is_empty() {
+            let faction = data.sites.get(site_id).and_then(|s| s.faction);
+            let professions = [
+                Profession::Farmer,
+                Profession::Chef,
+                Profession::Blacksmith,
+                Profession::Hunter,
+                Profession::Guard,
+                Profession::Merchant,
+            ];
+            for (i, house) in plan.iter().copied().enumerate() {
+                let home_wpos = house_plots[house];
+                let species = *common::comp::humanoid::ALL_SPECIES
+                    .choose(&mut rng)
+                    .expect("humanoid species catalog must not be empty");
+                let body = common::comp::Body::Humanoid(
+                    common::comp::humanoid::Body::random_with(&mut rng, &species),
+                );
+                let mut npc = ::rtsim::data::npc::Npc::new(
+                    rng.random(),
+                    home_wpos,
+                    body,
+                    Role::Civilised(Some(professions[i % professions.len()])),
+                )
+                .with_home(site_id);
+                if let Some(f) = faction {
+                    npc = npc.with_faction(f);
+                }
+                residents.push(data.spawn_npc(npc));
+            }
+        }
+        tracing::info!(
+            adopted_existing,
+            settled,
+            houses = house_plots.len(),
+            wanted,
+            ?site_id,
+            "bastion: ADOPT-A-TOWN roll — adopted_existing are people who were              ALREADY there; settled are people we created into the village's own              houses because the architect had not populated it yet"
+        );
 
         let mut names = Vec::new();
         for id in residents {
@@ -634,9 +678,11 @@ impl RtSim {
             npc.bastion_colonist = Some(colonist);
         }
         tracing::info!(
-            adopted = names.len(),
+            colonists = names.len(),
+            adopted_existing,
+            settled,
             ?site_id,
-            "bastion: ADOPT-A-TOWN — the village's own people are the colony now"
+            "bastion: ADOPT-A-TOWN — the village's residents are the colony now"
         );
         names
     }

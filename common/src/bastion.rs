@@ -2139,8 +2139,54 @@ const COLONIST_BACKSTORIES: &[&str] = &[
     "camp cook",
 ];
 
+/// ADOPT-A-TOWN: which houses to put newly-settled residents in.
+///
+/// Returns one house index per resident we must create, in order. Empty when
+/// the village already has enough people of its own -- which is the case this
+/// whole mechanism exists to preserve: on a world where the player walks to a
+/// town before founding, the architect HAS populated it, and we must adopt
+/// those residents rather than manufacture new ones beside them.
+///
+/// Wrapping is deliberate. A town with three houses and eight colonists puts
+/// people in shared houses; it does not leave five of them standing in a
+/// field. That is also what a growing village does on its own.
+pub fn settle_plan(adopted_existing: usize, wanted: usize, houses: usize) -> Vec<usize> {
+    if houses == 0 || adopted_existing >= wanted {
+        return Vec::new();
+    }
+    (0..(wanted - adopted_existing)).map(|i| i % houses).collect()
+}
+
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn settle_plan_creates_nobody_when_the_village_already_has_people() {
+        // THE POINT OF THE WHOLE FEATURE. A town the architect has populated
+        // must be ADOPTED, not overwritten with strangers. Ben, 2026-08-21:
+        // "when you adopt a town you should adopt the existing npc in that
+        // town".
+        assert_eq!(settle_plan(8, 8, 5), Vec::<usize>::new());
+        assert_eq!(settle_plan(12, 8, 5), Vec::<usize>::new());
+    }
+
+    #[test]
+    fn settle_plan_fills_only_the_shortfall_and_shares_houses() {
+        // Five wanted, two already there -> three created, into houses 0,1,0
+        // (three residents, two houses). It fills the SHORTFALL, never the
+        // whole count -- adding `wanted` people to a village that already had
+        // some is the exact bug this replaced.
+        assert_eq!(settle_plan(2, 5, 2), vec![0, 1, 0]);
+        assert_eq!(settle_plan(0, 3, 5), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn settle_plan_refuses_when_the_town_has_no_houses() {
+        // A village with no house plots settles NOBODY rather than dropping
+        // people at a default coordinate. The caller then logs an empty
+        // adoption, which is a visible refusal; a silent (0,0,0) heap is not.
+        assert_eq!(settle_plan(0, 8, 0), Vec::<usize>::new());
+    }
     use super::*;
 
     /// FOCUS-0 pin: the Need-keyed collection round-trips serde, and —

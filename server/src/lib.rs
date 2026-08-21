@@ -1340,12 +1340,40 @@ impl Server {
     /// the village's own residents and spawns NOBODY. Seed stock and colony
     /// presence still apply — an adopted colony needs its seeds and needs to
     /// stay loaded exactly as a founded one does.
-    pub fn bastion_adopt_town_people(&mut self, wpos: Vec3<f32>, near: Vec2<i32>) -> Vec<String> {
+    pub fn bastion_adopt_town_people(
+        &mut self,
+        wpos: Vec3<f32>,
+        near: Vec2<i32>,
+        plots: &[(common::bastion::DesignationKind, Vec2<i32>, Vec2<i32>)],
+        wanted: u8,
+    ) -> Vec<String> {
+        // ★ WHERE A SETTLED RESIDENT GOES: the middle of an actual house, at
+        // worldgen's APPROXIMATE altitude -- never loaded terrain. At founding
+        // tick the town has no chunks, and reading real terrain there is the
+        // mistake that once left an entire adoption 1,100 blocks from its own
+        // plots. `get_alt_approx` is sim data, terrain-independent by
+        // construction, which is the property this decision needs.
+        let houses: Vec<Vec3<f32>> = plots
+            .iter()
+            .filter(|(k, _, _)| matches!(k, common::bastion::DesignationKind::Bed))
+            .filter_map(|(_, min, max)| {
+                let c = (*min + *max) / 2;
+                self.world()
+                    .sim()
+                    .get_alt_approx(c)
+                    .map(|alt| Vec3::new(c.x as f32 + 0.5, c.y as f32 + 0.5, alt + 2.0))
+            })
+            .collect();
+        tracing::info!(
+            houses = houses.len(),
+            wanted,
+            "bastion: ADOPT-A-TOWN — houses this village can put a resident in"
+        );
         let names = self
             .state
             .ecs()
             .write_resource::<rtsim::RtSim>()
-            .bastion_adopt_town_npcs(near, 0);
+            .bastion_adopt_town_npcs(near, 0, &houses, wanted as usize);
         self.bastion_found_colony_seed_stock(wpos);
         self.bastion_found_colony_presence(wpos);
         names
@@ -6973,9 +7001,13 @@ impl Server {
                         // defects (no tools, no homes, no skills, village as
                         // scenery): we were re-deriving everything the village
                         // already had, for people who should not have existed.
-                        let adopted_names = if let Some((asp, ..)) = adoption.as_ref() {
-                            let names = self
-                                .bastion_adopt_town_people(*asp, asp.xy().map(|e| e as i32));
+                        let adopted_names = if let Some((asp, _, plots)) = adoption.as_ref() {
+                            let names = self.bastion_adopt_town_people(
+                                *asp,
+                                asp.xy().map(|e| e as i32),
+                                plots,
+                                n,
+                            );
                             if names.is_empty() {
                                 // A named refusal, never silence: a village with
                                 // no adoptable residents must not look like a
