@@ -31,6 +31,13 @@
 //!       ground again (or the scan reaches zbot without finding any) --
 //!       the same terrain data a real client's renderer reads, not a
 //!       harness-only view.
+//!   ascii <radius>                      -- DF-style top-down map of the
+//!       square [player.xy - radius, player.xy + radius], one character per
+//!       block column, one log line per row. A column whose downward scan
+//!       touched terrain the client has never received renders `?` and is
+//!       NEVER drawn as ground -- the same distinction the survey verb had
+//!       to learn. Above ~60 radius the rows are sampled at a stride, and
+//!       the stride is printed in the legend rather than applied silently.
 //!   note <free text>                    -- marker only, logged verbatim
 //!   cmd <name> <args...>                -- raw chat command (e.g. `cmd
 //!       give_item common.items.food.mushroom 50`, `cmd dropall`) --
@@ -146,6 +153,12 @@ enum ScriptCmd {
     // role (`server-cli admin add <user> admin`), same as any other
     // admin-gated command.
     Cmd(String, Vec<String>),
+    /// THREE-MODE PLAYTEST mode 2 (Ben direct, 2026-08-21): a DF-style
+    /// ASCII map of a radius around the player — terrain surface, zones,
+    /// colonists, loose items — rendered per call so BEHAVIOR IS SEEN, not
+    /// merely counted. `ascii <radius>`; unloaded cells render `?` and
+    /// never as ground (the survey verb's own hard-won lesson).
+    Ascii(i32),
 }
 
 /// ACK BARRIER (ack-barrier row): tick until the server's designation
@@ -246,6 +259,7 @@ pub const SCRIPT_VERBS: &[&str] = &[
     "survey",
     "note",
     "cmd",
+    "ascii",
 ];
 
 fn parse_script(path: &str) -> Vec<ScriptCmd> {
@@ -322,6 +336,20 @@ fn parse_script_text(text: &str) -> Vec<ScriptCmd> {
                     zbot: n[5],
                     gap: n[6],
                 }
+            },
+            "ascii" => {
+                let radius: i32 = rest
+                    .first()
+                    .unwrap_or_else(|| panic!("ascii takes <radius> at line {lineno}"))
+                    .parse()
+                    .unwrap_or_else(|_| panic!("bad ascii radius at line {lineno}"));
+                // ARGUMENTS ARE REFUSED, NOT IGNORED (D2b): a negative radius
+                // would silently produce an empty map, which reads exactly
+                // like a colony that is not there.
+                if radius < 0 {
+                    panic!("ascii radius must be >= 0 at line {lineno}, got {radius}");
+                }
+                ScriptCmd::Ascii(radius)
             },
             "note" => ScriptCmd::Note(rest.join(" ")),
             "cmd" => {
@@ -1273,6 +1301,196 @@ fn main() {
                     }
                 ));
             },
+            // THREE-MODE PLAYTEST mode 2: a MAP, not a tally. Every other
+            // read in this driver reduces the world to counts, and a count
+            // cannot say that the eight colonists are all standing on the
+            // stockpile, or that the mine region was painted into the face
+            // of a cliff. The map is the cheapest instrument that shows
+            // ARRANGEMENT, and arrangement is what a playtest is judging.
+            ScriptCmd::Ascii(radius) => {
+                use std::collections::HashSet;
+                let cx = current_pos.x.floor() as i32;
+                let cy = current_pos.y.floor() as i32;
+                let cz = current_pos.z.floor() as i32;
+                let x0 = cx - radius;
+                let y0 = cy - radius;
+                let span = 2 * radius;
+                // NEVER SILENTLY DOWNSAMPLE. Past ~140 characters a row wraps
+                // in every viewer a log is read in and the picture stops being
+                // a picture, so a wide request is sampled -- but the stride is
+                // printed in the legend, because a sampled map that claims to
+                // be dense is a map that invents empty ground between hits.
+                let stride = ((span + 126) / 127).max(1);
+                let cols = (span / stride + 1) as usize;
+                let rows = cols;
+                // At stride > 1 an entity standing between two sampled columns
+                // would otherwise be dropped from the map entirely, which is
+                // the one error a colonist census must never make: it is
+                // attributed to the sampled column that OPENS its window, so
+                // sampling moves an entity but never deletes it.
+                let to_cell = |wx: f32, wy: f32| -> Option<(usize, usize)> {
+                    let ex = wx.floor() as i32;
+                    let ey = wy.floor() as i32;
+                    if ex < x0 || ey < y0 || ex > cx + radius || ey > cy + radius {
+                        return None;
+                    }
+                    let i = ((ex - x0) / stride) as usize;
+                    let j = ((ey - y0) / stride) as usize;
+                    Some((i.min(cols - 1), j.min(rows - 1)))
+                };
+                let player_cell = to_cell(current_pos.x, current_pos.y);
+                let (colonist_cells, item_cells, colonists_seen, colonists_off, items_off) = {
+                    use specs::Join;
+                    let ecs = client.state().ecs();
+                    let positions = ecs.read_storage::<comp::Pos>();
+                    // `Colonist` is NetSync (SyncFrom::AnyEntity), so the map
+                    // can read the colonist set straight out of the client's
+                    // own ECS rather than making inspect_colonists' uid
+                    // round-trip once per column.
+                    let colonists = ecs.read_storage::<comp::Colonist>();
+                    let items = ecs.read_storage::<comp::PickupItem>();
+                    let mut cs: HashSet<(usize, usize)> = HashSet::new();
+                    let mut is: HashSet<(usize, usize)> = HashSet::new();
+                    let (mut seen, mut c_off, mut i_off) = (0usize, 0usize, 0usize);
+                    for (_, pos) in (&colonists, &positions).join() {
+                        seen += 1;
+                        match to_cell(pos.0.x, pos.0.y) {
+                            Some(cell) => {
+                                cs.insert(cell);
+                            },
+                            // OFF-MAP IS NOT ABSENT. A colonist outside the
+                            // radius must be countable, or a wandering colony
+                            // renders identically to a dead one.
+                            None => c_off += 1,
+                        }
+                    }
+                    for (_, pos) in (&items, &positions).join() {
+                        match to_cell(pos.0.x, pos.0.y) {
+                            Some(cell) => {
+                                is.insert(cell);
+                            },
+                            None => i_off += 1,
+                        }
+                    }
+                    (cs, is, seen, c_off, i_off)
+                };
+
+                let ztop = cz + 20;
+                let zbot = cz - 20;
+                let terrain = client.state().ecs().read_resource::<TerrainGrid>();
+                let mut grid: Vec<(i32, String)> = Vec::with_capacity(rows);
+                let (mut unknown, mut water, mut open) = (0usize, 0usize, 0usize);
+                for j in (0..rows).rev() {
+                    let wy = y0 + (j as i32) * stride;
+                    let mut row = String::with_capacity(cols);
+                    for i in 0..cols {
+                        let wx = x0 + (i as i32) * stride;
+                        // Entities outrank terrain in a cell: the map exists
+                        // to show who is standing where, and ground under a
+                        // colonist is the one fact the reader can infer.
+                        if player_cell == Some((i, j)) {
+                            row.push('@');
+                            continue;
+                        }
+                        if colonist_cells.contains(&(i, j)) {
+                            row.push('C');
+                            continue;
+                        }
+                        if item_cells.contains(&(i, j)) {
+                            row.push('i');
+                            continue;
+                        }
+                        // ★ AN UNLOADED CELL IS NOT AIR, AND MUST NEVER BE
+                        // DRAWN AS GROUND. `TerrainGrid::get` returns Err for
+                        // a chunk the client has not received, so treating
+                        // "not filled" as air would paint terrain the client
+                        // has never seen -- and a map that draws confident
+                        // ground over unreceived chunks is worse than no map,
+                        // because it answers the question it cannot see.
+                        // Same lesson the survey verb had to learn.
+                        let mut surface = None;
+                        let mut blind = false;
+                        let mut z = ztop;
+                        while z >= zbot {
+                            match terrain.get(Vec3::new(wx, wy, z)) {
+                                Ok(b) if b.is_filled() => {
+                                    surface = Some(z);
+                                    break;
+                                },
+                                Ok(_) => {},
+                                Err(_) => blind = true,
+                            }
+                            z -= 1;
+                        }
+                        let ch = match surface {
+                            // A filled block found BENEATH an unobserved cell
+                            // is not a surface -- it is merely the deepest
+                            // thing in view, and the real surface may sit in
+                            // the chunk that never arrived.
+                            Some(_) if blind => '?',
+                            None if blind => '?',
+                            None => ' ',
+                            // What SITS ON the surface classifies the column:
+                            // water is a fluid, so the downward scan passes
+                            // through it to the bed and finds it here.
+                            Some(sz) => match terrain.get(Vec3::new(wx, wy, sz + 1)) {
+                                Err(_) => '?',
+                                Ok(b) if b.is_filled() => '#',
+                                Ok(b) if b.is_liquid() => '~',
+                                Ok(_) => '.',
+                            },
+                        };
+                        match ch {
+                            '?' => unknown += 1,
+                            '~' => water += 1,
+                            ' ' => open += 1,
+                            _ => {},
+                        }
+                        row.push(ch);
+                    }
+                    grid.push((wy, row));
+                }
+                drop(terrain);
+
+                log.log(&format!(
+                    "ascii radius={radius} centre=({cx},{cy},{cz}) x[{},{}] y[{},{}] \
+                     z[{zbot},{ztop}] grid={cols}x{rows} stride={stride} ({}); north is up",
+                    x0,
+                    cx + radius,
+                    y0,
+                    cy + radius,
+                    if stride == 1 {
+                        "one character per block column"
+                    } else {
+                        "SAMPLED: one character per stride columns, intervening columns NOT drawn"
+                    }
+                ));
+                log.log(
+                    "ascii legend: @ player | C colonist | i loose item | # solid above the \
+                     surface | . walkable ground | ~ water | ? UNLOADED, never ground | ' ' no \
+                     surface within the z window (but every cell in it was observed)",
+                );
+                for (wy, row) in &grid {
+                    log.log(&format!("{wy:>7} |{row}"));
+                }
+                // The tallies go BELOW the picture and name what the picture
+                // could not show: an eye-read map cannot distinguish "no
+                // colonists" from "colonists off the edge", and `?` density is
+                // the reader's warrant for trusting anything above.
+                log.log(&format!(
+                    "ascii tally: {} cells, {unknown} UNLOADED, {water} water, {open} no-surface; \
+                     colonists {colonists_seen} synced ({} on map, {colonists_off} off map), \
+                     {} item cell(s) drawn, {items_off} item(s) off map{}",
+                    cols * rows,
+                    colonist_cells.len(),
+                    item_cells.len(),
+                    if unknown > 0 {
+                        " <- READ THE UNLOADED FIGURE BEFORE THE MAP"
+                    } else {
+                        " (every column drawn rests on observed terrain)"
+                    }
+                ));
+            },
             ScriptCmd::Note(text) => {
                 log.log(&format!("[note] {text}"));
             },
@@ -1377,8 +1595,14 @@ mod tests {
                 "note" => "note hello".into(),
                 "inspect_colonists" => "inspect_colonists".into(),
                 "inspect_colony" => "inspect_colony".into(),
+                // The table grew `inspect_chronicle` without a sample, so this
+                // guard panicked on it and never reached the verbs declared
+                // after it -- the check that exists to stop the table drifting
+                // had itself stopped covering the tail of the table.
+                "inspect_chronicle" => "inspect_chronicle".into(),
                 "count_items" => "count_items".into(),
                 "cmd" => "cmd dropall".into(),
+                "ascii" => "ascii 8".into(),
                 other => panic!(
                     "SCRIPT_VERBS lists `{other}` but this test has no sample line for it -- \
                      the table grew and its check did not"
