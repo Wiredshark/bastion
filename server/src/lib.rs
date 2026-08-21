@@ -7123,6 +7123,21 @@ impl Server {
             256..=1023 => 2,
             _ => 3,
         };
+        // ★ THE RAID TICK MUST TESTIFY (2026-08-21). This returned SILENTLY
+        // whenever the band computed 0 raiders, so a leg where wealth reached
+        // 104 (band 1) and no raid appeared could not distinguish:
+        //   - the cadence never coincided with sufficient wealth,
+        //   - the band arithmetic is wrong,
+        //   - or something further down refused to spawn.
+        // Three different bugs, one identical silence — the exact ambiguity
+        // that cost F13 three legs and forestry zero, because forestry shipped
+        // its witness with the feature. Every raid OPPORTUNITY now speaks.
+        tracing::info!(
+            wealth,
+            raiders,
+            has_origin = origin.is_some(),
+            "bastion: ITEM 34 raid opportunity"
+        );
         if raiders == 0 {
             return;
         }
