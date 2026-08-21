@@ -22,6 +22,36 @@ Zero working. That number is the headline this list exists to move.
 | F2 | Colonists starve next to food | Their meal is a loose ground item the colony's own haulers merge away mid-walk; the eat job then DIED (635 preempts → 135 jobs → **33 meals**) | FIXED — re-aims at the nearest food (`5bb790c99c`), needs a played confirmation |
 | F3 | Nobody eats at all when any job wants that food | SELF-CATCH: my in-flight-ingredient guard protected the eater's own meal (an EatFrom job carries food as its `required_item`) | FIXED (`5bb790c99c`), needs a played confirmation |
 | F4 | 6 of 8 colonists idle in a town full of work | Partly F1; the remainder is unproven — the claim path must be measured per colonist, not per job | OPEN — needs a per-colonist claim census |
+| F13 | A colony founded on open ground can never sleep, and finishes nothing it was founded with | **CONFIRMED — see `F13-DISPOSITION.md`.** Matched arms differing in materials alone: `bed registered (built)` 0 vs 8, and rest tracks identically for 7,800 ticks then falls to 0/8 and never recovers, against a twin that recovers to 7/8. Repair is Ben's (decision 112) — pre-stocking proves the machinery, not autonomy | CONFIRMED — awaiting ruling |
+| ~~F13 (as first written)~~ | A colony founded on open ground never sleeps, and never finishes anything it was founded with | The founding designates 8 beds, but a Bed job requires `BUILD_MATERIAL_ITEM` and the founding provides **no material and no way to get one**: the preset places stockpile/farm/bed and no Mine or Chop. Materials only ever arrive from `BASTION_SEED_MATERIALS`, a *test* env var — so an unseeded founding is materially inert by construction. Measured on the attested injury leg: `beds=0` and `rested=0/8` for the whole run, `idle=7/8`, and 24 of 27 claim refusals reason `materials` | OPEN — pre-registered below |
+
+**F13, PRE-REGISTERED before its leg runs.** The chain is proven at three of
+four links and assumed at the fourth, which is exactly the link the leg tests.
+
+- Proven by reading the code: a Bed job's `required_item` is
+  `BUILD_MATERIAL_ITEM`; `completion_block(Bed)` returns `Some(Bedroll)`, so
+  registration is *reachable*; `board.beds` has exactly one writer on the
+  founding path — a completed Bed build.
+- Proven by the attested log: `beds=0`, `rested=0/8`, `materials=24`.
+- ASSUMED, and under test: that materials are the ONLY thing missing.
+
+**Prediction.** Re-run the identical arm with `BASTION_SEED_MATERIALS=64` added
+and nothing else changed. If materials are the whole story: beds get built
+(`bed registered (built)` appears), `beds` rises to 8, and `rested` leaves 0.
+If beds still do not appear, materials were a *sufficient-looking* blocker
+hiding a second one, and F13 is bigger than this row claims — that is the
+result I would rather find early than assume away.
+
+**The control that makes it a comparison and not a demo:** the injury leg
+already run is the matched arm — same seed, same colony size, same decay
+multiplier, differing in one declared variable. Both attestations get quoted.
+
+**What this row does NOT decide.** Whether the fix is "the founding ships a
+starter cache" or "a materials-short colony generates its own Mine/Chop work"
+is a design fork with gameplay consequences, and the second is the one that
+makes the colony autonomous rather than pre-stocked. It is banked for Ben in
+`readme/DECISIONS-FOR-BEN.md`, not chosen here. This row establishes the
+DEFECT; the ruling picks the repair.
 
 ## P1 — the adopted village is scenery, not a home
 

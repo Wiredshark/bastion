@@ -6822,6 +6822,19 @@ impl JobBoard {
             {
                 use common::terrain::sprite::SpriteKind as S;
                 let mut adopted_beds = 0u32;
+                // F6 / F7: the SAME pass adopts the village's kitchens and its
+                // storage. Both registries had exactly one writer — a
+                // completed BUILD — so a house full of cooking pots and a barn
+                // full of chests were invisible to a colony standing inside
+                // them: `cook_stations` empty means the cook generator's own
+                // `!board.cook_stations.is_empty()` guard is never satisfied,
+                // and `stockpiles` empty means every material claim refuses
+                // for want of somewhere to put things. Neither was a case of
+                // the colony DECLINING to use the village; neither could ever
+                // have been reached. One scan, three registries — a second
+                // pass over the same columns would be a second thing to drift.
+                let mut adopted_pots = 0u32;
+                let mut adopted_chests = 0u32;
                 for y in region.min.y..=region.max.y {
                     for x in region.min.x..=region.max.x {
                         let Some(surface) = column_surface_z(terrain, x, y, hint_z) else {
@@ -6830,8 +6843,9 @@ impl JobBoard {
                         for z in (surface - 2)..=(surface + 8) {
                             let pos = Vec3::new(x, y, z);
                             let Ok(block) = terrain.get(pos) else { continue };
+                            let sprite = block.get_sprite();
                             let is_bed = matches!(
-                                block.get_sprite(),
+                                sprite,
                                 Some(
                                     S::Bedroll
                                         | S::BedrollSnow
@@ -6849,14 +6863,42 @@ impl JobBoard {
                                 });
                                 adopted_beds += 1;
                             }
+                            // F6: a village hearth is a cook station. The
+                            // built-station path pushes a bare position and
+                            // nothing else, so this is the identical shape —
+                            // dedup by position, because the plot scan can run
+                            // more than once as terrain streams in.
+                            if matches!(sprite, Some(S::CookingPot | S::Cauldron))
+                                && !self.cook_stations.contains(&pos)
+                            {
+                                self.cook_stations.push(pos);
+                                adopted_pots += 1;
+                            }
+                            // F7: a chest is a one-block stockpile. Scope is
+                            // deliberately the PLAIN household containers —
+                            // locked, dungeon, pirate and witch chests are
+                            // someone else's property and adopting them would
+                            // make the colony a looter by default, which is a
+                            // gameplay ruling and not mine to make in a scan.
+                            if matches!(sprite, Some(S::Chest | S::ChestWoodDouble)) {
+                                let one = Region { min: pos, max: pos };
+                                if !self.stockpiles.iter().any(|(_, r)| *r == one) {
+                                    let sid = self.next_zone;
+                                    self.next_zone += 1;
+                                    self.stockpiles.push((sid, one));
+                                    adopted_chests += 1;
+                                }
+                            }
                         }
                     }
                 }
-                if adopted_beds > 0 {
+                if adopted_beds > 0 || adopted_pots > 0 || adopted_chests > 0 {
                     info!(
                         ?kind,
                         adopted_beds,
-                        "bastion: ADOPT-IN-PLACE — existing village beds registered sleepable"
+                        adopted_pots,
+                        adopted_chests,
+                        "bastion: ADOPT-IN-PLACE — existing village furniture registered usable"
                     );
                 }
             }

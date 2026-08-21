@@ -336,6 +336,17 @@ case "$ARM" in
   # window; it changes no consequence logic.
   injury)       PITVAR=" BASTION_SEED_FOOD=64 BASTION_NEEDS_DECAY_MULT=6"
               SCRIPT="script-injury.txt" ;;
+  # F13 FALSIFIER: the `injury` arm with ONE variable added — materials. The
+  # injury run measured beds=0 / rested=0/8 with 24 of 27 claim refusals
+  # reasoning `materials`, on a founding that designates 8 beds and ships
+  # nothing to build them with. This arm is its MATCHED CONTROL: same seed,
+  # same colony size, same decay multiplier, same script, differing in
+  # BASTION_SEED_MATERIALS alone, so the comparison is attributable to the
+  # one declared delta. Prediction on file in FUNCTIONALITY-FIRST.md (F13):
+  # beds registered, `beds` rises off 0, `rested` leaves 0. If beds STILL do
+  # not appear, materials were a sufficient-LOOKING blocker hiding a second.
+  matbeds)      PITVAR=" BASTION_SEED_FOOD=64 BASTION_NEEDS_DECAY_MULT=6 BASTION_SEED_MATERIALS=64"
+              SCRIPT="script-injury.txt" ;;
   smite)        PITVAR=" BASTION_SEED_FOOD=64"
               SCRIPT="script-smite.txt" ;;
   guardwound)   PITVAR=" BASTION_ACCESS_CLAIM_DIAG=1 BASTION_GUARD_BRAVERY=0.8,0.2 BASTION_GUARD_HOLD_DIAG=1 BASTION_GUARD_PLANT_WOUND=0.5"
