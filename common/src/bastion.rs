@@ -1494,6 +1494,34 @@ pub fn drive_work_factor(drive: ColonyDrive, work: WorkType) -> f32 {
 /// bastion (ITEM 28): the ONE work→tool mapping — `tool_factor` (the rate
 /// bonus) and the wear site (one durability step per completion) both read
 /// it, so they cannot drift onto different tools.
+/// bastion (DEATH v2, Ben RULED 2026-08-21: *"they get downed and can
+/// eventually die, we should have rng (deterministic) where a colonist may
+/// just die outright depending on factors with no chance to revive"*).
+///
+/// The chance that a fatal blow kills OUTRIGHT — no downed state, no revive
+/// window — given how far past zero it drove them.
+///
+/// `overkill` is the excess damage as a fraction of max health: 0.0 means the
+/// blow landed exactly on zero, 1.0 means it would have killed them twice over.
+///
+/// WHY OVERKILL, and only overkill, in v1: it is already in the data (the
+/// `HealthChange` amount is right there), needs no new state, and is legible
+/// to a player — massive damage kills, attrition downs. Personality and trait
+/// weighting are a natural successor and are deliberately absent: ONE factor,
+/// measurable, before a mixture nothing can attribute.
+///
+/// Bounded below 1.0 on purpose. A colonist can always, in principle, be
+/// downed rather than killed, so the rescue drama Ben's ruling preserves is
+/// never arithmetically removed by a big enough hit.
+pub fn outright_death_chance(overkill: f32) -> f32 {
+    (overkill.max(0.0) * OUTRIGHT_DEATH_SLOPE).min(OUTRIGHT_DEATH_CAP)
+}
+
+/// Overkill-to-chance slope, and the ceiling that keeps rescue always possible.
+/// Balance numbers: a mild blow mostly downs, a devastating one mostly kills.
+pub const OUTRIGHT_DEATH_SLOPE: f32 = 0.6;
+pub const OUTRIGHT_DEATH_CAP: f32 = 0.9;
+
 /// bastion (INJURY-REST, Ben RULED 2026-08-21: a wounded colonist should seek
 /// rest; *"eventually we'll need medical care system for deeper wounds"*).
 ///

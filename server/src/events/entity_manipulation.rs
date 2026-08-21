@@ -354,16 +354,53 @@ impl ServerEvent for HealthChangeEvent {
                     //
                     // Colonists only — a line per dead wolf would drown the
                     // signal this exists to carry.
+                    // ★ DEATH v2 (Ben RULED 2026-08-21): a colonist may die
+                    // OUTRIGHT — no downed state, no revive — on a
+                    // DETERMINISTIC roll weighted by how hard they were hit.
+                    //
+                    // Ben wrote "(deterministic)" into the ruling himself, and
+                    // this project earned that parenthesis today: the item-34
+                    // raid spawner was caught drawing OS entropy inside the
+                    // authoritative tick. A death roll is strictly worse to get
+                    // wrong — two runs of one seed would end with DIFFERENT
+                    // COLONISTS ALIVE, and nothing would look broken. Keyed on
+                    // (tick, uid, domain), the ChaCha8 shape already used for
+                    // farm-harvest scatter.
+                    let mut outright = false;
+                    if data.colonists.contains(ev.entity) && health.death_protection {
+                        let max = health.maximum().max(1.0);
+                        // Overkill = how far PAST zero the blow drove them, as
+                        // a fraction of max health. `current` is pre-change.
+                        let overkill = ((-ev.change.amount) - health.current()).max(0.0) / max;
+                        let chance = common::bastion::outright_death_chance(overkill);
+                        let uid_n = data.uids.get(ev.entity).map(|u| u.0.get()).unwrap_or(0);
+                        let mut rng = <rand_chacha::ChaCha8Rng as rand::SeedableRng>::seed_from_u64(
+                            uid_n
+                                ^ (ev.change.time.0.to_bits())
+                                ^ 0x0D3A_7B00_0000_0036,
+                        );
+                        outright = <rand_chacha::ChaCha8Rng as rand::RngExt>::random::<f32>(
+                            &mut rng,
+                        ) < chance;
+                        tracing::info!(
+                            uid = uid_n,
+                            overkill,
+                            chance,
+                            outright,
+                            "bastion: DEATH v2 roll — outright or downed"
+                        );
+                    }
                     if data.colonists.contains(ev.entity) {
                         tracing::info!(
                             uid = ?data.uids.get(ev.entity).map(|u| u.0.get()),
                             damage = ev.change.amount,
                             by = ?ev.change.by,
                             protected = health.death_protection,
+                            outright,
                             "bastion: COLONIST DIED"
                         );
                     }
-                    if health.death_protection {
+                    if health.death_protection && !outright {
                         emitters.emit(DownedEvent { entity: ev.entity });
                     } else {
                         emitters.emit(DestroyEvent {

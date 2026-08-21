@@ -1080,6 +1080,33 @@ mod bastion_b70_tests {
     /// not invent a flee), and Idle's ceiling (most-social 0.13) under
     /// Work's floor (least-greedy 0.4) — work-when-available always
     /// wins.
+    /// DEATH v2 (Ben ruled 2026-08-21). Both branches must remain REACHABLE:
+    /// a roll that always kills is permadeath wearing a roll's clothes, and a
+    /// roll that never kills leaves the ruling unimplemented. Ben asked for a
+    /// colonist who *may* die outright — "may" is the whole content.
+    #[test]
+    fn an_outright_kill_is_possible_and_never_certain() {
+        use crate::bastion::outright_death_chance as p;
+
+        // A blow landing exactly on zero does not kill outright: attrition
+        // downs you, it does not execute you.
+        assert!((p(0.0)).abs() < 1e-6, "a blow with no overkill must never kill outright");
+
+        // More overkill, more chance — monotone.
+        assert!(p(0.5) > p(0.1));
+        assert!(p(1.5) > p(0.5));
+
+        // NEVER certain. The rescue drama Ben's ruling preserves must not be
+        // arithmetically removable by a big enough hit.
+        for over in [1.0_f32, 5.0, 50.0, 1e6] {
+            let c = p(over);
+            assert!(c < 1.0, "overkill {over} produced certainty {c} — rescue became impossible");
+        }
+
+        // Never negative, whatever the caller hands in.
+        assert!(p(-3.0) >= 0.0);
+    }
+
     /// INJURY-REST (Ben ruled 2026-08-21: a wounded colonist should seek
     /// rest). The IDENTITY branch is the load-bearing one: a healthy colony
     /// must behave exactly as every banked corpus leg recorded it, or this
