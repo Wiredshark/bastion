@@ -1206,6 +1206,7 @@ pub(crate) fn job_kind_label(kind: &common::bastion::JobKind) -> &'static str {
     match kind {
         common::bastion::JobKind::Cook { .. } => "Cook",
         common::bastion::JobKind::TradeMission { .. } => "TradeMission",
+        common::bastion::JobKind::Tend { .. } => "Tend",
         common::bastion::JobKind::Designated(d) => match d {
             DesignationKind::GuardPost => "Designated:GuardPost",
             DesignationKind::PatrolPoint => "Designated:PatrolPoint",
@@ -2025,6 +2026,8 @@ fn job_still_wanted(kind: &common::bastion::JobKind, block: &Block) -> bool {
         // block precondition -- without this arm the moot-check reads the
         // site's arbitrary block and kills the mission instantly).
         common::bastion::JobKind::TradeMission { .. } => true,
+        // ITEM 35: a patient's validity is the patient's, not a block's.
+        common::bastion::JobKind::Tend { .. } => true,
         common::bastion::JobKind::Designated(DesignationKind::Farm) => true,
         common::bastion::JobKind::Designated(d) => job_wanted(*d, block),
         common::bastion::JobKind::Haul { .. }
@@ -2371,6 +2374,12 @@ pub const BED_REST_RECOVERY_PER_SEC: f32 = 0.02;
 /// CAVEIN_DAMAGE_FRAC / 25. Wounds heal in bed and nowhere else — that is
 /// what makes a bed worth building rather than a decoration.
 pub const BED_HEAL_FRAC_PER_SEC: f32 = CAVEIN_DAMAGE_FRAC / 25.0;
+/// bastion (ITEM 35 v1): how much faster a TENDED patient heals. A relief,
+/// not a replacement — an untended colonist still recovers, so a colony with
+/// nobody to spare is slowed rather than doomed. The A/B measures exactly
+/// this number, and the bar is that tended vs untended SEPARATE; if they do
+/// not, the Tend job is decorative and should be said so out loud.
+pub const TEND_MULTIPLIER: f32 = 2.5;
 /// Sleep past the comfort band by this much — waking AT the band would
 /// re-cross it within seconds of decay (rested, not barely-at-band).
 pub const SLEEP_MARGIN: f32 = 0.1;
@@ -11579,6 +11588,66 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             }
         }
 
+        // ── ITEM 35: the TEND generator ──────────────────────────────────
+        // A wounded colonist in a bed is a PATIENT, and a patient is work
+        // someone can choose. One job per occupied bed whose occupant is
+        // hurt; it dies with the sleep (the completion arm below and the
+        // patient-left check keep it honest). Medicine is deliberately not a
+        // status the body has — it is a colonist deciding to sit with
+        // someone, which is why it goes on the open board like any other job.
+        if tick.0 % ARBITRATION_INTERVAL as u64 == 6 {
+            let beds: Vec<(Vec3<i32>, Uid)> = board
+                .beds
+                .iter()
+                .filter_map(|(pos, slot)| slot.occupant.map(|u| (*pos, u)))
+                .collect();
+            for (bed_pos, patient) in beds {
+                let already = board.jobs.values().any(|j| {
+                    matches!(j.kind, common::bastion::JobKind::Tend { bed, .. } if bed == bed_pos)
+                });
+                if already {
+                    continue;
+                }
+                // Is the occupant actually hurt? A healthy sleeper needs no
+                // nurse, and minting a job for one would be the busywork
+                // this project keeps finding in its own generators.
+                let hurt = id_maps
+                    .uid_entity(patient)
+                    .and_then(|e| healths.get(e).map(|h| h.fraction() < 0.95))
+                    .unwrap_or(false);
+                if !hurt {
+                    continue;
+                }
+                let id = board.next_id;
+                board.next_id += 1;
+                board.jobs.insert(id, Job {
+                    kind: common::bastion::JobKind::Tend { patient, bed: bed_pos },
+                    work: common::bastion::WorkType::Haul,
+                    pos: bed_pos,
+                    skill_floor: 0,
+                    claimed_by: None,
+                    suspended_for: None,
+                    unreachable: false,
+                    progress: 0.0,
+                    required_item: None,
+                    needs_materials: false,
+                    carve_attempted: false,
+                    is_access: false,
+                    stuck_strikes: 0,
+                    benched_until_tick: None,
+                    depth: 0,
+                    reservation: None,
+                    affordance: common::bastion::AffordanceClass::Untargeted,
+                });
+                info!(
+                    job = id,
+                    patient = patient.0.get(),
+                    ?bed_pos,
+                    "bastion: ITEM 35 tend job created — a wounded colonist is in a bed"
+                );
+            }
+        }
+
         // ── ITEM 29: the TRADE MISSION generator ─────────────────────────
         // Par-stock pull: when colony food drops below TRADE_FOOD_PAR and
         // stockpiled wood exists to sell, mint ONE mission against the
@@ -16932,12 +17001,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // rides the sleep the colonist already seeks,
                                 // so it needs no new job kind and no new
                                 // need: the response loop is REST.
+                                // ITEM 35: is someone SITTING WITH them? A
+                                // claimed Tend job on this bed is the
+                                // treatment; TEND_MULTIPLIER is what the A/B
+                                // measures. Read before the health borrow so
+                                // the two never contend.
+                                let tended = board.jobs.values().any(|j| {
+                                    j.claimed_by.is_some()
+                                        && matches!(
+                                            j.kind,
+                                            common::bastion::JobKind::Tend { bed, .. }
+                                                if bed == bed_pos
+                                        )
+                                });
                                 if let Some(mut health) = healths.get_mut(entity) {
                                     let frac = health.fraction();
                                     if frac < 1.0 {
                                         let heal = health.maximum()
                                             * BED_HEAL_FRAC_PER_SEC
                                             * kind.quality()
+                                            * if tended { TEND_MULTIPLIER } else { 1.0 }
                                             * dt.0;
                                         health_change_events.emit_now(
                                             common::event::HealthChangeEvent {
@@ -16971,6 +17054,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     if let Some(slot) = board.beds.get_mut(&bed_pos) {
                                         slot.occupant = None;
                                     }
+                                    // ITEM 35: the patient got up — retire any
+                                    // Tend job on this bed rather than leaving
+                                    // a colonist sitting with an empty
+                                    // mattress (a job whose subject has left
+                                    // is the classic zombie this board keeps
+                                    // having to sweep).
+                                    let stale: Vec<JobId> = board
+                                        .jobs
+                                        .iter()
+                                        .filter(|(_, j)| {
+                                            matches!(
+                                                j.kind,
+                                                common::bastion::JobKind::Tend { bed, .. }
+                                                    if bed == bed_pos
+                                            )
+                                        })
+                                        .map(|(id, _)| *id)
+                                        .collect();
+                                    for id in stale {
+                                        board.remove_job(id);
+                                    }
                                     // Owned-bed sleep deposits the better
                                     // thought; communal sleep none (the
                                     // delta the design asserts).
@@ -16995,6 +17099,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             .get(entity)
                                             .map(|h| h.fraction())
                                             .unwrap_or(-1.0),
+                                        tended,
                                         "bastion: slept — rest restored"
                                     );
                                     board.remove_job(active.job);
@@ -17833,6 +17938,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         common::bastion::JobKind::Cook { .. } => true,
                         // ITEM 29: same — the exchange arm owns validity.
                         common::bastion::JobKind::TradeMission { .. } => true,
+                        common::bastion::JobKind::Tend { .. } => true,
                         common::bastion::JobKind::Designated(d) => match d {
                             // ITEM 14: no terrain precondition to re-check —
                             // `still_valid` is about a designation's target
@@ -18093,6 +18199,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         job.kind,
                         common::bastion::JobKind::Cook { .. }
                             | common::bastion::JobKind::TradeMission { .. }
+                            | common::bastion::JobKind::Tend { .. }
                     ) {
                         // ITEM 27: a completed COOK job — consume the carried raw
                         // (the sow `taken` pattern) and produce the vanilla dish

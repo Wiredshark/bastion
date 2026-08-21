@@ -1589,6 +1589,8 @@ pub enum JobKindTagV1 {
     Cook,
     /// bastion (ITEM 29): appended last (wire rule).
     TradeMission,
+    /// bastion (ITEM 35): appended last (wire rule).
+    Tend,
 }
 
 impl From<&crate::bastion::JobKind> for JobKindTagV1 {
@@ -1599,6 +1601,7 @@ impl From<&crate::bastion::JobKind> for JobKindTagV1 {
             J::Guard { .. } => JobKindTagV1::Guard,
             J::Cook { .. } => JobKindTagV1::Cook,
             J::TradeMission { .. } => JobKindTagV1::TradeMission,
+            J::Tend { .. } => JobKindTagV1::Tend,
             J::Haul { .. } => JobKindTagV1::Haul,
             J::DepositRun { .. } => JobKindTagV1::DepositRun,
             J::RestAt { .. } => JobKindTagV1::RestAt,

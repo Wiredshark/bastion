@@ -1231,6 +1231,15 @@ pub enum JobKind {
         /// The registered station this job cooks at.
         station: vek::Vec3<i32>,
     },
+    /// bastion (ARC 8 item 35): TEND a wounded colonist resting in a bed —
+    /// a second pair of hands multiplies the patient's heal rate. The job
+    /// lives AT the bed (`job.pos`), carries the patient so the completion
+    /// can find them, and is ordinary claimable work: medicine is a job
+    /// someone chooses, not a status a body has. Tail-appended (wire rule).
+    Tend {
+        patient: crate::uid::Uid,
+        bed: vek::Vec3<i32>,
+    },
     /// bastion (ARC 6 item 29): one priced exchange with a vanilla site.
     /// `job.pos` IS the site (the standard steer walks there); the B6
     /// fetch contract delivers the sold lot (`required_item`) for free;
@@ -1259,6 +1268,8 @@ impl JobKind {
             // ITEM 29: a mission's target is a WORLD SITE, not a painted
             // designation.
             JobKind::TradeMission { .. } => None,
+            // ITEM 35: a patient is not a painted designation either.
+            JobKind::Tend { .. } => None,
             // ITEM 14: a Guard JOB carries its own place (post/patrol_to), so
             // it is not "a job on a designation" the way Mine/Build are. The
             // GuardPost/PatrolPoint DESIGNATIONS are what the player paints;

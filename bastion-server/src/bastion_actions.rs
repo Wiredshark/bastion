@@ -60,6 +60,8 @@ pub fn completion_block(kind: JobKind) -> Option<Block> {
         JobKind::Cook { .. } => None,
         // ITEM 29: a trade exchange edits no terrain.
         JobKind::TradeMission { .. } => None,
+        // ITEM 35: tending edits no terrain either.
+        JobKind::Tend { .. } => None,
         JobKind::Designated(d) => match d {
             // ITEM 14: a guard assignment places NO block. Returning None keeps
             // it out of the completion-block path entirely.
