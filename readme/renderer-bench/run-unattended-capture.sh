@@ -21,6 +21,7 @@ echo "PRECONDITION voxygen=$(sha256sum "$B/veloren-voxygen.exe" | cut -c1-16) ti
     BASTION_R0D_CAPTURE_WARMUP=120 BASTION_R0D_CAPTURE_COUNT=3 \
     BASTION_R1BC_FIGURE_COUNT=1 \
     BASTION_R0D_AUTOPAUSE=1 \
+    BASTION_R0D_FREEZE_AFTER_LOGIN=1 \
     "$B/veloren-voxygen.exe" --bastion-flat-arena > "$EV/voxygen.log" 2>&1 ) &
 PID=$!
 echo "voxygen pid=$PID (${SECS}s budget)"

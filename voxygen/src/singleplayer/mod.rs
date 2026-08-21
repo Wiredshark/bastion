@@ -499,6 +499,17 @@ fn run_server(mut server: Server, stop_server_r: Receiver<()>, paused: Arc<Atomi
     if certification_freeze_tick.is_some() || continuous_streaming_measurement {
         crate::render::bastion_r0d::reset_certification_server_latch_v1();
     }
+    // W5 ops mode (BASTION_R0D_FREEZE_AFTER_LOGIN=1): the freeze counts
+    // down from the moment a client is PRESENT instead of from boot. The
+    // fixed-tick default lost a race against login on a loaded host — the
+    // server froze mid-login and the client timed out (measured three
+    // times tonight). Default unchanged: exact-tick freeze semantics.
+    let freeze_after_login = std::env::var_os("BASTION_R0D_FREEZE_AFTER_LOGIN").is_some();
+    let mut deferred_freeze_target: Option<u64> = if freeze_after_login {
+        None // resolves when the first client arrives
+    } else {
+        certification_freeze_tick
+    };
     let mut certification_weather_fixture =
         match crate::r1f_weather::certification_fixture_declaration() {
             crate::r1f_weather::CertificationFixtureDeclarationV1::Disabled => None,
@@ -635,7 +646,19 @@ fn run_server(mut server: Server, stop_server_r: Receiver<()>, paused: Arc<Atomi
             break;
         };
         completed_ticks = next_completed_tick;
-        if certification_freeze_tick == Some(completed_ticks) {
+        if freeze_after_login
+            && certification_freeze_tick.is_some()
+            && deferred_freeze_target.is_none()
+            && server.number_of_players() > 0
+        {
+            deferred_freeze_target =
+                certification_freeze_tick.map(|f| completed_ticks.saturating_add(f));
+            info!(
+                ?deferred_freeze_target,
+                completed_ticks, "bastion: deferred certification freeze armed (client present)"
+            );
+        }
+        if deferred_freeze_target == Some(completed_ticks) {
             if certification_weather_fixture
                 .as_ref()
                 .is_some_and(|(_, _, acknowledged)| !acknowledged)
