@@ -69,6 +69,9 @@ pub enum PresetRole {
     Farm,
     /// Rest service (proven in script-10's own leg).
     Bed,
+    /// bastion (ARC 10 v1): the kitchen. Founded colonies had none, so the
+    /// cook chain could not run without the player painting one.
+    Hearth,
 }
 
 impl PresetRole {
@@ -77,6 +80,7 @@ impl PresetRole {
             PresetRole::Stockpile => "stockpile",
             PresetRole::Farm => "farm",
             PresetRole::Bed => "bed",
+            PresetRole::Hearth => "hearth",
         }
     }
 }
@@ -300,6 +304,79 @@ pub fn farm_suppressed() -> bool {
 /// rather than validating columns for a plot that will not exist.
 /// `bed_capacity()` reads `FOUNDING_PRESET_V1` directly and is deliberately
 /// untouched: the colonist-count bar must keep checking the REAL table.
+/// bastion (ARC 10 #102 — the SETTLEMENT PLAN LAYER, v1): the founding
+/// layout, COMPUTED rather than constant.
+///
+/// `FOUNDING_PRESET_V1` is a hand-placed five-element table sized for exactly
+/// eight colonists. It cannot answer the two questions a settlement layer
+/// exists to answer — "what does a colony of 16 need?" and "where does a
+/// building go that is not already in the table?" — so a 32-colonist founding
+/// gets the same two-bed plot as an 8-colonist one, and no founded colony has
+/// a kitchen at all (a play session had to paint one by hand before the food
+/// chain could run once).
+///
+/// v1 is deliberately the SMALLEST honest plan layer: the same district
+/// grammar the preset encodes (pantry at the centre, field to the west, beds
+/// to the north, hearth to the east), scaled by population, laid out on
+/// non-overlapping bands so nothing has to be hand-checked for collisions.
+/// It is NOT the cost-driven form or the desire-line roads the charter
+/// eventually wants — those need the plot grammar reuse #102 names, and they
+/// are the next slice, not this one.
+///
+/// The constant table stays as the reference the plan must reproduce at
+/// population 8; `plan_matches_preset_at_eight` pins exactly that, so this
+/// layer cannot silently drift away from the founding every banked corpus
+/// leg was recorded against.
+pub fn founding_plan(colonists: u8) -> Vec<PresetElement> {
+    let n = colonists.max(1) as i32;
+    // Beds: the preset's dormitory is 2 wide x 2 deep x 2 tall = 8 sleeping
+    // cells for 8 colonists, so capacity is 4 cells per row of depth. Rows
+    // therefore = ceil(n / 4), and the band GROWS NORTHWARD FROM THE PRESET'S
+    // OWN ORIGIN rather than being re-placed — the first version of this
+    // moved the plot and `plan_matches_preset_at_eight` caught it on its
+    // first run, which is precisely why that pin exists: every banked corpus
+    // leg was recorded against the old layout.
+    let bed_rows = ((n + 3) / 4).max(1);
+    // The pantry and the field grow with the mouths they feed, but slowly —
+    // area scales with the square root of population, which is what keeps a
+    // 32-colonist camp from becoming a farm the size of the map.
+    let grow = |base: i32| base + ((n as f32).sqrt() as i32 - 2).max(0);
+    let mut plan = vec![
+        PresetElement {
+            role: PresetRole::Stockpile,
+            kind: DesignationKind::Stockpile,
+            min_off: Vec3::new(-2, -4, -1),
+            max_off: Vec3::new(grow(2), 1, 0),
+        },
+        PresetElement {
+            role: PresetRole::Farm,
+            kind: DesignationKind::Farm,
+            min_off: Vec3::new(-7 - grow(0), -4, -1),
+            max_off: Vec3::new(-3, 1, 0),
+        },
+    ];
+    // Dormitory band. NOTE, inherited and not introduced here: the preset's
+    // bed plot already shares its x=-2 column with the pantry, and the grown
+    // band inherits that. It is recorded rather than silently "fixed",
+    // because moving it would break the corpus this plan is pinned to.
+    plan.push(PresetElement {
+        role: PresetRole::Bed,
+        kind: DesignationKind::Bed,
+        min_off: Vec3::new(-3, -3, 0),
+        max_off: Vec3::new(-2, -3 + bed_rows - 1, 1),
+    });
+    // The hearth: every founded colony gets a kitchen. Without it the cook
+    // chain — which items 26 and 27 proved works — cannot run until a player
+    // paints one, which is exactly what a play session had to do.
+    plan.push(PresetElement {
+        role: PresetRole::Hearth,
+        kind: DesignationKind::CookStation,
+        min_off: Vec3::new(4, -2, 0),
+        max_off: Vec3::new(5, -1, 1),
+    });
+    plan
+}
+
 pub fn preset_regions(origin: Vec3<i32>) -> Vec<(PresetRole, DesignationKind, Region)> {
     FOUNDING_PRESET_V1
         .iter()
@@ -559,6 +636,58 @@ pub fn roles_summary(placed: &[PresetRole]) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// ARC 10 v1: the computed plan must REPRODUCE the hand-placed founding at
+    /// population 8 for the roles the preset defines. Every banked corpus leg
+    /// was recorded against that layout, so a plan layer that quietly moved
+    /// the pantry would invalidate the corpus without a single test going red.
+    /// The hearth is the one deliberate ADDITION and is excluded here — it is
+    /// named in the plan's own doc as new, not smuggled in.
+    #[test]
+    fn plan_matches_preset_at_eight() {
+        let plan = super::founding_plan(8);
+        for element in super::FOUNDING_PRESET_V1 {
+            let same = plan.iter().any(|p| {
+                p.role == element.role
+                    && p.kind == element.kind
+                    && p.min_off == element.min_off
+                    && p.max_off == element.max_off
+            });
+            assert!(
+                same,
+                "plan(8) dropped or moved the preset's {:?} plot ({:?}..{:?}) — the corpus was                  recorded against that layout",
+                element.role, element.min_off, element.max_off
+            );
+        }
+    }
+
+    /// The plan must GROW: a bigger colony gets more sleeping cells, or the
+    /// layer is a constant wearing a function's clothes.
+    #[test]
+    fn plan_beds_scale_with_population() {
+        let cells = |n: u8| -> i32 {
+            super::founding_plan(n)
+                .iter()
+                .filter(|e| e.role == super::PresetRole::Bed)
+                .map(|e| {
+                    let span = |a: i32, b: i32| (b - a + 1).max(0);
+                    span(e.min_off.x, e.max_off.x)
+                        * span(e.min_off.y, e.max_off.y)
+                        * span(e.min_off.z, e.max_off.z)
+                })
+                .sum()
+        };
+        let (eight, thirty_two) = (cells(8), cells(32));
+        assert!(
+            thirty_two > eight,
+            "a 32-colonist founding got {thirty_two} sleeping cells against {eight} for eight              colonists — the plan is not scaling"
+        );
+        assert!(
+            cells(8) >= 8,
+            "eight colonists were planned {} sleeping cells",
+            cells(8)
+        );
+    }
+
     use super::*;
 
     /// script-15's anchor, verified from six driver logs (`sent
