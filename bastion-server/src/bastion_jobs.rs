@@ -11589,7 +11589,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             .sum::<usize>()
                     })
                     .sum::<usize>();
-            let mut demand = job_demand.max(PAR_STOCK_STONE.saturating_sub(stone_on_hand));
+            // ★ SELF-CATCH, caught by the floor's own leg (2026-08-21): this
+            // was `PAR_STOCK_STONE.saturating_sub(stone_on_hand)` — the floor
+            // expressed as a DEFICIT. But the quota arithmetic below already
+            // subtracts supply (`deficit = demand - supply - pending`), so
+            // supply came off TWICE and the floor converged to roughly half
+            // its intended level: measured `demand=3 supply=5 quota=0`, i.e.
+            // parked at 5 against a floor of 8, reporting itself satisfied.
+            //
+            // The floor is a TARGET, not a deficit. Downstream owns the
+            // subtraction. The bug's direction was safe — it under-mined
+            // rather than strip-mined, which is exactly why it sailed through
+            // the safety bar and had to be caught by reading the numbers
+            // rather than by the leg going red.
+            let mut demand = job_demand.max(PAR_STOCK_STONE);
+            let _ = stone_on_hand;
             let mut build_new: Vec<Vec3<i32>> = Vec::new();
             let mut retired: Vec<common::bastion::ZoneId> = Vec::new();
             let pending_build = board

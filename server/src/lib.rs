@@ -2980,8 +2980,11 @@ impl Server {
             // makes this economy readable — that work has a VISIBLE REASON.
             // The level is a balance number and is banked for Ben; only the
             // mechanism is mine.
-            let floor_short = bastion_jobs::PAR_STOCK_WOOD.saturating_sub(supply);
-            let demand = job_demand.max(floor_short);
+            // The floor is a TARGET, not a deficit — the quiescence check
+            // below (`demand <= supply + pending`) owns the subtraction. The
+            // stone twin shipped this as a deficit and silently converged to
+            // half its level; see `job_bills_stone_unclaimed`'s neighbour.
+            let demand = job_demand.max(bastion_jobs::PAR_STOCK_WOOD);
             (demand, pending, supply, anchor)
         };
         if demand == 0 {
