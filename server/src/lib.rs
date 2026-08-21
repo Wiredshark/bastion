@@ -7022,10 +7022,17 @@ impl Server {
                         } else {
                             self.bastion_spawn_colony_seeded(sp, n, 0)
                         };
+                        // ★ `adopted` MEANT PLOTS, NOT PEOPLE, and printing it
+                        // beside `colonists=8` read as "8 people adopted" for
+                        // five play sessions while the true count was zero.
+                        // I claimed to have retired this label in 99a7a80217
+                        // and did not actually change the line; caught by
+                        // reading the log of the run that verified the fix.
+                        // Renamed so the two facts cannot be conflated again.
                         tracing::info!(
                             colonists = adopted_names.len(),
-                            adopted = adoption.is_some(),
-                            "bastion: colony population established"
+                            town_adopted = adoption.is_some(),
+                            "bastion: colony population established (town_adopted = a                              village's PLOTS were adopted; see the ADOPT-A-TOWN roll for                              how many PEOPLE were already there vs settled by us)"
                         );
                         // THE PRESET, TOO — otherwise this path spawns
                         // colonists into a world with NO WORK, and every
