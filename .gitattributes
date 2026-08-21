@@ -15,3 +15,8 @@ assets/world/map/*.bin filter=lfs diff=lfs merge=lfs -text
 *.ron gitlab-language=rust
 
 /CHANGELOG.md merge=union
+
+# Shell scripts MUST be LF: the VM fleet runs them on Linux, where a CR
+# terminator makes bash die on line 1 ("set: -: invalid option") — measured
+# on a fleet probe 2026-08-21, and invisible on a Windows checkout.
+*.sh text eol=lf
