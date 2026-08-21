@@ -8080,6 +8080,56 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     emergency_access_completions = board.emergency_access_completions,
                     "bastion food stock sample"
                 );
+                // THE EXPERIENCE CENSUS (Ben direct, 2026-08-21: "you need
+                // to actually play test the game"). Mechanisms passing while
+                // the colony LOOKS broken is the failure class every witness
+                // above missed — this line measures what a watching player
+                // sees: who is working, who is en route, who is STUCK
+                // (claims a job, isn't moving, isn't at it — the
+                // wall-runner's signature), who is idle, who is fed/rested.
+                // A leg whose stuck+idle dominates FAILS regardless of its
+                // mechanism witnesses.
+                {
+                    let (mut working, mut moving, mut stuck, mut idle) =
+                        (0u32, 0u32, 0u32, 0u32);
+                    let (mut fed, mut rested, mut total) = (0u32, 0u32, 0u32);
+                    for (_, entity, needs) in
+                        (&colonists, &entities, (&needs_storage).maybe()).join()
+                    {
+                        total += 1;
+                        if let Some(n) = needs {
+                            if n.hunger > 0.3 {
+                                fed += 1;
+                            }
+                            if n.rest > 0.3 {
+                                rested += 1;
+                            }
+                        }
+                        let speed = velocities
+                            .get(entity)
+                            .map(|v| v.0.xy().magnitude())
+                            .unwrap_or(0.0);
+                        match active_jobs.get(entity) {
+                            Some(aj) => match aj.state {
+                                ActiveJobState::Traveling if speed < 0.2 => stuck += 1,
+                                ActiveJobState::Traveling => moving += 1,
+                                _ => working += 1,
+                            },
+                            None => idle += 1,
+                        }
+                    }
+                    info!(
+                        tick = tick.0,
+                        total,
+                        working,
+                        moving,
+                        stuck,
+                        idle,
+                        fed,
+                        rested,
+                        "bastion EXPERIENCE census"
+                    );
+                }
                 // ITEM8-V4 sentinel S1 (Fable-ruled, LOG-ONLY -- never
                 // terminates the server, never gates anything; v3 would
                 // have terminated 79 minutes early had a naive version of
