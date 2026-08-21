@@ -13850,7 +13850,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         } else {
                             (job.stuck_strikes.min(3) as f32) * 1.2
                         })
-                    .max(if is_emergency_access { 6.25 } else { 0.0 });
+                    .max(if is_emergency_access { 6.25 } else { 0.0 })
+                    // ITEM 29: a trade SITE is a neighborhood, not a cell —
+                    // the book's z is approximate (sim alt, blind to plaza
+                    // structures) and chain19's first mission claim-cycled
+                    // "unreachable" four blocks out on exactly that. The
+                    // wide radius is the emergency-access precedent.
+                    .max(
+                        if matches!(
+                            job.kind,
+                            common::bastion::JobKind::TradeMission { .. }
+                        ) {
+                            8.0
+                        } else {
+                            0.0
+                        },
+                    );
                     let dist = pos.0.distance(target);
                     let actual_feet = pos.0.map(|value| value.floor() as i32);
                     let physics = physics_states.get(entity);

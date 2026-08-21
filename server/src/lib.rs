@@ -6936,7 +6936,7 @@ impl Server {
                     }
                     let wpos = site.wpos;
                     let alt = self.world.sim().get_alt_approx(wpos)?;
-                    Some((Vec3::new(wpos.x, wpos.y, alt as i32 + 1), wood / food))
+                    Some((Vec3::new(wpos.x, wpos.y, alt as i32 + 2), wood / food))
                 })
                 .collect()
         };
