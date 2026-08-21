@@ -580,6 +580,15 @@ struct Args {
     #[arg(long)]
     farm_scenario: bool,
 
+    /// bastion (ADOPT-SEED regression, 2026-08-21): the founding SEED STOCK
+    /// must survive a founding whose chunk is not loaded yet — the adopt-town
+    /// arm's defining geometry. Founds through the real `bastion_adoption`
+    /// decision, paints a farm, and requires at least one SOWN cell. See the
+    /// scenario's own doc for what broke and how it goes VOID rather than
+    /// green when a seed cannot exercise the premise.
+    #[arg(long)]
+    adoptseed_scenario: bool,
+
     /// bastion (task #64/#61 planted fixture, Opus-specified): proves the
     /// `remove_job` `blocked_regions` prune (ed532c600e) actually retracts
     /// a genuine block, not just no-ops on an empty common case (wave19's
@@ -1823,6 +1832,8 @@ fn main() -> ExitCode {
         path_scenario(&args)
     } else if args.farm_scenario {
         farm_scenario(&args)
+    } else if args.adoptseed_scenario {
+        adoptseed_scenario(&args)
     } else if args.blocked_retract_scenario {
         blocked_retract_scenario(&args)
     } else if args.cavein_conservation_scenario {
@@ -13949,6 +13960,384 @@ fn farm_scenario(args: &Args) -> ExitCode {
 
     drop(server);
     let _ = std::fs::remove_dir_all(&data_dir);
+    if pass {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// bastion (ADOPT-SEED, 2026-08-21): the regression bar for the play session
+/// that tilled 112 cells over ~31 game days and sowed ZERO.
+///
+/// WHAT BROKE. The founding SEED STOCK was a direct `CreateItemDropEvent` at
+/// the founding position. That is correct only where the founding chunk is
+/// already loaded -- true on the flat arena every other harness scenario
+/// founds into, and FALSE on the adopt-town arm by construction rather than
+/// by accident: `Server::bastion_adoption` re-anchors the whole founding at
+/// the town via worldgen's `get_alt_approx` PRECISELY BECAUSE no chunk exists
+/// there at founding tick (its own comment measures the town 1,224 blocks
+/// from the original spawn). The stock dropped into unloaded space and was
+/// gone. The sow verb then refused forever: 106 sow jobs created, `materials`
+/// in every tick's claim census, 0 sown.
+///
+/// THE BAR: found through the adopt-town arm, paint a farm, and at least one
+/// cell must be SOWN. `bastion_sprite_growth` returning `Some` for a plot cell
+/// is the STATE form of the `"bastion: sown"` event -- an assertion on the
+/// world rather than on a log line, so it cannot pass on a line that was
+/// merely printed.
+///
+/// THE UNLOADED FOUNDING IS THE ONLY PART THAT MUST BE ORGANIC. Everything
+/// after it is staging, so the scenario force-loads and flattens IMMEDIATELY
+/// after founding rather than waiting for the colony's own presence to stream
+/// chunks in. That is deliberate: waiting would leave the `PendingSeedItems`
+/// drain racing the paint (the drain delivers in whichever tick the chunk
+/// first resolves, and with no stockpile registered yet it would deliver to
+/// the doorstep), and a test whose subject can be decided by tick ordering
+/// measures the ordering. The defect fires at the founding instant and the
+/// stock is already queued by the time the force-load runs.
+///
+/// EVERY PRECONDITION IS A FIELD, because this scenario has ways to go
+/// vacuously green that render identically to a pass from outside: the seed's
+/// worldgen may offer no adoptable town within the search radius, or the town
+/// may land in already-loaded terrain (the deferred branch cannot fire, and
+/// the immediate branch was never broken). Each sets `void=true` with a
+/// `void_reason` and EXITS 2 -- distinct from both 0 (pass) and 1 (the bar
+/// was missed), so a VOID can never be read as either.
+///
+/// BOTH ARMS, ONE SCENARIO. The play session hit the zero-resident FALLBACK
+/// (`adopted=0` -> `bastion_spawn_colony_seeded`); adoption has since been
+/// fixed to match on POSITION (d52a637a7c), so the adopted arm may now be the
+/// one that fires. `took_fallback` records which arm this run took. The seed
+/// bar is identical for both, which is exactly what hanging the grant off
+/// establishment instead of off a spawn helper buys.
+fn adoptseed_scenario(args: &Args) -> ExitCode {
+    use common::{
+        bastion::{DesignationKind, Region},
+        terrain::BlockKind,
+        vol::ReadVol,
+    };
+    use vek::Vec3;
+
+    const SEEDS: &str = "common.items.bastion.wheat_seeds";
+    // The colony size the play session ran (BASTION_AUTOFOUND_COLONY=8).
+    const COLONY: u8 = 8;
+
+    // The arm under test. SET rather than required: a scenario that silently
+    // measures mode B when the operator forgets the env var is exactly the
+    // vacuous green this doc is about.
+    unsafe { std::env::set_var("BASTION_ADOPT_TOWN", "1") };
+
+    let started = Instant::now();
+    let data_dir = std::env::temp_dir().join(format!(
+        "bastion-adoptseed-{}-{}",
+        std::process::id(),
+        started.elapsed().as_nanos()
+    ));
+    std::fs::create_dir_all(&data_dir).expect("failed to create harness data dir");
+    let settings = Settings {
+        gameserver_protocols: Vec::new(),
+        auth_server_address: None,
+        query_address: None,
+        world_seed: args.seed,
+        server_name: "bastion-harness-adoptseed".into(),
+        map_file: None,
+        max_view_distance: None,
+        calendar_mode: CalendarMode::None,
+        ..Settings::default()
+    };
+    let editable_settings = EditableSettings::singleplayer(&data_dir);
+    let database_settings = DatabaseSettings {
+        db_dir: data_dir.join("saves"),
+        sql_log_mode: SqlLogMode::Disabled,
+    };
+    let runtime = Arc::new(
+        tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .worker_threads(2)
+            .thread_name("bastion-adoptseed-tokio")
+            .build()
+            .expect("failed to build tokio runtime"),
+    );
+    let mut server = Server::new(
+        settings,
+        editable_settings,
+        database_settings,
+        &data_dir,
+        &|stage| info!(?stage, "server init"),
+        runtime,
+    )
+    .expect("failed to create headless server");
+    let dt = Duration::from_secs_f64(1.0 / args.tps);
+    let tick = |server: &mut Server, n: u64| {
+        for _ in 0..n {
+            server
+                .tick(Input::default(), dt)
+                .expect("server tick failed");
+            server.cleanup();
+        }
+    };
+
+    let void = |reason: &str, extra: serde_json::Value| -> ExitCode {
+        let mut v = serde_json::json!({
+            "seed": args.seed,
+            "elapsed_ms": started.elapsed().as_millis(),
+            "void": true,
+            "void_reason": reason,
+            "seeds_total": 0,
+            "sown_cells": 0,
+            "pass": false,
+        });
+        if let (Some(obj), Some(e)) = (v.as_object_mut(), extra.as_object()) {
+            for (k, val) in e {
+                obj.insert(k.clone(), val.clone());
+            }
+        }
+        println!(
+            "{}",
+            serde_json::to_string(&v).expect("Value is always serializable")
+        );
+        // ★ VOID GETS ITS OWN EXIT CODE. 0 = PASS, 1 = the bar was MISSED,
+        // 2 = the run never reached the bar's premise (try another --seed).
+        // Neither of the other two codes is honest here: SUCCESS would let a
+        // world where EVERY seed voids report green forever -- the vacuous
+        // green this scenario's whole doc is about -- and FAILURE would train
+        // the operator to read a real regression as "that seed again". The
+        // `void_reason` field says which premise was missing.
+        ExitCode::from(2)
+    };
+
+    // A spawn to search FROM. Adoption re-anchors the whole founding at the
+    // town it picks, so this only has to be somewhere in the world -- the
+    // first rtsim site is the anchor the other scenarios already use.
+    let sp0: Vec3<f32> = {
+        let ecs = server.state().ecs();
+        let rtsim = ecs.read_resource::<server::rtsim::RtSim>();
+        let data = rtsim.state().data();
+        data.sites
+            .sites
+            .values()
+            .next()
+            .map(|s| Vec3::new(s.wpos.x as f32, s.wpos.y as f32, 0.0))
+            .unwrap_or_else(|| Vec3::new(16384.0, 16384.0, 0.0))
+    };
+
+    // THE REAL DECISION, not a lookalike: the same `bastion_adoption` the live
+    // autofound arm calls, so this founds at the town the game would adopt.
+    let Some((asp, town_origin, plots)) = server.bastion_adoption(sp0) else {
+        return void(
+            "no adoptable town within the search radius for this seed",
+            serde_json::json!({}),
+        );
+    };
+    let asp_block = asp.map(|e| e.floor() as i32);
+
+    // THE PRECONDITION THAT MAKES THIS A TEST OF THE DEFECT AT ALL: the
+    // founding chunk must be UNLOADED right now. `bastion_block_kind` asks
+    // `terrain.get(pos).is_ok()` -- the SAME question the `PendingSeedItems`
+    // drain asks -- so the two cannot disagree about what "loaded" means. A
+    // loaded chunk here takes the immediate-drop branch, which was never
+    // broken, and the run would prove nothing.
+    let founding_chunk_loaded = server.bastion_block_kind(asp_block).is_some();
+    if founding_chunk_loaded {
+        return void(
+            "the adopted town's founding chunk was already loaded -- the deferred branch \
+             cannot fire, so this run cannot see the defect",
+            serde_json::json!({ "town_origin": [town_origin.x, town_origin.y] }),
+        );
+    }
+
+    // FOUND THROUGH THE ARM, fallback included -- the same sequence
+    // `bastion_autofound_found` runs.
+    // `plots` and `wanted` are what 99a7a80217 added: adoption SETTLES one
+    // resident per house plot when the architect has not populated the village
+    // yet, so the plots are how it knows where a resident can live.
+    let adopted = server.bastion_adopt_town_people(
+        asp,
+        asp.xy().map(|e| e.floor() as i32),
+        &plots,
+        COLONY,
+    );
+    let adopted_residents = adopted.len();
+    let colonists = if adopted.is_empty() {
+        server.bastion_spawn_colony_seeded(asp, COLONY, 0)
+    } else {
+        adopted
+    };
+
+    // ★ TICK BEFORE LOADING, OR THE DEFECT NEVER FIRES -- and the first
+    // falsifier control is what caught this. The scenario used to force-load
+    // IMMEDIATELY after founding, under a comment claiming "the defect window
+    // has closed". The window had never OPENED. `bastion_spawn_item` does not
+    // drop anything; it EMITS a `CreateItemDropEvent`, and the bus is drained
+    // inside `tick()`. Force-loading before the first tick meant the pre-fix
+    // code's drop was processed against terrain the fixture had just brought
+    // in, so the planted control PASSED -- seeds_total=15, sown_cells=1, on
+    // code that produced 0 sown across ~31 game days in the real play session.
+    // A test that its own defect cannot fail proves nothing, and this one had
+    // already been used to claim the fix worked.
+    //
+    // The live arm has no force-load at all: the founding emits, the tick
+    // drains, and the adopted town's chunks are still streaming in. These
+    // ticks reproduce exactly that ordering.
+    const DRAIN_TICKS: u64 = 2;
+    tick(&mut server, DRAIN_TICKS);
+    // ...and the window must still have been OPEN when the bus drained. The
+    // colony's presence is requesting these chunks, so if generation happened
+    // to complete inside the drain ticks, the pre-fix drop would have landed
+    // and this run cannot discriminate. That is a VOID, not a pass.
+    if server.bastion_block_kind(asp_block).is_some() {
+        return void(
+            "the founding chunk loaded within the drain ticks -- the pre-fix drop would have              landed, so this run cannot tell the fix from the defect",
+            serde_json::json!({
+                "town_origin": [town_origin.x, town_origin.y],
+                "colonists": colonists.len(),
+                "drain_ticks": DRAIN_TICKS,
+            }),
+        );
+    }
+
+    // The defect window is now closed; from here on the town is staging.
+    server.bastion_force_load_area(asp.xy(), 5);
+    let ground_z = |server: &Server, x: i32, y: i32| -> Option<i32> {
+        let terrain = server.state().terrain();
+        (0..2048).rev().find(|z| {
+            terrain.get(Vec3::new(x, y, *z)).is_ok_and(|b| {
+                matches!(
+                    b.kind(),
+                    BlockKind::Rock
+                        | BlockKind::WeakRock
+                        | BlockKind::Grass
+                        | BlockKind::Snow
+                        | BlockKind::Earth
+                        | BlockKind::Sand
+                )
+            })
+        })
+    };
+    let cx = asp_block.x;
+    let cy = asp_block.y;
+    // ★ NO FLAT PAD, AND NO SINGLE DATUM. The first two runs of this scenario
+    // copied `farm_scenario`'s pad: take the MAX ground over a +-16/+-12
+    // sample, cut rock to it, and probe crops at `gz + 1`. On the adopted
+    // town that reported plot_datum=455 while the server's own log sowed at
+    // z=444 -- an 11-block disagreement, because the max over a wide sample
+    // is a HILLTOP, not the plot's surface, and `place_designation` resolves
+    // each column's REAL top regardless of what the fixture believed. Two
+    // runs scored sown_cells=0 with farming visibly working.
+    //
+    // Widening the band would have been a third guess. The plot sits on the
+    // town's own organic ground instead -- which is what the adopt-town arm
+    // is ABOUT, so the pad was never faithful here anyway -- and every z is
+    // asked of the terrain rather than derived from arithmetic.
+    let Some(gz) = ground_z(&server, cx + 3, cy + 3) else {
+        return void(
+            "no ground resolved at the plot centre after the force-load",
+            serde_json::json!({
+                "town_origin": [town_origin.x, town_origin.y],
+                "colonists": colonists.len(),
+            }),
+        );
+    };
+
+    // PAINT THE PANTRY AND THE FARM (the ask's own words) BEFORE the first
+    // tick, so the drain's retarget has a stockpile to find the moment it
+    // delivers.
+    let store = Region {
+        min: Vec3::new(cx - 2, cy - 4, gz),
+        max: Vec3::new(cx - 1, cy - 3, gz + 1),
+    };
+    server.bastion_place_designation(store, DesignationKind::Stockpile);
+    let plot = Region {
+        min: Vec3::new(cx + 2, cy + 2, gz),
+        max: Vec3::new(cx + 4, cy + 4, gz),
+    };
+    let paint_jobs = server
+        .bastion_place_designation(plot, DesignationKind::Farm)
+        .len();
+    // ★ THE PROBE ASKS THE TERRAIN FOR EACH COLUMN'S OWN GROUND, then looks
+    // just above it. That is where `place_designation` put the tilled cell and
+    // where the sow verb puts the sprite, so the probe and the thing it
+    // explains now resolve z the same way. `Growth` exists only on crop
+    // sprites, so the +1..+2 reach cannot false-positive on terrain.
+    let sown_cells = |server: &Server| {
+        let mut n = 0;
+        for y in plot.min.y..=plot.max.y {
+            for x in plot.min.x..=plot.max.x {
+                let Some(g) = ground_z(server, x, y) else {
+                    continue;
+                };
+                if (g..=g + 2)
+                    .any(|z| server.bastion_sprite_growth(Vec3::new(x, y, z)).is_some())
+                {
+                    n += 1;
+                }
+            }
+        }
+        n
+    };
+
+    // THE BAR. Two fields, because they fail differently and the difference IS
+    // the diagnosis: `seeds_total` says whether the founding stock SURVIVED
+    // (the defect), `sown_cells` says whether it reached the verb that
+    // consumes it (the symptom). The broken code scores 0 and 0. A delivery
+    // that lands somewhere the sow gate cannot see scores >0 and 0, which is a
+    // DIFFERENT bug and must not be read as this one.
+    let mut sown = 0;
+    let mut seeds_total = 0;
+    let mut seeds_first_seen_tick = None;
+    for i in 0..900u64 {
+        tick(&mut server, 10);
+        seeds_total = server.bastion_colony_item_total(SEEDS);
+        if seeds_total > 0 && seeds_first_seen_tick.is_none() {
+            seeds_first_seen_tick = Some(i * 10);
+        }
+        sown = sown_cells(&server);
+        if sown > 0 {
+            break;
+        }
+    }
+    let pass = sown > 0;
+
+    let result = serde_json::json!({
+        "seed": args.seed,
+        "elapsed_ms": started.elapsed().as_millis(),
+        "void": false,
+        "void_reason": serde_json::Value::Null,
+        // Preconditions, stated BESIDE the outcome so a green cannot be read
+        // without them.
+        "town_origin": [town_origin.x, town_origin.y],
+        "town_plots": plots.len(),
+        "founding_chunk_loaded_at_founding": founding_chunk_loaded,
+        // The two halves of the premise: the chunk was unloaded AT founding,
+        // and was STILL unloaded when the event bus drained. Only the second
+        // one makes a pre-fix drop vanish.
+        "drain_ticks": DRAIN_TICKS,
+        "founding_chunk_unloaded_through_drain": true,
+        "colonists": colonists.len(),
+        "adopted_residents": adopted_residents,
+        "took_fallback": adopted_residents == 0,
+        // `paint_jobs` is the count `place_designation` returned AT PAINT
+        // TIME, which is legitimately 0 while the farm's till jobs are still
+        // being generated -- it is reported, not asserted on. `plot_datum` is
+        // the sampled MAX ground the pad was cut to; when it disagrees with
+        // where the crops actually appear, the probe's z band is what covers
+        // the gap (see `sown_cells`).
+        "paint_jobs": paint_jobs,
+        "plot_datum": gz,
+        "plot_min": [plot.min.x, plot.min.y],
+        "plot_max": [plot.max.x, plot.max.y],
+        // Outcome.
+        "seeds_total": seeds_total,
+        "seeds_survived": seeds_total > 0,
+        "seeds_first_seen_tick": seeds_first_seen_tick,
+        "sown_cells": sown,
+        "pass": pass,
+    });
+    println!(
+        "{}",
+        serde_json::to_string(&result).expect("Value is always serializable")
+    );
     if pass {
         ExitCode::SUCCESS
     } else {

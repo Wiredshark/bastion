@@ -7992,6 +7992,31 @@ pub struct MineReadbackQueue(pub Vec<MineReadbackEntry>);
 #[derive(Default)]
 pub struct PendingSeedItems(pub Vec<(Vec3<i32>, String, u32)>);
 
+/// bastion (FOUNDING SEED STOCK, 2026-08-21): the origins that have already
+/// received their founding stock — the once-per-colony latch that lets the
+/// grant hang off COLONY ESTABLISHMENT instead of off particular spawn
+/// helpers.
+///
+/// WHY A LATCH IS REQUIRED, not merely tidy: the grant now fires from
+/// `Server::bastion_found_colony_presence`, the ONE call every establishment
+/// path makes (the three `Server` founding helpers, and the live
+/// `BastionSpawnColony` message via `CreateColonyPresenceEvent`) — and the
+/// autofound path calls presence THREE times for a single colony (the adopt
+/// helper, the zero-resident fallback's spawn helper, then the explicit call
+/// that closes `bastion_autofound_found`). Without this latch, consolidating
+/// onto presence would TRIPLE the stock rather than fix its delivery.
+///
+/// Keyed by ORIGIN, not a bare bool: `bastion_arena.rs`'s staging spawn and
+/// the harness's scenario foundings each establish a colony at a position of
+/// their own and each is entitled to its own stock, exactly as today. Only a
+/// repeat at the SAME origin is the double-fire this suppresses.
+///
+/// Iteration order is never observed (`contains`/`insert` only), so the
+/// HashSet carries no determinism hazard. MANUALLY inserted at server
+/// construction for the measured reason in [`PendingSeedItems`] above.
+#[derive(Default)]
+pub struct FoundingStockGranted(pub std::collections::HashSet<Vec3<i32>>);
+
 /// bastion (ITEM 29): the trade price book — (site position, food received
 /// per wood sold), refreshed by the SERVER (which can see `world`'s site
 /// economies; this leaf crate cannot) and READ by the mission generator.

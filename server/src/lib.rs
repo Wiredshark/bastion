@@ -702,6 +702,12 @@ impl Server {
         state
             .ecs_mut()
             .insert(bastion_jobs::PendingSeedItems::default());
+        // Same measured lesson, third instance — the founding-stock latch
+        // (`bastion_found_colony_seed_stock` reads it on the FIRST founding
+        // tick, long before any auto-setup could have run).
+        state
+            .ecs_mut()
+            .insert(bastion_jobs::FoundingStockGranted::default());
         state
             .ecs_mut()
             .insert(bastion_jobs::TradePriceBook::default());
@@ -1309,7 +1315,8 @@ impl Server {
             .ecs()
             .write_resource::<rtsim::RtSim>()
             .bastion_spawn_colony(wpos, count);
-        self.bastion_found_colony_seed_stock(wpos);
+        // Seed stock is NOT called here: it hangs off establishment itself,
+        // inside `bastion_found_colony_presence` (see its doc).
         self.bastion_found_colony_presence(wpos);
         names
     }
@@ -1327,7 +1334,6 @@ impl Server {
             .ecs()
             .write_resource::<rtsim::RtSim>()
             .bastion_spawn_colony_seeded(wpos, count, seed_tick);
-        self.bastion_found_colony_seed_stock(wpos);
         self.bastion_found_colony_presence(wpos);
         names
     }
@@ -1374,40 +1380,109 @@ impl Server {
             .ecs()
             .write_resource::<rtsim::RtSim>()
             .bastion_adopt_town_npcs(near, 0, &houses, wanted as usize);
-        self.bastion_found_colony_seed_stock(wpos);
         self.bastion_found_colony_presence(wpos);
         names
     }
 
-    /// bastion (#105, DECISIONS-FOR-BEN: FOUNDING SEED STOCK): the shared
-    /// half of colony founding both spawn paths above call -- a persistent
-    /// loose drop (same mechanism as a player's own `/dropall true`, item
-    /// 6's own instrument) so it becomes eligible for the B6 haul-to-
-    /// stockpile pipeline the moment a stockpile is designated nearby.
-    /// Deliberately at the Server layer, not inside `RtSim`: RtSim has no
-    /// ECS item-drop/event-bus access, and every founding that reaches the
-    /// Server API (live or determinism-capture) should carry the same
-    /// starting stock -- one entry point, not a live-only special case.
+    /// bastion (#105, DECISIONS-FOR-BEN: FOUNDING SEED STOCK): the colony's
+    /// starting seeds -- a persistent loose drop (same mechanism as a
+    /// player's own `/dropall true`, item 6's own instrument) so it becomes
+    /// eligible for the B6 haul-to-stockpile pipeline. Deliberately at the
+    /// Server layer, not inside `RtSim`: RtSim has no ECS item-drop/event-bus
+    /// access.
     ///
-    /// TWO PRODUCERS BY DESIGN, NOT A DOUBLE-FIRE RISK: this one, and the
-    /// twin at `sys/msg/in_game.rs`'s `rtsim.bastion_spawn_colony` call
-    /// site (the live `BastionSpawnColony` client-message path, which
-    /// bypasses this method entirely -- see that call site's own doc for
-    /// why the fix originally missed it). The two entry points are
-    /// disjoint by construction: a live client founding is handled
-    /// entirely inside that system and never reaches `Server::
-    /// bastion_spawn_colony`/`_seeded`; every OTHER caller of THIS method
-    /// -- the harness's ~60 scenario call sites, `bastion_arena.rs`'s
-    /// "fixture" staging spawn (a live but non-client-message admin path),
-    /// determinism-capture code -- is a direct Rust call that never goes
-    /// through the client-message system at all. One founding call, one
-    /// path, one producer -- grep both sites before assuming otherwise.
+    /// ★ ONE PRODUCER, HUNG OFF ESTABLISHMENT (2026-08-21). The previous doc
+    /// here asserted "one founding call, one path, one producer" over TWO
+    /// hand-maintained producers (this method, called from three spawn
+    /// helpers, plus an inline twin in `sys/msg/in_game.rs`) and invited the
+    /// reader to "grep both sites before assuming otherwise". That structure
+    /// is a standing invitation to add a fourth founding path that grants
+    /// nothing, and the claim could only ever be true until the next path
+    /// existed. It is now called from exactly one place --
+    /// [`Self::bastion_found_colony_presence`], which is the ONE call every
+    /// establishment path already makes -- so a new founding path inherits
+    /// the stock by construction instead of by remembering. The latch that
+    /// makes that safe is [`bastion_jobs::FoundingStockGranted`].
+    ///
+    /// ★ AND IT DEFERS WHEN THE GROUND IS NOT THERE YET. The direct emit
+    /// this used to do is CORRECT only where the founding chunk is already
+    /// loaded -- true on the flat arena the harness founds into, false at an
+    /// adopted town, whose site sits outside the radius-5 area the autofound
+    /// force-loads and whose chunks stream in several ticks after the
+    /// founding. A drop into unloaded space is not an error, it is a
+    /// SILENCE: this row's sibling fixtures already paid for that exact
+    /// lesson twice (see [`bastion_jobs::PendingSeedItems`] and
+    /// `bastion_seed_materials` -- "direct emits landed in the void
+    /// (food_stock=0 all leg while the witness said seeded=64)"), and the
+    /// founding stock was the one founding-time item spawn that never got
+    /// the treatment. Measured consequence, ~31 game days on the adopt-town
+    /// arm: 112 cells tilled, 106 sow jobs created, 0 sown, every tick's
+    /// claim census reasoning `materials`.
+    ///
+    /// So: drop immediately WHEN THE TARGET BLOCK IS LOADED (byte-identical
+    /// to the old behaviour everywhere that behaviour worked), and otherwise
+    /// hand the stock to the `PendingSeedItems` drain, which delivers on
+    /// chunk-load AND retargets into the stockpile -- the population
+    /// `stockpile_has_material` actually reads, and therefore the difference
+    /// between seeds existing and seeds being sowable.
+    ///
+    /// AND IT LEAVES A WITNESS EITHER WAY. This method logged NOTHING for
+    /// its whole life, which is why the play session that found the bug
+    /// reasoned from `grep wheat` over the server log and concluded the
+    /// grant had never run. It had run; it had vanished. A null with no
+    /// couldn't-happen witness reads identically to a null that never fired.
     fn bastion_found_colony_seed_stock(&mut self, wpos: Vec3<f32>) {
-        self.bastion_spawn_item(
-            wpos,
-            bastion_jobs::FARM_SEED_ITEM,
-            bastion_jobs::FOUNDING_SEED_STOCK,
-        );
+        let origin = wpos.map(|e| e.floor() as i32);
+        // ONCE PER ORIGIN. The autofound path reaches presence three times
+        // for one colony (see the latch's doc); a distinct origin is a
+        // distinct colony and still gets its own stock.
+        {
+            let ecs = self.state.ecs();
+            let mut granted = ecs.write_resource::<bastion_jobs::FoundingStockGranted>();
+            if !granted.0.insert(origin) {
+                return;
+            }
+        }
+        // The load probe is the SAME question the `PendingSeedItems` drain
+        // asks (`terrain.get(pos).is_ok()`), so the two halves cannot
+        // disagree about what "loaded" means.
+        let loaded = {
+            use common::vol::ReadVol;
+            let ecs = self.state.ecs();
+            let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
+            terrain.get(origin).is_ok()
+        };
+        if loaded {
+            let dropped = self.bastion_spawn_item(
+                wpos,
+                bastion_jobs::FARM_SEED_ITEM,
+                bastion_jobs::FOUNDING_SEED_STOCK,
+            );
+            tracing::info!(
+                item = bastion_jobs::FARM_SEED_ITEM,
+                amount = bastion_jobs::FOUNDING_SEED_STOCK,
+                pos = ?wpos,
+                dropped,
+                "bastion: founding stock dropped (founding chunk already loaded)"
+            );
+        } else {
+            self.state
+                .ecs()
+                .write_resource::<bastion_jobs::PendingSeedItems>()
+                .0
+                .push((
+                    origin,
+                    bastion_jobs::FARM_SEED_ITEM.to_string(),
+                    bastion_jobs::FOUNDING_SEED_STOCK,
+                ));
+            tracing::info!(
+                item = bastion_jobs::FARM_SEED_ITEM,
+                amount = bastion_jobs::FOUNDING_SEED_STOCK,
+                pos = ?origin,
+                "bastion: founding stock QUEUED for chunk-load delivery (founding chunk not \
+                 loaded -- a direct drop here would land in the void)"
+            );
+        }
     }
 
     /// ★ THE FOUNDING TOOL KIT (Ben RULED 2026-08-21: "yes colonist start with
@@ -1577,11 +1652,25 @@ impl Server {
     /// colony but grow UNBOUNDED across many, and item 40 (multi-colony)
     /// is where that cost gets revisited, not here.
     ///
-    /// Same "two producers by design" shape as
-    /// `bastion_found_colony_seed_stock` above, called from the same two
-    /// call sites for the same reason (the live `BastionSpawnColony`
-    /// message bypasses this method entirely) -- see that method's doc.
+    /// ★ THIS IS ALSO WHERE THE COLONY GETS ITS SEEDS (2026-08-21). Presence
+    /// is the ONE call every establishment path already makes -- the three
+    /// `Server` founding helpers call it directly, and the live
+    /// `BastionSpawnColony` message reaches it through
+    /// `CreateColonyPresenceEvent` -- which makes it the only honest place to
+    /// hang "a colony was established" work. `bastion_found_colony_seed_stock`
+    /// therefore hangs off THIS call rather than off the spawn helpers, so a
+    /// founding path added later inherits the stock by construction. See that
+    /// method's doc for the defect that forced the move.
+    ///
+    /// It also inherits presence's refusal contract for free: the live path
+    /// emits `CreateColonyPresenceEvent` only in its success branch, so a
+    /// REFUSED founding still grants no stock, exactly as before.
+    ///
+    /// The grant is deliberately OUTSIDE the `worldgen` cfg below: a colony
+    /// established on a non-worldgen build is still a colony that must be
+    /// able to farm, and only the chunk-loading presence needs the feature.
     pub(crate) fn bastion_found_colony_presence(&mut self, wpos: Vec3<f32>) {
+        self.bastion_found_colony_seed_stock(wpos);
         #[cfg(feature = "worldgen")]
         {
             // ★ VIEW DISTANCE IS NOW A KNOB (BASTION_COLONY_PRESENCE_VD).
@@ -7103,7 +7192,14 @@ impl Server {
     /// window, exactly as the seed-food block did before it. Returns the
     /// re-anchored spawn, the town origin, and the mapped plots; `None` =
     /// mode B, byte-identical founding.
-    fn bastion_adoption(
+    ///
+    /// `pub` for the harness (`--adoptseed-scenario`), which must found at the
+    /// town THIS decision picks rather than at a lookalike position of its
+    /// own: the whole point of that regression is that the re-anchored spawn
+    /// lands in an UNLOADED chunk, and a fixture that chose its own coordinate
+    /// would be asserting against its own arithmetic. Side-effect free
+    /// (`&self`), so exposing it adds no path, only a reader.
+    pub fn bastion_adoption(
         &self,
         sp: Vec3<f32>,
     ) -> Option<(

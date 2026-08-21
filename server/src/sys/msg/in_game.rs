@@ -61,18 +61,16 @@ event_emitters! {
         set_battle_mode: event::SetBattleModeEvent,
         // bastion (B3): god-anchor invulnerability buff add/remove
         buff: event::BuffEvent,
-        // bastion (#105, DECISIONS-FOR-BEN: FOUNDING SEED STOCK): the LIVE
-        // BastionSpawnColony path -- Server::bastion_spawn_colony's own
-        // seed-stock call never reaches this system; live colony founding
-        // calls `rtsim.bastion_spawn_colony` directly (see the call site
-        // below), so the founding drop has to be emitted from here too,
-        // not just the Server-level wrapper the harness goes through.
-        create_item_drop: event::CreateItemDropEvent,
-        // bastion (ROW-COLONY-PRESENCE, DECISIONS #106): same live-path
-        // reasoning as `create_item_drop` right above -- the Server-level
-        // founding wrapper (`bastion_found_colony_presence`) never runs
-        // for a live client founding, which calls `rtsim.
-        // bastion_spawn_colony` directly from inside this system.
+        // bastion (ROW-COLONY-PRESENCE, DECISIONS #106): the live
+        // BastionSpawnColony path's route to the Server-level founding
+        // work. Live colony founding calls `rtsim.bastion_spawn_colony`
+        // directly from inside this system and so never reaches
+        // `Server::bastion_spawn_colony`; this event is what still gets it
+        // `Server::bastion_found_colony_presence`, which mints the presence
+        // AND grants the founding seed stock. (A `create_item_drop` emitter
+        // used to sit beside this one, purely to inline a copy of that seed
+        // grant here. It is gone -- one producer, reached through this
+        // event; see `Server::bastion_found_colony_seed_stock`.)
         create_colony_presence: event::CreateColonyPresenceEvent,
     }
 }
@@ -873,7 +871,12 @@ impl<'a> System<'a> for Sys {
         (
             WriteStorage<'a, common::comp::BastionGodAnchor>,
             Read<'a, common::resources::Time>,
-            // #105: PickupItem::new needs this for the founding seed drop.
+            // #105 USED this for the inlined founding seed drop, which now
+            // lives in `Server::bastion_found_colony_seed_stock`. The
+            // dependency is KEPT rather than dropped: removing a read from a
+            // system's `SystemData` changes what the specs dispatcher may run
+            // it in parallel with, and this row is not the place to move a
+            // scheduling edge (DETERMINISM BY CONSTRUCTION). Bound as `_`.
             ReadExpect<'a, common::resources::ProgramTime>,
             specs::WriteExpect<'a, crate::rtsim::RtSim>,
             Write<'a, crate::bastion_jobs::JobBoard>,
@@ -943,7 +946,7 @@ impl<'a> System<'a> for Sys {
             (
                 mut god_anchors,
                 time,
-                program_time,
+                _program_time,
                 mut rtsim,
                 mut job_board,
                 world,
@@ -1471,67 +1474,27 @@ impl<'a> System<'a> for Sys {
 
                     // bastion (B3): spawn the starting band (validated above).
                     rtsim.bastion_spawn_colony(pos, count);
-                    // #105 (DECISIONS-FOR-BEN, FOUNDING SEED STOCK): a
-                    // persistent loose drop, same mechanism as a player's
-                    // own `/dropall true` (item 6's own instrument) --
-                    // eligible for the B6 haul-to-stockpile pipeline the
-                    // moment a stockpile is designated nearby. Live-path
-                    // twin of `Server::bastion_found_colony_seed_stock`;
-                    // this is the entry point that actually fires for a
-                    // real in-game founding (caught live-first: the
-                    // Server-level wrapper alone tested green against the
-                    // harness while staying inert here -- the acceptance
-                    // run's honest 0-sown result is what caught it).
+                    // #105 (FOUNDING SEED STOCK) USED TO BE INLINED HERE, as
+                    // a hand-maintained twin of
+                    // `Server::bastion_found_colony_seed_stock`. It is gone
+                    // on purpose (2026-08-21): the stock now hangs off
+                    // `Server::bastion_found_colony_presence`, which the
+                    // `CreateColonyPresenceEvent` emitted below reaches, so
+                    // this path still grants exactly one stock -- through the
+                    // same producer every other founding path uses, rather
+                    // than through a copy that has to be kept in step by
+                    // grepping. The pair of twins had already cost one
+                    // 0-sown acceptance run when only the Server half
+                    // existed; a second founding path (autofound/adopt) then
+                    // proved the "disjoint by construction" claim was a
+                    // property of the paths that happened to exist, not an
+                    // invariant. Delivery, retry-on-unloaded-chunk and the
+                    // witness line all live in that one method now.
                     //
-                    // NOT a double-fire with the Server-level twin: a
-                    // founding reaches exactly one of the two entry points,
-                    // never both. This one fires ONLY from the live
-                    // `ClientGeneral::BastionSpawnColony` message, handled
-                    // entirely inside this system -- it never calls
-                    // `Server::bastion_spawn_colony`/`_seeded`. Every other
-                    // caller of THOSE (the harness's ~60 scenario sites,
-                    // `bastion_arena.rs`'s "fixture" staging spawn, any
-                    // determinism-capture code) is a direct Rust call that
-                    // never routes through this client-message system. See
-                    // the Server-level twin's own doc for the full
-                    // caller enumeration.
-                    if let Ok(mut item) =
-                        common::comp::Item::new_from_asset(crate::bastion_jobs::FARM_SEED_ITEM)
-                    {
-                        let _ = item.set_amount(crate::bastion_jobs::FOUNDING_SEED_STOCK);
-                        // FOUNDING PRESET F-2 (2026-08-12): the founding stock had NO
-                        // witness line. A5/A3 both read "founded WITH stock", and with
-                        // no emit that premise is UNREAD rather than true -- the same
-                        // shape as every unwitnessed outcome this arc has paid for.
-                        //
-                        // `amount` is read BACK OFF THE ITEM, never echoed from
-                        // FOUNDING_SEED_STOCK: `set_amount`'s Result is discarded above,
-                        // so the constant is the INTENT and only the item carries the
-                        // EFFECT. Reporting the constant here would be the F8 defect in
-                        // miniature -- announcing what we meant to do.
-                        //
-                        // Inside the `Ok` arm on purpose: if the asset fails to load
-                        // there is no drop, and there must be no line claiming one.
-                        let dropped_amount = item.amount();
-                        post_emitters.emit(event::CreateItemDropEvent {
-                            pos: common::comp::Pos(pos),
-                            vel: common::comp::Vel(Vec3::zero()),
-                            ori: common::comp::Ori::default(),
-                            item: common::comp::PickupItem::new(item, *program_time, true),
-                            loot_owner: None,
-                            persistent: true,
-                        });
-                        tracing::info!(
-                            item = crate::bastion_jobs::FARM_SEED_ITEM,
-                            amount = dropped_amount,
-                            pos = ?pos,
-                            "bastion: founding stock dropped"
-                        );
-                    }
                     // bastion (ROW-COLONY-PRESENCE, DECISIONS #106): the
-                    // live-path twin of `Server::bastion_found_colony_
-                    // presence` above -- same disjoint-producer shape as
-                    // the seed-stock drop right above it.
+                    // live-path route into `Server::bastion_found_colony_
+                    // presence`, which the Server-level founding helpers
+                    // call directly.
                     //
                     // FOUNDING PRESET v1: this IS the promotion half of
                     // "spawn + promote" — the server-owned colony presence
