@@ -619,7 +619,34 @@ impl RtSim {
                 Profession::Merchant,
             ];
             for (i, house) in plan.iter().copied().enumerate() {
-                let home_wpos = house_plots[house];
+                // ★ SPREAD THEM AROUND THE DOOR, don't stack them on it.
+                // `settle_plan` wraps when there are fewer houses than
+                // colonists -- 8 residents over 4 houses is [0,1,2,3,0,1,2,3]
+                // -- so without an offset each pair materialises at the SAME
+                // Vec3. The first live leg founded 8 and the census read
+                // total=8 at tick 300, 600, then 7 from tick 900 onward with
+                // downed=0, no COLONIST DIED, and no despawn line: one
+                // colonist left the ECS silently and never came back.
+                //
+                // NOT CLAIMED AS THE CAUSE -- one vanished, not four, so
+                // co-location does not by itself explain it and the real
+                // remover is still unidentified. This offset is here because
+                // two people occupying one block is wrong regardless, and
+                // because it removes co-location as a CONFOUND from the next
+                // run: if a colonist still vanishes with everyone on their own
+                // block, the cause is elsewhere and we will know it in one leg
+                // instead of arguing about it.
+                //
+                // Deterministic by construction (index-derived, no RNG draw):
+                // a ring of 8 around the house centre, so the same world always
+                // places the same person in the same spot.
+                let ring = [
+                    (0i32, 0i32), (2, 0), (0, 2), (-2, 0),
+                    (0, -2), (2, 2), (-2, 2), (2, -2),
+                ];
+                let (dx, dy) = ring[i % ring.len()];
+                let home_wpos =
+                    house_plots[house] + Vec3::new(dx as f32, dy as f32, 0.0);
                 let species = *common::comp::humanoid::ALL_SPECIES
                     .choose(&mut rng)
                     .expect("humanoid species catalog must not be empty");
@@ -990,6 +1017,32 @@ impl RtSim {
     pub fn hook_rtsim_entity_unload(&mut self, entity: RtSimEntity) {
         let data = self.state.get_data_mut();
 
+        // ★ THE COLONY DOES NOT SHRINK -- THE INSTRUMENT DOES (2026-08-21).
+        // A verification run read total=8 at ticks 300 and 600, then total=7
+        // from tick 900 onward, with downed=0, no COLONIST DIED and no despawn
+        // line. It looked exactly like a colonist silently vanishing, and that
+        // is how I first read it. Nobody died: ONE colonist walked out of the
+        // loaded area and was demoted here, losing its ECS entity.
+        //
+        // A JOIN IS A FILTER. Every ECS-joined instrument drops that colonist
+        // at once -- the EXPERIENCE census `total`, `fed`, `rested`, `engaged`,
+        // and (the part with teeth) food_per_cap, beds_short and the colony
+        // drive, which therefore decide against a denominator that shrinks
+        // whenever somebody goes for a walk.
+        //
+        // So the boundary emit now carries the WHOLE population, counted from
+        // rtsim rather than the ECS: a reader can no longer mistake a demotion
+        // for a death, because the totals sit beside it and they conserve.
+        let (mut loaded_c, mut simulated_c) = (0u32, 0u32);
+        for (_, n) in data.npcs.npcs.iter() {
+            if n.bastion_colonist.is_some() {
+                match n.mode {
+                    SimulationMode::Loaded => loaded_c += 1,
+                    SimulationMode::Simulated => simulated_c += 1,
+                }
+            }
+        }
+
         if let Some(npc) = data.npcs.get_mut(entity) {
             if matches!(npc.mode, SimulationMode::Simulated) {
                 error!("Unloaded already unloaded entity");
@@ -998,6 +1051,14 @@ impl RtSim {
             if let Some(colonist) = &npc.bastion_colonist {
                 tracing::info!(
                     name = colonist.name.as_str(),
+
+                    // Counted BEFORE this demotion lands, so the line reads as
+                    // the transition it is. `colony_total` is the number that
+                    // must NOT move for a demotion -- if it drops, somebody
+                    // really did die and this is not the reason.
+                    colony_total = loaded_c + simulated_c,
+                    loaded_before = loaded_c,
+                    simulated_before = simulated_c,
                     "bastion: colonist demoted to SimulationMode::Simulated"
                 );
             }

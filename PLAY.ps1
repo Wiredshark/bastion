@@ -110,6 +110,12 @@ if ($skewMin -gt 3) {
 $EnvVars = if ($Mode -eq 'town') {
     @{
         BASTION_ADOPT_TOWN             = '1'
+        # Hold founding until the player marks the town they want. Without
+        # this, autofound fires at tick 30 -- one second after boot -- and
+        # takes the town nearest spawn, so the map-marker choice can never
+        # happen and the player's real choice is later REFUSED with "your
+        # colony already lives in this world".
+        BASTION_ADOPT_WAIT_FOR_MARKER  = '1'
         BASTION_AUTOFOUND_REAL_TERRAIN = '1'
         BASTION_COLONY_PRESENCE_VD     = '3'
         BASTION_AUTOFOUND_COLONY       = '8'

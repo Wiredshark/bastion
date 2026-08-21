@@ -5691,7 +5691,54 @@ impl Server {
                         .state()
                         .data()
                         .tick;
-                    if dtick >= 30 {
+                    // ★ LET THE PLAYER CHOOSE THE TOWN (Ben, 2026-08-21:
+                    // "I don't see any of my colonist after choosing a town").
+                    //
+                    // Autofound fires at tick 30 -- about one second after the
+                    // world boots. A player cannot place a map marker in one
+                    // second, so `adopt_target`'s marker branch was UNREACHABLE
+                    // in live play: it always took the town nearest spawn,
+                    // logged `player_chose=false`, and then REFUSED Ben's
+                    // actual choice later with "your colony already lives in
+                    // this world". The feature he asked for existed and had
+                    // never once run.
+                    //
+                    // GATED ON ITS OWN FLAG, NOT ON ADOPT-TOWN. Roughly sixty
+                    // harness foundings run with BASTION_ADOPT_TOWN=1 and no
+                    // player; making adoption wait for a marker unconditionally
+                    // would move every one of them off tick 30 and rebase every
+                    // captured baseline. The status quo is the EXERCISED
+                    // population, so it keeps its exact timing and the new
+                    // behaviour is opt-in (PLAY.ps1 sets it).
+                    let wait_for_marker = std::env::var_os("BASTION_ADOPT_WAIT_FOR_MARKER")
+                        .is_some();
+                    let blocked_on_marker = if wait_for_marker && dtick >= 30 {
+                        let has_marker = {
+                            let ecs = self.state.ecs();
+                            let markers = ecs.read_storage::<comp::MapMarker>();
+                            use specs::Join as _;
+                            markers.join().next().is_some()
+                        };
+                        if has_marker {
+                            tracing::info!(
+                                dtick,
+                                "bastion: ADOPT-A-TOWN — map marker found, founding at the                                  town YOU chose"
+                            );
+                        } else if dtick % 600 == 30 {
+                            // A WAITING WITNESS, not silence. "Waiting for you
+                            // to pick a town" and "founding is broken" look
+                            // identical from outside, and this path can now
+                            // legitimately do nothing for minutes.
+                            tracing::info!(
+                                dtick,
+                                "bastion: ADOPT-A-TOWN is WAITING for you to place a map                                  marker on the town you want — nothing is wrong; founding                                  is deliberately held until you choose"
+                            );
+                        }
+                        !has_marker
+                    } else {
+                        false
+                    };
+                    if dtick >= 30 && !blocked_on_marker {
                         SPAWNED.store(true, Ordering::Relaxed);
                         let center = bastion_flat_arena::world_center_wpos(&self.world);
                         // On the flat arena the spawn z is the slab constant. On
