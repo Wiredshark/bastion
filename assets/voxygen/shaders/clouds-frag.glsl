@@ -295,7 +295,18 @@ void main() {
                     cloud_blend = 1;
                 }
         }
-        color.rgb = mix(color.rgb, get_cloud_color(color.rgb, dir, cam_pos.xyz, dist, 1.0), cloud_blend);
+        // bastion (overseer haze fix): atmospheric scattering is
+        // FOCUS-relative, not camera-relative. The overseer camera rides
+        // hundreds of blocks above the ground it inspects; marching the
+        // full camera distance painted everything below the focus with
+        // dawn/dusk haze (the "mauve lake" report — the wash boundary was
+        // the scatter sphere, not water at all). Subtract the camera's
+        // stand-off from the marched distance; vanilla cameras sit within
+        // a few blocks of focus, so the 32-block guard keeps them
+        // pixel-identical.
+        float bastion_standoff = max(distance(cam_pos.xyz, focus_pos.xyz) - 32.0, 0.0);
+        float bastion_scatter_dist = max(dist - bastion_standoff, 0.0);
+        color.rgb = mix(color.rgb, get_cloud_color(color.rgb, dir, cam_pos.xyz, bastion_scatter_dist, 1.0), cloud_blend);
 
         #ifndef RAIN_ENABLED
             color.rgb = apply_point_glow(cam_pos.xyz + focus_off.xyz, dir, dist, color.rgb);
