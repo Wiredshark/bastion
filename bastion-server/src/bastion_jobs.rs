@@ -7700,6 +7700,54 @@ impl JobBoard {
                 self.remove_job(id);
             }
         }
+        // ★ THE TWO REGISTRIES A CANCEL NEVER TOUCHED (2026-08-21, found by
+        // ecstatic-gates-bdbd18-0c while scoping the granularity ruling).
+        // This function prunes zones, jobs, plans, reservations,
+        // blocked_regions and the claim mask -- and NEVER pruned
+        // `cook_stations` or `beds`. Neither registry had a removal path
+        // anywhere in this file.
+        //
+        // So an erased kitchen left a station that kept generating Cook jobs
+        // and "cook station idle" lines forever, and an erased bedroom left a
+        // bed slot the sleep assigner would still hand out -- pointing a
+        // colonist at furniture that no longer exists. A player who un-paints
+        // a room could not un-paint its consequences.
+        //
+        // OCCUPANCY IS CLEARED BEFORE REMOVAL, not silently dropped: a sleeper
+        // whose bed is destroyed under them must be released, exactly as a
+        // claimant whose job is cancelled is released above. Removing the slot
+        // while it still records an occupant would leave that uid referenced
+        // by nothing, which is how the B7-1 orphan sweep got written.
+        let stations_before = self.cook_stations.len();
+        self.cook_stations.retain(|p| !region.contains_point(*p));
+        let stations_lost = stations_before - self.cook_stations.len();
+        let mut beds_lost = 0usize;
+        let mut beds_lost_occupied = 0usize;
+        self.beds.retain(|p, slot| {
+            if region.contains_point(*p) {
+                beds_lost += 1;
+                if slot.occupant.is_some() {
+                    beds_lost_occupied += 1;
+                    slot.occupant = None;
+                }
+                false
+            } else {
+                true
+            }
+        });
+        if stations_lost > 0 || beds_lost > 0 {
+            info!(
+                stations_lost,
+                beds_lost,
+                // Called out separately because it is the one with a live
+                // consequence: somebody was asleep in it.
+                beds_lost_occupied,
+                stations_left = self.cook_stations.len(),
+                beds_left = self.beds.len(),
+                ?region,
+                "bastion: CANCEL destroyed registered furniture — these used to                  survive the cancel and keep generating work forever"
+            );
+        }
         // ★ SAY WHAT THE BRUSH DID (2026-08-21): a cancel used to report only
         // the thing the player INTENDED ("Designations cancelled.") and never
         // the thing it destroyed. Zones lost/shrunk are the expensive half.
@@ -25774,6 +25822,59 @@ mod tests {
         // founding a third.
         assert!(!register_cook_station(&mut stations, origin + Vec3::new(1, 0, 0)));
         assert_eq!(stations.len(), 2, "the gap cell joins, it does not found");
+    }
+
+    /// ★ A CANCEL MUST DESTROY THE FURNITURE IT ERASES.
+    ///
+    /// `cancel_region` pruned zones, jobs, plans, reservations,
+    /// blocked_regions and the claim mask -- and never `cook_stations` or
+    /// `beds`. Neither registry had a removal path anywhere in this file, so
+    /// an erased kitchen kept generating Cook jobs forever and an erased
+    /// bedroom left a slot the sleep assigner still handed out.
+    ///
+    /// BOTH DIRECTIONS ARE PINNED, because a prune that removes EVERYTHING
+    /// also stops the bug reproducing and would pass a one-sided test: the
+    /// furniture inside the cancelled region must go, and the furniture
+    /// outside it must survive.
+    #[test]
+    fn a_cancel_destroys_the_furniture_inside_it_and_spares_the_furniture_outside() {
+        use common::bastion::{BedKind, BedSlot};
+        let mut board = JobBoard::default();
+        let inside = Vec3::new(5, 5, 10);
+        let outside = Vec3::new(50, 50, 10);
+        board.cook_stations.push(inside);
+        board.cook_stations.push(outside);
+        board.beds.insert(inside, BedSlot {
+            kind: BedKind::Frame,
+            owner: None,
+            // Occupied on purpose: a sleeper whose bed is erased is the case
+            // with a live consequence, and the one most likely to be missed.
+            occupant: Some(Uid(NonZeroU64::new(11).unwrap())),
+        });
+        board.beds.insert(outside, BedSlot {
+            kind: BedKind::Frame,
+            owner: None,
+            occupant: None,
+        });
+
+        board.cancel_region(Region {
+            min: Vec3::new(0, 0, 8),
+            max: Vec3::new(10, 10, 12),
+        });
+
+        assert_eq!(
+            board.cook_stations,
+            vec![outside],
+            "the erased kitchen must go, and only it -- a station outside the brush is              not the player's to lose"
+        );
+        assert!(
+            !board.beds.contains_key(&inside),
+            "an erased bedroom must not leave a slot the sleep assigner still hands out"
+        );
+        assert!(
+            board.beds.contains_key(&outside),
+            "a bed outside the cancelled region must survive: a prune that removes              everything also stops the bug reproducing"
+        );
     }
 
     /// ★ F16: A STARVING COLONY MUST STILL BE ABLE TO DEFEND ITSELF.
