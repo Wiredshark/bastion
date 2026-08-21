@@ -86,12 +86,36 @@ pub fn flatten(sim: &mut WorldSim) -> usize {
             let Some(chunk) = sim.get_mut(key) else {
                 continue;
             };
-            let delta = target - chunk.alt;
+            // ★ TAPER THE RIM, or the disc is a CLIFF (2026-08-21). The
+            // first leg flattened radius 14 with max_drop=82: an
+            // eighty-two-block vertical wall right around the edge. Nothing
+            // about that looks like a real place, and it is a pathing hazard
+            // of exactly the kind this work exists to remove -- a colonist
+            // who wanders to the rim has an 82-block fall waiting.
+            //
+            // Blend over the outer fifth of the radius so the plain meets the
+            // world it sits in. `t` is 1.0 through the inner core and eases to
+            // 0.0 at the boundary, so the centre is genuinely flat (which is
+            // the point) and only the margin slopes.
+            let d = ((dx * dx + dy * dy) as f32).sqrt();
+            let inner = radius as f32 * 0.8;
+            let t = if d <= inner {
+                1.0
+            } else {
+                let u = ((radius as f32 - d) / (radius as f32 - inner)).clamp(0.0, 1.0);
+                // Smoothstep, not linear: a linear blend leaves a visible
+                // crease where the taper meets the flat core.
+                u * u * (3.0 - 2.0 * u)
+            };
+            let blended = chunk.alt + (target - chunk.alt) * t;
+
+            let delta = blended - chunk.alt;
             if delta < 0.0 {
                 max_drop = max_drop.max(-delta);
             } else {
                 max_lift = max_lift.max(delta);
             }
+            let target = blended;
             chunk.alt = target;
             // `basement` is the rock floor BENEATH the surface. Leaving it
             // above the new altitude would put stone through the ground where
