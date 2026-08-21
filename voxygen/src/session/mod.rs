@@ -2398,10 +2398,17 @@ impl PlayState for SessionState {
             global_state.settings.graphics.fov,
         )
         .unwrap_or_default();
-        let horizon_terrain = self
-            .scene
-            .terrain()
-            .visible_horizon_census_v1(self.scene.camera().get_focus_pos());
+        // Row-81 exclusion (1) FIXED: the census walks every loaded chunk
+        // and used to run per-frame on the DEFAULT path. It has exactly two
+        // consumers — the armed r0p observer and the horizon fixture — so
+        // it now runs only for them; everyone else gets the zero default.
+        let horizon_terrain = if crate::r0p_observer::enabled() || horizon_fixture_selected {
+            self.scene
+                .terrain()
+                .visible_horizon_census_v1(self.scene.camera().get_focus_pos())
+        } else {
+            Default::default()
+        };
         crate::r0p_observer::record_scene_counters(crate::r0p_observer::SceneCountersV1 {
             terrain_chunks: u64::try_from(self.scene.terrain().chunk_count()).unwrap_or(u64::MAX),
             visible_terrain_chunks: u64::try_from(self.scene.terrain().visible_chunk_count())

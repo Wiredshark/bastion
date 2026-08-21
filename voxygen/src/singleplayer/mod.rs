@@ -475,9 +475,19 @@ fn run_server(mut server: Server, stop_server_r: Receiver<()>, paused: Arc<Atomi
         match crate::render::bastion_r0d::continuous_streaming_measurement_selected_v1() {
             Ok(selected) => selected,
             Err(fault) => {
+                // Row-81 exclusion (3) FIXED: an invalid declaration used
+                // to `return` here — killing the EMBEDDED SERVER (and the
+                // whole session with it) over a diagnostic env typo. The
+                // fault is recorded (any certification leg that expected
+                // the measurement sees it and refuses on its own), the
+                // error is loud, and the game keeps running unmeasured.
                 crate::render::bastion_r0d::record_certification_fixture_fault_v1(fault);
-                error!(fault, "bastion: invalid streaming-measurement declaration");
-                return;
+                error!(
+                    fault,
+                    "bastion: invalid streaming-measurement declaration — measurement DISABLED, \
+                     server continues (fault recorded for the certification path)"
+                );
+                false
             },
         };
     let certification_freeze_tick =
