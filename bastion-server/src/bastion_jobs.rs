@@ -23258,6 +23258,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     });
                     if needs_fetch {
                         let req = board.jobs.get(&job_id).and_then(|j| j.required_item);
+                        // ★ THE DEAD-COLONY ROOT (2026-08-21, found by
+                        // playing then confirmed by a workflow's verify leg):
+                        // SCORING asks "is there material?" unit-aware —
+                        // `stockpile_has_material`, which counts a merged
+                        // pile's SPARE UNITS — while this commit-time scan
+                        // still asked the old whole-entity question
+                        // (`!is_reserved`). One reservation against a
+                        // 64-unit pile therefore made every job "eligible"
+                        // and none claimable: 10,626 eligible, 0 assigned,
+                        // ONE claim in a whole run, `working=0 idle=8`. Two
+                        // availability checks, one item population, opposite
+                        // answers — the same shape that cost this project a
+                        // week on cooking. They now ask the SAME question.
                         let cand = (&pickup_items, &positions, &uids)
                             .join()
                             .find(|(pi, ipos, iuid)| {
@@ -23265,15 +23278,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     && board
                                         .stockpile_at(ipos.0.map(|e| e.floor() as i32))
                                         .is_some()
-                                    && !board.is_reserved(**iuid)
+                                    && board.has_capacity(**iuid, pi.amount())
                             })
-                            .map(|(_, _, iuid)| *iuid);
+                            .map(|(pi, _, iuid)| (*iuid, pi.amount()));
                         match cand {
-                            // #89: whole-entity fetch reservation, same
-                            // reasoning as the haul site above -- the
-                            // unchanged `!is_reserved` gate already
-                            // guarantees zero prior reservations.
-                            Some(iuid) => fetch_rid = Some(board.reserve(iuid, u32::MAX)),
+                            // Reserve ONE UNIT against the pile's OWN
+                            // capacity: `reserve(item, amount)` asserts
+                            // `reserved_count < amount`, so the amount passed
+                            // is the pile's total — that is what lets a
+                            // 64-stone pile serve 64 builders instead of one.
+                            // Passing 1 here would re-create the old
+                            // whole-entity lock through the assert.
+                            Some((iuid, amount)) => {
+                                fetch_rid = Some(board.reserve(iuid, amount))
+                            },
                             None => continue,
                         }
                     }

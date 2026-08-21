@@ -53,8 +53,12 @@ boot)
   esac
   # NOT uncapped: a player watches at human speed, and an uncapped server makes
   # every observation a blur of thousands of ticks.
-  ( cd "$WT" && VELOREN_USERDATA=$UD VELOREN_ASSETS=$WT/assets \
-      env BASTION_DETERMINISTIC=1 $ENVV \
+  # `$!` of a SUBSHELL is the subshell, not the server — `stop` reported
+  # success while the server kept listening (caught by a play agent, who had
+  # to kill it by hand). `exec` makes the backgrounded process BE the server,
+  # so the recorded pid is the real one.
+  ( cd "$WT" && exec env VELOREN_USERDATA=$UD VELOREN_ASSETS=$WT/assets \
+      BASTION_DETERMINISTIC=1 $ENVV \
       "$B/veloren-server-cli.exe" --no-auth > "$SRVLOG" 2>&1 ) &
   echo $! > "$PIDF"
   echo "booting slot $SLOT ($ARM) on port $GAME, pid $(cat "$PIDF")"
@@ -87,9 +91,22 @@ watch)
   sed 's/\x1b\[[0-9;]*m//g' "$SRVLOG" | grep -E "EXPERIENCE census|colony drive|dish produced|ate — hunger|slept|unreachable|stalled on materials|RE-TARGET|beds registered|COLONY TERMINAL" | tail -"$N"
   ;;
 stop)
-  [ -f "$PIDF" ] && kill "$(cat "$PIDF")" 2>/dev/null
+  if [ -f "$PIDF" ]; then
+    PID=$(cat "$PIDF")
+    kill "$PID" 2>/dev/null
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      kill -0 "$PID" 2>/dev/null || break
+      sleep 1
+    done
+    kill -0 "$PID" 2>/dev/null && { kill -9 "$PID" 2>/dev/null; sleep 1; }
+    # VERIFY, never assume: "stopped" that leaves a live listener is exactly
+    # the lie this command used to tell.
+    if kill -0 "$PID" 2>/dev/null; then
+      echo "slot $SLOT STILL ALIVE (pid $PID, port $GAME)"; exit 1
+    fi
+  fi
   rm -f "$PIDF"
-  echo "slot $SLOT stopped"
+  echo "slot $SLOT stopped (pid gone, port $GAME released)"
   ;;
 *)
   echo "usage: play-harness.sh boot|turn|watch|stop <slot> [arg]"; exit 2 ;;
