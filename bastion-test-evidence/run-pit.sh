@@ -333,6 +333,13 @@ case "$ARM" in
   # Item 31 (POWER-0): both favor-gate branches in one flat-arena leg.
   smite)        PITVAR=" BASTION_SEED_FOOD=64"
               SCRIPT="script-smite.txt" ;;
+  # Item 40 (colony scale): the 16- and 32-colonist tick-cost measurements
+  # against the re-based avg_tick_ms guard (12). Same script as cookery so
+  # the workload shape is comparable; the b5_soak tick stats ARE the read.
+  scale16)      PITVAR=" BASTION_SEED_FOOD=128 BASTION_AUTOFOUND_COLONY=16"
+              SCRIPT="script-cook.txt" ;;
+  scale32)      PITVAR=" BASTION_SEED_FOOD=256 BASTION_AUTOFOUND_COLONY=32"
+              SCRIPT="script-cook.txt" ;;
   guardwound)   PITVAR=" BASTION_ACCESS_CLAIM_DIAG=1 BASTION_GUARD_BRAVERY=0.8,0.2 BASTION_GUARD_HOLD_DIAG=1 BASTION_GUARD_PLANT_WOUND=0.5"
               SCRIPT="script-guard.txt" ;;
   recrabfedctl) PITVAR=" BASTION_SEED_FOOD=64"
