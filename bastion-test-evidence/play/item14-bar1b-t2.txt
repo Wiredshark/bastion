@@ -1,0 +1,21 @@
+note ITEM 14 BAR 1B, leg 2 -- AXIS 2 AT MATCHED HEALTH. World pinned BASTION_GUARD_BRAVERY=0.2,0.8 and BASTION_GUARD_PLANT_WOUND=0.5.
+note THE DISCRIMINATOR: a guard holds while health.fraction() >= guard_bravery. Wound BOTH to the SAME 0.5, and the thresholds fall on opposite sides of it -- 0.5 >= 0.2 so the 0.2 colonist HOLDS, and 0.5 < 0.8 so the 0.8 colonist FLEES. Same health, same threat, opposite outcomes, and the only difference is the per-colonist parameter Ben's ruling says should govern it.
+note NOTE THE SEMANTICS, because the names invert: LOW bravery is the BRAVE one (holds down to 20% health) and HIGH is the TIMID one (flees at 80%).
+note PRECONDITION -- if no colonist is ever assigned a guard job, this leg is VOID, not a fail. An unengaged post reads identically to a colonist who held.
+anchor
+inspect_colony
+note --- TWO posts, so at least two colonists get promoted and the pin's alternating 0.2/0.8 lands on both sides.
+designate guardpost 16394 16384 399 16396 16386 400
+designate guardpost 16374 16384 399 16376 16386 400
+inspect_colony
+wait 600
+note --- ~20s: promotion should have happened; the wound plants on a guard once it is guarding.
+inspect_colony
+inspect_colonists
+wait 900
+note --- ~50s: past every pre-fix destruction time, so any guard still here is holding by decision and not by luck.
+inspect_colonists
+wait 900
+note --- ~80s. Final read: who is still Guard, who went Flee, and at what health.
+inspect_colony
+inspect_colonists
