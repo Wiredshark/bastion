@@ -7453,6 +7453,11 @@ pub const FAVOR_CAP: f32 = 20.0;
 /// One Smite's cost — 25 game-seconds of trickle.
 pub const SMITE_COST: f32 = 5.0;
 
+fn favor_zero_pin() -> bool {
+    static PIN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *PIN.get_or_init(|| std::env::var_os("BASTION_FAVOR_ZERO").is_some())
+}
+
 /// bastion (ITEM 29): mint a mission when colony food drops below this.
 /// A PAR, not a balance tweak — the par-stock pull the charter names.
 pub const TRADE_FOOD_PAR: u32 = 16;
@@ -11068,7 +11073,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // ── ITEM 31: divine favor trickle (POWER-0's cost pool) ──────────
         // Per-tick, dt-scaled, capped — the identity shape (no cast, no
         // change beyond the trickle; casts deduct in the command handler).
-        divine_favor.0 = (divine_favor.0 + FAVOR_REGEN_PER_SEC * dt.0).min(FAVOR_CAP);
+        // BASTION_FAVOR_ZERO (FIXTURE): the refusal branch is unreachable
+        // by script timing (the pool fills during the ~2-minute boot; 3/3
+        // casts landed including one at t=0) — the pin holds the pool at
+        // zero so a refusal leg can exist at all.
+        if !favor_zero_pin() {
+            divine_favor.0 =
+                (divine_favor.0 + FAVOR_REGEN_PER_SEC * dt.0).min(FAVOR_CAP);
+        }
 
         // ── #107 COLONY MIND v1: the reactive drive arbiter ──────────────
         // Four LIVE producers, fixed thresholds, strict precedence
