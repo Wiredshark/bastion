@@ -1,0 +1,40 @@
+[1787294503473] === bastion_playtest starting: server=localhost:26074 username=player script=bastion-test-evidence/play/s5-t8.txt ===
+[1787294503473] driver build=2a2cdec1 built_at=1787290172 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,inspect_colonists,inspect_colony,inspect_chronicle,count_items,list_designations,survey,note,cmd,ascii
+[1787294503473] parsed 5 script commands
+[1787294506908] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/da17593b-a962-4e0a-9689-ae95cdcf6930), name: "Veloren Server", git_hash: 458029102, git_timestamp: 1787291192, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1787294507008] requesting view distance terrain=6 entity=6
+[1787294507009] requested character join id=CharacterId(2)
+[1787294507009] in-game. entity=Entity(0, Generation(1))
+[1787294507148] anchor precondition: Pos arrived after 4 ticks (old fixed spin was 60, ceiling 450); OLD BEHAVIOUR WOULD HAVE matched this run
+[1787294509015] player pos at script start: Vec3 { x: 16384.5, y: 16384.5, z: 400.0 }
+[1787294509015] [note] TURN 8 LEFT ALONE: rest was 0.0483 at tick 64363 with beds=0 and all 5 in drive=Personal. Does rest PIN at 0.0000?
+[1787294509015] sent BastionCameraAnchor at Vec3 { x: 16384.5, y: 16384.5, z: 400.0 }
+[1787294562968] [chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-menacing", seed: 57694, args: {} } }
+[1787294623274] [chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-menacing", seed: 32086, args: {} } }
+[1787294623307] [chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-menacing", seed: 50938, args: {} } }
+[1787294623341] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-menacing", seed: 57378, args: {} } }
+[1787294684565] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-menacing", seed: 44168, args: {} } }
+[1787294689333] [chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-menacing", seed: 480, args: {} } }
+[1787294744646] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-menacing", seed: 63319, args: {} } }
+[1787294745246] [chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-menacing", seed: 20806, args: {} } }
+[1787294749713] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-menacing", seed: 43101, args: {} } }
+[1787294804851] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-menacing", seed: 58164, args: {} } }
+[1787294807983] waited 9000 ticks -> sim 2168.76..2468.78 in 8965 client spins; pos now Vec3 { x: 16384.5, y: 16384.5, z: 400.0 }
+[1787294808083] COLONY tick=74065 colonists=5 food_stock=912 jobs_total=33 jobs_claimed=2 jobs_unreachable=0 designations=3 blocked_materials=0 favor=20.0
+[1787294808183] INSPECT uid=4 name=Awen the Wary hunger=0.3067 rest=0.0000 recreation=0.5058 energy=1.0000 health=Some(1.0) mood=0.3034 drive=Flee scores=(0.478, 1.054, 0.0992) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 0), ("chop", 3), ("build", 3), ("haul", 1), ("cook", 0), ("farm", 106), ("guard", 0)] traits=["Busybody", "Unconscientious", "Disagreeable"]                              desires=[("mine", 0.5), ("chop", 2.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+[1787294808183] SENT uid=4 sentiments=6 [("uid:5", 0.33333334), ("uid:6", 0.30952382), ("npc:NpcId(257v1)", 0.34126985), ("uid:8", 0.33333334), ("npc:NpcId(259v1)", 0.30952382), ("uid:10", 0.38888893)]
+[1787294808183] MOODX uid=4 total=0.3034 thoughts=0 []
+[1787294808283] INSPECT uid=5 name=Peri Ironhand hunger=0.3067 rest=0.0000 recreation=0.5057 energy=1.0000 health=Some(1.0) mood=0.3034 drive=Personal scores=(0.492, 0.0, 0.0828) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 2), ("chop", 5), ("build", 5), ("haul", 3), ("cook", 0), ("farm", 90), ("guard", 5)] traits=["Closed", "Busybody", "Introverted", "Disagreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 2.0), ("haul", 0.5), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+[1787294808283] SENT uid=5 sentiments=6 [("uid:4", 0.3015873), ("uid:6", 0.36507937), ("npc:NpcId(257v1)", 0.34920636), ("uid:8", 0.34126985), ("npc:NpcId(259v1)", 0.36507937), ("uid:10", 0.38888893)]
+[1787294808283] MOODX uid=5 total=0.3033 thoughts=0 []
+[1787294808383] INSPECT uid=6 name=Eira Longstride hunger=0.3065 rest=0.0000 recreation=0.5057 energy=1.0000 health=Some(1.0) mood=0.3034 drive=Personal scores=(0.556, 0.0, 0.0916) activity=Some((Farm, 0.1511111)) status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 2), ("chop", 2), ("build", 4), ("haul", 5), ("cook", 1), ("farm", 63), ("guard", 1)] traits=["Introverted", "Agreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
+[1787294808383] SENT uid=6 sentiments=6 [("uid:4", 0.35714287), ("uid:5", 0.36507937), ("npc:NpcId(257v1)", 0.32539684), ("uid:8", 0.34920636), ("npc:NpcId(259v1)", 0.33333334), ("uid:10", 0.35714287)]
+[1787294808383] MOODX uid=6 total=0.3033 thoughts=0 []
+[1787294808450] INSPECT uid=8 name=Yara the Quiet hunger=0.3064 rest=0.0000 recreation=0.5057 energy=1.0000 health=Some(1.0) mood=0.3034 drive=Personal scores=(0.426, 0.0, 0.089200005) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 4), ("chop", 5), ("build", 5), ("haul", 5), ("cook", 4), ("farm", 47), ("guard", 0)] traits=["Introverted"]                              desires=[("mine", 1.0), ("chop", 0.5), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 2.0)] bravery=0.50
+[1787294808450] SENT uid=8 sentiments=6 [("uid:4", 0.3015873), ("uid:5", 0.32539684), ("uid:6", 0.32539684), ("npc:NpcId(257v1)", 0.32539684), ("npc:NpcId(259v1)", 0.33333334), ("uid:10", 0.34126985)]
+[1787294808450] MOODX uid=8 total=0.3032 thoughts=0 []
+[1787294808550] INSPECT uid=10 name=Wynn Ironhand hunger=0.3065 rest=0.0000 recreation=0.5057 energy=1.0000 health=Some(1.0) mood=0.3034 drive=Personal scores=(0.504, 0.0, 0.0908) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 4), ("chop", 4), ("build", 3), ("haul", 0), ("cook", 0), ("farm", 32), ("guard", 4)] traits=["Open"]                              desires=[("mine", 0.5), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
+[1787294808550] SENT uid=10 sentiments=6 [("uid:4", 0.35714287), ("uid:5", 0.34920636), ("uid:6", 0.38095242), ("npc:NpcId(257v1)", 0.2857143), ("uid:8", 0.34920636), ("npc:NpcId(259v1)", 0.34920636)]
+[1787294808550] MOODX uid=10 total=0.3032 thoughts=0 []
+[1787294811384] inspect_colonists -> 5 colonist payload(s)
+[1787294811384] === script complete, disconnecting ===

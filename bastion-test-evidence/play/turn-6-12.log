@@ -1,0 +1,18 @@
+[1787293312317] === bastion_playtest starting: server=localhost:26084 username=player script=bastion-test-evidence/play/s6-t12.txt ===
+[1787293312317] driver build=2a2cdec1 built_at=1787290172 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,inspect_colonists,inspect_colony,inspect_chronicle,count_items,list_designations,survey,note,cmd,ascii
+[1787293312317] parsed 7 script commands
+[1787293315945] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/66dffb5b-648f-4758-b74f-6578d18b3a3a), name: "Veloren Server", git_hash: 458029102, git_timestamp: 1787291192, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1787293316045] requesting view distance terrain=6 entity=6
+[1787293316046] requested character join id=CharacterId(2)
+[1787293316046] in-game. entity=Entity(0, Generation(1))
+[1787293316226] anchor precondition: Pos arrived after 4 ticks (old fixed spin was 60, ceiling 450); OLD BEHAVIOUR WOULD HAVE matched this run
+[1787293318092] player pos at script start: Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787293318092] [note] TURN 12: chop box placed EAST of the known trees, containing none of them.
+[1787293318092] sent BastionCameraAnchor at Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787293318093] designations (rev=0): []
+[1787293318159] COLONY tick=28781 colonists=4 food_stock=0 jobs_total=5 jobs_claimed=1 jobs_unreachable=0 designations=11 blocked_materials=0 favor=20.0
+[1787293318159] sent BastionPlaceDesignation kind=Chop region=Region { min: Vec3 { x: 15200, y: 15980, z: 405 }, max: Vec3 { x: 15220, y: 16000, z: 445 } }
+[1787293318226] designate ACK rev 0 -> 1 (observed)
+[1787293318226] designations (rev=1): [(Region { min: Vec3 { x: 15160, y: 15984, z: 412 }, max: Vec3 { x: 15180, y: 16004, z: 454 } }, Chop, None)]
+[1787293318381] COLONY tick=28785 colonists=4 food_stock=0 jobs_total=5 jobs_claimed=1 jobs_unreachable=0 designations=11 blocked_materials=0 favor=20.0
+[1787293318381] === script complete, disconnecting ===

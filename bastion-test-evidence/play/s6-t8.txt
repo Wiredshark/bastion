@@ -1,0 +1,11 @@
+note TURN 8: erase the split zone 1 entirely and see if hauling ever recovers.
+anchor
+inspect_colony
+cancel 15239 15985 375 15251 16085 465
+wait 300
+inspect_colony
+wait 600
+inspect_colony
+wait 600
+inspect_colony
+count_items

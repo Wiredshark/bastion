@@ -1,0 +1,6 @@
+note TURN 7 RETRY (prior attempt VOIDed: no Pos after 450 ticks). Left alone. Rest is at the 0.2 interrupt; beds=0 since founding.
+anchor
+wait 9000
+inspect_colony
+inspect_colonists
+count_items

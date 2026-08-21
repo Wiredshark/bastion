@@ -1,0 +1,8 @@
+note TURN 1 ADVERSARY: baseline. Look at everything before touching anything.
+anchor
+wait 400
+inspect_colony
+inspect_colonists
+list_designations
+count_items
+ascii 18

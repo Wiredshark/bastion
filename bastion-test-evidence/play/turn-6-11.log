@@ -1,0 +1,41 @@
+[1787293275719] === bastion_playtest starting: server=localhost:26084 username=player script=bastion-test-evidence/play/s6-t11.txt ===
+[1787293275719] driver build=2a2cdec1 built_at=1787290172 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,inspect_colonists,inspect_colony,inspect_chronicle,count_items,list_designations,survey,note,cmd,ascii
+[1787293275719] parsed 7 script commands
+[1787293279194] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/66dffb5b-648f-4758-b74f-6578d18b3a3a), name: "Veloren Server", git_hash: 458029102, git_timestamp: 1787291192, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1787293279294] requesting view distance terrain=6 entity=6
+[1787293279294] requested character join id=CharacterId(2)
+[1787293279294] in-game. entity=Entity(0, Generation(1))
+[1787293279471] anchor precondition: Pos arrived after 4 ticks (old fixed spin was 60, ceiling 450); OLD BEHAVIOUR WOULD HAVE matched this run
+[1787293281338] player pos at script start: Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787293281338] [note] TURN 11: paint a CHOP box over bare walkable ground with no tree in it, and see what it selects.
+[1787293281338] sent BastionCameraAnchor at Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787293281338] ascii radius=10 centre=(15216,16016,419) x[15206,15226] y[16006,16026] z[399,439] grid=21x21 stride=1 (one character per block column); north is up
+[1787293281338] ascii legend: @ player | C colonist | i loose item | # solid above the surface | . walkable ground | ~ water | ? UNLOADED, never ground | ' ' no surface within the z window (but every cell in it was observed)
+[1787293281338]   16026 |####...............##
+[1787293281338]   16025 |####................#
+[1787293281338]   16024 |###..................
+[1787293281338]   16023 |#....................
+[1787293281338]   16022 |.....................
+[1787293281338]   16021 |.....................
+[1787293281338]   16020 |.....................
+[1787293281338]   16019 |...............######
+[1787293281338]   16018 |...............C#####
+[1787293281338]   16017 |...............######
+[1787293281338]   16016 |..........@....######
+[1787293281338]   16015 |...............######
+[1787293281338]   16014 |...............######
+[1787293281338]   16013 |...............######
+[1787293281338]   16012 |...............######
+[1787293281338]   16011 |...............######
+[1787293281338]   16010 |...............######
+[1787293281338]   16009 |...............######
+[1787293281339]   16008 |...............######
+[1787293281339]   16007 |...............######
+[1787293281339]   16006 |...............######
+[1787293281339] ascii tally: 441 cells, 0 UNLOADED, 0 water, 0 no-surface; colonists 4 synced (1 on map, 3 off map), 0 item cell(s) drawn, 6 item(s) off map (every column drawn rests on observed terrain)
+[1787293281404] COLONY tick=27687 colonists=4 food_stock=0 jobs_total=5 jobs_claimed=1 jobs_unreachable=0 designations=11 blocked_materials=0 favor=20.0
+[1787293281405] sent BastionPlaceDesignation kind=Chop region=Region { min: Vec3 { x: 15206, y: 16006, z: 415 }, max: Vec3 { x: 15214, y: 16014, z: 425 } }
+[1787293281471] designate ACK rev 0 -> 2 (observed)
+[1787293281471] designations (rev=2): [(Region { min: Vec3 { x: 15160, y: 15984, z: 412 }, max: Vec3 { x: 15180, y: 16004, z: 454 } }, Chop, None), (Region { min: Vec3 { x: 15178, y: 16016, z: 416 }, max: Vec3 { x: 15198, y: 16036, z: 456 } }, Chop, None)]
+[1787293281538] COLONY tick=27690 colonists=4 food_stock=0 jobs_total=5 jobs_claimed=1 jobs_unreachable=0 designations=11 blocked_materials=0 favor=20.0
+[1787293281538] === script complete, disconnecting ===

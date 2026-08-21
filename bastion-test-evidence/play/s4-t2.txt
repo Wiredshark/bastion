@@ -1,0 +1,18 @@
+note TURN 2 -- THE FIRST NIGHT, UNPROMPTED. I have painted NOTHING. rest decays 0.000444/sim-sec and a RestAt job only mints below the ~0.2 interrupt, so ~1790 sim seconds must pass before the colony can even want a bed. Waiting it out and sampling four times.
+anchor
+inspect_colony
+wait 18000
+inspect_colonists
+inspect_colony
+wait 18000
+inspect_colonists
+inspect_colony
+wait 18000
+inspect_colonists
+inspect_colony
+wait 9000
+inspect_colonists
+inspect_colony
+count_items
+list_designations
+ascii 40

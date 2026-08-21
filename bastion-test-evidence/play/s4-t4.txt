@@ -1,0 +1,14 @@
+note TURN 4 -- RAIDERS ARE EATING MY COLONY WHILE IT STANDS STILL. A player would post a guard. I paint a GUARDPOST on the stockpile the raids keep spawning on top of (raid origin 15275.5,16039.5,430) and a PATROL point beside it, then watch whether anyone ever takes the job.
+anchor
+designate guardpost 15272 16036 428 15278 16042 433
+wait 200
+designate patrol 15260 16024 426 15266 16030 432
+wait 300
+list_designations
+inspect_colony
+wait 3000
+inspect_colony
+inspect_colonists
+wait 3000
+inspect_colony
+count_items

@@ -1,0 +1,39 @@
+[1787293027514] === bastion_playtest starting: server=localhost:26084 username=player script=bastion-test-evidence/play/s6-t8.txt ===
+[1787293027514] driver build=2a2cdec1 built_at=1787290172 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,inspect_colonists,inspect_colony,inspect_chronicle,count_items,list_designations,survey,note,cmd,ascii
+[1787293027515] parsed 11 script commands
+[1787293030933] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/66dffb5b-648f-4758-b74f-6578d18b3a3a), name: "Veloren Server", git_hash: 458029102, git_timestamp: 1787291192, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1787293031033] requesting view distance terrain=6 entity=6
+[1787293031033] requested character join id=CharacterId(2)
+[1787293031033] in-game. entity=Entity(0, Generation(1))
+[1787293031224] anchor precondition: Pos arrived after 4 ticks (old fixed spin was 60, ceiling 450); OLD BEHAVIOUR WOULD HAVE matched this run
+[1787293033091] player pos at script start: Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787293033091] [note] TURN 8: erase the split zone 1 entirely and see if hauling ever recovers.
+[1787293033091] sent BastionCameraAnchor at Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787293033191] COLONY tick=20285 colonists=8 food_stock=0 jobs_total=12 jobs_claimed=3 jobs_unreachable=0 designations=13 blocked_materials=0 favor=20.0
+[1787293033191] sent BastionCancelDesignation region=Region { min: Vec3 { x: 15239, y: 15985, z: 375 }, max: Vec3 { x: 15251, y: 16085, z: 465 } }
+[1787293033259] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Designations cancelled.") }
+[1787293034790] [chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-villager_closed", seed: 19195, args: {} } }
+[1787293035324] [chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-tell_monster", seed: 60365, args: {"body": Content(Localized { key: "noun-wendigo", seed: 51276, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 27271, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 11893, args: {} })} } }
+[1787293036423] [chat] GenericChatMsg { chat_type: Npc(Uid(33)), content: Localized { key: "npc-speech-tell_monster", seed: 50592, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 55346, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 53417, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 41190, args: {} })} } }
+[1787293036991] [chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-villager_unconscientious", seed: 8457, args: {} } }
+[1787293038623] [chat] GenericChatMsg { chat_type: Npc(Uid(19)), content: Localized { key: "npc-speech-villager_extroverted", seed: 12607, args: {} } }
+[1787293041524] [chat] GenericChatMsg { chat_type: Npc(Uid(19)), content: Localized { key: "npc-speech-site", seed: 51669, args: {"site": Content(Plain("Strach"))} } }
+[1787293043123] waited 300 ticks -> sim 675.56..685.59 in 296 client spins; pos now Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787293043189] COLONY tick=20582 colonists=8 food_stock=0 jobs_total=11 jobs_claimed=2 jobs_unreachable=0 designations=11 blocked_materials=0 favor=20.0
+[1787293043391] [chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-villager_conscientious", seed: 12080, args: {} } }
+[1787293048091] [chat] GenericChatMsg { chat_type: Npc(Uid(26)), content: Localized { key: "npc-speech-menacing", seed: 33109, args: {} } }
+[1787293053158] [chat] GenericChatMsg { chat_type: Npc(Uid(26)), content: Localized { key: "npc-speech-menacing", seed: 45839, args: {} } }
+[1787293056059] [chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-tell_monster", seed: 38233, args: {"body": Content(Localized { key: "noun-wendigo", seed: 13166, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 61821, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 35216, args: {} })} } }
+[1787293057659] [chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-night_time", seed: 35541, args: {} } }
+[1787293057692] [chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-tell_site", seed: 56772, args: {"site": Content(Plain("Phreoraros")), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 7014, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 16953, args: {} })} } }
+[1787293058226] [chat] GenericChatMsg { chat_type: Npc(Uid(26)), content: Localized { key: "npc-speech-menacing", seed: 45556, args: {} } }
+[1787293062226] [chat] GenericChatMsg { chat_type: Npc(Uid(34)), content: Localized { key: "npc-speech-tell_site", seed: 2262, args: {"dir": Content(Localized { key: "npc-speech-dir_west", seed: 31237, args: {} }), "site": Content(Plain("Nzitaka")), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 47937, args: {} })} } }
+[1787293062991] waited 600 ticks -> sim 685.65..705.65 in 594 client spins; pos now Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787293063058] COLONY tick=21178 colonists=8 food_stock=0 jobs_total=5 jobs_claimed=1 jobs_unreachable=0 designations=11 blocked_materials=0 favor=20.0
+[1787293063859] [chat] GenericChatMsg { chat_type: Npc(Uid(12)), content: Localized { key: "npc-speech-tell_site", seed: 34699, args: {"dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 13935, args: {} }), "site": Content(Plain("Greabrien Glider Course")), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 17790, args: {} })} } }
+[1787293064326] [chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-tell_site", seed: 16777, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 30557, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 63494, args: {} }), "site": Content(Plain("Himore"))} } }
+[1787293066160] [chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-tell_site", seed: 15618, args: {"site": Content(Plain("Greabrien Glider Course")), "dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 10428, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 51679, args: {} })} } }
+[1787293082994] waited 600 ticks -> sim 705.72..725.72 in 598 client spins; pos now Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787293083094] COLONY tick=21773 colonists=8 food_stock=0 jobs_total=5 jobs_claimed=1 jobs_unreachable=0 designations=11 blocked_materials=0 favor=20.0
+[1787293083094] ITEMS count=4 common.items.log.wood@(15275.3,16037.0,431.0) common.items.crafting_ing.animal_misc.sharp_fang@(15295.5,16004.0,418.0) common.items.crafting_ing.hide.tough_hide@(15295.0,16003.5,418.0) common.items.food.meat.beast_small_raw@(15295.5,16003.5,418.0)
+[1787293083094] === script complete, disconnecting ===

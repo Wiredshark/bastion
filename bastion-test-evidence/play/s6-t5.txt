@@ -1,0 +1,9 @@
+note TURN 5: ONE cancel brush - swallows food-store zone 0 whole, cuts zone 1 into two.
+anchor
+inspect_colony
+cancel 15240 16016 380 15299 16063 460
+wait 100
+inspect_colony
+wait 400
+inspect_colony
+count_items

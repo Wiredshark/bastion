@@ -131,6 +131,49 @@ Three play sessions run the same night reached this defect separately:
   an adopted village mints no work at all, `working=0` in all 193 samples until
   a region was painted by hand.
 
+## THE FULL CHAIN, traced by instrument across five legs
+
+F13 was not one bug. It was four stacked blockers, each of which perfectly
+hid the next — every one of them producing the identical player-visible
+symptom (`beds=0`, nobody sleeps, colonists idle) and the identical silence in
+the log. Each fix moved the failure one layer deeper and **looked like it had
+achieved nothing**, which is the honest reason this took five legs and not one.
+
+| # | Blocker | How it was found | State |
+|---|---|---|---|
+| 1 | Demand measured over build PLANS only, so designated bed jobs were invisible and the whole generator block never ran | Read the producer | **FIXED** |
+| 2 | `MINE_GEN_RADIUS = 12`, and the arena's only stone sits ~20 blocks out — the generator ran and saw nothing | The `WANTED stone … rock_seen=0` witness, 778 firings | **FIXED** (→24) |
+| 3 | The demand predicate excluded CLAIMED jobs, so fixing #2 let colonists claim the bed jobs, which **zeroed the demand that pays for the stone** | `already_claimed=13` beside `materials=8` in one refusal census | **FIXED** |
+| 4 | The generator's "exposed rock" test and the claim path's "affordance" test disagree about what is minable, so it mints work nobody can accept | `demand=8 pending_mine=8 quota=0` with `affordance=56` refusals | **OPEN** |
+
+Blocker 4 is now the live one, and it is the same shape as F13's original root
+cause: **two predicates that must agree about availability, and don't.** The
+generator accepts a rock cell if any of its six neighbours is open; the claim
+path requires a standable stance for a colonist. Those are different
+questions, and the generator is answering the easier one. Eight mine jobs sit
+on the board permanently, refused 56 times per census — 8 jobs × 7 colonists,
+every single consideration.
+
+An adversarial play session hit the identical wall from the other side (row
+F19): four jobs, eight colonists, `affordance=32`, and a dashboard reading
+`jobs_unreachable=0 blocked_materials=0` — no player-facing bucket exists for
+"minted work that cannot be stood next to".
+
+**The generator must not mint work the claim path will refuse.** Whichever
+predicate is right, one of them has to ask the other. That is the next row,
+and it is stated as OPEN rather than folded into a fix I have not made.
+
+### What each leg actually showed, including the ones that looked like failures
+
+- Leg 2 (demand fix): 0 mine jobs. Read as total failure; was blocker 2.
+- Leg 3 (radius fix): 0 mine jobs **and the witness went silent** — worse-looking
+  than leg 2, and actually progress: colonists could now reach and claim the
+  bed jobs, which zeroed demand. A silent instrument is not evidence of health.
+- Leg 4 (predicate fix): still 0 completions, witness still silent — because
+  the witness lived *inside* the branch it was meant to explain.
+- Leg 5 (unconditional state emit): `demand=8 supply=0 pending_mine=8 quota=0`.
+  The generator had been working for two legs. Nothing downstream could use it.
+
 ## What is proven, and what is NOT
 
 **Proven.** The defect is real and materials are *sufficient* to clear it. The

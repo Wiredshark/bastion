@@ -1,0 +1,22 @@
+[1787292688449] === bastion_playtest starting: server=localhost:26084 username=player script=bastion-test-evidence/play/s6-t4.txt ===
+[1787292688449] driver build=2a2cdec1 built_at=1787290172 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,inspect_colonists,inspect_colony,inspect_chronicle,count_items,list_designations,survey,note,cmd,ascii
+[1787292688449] parsed 9 script commands
+[1787292692013] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/66dffb5b-648f-4758-b74f-6578d18b3a3a), name: "Veloren Server", git_hash: 458029102, git_timestamp: 1787291192, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1787292692113] requesting view distance terrain=6 entity=6
+[1787292692113] requested character join id=CharacterId(2)
+[1787292692113] in-game. entity=Entity(0, Generation(1))
+[1787292692307] anchor precondition: Pos arrived after 4 ticks (old fixed spin was 60, ceiling 450); OLD BEHAVIOUR WOULD HAVE matched this run
+[1787292694174] player pos at script start: Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787292694174] [note] TURN 4: paint a second stockpile that straddles the food store's y-band, north-to-south.
+[1787292694174] sent BastionCameraAnchor at Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787292694241] COLONY tick=10188 colonists=8 food_stock=32 jobs_total=4 jobs_claimed=0 jobs_unreachable=0 designations=11 blocked_materials=0 favor=20.0
+[1787292694241] designations (rev=0): []
+[1787292694241] sent BastionPlaceDesignation kind=Stockpile region=Region { min: Vec3 { x: 15240, y: 15990, z: 380 }, max: Vec3 { x: 15250, y: 16080, z: 460 } }
+[1787292694341] designate ACK rev 0 -> 1 (observed)
+[1787292696788] [chat] GenericChatMsg { chat_type: Npc(Uid(35)), content: Localized { key: "npc-speech-villager_stable", seed: 10984, args: {} } }
+[1787292698155] [chat] GenericChatMsg { chat_type: Npc(Uid(29)), content: Localized { key: "npc-speech-menacing", seed: 1132, args: {} } }
+[1787292700954] waited 200 ticks -> sim 338.97..345.64 in 196 client spins; pos now Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787292701020] COLONY tick=10387 colonists=8 food_stock=32 jobs_total=4 jobs_claimed=0 jobs_unreachable=0 designations=12 blocked_materials=0 favor=20.0
+[1787292701020] designations (rev=1): [(Region { min: Vec3 { x: 15240, y: 15990, z: 380 }, max: Vec3 { x: 15250, y: 16080, z: 460 } }, Stockpile, None)]
+[1787292701020] ITEMS count=5 common.items.quest.legoom_leaf@(15263.6,16004.5,417.0) common.items.food.mushroom@(15275.1,16038.5,431.0) common.items.crafting_ing.stones@(15275.2,16038.4,431.0) common.items.food.tomato@(15264.0,16004.8,417.0) common.items.log.wood@(15275.1,16038.5,431.0)
+[1787292701020] === script complete, disconnecting ===

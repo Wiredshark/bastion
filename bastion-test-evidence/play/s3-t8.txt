@@ -1,0 +1,17 @@
+note ===== TURN 8: THE SLEEP TEST =====
+note Turn 7, tick 43361: the starving three recovered (uid3 0.663, uid5
+note 0.274, uid8 0.216) so nobody died -- but mood is down across the board
+note (0.40-0.54 vs the 0.60 base) and food_stock is now SIX.
+note rest=0.3591 for everyone and it falls 0.000444 per sim-second. The
+note interrupt band is 0.2 (base) to 0.3 (neurotic uid=9). Eight beds are
+note BUILT and registered since 06:13-06:14. So this is the decisive test:
+note   PASS  someone takes a RestAt job, occupies a bed, and the server
+note         prints "slept - rest restored".
+note   FAIL  rest keeps falling through 0.2 with beds standing empty.
+note Zero "need preempt - rest" lines have appeared in 43,000 ticks, which
+note is CORRECT so far (rest has never been below threshold). This turn is
+note where that becomes falsifiable.
+wait 7000
+inspect_colony
+inspect_colonists
+count_items

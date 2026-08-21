@@ -1,0 +1,5 @@
+note TURN 6 LEFT ALONE: still zero intervention. Watching health ratchet + the rest/sleep interrupt (rest 0.2 at ~tick 54000).
+anchor
+wait 9000
+inspect_colony
+inspect_colonists

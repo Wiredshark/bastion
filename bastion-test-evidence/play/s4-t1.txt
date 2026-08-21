@@ -1,0 +1,8 @@
+note TURN 1 -- THE SETTLER ARRIVES. Look before touching. What did we move into?
+anchor
+wait 300
+inspect_colony
+inspect_colonists
+count_items
+list_designations
+ascii 40

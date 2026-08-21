@@ -1,0 +1,22 @@
+note ===== TURN 4: I FEED THE MACHINE. =====
+note Diagnosis so far: 8 bed jobs, 0 claimable, refusal census reads
+note "considered=64 eligible=0 refused=64 ... materials=64" every single
+note sample. There is a stone outcrop 20 blocks west and three trees ~20
+note blocks east and NOBODY HAS GONE TO EITHER in 8,700 ticks.
+note So now I do what a DF player does: I paint the quarry and the woodcut.
+note   outcrop  x[16362,16366] y[16382,16386] z[400,402]
+note   trees    x[16398,16412] y[16378,16392] z[400,410]
+note Q1 do mine/chop designations create jobs at all?
+note Q2 do colonists WALK there (idle= should fall in the server census)?
+note Q3 does stone come back to the stockpile and do the BEDS then build?
+note Q4 does list_designations now show MY paint (it showed [] for the
+note    founding preset's 3 -- if mine appear and the preset's do not, the
+note    sync defect is proven precisely).
+designate mine 16362 16382 400 16366 16386 402
+designate chop 16398 16378 400 16412 16392 410
+list_designations
+inspect_colony
+wait 3000
+ascii 30
+inspect_colony
+count_items

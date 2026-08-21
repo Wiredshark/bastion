@@ -1,0 +1,115 @@
+[1787294018777] === bastion_playtest starting: server=localhost:26054 username=player script=E:/veloren-master/.item29-wt/bastion-test-evidence/play/s3-t9.txt ===
+[1787294018777] driver build=2a2cdec1 built_at=1787290172 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,inspect_colonists,inspect_colony,inspect_chronicle,count_items,list_designations,survey,note,cmd,ascii
+[1787294018777] parsed 16 script commands
+[1787294022085] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/d7613ef9-0628-44bc-b098-48cb13759af5), name: "Veloren Server", git_hash: 458029102, git_timestamp: 1787291192, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1787294022185] requesting view distance terrain=6 entity=6
+[1787294022186] requested character join id=CharacterId(2)
+[1787294022186] in-game. entity=Entity(0, Generation(1))
+[1787294022298] anchor precondition: Pos arrived after 3 ticks (old fixed spin was 60, ceiling 450); OLD BEHAVIOUR WOULD HAVE matched this run
+[1787294024198] player pos at script start: Vec3 { x: 16384.479, y: 16383.106, z: 400.0 }
+[1787294024198] [note] ===== TURN 9 (FINAL): THEY SLEEP. What does the colony LOOK like? =====
+[1787294024198] [note] CONFIRMED at 06:32:17: "slept - rest restored uid=10 job=2520
+[1787294024198] [note] pos=(16382,16382,400) owned=false". uid=5 followed at 06:32:57.
+[1787294024198] [note] So sleep works -- once a PLAYER supplied the stone to build the beds.
+[1787294024198] [note] Both slept in the SAME bed and both read owned=false: eight beds
+[1787294024198] [note] exist, eight colonists exist, and not one of them owns one.
+[1787294024198] [note] Final frame: I want to see the colony I built. Eight beds, a stockpile,
+[1787294024198] [note] a farm, a cookstation and a food store all stand inside radius 12 of
+[1787294024198] [note] (16385,16384). If the map still renders that as bare ground, then the
+[1787294024198] [note] DF layer cannot show a player their own fortress.
+[1787294039867] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-menacing", seed: 35193, args: {} } }
+[1787294043367] [chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-menacing", seed: 50511, args: {} } }
+[1787294044000] [chat] GenericChatMsg { chat_type: NpcSay(Uid(5)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1787294044934] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-menacing", seed: 40999, args: {} } }
+[1787294045000] [chat] GenericChatMsg { chat_type: Npc(Uid(6)), content: Localized { key: "npc-speech-menacing", seed: 52755, args: {} } }
+[1787294048501] [chat] GenericChatMsg { chat_type: NpcSay(Uid(10)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1787294049268] [chat] GenericChatMsg { chat_type: Npc(Uid(3)), content: Localized { key: "npc-speech-tell_monster", seed: 9549, args: {"dir": Content(Localized { key: "npc-speech-dir_north", seed: 14099, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 1533, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 12809, args: {} })} } }
+[1787294050001] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-menacing", seed: 63767, args: {} } }
+[1787294055068] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-menacing", seed: 46398, args: {} } }
+[1787294056468] [chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-villager_unconscientious", seed: 63234, args: {} } }
+[1787294058102] [chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-villager_open", seed: 10933, args: {} } }
+[1787294061502] [chat] GenericChatMsg { chat_type: NpcSay(Uid(7)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1787294062003] [chat] GenericChatMsg { chat_type: NpcSay(Uid(3)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1787294069505] [chat] GenericChatMsg { chat_type: NpcSay(Uid(8)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1787294086641] [chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-tell_monster", seed: 16955, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 38774, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 7292, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 8727, args: {} })} } }
+[1787294088274] [chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-tell_monster", seed: 45794, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 20911, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 49227, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 20104, args: {} })} } }
+[1787294089707] [chat] GenericChatMsg { chat_type: NpcSay(Uid(4)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1787294100208] [chat] GenericChatMsg { chat_type: NpcSay(Uid(3)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1787294103175] [chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-menacing", seed: 8107, args: {} } }
+[1787294103275] [chat] GenericChatMsg { chat_type: Npc(Uid(3)), content: Localized { key: "npc-speech-menacing", seed: 35399, args: {} } }
+[1787294104242] [chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-menacing", seed: 14961, args: {} } }
+[1787294104508] [chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-menacing", seed: 36586, args: {} } }
+[1787294108242] [chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-menacing", seed: 62861, args: {} } }
+[1787294109309] [chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-menacing", seed: 28301, args: {} } }
+[1787294115210] [chat] GenericChatMsg { chat_type: NpcSay(Uid(10)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1787294115676] [chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-menacing", seed: 53281, args: {} } }
+[1787294118809] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-menacing", seed: 36974, args: {} } }
+[1787294118910] [chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-menacing", seed: 14099, args: {} } }
+[1787294119343] [chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-menacing", seed: 9800, args: {} } }
+[1787294119376] [chat] GenericChatMsg { chat_type: Npc(Uid(6)), content: Localized { key: "npc-speech-menacing", seed: 33262, args: {} } }
+[1787294119643] [chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-menacing", seed: 1516, args: {} } }
+[1787294124410] [chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-menacing", seed: 32898, args: {} } }
+[1787294124443] [chat] GenericChatMsg { chat_type: Npc(Uid(6)), content: Localized { key: "npc-speech-menacing", seed: 51286, args: {} } }
+[1787294124710] [chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-menacing", seed: 42211, args: {} } }
+[1787294130810] [chat] GenericChatMsg { chat_type: NpcSay(Uid(3)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1787294131311] [chat] GenericChatMsg { chat_type: NpcSay(Uid(4)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1787294132310] [chat] GenericChatMsg { chat_type: NpcSay(Uid(7)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1787294145012] [chat] GenericChatMsg { chat_type: NpcSay(Uid(9)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1787294156214] waited 4000 ticks -> sim 1742.09..1875.43 in 3959 client spins; pos now Vec3 { x: 16384.287, y: 16383.982, z: 400.0 }
+[1787294156215] ascii radius=12 centre=(16384,16383,400) x[16372,16396] y[16371,16395] z[380,420] grid=25x25 stride=1 (one character per block column); north is up
+[1787294156216] ascii legend: @ player | C colonist | i loose item | # solid above the surface | . walkable ground | ~ water | ? UNLOADED, never ground | ' ' no surface within the z window (but every cell in it was observed)
+[1787294156216]   16395 |.........................
+[1787294156216]   16394 |.........................
+[1787294156216]   16393 |.........................
+[1787294156216]   16392 |.........................
+[1787294156216]   16391 |.........................
+[1787294156216]   16390 |.........................
+[1787294156216]   16389 |...............i.........
+[1787294156216]   16388 |..............C..........
+[1787294156216]   16387 |.........................
+[1787294156216]   16386 |.........................
+[1787294156216]   16385 |.........i........i......
+[1787294156216]   16384 |........C...........C....
+[1787294156216]   16383 |............@............
+[1787294156216]   16382 |........C..i.............
+[1787294156216]   16381 |....C...C....i...........
+[1787294156216]   16380 |........i................
+[1787294156216]   16379 |.........................
+[1787294156216]   16378 |.........................
+[1787294156216]   16377 |.........................
+[1787294156216]   16376 |.........................
+[1787294156216]   16375 |.........................
+[1787294156216]   16374 |.........................
+[1787294156216]   16373 |.............i...........
+[1787294156216]   16372 |.............i...........
+[1787294156216]   16371 |.........................
+[1787294156216] ascii tally: 625 cells, 0 UNLOADED, 0 water, 0 no-surface; colonists 8 synced (6 on map, 0 off map), 8 item cell(s) drawn, 24 item(s) off map (every column drawn rests on observed terrain)
+[1787294156314] COLONY tick=56269 colonists=8 food_stock=439 jobs_total=13 jobs_claimed=7 jobs_unreachable=2 designations=9 blocked_materials=0 favor=20.0
+[1787294156414] INSPECT uid=3 name=Osric of the Vale hunger=0.2806 rest=0.2009 recreation=0.6246 energy=1.0000 health=Some(1.0) mood=0.3691 drive=Personal scores=(0.578, 0.0, 0.094000004) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 1), ("chop", 3), ("build", 7), ("haul", 0), ("cook", 15), ("farm", 56), ("guard", 4)] traits=["Closed", "Extroverted"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 0.5), ("haul", 1.0), ("cook", 2.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+[1787294156414] SENT uid=3 sentiments=7 [("uid:4", 0.39682543), ("uid:5", 0.39682543), ("uid:6", 0.39682543), ("uid:7", 0.39682543), ("uid:8", 0.39682543), ("uid:9", 0.39682543), ("uid:10", 0.39682543)]
+[1787294156414] MOODX uid=3 total=0.3706 thoughts=0 []
+[1787294156514] INSPECT uid=4 name=Awen the Wary hunger=0.3339 rest=0.5401 recreation=0.6245 energy=1.0000 health=Some(1.0) mood=0.5171 drive=Work scores=(0.478, 0.0, 0.0992) activity=Some((Farm, 0.75555557)) status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 4), ("chop", 3), ("build", 4), ("haul", 1), ("cook", 16), ("farm", 63), ("guard", 0)] traits=["Busybody", "Unconscientious", "Disagreeable"]                              desires=[("mine", 0.5), ("chop", 2.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+[1787294156514] SENT uid=4 sentiments=7 [("uid:3", 0.39682543), ("uid:5", 0.39682543), ("uid:6", 0.39682543), ("uid:7", 0.39682543), ("uid:8", 0.39682543), ("uid:9", 0.39682543), ("uid:10", 0.39682543)]
+[1787294156514] MOODX uid=4 total=0.5169 thoughts=0 []
+[1787294156614] INSPECT uid=5 name=Peri Ironhand hunger=0.6951 rest=0.5217 recreation=0.6245 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.492, 0.0, 0.0828) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 4), ("chop", 5), ("build", 5), ("haul", 3), ("cook", 22), ("farm", 60), ("guard", 5)] traits=["Closed", "Busybody", "Introverted", "Disagreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 2.0), ("haul", 0.5), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+[1787294156614] SENT uid=5 sentiments=7 [("uid:3", 0.39682543), ("uid:4", 0.39682543), ("uid:6", 0.39682543), ("uid:7", 0.39682543), ("uid:8", 0.39682543), ("uid:9", 0.39682543), ("uid:10", 0.39682543)]
+[1787294156614] MOODX uid=5 total=0.6000 thoughts=0 []
+[1787294156714] INSPECT uid=6 name=Eira Longstride hunger=0.6477 rest=0.5992 recreation=0.6245 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Work scores=(0.556, 0.0, 0.0916) activity=Some((Farm, 0.08888888)) status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 8), ("chop", 2), ("build", 4), ("haul", 5), ("cook", 31), ("farm", 35), ("guard", 1)] traits=["Introverted", "Agreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
+[1787294156714] SENT uid=6 sentiments=7 [("uid:3", 0.39682543), ("uid:4", 0.39682543), ("uid:5", 0.39682543), ("uid:7", 0.39682543), ("uid:8", 0.39682543), ("uid:9", 0.39682543), ("uid:10", 0.39682543)]
+[1787294156714] MOODX uid=6 total=0.6000 thoughts=0 []
+[1787294156814] INSPECT uid=7 name=Quill Longstride hunger=0.3335 rest=0.5512 recreation=0.6245 energy=0.9990 health=Some(1.0) mood=0.5169 drive=Work scores=(0.594, 0.0, 0.0844) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 2), ("chop", 2), ("build", 5), ("haul", 0), ("cook", 22), ("farm", 39), ("guard", 2)] traits=["Unconscientious"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 2.0), ("haul", 1.0), ("cook", 0.5), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+[1787294156814] SENT uid=7 sentiments=7 [("uid:3", 0.39682543), ("uid:4", 0.39682543), ("uid:5", 0.39682543), ("uid:6", 0.39682543), ("uid:8", 0.39682543), ("uid:9", 0.39682543), ("uid:10", 0.39682543)]
+[1787294156814] MOODX uid=7 total=0.5168 thoughts=0 []
+[1787294156914] INSPECT uid=8 name=Yara the Quiet hunger=0.6664 rest=0.5615 recreation=0.6245 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Personal scores=(0.426, 0.0, 0.089200005) activity=Some((Cook, 0.46444434)) status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 8), ("chop", 7), ("build", 6), ("haul", 5), ("cook", 17), ("farm", 34), ("guard", 0)] traits=["Introverted"]                              desires=[("mine", 1.0), ("chop", 0.5), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 2.0)] bravery=0.50
+[1787294156914] SENT uid=8 sentiments=7 [("uid:3", 0.39682543), ("uid:4", 0.39682543), ("uid:5", 0.39682543), ("uid:6", 0.39682543), ("uid:7", 0.39682543), ("uid:9", 0.39682543), ("uid:10", 0.39682543)]
+[1787294156914] MOODX uid=8 total=0.6000 thoughts=0 []
+[1787294156981] INSPECT uid=9 name=Yara the Steady hunger=0.3334 rest=0.5771 recreation=0.6244 energy=1.0000 health=Some(1.0) mood=0.5169 drive=Work scores=(0.59, 0.0, 0.0908) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=true skills=[("mine", 4), ("chop", 3), ("build", 2), ("haul", 3), ("cook", 27), ("farm", 42), ("guard", 2)] traits=["Unconscientious", "Agreeable", "Neurotic", "Worried", "SadLoner"]                              desires=[("mine", 2.0), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+[1787294156981] SENT uid=9 sentiments=7 [("uid:3", 0.39682543), ("uid:4", 0.39682543), ("uid:5", 0.39682543), ("uid:6", 0.39682543), ("uid:7", 0.38888893), ("uid:8", 0.39682543), ("uid:10", 0.39682543)]
+[1787294156981] MOODX uid=9 total=0.5167 thoughts=0 []
+[1787294157081] INSPECT uid=10 name=Wynn Ironhand hunger=0.3333 rest=0.5035 recreation=0.6244 energy=1.0000 health=Some(1.0) mood=0.5167 drive=Flee scores=(0.0, 1.078, 0.0908) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 8), ("chop", 4), ("build", 3), ("haul", 0), ("cook", 32), ("farm", 47), ("guard", 4)] traits=["Open"]                              desires=[("mine", 0.5), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
+[1787294157081] SENT uid=10 sentiments=7 [("uid:3", 0.39682543), ("uid:4", 0.39682543), ("uid:5", 0.39682543), ("uid:6", 0.39682543), ("uid:7", 0.39682543), ("uid:8", 0.39682543), ("uid:9", 0.39682543)]
+[1787294157081] MOODX uid=10 total=0.5167 thoughts=0 []
+[1787294160515] inspect_colonists -> 8 colonist payload(s)
+[1787294160515] designations (rev=0): []
+[1787294160515] ITEMS count=32 common.items.food.meat.beast_small_raw@(16354.3,16390.2,400.0) common.items.crafting_ing.hide.tough_hide@(16358.1,16389.9,400.0) common.items.crafting_ing.hide.tough_hide@(16353.8,16389.7,400.0) common.items.crafting_ing.animal_misc.sharp_fang@(16358.0,16390.2,400.0) common.items.crafting_ing.animal_misc.sharp_fang@(16354.3,16389.7,400.0) common.items.food.meat.beast_small_raw@(16357.1,16389.4,400.0) common.items.food.apple_mushroom_curry@(16387.1,16389.8,400.0) common.items.food.meat.beast_small_raw@(16407.0,16397.1,400.0) common.items.crafting_ing.hide.tough_hide@(16408.0,16396.7,400.0) common.items.crafting_ing.animal_misc.sharp_fang@(16407.1,16397.4,400.0) common.items.food.meat.beast_small_raw@(16421.2,16396.7,400.0) common.items.crafting_ing.hide.tough_hide@(16406.5,16390.6,400.0) common.items.crafting_ing.hide.tough_hide@(16420.6,16396.7,400.0) common.items.crafting_ing.animal_misc.sharp_fang@(16420.8,16397.4,400.0) common.items.crafting_ing.animal_misc.sharp_fang@(16406.2,16390.3,400.0) common.items.bastion.wheat@(16387.5,16388.5,400.0) common.items.crafting_ing.animal_misc.sharp_fang@(16413.6,16373.8,400.0) common.items.crafting_ing.hide.tough_hide@(16413.6,16374.3,400.0) common.items.food.meat.beast_small_raw@(16432.4,16384.7,400.0) common.items.food.meat.beast_small_raw@(16413.1,16373.8,400.0) common.items.food.meat.beast_small_raw@(16356.7,16351.0,400.0) common.items.crafting_ing.stones@(16385.0,16381.4,400.0) common.items.crafting_ing.animal_misc.sharp_fang@(16357.2,16351.0,400.0) common.items.crafting_ing.animal_misc.sharp_fang@(16386.0,16373.3,400.0) common.items.log.wood@(16383.1,16382.3,400.0) common.items.crafting_ing.animal_misc.sharp_fang@(16432.4,16384.2,400.0) common.items.crafting_ing.hide.tough_hide@(16431.9,16384.2,400.0) common.items.food.meat.beast_small_raw@(16406.6,16390.3,400.0) common.items.bastion.wheat@(16380.8,16380.5,400.0) common.items.crafting_ing.hide.tough_hide@(16357.2,16351.5,400.0) common.items.crafting_ing.hide.tough_hide@(16385.5,16372.8,400.0) common.items.food.meat.beast_small_raw@(16386.0,16372.8,400.0)
+[1787294160515] === script complete, disconnecting ===

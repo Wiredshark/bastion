@@ -1,0 +1,17 @@
+note ===== TURN 1: THE FOUNDER OPENS HIS EYES =====
+note I have just founded 8 people on flat ground. Before I touch anything I
+note want the honest baseline: what did founding give me, where is everyone,
+note what is on the ground, and what work already exists.
+note REGISTERED EXPECTATIONS (written before I look):
+note  E1 list_designations shows a stockpile, a farm and a BED plot from the
+note     founding preset. If there is no bed plot, sleep is impossible by
+note     construction and that is the headline, not a slow-burn finding.
+note  E2 count_items > 0 (BASTION_SEED_FOOD=32 was set on this boot). Zero
+note     means the seed never landed and every food finding below is VOID.
+note  E3 all 8 colonists exist with hunger=1.0 rest=1.0 (fresh defaults).
+anchor
+ascii 30
+list_designations
+inspect_colony
+inspect_colonists
+count_items

@@ -1,0 +1,46 @@
+[1787294694052] === bastion_playtest starting: server=localhost:26064 username=player script=bastion-test-evidence/play/s4-t3.txt ===
+[1787294694053] driver build=2a2cdec1 built_at=1787290172 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,inspect_colonists,inspect_colony,inspect_chronicle,count_items,list_designations,survey,note,cmd,ascii
+[1787294694053] parsed 24 script commands
+[1787294697323] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/ed9adacc-d308-485b-b435-4f474bcf57fe), name: "Veloren Server", git_hash: 458029102, git_timestamp: 1787291192, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1787294697423] requesting view distance terrain=6 entity=6
+[1787294697424] requested character join id=CharacterId(2)
+[1787294697424] in-game. entity=Entity(0, Generation(1))
+[1787294697632] anchor precondition: Pos arrived after 4 ticks (old fixed spin was 60, ceiling 450); OLD BEHAVIOUR WOULD HAVE matched this run
+[1787294699498] player pos at script start: Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787294699498] [note] TURN 3 -- THE COLONY INVENTED NO WORK FOR ITSELF, so I hand it some. I paint a FARM over the open village ground west of where I stand (x 15190-15215, y 16000-16012, all '.' on the turn-1 map). Two questions at once: (a) does a painted designation produce work at all, and (b) is anything ALREADY planted here -- inspect_cell inside a registered farm is the only tool in this driver that reads a crop's Growth attribute, so I probe a whole z-column at one xy rather than guessing the ground height.
+[1787294699499] sent BastionCameraAnchor at Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787294699499] sent BastionPlaceDesignation kind=Farm region=Region { min: Vec3 { x: 15190, y: 16000, z: 410 }, max: Vec3 { x: 15215, y: 16012, z: 422 } }
+[1787294699598] designate ACK rev 0 -> 1 (observed)
+[1787294699994] [chat] GenericChatMsg { chat_type: Npc(Uid(14)), content: Localized { key: "npc-speech-tell_site", seed: 58461, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 64967, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 20196, args: {} }), "site": Content(Plain("Phreoraros"))} } }
+[1787294709517] waited 300 ticks -> sim 2372.25..2382.25 in 292 client spins; pos now Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787294709521] designations (rev=1): [(Region { min: Vec3 { x: 15190, y: 16000, z: 410 }, max: Vec3 { x: 15215, y: 16012, z: 422 } }, Farm, None)]
+[1787294709617] COLONY tick=71470 colonists=2 food_stock=0 jobs_total=334 jobs_claimed=2 jobs_unreachable=0 designations=6 blocked_materials=5 favor=20.0
+[1787294709617] [note] --- z-column probe at (15200,16006): growth=Some(n) means a crop sprite is standing there; growth=None means that z holds no crop.
+[1787294709651] inspect_cell Vec3 { x: 15200, y: 16006, z: 412 } -> None
+[1787294709684] inspect_cell Vec3 { x: 15200, y: 16006, z: 414 } -> None
+[1787294709717] inspect_cell Vec3 { x: 15200, y: 16006, z: 415 } -> None
+[1787294709751] inspect_cell Vec3 { x: 15200, y: 16006, z: 416 } -> None
+[1787294709784] inspect_cell Vec3 { x: 15200, y: 16006, z: 417 } -> None
+[1787294709817] inspect_cell Vec3 { x: 15200, y: 16006, z: 418 } -> None
+[1787294709851] inspect_cell Vec3 { x: 15200, y: 16006, z: 419 } -> None
+[1787294709884] inspect_cell Vec3 { x: 15200, y: 16006, z: 420 } -> None
+[1787294709917] inspect_cell Vec3 { x: 15200, y: 16006, z: 421 } -> None
+[1787294709917] [note] --- second xy, in case one column is unrepresentative
+[1787294709951] inspect_cell Vec3 { x: 15208, y: 16003, z: 417 } -> None
+[1787294709984] inspect_cell Vec3 { x: 15208, y: 16003, z: 418 } -> Some((Cell(Vec3 { x: 15208, y: 16003, z: 417 }), Some(Job(BastionJobInspect { work: Farm, pos: Vec3 { x: 15208, y: 16003, z: 416 }, progress: 0.0, claimant: None, unreachable: false, needs_materials: false, is_access: false, stuck_strikes: 0, blocked_by: None, benched_since_tick: None, benched_until_tick: None }))))
+[1787294710017] inspect_cell Vec3 { x: 15208, y: 16003, z: 419 } -> Some((Cell(Vec3 { x: 15208, y: 16003, z: 418 }), Some(Job(BastionJobInspect { work: Farm, pos: Vec3 { x: 15208, y: 16003, z: 416 }, progress: 0.0, claimant: None, unreachable: false, needs_materials: false, is_access: false, stuck_strikes: 0, blocked_by: None, benched_since_tick: None, benched_until_tick: None }))))
+[1787294710051] inspect_cell Vec3 { x: 15208, y: 16003, z: 420 } -> None
+[1787294717087] [chat] GenericChatMsg { chat_type: NpcSay(Uid(24)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1787294717453] [chat] GenericChatMsg { chat_type: Npc(Uid(33)), content: Localized { key: "npc-speech-villager_conscientious", seed: 45671, args: {} } }
+[1787294755088] [chat] GenericChatMsg { chat_type: NpcSay(Uid(24)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1787294775356] [chat] GenericChatMsg { chat_type: Npc(Uid(14)), content: Localized { key: "npc-speech-site", seed: 58488, args: {"site": Content(Plain("Strach"))} } }
+[1787294776856] [chat] GenericChatMsg { chat_type: Npc(Uid(33)), content: Localized { key: "npc-speech-villager_conscientious", seed: 73, args: {} } }
+[1787294777023] [chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-site", seed: 50498, args: {"site": Content(Plain("Strach"))} } }
+[1787294778524] [chat] GenericChatMsg { chat_type: Npc(Uid(18)), content: Localized { key: "npc-speech-villager_extroverted", seed: 14341, args: {} } }
+[1787294788757] [chat] GenericChatMsg { chat_type: NpcSay(Uid(24)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[1787294804261] [chat] GenericChatMsg { chat_type: Npc(Uid(18)), content: Localized { key: "npc-speech-tell_site", seed: 44098, args: {"site": Content(Plain("Phreoraros")), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 44125, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 34430, args: {} })} } }
+[1787294805928] [chat] GenericChatMsg { chat_type: Npc(Uid(33)), content: Localized { key: "npc-speech-site", seed: 55638, args: {"site": Content(Plain("Strach"))} } }
+[1787294810593] waited 3000 ticks -> sim 2382.82..2482.82 in 3016 client spins; pos now Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787294810693] COLONY tick=74487 colonists=2 food_stock=0 jobs_total=335 jobs_claimed=2 jobs_unreachable=0 designations=6 blocked_materials=20 favor=20.0
+[1787294810694] ITEMS count=2 common.items.crafting_ing.stones@(15273.9,16039.5,431.0) common.items.log.wood@(15273.8,16039.5,431.0)
+[1787294810694] === script complete, disconnecting ===

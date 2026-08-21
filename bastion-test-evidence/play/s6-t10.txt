@@ -1,0 +1,9 @@
+note TURN 10: final wreckage census - are the Mine activities still frozen, does anyone eat?
+anchor
+inspect_colony
+inspect_colonists
+list_designations
+count_items
+wait 700
+inspect_colony
+inspect_colonists

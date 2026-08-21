@@ -1,0 +1,10 @@
+note TURN 8 -- CLOSING THE BOOK. Two of eight settlers left, both starving, in a village whose beds they did use, whose barn fed them once, and whose kitchen and fields they never touched. Final reading.
+anchor
+cmd goto 15216 16016 420
+wait 400
+anchor
+inspect_colony
+inspect_colonists
+count_items
+list_designations
+ascii 40

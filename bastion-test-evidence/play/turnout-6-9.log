@@ -1,0 +1,138 @@
+=== bastion_playtest starting: server=localhost:26084 username=player script=bastion-test-evidence/play/s6-t9.txt ===
+driver build=2a2cdec1 built_at=1787290172 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,inspect_colonists,inspect_colony,inspect_chronicle,count_items,list_designations,survey,note,cmd,ascii
+parsed 10 script commands
+[init] ConnectionEstablish
+[2m2026-08-21T06:18:27.663128Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mnWnD4T[1m}[0m[2m:[0m [2mveloren_network::channel[0m[2m:[0m Connecting Tcp to: 127.0.0.1:26084
+[2m2026-08-21T06:18:27.663586Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mnWnD4T[1m}[0m[2m:[0m[1m[0m[2m:[0m[1mhandshake[0m[1m{[0m[3mcid[0m[2m=[0m0[1m}[0m[2m:[0m [2mveloren_network_protocol::handshake[0m[2m:[0m This Handshake is now configured! [3mpid[0m[2m=[0mtDyf6o
+[init] WatingForServerVersion
+[2m2026-08-21T06:18:27.697990Z[0m [33m WARN[0m [2mveloren_client[0m[2m:[0m Server is running 1b4cf82e [2026-08-21], you are running 2a2cdec1 [2026-08-21], versions might be incompatible!
+[init] Authentication
+[init] LoadingInitData
+[init] StartingClient
+connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/66dffb5b-648f-4758-b74f-6578d18b3a3a), name: "Veloren Server", git_hash: 458029102, git_timestamp: 1787291192, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[2m2026-08-21T06:18:31.295392Z[0m [32m INFO[0m [2mveloren_common_assets[0m[2m:[0m Assets found path=E:/veloren-master/.item29-wt/assets
+[2m2026-08-21T06:18:31.365331Z[0m [33m WARN[0m [2mveloren_client[0m[2m:[0m CharacterActionError: "Character limit exceeded".
+requesting view distance terrain=6 entity=6
+requested character join id=CharacterId(2)
+in-game. entity=Entity(0, Generation(1))
+[2m2026-08-21T06:18:31.589433Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m2
+anchor precondition: Pos arrived after 4 ticks (old fixed spin was 60, ceiling 450); OLD BEHAVIOUR WOULD HAVE matched this run
+[2m2026-08-21T06:18:31.590763Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T06:18:31.624114Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T06:18:31.657513Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:18:31.690592Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
+[2m2026-08-21T06:18:31.724163Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
+[2m2026-08-21T06:18:31.908064Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m2
+[2m2026-08-21T06:18:31.924234Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T06:18:31.957361Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T06:18:31.990660Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:18:32.024097Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
+[2m2026-08-21T06:18:32.057604Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
+[2m2026-08-21T06:18:32.405891Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m2
+[2m2026-08-21T06:18:32.424258Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T06:18:32.457561Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T06:18:32.490756Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:18:32.524246Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
+[2m2026-08-21T06:18:32.557459Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
+[2m2026-08-21T06:18:32.941133Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m2
+[2m2026-08-21T06:18:32.957431Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T06:18:32.991394Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T06:18:33.024324Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:18:33.057650Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
+[2m2026-08-21T06:18:33.090935Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
+[2m2026-08-21T06:18:33.395077Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m9
+[2m2026-08-21T06:18:33.432591Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+player pos at script start: Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[note] TURN 9: threats - drop 5 hostile wolves in the middle of the colony.
+sent BastionCameraAnchor at Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[2m2026-08-21T06:18:33.457470Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m12
+[2m2026-08-21T06:18:33.490993Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m20
+COLONY tick=22683 colonists=8 food_stock=0 jobs_total=5 jobs_claimed=1 jobs_unreachable=0 designations=11 blocked_materials=0 favor=20.0
+sent chat command /spawn ["enemy", "wolf", "5"]
+[2m2026-08-21T06:18:33.524829Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m28
+[2m2026-08-21T06:18:33.557878Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m36
+[2m2026-08-21T06:18:33.591227Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m44
+[chat] GenericChatMsg { chat_type: CommandInfo, content: Localized { key: "command-spawned-entity", seed: 64472, args: {"id": Nat(288)} } }
+[chat] GenericChatMsg { chat_type: CommandInfo, content: Localized { key: "command-spawned-entity", seed: 39871, args: {"id": Nat(289)} } }
+[chat] GenericChatMsg { chat_type: CommandInfo, content: Localized { key: "command-spawned-entity", seed: 25271, args: {"id": Nat(290)} } }
+[chat] GenericChatMsg { chat_type: CommandInfo, content: Localized { key: "command-spawned-entity", seed: 24277, args: {"id": Nat(291)} } }
+[chat] GenericChatMsg { chat_type: CommandInfo, content: Localized { key: "command-spawned-entity", seed: 13992, args: {"id": Nat(292)} } }
+[chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Spawned 5 entities") }
+cmd ACK observed
+[2m2026-08-21T06:18:33.657672Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m4 [3mpending_total[0m[2m=[0m48
+[2m2026-08-21T06:18:34.056828Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:18:34.057892Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m16
+[2m2026-08-21T06:18:34.091559Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m24
+[2m2026-08-21T06:18:34.125036Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m32
+[2m2026-08-21T06:18:34.158302Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m40
+[2m2026-08-21T06:18:34.191537Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m48
+[2m2026-08-21T06:18:34.592161Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:18:34.593142Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m5 [3mpending_total[0m[2m=[0m13
+[chat] GenericChatMsg { chat_type: Npc(Uid(29)), content: Localized { key: "npc-speech-menacing", seed: 26226, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-tell_monster", seed: 45493, args: {"dir": Content(Localized { key: "npc-speech-dir_north", seed: 28221, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 5167, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 13028, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(27)), content: Localized { key: "npc-speech-menacing", seed: 40036, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(33)), content: Localized { key: "npc-speech-night", seed: 11629, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-night", seed: 5983, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(26)), content: Localized { key: "npc-speech-menacing", seed: 36076, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(29)), content: Localized { key: "npc-speech-menacing", seed: 54456, args: {} } }
+waited 300 ticks -> sim 755.63..765.66 in 296 client spins; pos now Vec3 { x: 15213.525, y: 16016.499, z: 419.0 }
+COLONY tick=22983 colonists=8 food_stock=0 jobs_total=5 jobs_claimed=1 jobs_unreachable=0 designations=11 blocked_materials=0 favor=20.0
+INSPECT uid=25 name=Osric of the Vale hunger=0.3202 rest=0.6608 recreation=0.8468 energy=0.8069 health=Some(0.8826953) mood=0.5102 drive=Flee scores=(0.578, 0.946, 0.094000004) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 1), ("chop", 2), ("build", 5), ("haul", 0), ("cook", 0), ("farm", 2), ("guard", 4)] traits=["Closed", "Extroverted"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 0.5), ("haul", 1.0), ("cook", 2.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=25 sentiments=7 [("uid:26", 0.22222224), ("uid:27", 0.26984128), ("uid:28", 0.13492064), ("uid:29", 0.23015875), ("uid:30", 0.14285715), ("uid:31", 0.12698413), ("uid:32", 0.19841272)]
+MOODX uid=25 total=0.5101 thoughts=0 []
+INSPECT uid=26 name=Awen the Wary hunger=0.3201 rest=0.6608 recreation=0.8468 energy=1.0000 health=Some(1.0) mood=0.5102 drive=Flee scores=(0.478, 1.054, 0.0992) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 1), ("chop", 3), ("build", 3), ("haul", 1), ("cook", 0), ("farm", 3), ("guard", 0)] traits=["Busybody", "Unconscientious", "Disagreeable"]                              desires=[("mine", 0.5), ("chop", 2.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=26 sentiments=7 [("uid:25", 0.22222224), ("uid:27", 0.34126985), ("uid:28", 0.12698413), ("uid:29", 0.12698413), ("uid:30", 0.11904763), ("uid:31", 0.095238104), ("uid:32", 0.22222224)]
+MOODX uid=26 total=0.5101 thoughts=0 []
+INSPECT uid=27 name=Peri Ironhand hunger=0.3201 rest=0.6607 recreation=0.8468 energy=0.9226 health=Some(1.0) mood=0.5102 drive=Flee scores=(0.492, 0.968, 0.0828) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 3), ("chop", 5), ("build", 5), ("haul", 3), ("cook", 0), ("farm", 4), ("guard", 5)] traits=["Closed", "Busybody", "Introverted", "Disagreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 2.0), ("haul", 0.5), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=27 sentiments=7 [("uid:25", 0.2777778), ("uid:26", 0.34126985), ("uid:28", 0.15079366), ("uid:29", 0.21428573), ("uid:30", 0.16666667), ("uid:31", 0.15079366), ("uid:32", 0.08730159)]
+MOODX uid=27 total=0.5100 thoughts=0 []
+INSPECT uid=28 name=Eira Longstride hunger=0.3200 rest=0.6607 recreation=0.8468 energy=0.8516 health=Some(1.0) mood=0.5100 drive=Flee scores=(0.556, 0.946, 0.0916) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 2), ("chop", 2), ("build", 4), ("haul", 5), ("cook", 1), ("farm", 1), ("guard", 1)] traits=["Introverted", "Agreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
+SENT uid=28 sentiments=7 [("uid:25", 0.11904763), ("uid:26", 0.07936508), ("uid:27", 0.15873016), ("uid:29", 0.07936508), ("uid:30", 0.015873017), ("uid:31", 0.095238104), ("uid:32", 0.10317461)]
+MOODX uid=28 total=0.5100 thoughts=0 []
+INSPECT uid=29 name=Quill Longstride hunger=0.3199 rest=0.6607 recreation=0.8467 energy=0.5123 health=Some(0.73976564) mood=0.5100 drive=Flee scores=(0.594, 0.962, 0.0844) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 1), ("chop", 0), ("build", 5), ("haul", 0), ("cook", 0), ("farm", 1), ("guard", 2)] traits=["Unconscientious"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 2.0), ("haul", 1.0), ("cook", 0.5), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=29 sentiments=7 [("uid:25", 0.24603176), ("uid:26", 0.14285715), ("uid:27", 0.20634922), ("uid:28", 0.11111112), ("uid:30", 0.031746034), ("uid:31", 0.20634922), ("uid:32", 0.19841272)]
+MOODX uid=29 total=0.5100 thoughts=0 []
+INSPECT uid=30 name=Yara the Quiet hunger=0.3199 rest=0.6606 recreation=0.8467 energy=0.9993 health=Some(1.0) mood=0.5100 drive=Work scores=(0.426, 0.0, 0.089200005) activity=Some((Mine, 0.11999998)) status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 4), ("chop", 5), ("build", 5), ("haul", 5), ("cook", 4), ("farm", 5), ("guard", 0)] traits=["Introverted"]                              desires=[("mine", 1.0), ("chop", 0.5), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 2.0)] bravery=0.50
+SENT uid=30 sentiments=7 [("uid:25", 0.18253969), ("uid:26", 0.12698413), ("uid:27", 0.12698413), ("uid:28", 0.05555556), ("uid:29", 0.047619052), ("uid:31", 0.18253969), ("uid:32", 0.031746034)]
+MOODX uid=30 total=0.5099 thoughts=0 []
+INSPECT uid=31 name=Yara the Steady hunger=0.3198 rest=0.6606 recreation=0.8467 energy=1.0000 health=Some(1.0) mood=0.5100 drive=Work scores=(0.59, 0.0, 0.0908) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=true skills=[("mine", 0), ("chop", 3), ("build", 2), ("haul", 3), ("cook", 3), ("farm", 0), ("guard", 2)] traits=["Unconscientious", "Agreeable", "Neurotic", "Worried", "SadLoner"]                              desires=[("mine", 2.0), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=31 sentiments=7 [("uid:25", 0.11904763), ("uid:26", 0.095238104), ("uid:27", 0.14285715), ("uid:28", 0.071428575), ("uid:29", 0.19841272), ("uid:30", 0.17460318), ("uid:32", 0.031746034)]
+MOODX uid=31 total=0.5099 thoughts=0 []
+INSPECT uid=32 name=Wynn Ironhand hunger=0.3198 rest=0.6606 recreation=0.8467 energy=1.0000 health=Some(0.9476172) mood=0.5100 drive=Flee scores=(0.504, 1.078, 0.0908) activity=Some((Mine, 0.04333333)) status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 8), ("chop", 4), ("build", 3), ("haul", 0), ("cook", 0), ("farm", 3), ("guard", 4)] traits=["Open"]                              desires=[("mine", 0.5), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
+SENT uid=32 sentiments=7 [("uid:25", 0.15873016), ("uid:26", 0.21428573), ("uid:27", 0.08730159), ("uid:28", 0.08730159), ("uid:29", 0.15873016), ("uid:30", 0.047619052), ("uid:31", 0.007936508)]
+MOODX uid=32 total=0.5099 thoughts=0 []
+inspect_colonists -> 8 colonist payload(s)
+[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-night_time", seed: 24374, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-night_time", seed: 42197, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(33)), content: Localized { key: "npc-speech-tell_site", seed: 31665, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 34368, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 1196, args: {} }), "site": Content(Plain("Phreoraros"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(36)), content: Localized { key: "npc-speech-night", seed: 31515, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(25)), content: Localized { key: "npc-speech-villager_under_attack", seed: 61396, args: {} } }
+waited 600 ticks -> sim 774.05..794.05 in 598 client spins; pos now Vec3 { x: 15213.525, y: 16016.499, z: 419.0 }
+COLONY tick=23824 colonists=7 food_stock=0 jobs_total=5 jobs_claimed=1 jobs_unreachable=0 designations=11 blocked_materials=1 favor=20.0
+INSPECT uid=25 name=Osric of the Vale hunger=0.2950 rest=0.6482 recreation=0.8411 energy=0.3627 health=Some(0.3745703) mood=0.4976 drive=Flee scores=(0.578, 0.946, 0.094000004) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 1), ("chop", 2), ("build", 5), ("haul", 0), ("cook", 0), ("farm", 2), ("guard", 4)] traits=["Closed", "Extroverted"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 0.5), ("haul", 1.0), ("cook", 2.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=25 sentiments=7 [("uid:26", 0.22222224), ("uid:27", 0.26984128), ("uid:28", 0.13492064), ("npc:NpcId(257v1)", 0.23015875), ("uid:30", 0.14285715), ("uid:31", 0.12698413), ("uid:32", 0.19047621)]
+MOODX uid=25 total=0.4975 thoughts=0 []
+INSPECT uid=26 name=Awen the Wary hunger=0.2949 rest=0.6481 recreation=0.8411 energy=1.0000 health=Some(1.0) mood=0.4976 drive=Work scores=(0.478, 0.0, 0.0992) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 1), ("chop", 3), ("build", 3), ("haul", 1), ("cook", 0), ("farm", 3), ("guard", 0)] traits=["Busybody", "Unconscientious", "Disagreeable"]                              desires=[("mine", 0.5), ("chop", 2.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=26 sentiments=7 [("uid:25", 0.22222224), ("uid:27", 0.33333334), ("uid:28", 0.11904763), ("npc:NpcId(257v1)", 0.12698413), ("uid:30", 0.11904763), ("uid:31", 0.095238104), ("uid:32", 0.21428573)]
+MOODX uid=26 total=0.4974 thoughts=0 []
+INSPECT uid=27 name=Peri Ironhand hunger=0.2948 rest=0.6481 recreation=0.8411 energy=0.8019 health=Some(1.0) mood=0.4976 drive=Flee scores=(0.492, 0.968, 0.0828) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 3), ("chop", 5), ("build", 5), ("haul", 3), ("cook", 0), ("farm", 4), ("guard", 5)] traits=["Closed", "Busybody", "Introverted", "Disagreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 2.0), ("haul", 0.5), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=27 sentiments=7 [("uid:25", 0.2777778), ("uid:26", 0.34126985), ("uid:28", 0.15079366), ("npc:NpcId(257v1)", 0.20634922), ("uid:30", 0.16666667), ("uid:31", 0.15079366), ("uid:32", 0.08730159)]
+MOODX uid=27 total=0.4974 thoughts=0 []
+INSPECT uid=28 name=Eira Longstride hunger=0.2947 rest=0.6481 recreation=0.8411 energy=0.2632 health=Some(0.0051171873) mood=0.4973 drive=Flee scores=(0.556, 0.946, 0.0916) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 2), ("chop", 2), ("build", 4), ("haul", 5), ("cook", 1), ("farm", 1), ("guard", 1)] traits=["Introverted", "Agreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
+SENT uid=28 sentiments=7 [("uid:25", 0.10317461), ("uid:26", 0.07936508), ("uid:27", 0.15079366), ("npc:NpcId(257v1)", 0.07936508), ("uid:30", 0.015873017), ("uid:31", 0.095238104), ("uid:32", 0.095238104)]
+MOODX uid=28 total=0.4973 thoughts=0 []
+INSPECT uid=30 name=Yara the Quiet hunger=0.2946 rest=0.6480 recreation=0.8410 energy=1.0000 health=Some(1.0) mood=0.4973 drive=Work scores=(0.426, 0.0, 0.089200005) activity=Some((Mine, 0.11999998)) status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 4), ("chop", 5), ("build", 5), ("haul", 5), ("cook", 4), ("farm", 5), ("guard", 0)] traits=["Introverted"]                              desires=[("mine", 1.0), ("chop", 0.5), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 2.0)] bravery=0.50
+SENT uid=30 sentiments=7 [("uid:25", 0.18253969), ("uid:26", 0.12698413), ("uid:27", 0.12698413), ("uid:28", 0.05555556), ("npc:NpcId(257v1)", 0.03968254), ("uid:31", 0.18253969), ("uid:32", 0.031746034)]
+MOODX uid=30 total=0.4973 thoughts=0 []
+INSPECT uid=31 name=Yara the Steady hunger=0.2945 rest=0.6480 recreation=0.8410 energy=1.0000 health=Some(1.0) mood=0.4973 drive=Work scores=(0.59, 0.0, 0.0908) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=true skills=[("mine", 0), ("chop", 3), ("build", 2), ("haul", 3), ("cook", 3), ("farm", 0), ("guard", 2)] traits=["Unconscientious", "Agreeable", "Neurotic", "Worried", "SadLoner"]                              desires=[("mine", 2.0), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=31 sentiments=7 [("uid:25", 0.11904763), ("uid:26", 0.095238104), ("uid:27", 0.13492064), ("uid:28", 0.071428575), ("npc:NpcId(257v1)", 0.19841272), ("uid:30", 0.17460318), ("uid:32", 0.023809526)]
+MOODX uid=31 total=0.4973 thoughts=0 []
+INSPECT uid=32 name=Wynn Ironhand hunger=0.2944 rest=0.6479 recreation=0.8410 energy=0.6645 health=Some(0.77308595) mood=0.4973 drive=Flee scores=(0.504, 1.078, 0.0908) activity=Some((Mine, 0.04333333)) status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 8), ("chop", 4), ("build", 3), ("haul", 0), ("cook", 0), ("farm", 3), ("guard", 4)] traits=["Open"]                              desires=[("mine", 0.5), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
+SENT uid=32 sentiments=7 [("uid:25", 0.15079366), ("uid:26", 0.20634922), ("uid:27", 0.08730159), ("uid:28", 0.08730159), ("npc:NpcId(257v1)", 0.15873016), ("uid:30", 0.047619052), ("uid:31", 0.007936508)]
+MOODX uid=32 total=0.4972 thoughts=0 []
+inspect_colonists -> 7 colonist payload(s)
+=== script complete, disconnecting ===
+[2m2026-08-21T06:19:20.332463Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mnWnD4T[1m}[0m[2m:[0m[1m[0m[2m:[0m[1mremote[0m[1m{[0m[3mp[0m[2m=[0mtDyf6o[1m}[0m[2m:[0m[1mrecv[0m[2m:[0m [2mveloren_network::participant[0m[2m:[0m protocol failed, shutting down channel [3me[0m[2m=[0mCustom(Tcp(Custom { kind: BrokenPipe, error: "read returned 0 bytes" })) [3mcid[0m[2m=[0m0
+[2m2026-08-21T06:19:20.360751Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mnWnD4T[1m}[0m[2m:[0m[1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mnWnD4T[1m}[0m[2m:[0m[1mremote[0m[1m{[0m[3mp[0m[2m=[0mtDyf6o[1m}[0m[2m:[0m [2mveloren_network::api[0m[2m:[0m Participant already has been shutdown gracefully
+[2m2026-08-21T06:19:20.360928Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mnWnD4T[1m}[0m[2m:[0m [2mveloren_network::scheduler[0m[2m:[0m Shutdown of scheduler requested
+[2m2026-08-21T06:19:20.461274Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mnWnD4T[1m}[0m[2m:[0m [2mveloren_network::api[0m[2m:[0m Network dropped gracefully

@@ -1,0 +1,93 @@
+=== bastion_playtest starting: server=localhost:26084 username=player script=bastion-test-evidence/play/s6-t8.txt ===
+driver build=2a2cdec1 built_at=1787290172 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,inspect_colonists,inspect_colony,inspect_chronicle,count_items,list_designations,survey,note,cmd,ascii
+parsed 11 script commands
+[init] ConnectionEstablish
+[2m2026-08-21T06:17:07.526631Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mVmeZwl[1m}[0m[2m:[0m [2mveloren_network::channel[0m[2m:[0m Connecting Tcp to: 127.0.0.1:26084
+[2m2026-08-21T06:17:07.527151Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mVmeZwl[1m}[0m[2m:[0m[1m[0m[2m:[0m[1mhandshake[0m[1m{[0m[3mcid[0m[2m=[0m0[1m}[0m[2m:[0m [2mveloren_network_protocol::handshake[0m[2m:[0m This Handshake is now configured! [3mpid[0m[2m=[0mtDyf6o
+[init] WatingForServerVersion
+[2m2026-08-21T06:17:07.549756Z[0m [33m WARN[0m [2mveloren_client[0m[2m:[0m Server is running 1b4cf82e [2026-08-21], you are running 2a2cdec1 [2026-08-21], versions might be incompatible!
+[init] Authentication
+[init] LoadingInitData
+[init] StartingClient
+connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/66dffb5b-648f-4758-b74f-6578d18b3a3a), name: "Veloren Server", git_hash: 458029102, git_timestamp: 1787291192, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[2m2026-08-21T06:17:10.933865Z[0m [32m INFO[0m [2mveloren_common_assets[0m[2m:[0m Assets found path=E:/veloren-master/.item29-wt/assets
+requesting view distance terrain=6 entity=6
+requested character join id=CharacterId(2)
+in-game. entity=Entity(0, Generation(1))
+[2m2026-08-21T06:17:11.224255Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m2
+anchor precondition: Pos arrived after 4 ticks (old fixed spin was 60, ceiling 450); OLD BEHAVIOUR WOULD HAVE matched this run
+[2m2026-08-21T06:17:11.225202Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T06:17:11.259089Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T06:17:11.292235Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:17:11.325779Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
+[2m2026-08-21T06:17:11.358753Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
+[2m2026-08-21T06:17:11.509324Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m2
+[2m2026-08-21T06:17:11.525477Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T06:17:11.558930Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T06:17:11.592428Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:17:11.625816Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
+[2m2026-08-21T06:17:11.658906Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
+[2m2026-08-21T06:17:12.007874Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m2
+[2m2026-08-21T06:17:12.025661Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T06:17:12.059327Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T06:17:12.092540Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:17:12.125767Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
+[2m2026-08-21T06:17:12.158997Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
+[2m2026-08-21T06:17:12.510138Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m2
+[2m2026-08-21T06:17:12.525637Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T06:17:12.559028Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T06:17:12.592331Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:17:12.625938Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
+[2m2026-08-21T06:17:12.659202Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
+[2m2026-08-21T06:17:13.005363Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m2
+[2m2026-08-21T06:17:13.025913Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T06:17:13.059116Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+player pos at script start: Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[note] TURN 8: erase the split zone 1 entirely and see if hauling ever recovers.
+sent BastionCameraAnchor at Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[2m2026-08-21T06:17:13.092747Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m14
+[2m2026-08-21T06:17:13.125911Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m22
+[2m2026-08-21T06:17:13.159338Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m30
+COLONY tick=20285 colonists=8 food_stock=0 jobs_total=12 jobs_claimed=3 jobs_unreachable=0 designations=13 blocked_materials=0 favor=20.0
+sent BastionCancelDesignation region=Region { min: Vec3 { x: 15239, y: 15985, z: 375 }, max: Vec3 { x: 15251, y: 16085, z: 465 } }
+[2m2026-08-21T06:17:13.192657Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m38
+[2m2026-08-21T06:17:13.226047Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m46
+[2m2026-08-21T06:17:13.259655Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m48
+[chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Designations cancelled.") }
+[2m2026-08-21T06:17:13.622202Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:17:13.623361Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m16
+[2m2026-08-21T06:17:13.656981Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m24
+[2m2026-08-21T06:17:13.690482Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m32
+[2m2026-08-21T06:17:13.723588Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m40
+[2m2026-08-21T06:17:13.756960Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m48
+[2m2026-08-21T06:17:14.188759Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:17:14.189805Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m5 [3mpending_total[0m[2m=[0m13
+[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-villager_closed", seed: 19195, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-tell_monster", seed: 60365, args: {"body": Content(Localized { key: "noun-wendigo", seed: 51276, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 27271, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 11893, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(33)), content: Localized { key: "npc-speech-tell_monster", seed: 50592, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 55346, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 53417, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 41190, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-villager_unconscientious", seed: 8457, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(19)), content: Localized { key: "npc-speech-villager_extroverted", seed: 12607, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(19)), content: Localized { key: "npc-speech-site", seed: 51669, args: {"site": Content(Plain("Strach"))} } }
+waited 300 ticks -> sim 675.56..685.59 in 296 client spins; pos now Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+COLONY tick=20582 colonists=8 food_stock=0 jobs_total=11 jobs_claimed=2 jobs_unreachable=0 designations=11 blocked_materials=0 favor=20.0
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-villager_conscientious", seed: 12080, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(26)), content: Localized { key: "npc-speech-menacing", seed: 33109, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(26)), content: Localized { key: "npc-speech-menacing", seed: 45839, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(15)), content: Localized { key: "npc-speech-tell_monster", seed: 38233, args: {"body": Content(Localized { key: "noun-wendigo", seed: 13166, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 61821, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 35216, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-night_time", seed: 35541, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-tell_site", seed: 56772, args: {"site": Content(Plain("Phreoraros")), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 7014, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 16953, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(26)), content: Localized { key: "npc-speech-menacing", seed: 45556, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(34)), content: Localized { key: "npc-speech-tell_site", seed: 2262, args: {"dir": Content(Localized { key: "npc-speech-dir_west", seed: 31237, args: {} }), "site": Content(Plain("Nzitaka")), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 47937, args: {} })} } }
+waited 600 ticks -> sim 685.65..705.65 in 594 client spins; pos now Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+COLONY tick=21178 colonists=8 food_stock=0 jobs_total=5 jobs_claimed=1 jobs_unreachable=0 designations=11 blocked_materials=0 favor=20.0
+[chat] GenericChatMsg { chat_type: Npc(Uid(12)), content: Localized { key: "npc-speech-tell_site", seed: 34699, args: {"dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 13935, args: {} }), "site": Content(Plain("Greabrien Glider Course")), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 17790, args: {} })} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-tell_site", seed: 16777, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 30557, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_east", seed: 63494, args: {} }), "site": Content(Plain("Himore"))} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-tell_site", seed: 15618, args: {"site": Content(Plain("Greabrien Glider Course")), "dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 10428, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 51679, args: {} })} } }
+waited 600 ticks -> sim 705.72..725.72 in 598 client spins; pos now Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+COLONY tick=21773 colonists=8 food_stock=0 jobs_total=5 jobs_claimed=1 jobs_unreachable=0 designations=11 blocked_materials=0 favor=20.0
+ITEMS count=4 common.items.log.wood@(15275.3,16037.0,431.0) common.items.crafting_ing.animal_misc.sharp_fang@(15295.5,16004.0,418.0) common.items.crafting_ing.hide.tough_hide@(15295.0,16003.5,418.0) common.items.food.meat.beast_small_raw@(15295.5,16003.5,418.0)
+=== script complete, disconnecting ===
+[2m2026-08-21T06:18:03.095522Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mVmeZwl[1m}[0m[2m:[0m[1m[0m[2m:[0m[1mremote[0m[1m{[0m[3mp[0m[2m=[0mtDyf6o[1m}[0m[2m:[0m[1mrecv[0m[2m:[0m [2mveloren_network::participant[0m[2m:[0m protocol failed, shutting down channel [3me[0m[2m=[0mCustom(Tcp(Custom { kind: BrokenPipe, error: "read returned 0 bytes" })) [3mcid[0m[2m=[0m0
+[2m2026-08-21T06:18:03.109892Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mVmeZwl[1m}[0m[2m:[0m[1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mVmeZwl[1m}[0m[2m:[0m[1mremote[0m[1m{[0m[3mp[0m[2m=[0mtDyf6o[1m}[0m[2m:[0m [2mveloren_network::api[0m[2m:[0m Participant already has been shutdown gracefully
+[2m2026-08-21T06:18:03.110063Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mVmeZwl[1m}[0m[2m:[0m [2mveloren_network::scheduler[0m[2m:[0m Shutdown of scheduler requested
+[2m2026-08-21T06:18:03.210448Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mVmeZwl[1m}[0m[2m:[0m [2mveloren_network::api[0m[2m:[0m Network dropped gracefully

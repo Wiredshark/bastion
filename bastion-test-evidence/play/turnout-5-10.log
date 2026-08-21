@@ -1,0 +1,18 @@
+=== bastion_playtest starting: server=localhost:26074 username=player script=bastion-test-evidence/play/s5-t9.txt ===
+driver build=2a2cdec1 built_at=1787290172 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,inspect_colonists,inspect_colony,inspect_chronicle,count_items,list_designations,survey,note,cmd,ascii
+parsed 8 script commands
+[init] ConnectionEstablish
+[2m2026-08-21T06:46:51.838647Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0muyGCfV[1m}[0m[2m:[0m [2mveloren_network::channel[0m[2m:[0m Connecting Tcp to: 127.0.0.1:26074
+[2m2026-08-21T06:46:51.839267Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0muyGCfV[1m}[0m[2m:[0m[1m[0m[2m:[0m[1mhandshake[0m[1m{[0m[3mcid[0m[2m=[0m0[1m}[0m[2m:[0m [2mveloren_network_protocol::handshake[0m[2m:[0m This Handshake is now configured! [3mpid[0m[2m=[0mEsInt2
+[init] WatingForServerVersion
+[2m2026-08-21T06:46:51.853438Z[0m [33m WARN[0m [2mveloren_client[0m[2m:[0m Server is running 1b4cf82e [2026-08-21], you are running 2a2cdec1 [2026-08-21], versions might be incompatible!
+[init] Authentication
+[init] LoadingInitData
+[init] StartingClient
+connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/da17593b-a962-4e0a-9689-ae95cdcf6930), name: "Veloren Server", git_hash: 458029102, git_timestamp: 1787291192, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[2m2026-08-21T06:46:55.421782Z[0m [32m INFO[0m [2mveloren_common_assets[0m[2m:[0m Assets found path=E:/veloren-master/.item29-wt/assets
+[2m2026-08-21T06:46:55.490983Z[0m [33m WARN[0m [2mveloren_client[0m[2m:[0m CharacterActionError: "Character limit exceeded".
+requesting view distance terrain=6 entity=6
+requested character join id=CharacterId(2)
+in-game. entity=Entity(0, Generation(1))
+VOID: no Pos component after 450 ticks (15s) -- REFUSING to anchor at the world origin. Anchoring at Vec3::zero() streams terrain at chunk (0, 0) and silently makes this run a different condition from one anchored at the colony.

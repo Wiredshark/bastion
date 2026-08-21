@@ -1,0 +1,28 @@
+[1787292745519] === bastion_playtest starting: server=localhost:26084 username=player script=bastion-test-evidence/play/s6-t5.txt ===
+[1787292745519] driver build=2a2cdec1 built_at=1787290172 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,inspect_colonists,inspect_colony,inspect_chronicle,count_items,list_designations,survey,note,cmd,ascii
+[1787292745519] parsed 9 script commands
+[1787292749214] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/66dffb5b-648f-4758-b74f-6578d18b3a3a), name: "Veloren Server", git_hash: 458029102, git_timestamp: 1787291192, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1787292749315] requesting view distance terrain=6 entity=6
+[1787292749315] requested character join id=CharacterId(2)
+[1787292749315] in-game. entity=Entity(0, Generation(1))
+[1787292749504] anchor precondition: Pos arrived after 4 ticks (old fixed spin was 60, ceiling 450); OLD BEHAVIOUR WOULD HAVE matched this run
+[1787292751371] player pos at script start: Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787292751371] [note] TURN 5: ONE cancel brush - swallows food-store zone 0 whole, cuts zone 1 into two.
+[1787292751371] sent BastionCameraAnchor at Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787292751438] COLONY tick=11889 colonists=8 food_stock=32 jobs_total=4 jobs_claimed=0 jobs_unreachable=0 designations=12 blocked_materials=0 favor=20.0
+[1787292751438] sent BastionCancelDesignation region=Region { min: Vec3 { x: 15240, y: 16016, z: 380 }, max: Vec3 { x: 15299, y: 16063, z: 460 } }
+[1787292751475] [chat] GenericChatMsg { chat_type: CommandInfo, content: Plain("Designations cancelled.") }
+[1787292752529] [chat] GenericChatMsg { chat_type: Npc(Uid(36)), content: Localized { key: "npc-speech-villager_seeker", seed: 13418, args: {} } }
+[1787292754761] waited 100 ticks -> sim 395.53..398.88 in 98 client spins; pos now Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787292754861] COLONY tick=11987 colonists=8 food_stock=0 jobs_total=7 jobs_claimed=3 jobs_unreachable=0 designations=12 blocked_materials=0 favor=20.0
+[1787292757997] [chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-rain_stopped", seed: 21353, args: {} } }
+[1787292757997] [chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-rain_stopped", seed: 62926, args: {} } }
+[1787292757997] [chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-rain_stopped", seed: 3654, args: {} } }
+[1787292757997] [chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-rain_stopped", seed: 50956, args: {} } }
+[1787292757997] [chat] GenericChatMsg { chat_type: Npc(Uid(19)), content: Localized { key: "npc-speech-rain_stopped", seed: 12584, args: {} } }
+[1787292757997] [chat] GenericChatMsg { chat_type: Npc(Uid(33)), content: Localized { key: "npc-speech-rain_stopped", seed: 8898, args: {} } }
+[1787292757997] [chat] GenericChatMsg { chat_type: Npc(Uid(34)), content: Localized { key: "npc-speech-rain_stopped", seed: 36058, args: {} } }
+[1787292768096] waited 400 ticks -> sim 398.98..412.35 in 397 client spins; pos now Vec3 { x: 15216.308, y: 16016.316, z: 419.0 }
+[1787292768163] COLONY tick=12381 colonists=8 food_stock=0 jobs_total=7 jobs_claimed=3 jobs_unreachable=0 designations=12 blocked_materials=0 favor=20.0
+[1787292768163] ITEMS count=5 common.items.quest.legoom_leaf@(15263.6,16004.5,417.0) common.items.food.mushroom@(15275.1,16038.5,431.0) common.items.crafting_ing.stones@(15275.2,16038.4,431.0) common.items.food.tomato@(15264.0,16004.8,417.0) common.items.log.wood@(15275.1,16038.5,431.0)
+[1787292768163] === script complete, disconnecting ===

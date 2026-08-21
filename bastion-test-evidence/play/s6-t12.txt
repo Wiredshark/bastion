@@ -1,0 +1,7 @@
+note TURN 12: chop box placed EAST of the known trees, containing none of them.
+anchor
+list_designations
+inspect_colony
+designate chop 15200 15980 405 15220 16000 445
+list_designations
+inspect_colony

@@ -1,0 +1,6 @@
+note TURN 1 (Fable playing): what do I actually have? Looking before touching.
+anchor
+wait 600
+ascii 24
+inspect_colonists
+count_items

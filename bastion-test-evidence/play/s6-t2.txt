@@ -1,0 +1,11 @@
+note TURN 2: paint a LOT of work at once and watch it get claimed.
+anchor
+inspect_colony
+designate mine 15221 16005 419 15232 16016 421
+designate chop 15198 15998 405 15234 16034 435
+list_designations
+inspect_colony
+wait 500
+inspect_colony
+wait 500
+inspect_colony

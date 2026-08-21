@@ -1,0 +1,16 @@
+note ===== TURN 3: STILL HANDS OFF. Second look, longer. =====
+note Turn 2 (t=7580): food_stock 32 -> 80 (the farm WORKS), but jobs_total
+note fell 37 -> 8, jobs_claimed=0, blocked_materials=8. The 8 survivors are
+note the founding BED plot's build jobs and they are blocked on stone.
+note The server census has read "working=0 ... idle=8" on most samples.
+note Q1 does jobs_total ever rise again on its own (farm regrowth)?
+note Q2 does blocked_materials ever fall on its own? i.e. will these people
+note    go and QUARRY the outcrop 20 blocks west without being told?
+note Q3 how fast are hunger/rest actually falling? I need the slope to know
+note    whether I can reach a sleep in this session at all.
+note Q4 does the chronicle record anything?
+wait 5000
+inspect_colony
+inspect_colonists
+count_items
+inspect_chronicle

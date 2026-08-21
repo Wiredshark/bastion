@@ -1,0 +1,9 @@
+note TURN 4: paint a second stockpile that straddles the food store's y-band, north-to-south.
+anchor
+inspect_colony
+list_designations
+designate stockpile 15240 15990 380 15250 16080 460
+wait 200
+inspect_colony
+list_designations
+count_items

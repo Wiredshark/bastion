@@ -1,0 +1,8 @@
+note TURN 5 -- LAST LIGHT. Two settlers left of eight, both at hunger 0.0, no food anywhere in the colony, 28 cells tilled and none sown for want of seed. I let it run and read the chronicle: what does the game itself record as having happened to these people?
+anchor
+inspect_chronicle
+wait 4000
+inspect_colony
+inspect_colonists
+inspect_chronicle
+count_items

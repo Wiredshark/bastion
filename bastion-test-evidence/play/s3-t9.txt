@@ -1,0 +1,16 @@
+note ===== TURN 9 (FINAL): THEY SLEEP. What does the colony LOOK like? =====
+note CONFIRMED at 06:32:17: "slept - rest restored uid=10 job=2520
+note pos=(16382,16382,400) owned=false". uid=5 followed at 06:32:57.
+note So sleep works -- once a PLAYER supplied the stone to build the beds.
+note Both slept in the SAME bed and both read owned=false: eight beds
+note exist, eight colonists exist, and not one of them owns one.
+note Final frame: I want to see the colony I built. Eight beds, a stockpile,
+note a farm, a cookstation and a food store all stand inside radius 12 of
+note (16385,16384). If the map still renders that as bare ground, then the
+note DF layer cannot show a player their own fortress.
+wait 4000
+ascii 12
+inspect_colony
+inspect_colonists
+list_designations
+count_items

@@ -1,0 +1,11 @@
+note TURN 6: does the colony recover its food store into the split zone 1?
+anchor
+inspect_colony
+wait 600
+inspect_colony
+wait 600
+inspect_colony
+wait 600
+inspect_colony
+count_items
+inspect_colonists

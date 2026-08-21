@@ -1,0 +1,11 @@
+note TURN 5 -- THE KITCHEN QUESTION. The colony holds 32 raw mushrooms and several colonists whose strongest DESIRE is cook, yet it has never cooked. The village has houses; if their pots counted, a cook job could exist. I paint a COOKSTATION myself on open ground next to the stockpile -- if the colony can only ever cook at a station IT BUILT, this is the difference between "chose not to" and "no such job could exist".
+anchor
+inspect_colony
+designate cookstation 15268 16032 428 15270 16034 431
+wait 300
+list_designations
+inspect_colony
+wait 4000
+inspect_colony
+inspect_colonists
+count_items

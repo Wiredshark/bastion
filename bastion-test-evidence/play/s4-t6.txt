@@ -1,0 +1,15 @@
+note TURN 6 -- WALK INTO THE HOUSES. Three sleeps have now landed on world-generated house beds at (15231,16006,426) and (15198,15987,416). I move the camera into the south-west quarter of the village to see houses 1 and 2 up close, and I ask the inspector directly about a bed cell -- twice, because a single inspect_cell reads the PREVIOUS request's reply (I got caught by that in turn 3).
+anchor
+cmd goto 15195 15985 420
+wait 300
+anchor
+ascii 30
+note --- inspector aimed straight at a bed the colony has actually slept in; asked twice so the reply matches the request
+inspect_cell 15198 15987 416
+inspect_cell 15198 15987 416
+inspect_cell 15231 16006 426
+inspect_cell 15231 16006 426
+note --- and a house interior floor cell, twice
+inspect_cell 15190 15985 415
+inspect_cell 15190 15985 415
+inspect_colony

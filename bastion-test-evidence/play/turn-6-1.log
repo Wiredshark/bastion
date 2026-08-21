@@ -1,0 +1,81 @@
+[1787292348456] === bastion_playtest starting: server=localhost:26084 username=player script=bastion-test-evidence/play/s6-t1.txt ===
+[1787292348457] driver build=2a2cdec1 built_at=1787290172 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,inspect_colonists,inspect_colony,inspect_chronicle,count_items,list_designations,survey,note,cmd,ascii
+[1787292348457] parsed 8 script commands
+[1787292352182] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/66dffb5b-648f-4758-b74f-6578d18b3a3a), name: "Veloren Server", git_hash: 458029102, git_timestamp: 1787291192, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1787292352316] requesting view distance terrain=6 entity=6
+[1787292352316] requested character join id=CharacterId(2)
+[1787292352316] in-game. entity=Entity(0, Generation(1))
+[1787292352508] anchor precondition: Pos arrived after 4 ticks (old fixed spin was 60, ceiling 450); OLD BEHAVIOUR WOULD HAVE matched this run
+[1787292354375] player pos at script start: Vec3 { x: 15216.516, y: 16016.553, z: 419.0 }
+[1787292354375] [note] TURN 1 ADVERSARY: baseline. Look at everything before touching anything.
+[1787292354375] sent BastionCameraAnchor at Vec3 { x: 15216.516, y: 16016.553, z: 419.0 }
+[1787292367692] waited 400 ticks -> sim 2.19..15.54 in 398 client spins; pos now Vec3 { x: 15216.284, y: 16016.887, z: 419.0 }
+[1787292367758] COLONY tick=437 colonists=8 food_stock=32 jobs_total=0 jobs_claimed=0 jobs_unreachable=0 designations=5 blocked_materials=0 favor=2.9
+[1787292369192] INSPECT uid=25 name=Osric of the Vale hunger=0.9878 rest=0.9939 recreation=0.9972 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Idle scores=(0.0, 0.0, 0.094000004) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 0), ("chop", 2), ("build", 5), ("haul", 0), ("cook", 0), ("farm", 2), ("guard", 4)] traits=["Closed", "Extroverted"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 0.5), ("haul", 1.0), ("cook", 2.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+[1787292369192] SENT uid=25 sentiments=0 []
+[1787292369192] MOODX uid=25 total=0.6000 thoughts=0 []
+[1787292369259] INSPECT uid=26 name=Awen the Wary hunger=0.9877 rest=0.9939 recreation=0.9972 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Idle scores=(0.0, 0.0, 0.0992) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 0), ("chop", 3), ("build", 3), ("haul", 1), ("cook", 0), ("farm", 3), ("guard", 0)] traits=["Busybody", "Unconscientious", "Disagreeable"]                              desires=[("mine", 0.5), ("chop", 2.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+[1787292369259] SENT uid=26 sentiments=0 []
+[1787292369259] MOODX uid=26 total=0.6000 thoughts=0 []
+[1787292369358] INSPECT uid=27 name=Peri Ironhand hunger=0.9876 rest=0.9938 recreation=0.9972 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Idle scores=(0.0, 0.0, 0.0828) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 2), ("chop", 5), ("build", 5), ("haul", 3), ("cook", 0), ("farm", 4), ("guard", 5)] traits=["Closed", "Busybody", "Introverted", "Disagreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 2.0), ("haul", 0.5), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+[1787292369359] SENT uid=27 sentiments=0 []
+[1787292369359] MOODX uid=27 total=0.6000 thoughts=0 []
+[1787292369425] INSPECT uid=28 name=Eira Longstride hunger=0.9876 rest=0.9938 recreation=0.9972 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Idle scores=(0.0, 0.0, 0.0916) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 2), ("chop", 2), ("build", 4), ("haul", 5), ("cook", 1), ("farm", 1), ("guard", 1)] traits=["Introverted", "Agreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
+[1787292369425] SENT uid=28 sentiments=0 []
+[1787292369425] MOODX uid=28 total=0.6000 thoughts=0 []
+[1787292369492] INSPECT uid=29 name=Quill Longstride hunger=0.9875 rest=0.9938 recreation=0.9972 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Idle scores=(0.0, 0.0, 0.0844) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 0), ("chop", 0), ("build", 5), ("haul", 0), ("cook", 0), ("farm", 1), ("guard", 2)] traits=["Unconscientious"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 2.0), ("haul", 1.0), ("cook", 0.5), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+[1787292369492] SENT uid=29 sentiments=0 []
+[1787292369492] MOODX uid=29 total=0.6000 thoughts=0 []
+[1787292369559] INSPECT uid=30 name=Yara the Quiet hunger=0.9875 rest=0.9937 recreation=0.9972 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Idle scores=(0.0, 0.0, 0.089200005) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 4), ("chop", 5), ("build", 5), ("haul", 5), ("cook", 4), ("farm", 5), ("guard", 0)] traits=["Introverted"]                              desires=[("mine", 1.0), ("chop", 0.5), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 2.0)] bravery=0.50
+[1787292369559] SENT uid=30 sentiments=0 []
+[1787292369559] MOODX uid=30 total=0.6000 thoughts=0 []
+[1787292369659] INSPECT uid=31 name=Yara the Steady hunger=0.9874 rest=0.9937 recreation=0.9972 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Idle scores=(0.0, 0.0, 0.0908) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=true skills=[("mine", 0), ("chop", 3), ("build", 2), ("haul", 3), ("cook", 3), ("farm", 0), ("guard", 2)] traits=["Unconscientious", "Agreeable", "Neurotic", "Worried", "SadLoner"]                              desires=[("mine", 2.0), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+[1787292369659] SENT uid=31 sentiments=0 []
+[1787292369659] MOODX uid=31 total=0.6000 thoughts=0 []
+[1787292369725] INSPECT uid=32 name=Wynn Ironhand hunger=0.9873 rest=0.9937 recreation=0.9971 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Idle scores=(0.0, 0.0, 0.0908) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 4), ("chop", 4), ("build", 3), ("haul", 0), ("cook", 0), ("farm", 3), ("guard", 4)] traits=["Open"]                              desires=[("mine", 0.5), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
+[1787292369725] SENT uid=32 sentiments=0 []
+[1787292369725] MOODX uid=32 total=0.6000 thoughts=0 []
+[1787292374359] inspect_colonists -> 8 colonist payload(s)
+[1787292374360] designations (rev=0): []
+[1787292374360] ITEMS count=6 common.items.food.mushroom@(15275.8,16038.5,431.0) common.items.crafting_ing.stones@(15275.7,16038.4,431.0) common.items.log.wood@(15275.8,16038.5,431.0) common.items.flowers.plant_fiber@(15191.3,15955.2,410.0) common.items.quest.legoom_leaf@(15204.2,15937.0,410.0) common.items.crafting_ing.twigs@(15203.9,15936.4,410.0)
+[1787292374361] ascii radius=18 centre=(15216,16016,419) x[15198,15234] y[15998,16034] z[399,439] grid=37x37 stride=1 (one character per block column); north is up
+[1787292374361] ascii legend: @ player | C colonist | i loose item | # solid above the surface | . walkable ground | ~ water | ? UNLOADED, never ground | ' ' no surface within the z window (but every cell in it was observed)
+[1787292374361]   16034 |###################.....#############
+[1787292374361]   16033 |###################.......###########
+[1787292374361]   16032 |###################..........########
+[1787292374361]   16031 |##################...........########
+[1787292374361]   16030 |##################...........########
+[1787292374361]   16029 |##################..........#########
+[1787292374361]   16028 |###############.............#########
+[1787292374361]   16027 |#############...............#########
+[1787292374361]   16026 |############...............##########
+[1787292374361]   16025 |############................#########
+[1787292374361]   16024 |###########..................########
+[1787292374361]   16023 |#########...........................#
+[1787292374361]   16022 |########.............................
+[1787292374361]   16021 |########.............................
+[1787292374361]   16020 |#######..............................
+[1787292374361]   16019 |#######................##########.###
+[1787292374361]   16018 |######.................##############
+[1787292374361]   16017 |######.................##############
+[1787292374361]   16016 |####..............@....##############
+[1787292374361]   16015 |##.....................##############
+[1787292374361]   16014 |##.....................##############
+[1787292374361]   16013 |.......................##############
+[1787292374361]   16012 |.......................##############
+[1787292374361]   16011 |.......................##############
+[1787292374362]   16010 |.......................##############
+[1787292374362]   16009 |.......................##############
+[1787292374362]   16008 |.......................##############
+[1787292374362]   16007 |.......................##############
+[1787292374362]   16006 |.......................##############
+[1787292374362]   16005 |.......................##############
+[1787292374362]   16004 |.......................##############
+[1787292374362]   16003 |.......................##############
+[1787292374362]   16002 |.......................##############
+[1787292374362]   16001 |.......................##############
+[1787292374362]   16000 |.......................###########..#
+[1787292374362]   15999 |.......................##############
+[1787292374362]   15998 |.......................##############
+[1787292374362] ascii tally: 1369 cells, 0 UNLOADED, 0 water, 0 no-surface; colonists 8 synced (0 on map, 8 off map), 0 item cell(s) drawn, 6 item(s) off map (every column drawn rests on observed terrain)
+[1787292374362] === script complete, disconnecting ===

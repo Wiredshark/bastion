@@ -1,0 +1,24 @@
+note TURN 3 -- THE COLONY INVENTED NO WORK FOR ITSELF, so I hand it some. I paint a FARM over the open village ground west of where I stand (x 15190-15215, y 16000-16012, all '.' on the turn-1 map). Two questions at once: (a) does a painted designation produce work at all, and (b) is anything ALREADY planted here -- inspect_cell inside a registered farm is the only tool in this driver that reads a crop's Growth attribute, so I probe a whole z-column at one xy rather than guessing the ground height.
+anchor
+designate farm 15190 16000 410 15215 16012 422
+wait 300
+list_designations
+inspect_colony
+note --- z-column probe at (15200,16006): growth=Some(n) means a crop sprite is standing there; growth=None means that z holds no crop.
+inspect_cell 15200 16006 412
+inspect_cell 15200 16006 414
+inspect_cell 15200 16006 415
+inspect_cell 15200 16006 416
+inspect_cell 15200 16006 417
+inspect_cell 15200 16006 418
+inspect_cell 15200 16006 419
+inspect_cell 15200 16006 420
+inspect_cell 15200 16006 421
+note --- second xy, in case one column is unrepresentative
+inspect_cell 15208 16003 417
+inspect_cell 15208 16003 418
+inspect_cell 15208 16003 419
+inspect_cell 15208 16003 420
+wait 3000
+inspect_colony
+count_items

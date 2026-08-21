@@ -1,0 +1,6 @@
+note TURN 3 LEFT ALONE #2: colonist uid=3 died ~tick 11400 (beast; FLEE preempts). Still no intervention. Watching hunger toward the 0.2 interrupt (~tick 27000).
+anchor
+wait 9000
+inspect_colony
+inspect_colonists
+inspect_chronicle

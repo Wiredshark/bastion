@@ -1,0 +1,15 @@
+note ===== TURN 6: THEY ATE. Now, do they SLEEP? =====
+note Turn 5: the kitchen built itself once stone was flowing, 28 dishes were
+note cooked, and at 06:18:11 the log finally said "ate - hunger restored
+note uid=10". So eat works. Cook works. Build works. Farm works.
+note BUT the pantry number I am shown crashed 248 -> 7 while all that
+note happened, and I want to see whether it recovers or whether I am
+note actually being starved by my own kitchen.
+note Also: BEDS EXIST NOW (4 registered since 06:13:15) and rest is ~0.7.
+note The interrupt band is 0.2-0.3, so nobody should sleep yet. This turn
+note is the CONTROL for the sleep question: beds present, rest high, so
+note NO sleep expected. If someone sleeps here, my model is wrong.
+wait 5500
+inspect_colony
+inspect_colonists
+count_items

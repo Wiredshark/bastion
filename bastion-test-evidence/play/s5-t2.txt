@@ -1,0 +1,6 @@
+note TURN 2 LEFT ALONE #1: no intervention. 28/28 jobs blocked_materials at tick 2901; server census says working=0 idle=8 since tick 1500.
+anchor
+wait 8000
+inspect_colony
+inspect_colonists
+count_items

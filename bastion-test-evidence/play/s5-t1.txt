@@ -1,0 +1,8 @@
+note TURN 1 BASELINE (slot 5, LONG GAME): what did I inherit? No intervention yet.
+anchor
+wait 120
+inspect_colony
+inspect_colonists
+count_items
+list_designations
+ascii 20

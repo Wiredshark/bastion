@@ -1,0 +1,11 @@
+note TURN 7: player recovery - paint a NORMAL thin surface stockpile right on top of the loose food.
+anchor
+inspect_colony
+designate stockpile 15270 16034 429 15280 16044 433
+wait 300
+inspect_colony
+wait 600
+inspect_colony
+wait 600
+inspect_colony
+count_items

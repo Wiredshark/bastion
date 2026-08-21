@@ -1,0 +1,9 @@
+note TURN 4 THE HUNGER CROSSING: hunger hits the 0.2 interrupt at ~tick 27000 and 0.0 at ~tick 33750. food_stock=340. Does ANYONE eat?
+anchor
+wait 4000
+inspect_colony
+inspect_colonists
+wait 5000
+inspect_colony
+inspect_colonists
+count_items

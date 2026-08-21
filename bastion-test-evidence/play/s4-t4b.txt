@@ -1,0 +1,14 @@
+note TURN 4 -- THE KITCHEN AND THE GUARD. In 76,000 ticks this colony has never cooked, though it held 32 raw mushrooms and several colonists whose strongest desire is cook. It has also lost six of eight settlers to raiders while standing idle. A player would build a kitchen and post a guard. I paint both MYSELF -- if the only kitchen the colony can ever have is one it builds, that is the difference between "chose not to use the village pots" and "no such job could exist".
+anchor
+inspect_colony
+designate cookstation 15268 16032 429 15270 16034 431
+wait 200
+designate guardpost 15272 16036 429 15278 16042 433
+wait 400
+list_designations
+inspect_colony
+wait 3000
+inspect_colony
+inspect_colonists
+count_items
+ascii 40

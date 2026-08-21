@@ -1,0 +1,10 @@
+note TURN 9: threats - drop 5 hostile wolves in the middle of the colony.
+anchor
+inspect_colony
+cmd spawn enemy wolf 5
+wait 300
+inspect_colony
+inspect_colonists
+wait 600
+inspect_colony
+inspect_colonists

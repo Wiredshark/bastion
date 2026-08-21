@@ -1,0 +1,8 @@
+note TURN 9 FINAL LEFT ALONE: last reading of the run. Population 8 -> 5 so far, beds=0 for the whole game.
+anchor
+wait 9000
+inspect_colony
+inspect_colonists
+inspect_chronicle
+count_items
+ascii 16

@@ -1,0 +1,14 @@
+note ===== TURN 2: HANDS OFF. I TOUCH NOTHING. =====
+note Turn 1 said: 3 designations placed by founding (stockpile, farm, BED),
+note 37 jobs, 8 claimed, blocked_materials=9 ALREADY, and list_designations
+note returned [] to me the player while the colony says designations=3.
+note This turn I do NOTHING but wait 6000 ticks (200 sim-seconds) and look.
+note Q1 does jobs_claimed stay at 8, or do people fall idle?
+note Q2 does blocked_materials go DOWN (they fetched wood) or UP/flat?
+note Q3 does anything appear on the map that was not there at turn 1?
+note Q4 does count_items move? (one mushroom on the ground at turn 1)
+wait 6000
+ascii 30
+inspect_colony
+count_items
+list_designations

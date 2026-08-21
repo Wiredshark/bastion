@@ -1,0 +1,35 @@
+=== RUN ATTESTATION 2026-08-21 01:26:18 ===
+HEAD          : fb57c9e4b0
+dirty .rs     : 2
+  !! THE BINARY'S BAKED HASH NAMES HEAD, NOT THIS TREE.
+      M bastion-server/src/bastion_jobs.rs
+      M server/src/lib.rs
+run config    : BASTION_DETERMINISTIC=1 BASTION_AUTOFOUND_COLONY=8 BASTION_FLAT_ARENA=1 BASTION_FLAT_ARENA_RESOURCED=1 BASTION_UNCAPPED_TPS=1 BASTION_SEED_FOOD=64 BASTION_NEED_SKIP_DIAG=1 BASTION_FETCH_DIAG=1
+  vars declared : 8
+outputs       : 4
+output        : /e/veloren-master/.item29-wt/bastion-test-evidence/server-pit-cookdiag.log
+output        : /e/veloren-master/.item29-wt/bastion-test-evidence/pit-cookdiag.log
+output        : /e/veloren-master/.item29-wt/bastion-test-evidence/driver-pit-cookdiag.log
+output        : /e/veloren-master/.item29-wt/bastion-test-evidence/driverout-pit-cookdiag.log
+binary        : veloren-server-cli.exe  built 2026-08-20 23:04:07
+  !! STALE: source is NEWER than this binary, e.g. server/src/cmd.rs
+binary        : bastion_playtest.exe  built 2026-08-21 01:22:55
+  fresh: no tracked .rs source is newer than the binary
+ATTESTATION FAILED: STALE 
+=== RUN ATTESTATION 2026-08-21 01:37:11 ===
+HEAD          : 15c1712d4c
+dirty .rs     : 1
+  !! THE BINARY'S BAKED HASH NAMES HEAD, NOT THIS TREE.
+      M bastion-server/src/bastion_founding_preset.rs
+run config    : BASTION_DETERMINISTIC=1 BASTION_AUTOFOUND_COLONY=8 BASTION_FLAT_ARENA=1 BASTION_FLAT_ARENA_RESOURCED=1 BASTION_UNCAPPED_TPS=1 BASTION_SEED_FOOD=64 BASTION_NEED_SKIP_DIAG=1 BASTION_FETCH_DIAG=1
+  vars declared : 8
+outputs       : 4
+output        : /e/veloren-master/.item29-wt/bastion-test-evidence/server-pit-cookdiag.log
+output        : /e/veloren-master/.item29-wt/bastion-test-evidence/pit-cookdiag.log
+output        : /e/veloren-master/.item29-wt/bastion-test-evidence/driver-pit-cookdiag.log
+output        : /e/veloren-master/.item29-wt/bastion-test-evidence/driverout-pit-cookdiag.log
+binary        : veloren-server-cli.exe  built 2026-08-21 01:32:32
+  !! STALE: source is NEWER than this binary, e.g. bastion-server/src/bastion_founding_preset.rs
+binary        : bastion_playtest.exe  built 2026-08-21 01:30:50
+  fresh: no tracked .rs source is newer than the binary
+ATTESTATION FAILED: STALE 

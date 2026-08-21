@@ -1,0 +1,66 @@
+[1787293825067] === bastion_playtest starting: server=localhost:26074 username=player script=bastion-test-evidence/play/s5-t6.txt ===
+[1787293825067] driver build=2a2cdec1 built_at=1787290172 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,inspect_colonists,inspect_colony,inspect_chronicle,count_items,list_designations,survey,note,cmd,ascii
+[1787293825067] parsed 5 script commands
+[1787293828950] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/da17593b-a962-4e0a-9689-ae95cdcf6930), name: "Veloren Server", git_hash: 458029102, git_timestamp: 1787291192, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1787293829017] requesting view distance terrain=6 entity=6
+[1787293829017] requested character join id=CharacterId(2)
+[1787293829017] in-game. entity=Entity(0, Generation(1))
+[1787293829196] anchor precondition: Pos arrived after 5 ticks (old fixed spin was 60, ceiling 450); OLD BEHAVIOUR WOULD HAVE matched this run
+[1787293831030] player pos at script start: Vec3 { x: 16384.053, y: 16384.34, z: 400.0 }
+[1787293831030] [note] TURN 6 LEFT ALONE: still zero intervention. Watching health ratchet + the rest/sleep interrupt (rest 0.2 at ~tick 54000).
+[1787293831030] sent BastionCameraAnchor at Vec3 { x: 16384.053, y: 16384.34, z: 400.0 }
+[1787293844865] [chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-menacing", seed: 49964, args: {} } }
+[1787293849098] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-menacing", seed: 43145, args: {} } }
+[1787293850265] [chat] GenericChatMsg { chat_type: Npc(Uid(6)), content: Localized { key: "npc-speech-menacing", seed: 34529, args: {} } }
+[1787293861333] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-tell_monster", seed: 54952, args: {"dir": Content(Localized { key: "npc-speech-dir_north", seed: 64594, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 55149, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 37178, args: {} })} } }
+[1787293862966] [chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-tell_monster", seed: 52738, args: {"body": Content(Localized { key: "noun-wendigo", seed: 48931, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 61700, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 45543, args: {} })} } }
+[1787293863566] [chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-villager_under_attack", seed: 39129, args: {} } }
+[1787293864433] [chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-villager_open", seed: 56975, args: {} } }
+[1787293866067] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-tell_monster", seed: 41816, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 37458, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 49717, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 35513, args: {} })} } }
+[1787293908471] [chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-night", seed: 986, args: {} } }
+[1787293926208] [chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-villager_unconscientious", seed: 58760, args: {} } }
+[1787293931441] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-tell_monster", seed: 10514, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 31169, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 41310, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 63624, args: {} })} } }
+[1787293933075] [chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-villager_open", seed: 20372, args: {} } }
+[1787293936732] [chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-villager_open", seed: 38625, args: {} } }
+[1787293938361] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-villager_unconscientious", seed: 19524, args: {} } }
+[1787293967797] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-villager_disagreeable", seed: 64174, args: {} } }
+[1787293969430] [chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-villager_disagreeable", seed: 2023, args: {} } }
+[1787293998599] [chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-villager_unconscientious", seed: 55828, args: {} } }
+[1787294002099] [chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-menacing", seed: 22394, args: {} } }
+[1787294003766] [chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-menacing", seed: 1376, args: {} } }
+[1787294005400] [chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-menacing", seed: 19557, args: {} } }
+[1787294007167] [chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-menacing", seed: 42004, args: {} } }
+[1787294012400] [chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-menacing", seed: 64622, args: {} } }
+[1787294016834] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-tell_monster", seed: 55961, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 48228, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 19217, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 9788, args: {} })} } }
+[1787294017467] [chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-menacing", seed: 26031, args: {} } }
+[1787294027235] [chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-villager_under_attack", seed: 54504, args: {} } }
+[1787294030902] [chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-villager_under_attack", seed: 30277, args: {} } }
+[1787294036335] [chat] GenericChatMsg { chat_type: Npc(Uid(7)), content: Localized { key: "npc-speech-villager_under_attack", seed: 58219, args: {} } }
+[1787294046238] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-villager_unconscientious", seed: 54983, args: {} } }
+[1787294058472] [chat] GenericChatMsg { chat_type: Npc(Uid(9)), content: Localized { key: "npc-speech-witness_death", seed: 64339, args: {} } }
+[1787294077907] [chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-villager_disagreeable", seed: 61439, args: {} } }
+[1787294079541] [chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-tell_monster", seed: 43855, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 60603, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 37963, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 63422, args: {} })} } }
+[1787294098110] [chat] GenericChatMsg { chat_type: Npc(Uid(6)), content: Localized { key: "npc-speech-witness_death", seed: 56537, args: {} } }
+[1787294102143] [chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-witness_death", seed: 33760, args: {} } }
+[1787294130044] waited 9000 ticks -> sim 1495.39..1795.42 in 8969 client spins; pos now Vec3 { x: 16384.445, y: 16384.54, z: 400.0 }
+[1787294130144] COLONY tick=53859 colonists=6 food_stock=805 jobs_total=33 jobs_claimed=4 jobs_unreachable=2 designations=3 blocked_materials=0 favor=20.0
+[1787294130211] INSPECT uid=4 name=Awen the Wary hunger=0.4053 rest=0.2038 recreation=0.6407 energy=1.0000 health=Some(1.0) mood=0.4342 drive=Personal scores=(0.478, 0.0, 0.0992) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 0), ("chop", 3), ("build", 3), ("haul", 1), ("cook", 0), ("farm", 104), ("guard", 0)] traits=["Busybody", "Unconscientious", "Disagreeable"]                              desires=[("mine", 0.5), ("chop", 2.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+[1787294130211] SENT uid=4 sentiments=7 [("npc:NpcId(253v1)", 0.015873017), ("uid:5", 0.38095242), ("uid:6", 0.39682543), ("npc:NpcId(257v1)", 0.38888893), ("uid:8", 0.39682543), ("uid:9", 0.36507937), ("uid:10", 0.38888893)]
+[1787294130211] MOODX uid=4 total=0.4342 thoughts=0 []
+[1787294130311] INSPECT uid=5 name=Peri Ironhand hunger=0.4053 rest=0.2037 recreation=0.6406 energy=1.0000 health=Some(1.0) mood=0.4342 drive=Personal scores=(0.492, 0.0, 0.0828) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 2), ("chop", 5), ("build", 5), ("haul", 3), ("cook", 0), ("farm", 70), ("guard", 5)] traits=["Closed", "Busybody", "Introverted", "Disagreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 2.0), ("haul", 0.5), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+[1787294130311] SENT uid=5 sentiments=6 [("uid:4", 0.38095242), ("uid:6", 0.39682543), ("npc:NpcId(257v1)", 0.38888893), ("uid:8", 0.38888893), ("uid:9", 0.39682543), ("uid:10", 0.39682543)]
+[1787294130311] MOODX uid=5 total=0.4341 thoughts=0 []
+[1787294130411] INSPECT uid=6 name=Eira Longstride hunger=0.4052 rest=0.2037 recreation=0.6406 energy=0.7826 health=Some(0.90910155) mood=0.4342 drive=Work scores=(0.556, 0.0, 0.0916) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 2), ("chop", 2), ("build", 4), ("haul", 5), ("cook", 1), ("farm", 55), ("guard", 1)] traits=["Introverted", "Agreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
+[1787294130411] SENT uid=6 sentiments=6 [("uid:4", 0.38888893), ("uid:5", 0.39682543), ("npc:NpcId(257v1)", 0.38095242), ("uid:8", 0.38888893), ("uid:9", 0.39682543), ("uid:10", 0.32539684)]
+[1787294130411] MOODX uid=6 total=0.4341 thoughts=0 []
+[1787294130477] INSPECT uid=8 name=Yara the Quiet hunger=0.4051 rest=0.2036 recreation=0.6406 energy=1.0000 health=Some(1.0) mood=0.4341 drive=Personal scores=(0.426, 0.0, 0.089200005) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 4), ("chop", 5), ("build", 5), ("haul", 5), ("cook", 4), ("farm", 44), ("guard", 0)] traits=["Introverted"]                              desires=[("mine", 1.0), ("chop", 0.5), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 2.0)] bravery=0.50
+[1787294130478] SENT uid=8 sentiments=6 [("uid:4", 0.37301588), ("uid:5", 0.37301588), ("uid:6", 0.38095242), ("npc:NpcId(257v1)", 0.37301588), ("uid:9", 0.39682543), ("uid:10", 0.38888893)]
+[1787294130478] MOODX uid=8 total=0.4340 thoughts=0 []
+[1787294130544] INSPECT uid=9 name=Yara the Steady hunger=0.4050 rest=0.2036 recreation=0.6406 energy=1.0000 health=Some(0.6535547) mood=0.4341 drive=Personal scores=(0.59, 0.0, 0.0908) activity=Some((Farm, 0.28666666)) status=None ownership=SOME mood_expl=SOME consc=false neur=true skills=[("mine", 0), ("chop", 3), ("build", 2), ("haul", 3), ("cook", 3), ("farm", 38), ("guard", 2)] traits=["Unconscientious", "Agreeable", "Neurotic", "Worried", "SadLoner"]                              desires=[("mine", 2.0), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+[1787294130544] SENT uid=9 sentiments=6 [("uid:4", 0.36507937), ("uid:5", 0.39682543), ("uid:6", 0.39682543), ("npc:NpcId(257v1)", 0.31746033), ("uid:8", 0.39682543), ("uid:10", 0.39682543)]
+[1787294130544] MOODX uid=9 total=0.4339 thoughts=0 []
+[1787294130644] INSPECT uid=10 name=Wynn Ironhand hunger=0.4050 rest=0.2036 recreation=0.6406 energy=1.0000 health=Some(1.0) mood=0.4342 drive=Personal scores=(0.504, 0.0, 0.0908) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 4), ("chop", 4), ("build", 3), ("haul", 0), ("cook", 0), ("farm", 23), ("guard", 4)] traits=["Open"]                              desires=[("mine", 0.5), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
+[1787294130644] SENT uid=10 sentiments=6 [("uid:4", 0.38095242), ("uid:5", 0.39682543), ("uid:6", 0.34920636), ("npc:NpcId(257v1)", 0.33333334), ("uid:8", 0.37301588), ("uid:9", 0.39682543)]
+[1787294130644] MOODX uid=10 total=0.4339 thoughts=0 []
+[1787294133578] inspect_colonists -> 6 colonist payload(s)
+[1787294133578] === script complete, disconnecting ===

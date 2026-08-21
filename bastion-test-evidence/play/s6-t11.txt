@@ -1,0 +1,7 @@
+note TURN 11: paint a CHOP box over bare walkable ground with no tree in it, and see what it selects.
+anchor
+ascii 10
+inspect_colony
+designate chop 15206 16006 415 15214 16014 425
+list_designations
+inspect_colony

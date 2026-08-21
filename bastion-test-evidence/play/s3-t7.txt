@@ -1,0 +1,17 @@
+note ===== TURN 7: THREE OF MY EIGHT ARE STARVING NEXT TO 288 FOOD =====
+note Turn 6, tick 32565: food_stock=288, and yet
+note   uid=3  hunger=0.0361  mood=0.3681  drive=Work activity=None
+note   uid=5  hunger=0.0360  mood=0.3681
+note   uid=8  hunger=0.0358  mood=0.3679
+note while uid 4/6/7/9/10 sit at 0.536 (they each ate exactly once).
+note The server fired 20 hunger preempts and only 5 meals ever completed.
+note Colonists 3, 5 and 8 tried 3, 4 and 4 times respectively and NEVER ate.
+note This turn: run long, and answer two things at once --
+note  A do the starving three ever eat, or do they starve to death?
+note  B rest is 0.519 and falling 0.000444/sim-sec; interrupt is 0.2-0.3,
+note    so the first bed-seeking should begin around tick 47,000-51,000.
+note    Eight beds are BUILT and registered. So this is the clean test of
+note    "do colonists ever sleep" with the bed precondition SATISFIED.
+wait 9000
+inspect_colony
+inspect_colonists

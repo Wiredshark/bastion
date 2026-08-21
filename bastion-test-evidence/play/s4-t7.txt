@@ -1,0 +1,10 @@
+note TURN 7 -- CAN THEY LIVE OFF THIS LAND? The colony has zero food, zero seed, and two survivors. GATHER is the one designation that collects world-generated plants rather than crops the colony sowed itself. I paint it over the open ground south of the houses. If it mints jobs, the village's land can feed them and the colony simply never asks; if it mints none, there is nothing here to eat.
+anchor
+inspect_colony
+designate gather 15175 15960 405 15195 15978 425
+wait 600
+list_designations
+inspect_colony
+wait 3000
+inspect_colony
+count_items

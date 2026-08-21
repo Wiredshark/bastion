@@ -1,0 +1,199 @@
+=== bastion_playtest starting: server=localhost:26064 username=player script=bastion-test-evidence/play/s4-t1.txt ===
+driver build=2a2cdec1 built_at=1787290172 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,inspect_colonists,inspect_colony,inspect_chronicle,count_items,list_designations,survey,note,cmd,ascii
+parsed 8 script commands
+[init] ConnectionEstablish
+[2m2026-08-21T06:05:16.650780Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mipg16Q[1m}[0m[2m:[0m [2mveloren_network::channel[0m[2m:[0m Connecting Tcp to: 127.0.0.1:26064
+[2m2026-08-21T06:05:16.651599Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mipg16Q[1m}[0m[2m:[0m[1m[0m[2m:[0m[1mhandshake[0m[1m{[0m[3mcid[0m[2m=[0m0[1m}[0m[2m:[0m [2mveloren_network_protocol::handshake[0m[2m:[0m This Handshake is now configured! [3mpid[0m[2m=[0muDMjav
+[init] WatingForServerVersion
+[2m2026-08-21T06:05:16.665063Z[0m [33m WARN[0m [2mveloren_client[0m[2m:[0m Server is running 1b4cf82e [2026-08-21], you are running 2a2cdec1 [2026-08-21], versions might be incompatible!
+[init] Authentication
+[init] LoadingInitData
+[init] StartingClient
+connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/ed9adacc-d308-485b-b435-4f474bcf57fe), name: "Veloren Server", git_hash: 458029102, git_timestamp: 1787291192, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[2m2026-08-21T06:05:20.506312Z[0m [32m INFO[0m [2mveloren_common_assets[0m[2m:[0m Assets found path=E:/veloren-master/.item29-wt/assets
+requesting view distance terrain=6 entity=6
+requested character join id=CharacterId(2)
+in-game. entity=Entity(0, Generation(1))
+[2m2026-08-21T06:05:20.799849Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m2
+anchor precondition: Pos arrived after 4 ticks (old fixed spin was 60, ceiling 450); OLD BEHAVIOUR WOULD HAVE matched this run
+[2m2026-08-21T06:05:20.800766Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T06:05:20.834558Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T06:05:20.867774Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:05:20.900939Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
+[2m2026-08-21T06:05:20.934515Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
+[2m2026-08-21T06:05:21.323612Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m2
+[2m2026-08-21T06:05:21.334210Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T06:05:21.369132Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T06:05:21.402166Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:05:21.434964Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
+[2m2026-08-21T06:05:21.468841Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
+[2m2026-08-21T06:05:21.817483Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m2
+[2m2026-08-21T06:05:21.834568Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T06:05:21.868080Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T06:05:21.901602Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:05:21.934636Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
+[2m2026-08-21T06:05:21.968223Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
+[2m2026-08-21T06:05:22.321681Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m2
+[2m2026-08-21T06:05:22.334972Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T06:05:22.368709Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T06:05:22.401491Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:05:22.434948Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
+[2m2026-08-21T06:05:22.468355Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
+player pos at script start: Vec3 { x: 15216.48, y: 16016.548, z: 419.0 }
+[note] TURN 1 -- THE SETTLER ARRIVES. Look before touching. What did we move into?
+sent BastionCameraAnchor at Vec3 { x: 15216.48, y: 16016.548, z: 419.0 }
+[2m2026-08-21T06:05:22.668900Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m20
+[2m2026-08-21T06:05:22.701693Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m28
+[2m2026-08-21T06:05:22.735010Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m36
+[2m2026-08-21T06:05:22.768093Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m44
+[2m2026-08-21T06:05:22.801544Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m4 [3mpending_total[0m[2m=[0m48
+[2m2026-08-21T06:05:24.844104Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m47
+[2m2026-08-21T06:05:24.874150Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m5 [3mpending_total[0m[2m=[0m48
+[2m2026-08-21T06:05:25.701725Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 chunk-request retry EXPIRED [3mexpired[0m[2m=[0m15 [3mremaining[0m[2m=[0m33
+[2m2026-08-21T06:05:25.735390Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m41
+[2m2026-08-21T06:05:25.735444Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 chunk-request retry EXPIRED [3mexpired[0m[2m=[0m8 [3mremaining[0m[2m=[0m33
+[2m2026-08-21T06:05:25.768801Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m41
+[2m2026-08-21T06:05:25.768921Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 chunk-request retry EXPIRED [3mexpired[0m[2m=[0m8 [3mremaining[0m[2m=[0m33
+[2m2026-08-21T06:05:25.801999Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m41
+[2m2026-08-21T06:05:25.802062Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 chunk-request retry EXPIRED [3mexpired[0m[2m=[0m4 [3mremaining[0m[2m=[0m37
+[2m2026-08-21T06:05:25.835416Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m45
+[2m2026-08-21T06:05:25.868833Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m3 [3mpending_total[0m[2m=[0m48
+[2m2026-08-21T06:05:26.629400Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m44
+[2m2026-08-21T06:05:26.635493Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m4 [3mpending_total[0m[2m=[0m48
+[2m2026-08-21T06:05:27.782118Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m20
+[2m2026-08-21T06:05:27.783705Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m28
+[2m2026-08-21T06:05:27.817164Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m36
+[2m2026-08-21T06:05:27.850611Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m44
+[2m2026-08-21T06:05:27.883666Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m4 [3mpending_total[0m[2m=[0m48
+[2m2026-08-21T06:05:29.651027Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 chunk-request retry EXPIRED [3mexpired[0m[2m=[0m12 [3mremaining[0m[2m=[0m36
+[2m2026-08-21T06:05:29.683663Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m44
+[2m2026-08-21T06:05:29.717498Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m4 [3mpending_total[0m[2m=[0m48
+[2m2026-08-21T06:05:30.599155Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m47
+[2m2026-08-21T06:05:30.622669Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m4 [3mpending_total[0m[2m=[0m48
+[2m2026-08-21T06:05:30.783987Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 chunk-request retry EXPIRED [3mexpired[0m[2m=[0m16 [3mremaining[0m[2m=[0m32
+[2m2026-08-21T06:05:30.817287Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m40
+[2m2026-08-21T06:05:30.817350Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 chunk-request retry EXPIRED [3mexpired[0m[2m=[0m8 [3mremaining[0m[2m=[0m32
+[2m2026-08-21T06:05:30.850665Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m40
+[2m2026-08-21T06:05:30.850715Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 chunk-request retry EXPIRED [3mexpired[0m[2m=[0m8 [3mremaining[0m[2m=[0m32
+[2m2026-08-21T06:05:30.884182Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m40
+[2m2026-08-21T06:05:30.884244Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 chunk-request retry EXPIRED [3mexpired[0m[2m=[0m4 [3mremaining[0m[2m=[0m36
+[2m2026-08-21T06:05:30.917465Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m44
+[2m2026-08-21T06:05:30.950640Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m4 [3mpending_total[0m[2m=[0m48
+waited 300 ticks -> sim 8.82..18.83 in 297 client spins; pos now Vec3 { x: 15216.48, y: 16016.548, z: 419.0 }
+COLONY tick=497 colonists=8 food_stock=32 jobs_total=0 jobs_claimed=0 jobs_unreachable=0 designations=5 blocked_materials=0 favor=3.3
+INSPECT uid=24 name=Osric of the Vale hunger=0.9859 rest=0.9929 recreation=0.9968 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Idle scores=(0.0, 0.0, 0.094000004) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 0), ("chop", 2), ("build", 5), ("haul", 0), ("cook", 0), ("farm", 2), ("guard", 4)] traits=["Closed", "Extroverted"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 0.5), ("haul", 1.0), ("cook", 2.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=24 sentiments=0 []
+MOODX uid=24 total=0.6000 thoughts=0 []
+INSPECT uid=25 name=Awen the Wary hunger=0.9858 rest=0.9929 recreation=0.9968 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Idle scores=(0.0, 0.0, 0.0992) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 0), ("chop", 3), ("build", 3), ("haul", 1), ("cook", 0), ("farm", 3), ("guard", 0)] traits=["Busybody", "Unconscientious", "Disagreeable"]                              desires=[("mine", 0.5), ("chop", 2.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=25 sentiments=0 []
+MOODX uid=25 total=0.6000 thoughts=0 []
+INSPECT uid=26 name=Peri Ironhand hunger=0.9857 rest=0.9929 recreation=0.9968 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Idle scores=(0.0, 0.0, 0.0828) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 2), ("chop", 5), ("build", 5), ("haul", 3), ("cook", 0), ("farm", 4), ("guard", 5)] traits=["Closed", "Busybody", "Introverted", "Disagreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 2.0), ("haul", 0.5), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=26 sentiments=0 []
+MOODX uid=26 total=0.6000 thoughts=0 []
+INSPECT uid=27 name=Eira Longstride hunger=0.9856 rest=0.9928 recreation=0.9968 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Idle scores=(0.0, 0.0, 0.0916) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 2), ("chop", 2), ("build", 4), ("haul", 5), ("cook", 1), ("farm", 1), ("guard", 1)] traits=["Introverted", "Agreeable", "Stable"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
+SENT uid=27 sentiments=0 []
+MOODX uid=27 total=0.6000 thoughts=0 []
+INSPECT uid=28 name=Quill Longstride hunger=0.9855 rest=0.9928 recreation=0.9967 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Idle scores=(0.0, 0.0, 0.0844) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 0), ("chop", 0), ("build", 5), ("haul", 0), ("cook", 0), ("farm", 1), ("guard", 2)] traits=["Unconscientious"]                              desires=[("mine", 1.0), ("chop", 1.0), ("build", 2.0), ("haul", 1.0), ("cook", 0.5), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=28 sentiments=0 []
+MOODX uid=28 total=0.6000 thoughts=0 []
+INSPECT uid=29 name=Yara the Quiet hunger=0.9855 rest=0.9927 recreation=0.9967 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Idle scores=(0.0, 0.0, 0.089200005) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 4), ("chop", 5), ("build", 5), ("haul", 5), ("cook", 4), ("farm", 5), ("guard", 0)] traits=["Introverted"]                              desires=[("mine", 1.0), ("chop", 0.5), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 2.0)] bravery=0.50
+SENT uid=29 sentiments=0 []
+MOODX uid=29 total=0.6000 thoughts=0 []
+INSPECT uid=30 name=Yara the Steady hunger=0.9854 rest=0.9927 recreation=0.9967 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Idle scores=(0.0, 0.0, 0.0908) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=true skills=[("mine", 0), ("chop", 3), ("build", 2), ("haul", 3), ("cook", 3), ("farm", 0), ("guard", 2)] traits=["Unconscientious", "Agreeable", "Neurotic", "Worried", "SadLoner"]                              desires=[("mine", 2.0), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=30 sentiments=0 []
+MOODX uid=30 total=0.6000 thoughts=0 []
+INSPECT uid=31 name=Wynn Ironhand hunger=0.9853 rest=0.9927 recreation=0.9967 energy=1.0000 health=Some(1.0) mood=0.6000 drive=Idle scores=(0.0, 0.0, 0.0908) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 4), ("chop", 4), ("build", 3), ("haul", 0), ("cook", 0), ("farm", 3), ("guard", 4)] traits=["Open"]                              desires=[("mine", 0.5), ("chop", 1.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 2.0), ("guard", 1.0)] bravery=0.50
+SENT uid=31 sentiments=0 []
+MOODX uid=31 total=0.6000 thoughts=0 []
+inspect_colonists -> 8 colonist payload(s)
+ITEMS count=5 common.items.quest.legoom_leaf@(15199.4,15946.4,411.0) common.items.food.mushroom@(15275.7,16039.4,431.0) common.items.crafting_ing.stones@(15275.7,16039.4,431.0) common.items.log.wood@(15275.7,16039.4,431.0) common.items.crafting_ing.twigs@(15198.9,15946.0,411.0)
+designations (rev=0): []
+ascii radius=40 centre=(15216,16016,419) x[15176,15256] y[15976,16056] z[399,439] grid=81x81 stride=1 (one character per block column); north is up
+ascii legend: @ player | C colonist | i loose item | # solid above the surface | . walkable ground | ~ water | ? UNLOADED, never ground | ' ' no surface within the z window (but every cell in it was observed)
+  16056 |.......................##########################################################
+  16055 |......................###########################################################
+  16054 |......................###########################################################
+  16053 |.......................##########################################################
+  16052 |.......................##########################################################
+  16051 |.......................##########################################################
+  16050 |......................###########################################################
+  16049 |#.....................###########################################################
+  16048 |#.....................###########################################################
+  16047 |#......................##########################################################
+  16046 |#.###.####...........############################################################
+  16045 |###########.........#############################################################
+  16044 |###########.........#############################################################
+  16043 |###########.........########################################################C####
+  16042 |###########.........###################################################C#########
+  16041 |###########..........###################################################C########
+  16040 |#########.####......#############################################################
+  16039 |###############....##############################################################
+  16038 |###############....##############################################################
+  16037 |###############....####################################################C#########
+  16036 |##################.####################################################C#########
+  16035 |##########################################.######################################
+  16034 |#########################################.....###################################
+  16033 |#########################################.......#################################
+  16032 |#########################################..........##############################
+  16031 |########################################...........####################C#########
+  16030 |########################################...........####################C#########
+  16029 |########################################..........###############################
+  16028 |#####################################.............###############################
+  16027 |###################################...............###############################
+  16026 |##################################...............################################
+  16025 |##################################................###############......##########
+  16024 |#################################..................##############......##########
+  16023 |###############################...........................#######......##########
+  16022 |##############################.............................#####.......##########
+  16021 |##############################..............................###........##########
+  16020 |.############################..........................................##########
+  16019 |...##########################................##########.##########......#########
+  16018 |..##########################.................#####################......#########
+  16017 |..##########################.................#####################......#########
+  16016 |..########################..............@....#####################......#########
+  16015 |..###############.######.....................#####################......#########
+  16014 |...####.#########..#####.....................#####################......#########
+  16013 |........#########............................#####################......#########
+  16012 |........#######..............................#####################.....##########
+  16011 |........######...............................#####################.....##########
+  16010 |###.....######...............................#####################......#########
+  16009 |####.....####................................#####################......#########
+  16008 |#####........................................#####################..#############
+  16007 |#####........................................#####################.##############
+  16006 |#####........................................#####################.##############
+  16005 |#####........................................#####################.##############
+  16004 |####.........................................#####################.##############
+  16003 |#######......................................#####################..#############
+  16002 |########.....................................#####################...############
+  16001 |########.....................................#####################..#############
+  16000 |########.....................................###########..########.##############
+  15999 |########.....................................#####################.##############
+  15998 |########.....................................####################################
+  15997 |#######......................................##########.#########################
+  15996 |########........................................................#################
+  15995 |########........................................................#################
+  15994 |#########.......................................................#################
+  15993 |#############################....................................################
+  15992 |#############################.....................................###.###########
+  15991 |#############################........................................############
+  15990 |#############..##############........................................############
+  15989 |#############################.........................................#####.#####
+  15988 |#############################..........................................###...####
+  15987 |#############################..................................................##
+  15986 |#############################.........######################...................##
+  15985 |#############################.........######################...................##
+  15984 |#############################.........######################....................#
+  15983 |#############################.........######################.....................
+  15982 |#############################.........######################.....................
+  15981 |###.#########################.........######################.....................
+  15980 |###.#########################.........######################.....................
+  15979 |##..#########################.........##################.###.....................
+  15978 |#...#########################.........##################.###.....................
+  15977 |....#########################.........######################.....................
+  15976 |....#########################.........######################.....................
+ascii tally: 6561 cells, 0 UNLOADED, 0 water, 0 no-surface; colonists 8 synced (7 on map, 0 off map), 0 item cell(s) drawn, 5 item(s) off map (every column drawn rests on observed terrain)
+=== script complete, disconnecting ===
+[2m2026-08-21T06:05:39.830875Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mipg16Q[1m}[0m[2m:[0m[1m[0m[2m:[0m[1mremote[0m[1m{[0m[3mp[0m[2m=[0muDMjav[1m}[0m[2m:[0m[1mrecv[0m[2m:[0m [2mveloren_network::participant[0m[2m:[0m protocol failed, shutting down channel [3me[0m[2m=[0mCustom(Tcp(Custom { kind: BrokenPipe, error: "read returned 0 bytes" })) [3mcid[0m[2m=[0m0
+[2m2026-08-21T06:05:39.845625Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mipg16Q[1m}[0m[2m:[0m[1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mipg16Q[1m}[0m[2m:[0m[1mremote[0m[1m{[0m[3mp[0m[2m=[0muDMjav[1m}[0m[2m:[0m [2mveloren_network::api[0m[2m:[0m Participant already has been shutdown gracefully
+[2m2026-08-21T06:05:39.847048Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mipg16Q[1m}[0m[2m:[0m [2mveloren_network::scheduler[0m[2m:[0m Shutdown of scheduler requested
+[2m2026-08-21T06:05:39.946839Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mipg16Q[1m}[0m[2m:[0m [2mveloren_network::api[0m[2m:[0m Network dropped gracefully

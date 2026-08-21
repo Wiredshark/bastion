@@ -1,0 +1,23 @@
+note ===== TURN 5: THE INTERVENTION WORKED. NOW THE KITCHEN. =====
+note Turn 4 result, stated plainly: I painted a quarry and a woodcut and the
+note colony CAME ALIVE. Server census went from "working=0 idle=8" for
+note thousands of ticks to "working=6 moving=1 idle=1", stone reached the
+note stockpile, blocked_materials 8 -> 0, and beds started registering.
+note So the machinery is fine. What was missing was a PLAYER.
+note
+note Founding gave me stockpile + farm + bed. It did NOT give me a kitchen,
+note so I paint one now, plus a typed food store, and I keep waiting for
+note the first MEAL: hunger is ~0.45 and the interrupt band is 0.2-0.3, so
+note the hungriest (uid=9, neurotic, highest threshold) should eat inside
+note this turn if eating works at all.
+note Q1 does a bed exist now and does the map SHOW it?
+note Q2 does anyone EAT? food_stock is 230 and nobody has eaten once.
+note Q3 does the cookstation get built now that stone is flowing?
+designate cookstation 16388 16383 400 16389 16384 401
+designate foodstore 16386 16387 399 16388 16389 400
+list_designations
+wait 4500
+ascii 16
+inspect_colony
+inspect_colonists
+count_items

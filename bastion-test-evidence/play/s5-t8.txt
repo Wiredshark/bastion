@@ -1,0 +1,5 @@
+note TURN 8 LEFT ALONE: rest was 0.0483 at tick 64363 with beds=0 and all 5 in drive=Personal. Does rest PIN at 0.0000?
+anchor
+wait 9000
+inspect_colony
+inspect_colonists

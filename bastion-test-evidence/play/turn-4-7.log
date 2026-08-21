@@ -1,0 +1,29 @@
+[1787295398088] === bastion_playtest starting: server=localhost:26064 username=player script=bastion-test-evidence/play/s4-t7.txt ===
+[1787295398088] driver build=2a2cdec1 built_at=1787290172 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,inspect_colonists,inspect_colony,inspect_chronicle,count_items,list_designations,survey,note,cmd,ascii
+[1787295398088] parsed 10 script commands
+[1787295401322] connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/ed9adacc-d308-485b-b435-4f474bcf57fe), name: "Veloren Server", git_hash: 458029102, git_timestamp: 1787291192, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[1787295401456] requesting view distance terrain=6 entity=6
+[1787295401456] requested character join id=CharacterId(2)
+[1787295401456] in-game. entity=Entity(0, Generation(1))
+[1787295401579] anchor precondition: Pos arrived after 3 ticks (old fixed spin was 60, ceiling 450); OLD BEHAVIOUR WOULD HAVE matched this run
+[1787295403479] player pos at script start: Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787295403479] [note] TURN 7 -- CAN THEY LIVE OFF THIS LAND? The colony has zero food, zero seed, and two survivors. GATHER is the one designation that collects world-generated plants rather than crops the colony sowed itself. I paint it over the open ground south of the houses. If it mints jobs, the village's land can feed them and the colony simply never asks; if it mints none, there is nothing here to eat.
+[1787295403479] sent BastionCameraAnchor at Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787295403579] COLONY tick=92175 colonists=2 food_stock=0 jobs_total=344 jobs_claimed=2 jobs_unreachable=0 designations=8 blocked_materials=70 favor=20.0
+[1787295403579] sent BastionPlaceDesignation kind=Gather region=Region { min: Vec3 { x: 15175, y: 15960, z: 405 }, max: Vec3 { x: 15195, y: 15978, z: 425 } }
+[1787295403646] designate ACK rev 0 -> 1 (observed)
+[1787295417077] [chat] GenericChatMsg { chat_type: Npc(Uid(18)), content: Localized { key: "npc-speech-night", seed: 58547, args: {} } }
+[1787295423476] waited 600 ticks -> sim 3072.29..3092.31 in 593 client spins; pos now Vec3 { x: 15216.5, y: 16016.5, z: 419.0 }
+[1787295423476] designations (rev=1): [(Region { min: Vec3 { x: 15175, y: 15960, z: 405 }, max: Vec3 { x: 15195, y: 15978, z: 425 } }, Gather, None)]
+[1787295423576] COLONY tick=92772 colonists=2 food_stock=0 jobs_total=344 jobs_claimed=2 jobs_unreachable=0 designations=9 blocked_materials=70 favor=20.0
+[1787295446316] [chat] GenericChatMsg { chat_type: Npc(Uid(18)), content: Localized { key: "npc-speech-tell_site", seed: 56285, args: {"dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 9272, args: {} }), "site": Content(Plain("Greabrien Glider Course")), "dist": Content(Localized { key: "npc-speech-dist_far", seed: 59456, args: {} })} } }
+[1787295458718] [chat] GenericChatMsg { chat_type: Npc(Uid(14)), content: Localized { key: "npc-speech-tell_monster", seed: 64690, args: {"body": Content(Localized { key: "noun-wendigo", seed: 63543, args: {} }), "dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 50025, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 15232, args: {} })} } }
+[1787295459251] [chat] GenericChatMsg { chat_type: Npc(Uid(83096)), content: Localized { key: "npc-speech-night_time", seed: 30252, args: {} } }
+[1787295460386] [chat] GenericChatMsg { chat_type: Npc(Uid(11)), content: Localized { key: "npc-speech-tell_monster", seed: 26679, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 40432, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 9372, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 30817, args: {} })} } }
+[1787295496122] [chat] GenericChatMsg { chat_type: Npc(Uid(18)), content: Localized { key: "npc-speech-tell_site", seed: 9881, args: {"dist": Content(Localized { key: "npc-speech-dist_far", seed: 44304, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north_west", seed: 26275, args: {} }), "site": Content(Plain("Greabrien Glider Course"))} } }
+[1787295508423] [chat] GenericChatMsg { chat_type: Npc(Uid(14)), content: Localized { key: "npc-speech-night", seed: 43657, args: {} } }
+[1787295510024] [chat] GenericChatMsg { chat_type: Npc(Uid(11)), content: Localized { key: "npc-speech-tell_monster", seed: 17836, args: {"dist": Content(Localized { key: "npc-speech-dist_ahead", seed: 41576, args: {} }), "body": Content(Localized { key: "noun-wendigo", seed: 36678, args: {} }), "dir": Content(Localized { key: "npc-speech-dir_north", seed: 55880, args: {} })} } }
+[1787295524256] waited 3000 ticks -> sim 3092.41..3192.44 in 3020 client spins; pos now Vec3 { x: 15216.591, y: 16016.553, z: 419.0 }
+[1787295524323] COLONY tick=95774 colonists=2 food_stock=0 jobs_total=344 jobs_claimed=2 jobs_unreachable=0 designations=9 blocked_materials=70 favor=20.0
+[1787295524323] ITEMS count=2 common.items.crafting_ing.stones@(15273.8,16041.3,431.0) common.items.log.wood@(15273.8,16041.3,431.0)
+[1787295524323] === script complete, disconnecting ===

@@ -1,0 +1,708 @@
+=== bastion_playtest starting: server=localhost:26074 username=player script=bastion-test-evidence/play/s5-t9.txt ===
+driver build=2a2cdec1 built_at=1787290172 verbs=wait,anchor,spawn,designate,cancel,inspect_cell,inspect_colonists,inspect_colony,inspect_chronicle,count_items,list_designations,survey,note,cmd,ascii
+parsed 8 script commands
+[init] ConnectionEstablish
+[2m2026-08-21T06:47:35.285459Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mB8Ea26[1m}[0m[2m:[0m [2mveloren_network::channel[0m[2m:[0m Connecting Tcp to: 127.0.0.1:26074
+[2m2026-08-21T06:47:35.285797Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mB8Ea26[1m}[0m[2m:[0m[1m[0m[2m:[0m[1mhandshake[0m[1m{[0m[3mcid[0m[2m=[0m0[1m}[0m[2m:[0m [2mveloren_network_protocol::handshake[0m[2m:[0m This Handshake is now configured! [3mpid[0m[2m=[0mEsInt2
+[init] WatingForServerVersion
+[2m2026-08-21T06:47:35.302982Z[0m [33m WARN[0m [2mveloren_client[0m[2m:[0m Server is running 1b4cf82e [2026-08-21], you are running 2a2cdec1 [2026-08-21], versions might be incompatible!
+[init] Authentication
+[init] LoadingInitData
+[init] StartingClient
+connected. server_info=ServerInfo { server_boot_id: ServerBootId(boot/da17593b-a962-4e0a-9689-ae95cdcf6930), name: "Veloren Server", git_hash: 458029102, git_timestamp: 1787291192, auth_provider: None, supported_semantic_protocols: [Legacy, NetEnvelopeV1] }
+[2m2026-08-21T06:47:38.576199Z[0m [32m INFO[0m [2mveloren_common_assets[0m[2m:[0m Assets found path=E:/veloren-master/.item29-wt/assets
+[2m2026-08-21T06:47:38.611317Z[0m [33m WARN[0m [2mveloren_client[0m[2m:[0m CharacterActionError: "Character limit exceeded".
+requesting view distance terrain=6 entity=6
+requested character join id=CharacterId(2)
+in-game. entity=Entity(0, Generation(1))
+[2m2026-08-21T06:47:38.754279Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m2
+anchor precondition: Pos arrived after 3 ticks (old fixed spin was 60, ceiling 450); OLD BEHAVIOUR WOULD HAVE matched this run
+[2m2026-08-21T06:47:38.754944Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T06:47:38.788386Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T06:47:38.821901Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:47:38.855233Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
+[2m2026-08-21T06:47:38.888585Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
+[2m2026-08-21T06:47:38.988834Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m2
+[2m2026-08-21T06:47:39.022461Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T06:47:39.055292Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T06:47:39.088614Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:47:39.122002Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
+[2m2026-08-21T06:47:39.155862Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
+[2m2026-08-21T06:47:39.488837Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m2
+[2m2026-08-21T06:47:39.521964Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T06:47:39.555534Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T06:47:39.588694Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:47:39.622405Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
+[2m2026-08-21T06:47:39.655219Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
+[2m2026-08-21T06:47:39.988751Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m2
+[2m2026-08-21T06:47:40.022049Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T06:47:40.055201Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T06:47:40.088820Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:47:40.122031Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
+[2m2026-08-21T06:47:40.155328Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m12
+[2m2026-08-21T06:47:40.489228Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m2
+[2m2026-08-21T06:47:40.522072Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m4
+[2m2026-08-21T06:47:40.555468Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m6
+[2m2026-08-21T06:47:40.588685Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:47:40.622482Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m2 [3mpending_total[0m[2m=[0m10
+player pos at script start: Vec3 { x: 16384.5, y: 16384.5, z: 400.0 }
+[note] TURN 9 FINAL LEFT ALONE: last reading of the run. Population 8 -> 5 so far, beds=0 for the whole game.
+sent BastionCameraAnchor at Vec3 { x: 16384.5, y: 16384.5, z: 400.0 }
+[2m2026-08-21T06:47:40.655525Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m18
+[2m2026-08-21T06:47:40.688901Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m26
+[2m2026-08-21T06:47:40.722048Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m34
+[2m2026-08-21T06:47:40.755545Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m42
+[2m2026-08-21T06:47:40.788685Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m6 [3mpending_total[0m[2m=[0m48
+[2m2026-08-21T06:47:40.989014Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:47:41.022844Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m16
+[2m2026-08-21T06:47:41.055408Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m24
+[2m2026-08-21T06:47:41.088936Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m32
+[2m2026-08-21T06:47:41.122034Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m40
+[2m2026-08-21T06:47:41.155537Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m48
+[2m2026-08-21T06:47:41.489337Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m8 [3mpending_total[0m[2m=[0m8
+[2m2026-08-21T06:47:41.522059Z[0m [32m INFO[0m [2mveloren_client[0m[2m:[0m bastion: row89 client send-cap census [3msent[0m[2m=[0m5 [3mpending_total[0m[2m=[0m13
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-menacing", seed: 58499, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-menacing", seed: 10104, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-menacing", seed: 46436, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-menacing", seed: 40029, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-menacing", seed: 59678, args: {} } }
+[chat] GenericChatMsg { chat_type: NpcSay(Uid(5)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-menacing", seed: 18146, args: {} } }
+[chat] GenericChatMsg { chat_type: NpcSay(Uid(4)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-villager_under_attack", seed: 7059, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-villager_under_attack", seed: 63931, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-villager_under_attack", seed: 6309, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-villager_under_attack", seed: 17783, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-villager_under_attack", seed: 4163, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(10)), content: Localized { key: "npc-speech-villager_under_attack", seed: 5560, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(8)), content: Localized { key: "npc-speech-villager_under_attack", seed: 54895, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-villager_under_attack", seed: 1587, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(6)), content: Localized { key: "npc-speech-menacing", seed: 17021, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-villager_under_attack", seed: 57607, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(5)), content: Localized { key: "npc-speech-villager_under_attack", seed: 28930, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(6)), content: Localized { key: "npc-speech-menacing", seed: 28747, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(6)), content: Localized { key: "npc-speech-menacing", seed: 57751, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-menacing", seed: 27085, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(6)), content: Localized { key: "npc-speech-menacing", seed: 61876, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-menacing", seed: 54619, args: {} } }
+[chat] GenericChatMsg { chat_type: NpcSay(Uid(4)), content: Plain("Crowded here — I'll work where they're short-handed.") }
+[chat] GenericChatMsg { chat_type: Npc(Uid(6)), content: Localized { key: "npc-speech-villager_under_attack", seed: 47843, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-menacing", seed: 15612, args: {} } }
+[chat] GenericChatMsg { chat_type: Npc(Uid(4)), content: Localized { key: "npc-speech-menacing", seed: 30691, args: {} } }
+waited 9000 ticks -> sim 2518.72..2818.73 in 8964 client spins; pos now Vec3 { x: 16384.5, y: 16384.5, z: 400.0 }
+COLONY tick=84562 colonists=1 food_stock=70 jobs_total=8 jobs_claimed=1 jobs_unreachable=0 designations=3 blocked_materials=0 favor=20.0
+INSPECT uid=4 name=Awen the Wary hunger=0.4957 rest=0.0000 recreation=0.4357 energy=1.0000 health=Some(1.0) mood=0.3980 drive=Work scores=(0.478, 0.0, 0.0992) activity=None status=None ownership=SOME mood_expl=SOME consc=false neur=false skills=[("mine", 0), ("chop", 3), ("build", 3), ("haul", 1), ("cook", 0), ("farm", 144), ("guard", 0)] traits=["Busybody", "Unconscientious", "Disagreeable"]                              desires=[("mine", 0.5), ("chop", 2.0), ("build", 1.0), ("haul", 1.0), ("cook", 1.0), ("farm", 1.0), ("guard", 1.0)] bravery=0.50
+SENT uid=4 sentiments=6 [("npc:NpcId(255v1)", 0.34920636), ("npc:NpcId(256v1)", 0.34920636), ("npc:NpcId(257v1)", 0.3015873), ("npc:NpcId(258v1)", 0.33333334), ("npc:NpcId(259v1)", 0.2777778), ("npc:NpcId(260v1)", 0.37301588)]
+MOODX uid=4 total=0.3979 thoughts=0 []
+inspect_colonists -> 1 colonist payload(s)
+CHRONICLE requesting 1 colonists
+CHRONICLE uid=4 enabled=true truncated=false rows=567
+CHRONICLE-ROW uid=4 tick=201 kind=Colonist(Released { job: 12, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=338 kind=Colonist(Released { job: 8, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=459 kind=Colonist(Released { job: 9, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=598 kind=Colonist(Released { job: 29, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=3493 kind=Colonist(Released { job: 69, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=3497 kind=Colonist(Released { job: 43, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=3612 kind=Colonist(Released { job: 72, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=3668 kind=Colonist(Released { job: 75, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=3775 kind=Colonist(Released { job: 56, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=3871 kind=Colonist(Released { job: 40, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=3887 kind=Colonist(Released { job: 44, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=4019 kind=Colonist(Released { job: 80, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=4178 kind=Colonist(Released { job: 82, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=4238 kind=Colonist(Released { job: 88, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=4329 kind=Colonist(Released { job: 74, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=4429 kind=Colonist(Released { job: 83, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=4478 kind=Colonist(Released { job: 92, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=6655 kind=Colonist(Released { job: 94, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=6752 kind=Colonist(Released { job: 101, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=6767 kind=Colonist(Released { job: 45, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=6896 kind=Colonist(Released { job: 110, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=6902 kind=Colonist(Released { job: 47, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=6964 kind=Colonist(Released { job: 117, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=7071 kind=Colonist(Released { job: 45, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=7146 kind=Colonist(Released { job: 109, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=7204 kind=Colonist(Released { job: 129, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=7301 kind=Colonist(Released { job: 115, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=7374 kind=Colonist(Released { job: 65, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=7433 kind=Colonist(Released { job: 147, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=7525 kind=Colonist(Released { job: 47, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=9610 kind=Colonist(Released { job: 149, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=9693 kind=Colonist(Released { job: 151, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=9771 kind=Colonist(Released { job: 154, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=9806 kind=Colonist(Released { job: 162, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=9833 kind=Colonist(Released { job: 163, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=9870 kind=Colonist(Released { job: 164, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=9926 kind=Colonist(Released { job: 174, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=9995 kind=Colonist(Released { job: 173, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=10059 kind=Colonist(Released { job: 188, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=10119 kind=Colonist(Released { job: 193, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=10156 kind=Colonist(Released { job: 177, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=10231 kind=Colonist(Released { job: 200, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=10297 kind=Colonist(Released { job: 194, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=10357 kind=Colonist(Released { job: 189, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=10414 kind=Colonist(Released { job: 195, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=10474 kind=Colonist(Released { job: 206, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=10487 kind=Colonist(Released { job: 183, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=10538 kind=Colonist(Released { job: 184, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=11510 kind=Colonist(Released { job: 215, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=12616 kind=Colonist(Released { job: 218, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=12677 kind=Colonist(Released { job: 219, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=13323 kind=Colonist(Released { job: 222, reason: TimedOut, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=13379 kind=Colonist(Released { job: 252, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=13429 kind=Colonist(Released { job: 247, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=13482 kind=Colonist(Released { job: 253, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=13813 kind=Colonist(Released { job: 255, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=14059 kind=Colonist(Released { job: 198, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=14134 kind=Colonist(Released { job: 260, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=14186 kind=Colonist(Released { job: 273, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=14231 kind=Colonist(Released { job: 276, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=14320 kind=Colonist(Released { job: 277, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=14379 kind=Colonist(Released { job: 283, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=14411 kind=Colonist(Released { job: 286, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=15473 kind=Colonist(Released { job: 289, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=15482 kind=Colonist(Released { job: 222, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=15532 kind=Colonist(Released { job: 290, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=15766 kind=Colonist(Released { job: 292, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=15816 kind=Colonist(Released { job: 294, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=15845 kind=Colonist(Released { job: 297, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=15905 kind=Colonist(Released { job: 300, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=15972 kind=Colonist(Released { job: 301, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=16048 kind=Colonist(Released { job: 302, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=16126 kind=Colonist(Released { job: 306, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=16174 kind=Colonist(Released { job: 312, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=16216 kind=Colonist(Released { job: 316, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=16312 kind=Colonist(Released { job: 317, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=16369 kind=Colonist(Released { job: 321, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=16450 kind=Colonist(Released { job: 330, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=16538 kind=Colonist(Released { job: 334, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=16593 kind=Colonist(Released { job: 339, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=16635 kind=Colonist(Released { job: 342, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=16680 kind=Colonist(Released { job: 345, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=16731 kind=Colonist(Released { job: 347, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=16761 kind=Colonist(Released { job: 349, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=16817 kind=Colonist(Released { job: 350, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=16861 kind=Colonist(Released { job: 352, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=16898 kind=Colonist(Released { job: 354, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=16966 kind=Colonist(Released { job: 358, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=17027 kind=Colonist(Released { job: 362, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=17070 kind=Colonist(Released { job: 369, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=17126 kind=Colonist(Released { job: 371, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=17183 kind=Colonist(Released { job: 376, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=17220 kind=Colonist(Released { job: 379, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=17255 kind=Colonist(Released { job: 384, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=17306 kind=Colonist(Released { job: 387, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=17343 kind=Colonist(Released { job: 390, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=18335 kind=Colonist(Released { job: 391, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=18380 kind=Colonist(Released { job: 392, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=18448 kind=Colonist(Released { job: 396, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=18671 kind=Colonist(Released { job: 397, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=18729 kind=Colonist(Released { job: 399, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=18772 kind=Colonist(Released { job: 401, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=18797 kind=Colonist(Released { job: 403, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=18941 kind=Colonist(Released { job: 406, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=18990 kind=Colonist(Released { job: 412, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=19016 kind=Colonist(Released { job: 414, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=19046 kind=Colonist(Released { job: 417, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=19076 kind=Colonist(Released { job: 420, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=19134 kind=Colonist(Released { job: 421, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=19191 kind=Colonist(Released { job: 427, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=19292 kind=Colonist(Released { job: 431, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=19338 kind=Colonist(Released { job: 436, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=19399 kind=Colonist(Released { job: 442, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=19474 kind=Colonist(Released { job: 444, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=19526 kind=Colonist(Released { job: 448, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=19617 kind=Colonist(Released { job: 453, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=19666 kind=Colonist(Released { job: 456, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=19753 kind=Colonist(Released { job: 460, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=19811 kind=Colonist(Released { job: 462, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=19840 kind=Colonist(Released { job: 465, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=19869 kind=Colonist(Released { job: 469, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=20315 kind=Colonist(Released { job: 472, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=20430 kind=Colonist(Released { job: 482, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=20471 kind=Colonist(Released { job: 487, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=20521 kind=Colonist(Released { job: 477, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=20588 kind=Colonist(Released { job: 489, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=20634 kind=Colonist(Released { job: 493, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=21269 kind=Colonist(Released { job: 494, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=21308 kind=Colonist(Released { job: 495, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=21351 kind=Colonist(Released { job: 497, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=21523 kind=Colonist(Released { job: 498, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=21547 kind=Colonist(Released { job: 499, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=21575 kind=Colonist(Released { job: 502, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=21633 kind=Colonist(Released { job: 502, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=21767 kind=Colonist(Released { job: 505, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=21834 kind=Colonist(Released { job: 508, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=21867 kind=Colonist(Released { job: 514, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=22133 kind=Colonist(Released { job: 524, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=22161 kind=Colonist(Released { job: 529, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=22210 kind=Colonist(Released { job: 531, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=22236 kind=Colonist(Released { job: 534, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=22281 kind=Colonist(Released { job: 538, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=22311 kind=Colonist(Released { job: 539, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=22512 kind=Colonist(Released { job: 535, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=22745 kind=Colonist(Released { job: 552, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=22791 kind=Colonist(Released { job: 562, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=22831 kind=Colonist(Released { job: 568, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=22894 kind=Colonist(Released { job: 569, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=22932 kind=Colonist(Released { job: 576, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=22998 kind=Colonist(Released { job: 574, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=23039 kind=Colonist(Released { job: 577, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=23120 kind=Colonist(Released { job: 578, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=23159 kind=Colonist(Released { job: 580, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=23209 kind=Colonist(Released { job: 585, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=23246 kind=Colonist(Released { job: 590, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=23293 kind=Colonist(Released { job: 597, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=23331 kind=Colonist(Released { job: 600, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=23376 kind=Colonist(Released { job: 605, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=23405 kind=Colonist(Released { job: 606, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=23461 kind=Colonist(Released { job: 613, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=23531 kind=Colonist(Released { job: 617, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=23586 kind=Colonist(Released { job: 619, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=24132 kind=Colonist(Released { job: 620, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=24169 kind=Colonist(Released { job: 621, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=24322 kind=Colonist(Released { job: 623, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=24513 kind=Colonist(Released { job: 624, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=24544 kind=Colonist(Released { job: 626, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=24608 kind=Colonist(Released { job: 628, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=24664 kind=Colonist(Released { job: 629, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=24724 kind=Colonist(Released { job: 632, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=24827 kind=Colonist(Released { job: 635, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=24889 kind=Colonist(Released { job: 636, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=24935 kind=Colonist(Released { job: 637, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=24989 kind=Colonist(Released { job: 641, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=25023 kind=Colonist(Released { job: 643, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=25068 kind=Colonist(Released { job: 645, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=25114 kind=Colonist(Released { job: 648, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=25143 kind=Colonist(Released { job: 652, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=25200 kind=Colonist(Released { job: 655, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=25252 kind=Colonist(Released { job: 657, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=25279 kind=Colonist(Released { job: 658, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=25325 kind=Colonist(Released { job: 661, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=25375 kind=Colonist(Released { job: 665, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=25541 kind=Colonist(Released { job: 669, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=25563 kind=Colonist(Released { job: 671, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=25611 kind=Colonist(Released { job: 676, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=25618 kind=Colonist(NeedCrossed { need: Hunger, dir: Into }) actor=None
+CHRONICLE-ROW uid=4 tick=25633 kind=Colonist(Released { job: 679, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=25635 kind=Colonist(Released { job: 684, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=25648 kind=Colonist(NeedCrossed { need: Hunger, dir: OutOf }) actor=None
+CHRONICLE-ROW uid=4 tick=25692 kind=Colonist(Released { job: 679, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=25725 kind=Colonist(Released { job: 682, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=25751 kind=Colonist(Released { job: 692, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=25779 kind=Colonist(Released { job: 685, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=25804 kind=Colonist(Released { job: 686, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=26047 kind=Colonist(Released { job: 691, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=26072 kind=Colonist(Released { job: 696, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=26102 kind=Colonist(Released { job: 703, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=26174 kind=Colonist(Released { job: 705, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=26196 kind=Colonist(Released { job: 699, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=26525 kind=Colonist(Released { job: 707, reason: TimedOut, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=26853 kind=Colonist(Released { job: 709, reason: TimedOut, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=27226 kind=Colonist(Released { job: 722, reason: TimedOut, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=27661 kind=Colonist(Released { job: 723, reason: TimedOut, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=28066 kind=Colonist(Released { job: 727, reason: TimedOut, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=28426 kind=Colonist(Released { job: 745, reason: TimedOut, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=28741 kind=Colonist(Released { job: 762, reason: TimedOut, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=29056 kind=Colonist(Released { job: 778, reason: TimedOut, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=29371 kind=Colonist(Released { job: 796, reason: TimedOut, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=29761 kind=Colonist(Released { job: 797, reason: TimedOut, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=30946 kind=Colonist(Released { job: 811, reason: TimedOut, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=31261 kind=Colonist(Released { job: 778, reason: TimedOut, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=31576 kind=Colonist(Released { job: 823, reason: TimedOut, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=31712 kind=Colonist(Released { job: 849, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=31762 kind=Colonist(Released { job: 863, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=31796 kind=Colonist(Released { job: 870, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=31821 kind=Colonist(Released { job: 869, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=31861 kind=Colonist(Released { job: 875, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=32350 kind=Colonist(Released { job: 879, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=32386 kind=Colonist(Released { job: 880, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=32462 kind=Colonist(Released { job: 882, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=32548 kind=Colonist(Released { job: 884, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=32566 kind=Colonist(Released { job: 891, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=32596 kind=Colonist(Released { job: 893, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=32630 kind=Colonist(Released { job: 894, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=32672 kind=Colonist(Released { job: 890, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=32814 kind=Colonist(Released { job: 896, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=32857 kind=Colonist(Released { job: 898, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=33923 kind=Colonist(Released { job: 901, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=33961 kind=Colonist(Released { job: 902, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=34063 kind=Colonist(Released { job: 903, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=34104 kind=Colonist(Released { job: 905, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=34144 kind=Colonist(Released { job: 906, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=34180 kind=Colonist(Released { job: 908, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=34190 kind=Colonist(Released { job: 913, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=34325 kind=Colonist(Released { job: 914, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=34360 kind=Colonist(Released { job: 927, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=34390 kind=Colonist(Released { job: 929, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=34397 kind=Colonist(Released { job: 930, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=34450 kind=Colonist(Released { job: 939, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=34470 kind=Colonist(Released { job: 943, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=34486 kind=Colonist(Released { job: 945, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=34536 kind=Colonist(Released { job: 947, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=34578 kind=Colonist(Released { job: 951, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=34605 kind=Colonist(Released { job: 961, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=34634 kind=Colonist(Released { job: 963, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=34671 kind=Colonist(Released { job: 960, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=34722 kind=Colonist(Released { job: 970, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=34751 kind=Colonist(Released { job: 974, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=34803 kind=Colonist(Released { job: 977, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=35112 kind=Colonist(Released { job: 978, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=35287 kind=Colonist(Released { job: 980, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=35361 kind=Colonist(Released { job: 983, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=35471 kind=Colonist(Released { job: 988, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=35496 kind=Colonist(Released { job: 995, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=35519 kind=Colonist(Released { job: 997, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=35600 kind=Colonist(Released { job: 1000, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=35657 kind=Colonist(Released { job: 1001, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=35745 kind=Colonist(Released { job: 1006, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37003 kind=Colonist(Released { job: 1007, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37129 kind=Colonist(Released { job: 1012, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37165 kind=Colonist(Released { job: 1021, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37227 kind=Colonist(Released { job: 1028, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37264 kind=Colonist(Released { job: 1031, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37290 kind=Colonist(Released { job: 1039, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37295 kind=Colonist(Released { job: 1040, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37328 kind=Colonist(Released { job: 1044, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37355 kind=Colonist(Released { job: 1046, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37389 kind=Colonist(Released { job: 1043, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37409 kind=Colonist(Released { job: 1051, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37429 kind=Colonist(Released { job: 1054, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37469 kind=Colonist(Released { job: 1058, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37487 kind=Colonist(Released { job: 1056, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37512 kind=Colonist(Released { job: 1070, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37530 kind=Colonist(Released { job: 1073, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37555 kind=Colonist(Released { job: 1071, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37574 kind=Colonist(Released { job: 1077, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37591 kind=Colonist(Released { job: 1075, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37632 kind=Colonist(Released { job: 1080, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37657 kind=Colonist(Released { job: 1066, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37734 kind=Colonist(Released { job: 1081, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37864 kind=Colonist(Released { job: 1083, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=37987 kind=Colonist(Released { job: 1085, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=38027 kind=Colonist(Released { job: 1087, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=38166 kind=Colonist(Released { job: 1088, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=38195 kind=Colonist(Released { job: 1089, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=38250 kind=Colonist(Released { job: 1093, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=38263 kind=Colonist(Released { job: 1094, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=38278 kind=Colonist(Released { job: 1096, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=38293 kind=Colonist(Released { job: 1098, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=38308 kind=Colonist(Released { job: 1101, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=38336 kind=Colonist(Released { job: 1102, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=38490 kind=Colonist(Released { job: 1103, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=38539 kind=Colonist(Released { job: 1106, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=38622 kind=Colonist(Released { job: 1113, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=38726 kind=Colonist(Released { job: 1009, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=38782 kind=Colonist(Released { job: 1114, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=38869 kind=Colonist(Released { job: 1116, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=40266 kind=Colonist(Released { job: 1118, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=40294 kind=Colonist(Released { job: 1138, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=40324 kind=Colonist(Released { job: 1136, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=40354 kind=Colonist(Released { job: 1141, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=40377 kind=Colonist(Released { job: 1150, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=40392 kind=Colonist(Released { job: 1154, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=40397 kind=Colonist(Released { job: 1147, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=40430 kind=Colonist(Released { job: 1158, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=40465 kind=Colonist(Released { job: 1160, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=40541 kind=Colonist(Released { job: 1156, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=40557 kind=Colonist(Released { job: 1163, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=40577 kind=Colonist(Released { job: 1167, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=40620 kind=Colonist(Released { job: 1171, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=40657 kind=Colonist(Released { job: 1173, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=40752 kind=Colonist(Released { job: 1177, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=40819 kind=Colonist(Released { job: 1184, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=41035 kind=Colonist(Released { job: 1187, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=41061 kind=Colonist(Released { job: 1189, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=41097 kind=Colonist(Released { job: 1192, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=41200 kind=Colonist(Released { job: 1197, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=41234 kind=Colonist(Released { job: 1205, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=41262 kind=Colonist(Released { job: 1208, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=41288 kind=Colonist(Released { job: 1209, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=41349 kind=Colonist(Released { job: 1210, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=41407 kind=Colonist(Released { job: 1212, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=41454 kind=Colonist(Released { job: 1214, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=41506 kind=Colonist(Released { job: 1215, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=41572 kind=Colonist(Released { job: 1217, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=41615 kind=Colonist(Released { job: 1219, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=41653 kind=Colonist(Released { job: 1221, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=42493 kind=Colonist(NeedCrossed { need: Hunger, dir: Into }) actor=None
+CHRONICLE-ROW uid=4 tick=43278 kind=Colonist(Released { job: 1241, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=43347 kind=Colonist(Released { job: 1231, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=43386 kind=Colonist(Released { job: 1255, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=43416 kind=Colonist(Released { job: 1249, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=43437 kind=Colonist(Released { job: 1259, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=43465 kind=Colonist(Released { job: 1257, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=43472 kind=Colonist(Released { job: 1262, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=43496 kind=Colonist(Released { job: 1273, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=43511 kind=Colonist(Released { job: 1276, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=43538 kind=Colonist(Released { job: 1275, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=43556 kind=Colonist(Released { job: 1280, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=43596 kind=Colonist(Released { job: 1281, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=43630 kind=Colonist(Released { job: 1284, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=43646 kind=Colonist(Released { job: 1228, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=43672 kind=Colonist(Released { job: 1288, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=43704 kind=Colonist(Released { job: 1286, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=43738 kind=Colonist(Released { job: 1291, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=43834 kind=Colonist(Released { job: 1292, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=43878 kind=Colonist(Released { job: 1293, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=43960 kind=Colonist(Released { job: 1297, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=44005 kind=Colonist(Released { job: 1298, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=44026 kind=Colonist(Released { job: 1301, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=44059 kind=Colonist(Released { job: 1304, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=44120 kind=Colonist(Released { job: 1306, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=44184 kind=Colonist(Released { job: 1308, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=44215 kind=Colonist(Released { job: 1310, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=44268 kind=Colonist(Released { job: 1312, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=44328 kind=Colonist(Released { job: 1314, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=44363 kind=Colonist(Released { job: 1316, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=44402 kind=Colonist(Released { job: 1317, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=44426 kind=Colonist(Released { job: 1318, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=44496 kind=Colonist(Released { job: 1320, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=46343 kind=Colonist(Released { job: 1335, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=46399 kind=Colonist(Released { job: 1350, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=46448 kind=Colonist(Released { job: 1333, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=46474 kind=Colonist(Released { job: 1357, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=46496 kind=Colonist(Released { job: 1361, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=46529 kind=Colonist(Released { job: 1367, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=46535 kind=Colonist(Released { job: 1363, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=46605 kind=Colonist(Released { job: 1362, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=46634 kind=Colonist(Released { job: 1377, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=46646 kind=Colonist(Released { job: 1378, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=46672 kind=Colonist(Released { job: 1372, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=46704 kind=Colonist(Released { job: 1374, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=46795 kind=Colonist(Released { job: 1389, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=46824 kind=Colonist(Released { job: 1390, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=46854 kind=Colonist(Released { job: 1392, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=46871 kind=Colonist(Released { job: 1394, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=46886 kind=Colonist(Released { job: 1395, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=46892 kind=Colonist(Released { job: 1399, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=46922 kind=Colonist(Released { job: 1401, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=46967 kind=Colonist(Released { job: 1403, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=47075 kind=Colonist(Released { job: 1403, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=47112 kind=Colonist(Released { job: 1415, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=47180 kind=Colonist(Released { job: 1416, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=47262 kind=Colonist(Released { job: 1422, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=47305 kind=Colonist(Released { job: 1426, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=48131 kind=Colonist(Released { job: 1427, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=48133 kind=Colonist(NeedCrossed { need: Hunger, dir: OutOf }) actor=None
+CHRONICLE-ROW uid=4 tick=49256 kind=Colonist(Released { job: 1437, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49287 kind=Colonist(Released { job: 1445, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49321 kind=Colonist(Released { job: 1450, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49345 kind=Colonist(Released { job: 1456, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49378 kind=Colonist(Released { job: 1459, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49394 kind=Colonist(Released { job: 1464, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49405 kind=Colonist(Released { job: 1466, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49430 kind=Colonist(Released { job: 1468, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49473 kind=Colonist(Released { job: 1474, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49518 kind=Colonist(Released { job: 1480, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49578 kind=Colonist(Released { job: 1483, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49655 kind=Colonist(Released { job: 1488, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49682 kind=Colonist(Released { job: 1494, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49705 kind=Colonist(Released { job: 1502, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49739 kind=Colonist(Released { job: 1504, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49761 kind=Colonist(Released { job: 1505, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49781 kind=Colonist(Released { job: 1511, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49795 kind=Colonist(Released { job: 1512, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49822 kind=Colonist(Released { job: 1514, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49840 kind=Colonist(Released { job: 1516, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49866 kind=Colonist(Released { job: 1518, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49919 kind=Colonist(Released { job: 1523, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49950 kind=Colonist(Released { job: 1525, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49960 kind=Colonist(Released { job: 1526, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=49990 kind=Colonist(Released { job: 1527, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=50082 kind=Colonist(Released { job: 1529, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=50118 kind=Colonist(Released { job: 1530, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=50201 kind=Colonist(Released { job: 1532, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=51253 kind=Colonist(NeedCrossed { need: Rest, dir: Into }) actor=None
+CHRONICLE-ROW uid=4 tick=59368 kind=Colonist(NeedCrossed { need: Hunger, dir: Into }) actor=None
+CHRONICLE-ROW uid=4 tick=59570 kind=Colonist(Released { job: 1633, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=59578 kind=Colonist(NeedCrossed { need: Hunger, dir: OutOf }) actor=None
+CHRONICLE-ROW uid=4 tick=60218 kind=Colonist(Released { job: 1638, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=60256 kind=Colonist(Released { job: 1545, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=60299 kind=Colonist(Released { job: 1636, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=60313 kind=Colonist(Released { job: 1640, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=60347 kind=Colonist(Released { job: 1641, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=60378 kind=Colonist(Released { job: 1643, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=60426 kind=Colonist(Released { job: 1645, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=60497 kind=Colonist(Released { job: 1646, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=60549 kind=Colonist(Released { job: 1648, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=61227 kind=Colonist(Released { job: 1576, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=76243 kind=Colonist(NeedCrossed { need: Hunger, dir: Into }) actor=None
+CHRONICLE-ROW uid=4 tick=76437 kind=Colonist(Released { job: 1759, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=76496 kind=Colonist(Released { job: 1725, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=76517 kind=Colonist(Released { job: 1755, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=76561 kind=Colonist(Released { job: 1756, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=76594 kind=Colonist(Released { job: 1766, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=76633 kind=Colonist(Released { job: 1767, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=76661 kind=Colonist(Released { job: 1732, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=76684 kind=Colonist(Released { job: 1763, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=76750 kind=Colonist(Released { job: 1770, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=76778 kind=Colonist(Released { job: 1771, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=76819 kind=Colonist(Released { job: 1758, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=76869 kind=Colonist(Released { job: 1778, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=76897 kind=Colonist(Released { job: 1743, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=76914 kind=Colonist(Released { job: 1737, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=76925 kind=Colonist(Released { job: 1781, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=76990 kind=Colonist(Released { job: 1772, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=77019 kind=Colonist(Released { job: 1773, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=77027 kind=Colonist(Released { job: 1774, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=77042 kind=Colonist(Released { job: 1775, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=77080 kind=Colonist(Released { job: 1739, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=77094 kind=Colonist(Released { job: 1724, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=77164 kind=Colonist(Released { job: 1788, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=77204 kind=Colonist(Released { job: 1786, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=77214 kind=Colonist(Released { job: 1792, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=77229 kind=Colonist(Released { job: 1790, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=77255 kind=Colonist(Released { job: 1711, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=77315 kind=Colonist(Released { job: 1795, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=77406 kind=Colonist(Released { job: 1799, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79416 kind=Colonist(Released { job: 1811, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79459 kind=Colonist(Released { job: 1818, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79479 kind=Colonist(Released { job: 1809, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79495 kind=Colonist(Released { job: 1824, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79515 kind=Colonist(Released { job: 1814, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79524 kind=Colonist(Released { job: 1828, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79539 kind=Colonist(Released { job: 1812, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79554 kind=Colonist(Released { job: 1817, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79569 kind=Colonist(Released { job: 1834, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79584 kind=Colonist(Released { job: 1835, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79592 kind=Colonist(Released { job: 1819, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79632 kind=Colonist(Released { job: 1705, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79657 kind=Colonist(Released { job: 1829, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79674 kind=Colonist(Released { job: 1840, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79723 kind=Colonist(Released { job: 1841, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79730 kind=Colonist(Released { job: 1838, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79775 kind=Colonist(Released { job: 1845, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79796 kind=Colonist(Released { job: 1847, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79837 kind=Colonist(Released { job: 1851, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79856 kind=Colonist(Released { job: 1821, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79886 kind=Colonist(Released { job: 1852, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79909 kind=Colonist(Released { job: 1856, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79945 kind=Colonist(Released { job: 1859, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79965 kind=Colonist(Released { job: 1837, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=79986 kind=Colonist(Released { job: 1863, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=80027 kind=Colonist(Released { job: 1866, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=80058 kind=Colonist(Released { job: 1836, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=80086 kind=Colonist(Released { job: 1871, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=80109 kind=Colonist(Released { job: 1853, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=80124 kind=Colonist(Released { job: 1861, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=80139 kind=Colonist(Released { job: 1873, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=80173 kind=Colonist(Released { job: 1877, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=80218 kind=Colonist(Released { job: 1878, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=80245 kind=Colonist(Released { job: 1870, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=80259 kind=Colonist(Released { job: 1874, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=80309 kind=Colonist(Released { job: 1876, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=80342 kind=Colonist(Released { job: 1879, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=80428 kind=Colonist(Released { job: 1885, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=80469 kind=Colonist(Released { job: 1885, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=80524 kind=Colonist(Released { job: 1886, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=80537 kind=Colonist(Released { job: 1890, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=80599 kind=Colonist(Released { job: 1891, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=80639 kind=Colonist(Released { job: 1855, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=80726 kind=Colonist(Released { job: 1895, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=82443 kind=Colonist(Released { job: 1900, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=82464 kind=Colonist(Released { job: 1902, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=82478 kind=Colonist(Released { job: 1906, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=82493 kind=Colonist(Released { job: 1903, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=82508 kind=Colonist(Released { job: 1913, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=82571 kind=Colonist(Released { job: 1915, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=82919 kind=Colonist(Released { job: 1924, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=82928 kind=Colonist(Released { job: 1922, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=82943 kind=Colonist(Released { job: 1928, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83014 kind=Colonist(Released { job: 1931, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83033 kind=Colonist(Released { job: 1911, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83048 kind=Colonist(Released { job: 1925, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83063 kind=Colonist(Released { job: 1935, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83078 kind=Colonist(Released { job: 1933, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83093 kind=Colonist(Released { job: 1926, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83129 kind=Colonist(Released { job: 1934, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83138 kind=Colonist(Released { job: 1938, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83153 kind=Colonist(Released { job: 1940, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83187 kind=Colonist(Released { job: 1937, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83198 kind=Colonist(Released { job: 1939, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83213 kind=Colonist(Released { job: 1941, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83249 kind=Colonist(Released { job: 1942, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83258 kind=Colonist(Released { job: 1945, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83273 kind=Colonist(Released { job: 1944, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83288 kind=Colonist(Released { job: 1947, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83329 kind=Colonist(Released { job: 1943, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83377 kind=Colonist(Released { job: 1927, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83407 kind=Colonist(Released { job: 1910, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83423 kind=Colonist(Released { job: 1950, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83438 kind=Colonist(Released { job: 1949, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83471 kind=Colonist(Released { job: 1916, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83504 kind=Colonist(Released { job: 1920, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83569 kind=Colonist(Released { job: 1908, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83597 kind=Colonist(Released { job: 1909, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83666 kind=Colonist(Released { job: 1936, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83678 kind=Colonist(Released { job: 1953, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83693 kind=Colonist(Released { job: 1951, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83720 kind=Colonist(Released { job: 1907, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=83775 kind=Colonist(Released { job: 1954, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84116 kind=Colonist(Released { job: 1957, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84118 kind=Colonist(NeedCrossed { need: Hunger, dir: OutOf }) actor=None
+CHRONICLE-ROW uid=4 tick=84143 kind=Colonist(Released { job: 1930, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84158 kind=Colonist(Released { job: 1932, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84173 kind=Colonist(Released { job: 1952, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84203 kind=Colonist(Released { job: 1948, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84261 kind=Colonist(Released { job: 1956, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84279 kind=Colonist(Released { job: 1917, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84290 kind=Colonist(Released { job: 1912, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84325 kind=Colonist(Released { job: 1914, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84338 kind=Colonist(Released { job: 1901, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84361 kind=Colonist(Released { job: 1955, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84383 kind=Colonist(Released { job: 1919, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84420 kind=Colonist(Released { job: 1962, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84428 kind=Colonist(Released { job: 1918, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84449 kind=Colonist(Released { job: 1964, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84458 kind=Colonist(Released { job: 1967, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84473 kind=Colonist(Released { job: 1921, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84488 kind=Colonist(Released { job: 1946, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84503 kind=Colonist(Released { job: 1968, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84518 kind=Colonist(Released { job: 1929, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84533 kind=Colonist(Released { job: 1961, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84548 kind=Colonist(Released { job: 1960, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84583 kind=Colonist(Released { job: 1959, reason: Other, queue_position: None }) actor=None
+CHRONICLE-ROW uid=4 tick=84603 kind=Colonist(Released { job: 1958, reason: Other, queue_position: None }) actor=None
+ITEMS count=21 common.items.bastion.wheat@(16378.4,16385.4,400.0) common.items.crafting_ing.animal_misc.sharp_fang@(16397.5,16374.2,400.0) common.items.bastion.wheat@(16381.5,16385.3,400.0) common.items.bastion.wheat@(16379.3,16380.4,400.0) common.items.crafting_ing.hide.tough_hide@(16360.9,16375.5,400.0) common.items.food.meat.beast_small_raw@(16397.0,16373.7,400.0) common.items.crafting_ing.hide.tough_hide@(16354.5,16375.1,400.0) common.items.crafting_ing.animal_misc.sharp_fang@(16354.3,16374.7,400.0) common.items.crafting_ing.animal_misc.sharp_fang@(16342.5,16373.9,400.0) common.items.bastion.wheat_seeds@(16380.3,16382.3,400.0) common.items.bastion.wheat@(16381.6,16380.3,400.0) common.items.bastion.wheat_seeds@(16377.9,16385.4,400.0) common.items.bastion.wheat@(16380.3,16383.5,400.0) common.items.bastion.wheat@(16384.3,16382.9,400.0) common.items.crafting_ing.animal_misc.sharp_fang@(16361.4,16376.0,400.0) common.items.food.meat.beast_small_raw@(16361.4,16375.5,400.0) common.items.crafting_ing.hide.tough_hide@(16342.0,16373.4,400.0) common.items.food.meat.beast_small_raw@(16353.5,16374.4,400.0) common.items.crafting_ing.hide.tough_hide@(16397.5,16373.7,400.0) common.items.food.meat.beast_small_raw@(16342.5,16373.4,400.0) common.items.bastion.wheat@(16377.6,16381.6,400.0)
+ascii radius=16 centre=(16384,16384,400) x[16368,16400] y[16368,16400] z[380,420] grid=33x33 stride=1 (one character per block column); north is up
+ascii legend: @ player | C colonist | i loose item | # solid above the surface | . walkable ground | ~ water | ? UNLOADED, never ground | ' ' no surface within the z window (but every cell in it was observed)
+  16400 |.................................
+  16399 |.................................
+  16398 |.................................
+  16397 |.................................
+  16396 |.................................
+  16395 |.................................
+  16394 |.................................
+  16393 |.................................
+  16392 |.................................
+  16391 |.................................
+  16390 |.................................
+  16389 |.................................
+  16388 |.................................
+  16387 |.................................
+  16386 |.................................
+  16385 |.........ii..i...................
+  16384 |................@................
+  16383 |............i....................
+  16382 |............i...i................
+  16381 |.........i.......................
+  16380 |...........i.i...................
+  16379 |......C..........................
+  16378 |.................................
+  16377 |.................................
+  16376 |.................................
+  16375 |.................................
+  16374 |.............................i...
+  16373 |............................ii...
+  16372 |.................................
+  16371 |.................................
+  16370 |.................................
+  16369 |.................................
+  16368 |.................................
+ascii tally: 1089 cells, 0 UNLOADED, 0 water, 0 no-surface; colonists 1 synced (1 on map, 0 off map), 12 item cell(s) drawn, 9 item(s) off map (every column drawn rests on observed terrain)
+=== script complete, disconnecting ===
+[2m2026-08-21T06:52:42.105959Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mB8Ea26[1m}[0m[2m:[0m[1m[0m[2m:[0m[1mremote[0m[1m{[0m[3mp[0m[2m=[0mEsInt2[1m}[0m[2m:[0m[1mrecv[0m[2m:[0m [2mveloren_network::participant[0m[2m:[0m protocol failed, shutting down channel [3me[0m[2m=[0mCustom(Tcp(Custom { kind: BrokenPipe, error: "read returned 0 bytes" })) [3mcid[0m[2m=[0m0
+[2m2026-08-21T06:52:42.120095Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mB8Ea26[1m}[0m[2m:[0m[1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mB8Ea26[1m}[0m[2m:[0m[1mremote[0m[1m{[0m[3mp[0m[2m=[0mEsInt2[1m}[0m[2m:[0m [2mveloren_network::api[0m[2m:[0m Participant already has been shutdown gracefully
+[2m2026-08-21T06:52:42.120238Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mB8Ea26[1m}[0m[2m:[0m [2mveloren_network::scheduler[0m[2m:[0m Shutdown of scheduler requested
+[2m2026-08-21T06:52:42.220402Z[0m [32m INFO[0m [1mnetwork[0m[1m{[0m[3mp[0m[2m=[0mB8Ea26[1m}[0m[2m:[0m [2mveloren_network::api[0m[2m:[0m Network dropped gracefully
