@@ -358,6 +358,7 @@ without crossing that routing.
 | Item 27 | **bars 1–2 PASS: 32 dishes, 0 stalls, 32:32 XP** (five measured roots in the disposition); bars 3–4 = one def-carrying eat witness + A/B |
 | Item 31 | bar 2's refusal is UNREACHABLE by script timing (the pool fills during the ~2-min boot; 3/3 casts landed incl. t=0) — needs `BASTION_FAVOR_ZERO` (skip trickle) + a `smiteref` arm. **Cast 3 KILLED Osric — see item 36's premise below** |
 | Item 36 premise | **MEASURED: colonist death does not exist** — health 0.0, no death event, no despawn, population still 8. The row's first build step is death itself (health 0 → is_dead → consequences), not the consequences |
+| Item 40 first data | 8-col ≈ 129.6 t/s (7.7 ms), 16-col ≈ 71.2 t/s (14.0 ms — nominally OVER the 12 ms guard) — **VOID FOR THE GUARD QUESTION: the arms ran under DIFFERENT co-load** (the watch server ran through scale16's window; voxygen compiled during it). The soak stat is harness-side, not server-side — tick-rate-from-census-timestamps is the working instrument. Re-run the 8/16/32 triplet on a quiet machine |
 | Item 27 | thief WINDOW closed to the work second (carried 2-64 at arrival, 0 at consume); per-tick watch lands in chain15 |
 
 ## YEAR-LEG FINDING — starved beside a full larder (2026-08-20, NEW ROW)
