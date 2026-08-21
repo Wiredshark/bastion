@@ -5157,15 +5157,41 @@ impl PlayState for SessionState {
                 }
             }
 
-            let r0d_capture_ready = crate::r1a_presentation::ready_for_capture_measurement()
-                && crate::r1f_weather::certification_fixture_ready_for_capture()
-                && crate::r1f_fog::certification_fixture_ready_for_capture()
-                && crate::r1f_lighting::certification_fixture_ready_for_capture()
-                && crate::r1g_lens::certification_fixture_ready_for_capture()
-                && (!crate::render::bastion_r0d::capture_waits_for_pause_v1(
-                    std::env::var_os("BASTION_FLAT_ARENA").is_some(),
-                    crate::render::bastion_r0d::absolute_time_capture_selected(),
-                ) || global_state.paused());
+            let r1a_ready = crate::r1a_presentation::ready_for_capture_measurement();
+            let weather_ready = crate::r1f_weather::certification_fixture_ready_for_capture();
+            let fog_ready = crate::r1f_fog::certification_fixture_ready_for_capture();
+            let lighting_ready = crate::r1f_lighting::certification_fixture_ready_for_capture();
+            let lens_ready = crate::r1g_lens::certification_fixture_ready_for_capture();
+            let pause_ok = !crate::render::bastion_r0d::capture_waits_for_pause_v1(
+                std::env::var_os("BASTION_FLAT_ARENA").is_some(),
+                crate::render::bastion_r0d::absolute_time_capture_selected(),
+            ) || global_state.paused();
+            let r0d_capture_ready =
+                r1a_ready && weather_ready && fog_ready && lighting_ready && lens_ready && pause_ok;
+            // W5 (print-the-precondition): a capture leg that never fires
+            // must NAME its blocker — log the gate booleans whenever they
+            // CHANGE (not per frame) while a capture is configured.
+            if crate::render::bastion_r0d::capture_config().is_some() {
+                use std::sync::atomic::{AtomicU8, Ordering};
+                static LAST: AtomicU8 = AtomicU8::new(0xFF);
+                let bits = u8::from(r1a_ready)
+                    | (u8::from(weather_ready) << 1)
+                    | (u8::from(fog_ready) << 2)
+                    | (u8::from(lighting_ready) << 3)
+                    | (u8::from(lens_ready) << 4)
+                    | (u8::from(pause_ok) << 5);
+                if LAST.swap(bits, Ordering::Relaxed) != bits {
+                    tracing::info!(
+                        r1a_ready,
+                        weather_ready,
+                        fog_ready,
+                        lighting_ready,
+                        lens_ready,
+                        pause_ok,
+                        "bastion r0d capture gate state"
+                    );
+                }
+            }
             if r0d_capture_ready
                 && crate::render::bastion_r0d::drive_capture(
                     global_state.window.renderer_mut(),
