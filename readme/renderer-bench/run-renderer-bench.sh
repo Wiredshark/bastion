@@ -13,7 +13,10 @@ set -u
 WT="E:/veloren-master/.renderer-wt"
 B="$WT/target/debug"
 A="$WT/assets"
-FIX="$WT/readme/renderer-bench/fixtures/walk-and-seek-v1.rbdm"
+# v2: arena anchored ON the flat-arena slab at world center (z=401) so
+# the terrain regime is defined — the server pins those chunks at boot
+# whenever the bench is armed, observers or none.
+FIX="$WT/readme/renderer-bench/fixtures/walk-and-seek-v2.rbdm"
 EV="$WT/readme/renderer-bench/smoke"
 GAME=27024; WEB=27025; METRICS=27026
 TICKS="${TICKS:-600}"; CADENCE="${CADENCE:-30}"
@@ -66,14 +69,20 @@ leg() {
   fi
 }
 
-rm -f "$EV/tape-1.json" "$EV/tape-2.json" "$EV/tape-A.json"
-leg 1 || exit 1
-leg 2 || exit 1
+if [ "${ONLY_LEG_A:-0}" = "1" ]; then
+  # Re-run just the client leg against an existing green tape-1.
+  [ -s "$EV/tape-1.json" ] || { echo "ONLY_LEG_A=1 but no tape-1.json"; exit 1; }
+  rm -f "$EV/tape-A.json"
+else
+  rm -f "$EV/tape-1.json" "$EV/tape-2.json" "$EV/tape-A.json"
+  leg 1 || exit 1
+  leg 2 || exit 1
 
-"$B/bastion-harness.exe" --renderer-bench-golden "$EV/tape-1.json" "$EV/tape-2.json"
-RC=$?
-echo "TWIN VERDICT exit=$RC (0 = run_root identical = determinism witness GREEN)"
-[ $RC -eq 0 ] || exit $RC
+  "$B/bastion-harness.exe" --renderer-bench-golden "$EV/tape-1.json" "$EV/tape-2.json"
+  RC=$?
+  echo "TWIN VERDICT exit=$RC (0 = run_root identical = determinism witness GREEN)"
+  [ $RC -eq 0 ] || exit $RC
+fi
 
 # ── W3 leg A: server WAITS for a client, ackbot spectates + acks. ──
 # The wave's integrated proof (W3-LAUNCH-PACKET.md): tape A must carry
@@ -103,9 +112,22 @@ leg_a() {
       "$B/veloren-server-cli.exe" --no-auth > "$EV/server-A.log" 2>&1 ) &
   local SRV=$!
   echo "leg A: server pid=$SRV (WAIT_CLIENT=1)"
-  sleep 20  # let the server bind before the bot dials
+  # Gate the bot on the server's OWN readiness line (boot takes minutes;
+  # a fixed sleep raced it and the bot died ConnectionRefused). The
+  # WAITING line means the tick loop is live, so the port is bound.
+  local bt=0
+  while [ $bt -lt 300 ]; do
+    if grep -q "WAITING for client readiness" "$EV/server-A.log" 2>/dev/null; then break; fi
+    sleep 5; bt=$((bt+5))
+  done
+  if ! grep -q "WAITING for client readiness" "$EV/server-A.log" 2>/dev/null; then
+    echo "leg A: server never reached WAITING after ${bt}s — leg VOID"
+    taskkill //F //PID "$SRV" >/dev/null 2>&1
+    return 1
+  fi
+  echo "leg A: server WAITING after ~${bt}s — launching ackbot"
   ( cd "$WT" && BASTION_RENDERER_BENCH_ACK=1 VELOREN_ASSETS="$A" \
-      "$B/rbench_ackbot.exe" "localhost:$GAME" "$TAG" 0 0 40 420 \
+      "$B/rbench_ackbot.exe" "localhost:$GAME" "$TAG" 16384.5 16384.5 441 420 \
       > "$EV/ackbot-A.log" 2>&1 ) &
   local BOT=$!
   echo "leg A: ackbot pid=$BOT"
@@ -132,19 +154,30 @@ leg_a || exit 1
 RCA=$?
 echo "NEUTRALITY VERDICT exit=$RCA (0 = client presence did not perturb run_root)"
 
-python - "$EV/tape-A.json" <<'PYEOF'
-import json, sys
+python - "$EV/tape-A.json" "$FIX" <<'PYEOF'
+import json, struct, sys
 d = json.load(open(sys.argv[1]))
+# Expected entity count comes from the FIXTURE, not a hand constant
+# (walk-and-seek has 2; a wrong constant already burned one leg).
+b = open(sys.argv[2], "rb").read()
+o = 8
+slen = struct.unpack_from("<I", b, o)[0]; o += 4 + slen  # scenario_id
+o += 8 * 3 + 4 + 4 * 3                                   # seeds, tps, origin
+slen = struct.unpack_from("<I", b, o)[0]; o += 4 + slen  # camera_script_id
+o += 4 + 4                                               # gfx + schema versions
+expected = struct.unpack_from("<I", b, o)[0]
 acks = d.get("client_acks", [])
 ready = d.get("ready_count", 0)
-ok = (len(acks) >= 2
-      and all(a.get("echo_match") is True for a in acks)
-      and all(a.get("entities_resolved") == 3 for a in acks)
-      and ready >= 1)
-print(f"ACK VERDICT acks={len(acks)} ready_count={ready} "
-      f"echo_all={all(a.get('echo_match') is True for a in acks) if acks else False} "
-      f"resolved3_all={all(a.get('entities_resolved') == 3 for a in acks) if acks else False} "
-      f"=> {'GREEN' if ok else 'RED'}")
+echo_all = bool(acks) and all(a.get("echo_match") is True for a in acks)
+resolved = [a.get("entities_resolved") for a in acks]
+# The sync ramp is physical (spawn + replication latency after run
+# start), so the bar is: the ramp COMPLETES — >=2 acks at the full
+# count and the final ack at the full count.
+full = [r for r in resolved if r == expected]
+ok = (len(acks) >= 2 and echo_all and ready >= 1
+      and len(full) >= 2 and resolved and resolved[-1] == expected)
+print(f"ACK VERDICT acks={len(acks)} ready_count={ready} expected={expected} "
+      f"echo_all={echo_all} resolved={resolved} => {'GREEN' if ok else 'RED'}")
 sys.exit(0 if ok else 1)
 PYEOF
 RCB=$?

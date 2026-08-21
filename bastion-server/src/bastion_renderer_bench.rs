@@ -363,6 +363,11 @@ impl<'a> System<'a> for Sys {
                     body,
                 );
                 let pos = origin + mm_to_blocks(e.spawn_position_mm);
+                info!(
+                    semantic_id = e.semantic_id,
+                    x = pos.x, y = pos.y, z = pos.z,
+                    "bastion: renderer-bench SPAWN"
+                );
                 emitter.emit(CreateNpcEvent {
                     pos: comp::Pos(pos),
                     ori: comp::Ori::default(),

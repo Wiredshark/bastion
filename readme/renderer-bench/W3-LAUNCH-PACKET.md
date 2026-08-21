@@ -88,17 +88,34 @@ forbidden-surface rules. Interface implemented: `replication_projection_ack`
   second half.
 
 ## Gates for this wave (all must be green before W4)
-- [ ] Python-independent vectors for the ClientProjection leaf/owner/domain
-      shapes (new producer script + checked-in JSON; Rust reproduces
-      byte-exact — the encoder never blesses its own vectors).
-- [ ] Wire-shape goldens for all three new variants; coverage lists stay [].
-- [ ] Planted red-demo: mutate `CLIENT_PROJECTION_LEAF` → exactly the
-      client-projection consumers fail by name; restore; green.
-- [ ] Integrated smoke (three legs): leg A server+ackbot (WAIT_CLIENT=1),
-      leg B clientless, leg C clientless. Assert: A's tape has ≥2 acks,
-      all `echo_match=true`, `entities_resolved=3`; run_root(A) ==
-      run_root(B) == run_root(C) (replication neutrality + the existing
-      twin determinism witness in one run).
-- [ ] `cargo check -p veloren-common -p veloren-common-net -p veloren-client
-      -p veloren-server -p bastion-server` clean + the three W1/W2 suites
-      still green.
+- [x] Python-independent vectors reproduced byte-exact, 15/15 FIRST RUN
+      (2026-08-20; `w3_client_projection_vectors_v1.py` → checked-in JSON
+      → `renderer_bench_vectors.rs`).
+- [x] Wire-shape goldens for all three new variants (39/53 counts pinned);
+      coverage lists stay []. common-net 138/138.
+- [x] Planted red-demo EXACT (leaf id 0x…01→0x…99): 1 failed by name
+      (`w3_client_projection_reproduces_python_vectors`), 14 green;
+      restored; 15/15.
+- [x] Integrated smoke GREEN (2026-08-21 00:5x, fixture v2 sha 3bbdff4a):
+      twins run_root IDENTICAL; leg A (WAIT_CLIENT + spectator ackbot)
+      run_root IDENTICAL to clientless; acks 20/20 echo_match, resolved
+      ramp [0,2,2,…,2] = both entities resolved from frame 1 on.
+- [x] check clean across all five crates; W1/W2 suites green throughout.
+
+## Findings the wave banked (each cost a red leg)
+1. **Client presence is OPTIMISTIC**: `request_spectate` flips presence()
+   locally; server truth is `Event::StartSpectate`. Anything sent before
+   it is silently dropped by the not-in-game guard (two legs parked at
+   world spawn while reporting local success).
+2. **THE OBSERVER CHANGED THE EXPERIMENT** (the project law made flesh):
+   the spectator's presence loaded the arena chunks, turning the twins'
+   silent vacuum-physics regime into collision physics — one entity did
+   not survive, and run_root split. Fix BY CONSTRUCTION: an armed bench
+   force-loads + pins its arena chunks at boot (`bastion_force_load_area`
+   in Server::new), identical in every leg; fixture v2 anchors the arena
+   ON the flat-arena slab at world center (z=401). The W2 baseline had
+   been living in the undefined unloaded regime without knowing it.
+3. Fixture entity count belongs to the FIXTURE (the verdict parses the
+   RBDM; a hand constant of 3 burned a leg against the real 2).
+4. Never grep-filter cargo output for "^error" — two "clean" builds hid
+   a compile failure; mtime of the binary is the arbiter.
