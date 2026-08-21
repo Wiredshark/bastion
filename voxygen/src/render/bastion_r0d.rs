@@ -527,13 +527,18 @@ impl CertificationServerLatchV1 {
         &mut self,
         completed_tick: u64,
     ) -> Result<(), CertificationServerLatchErrorV1> {
-        self.record_completed_tick_for_runtime(completed_tick, true)
+        self.record_completed_tick_for_runtime(completed_tick, Some(CERTIFICATION_SERVER_TICK_V1))
     }
 
+    /// `freeze_tick` is the RUNTIME's actual freeze target — under the
+    /// W5 login-deferred mode it is later than the fixed constant, and a
+    /// latch that kept its own copy of tick 300 shut down a healthy
+    /// server one tick after the constant passed un-frozen (measured).
+    /// `None` = this runtime never freezes (streaming-only measurement).
     pub fn record_completed_tick_for_runtime(
         &mut self,
         completed_tick: u64,
-        freeze_at_certification_tick: bool,
+        freeze_tick: Option<u64>,
     ) -> Result<(), CertificationServerLatchErrorV1> {
         if completed_tick < self.completed_tick {
             return Err(CertificationServerLatchErrorV1::TickRegression);
@@ -542,8 +547,7 @@ impl CertificationServerLatchV1 {
             return Err(CertificationServerLatchErrorV1::AdvancedAfterFreeze);
         }
         self.completed_tick = completed_tick;
-        self.frozen =
-            freeze_at_certification_tick && completed_tick == CERTIFICATION_SERVER_TICK_V1;
+        self.frozen = freeze_tick == Some(completed_tick);
         Ok(())
     }
 }
@@ -570,17 +574,17 @@ pub fn reset_certification_server_latch_v1() {
 pub fn record_certification_server_tick_v1(
     completed_tick: u64,
 ) -> Result<(), CertificationServerLatchErrorV1> {
-    record_certification_server_tick_for_runtime_v1(completed_tick, true)
+    record_certification_server_tick_for_runtime_v1(completed_tick, Some(CERTIFICATION_SERVER_TICK_V1))
 }
 
 pub fn record_certification_server_tick_for_runtime_v1(
     completed_tick: u64,
-    freeze_at_certification_tick: bool,
+    freeze_tick: Option<u64>,
 ) -> Result<(), CertificationServerLatchErrorV1> {
     CERTIFICATION_SERVER_LATCH
         .lock()
         .map_err(|_| CertificationServerLatchErrorV1::AdvancedAfterFreeze)?
-        .record_completed_tick_for_runtime(completed_tick, freeze_at_certification_tick)
+        .record_completed_tick_for_runtime(completed_tick, freeze_tick)
 }
 
 pub fn certification_server_latch_v1() -> Option<CertificationServerLatchV1> {
@@ -2406,10 +2410,10 @@ mod tests {
         );
         let mut continuous = CertificationServerLatchV1::default();
         continuous
-            .record_completed_tick_for_runtime(CERTIFICATION_SERVER_TICK_V1, false)
+            .record_completed_tick_for_runtime(CERTIFICATION_SERVER_TICK_V1, None)
             .unwrap();
         continuous
-            .record_completed_tick_for_runtime(CERTIFICATION_SERVER_TICK_V1 + 1, false)
+            .record_completed_tick_for_runtime(CERTIFICATION_SERVER_TICK_V1 + 1, None)
             .unwrap();
         assert_eq!(continuous, CertificationServerLatchV1 {
             completed_tick: CERTIFICATION_SERVER_TICK_V1 + 1,

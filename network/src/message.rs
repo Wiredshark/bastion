@@ -143,6 +143,7 @@ impl Message {
                     consumed,
                     total = uncompressed_data.len(),
                     head = ?&uncompressed_data[..uncompressed_data.len().min(24)],
+                    tail = ?&uncompressed_data[consumed.min(uncompressed_data.len())..],
                     "DET-NET-017: trailing bytes on strict decode"
                 );
                 Err(StreamError::TrailingBytes { consumed, total: uncompressed_data.len() })

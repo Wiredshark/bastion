@@ -102,6 +102,30 @@ impl PlayState for CharSelectionState {
             client.registered()
         };
         if client_registered {
+            // W5 unattended flow: the capture vehicle's LAST human click.
+            // Every prior "unattended" leg silently depended on someone
+            // pressing Spectate here — with the flat arena up and a
+            // capture configured, enter as spectator automatically (the
+            // overseer entry, same body as ui::Event::Spectate below).
+            if global_state.args.bastion_flat_arena
+                && crate::render::bastion_r0d::capture_config().is_some()
+            {
+                use std::sync::atomic::{AtomicBool, Ordering};
+                static AUTO_ENTERED: AtomicBool = AtomicBool::new(false);
+                if !AUTO_ENTERED.swap(true, Ordering::Relaxed) {
+                    tracing::info!("bastion: capture vehicle AUTO-SPECTATE (unattended entry)");
+                    {
+                        let mut c = self.client.borrow_mut();
+                        c.request_spectate(global_state.settings.graphics.view_distances());
+                    }
+                    return PlayStateResult::Switch(Box::new(SessionState::new(
+                        global_state,
+                        UpdateCharacterMetadata::default(),
+                        Rc::clone(&self.client),
+                        Rc::clone(&self.persisted_state),
+                    )));
+                }
+            }
             // Handle window events
             for event in events {
                 if self.char_selection_ui.handle_event(event.clone()) {

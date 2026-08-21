@@ -649,7 +649,24 @@ fn run_server(mut server: Server, stop_server_r: Receiver<()>, paused: Arc<Atomi
         if freeze_after_login
             && certification_freeze_tick.is_some()
             && deferred_freeze_target.is_none()
-            && server.number_of_players() > 0
+            && {
+                // IN-WORLD presence ON A CLIENT: number_of_players()
+                // armed at connection (client still on the character
+                // screen), and bare Presence armed at server tick 1 —
+                // the COLONY presence (decision 106's chunk anchor)
+                // carries Presence with no client attached. Both froze
+                // the server before login (measured). Only a network
+                // client that has entered the world counts.
+                use specs::{Join, WorldExt};
+                let ecs = server.state().ecs();
+                (
+                    &ecs.read_storage::<common::comp::Presence>(),
+                    &ecs.read_storage::<server::client::Client>(),
+                )
+                    .join()
+                    .next()
+                    .is_some()
+            }
         {
             deferred_freeze_target =
                 certification_freeze_tick.map(|f| completed_ticks.saturating_add(f));
@@ -682,7 +699,10 @@ fn run_server(mut server: Server, stop_server_r: Receiver<()>, paused: Arc<Atomi
             && let Err(error) =
                 crate::render::bastion_r0d::record_certification_server_tick_for_runtime_v1(
                     completed_ticks,
-                    certification_freeze_tick.is_some(),
+                    // The RUNTIME's actual target — under login-deferred
+                    // freeze this is later than the fixed constant, and
+                    // None until the client arrives (not frozen yet).
+                    deferred_freeze_target,
                 )
         {
             error!(

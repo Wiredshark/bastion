@@ -18,6 +18,7 @@ echo "PRECONDITION voxygen=$(sha256sum "$B/veloren-voxygen.exe" | cut -c1-16) ti
 ( cd "$WT" && VELOREN_USERDATA="$EV/userdata" VOXYGEN_CONFIG="$EV/userdata/voxygen" \
     VELOREN_ASSETS="$A" \
     BASTION_R0D_CAPTURE_OUT="$EV/captures" \
+    BASTION_R0D_MANIFEST="$EV/r0d-manifest" \
     BASTION_R0D_CAPTURE_WARMUP=120 BASTION_R0D_CAPTURE_COUNT=3 \
     BASTION_R1BC_FIGURE_COUNT=1 \
     BASTION_R0D_AUTOPAUSE=1 \
