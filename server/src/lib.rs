@@ -6946,8 +6946,22 @@ impl Server {
                 .ecs()
                 .write_resource::<bastion_jobs::TradePriceBook>();
             if book.0.len() != entries.len() {
+                // Bar 2's audit rides here: the ratio must be the SITE'S,
+                // not a constant — a spread of one distinct value is the
+                // FEW-DISCRETE-VALUES flag (the first minted ratio was a
+                // suspiciously round 1.0).
+                let mut ratios: Vec<f32> = entries.iter().map(|(_, r)| *r).collect();
+                ratios.sort_by(|a, b| a.total_cmp(b));
+                let distinct = ratios
+                    .windows(2)
+                    .filter(|w| (w[1] - w[0]).abs() > 1e-6)
+                    .count()
+                    + 1;
                 tracing::info!(
                     sites = entries.len(),
+                    ratio_min = ratios.first().copied().unwrap_or(0.0),
+                    ratio_max = ratios.last().copied().unwrap_or(0.0),
+                    ratio_distinct = distinct,
                     "bastion: ITEM 29 trade price book refreshed"
                 );
             }
