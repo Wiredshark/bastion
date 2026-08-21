@@ -17394,6 +17394,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         tended,
                                         "bastion: slept — rest restored"
                                     );
+                                    // ★ FOUND BY PLAYING (2026-08-21): a
+                                    // colonist's story held 356 rows and every
+                                    // single one was a job RELEASE. Sleeping,
+                                    // eating, harvesting and being wounded all
+                                    // demonstrably happened and none of them
+                                    // were written down, so "Osric's life" read
+                                    // as 71 identical lines about releasing job
+                                    // handles. A night in a bed is the kind of
+                                    // thing a story is FOR.
+                                    crate::bastion_entity_event_log::record_event(
+                                        tick.0,
+                                        u,
+                                        crate::bastion_entity_event_log::EventKind::Colonist(
+                                            crate::bastion_entity_event_log::ColonistEventKind::Slept {
+                                                owned: owner == Some(u),
+                                                healed: tended,
+                                            },
+                                        ),
+                                        None,
+                                    );
                                     board.remove_job(active.job);
                                     to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
                                 }
@@ -17541,6 +17561,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 job = active.job,
                                 "bastion: ate — hunger restored"
                             );
+                            // The meal belongs in the EATER's story. It was
+                            // being recorded only against the ITEM's ring with
+                            // the colonist as `actor`, so a colonist's own
+                            // chronicle never showed a single meal — the
+                            // `Ate` variant existed and was never constructed.
+                            if let Some(u) = eater_uid {
+                                crate::bastion_entity_event_log::record_event(
+                                    tick.0,
+                                    u,
+                                    crate::bastion_entity_event_log::EventKind::Colonist(
+                                        crate::bastion_entity_event_log::ColonistEventKind::Ate {
+                                            // Inventory meal: no ground entity
+                                            // exists, so there is no item Uid
+                                            // to name. Absent, not padded.
+                                            item: None,
+                                        },
+                                    ),
+                                    None,
+                                );
+                            }
                             // remove_job releases the food reservation (B6
                             // machinery — THE removal path).
                             board.remove_job(active.job);
@@ -17655,6 +17695,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     job = active.job,
                                     "bastion: ate — hunger restored"
                                 );
+                                // The ground-item meal, on the EATER's ring.
+                                // The row above this records the same meal on
+                                // the ITEM's ring — both are wanted: one
+                                // answers "what happened to this food", the
+                                // other "what happened to this person", and
+                                // only the second is a story.
+                                if let Some(u) = eater_uid {
+                                    crate::bastion_entity_event_log::record_event(
+                                        tick.0,
+                                        u,
+                                        crate::bastion_entity_event_log::EventKind::Colonist(
+                                            crate::bastion_entity_event_log::ColonistEventKind::Ate {
+                                                item: Some(item),
+                                            },
+                                        ),
+                                        None,
+                                    );
+                                }
                                 board.remove_job(active.job);
                                 to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
                             } else {

@@ -182,8 +182,25 @@ pub enum ColonistEventKind {
     Preempted { need: NeedKind },
     Teleported { cause: TeleportCause },
     NeedCrossed { need: NeedKind, dir: CrossDirection },
-    Ate { item: Uid },
+    /// A completed meal.
+    ///
+    /// `item` is an honest `Option`, not a defaulted id: a colonist can eat a
+    /// ground item (which has an entity `Uid`) OR eat from their own
+    /// inventory (which has no entity at all, only an item def). Writing the
+    /// EATER's own uid into this field to fill the hole — which is what the
+    /// first version of the colonist-side record did — would put a quiet lie
+    /// in a story surface whose entire job is answering "what happened to
+    /// this person". Absent must read as absent.
+    Ate { item: Option<Uid> },
     Stuck { cause: StuckCause },
+    /// bastion (2026-08-21, found by playing): a completed night's sleep.
+    ///
+    /// `owned` is the bed-ownership question a play session surfaced — seven
+    /// sleeps in a session, every one `owned=false`, five of them in the SAME
+    /// bed while seven others stood empty. `healed` carries item 35's
+    /// treatment beside its outcome, so a sleep that mended a wound and one
+    /// that merely rested cannot read alike in a colonist's story.
+    Slept { owned: bool, healed: bool },
 }
 
 /// Closed vocabulary for which of a colonist's three tracked needs an event
