@@ -12567,7 +12567,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // Uid so the per-item reservation done during commit cannot
                 // change another candidate's admission.
                 let mut candidates: Vec<(Vec3<i32>, &'static str, Uid)> = Vec::new();
+                let (mut rej_in_stockpile, mut rej_reserved, mut rej_occupied, mut rej_other) =
+                    (0u32, 0u32, 0u32, 0u32);
+                let mut seen_pickups = 0u32;
                 for (pickup, ipos, iuid) in (&pickup_items, &positions, &uids).join() {
+                    seen_pickups += 1;
                     let matched = match pickup.item().item_definition_id().itemdef_id() {
                         Some(d) if d == MINE_DROP_ITEM => Some(MINE_DROP_ITEM),
                         Some(d) if d == CHOP_DROP_ITEM => Some(CHOP_DROP_ITEM),
@@ -12659,12 +12663,39 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 && j.claimed_by.is_none()
                                 && j.required_item == Some(static_def)
                         });
+                    // ★ WHY A LOAD IS NOT HAULED (2026-08-21). Measured on
+                    // three attested arms: four times the population delivered
+                    // FORTY PERCENT FEWER loads (62 at 8 colonists, 37 at 32),
+                    // while the colony held 224 stone, 30 idle workers, and
+                    // refused 300 of 390 claim considerations for `materials`.
+                    // Material could not reach the work, and the delivery rate
+                    // FELL as the colony grew.
+                    //
+                    // Three candidates fit and only an instrument separates
+                    // them: generation capped on a fixed cadence, RESERVATION
+                    // CONTENTION (exclusive reserve, 30 colonists thrashing the
+                    // same piles — the only one that predicts a DECREASE), or a
+                    // stockpile-membership disagreement. Counting the rejection
+                    // CAUSE is the whole diagnosis; guessing it is the mistake
+                    // this sweep keeps finding in other rows.
+                    let in_stockpile = board.stockpile_at(cell).is_some();
+                    let reserved = board.is_reserved(*iuid);
+                    let cell_occupied = occupied.contains(&cell);
                     if !haul_candidate_admitted(
-                        board.stockpile_at(cell).is_some(),
-                        board.is_reserved(*iuid),
-                        occupied.contains(&cell),
+                        in_stockpile,
+                        reserved,
+                        cell_occupied,
                         starved_cell,
                     ) {
+                        if in_stockpile {
+                            rej_in_stockpile += 1;
+                        } else if reserved {
+                            rej_reserved += 1;
+                        } else if cell_occupied {
+                            rej_occupied += 1;
+                        } else {
+                            rej_other += 1;
+                        }
                         continue;
                     }
                     if starved_cell {
@@ -12678,6 +12709,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 }
                 // DET-COL-HAUL-001 / DET-AUT-004: canonical admission order
                 // (unit-tested in the det_mood_003/haul tests below).
+                // Emitted at EVERY firing, including the ones that admit
+                // nothing — a generator that goes quiet must be able to say
+                // whether it found nothing or refused everything.
+                info!(
+                    seen_pickups,
+                    admitted = candidates.len(),
+                    rej_in_stockpile,
+                    rej_reserved,
+                    rej_occupied,
+                    rej_other,
+                    pending,
+                    cap,
+                    colonists = queue_snapshot.len(),
+                    "bastion: HAUL-GEN why a load is or is not hauled"
+                );
                 let candidates = canonical_haul_pickup_order(candidates);
                 for (cell, static_def, iuid) in candidates {
                     if pending >= cap {
