@@ -1270,6 +1270,66 @@ impl SessionState {
                                 format!("Traits: {}", traits.join(", "))
                             },
                         ];
+                        // THE FULL DOSSIER (Ben's ask, 2026-08-21): every
+                        // field the wire already carries, rendered — the
+                        // panel had fallen behind the payload by five items'
+                        // worth of tail-appends. Same-source throughout.
+                        if let Some(h) = p.health {
+                            lines.push(format!("Health {:.0}%", h * 100.0));
+                        }
+                        // ITEM 21: the FULL trait list (the 4-bool set above
+                        // is the legacy subset; this is every satisfied
+                        // trait from the record).
+                        if !p.traits.is_empty() {
+                            lines.push(format!("Personality: {}", p.traits.join(", ")));
+                        }
+                        // ITEM 17: per-work skill levels.
+                        let skills: Vec<String> = p
+                            .skills
+                            .iter()
+                            .filter(|(_, lvl)| *lvl > 0)
+                            .map(|(w, lvl)| format!("{w} {lvl}"))
+                            .collect();
+                        if !skills.is_empty() {
+                            lines.push(format!("Skills: {}", skills.join(", ")));
+                        }
+                        // ITEM 21: desires — what they WANT to do, beside
+                        // what they're good at (the tension is the point).
+                        let mut desires: Vec<(&String, f32)> =
+                            p.desires.iter().map(|(w, v)| (w, *v)).collect();
+                        desires.sort_by(|a, b| b.1.total_cmp(&a.1));
+                        let top: Vec<String> = desires
+                            .iter()
+                            .take(3)
+                            .map(|(w, v)| format!("{w} {v:.2}"))
+                            .collect();
+                        if !top.is_empty() {
+                            lines.push(format!("Wants: {}", top.join(", ")));
+                        }
+                        lines.push(format!("Bravery {:.2} (lower = braver)", p.guard_bravery));
+                        // ITEM 23: the mood BREAKDOWN — each active thought
+                        // with its signed weight, not just the total.
+                        if let Some(me) = &p.mood_explanation {
+                            for t in me.thoughts.iter().take(4) {
+                                lines.push(format!(
+                                    "  thought #{}: {:+.2}",
+                                    t.thought_id, t.base_magnitude
+                                ));
+                            }
+                        }
+                        // ITEM 22: relationships — who they like, by name
+                        // where the target resolves to a colonist uid.
+                        let mut rel: Vec<(&String, f32)> =
+                            p.sentiments.iter().map(|(t, v)| (t, *v)).collect();
+                        rel.sort_by(|a, b| b.1.abs().total_cmp(&a.1.abs()));
+                        for (target, v) in rel.iter().take(5) {
+                            lines.push(format!(
+                                "  {} {}: {:+.2}",
+                                if *v >= 0.0 { "likes" } else { "dislikes" },
+                                target,
+                                v
+                            ));
+                        }
                         // STATUS-SURFACE: the designed-wait/rescue status,
                         // right under the name — "sits there, looks broken"
                         // now reads as its actual state; NO line means
