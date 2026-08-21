@@ -25430,6 +25430,60 @@ mod tests {
     use super::*;
     use std::num::NonZeroU64;
 
+    /// ★ ITEM 27 GRANULARITY: ONE FIRE IS ONE KITCHEN.
+    ///
+    /// The paint path now yields one station per painted region by
+    /// construction, but the adopted-village furniture scan does not paint —
+    /// it walks a house and pushes a station per hearth BLOCK, and a worldgen
+    /// fireplace is several `Ember` blocks side by side. Without the absorb
+    /// rule an adopted house registers N kitchens for its one fire, each with
+    /// its own cook generator and its own idle cadence: the same miscount the
+    /// paint path was just cured of, arriving through the other door.
+    ///
+    /// A COMMENT CANNOT ENFORCE A RADIUS — the rule is asserted here, at the
+    /// boundary and on both sides of it, because "adjacent" is exactly the
+    /// kind of constant that drifts silently.
+    #[test]
+    fn adjacent_hearth_blocks_register_as_one_kitchen() {
+        let mut stations = Vec::new();
+        let origin = Vec3::new(100, 200, 40);
+        assert!(
+            register_cook_station(&mut stations, origin),
+            "the first station is always new"
+        );
+
+        // The fireplace's other blocks: orthogonal, diagonal, and one level up
+        // (a pot standing ON the hearth) are all the SAME fire.
+        for off in [
+            Vec3::new(1, 0, 0),
+            Vec3::new(0, 1, 0),
+            Vec3::new(1, 1, 0),
+            Vec3::new(-1, -1, 0),
+            Vec3::new(0, 0, 1),
+            Vec3::new(1, 1, 1),
+        ] {
+            assert!(
+                !register_cook_station(&mut stations, origin + off),
+                "{off:?} touches the existing station — same kitchen"
+            );
+        }
+        assert_eq!(stations.len(), 1, "one fire, one kitchen");
+
+        // Two blocks away is a SECOND kitchen, not the same one — the rule
+        // must not swallow a genuinely separate hearth across the room.
+        assert!(
+            register_cook_station(&mut stations, origin + Vec3::new(2, 0, 0)),
+            "a station two cells away is its own kitchen"
+        );
+        assert_eq!(stations.len(), 2);
+
+        // ...and absorption is transitive through the chain that just formed:
+        // the cell BETWEEN the two now touches both, and joins rather than
+        // founding a third.
+        assert!(!register_cook_station(&mut stations, origin + Vec3::new(1, 0, 0)));
+        assert_eq!(stations.len(), 2, "the gap cell joins, it does not found");
+    }
+
     /// ★ F16: A STARVING COLONY MUST STILL BE ABLE TO DEFEND ITSELF.
     ///
     /// The colony drive is a single exclusive slot, so the ladder's ORDER
