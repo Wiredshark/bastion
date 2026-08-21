@@ -361,7 +361,28 @@ pub fn founding_plan(colonists: u8) -> Vec<PresetElement> {
     //                                it, having already caught me moving the
     //                                pantry once tonight)
     //   n=32 -> base x 2.0          (4x the area for 4x the people)
-    let grow = |base: i32| ((base as f32) * ((n as f32) / 8.0).sqrt()).round() as i32;
+    // ★ SELF-CATCH, caught by its own leg (2026-08-21). I replaced the
+    // additive `base + (sqrt(n) - 2)` with a MULTIPLICATIVE
+    // `base * sqrt(n/8)` — correct arithmetic for scaling a side length, and
+    // wrong for THIS call site, because the farm passes `grow(0)`: the value
+    // is an ADDITIONAL extent, not a side. Multiplying zero gave zero at every
+    // population, so the farm SHRANK from 48 cells to 30 and the working share
+    // fell 12% -> 8.7% with sow/harvest down 382/341 -> 230/208.
+    //
+    // That accident is also the cleanest evidence this row has: farm 48 cells
+    // -> 12% share, farm 30 cells -> 8.7%. Farm AREA does drive the working
+    // share, in the direction claimed, measured on two attested runs of the
+    // same arm. The hypothesis survived its author's bug.
+    //
+    // `extra` is what a call site actually wants: how many blocks WIDER than
+    // the 8-colonist base. Linear in population, so AREA is linear too — the
+    // farm is 5x6=30 at n=8, and 5+15=20 wide x 6 = 120 at n=32, i.e. 4x the
+    // cells for 4x the people. Zero at n=8 keeps the corpus identity that
+    // `plan_matches_preset_at_eight` guards.
+    let grow = |base: i32| {
+        let extra = (((n as i32) - 8).max(0) as f32 * 0.625).round() as i32;
+        base + extra
+    };
     let mut plan = vec![
         PresetElement {
             role: PresetRole::Stockpile,
