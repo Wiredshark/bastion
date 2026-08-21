@@ -13004,17 +13004,54 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             let gather_open = board.jobs.values().any(|j| {
                 j.kind.is(DesignationKind::Gather) && j.claimed_by.is_none() && !j.unreachable
             });
-            if !gather_open && !board.stockpiles.is_empty() {
+            if !board.stockpiles.is_empty() {
                 let mut deposit_runs: Vec<(specs::Entity, JobId)> = Vec::new();
                 for (entity, _, pos, uid, ()) in
                     (&entities, &colonists, &positions, &uids, !&active_jobs).join()
                 {
-                    if !is_loaded(entity)
-                        || !board
-                            .gathered_defs
-                            .get(uid)
-                            .is_some_and(|defs| !defs.is_empty())
-                    {
+                    if !is_loaded(entity) {
+                        continue;
+                    }
+                    let has_forage = board
+                        .gathered_defs
+                        .get(uid)
+                        .is_some_and(|defs| !defs.is_empty());
+                    // ★ THE FETCH SURPLUS, which had no way home (2026-08-21).
+                    // This trip only ever fired for RECORDED FORAGE, so the
+                    // whole other way food enters a bag never came back out:
+                    // the B6 fetch leg steers a claimant at its reserved item
+                    // and vanilla's `pick_up()` takes the WHOLE STACK. A cook
+                    // who needs two mushrooms picks up thirty, cooks one, and
+                    // keeps twenty-nine forever -- `gathered_defs` is empty for
+                    // that colonist, so this generator never looked at them.
+                    //
+                    // Measured across a matched pair: 273 units in bags against
+                    // 154 in the pantry, bag_share pinned at 87-96%, and
+                    // `split_off_one` firing ZERO times in either arm -- the
+                    // single-item pickup path exists and is dead, so every food
+                    // pickup is a whole stack. Meanwhile "cook station idle --
+                    // no raw food in any stockpile" fired 188 times with 85-111
+                    // units sitting in inventories. Every consumer -- the cook
+                    // generator, the eat-target search, food_per_cap -- reads
+                    // stockpiles, and the food was not in one.
+                    //
+                    // Fixing it HERE rather than at the cook's completion is
+                    // deliberate: the surplus is created by the PICKUP
+                    // CONTRACT, not by cooking, so a cook-specific fix would
+                    // leave the identical bug waiting for the next consumer
+                    // that carries a required_item.
+                    let carries_surplus = inventories.get(entity).is_some_and(|inv| {
+                        inv.slots().flatten().any(|i| {
+                            i.item_definition_id()
+                                .itemdef_id()
+                                .is_some_and(|d| FOOD_DEFS.iter().any(|f| *f == d))
+                        })
+                    });
+                    // Forage still waits for the forage stint to END (the bag
+                    // is its batch unit -- one trip per stint, not per sprite).
+                    // Surplus does not: it is already surplus, and holding it
+                    // back until gathering finishes is what starved the colony.
+                    if !(has_forage && !gather_open) && !carries_surplus {
                         continue;
                     }
                     let cell = pos.0.map(|e| e.floor() as i32);
