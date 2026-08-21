@@ -11461,16 +11461,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // 48 of any colonist (the #93 census's pass-3 shape; v1 counts
             // wildlife too — arena fixtures have none, and a false Defend
             // is a tilt, not a break).
-            let colony_pos: Vec<Vec3<f32>> =
-                (&colonists, &positions).join().map(|(_, p)| p.0).collect();
+            // ★ A FRIENDLY VILLAGE IS NOT AN INVASION (2026-08-21, found by
+            // a play session): counting "any non-colonist agent within 48
+            // blocks" made the 22 residents of the town the colony had just
+            // MOVED INTO read as 22 threats — the drive flipped to Defend ten
+            // seconds after founding and never left, tilting every claim
+            // toward guarding a village that was greeting them. Count the
+            // colony's OWN perception of hostility instead: the same two
+            // field reads the flee signal and the hostile census use, so all
+            // three can never disagree about who is dangerous.
             let mut threats = 0u32;
-            for (a_ent, _, a_pos) in (&entities, &agents, &positions).join() {
-                if colonists.get(a_ent).is_some() {
-                    continue;
-                }
-                if colony_pos
-                    .iter()
-                    .any(|c| c.distance_squared(a_pos.0) < 48.0 * 48.0)
+            for (c_ent, _, _) in (&entities, &colonists, &positions).join() {
+                if agents
+                    .get(c_ent)
+                    .and_then(|ag| ag.target)
+                    .is_some_and(|t| t.hostile)
                 {
                     threats += 1;
                 }

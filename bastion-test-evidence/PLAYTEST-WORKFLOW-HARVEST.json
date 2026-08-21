@@ -1,0 +1,74 @@
+[
+ {
+  "arm": "smite",
+  "verdict": "MIXED",
+  "defects": [
+   "The colony stops for good and stands in front of eight bed sites it will never be able to build, for want of wood that does not exist anywhere in the world.",
+   "Nothing ever tells the player why the colony stopped -- no colonist complains, no warning appears, and the logs stay green while eight people stand still.",
+   "Colonists keep flopping down to sit in the middle of walking to a job and have to be hauled back to their feet -- somewhere in the eight-person colony it happens about every eight-tenths of a second, non-stop, for the whole session.",
+   "A colonist walks to a crate, picks up the load, and then simply stops -- the delivery never happens, the goods are never seen again, and nothing anywhere complains.",
+   "I hit a colonist with divine lightning three times and twenty-five seconds later he is at full health, back at work, in exactly the same mood, and not one witness cares.",
+   "The god-power has a price tag but I could always pay it -- the meter is back at its ceiling before I can cast again, so the cost is decoration."
+  ],
+  "worked": [
+   "The farm loop completed at 100%: 160 farm jobs created, 160 claimed, 160 finished. The accounting closes exactly -- 79 sown + 30 tilled + 51 harvested = 160, matching the created split of 79 sow=true / 81 sow=false, with 160 matching \"bastion: xp granted work=Farm xp=8.0\" lines.",
+   "Zero job thrash. 237 claim events over 237 distinct job ids -- every job claimed exactly once, no job re-claimed even once. A player would not see colonists picking up and dropping the same task.",
+   "Every claimed job was physically reached. 306 arrivals over those 237 jobs: 168 jobs with one arrival and 69 with two, and 69 is precisely the haul-delivery count (pickup leg + destination leg), so the arrival ledger balances rather than showing repeat-walking.",
+   "Crops actually grew on screen: 836 \"crop stage-up under season\" events, 51 \"crop MATURE\", 51 \"harvested (cell returns to tilled)\", with 28 of the 79 sown still growing at cutoff."
+  ]
+ },
+ {
+  "arm": "tradefed",
+  "verdict": "BROKEN",
+  "defects": [
+   "Six of the eight colonists never get given a job at all — for the entire session they stand around in a village with over 1,500 things to do.",
+   "The job board is 1,519 identical bed-building jobs and one trade mission — there is literally nothing else in the village to do: no chopping, mining, cooking, farming, or hauling.",
+   "The one colonist sent to trade froze roughly five blocks from its destination and never arrived in over two minutes; the game's rescue then flung it FARTHER away and six blocks into the air.",
+   "A colonist is teleported by magic, falls back to the exact same spot, and is teleported again — the identical warp fires three times in a row from the same tile.",
+   "The pathfinder never even considers the trapped colonist — it isn't that no route is found, it's that nothing ever looks.",
+   "Two colonists became each other's closest friends by 'working together', while neither of them ever did a single piece of work."
+  ],
+  "worked": [
+   "ADOPTION INTO A REAL SETTLEMENT — 1 site: \"bastion: autofound spawn resolved sp=Vec3 { x: 15216.5, y: 16016.5, z: 420.7743 } arena=false adopted=true\" then \"bastion: ADOPT-A-TOWN founded into an existing settlement (designations QUEUED, placed as terrain loads) town_origin=Vec2 { x: 15216, y: 16016 } plots=5 queued=5\". Deferred placement drained correctly as chunks loaded: placed=36 still_waiting=4 -> placed=445 still_waiting=3 -> placed=1038 still_waiting=1.",
+   "BED REGISTRATION — 4 emits of \"bastion: ADOPT-IN-PLACE — existing village beds registered sleepable kind=Bed adopted_beds=2\". The existing village beds were found and marked usable (they were never slept in, but rest never became binding — see blind spots).",
+   "TRADE PRICE BOOK — 194 sites: \"bastion: ITEM 29 trade price book refreshed sites=194 ratio_min=1.0 ratio_max=1.0 ratio_distinct=1\". Note ratio_distinct=1 means every one of the 194 sites priced identically, so the book is populated but carries no price signal yet.",
+   "TRADE-MISSION MINT GATE — 23 mint-gate witness lines showing the gate genuinely opening during the run, first \"bastion: ITEM 29 mint-gate witness book=0 mission_live=false food_stock=0 par=16 wood_stocked=false\" to last \"book=194 mission_live=true food_stock=8 par=16 wood_stocked=true\". 1 mission minted: job=1519, site Vec3 { x: 15216, y: 16016, z: 420 }."
+  ]
+ },
+ {
+  "arm": "adoptfed",
+  "verdict": "BROKEN",
+  "defects": [
+   "Seven colonists stand next to a 64-unit pile of stone and refuse to build, every tick, for the whole session — and nothing in the log says why.",
+   "The colony's own health readout says everything is fine while nobody has moved a block — the dashboard's conservation check passes precisely because the failure happens one step past where it looks.",
+   "The one colonist who did get a job spent the entire session pinned against a wall, and only ever moved after being teleported by magic.",
+   "The village you just moved into is counted as an invading army: 22 friendly neighbours flip the colony to Defend ten seconds after founding, and it never flips back.",
+   "Colonists at full health drop their work and run away from villagers who never touched them.",
+   "Colonists with nothing to do still keep falling over on flat village ground and needing to be picked up — 41 times in two and a half minutes."
+  ],
+  "worked": [
+   "ADOPTION ITSELF, fully: 1 site resolved with \"bastion: autofound spawn resolved sp=Vec3 { x: 15216.5, y: 16016.5, z: 420.7743 } arena=false adopted=true\" and \"bastion: ADOPT-A-TOWN founded into an existing settlement (designations QUEUED, placed as terrain loads) town_origin=Vec2 { x: 15216, y: 16016 } plots=5 queued=5\". The arm's own VOID condition (no town in radius) did not fire.",
+   "DEFERRED PLACEMENT ACROSS TERRAIN LOAD, in 3 witnessed waves: placed=36 still_waiting=4, then placed=445 still_waiting=3, then placed=1038 still_waiting=1 — the mechanism the script's own note was written to fix (\"the first deferred-placement leg drained all 5 designations ONE SECOND after founding\") demonstrably now stages placement against chunk load.",
+   "BED ADOPTION IN PLACE: 4 lines of \"bastion: ADOPT-IN-PLACE — existing village beds registered sleepable kind=Bed adopted_beds=2\", independently corroborated downstream by the drive line's \"beds=8 pop=8\" — the colony really did inherit 8 sleepable beds from pre-existing village furniture.",
+   "COLONIST CREATION: 8 spawned by name (\"names=[\\\"Osric of the Vale\\\", \\\"Awen the Wary\\\", \\\"Peri Ironhand\\\", \\\"Eira Longstride\\\", \\\"Quill Longstride\\\", \\\"Yara the Quiet\\\", \\\"Yara the Steady\\\", \\\"Wynn Ironhand\\\"] count=8\") and 8/8 individually confirmed with \"bastion: colonist promoted to loaded entity\" — a 100% promotion rate, no silent join filter at spawn."
+  ]
+ },
+ {
+  "arm": "cookdiag",
+  "verdict": "BROKEN",
+  "defects": [
+   "One colonist walks toward a mushroom for the entire back half of the session and never reaches it — 69 of the colony's 82 observable seconds spent on one errand that never finishes.",
+   "The colony's own health readout says nobody is stuck, while a colonist is frozen in place — the green light is blind to exactly the failure it claims to watch for.",
+   "Most of the colony stands around doing nothing, most of the time — and for a third of the checkpoints, literally nobody is working.",
+   "Colonists refuse to take jobs they are qualified and available for, and the game records no reason at all — they just stand there.",
+   "The two gates that decide 'is there material for this job' disagree with each other, so a job can pass the shop-window check and then fail at the counter.",
+   "The colony's beds are marked out at founding and never built — eight blueprints sit untouched the entire session while colonists idle a few blocks away."
+  ],
+  "worked": [
+   "The build half of the loop closed cleanly and fast: the driver painted a 3x3 CookStation at 'Region { min: Vec3 { x: 16388, y: 16384, z: 399 }, max: Vec3 { x: 16390, y: 16386, z: 400 } }' and all 9 cells were completed ('bastion: job completed job=66..74 kind=Designated(CookStation) ... completed_kind=Some(Air)', 9 lines) with 9 matching 'cook station registered (built)'.",
+   "Cooking itself conserved and produced real goods: 32 cook jobs created, 24 material-job claims committed with required_item=\"common.items.food.mushroom\", 23 dishes produced — 'bastion: ITEM 27 cooked — raw consumed (at arrival), dish produced station=Vec3 { x: 16390, y: 16386, z: 400 } raw=Some(\"common.items.food.mushroom\") product=\"common.items.food.apple_mushroom_curry\" n=1'. The driver's own count_items saw the product on the ground: 'ITEMS count=5 ... apple_mushroom_curry@(16390.5,16387.2,400.0) apple_mushroom_curry@(16387.9,16384.5,400.0) apple_mushroom_curry@(16387.8,16387.2,400.0)'.",
+   "Farming ran end to end all session: 30 tilled, 56 sown, 657 'crop stage-up under season' events, 35 'crop MATURE', 30 'harvested'. 148 xp grants (Farm 116, Cook 23, Build 9). Skills moved visibly — colonist 8 farm 7 -> 10, colonist 3 farm 5 -> 11 between the two driver inspect sweeps.",
+   "Food stock rose monotonically and never dipped: 34 samples from 'food stock sample tick=300 food_stock=64' to 'tick=10200 food_stock=118', with splits=0, claim_expiry_releases=0, designated_sweep_reaps=0, generic_claim_leak_releases=0 at every single sample. +54 units against 23 dishes + 30 harvests."
+  ]
+ }
+]
