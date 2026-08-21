@@ -16,3 +16,7 @@ note --- after bed time: health should be climbing, not stuck ---
 inspect_colonists
 wait 3000
 inspect_colonists
+note --- F19: the colony dashboard, so a leg can never again report idle
+note --- colonists with no stated reason. blocked_materials and
+note --- blocked_stance are the two buckets that must account for refusals.
+inspect_colony
