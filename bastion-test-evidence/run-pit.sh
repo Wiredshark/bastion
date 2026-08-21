@@ -370,6 +370,16 @@ case "$ARM" in
   scale32)      PITVAR=" BASTION_SEED_FOOD=256 BASTION_SEED_MATERIALS=256"
               PITFOUND="BASTION_AUTOFOUND_COLONY=32 "
               SCRIPT="script-injury.txt" ;;
+  # scale32's DIAGNOSTIC twin: identical arm plus BASTION_NEED_SKIP_DIAG, which
+  # un-silences the ITEM 27 "materials refusal is RESERVATION-ONLY" line. That
+  # instrument ALREADY EXISTED -- it reports `stocked` and `reserved` counts for
+  # the refused item, which is exactly the discriminator the scale finding needs
+  # (is the material absent, or present-but-entirely-reserved?). Checking for an
+  # existing instrument before building a second one is the cheaper half of this
+  # project's own "read the producer" law.
+  scale32diag)  PITVAR=" BASTION_SEED_FOOD=256 BASTION_SEED_MATERIALS=256 BASTION_NEED_SKIP_DIAG=1"
+              PITFOUND="BASTION_AUTOFOUND_COLONY=32 "
+              SCRIPT="script-injury.txt" ;;
   raidrich)     PITVAR=" BASTION_SEED_FOOD=128 BASTION_NEEDS_DECAY_MULT=6 BASTION_SEED_MATERIALS=256"
               SCRIPT="script-injury.txt" ;;
   matbeds)      PITVAR=" BASTION_SEED_FOOD=64 BASTION_NEEDS_DECAY_MULT=6 BASTION_SEED_MATERIALS=64"
