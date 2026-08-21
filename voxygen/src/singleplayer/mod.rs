@@ -506,13 +506,19 @@ fn run_server(mut server: Server, stop_server_r: Receiver<()>, paused: Arc<Atomi
                 Some((kind, None, false))
             },
             crate::r1f_weather::CertificationFixtureDeclarationV1::Invalid => {
+                // Same repair as the streaming-measurement arm above: fail
+                // LOUD, never fatal — a diagnostic env typo must not kill
+                // the embedded server. The fault is recorded; any
+                // certification leg that expected the fixture refuses on
+                // its own evidence.
                 let fault = "R1F_WEATHER_FIXTURE_INVALID_DECLARATION";
                 crate::render::bastion_r0d::record_certification_fixture_fault_v1(fault);
                 error!(
                     fault,
-                    "bastion: invalid flat-arena weather fixture declaration"
+                    "bastion: invalid flat-arena weather fixture declaration — fixture \
+                     DISABLED, server continues (fault recorded)"
                 );
-                return;
+                None
             },
         };
     let mut completed_ticks = 0_u64;

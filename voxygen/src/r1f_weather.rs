@@ -200,6 +200,11 @@ pub(crate) fn certification_fixture_declaration() -> CertificationFixtureDeclara
         Ok("storm") => {
             CertificationFixtureDeclarationV1::Requested(CertificationFixtureKindV1::Storm)
         },
+        // lw-port fix (found live, first GPU leg): an ABSENT declaration is
+        // DISABLED, not invalid — the ported arm treated every flat-arena
+        // run without a weather fixture as a fault and killed its own
+        // embedded server two minutes in. Absent ≠ invalid.
+        Err(std::env::VarError::NotPresent) => CertificationFixtureDeclarationV1::Disabled,
         Ok(_) | Err(_) => CertificationFixtureDeclarationV1::Invalid,
     }
 }
