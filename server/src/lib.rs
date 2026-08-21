@@ -6972,7 +6972,18 @@ impl Server {
         // `.read()` yields the Ron wrapper; `into_inner()` is the config the
         // spawn path actually consumes (the /spawn command does the same).
         let config = config.read().clone().into_inner();
-        let mut rng = rand::rng();
+        // ★ DETERMINISM BY CONSTRUCTION — SELF-CATCH (2026-08-21). This was
+        // `rand::rng()`, i.e. OS entropy, in code I wrote for item 34 the same
+        // day the law says ALL new work is deterministic. Two identical seeds
+        // would have produced different raids, which makes every A/B arm that
+        // ever crosses a raid tick incomparable — and the failure is silent:
+        // the raid still happens, still logs, still looks right, and only a
+        // same-seed comparison would ever have caught it. Keyed on the tick
+        // and an item-34 domain constant, the shape `toss_scatter_rng`
+        // already uses.
+        let mut rng = <rand_chacha::ChaCha8Rng as rand::SeedableRng>::seed_from_u64(
+            tick ^ 0x1734_9E37_79B9_0034,
+        );
         for i in 0..raiders {
             // Raiders arrive from OUTSIDE, not on top of the pantry.
             let angle = std::f32::consts::TAU * (i as f32 / raiders as f32);
