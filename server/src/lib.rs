@@ -7331,7 +7331,7 @@ impl Server {
         // selection hands it a hamlet, no matter what the rest of the pipeline
         // does. Distance is still the tiebreak; it just stops outranking
         // whether the place can house anybody.
-        let mut candidates: Vec<(&world::site::Site, i32, usize)> = index
+        let mut candidates: Vec<(&world::site::Site, i32, usize, usize)> = index
             .sites
             .iter()
             .filter_map(|(_, site)| {
@@ -7351,7 +7351,24 @@ impl Server {
                     .plots()
                     .filter(|p| matches!(map_kind(p.kind()), Some(D::Bed)))
                     .count();
-                Some((site, d2, houses))
+                // ★ A VILLAGE WITHOUT FIELDS HAS NO WORK, and a colony with no
+                // work is the squatter camp Ben is describing. Measured: the
+                // adopted village had farm_fields=0, so the refusal census read
+                // considered=25 eligible=0 with FIVE jobs on the whole board --
+                // every one already claimed or unreachable -- and five of eight
+                // colonists stood still. They were not stuck or broken; there
+                // was nothing to do.
+                //
+                // Farming is the only RENEWABLE work the colony has: mining and
+                // chopping consume a finite stock, and a village whose trees
+                // and rocks are gone goes quiet forever. So fields outrank
+                // houses in the score -- a smaller village that WORKS looks
+                // more like a town than a larger one standing idle.
+                let fields = site
+                    .plots()
+                    .filter(|p| matches!(map_kind(p.kind()), Some(D::Farm)))
+                    .count();
+                Some((site, d2, houses, fields))
             })
             .collect();
         if candidates.is_empty() {
@@ -7362,17 +7379,21 @@ impl Server {
             );
             return None;
         }
-        // Most houses wins; nearest breaks the tie.
-        candidates.sort_by_key(|(_, d2, houses)| (std::cmp::Reverse(*houses), *d2));
+        // FIELDS first (work), then houses (shelter), then distance.
+        candidates.sort_by_key(|(_, d2, houses, fields)| {
+            (std::cmp::Reverse(*fields), std::cmp::Reverse(*houses), *d2)
+        });
         tracing::info!(
             considered = candidates.len(),
             chosen_houses = candidates[0].2,
+            chosen_fields = candidates[0].3,
             chosen_dist = (candidates[0].1 as f32).sqrt() as i32,
             // The runner-up, so the choice is auditable: "we took a 2-house
             // village" and "2 houses was the best on offer" are different
             // facts and only one of them is a defect.
             runner_up_houses = candidates.get(1).map(|c| c.2).unwrap_or(0),
-            "bastion: ADOPT-A-TOWN site chosen — MOST HOUSES first, distance as tiebreak"
+            runner_up_fields = candidates.get(1).map(|c| c.3).unwrap_or(0),
+            "bastion: ADOPT-A-TOWN site chosen — FIELDS first (work), then houses              (shelter), then distance"
         );
         let (site, d2) = (candidates[0].0, candidates[0].1);
         let _ = d2;
