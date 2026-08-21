@@ -1448,6 +1448,38 @@ impl Job {
 /// reuse, never fork). Deterministic and pure — the curve is unit-pinned
 /// below. TOOL-1 adds the material-tier ladder + min-tier gating on hard
 /// blocks; TOOL-2 adds auto-equip-best + craft-quality stamps.
+/// bastion (ARC 9, #107): the COLONY MIND's drive — the colony-level
+/// arbiter one level above the per-colonist Arbiter. v1 is REACTIVE
+/// (fixed thresholds over live producers); the strategic layer builds on
+/// it later by charter.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ColonyDrive {
+    /// Food below par — the colony feeds itself first.
+    Sustain,
+    /// Hostiles near — protection outranks growth.
+    Defend,
+    /// Housing short — build out.
+    #[default]
+    Grow,
+    /// Satisfied — reach outward (trade, exploration ride here later).
+    Expand,
+}
+
+/// bastion (#107): how strongly a drive favors a work class in the CLAIM
+/// SELECTOR. Deliberately a score tilt, NOT a priority write — the
+/// `WorkPriorities` setter's own doc forbids a second writer beside it.
+/// Neutral is the identity (1.0); alignment is a relief, never a veto.
+pub fn drive_work_factor(drive: ColonyDrive, work: WorkType) -> f32 {
+    use WorkType as W;
+    let aligned = match drive {
+        ColonyDrive::Sustain => matches!(work, W::Farm | W::Cook | W::Haul),
+        ColonyDrive::Defend => matches!(work, W::Guard),
+        ColonyDrive::Grow => matches!(work, W::Build | W::Chop | W::Mine),
+        ColonyDrive::Expand => matches!(work, W::Haul),
+    };
+    if aligned { 1.5 } else { 1.0 }
+}
+
 /// bastion (ITEM 28): the ONE work→tool mapping — `tool_factor` (the rate
 /// bonus) and the wear site (one durability step per completion) both read
 /// it, so they cannot drift onto different tools.

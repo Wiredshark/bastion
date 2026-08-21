@@ -5735,6 +5735,10 @@ pub struct JobBoard {
     /// explicitly so the drain stays a dumb applier; the drain sorts
     /// (DET-MOOD-003's lesson) so persisted sentiment state is independent
     /// of producer pass order.
+    /// bastion (#107, colony mind v1): the current colony drive + the tick
+    /// it last TRANSITIONED (hysteresis reads the age; the claim selector
+    /// reads the drive). Session state — recomputed from live producers.
+    pub colony_drive: (common::bastion::ColonyDrive, u64),
     pub pending_sentiments: Vec<(
         common::rtsim::RtSimEntity,
         common::rtsim::RtSimEntity,
@@ -7839,6 +7843,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let pending = std::mem::take(&mut pending_seed_items.0);
                 let mut still_waiting = Vec::new();
                 for (pos, def, count) in pending {
+                    // RACE FIX (chain15): the origin chunk loads BEFORE the
+                    // adopted zone's plot corners, so retargeting at
+                    // origin-load found stockpiles EMPTY and delivered to
+                    // the doorstep anyway. While surface placements are
+                    // still pending and no zone exists yet, HOLD — the
+                    // zone is coming; founded presets register instantly
+                    // so flat-arena legs never wait.
+                    if board.stockpiles.is_empty()
+                        && !board.pending_adopt_surface.is_empty()
+                    {
+                        if tick.0 % 300 == 0 {
+                            info!(
+                                ?pos,
+                                def = %def,
+                                "bastion: deferred seed items HOLDING for zone registration"
+                            );
+                        }
+                        still_waiting.push((pos, def, count));
+                        continue;
+                    }
                     // Deliver INTO the pantry, not the doorstep: when a
                     // stockpile zone exists by delivery time, retarget to
                     // its center — the adopted town's zone registered 36
@@ -11045,6 +11069,64 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // Per-tick, dt-scaled, capped — the identity shape (no cast, no
         // change beyond the trickle; casts deduct in the command handler).
         divine_favor.0 = (divine_favor.0 + FAVOR_REGEN_PER_SEC * dt.0).min(FAVOR_CAP);
+
+        // ── #107 COLONY MIND v1: the reactive drive arbiter ──────────────
+        // Four LIVE producers, fixed thresholds, strict precedence
+        // (Sustain > Defend > Grow > Expand), hysteresis so satisfied
+        // colonies do not churn. The ONE consumer is the claim-score tilt
+        // (drive_work_factor) — a relief on aligned work, never a veto and
+        // never a second WorkPriorities writer.
+        if tick.0 % (ARBITRATION_INTERVAL as u64 * 10) == 29 {
+            let pop = (&colonists, &positions).join().count().max(1) as u32;
+            let food = colony_food_stock((&pickup_items, &positions).join(), &board);
+            let food_per_cap = food as f32 / pop as f32;
+            let beds = board.beds.len() as u32;
+            // Threat: perception-independent — non-colonist AGENTS within
+            // 48 of any colonist (the #93 census's pass-3 shape; v1 counts
+            // wildlife too — arena fixtures have none, and a false Defend
+            // is a tilt, not a break).
+            let colony_pos: Vec<Vec3<f32>> =
+                (&colonists, &positions).join().map(|(_, p)| p.0).collect();
+            let mut threats = 0u32;
+            for (a_ent, _, a_pos) in (&entities, &agents, &positions).join() {
+                if colonists.get(a_ent).is_some() {
+                    continue;
+                }
+                if colony_pos
+                    .iter()
+                    .any(|c| c.distance_squared(a_pos.0) < 48.0 * 48.0)
+                {
+                    threats += 1;
+                }
+            }
+            use common::bastion::ColonyDrive as D;
+            let (want, deciding, value) = if food_per_cap < 2.0 {
+                (D::Sustain, "food_per_cap", food_per_cap)
+            } else if threats > 0 {
+                (D::Defend, "threats", threats as f32)
+            } else if beds < pop {
+                (D::Grow, "beds_short", (pop - beds) as f32)
+            } else {
+                (D::Expand, "satisfied", 0.0)
+            };
+            let (cur, since) = board.colony_drive;
+            if want != cur
+                && tick.0.saturating_sub(since) >= ARBITRATION_INTERVAL as u64 * 20
+            {
+                board.colony_drive = (want, tick.0);
+                info!(
+                    from = ?cur,
+                    to = ?want,
+                    deciding,
+                    value,
+                    food_per_cap,
+                    threats,
+                    beds,
+                    pop,
+                    "bastion: #107 colony drive TRANSITION"
+                );
+            }
+        }
 
         // ── ITEM 29: the TRADE MISSION generator ─────────────────────────
         // Par-stock pull: when colony food drops below TRADE_FOOD_PAR and
@@ -17185,6 +17267,83 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // drop + skill XP. Plain `set` is safe here: the
                     // `can_set_block` deferral above already ruled out a
                     // same-tick collision, and nothing runs between it and
+                    // ITEM 27/29 (2026-08-20, THE cooked=0 ROOT): these
+                    // kinds complete WITHOUT a terrain edit, and the
+                    // `completion_block == None => continue` below silently
+                    // skipped the whole completion tail for them -- the
+                    // threshold-gated consume then re-fired EVERY tick
+                    // (the measured 1-per-tick larder drain) and the arms
+                    // were dead code on the live path. They complete HERE:
+                    // arm + XP + removal + release.
+                    if matches!(
+                        job.kind,
+                        common::bastion::JobKind::Cook { .. }
+                            | common::bastion::JobKind::TradeMission { .. }
+                    ) {
+                        // ITEM 27: a completed COOK job — consume the carried raw
+                        // (the sow `taken` pattern) and produce the vanilla dish
+                        // at the station. Conservation is the bar: one consumed,
+                        // one produced, both witnessed, or nothing at all.
+                        if let common::bastion::JobKind::Cook { station } = job.kind {
+                            // CONSERVATION FIX (2026-08-20): the ARRIVAL-stage
+                            // consume already took the raw (its stall branch
+                            // guards completion), so this arm re-consuming was
+                            // a 2-raw-per-dish double-charge. The completion
+                            // PRODUCES only; the arrival consume IS the
+                            // "raw consumed" half of the conservation pair.
+                            let mut rng = toss_scatter_rng(tick.0, station, 0x30E_0003);
+                            crate::bastion_actions::emit_drop(
+                                &mut item_drop_emitter,
+                                station,
+                                Item::new_from_asset_expect(COOKED_DISH_ITEM),
+                                *program_time,
+                                &mut rng,
+                            );
+                            info!(
+                                ?station,
+                                raw = ?job.required_item,
+                                "bastion: ITEM 27 cooked — raw consumed (at arrival), dish produced"
+                            );
+                        }
+                        // ITEM 29: a completed TRADE MISSION — the arrival-side
+                        // consume already took the sold log (the generic
+                        // material path); the exchange drops the bought food AT
+                        // THE SITE at the mint-frozen ratio, and the standard
+                        // haul pipeline carries it home. Both sides witnessed
+                        // (treatment beside outcome); a completion whose log
+                        // was already consumed upstream refuses to produce
+                        // (conservation, the cook arm's rule).
+                        if let common::bastion::JobKind::TradeMission { site, ratio } = job.kind {
+                            // The ARRIVAL-stage consume already took the sold
+                            // lot (a completion cannot be reached with the
+                            // material unconsumed — the stall branch guards
+                            // it), so the exchange PRODUCES only. Re-consuming
+                            // here would double-charge — the same defect just
+                            // fixed in the cook arm.
+                            let bought = (ratio.floor() as u32).max(1);
+                            let mut rng = toss_scatter_rng(tick.0, site, 0x30E_0004);
+                            for _ in 0..bought {
+                                crate::bastion_actions::emit_drop(
+                                    &mut item_drop_emitter,
+                                    site,
+                                    Item::new_from_asset_expect(FOOD_DEFS[0]),
+                                    *program_time,
+                                    &mut rng,
+                                );
+                            }
+                            info!(
+                                ?site,
+                                sold = ?job.required_item,
+                                received = bought,
+                                ratio,
+                                "bastion: ITEM 29 exchange complete — lot sold (consumed at arrival), food received at the site"
+                            );
+                        }
+                        grant_completion_xp(&mut colonist.0.skills, job.work, true);
+                        board.remove_job(active.job);
+                        to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { tracing::info!(reason = "completion", "bastion RELEASE"); }
+                        continue;
+                    }
                     // this line but our own loop (job positions are unique —
                     // `place_designation` dedupes — so a later iteration
                     // can't race this block either).
@@ -17237,65 +17396,6 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     if job.kind.is(DesignationKind::CookStation) {
                         board.cook_stations.push(job.pos);
                         info!(pos = ?job.pos, "bastion: cook station registered (built)");
-                    }
-                    // ITEM 27: a completed COOK job — consume the carried raw
-                    // (the sow `taken` pattern) and produce the vanilla dish
-                    // at the station. Conservation is the bar: one consumed,
-                    // one produced, both witnessed, or nothing at all.
-                    if let common::bastion::JobKind::Cook { station } = job.kind {
-                        // CONSERVATION FIX (2026-08-20): the ARRIVAL-stage
-                        // consume already took the raw (its stall branch
-                        // guards completion), so this arm re-consuming was
-                        // a 2-raw-per-dish double-charge. The completion
-                        // PRODUCES only; the arrival consume IS the
-                        // "raw consumed" half of the conservation pair.
-                        let mut rng = toss_scatter_rng(tick.0, station, 0x30E_0003);
-                        crate::bastion_actions::emit_drop(
-                            &mut item_drop_emitter,
-                            station,
-                            Item::new_from_asset_expect(COOKED_DISH_ITEM),
-                            *program_time,
-                            &mut rng,
-                        );
-                        info!(
-                            ?station,
-                            raw = ?job.required_item,
-                            "bastion: ITEM 27 cooked — raw consumed (at arrival), dish produced"
-                        );
-                    }
-                    // ITEM 29: a completed TRADE MISSION — the arrival-side
-                    // consume already took the sold log (the generic
-                    // material path); the exchange drops the bought food AT
-                    // THE SITE at the mint-frozen ratio, and the standard
-                    // haul pipeline carries it home. Both sides witnessed
-                    // (treatment beside outcome); a completion whose log
-                    // was already consumed upstream refuses to produce
-                    // (conservation, the cook arm's rule).
-                    if let common::bastion::JobKind::TradeMission { site, ratio } = job.kind {
-                        // The ARRIVAL-stage consume already took the sold
-                        // lot (a completion cannot be reached with the
-                        // material unconsumed — the stall branch guards
-                        // it), so the exchange PRODUCES only. Re-consuming
-                        // here would double-charge — the same defect just
-                        // fixed in the cook arm.
-                        let bought = (ratio.floor() as u32).max(1);
-                        let mut rng = toss_scatter_rng(tick.0, site, 0x30E_0004);
-                        for _ in 0..bought {
-                            crate::bastion_actions::emit_drop(
-                                &mut item_drop_emitter,
-                                site,
-                                Item::new_from_asset_expect(FOOD_DEFS[0]),
-                                *program_time,
-                                &mut rng,
-                            );
-                        }
-                        info!(
-                            ?site,
-                            sold = ?job.required_item,
-                            received = bought,
-                            ratio,
-                            "bastion: ITEM 29 exchange complete — lot sold (consumed at arrival), food received at the site"
-                        );
                     }
 
                     // ROW-COMPLETION-SIGNAL-SPLIT.md / F8: the drop/XP/log
@@ -22265,8 +22365,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     },
                     None => 1.0,
                 };
-                let score =
-                    (dist + depth_score + clump_penalty + sat_penalty) / claim_weight;
+                let score = (dist + depth_score + clump_penalty + sat_penalty)
+                    / (claim_weight
+                        // #107: the colony drive's tilt — aligned work
+                        // scores as if closer; a relief, never a veto.
+                        * common::bastion::drive_work_factor(
+                            board.colony_drive.0,
+                            job.work,
+                        ));
                 let better = match &best {
                     None => true,
                     Some((_, bp, bs)) => priority > *bp || (priority == *bp && score < *bs),
