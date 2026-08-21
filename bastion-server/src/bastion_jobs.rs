@@ -3023,6 +3023,59 @@ pub fn column_surface_z(terrain: &TerrainGrid, x: i32, y: i32, hint_z: i32) -> O
         })
 }
 
+/// How many solid blocks must sit directly beneath an adopted village
+/// container before it may become a haul-destination stockpile zone.
+///
+/// ★ FOUND BY A PLAY SESSION (2026-08-21). Village houses are generated with
+/// `const STOREY: i32 = 5`, a ground floor at `alt + 1`, and
+/// `base = alt + STOREY * (level - 1)` with the BEDROOM on even levels
+/// (`world/src/site/plot/house.rs`). So the upstairs bed, nightstand drawer
+/// and wardrobe sit FIVE blocks above the ground floor — inside
+/// `adopt_furniture_surface`'s `surface + 8` scan window. A wardrobe up there
+/// was adopted as zone 9 at `(15223, 16012, 426)`, above a ground floor at
+/// 421. HAUL-GEN routes every load to the NEAREST zone by 3D distance, so
+/// that one cell then outbid the painted stockpile for everything dropped
+/// near the house: in the preserved `play/server-6.log` run 37 of 45
+/// deliveries went to adopted container cells and the painted general
+/// stockpile received NONE. Colonists cannot route up a worldgen staircase,
+/// so each delivery ended in the ULTIMATE FAIL-SAFE teleport and the cargo
+/// landed on a floor nothing could fetch from. Two preserved runs
+/// (`play/server-3.log`, `server-pit-adoptfed.log`) carry the identical tile.
+///
+/// Three, because worldgen separates the two cases by a factor of twenty:
+/// `house.rs` fills a foundation of solid `Rock` from `alt - 20` through
+/// `alt`, so a ground-floor container has ~20 solid blocks under it, while an
+/// upper storey is a ONE-block floor over the open room below — exactly 1.
+/// Any threshold in between rules identically; 3 is far from both edges.
+pub const ADOPTED_CONTAINER_MIN_SOLID_BELOW: i32 = 3;
+
+/// How far down the scan looks. One past the threshold is all the ruling can
+/// use, and every extra block is a terrain read per container.
+pub const ADOPTED_CONTAINER_SOLID_PROBE: i32 = 4;
+
+/// THE RULING: may a container resting on `solid_below` consecutive solid
+/// blocks become a stockpile zone?
+///
+/// ★ IT ASKS WHAT IS UNDERNEATH, NOT HOW HIGH IT IS, and that is the whole
+/// correctness of this gate. The obvious version — cap the container's rise
+/// above the column's resolved surface — cannot work here:
+/// `column_surface_z` returns the topmost `is_surface_terrain` block, and a
+/// house FLOOR is filled with `BlockKind::Rock`, which `is_surface_terrain`
+/// accepts. Inside a multi-storey building an interior column can therefore
+/// resolve to the UPPER floor, and a rise measured against it reads the
+/// upstairs wardrobe as `+1` and admits precisely the container this gate
+/// exists to refuse: a fix that cannot fail and cannot work. A per-plot ground
+/// datum has the mirror defect — it is the MINIMUM over the footprint, so one
+/// column dropping off a slope refuses every legitimate ground-floor
+/// container in the house.
+///
+/// What is under a block is local, needs no datum, and does not care how the
+/// town slopes. Pure, so the boundary is asserted directly instead of only by
+/// building a world.
+pub fn adopted_container_admitted(solid_below: i32) -> bool {
+    solid_below >= ADOPTED_CONTAINER_MIN_SOLID_BELOW
+}
+
 /// How far ABOVE the flat floor a flat-floor column scans for its TRUE crest.
 /// `column_surface_z`'s ±window is centred on the PAINT PLANE, so a flat-floor
 /// pit painted from the BASE of a tall hill caps each hill column at
@@ -6867,12 +6920,65 @@ impl JobBoard {
                                 | S::ChestWoodDouble
                         )
                     ) {
+                        // ★ THE STOREY GATE. An adopted container becomes a
+                        // haul DESTINATION, and HAUL-GEN picks the nearest
+                        // zone by 3D distance — so a wardrobe on a house's
+                        // upper floor outbids the painted stockpile for
+                        // every load dropped near that house, and colonists
+                        // cannot route up a worldgen staircase. Refuse the
+                        // zone rather than mint an unreachable one; see
+                        // `adopted_container_admitted`.
+                        //
+                        // Count the solid blocks directly beneath the
+                        // container. An unreadable block ends the run: a
+                        // container over terrain we cannot see is not one we
+                        // can promise a colonist a route to.
+                        let solid_below = (1..=ADOPTED_CONTAINER_SOLID_PROBE)
+                            .take_while(|d| {
+                                terrain
+                                    .get(pos - Vec3::unit_z() * *d)
+                                    .is_ok_and(|b| b.is_filled())
+                            })
+                            .count() as i32;
+                        if !adopted_container_admitted(solid_below) {
+                            // A REFUSAL AND AN ABSENCE MUST NOT RENDER
+                            // ALIKE: the container is really there, it is
+                            // just not walk-in storage. Without this line a
+                            // future reader re-derives the sprite
+                            // vocabulary hunting a chest that was seen and
+                            // declined.
+                            info!(
+                                ?pos,
+                                surface,
+                                solid_below,
+                                ?sprite,
+                                "bastion: ADOPT-IN-PLACE container SKIPPED — suspended floor, \
+                                 not the walk-in storey"
+                            );
+                            continue;
+                        }
                         let one = Region { min: pos, max: pos };
                         if !self.stockpiles.iter().any(|(_, r)| *r == one) {
                             let sid = self.next_zone;
                             self.next_zone += 1;
                             self.stockpiles.push((sid, one));
                             chests += 1;
+                            // ★ THE MISSING REGISTRATION WITNESS. These
+                            // zones were minted silently, so a play session
+                            // that watched every load route into zone 9
+                            // could not learn from the log that zone 9
+                            // existed, let alone where it was or what made
+                            // it. Zones 10-15 printed; 0-9 did not, and the
+                            // gap read as corruption rather than as a
+                            // second, unlogged creation path.
+                            info!(
+                                zone = sid,
+                                ?pos,
+                                surface,
+                                solid_below,
+                                ?sprite,
+                                "bastion: ADOPT-IN-PLACE container zone registered"
+                            );
                         }
                     }
                 }
@@ -24304,9 +24410,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .fold((0u32, 0u32), |(u, r), (pi, _, iuid)| {
                             (u + pi.amount() as u32, r + board.reserved_count(*iuid))
                         });
-                    if stocked > 0
-                        && std::env::var_os("BASTION_NEED_SKIP_DIAG").is_some()
-                    {
+                    if std::env::var_os("BASTION_NEED_SKIP_DIAG").is_some() {
+                        // ★ A NULL NEEDS A COULDN'T-HAPPEN WITNESS. The
+                        // `stocked > 0` guard this replaces made the MOST
+                        // important case — the def is nowhere in any
+                        // stockpile — print nothing at all, so "every unit
+                        // is reserved" and "the colony's entire supply was
+                        // delivered somewhere that is not a zone" rendered
+                        // identically: as silence. That is exactly the pair
+                        // an adopted upper-storey zone creates, and a play
+                        // session lost a whole farming arm unable to tell
+                        // them apart.
+                        //
+                        // `in_world` is the separator: units of the def that
+                        // exist ANYWHERE against the units the gate can see.
+                        // stocked=0 in_world=40 says the material exists and
+                        // is out of bounds; stocked=0 in_world=0 says the
+                        // colony simply has none.
+                        let in_world: u32 = (&pickup_items)
+                            .join()
+                            .filter(|pi| {
+                                pi.item().item_definition_id().itemdef_id() == Some(req)
+                            })
+                            .map(|pi| pi.amount() as u32)
+                            .sum();
                         info!(
                             colonist = %uid,
                             req,
@@ -24314,7 +24441,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             reserved,
                             units,
                             reserved_units,
-                            "bastion: ITEM 27 materials refusal is RESERVATION-ONLY"
+                            in_world,
+                            "bastion: ITEM 27 materials refusal census"
                         );
                     }
                     { census.materials += 1; continue; }
@@ -25126,6 +25254,67 @@ fn reservation_indices_are_consistent_v1(
 mod tests {
     use super::*;
     use std::num::NonZeroU64;
+
+    /// ★ THE WARDROBE ON THE SECOND FLOOR (play session, 2026-08-21).
+    ///
+    /// An adopted village house at `min_xy(15222, 15998) .. max_xy(15239,
+    /// 16015)` registered its furniture in place. Its ground floor sits at
+    /// z 421; `adopt_furniture_surface` scans `surface - 2 ..= surface + 8`,
+    /// and worldgen puts the BEDROOM — bed, nightstand drawer, wardrobe — on
+    /// even levels at `alt + STOREY`, so the scan reached z 426 and minted
+    /// zone 9 on a container up there.
+    ///
+    /// Zone 9 then won HAUL-GEN's nearest-zone ballot for everything dropped
+    /// near that house. Two independent preserved runs
+    /// (`bastion-test-evidence/play/server-3.log`,
+    /// `bastion-test-evidence/server-pit-adoptfed.log`) show deliveries to
+    /// the identical tile `(15223, 16012, 426)`, each preceded by the
+    /// ULTIMATE FAIL-SAFE teleport of the colonist that could not route
+    /// there. A seed stack delivered onto that floor was out of reach of
+    /// every sow job for the rest of the session.
+    ///
+    /// The numbers below are worldgen's, not round ones: `house.rs` fills a
+    /// foundation of solid `Rock` from `alt - 20` through `alt`, and floors a
+    /// storey with a single block.
+    #[test]
+    fn an_upper_storey_container_is_not_adopted_as_a_stockpile_zone() {
+        // A ground-floor container stands on the foundation: ~20 solid
+        // blocks, of which the probe sees its first few. This is the case
+        // that WORKS in play — zone 5 at (15228, 15969, 416) took 33 of the
+        // 45 deliveries in the preserved `play/server-6.log` run, and
+        // breaking it to fix the upstairs one trades a bug for a bigger one.
+        assert!(adopted_container_admitted(ADOPTED_CONTAINER_SOLID_PROBE));
+        assert!(adopted_container_admitted(ADOPTED_CONTAINER_MIN_SOLID_BELOW));
+
+        // THE DEFECT: an upper storey is a ONE-block floor over the open room
+        // below, so the probe reads exactly 1.
+        assert!(
+            !adopted_container_admitted(1),
+            "a container on a one-block suspended floor must be refused — adopting it minted \
+             zone 9, which then outbid the painted stockpile for every nearby load"
+        );
+        // A container on a sprite or in open air reads 0 and is refused with
+        // it; 2 is still short of a foundation.
+        assert!(!adopted_container_admitted(0));
+        assert!(!adopted_container_admitted(2));
+
+        // ★ THE GATE MUST SIT STRICTLY INSIDE WHAT THE PROBE CAN SEE. A
+        // threshold above the probe depth can never be met, so EVERY
+        // container would be refused — an inverted fix that looks like a
+        // working one because the bug it targets does stop reproducing.
+        assert!(
+            ADOPTED_CONTAINER_MIN_SOLID_BELOW <= ADOPTED_CONTAINER_SOLID_PROBE,
+            "the threshold ({ADOPTED_CONTAINER_MIN_SOLID_BELOW}) exceeds the probe depth \
+             ({ADOPTED_CONTAINER_SOLID_PROBE}) — no container can satisfy it and adoption \
+             registers nothing at all"
+        );
+        // ...and strictly above a one-block floor, or it is inert.
+        assert!(
+            ADOPTED_CONTAINER_MIN_SOLID_BELOW > 1,
+            "a threshold of 1 admits the suspended upper-storey floor this gate exists to \
+             refuse: a fix that cannot fail and cannot work"
+        );
+    }
 
     /// ★ F16: A STARVING COLONY MUST STILL BE ABLE TO DEFEND ITSELF.
     ///

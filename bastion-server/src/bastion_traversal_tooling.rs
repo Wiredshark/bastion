@@ -2431,6 +2431,57 @@ mod tests {
         );
     }
 
+    /// ★ EVERY ZONE MUST ANNOUNCE ITSELF — the un-loggable bug.
+    ///
+    /// A play session watched every haul route into "zone 9" and could not
+    /// find one line in the whole server log that said zone 9 existed, where
+    /// it was, or what created it. Zones 10-15 printed a registration line;
+    /// 0-9 did not, and that gap read as corruption rather than as what it
+    /// was — a SECOND creation path (adopted village containers) that minted
+    /// zones without a witness. The defect was diagnosable only by reading
+    /// the source, which is the same as saying the log was useless.
+    ///
+    /// Structural, not behavioural: a zone id handed to the haul router is a
+    /// destination a colonist will walk to, so every site that mints one owes
+    /// the log a line. This asserts the property that makes the blind spot
+    /// impossible rather than the one message that closed it.
+    #[test]
+    fn every_stockpile_zone_creation_site_logs_a_registration() {
+        let src = repo_text("bastion-server/src/bastion_jobs.rs");
+        // Production sites only — the test module builds boards by hand.
+        let sites: Vec<usize> = src
+            .match_indices("self.stockpiles.push(")
+            .map(|(i, _)| i)
+            .collect();
+        assert!(
+            sites.len() >= 3,
+            "expected the painted, typed and adopted-container zone paths; found {}",
+            sites.len()
+        );
+        for (n, &at) in sites.iter().enumerate() {
+            // Proximity, not adjacency: these sites carry long ★ comments
+            // between the push and the emit, so the window has to be wide.
+            // CLAMPED AT THE NEXT SITE, because two of them are under a
+            // kilobyte apart — an unclamped window would let a neighbour's
+            // registration line stand in for a missing one, which is a test
+            // that passes for the wrong reason on exactly the code path it
+            // is guarding.
+            let end = sites
+                .get(n + 1)
+                .copied()
+                .unwrap_or(usize::MAX)
+                .min(at + 1600)
+                .min(src.len());
+            let window = &src[at..end];
+            assert!(
+                window.contains("zone registered"),
+                "a stockpile zone is minted at byte {at} with no \"zone registered\" line before \
+                 the next creation site — that is the zone-9 blind spot returning: the router \
+                 will send colonists to an id the log never named"
+            );
+        }
+    }
+
     /// ITEM 39 / ★ DETERMINISM ⊥ WALL-COUPLING. The tick-cost profiler asks a
     /// genuinely WALL question (sim time is a fixed step and would report the
     /// same number on a host ten times slower), so it lives outside the
