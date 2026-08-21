@@ -345,6 +345,14 @@ case "$ARM" in
   # one declared delta. Prediction on file in FUNCTIONALITY-FIRST.md (F13):
   # beds registered, `beds` rises off 0, `rested` leaves 0. If beds STILL do
   # not appear, materials were a sufficient-LOOKING blocker hiding a second.
+  # ITEM 34 bar 1: WEALTH HIGH ENOUGH TO BE WORTH RAIDING. The `matbeds` arm
+  # cannot test it -- its 7 raid opportunities all sampled wealth 0..56, below
+  # the 64 band floor, so raiders=0 every time (which is bar 2's null, and it
+  # PASSED). This arm seeds enough that wealth clears the band at the FIRST
+  # opportunity: 256 materials puts it in band 2 (256..=1023 -> 2 raiders), so
+  # the arm tests the raider COUNT as well as the fact of raiding.
+  raidrich)     PITVAR=" BASTION_SEED_FOOD=128 BASTION_NEEDS_DECAY_MULT=6 BASTION_SEED_MATERIALS=256"
+              SCRIPT="script-injury.txt" ;;
   matbeds)      PITVAR=" BASTION_SEED_FOOD=64 BASTION_NEEDS_DECAY_MULT=6 BASTION_SEED_MATERIALS=64"
               SCRIPT="script-injury.txt" ;;
   # ITEM 36: the DEATH arm. The smite arm cannot kill (~4% health a cast, two
