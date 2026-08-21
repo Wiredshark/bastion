@@ -99,14 +99,25 @@ stop)
       sleep 1
     done
     kill -0 "$PID" 2>/dev/null && { kill -9 "$PID" 2>/dev/null; sleep 1; }
-    # VERIFY, never assume: "stopped" that leaves a live listener is exactly
-    # the lie this command used to tell.
-    if kill -0 "$PID" 2>/dev/null; then
-      echo "slot $SLOT STILL ALIVE (pid $PID, port $GAME)"; exit 1
-    fi
+  fi
+  # ★ VERIFY THE THING YOU CLAIM (2026-08-21, second strike): the first
+  # version of this check verified the recorded PID — which was stale for any
+  # world booted before the pid fix — and then announced "port released"
+  # without ever looking at the port. A leftover server went on holding the
+  # server binary and failed a build an hour later. The PORT is the claim, so
+  # the PORT is what gets checked, and a stale pidfile cannot hide a live
+  # listener: kill whoever actually holds it.
+  HOLDER=$(netstat -ano 2>/dev/null | grep LISTENING | grep -E "[:.]$GAME" | awk '{print $NF}' | head -1)
+  if [ -n "$HOLDER" ]; then
+    echo "slot $SLOT: port $GAME still held by pid $HOLDER — killing it"
+    taskkill //PID "$HOLDER" //F >/dev/null 2>&1 || kill -9 "$HOLDER" 2>/dev/null
+    sleep 2
+  fi
+  if netstat -ano 2>/dev/null | grep LISTENING | grep -qE "[:.]$GAME"; then
+    echo "slot $SLOT NOT STOPPED — port $GAME is still listening"; exit 1
   fi
   rm -f "$PIDF"
-  echo "slot $SLOT stopped (pid gone, port $GAME released)"
+  echo "slot $SLOT stopped (port $GAME verified free)"
   ;;
 *)
   echo "usage: play-harness.sh boot|turn|watch|stop <slot> [arg]"; exit 2 ;;
