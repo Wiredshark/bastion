@@ -24833,6 +24833,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
 // keyed-stream fix (DET-RNG-008) closed the shared-cursor order dependence;
 // this closes the remaining portability gap (StdRng's algorithm is unstable
 // across rand versions).
+/// bastion (2026-08-21, Ben: "shouldn't we be able to use the existing player
+/// map selection for choosing the town we want"): WHICH position adoption
+/// searches around.
+///
+/// The player's map marker if they set one, else the spawn. Extracted as a
+/// pure function because the live leg can only witness ONE branch: the pit
+/// driver has no way to place a marker, so `player_chose=false` is observable
+/// and `player_chose=true` is not. A branch that cannot be reached by any test
+/// is a branch nobody has checked — so the decision is pinned here even though
+/// its live witness is still owed.
+pub fn adopt_target(marker: Option<Vec2<i32>>, spawn: Vec2<i32>) -> Vec2<i32> {
+    marker.unwrap_or(spawn)
+}
+
 /// bastion (F13, 2026-08-21): does this job bill the colony's STONE economy
 /// and still need supplying?
 ///
@@ -25240,6 +25254,28 @@ mod tests {
         ladder.required_item = Some(BUILD_MATERIAL_ITEM);
         assert!(!job_bills_wood_unsupplied(&ladder));
         assert!(job_bills_stone_unclaimed(&ladder));
+    }
+
+    /// The player's town choice must WIN over proximity — and the true branch
+    /// is pinned here because the live leg cannot reach it (the pit driver has
+    /// no way to place a map marker, so only `player_chose=false` is
+    /// observable in a run). Adopting the wrong village looks exactly like
+    /// adopting the right one, so an unchecked branch here is a silent
+    /// wrong-answer waiting to happen.
+    #[test]
+    fn a_map_marker_beats_proximity_when_choosing_a_town() {
+        let spawn = Vec2::new(16384, 16384);
+        let chosen = Vec2::new(15216, 16016);
+        assert_eq!(
+            adopt_target(Some(chosen), spawn),
+            chosen,
+            "a marker the player placed must decide the town, not where they happen to stand"
+        );
+        assert_eq!(
+            adopt_target(None, spawn),
+            spawn,
+            "with no marker the behaviour must be byte-identical to before, or every banked              corpus leg silently changes which town it adopted"
+        );
     }
 
     /// F13 / ★ THE DEMAND SIGNAL MUST COVER THE POPULATION. The colony's

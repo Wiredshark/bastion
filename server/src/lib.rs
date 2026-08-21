@@ -7074,7 +7074,7 @@ impl Server {
                 }
                 found
             };
-            let near = chosen.unwrap_or_else(|| sp.xy().map(|e| e as i32));
+            let near = bastion_jobs::adopt_target(chosen, sp.xy().map(|e| e as i32));
             tracing::info!(
                 ?near,
                 player_chose = chosen.is_some(),
