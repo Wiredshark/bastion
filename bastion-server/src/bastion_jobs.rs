@@ -15495,7 +15495,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // the wrapped body below is byte-identical to
                         // before this row; no release-path/escalation
                         // logic inside it changed.
-                        if auton_travel_ok {
+                        // ITEM 29 (chain20, the mission that could not
+                        // arrive): ALSO freeze while a FETCH steer owns
+                        // the trip — walking to the pantry is not failing
+                        // to reach the site, but the legacy watchdog
+                        // measured it as exactly that (strikes →
+                        // "unreachable" mid-fetch, twice per minute). The
+                        // fetch leg has its own vanish handling; the job
+                        // watchdog resumes the tick the colonist starts
+                        // FOR THE SITE. Same freeze-never-reset semantics
+                        // as T3.52b above.
+                        if auton_travel_ok && fetch_steer.is_none() {
                         // SDIST-TRACE (2026-08-08, one-off, hysteresis-
                         // oscillation hypothesis check): per-tick sdist,
                         // gated to a SINGLE job id via
