@@ -13090,6 +13090,57 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         matches!(j.kind, common::bastion::JobKind::Guard { .. })
                     })
                 });
+                // ★ ITEM 36 LETHAL PLANT (2026-08-21). `BASTION_PLANT_LETHAL=1`
+                // kills exactly one colonist, deterministically, at a fixed
+                // tick.
+                //
+                // WHY THIS FIXTURE HAD TO EXIST BEFORE DEATH COULD BE TESTED:
+                // three legs tried to kill a colonist and all three came back
+                // VOID because no lethal treatment ever reached one. The smite
+                // arm does ~4% damage a cast (two casts floored health at
+                // 0.92, nowhere near the 0.0 row F11 claims), and the hostile
+                // arm's wolves killed nobody inside a 12,000-tick window. The
+                // play sessions DID see deaths — over 50,000–90,000 ticks,
+                // under raids. Death was untestable, not absent.
+                //
+                // ★★ AND IT MUST EMIT AN EVENT, NOT CALL `change_by`. The
+                // planted wound below writes health DIRECTLY, which is fine
+                // for a wound and fatal for a kill: `!is_dead && should_die()`
+                // runs in exactly ONE place, the HealthChangeEvent handler, so
+                // a direct write to zero produces a colonist at 0.0 health who
+                // never dies. That is precisely what row F11 recorded
+                // ("health reached 0.0 … no death event, no despawn") and it
+                // was a symptom of the WRITE PATH, not of death being missing.
+                // A fixture that reproduced that mistake would test nothing.
+                if tick.0 == 3000
+                    && let Ok(n) = std::env::var("BASTION_PLANT_LETHAL")
+                    && let Ok(count) = n.parse::<usize>()
+                {
+                    let mut victims: Vec<(u64, specs::Entity)> = (&entities, &colonists)
+                        .join()
+                        .filter_map(|(e, _)| uids.get(e).map(|u| (u.0.get(), e)))
+                        .collect();
+                    // Deterministic victim choice: lowest uid first. ECS join
+                    // order is not a promise, and a fixture that killed a
+                    // different colonist on two runs of one seed would make
+                    // every downstream comparison incomparable.
+                    victims.sort_by_key(|(u, _)| *u);
+                    for (uid, ent) in victims.into_iter().take(count) {
+                        let Some(h) = healths.get(ent) else { continue };
+                        health_change_events.emit_now(common::event::HealthChangeEvent {
+                            entity: ent,
+                            change: comp::HealthChange {
+                                amount: -(h.maximum() * 2.0),
+                                by: None,
+                                cause: None,
+                                precise: false,
+                                time: *time,
+                                instance: 0,
+                            },
+                        });
+                        info!(uid, "bastion: ITEM 36 LETHAL PLANT — killing a colonist by event");
+                    }
+                }
                 // ★★ BAR 3 + BAR 4 IN ONE LEVER (item 14).
                 // `BASTION_GUARD_PLANT_WOUND=<fraction>` wounds every
                 // guard-holding colonist to that health fraction, driving

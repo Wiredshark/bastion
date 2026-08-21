@@ -347,6 +347,13 @@ case "$ARM" in
   # not appear, materials were a sufficient-LOOKING blocker hiding a second.
   matbeds)      PITVAR=" BASTION_SEED_FOOD=64 BASTION_NEEDS_DECAY_MULT=6 BASTION_SEED_MATERIALS=64"
               SCRIPT="script-injury.txt" ;;
+  # ITEM 36: the DEATH arm. The smite arm cannot kill (~4% health a cast, two
+  # casts floor at 0.92) and the hostile arm's wolves killed nobody inside a
+  # 12,000-tick window -- three legs came back VOID for want of a lethal
+  # treatment, not for want of death. This plants one deterministic kill AS AN
+  # EVENT, which is the only path that reaches `!is_dead && should_die()`.
+  death)        PITVAR=" BASTION_SEED_FOOD=64 BASTION_PLANT_LETHAL=1"
+              SCRIPT="script-smite.txt" ;;
   smite)        PITVAR=" BASTION_SEED_FOOD=64"
               SCRIPT="script-smite.txt" ;;
   guardwound)   PITVAR=" BASTION_ACCESS_CLAIM_DIAG=1 BASTION_GUARD_BRAVERY=0.8,0.2 BASTION_GUARD_HOLD_DIAG=1 BASTION_GUARD_PLANT_WOUND=0.5"
