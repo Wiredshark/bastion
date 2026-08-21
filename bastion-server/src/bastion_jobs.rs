@@ -11686,6 +11686,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let slab_z = anchor.z + MINE_GEN_Z_TOP - board.selfgen_cursor;
                     board.selfgen_cursor = (board.selfgen_cursor + 1) % MINE_GEN_Z_SLABS;
                     let mut emitted = 0usize;
+                    // Every rock-class cell the scan LOOKED AT, whether or not it
+                    // was emitted — the denominator for the witness below.
+                    let mut rock_seen = 0usize;
                     'scan: for y in (anchor.y - MINE_GEN_RADIUS)..=(anchor.y + MINE_GEN_RADIUS) {
                         for x in (anchor.x - MINE_GEN_RADIUS)..=(anchor.x + MINE_GEN_RADIUS) {
                             if emitted >= quota {
@@ -11704,6 +11707,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             if !matches!(block.kind(), BlockKind::Rock | BlockKind::WeakRock) {
                                 continue;
                             }
+                            rock_seen += 1;
                             // Exposed = a face a digger can reach (any
                             // open 6-neighbour).
                             let exposed = [
@@ -11753,6 +11757,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             board.gen_mine_jobs += 1;
                             emitted += 1;
                         }
+                    }
+                    // ★ A NULL NEEDS A COULDN'T-HAPPEN WITNESS. The miner
+                    // wanting stone and finding none renders IDENTICALLY to
+                    // the miner never running: in both cases the log is
+                    // silent and `beds=0`. That ambiguity cost a whole
+                    // verification leg — the demand fix was correct and the
+                    // colony still built nothing, and no line said whether
+                    // the generator woke, what it wanted, or what it saw.
+                    //
+                    // `rock_seen` is the discriminator: 0 means the scan
+                    // volume genuinely contains no exposed rock (the colony
+                    // is standing on a grass plain and its stone is outside
+                    // MINE_GEN_RADIUS), while a positive count with
+                    // `emitted=0` would mean rock exists and something else
+                    // is refusing it.
+                    if quota > 0 && emitted == 0 {
+                        info!(
+                            demand,
+                            supply,
+                            quota,
+                            pending_mine,
+                            slab_z,
+                            radius = MINE_GEN_RADIUS,
+                            rock_seen,
+                            ?anchor,
+                            "bastion: AUTON-1 mine generator WANTED stone and emitted NOTHING"
+                        );
                     }
                 }
             }
