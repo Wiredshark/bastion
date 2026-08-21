@@ -1420,8 +1420,13 @@ impl Server {
         let entities = ecs.entities();
         let mut inventories = ecs.write_storage::<comp::Inventory>();
         let mut armed = 0u32;
+        let mut seen = 0u32;
+        let mut already_armed = 0u32;
+        let mut no_inventory = 0u32;
         for (entity, colonist) in (&entities, &colonists).join() {
+            seen += 1;
             let Some(mut inv) = inventories.get_mut(entity) else {
+                no_inventory += 1;
                 continue;
             };
             // Already holding a tool? Leave them alone — this is a founding
@@ -1430,6 +1435,7 @@ impl Server {
                 .equipped(comp::slot::EquipSlot::ActiveMainhand)
                 .is_some_and(|i| matches!(&*i.kind(), comp::item::ItemKind::Tool(_)))
             {
+                already_armed += 1;
                 continue;
             }
             // Strongest trade wins the mainhand. Read through `level_for`, the
@@ -1467,12 +1473,20 @@ impl Server {
                 armed += 1;
             }
         }
-        if armed > 0 {
-            tracing::info!(
-                armed,
-                "bastion: FOUNDING TOOL KIT — colonists armed with the trade they are best at"
-            );
-        }
+        // ★ SELF-CATCH (2026-08-21): I gated this emit on `armed > 0` and
+        // immediately reproduced the defect I had written a memory about
+        // THREE TIMES the same night — the next leg came back with NO LINE AT
+        // ALL, which cannot distinguish "ran and armed nobody" from "never
+        // ran". Silencing a null to keep the log tidy is exactly how a null
+        // becomes unreadable. Every firing now speaks, and carries its
+        // denominators so the zero explains itself.
+        tracing::info!(
+            colonists_seen = seen,
+            armed,
+            already_armed,
+            no_inventory,
+            "bastion: FOUNDING TOOL KIT"
+        );
     }
 
     /// bastion (ROW-COLONY-PRESENCE, DECISIONS #106): mints the
