@@ -248,11 +248,33 @@ pub fn observe_visible_scene(
     let mut state = state().lock().map_err(|_| {
         ProductionPresentationErrorV1::Handoff(PresentationHandoffErrorV1::NoPendingFrame)
     })?;
-    if resources.presentation_generation == Some(state.next_generation)
-        && resources.terrain_draw_coverage
-        && resources.figure_draw_coverage
-        && state.upload_ready.is_some()
+    // W5 residual witness: name WHICH conjunct blocks stability, logged
+    // on CHANGE only (a per-frame line would be the census mistake again).
+    let conjuncts = (
+        resources.presentation_generation == Some(state.next_generation),
+        resources.terrain_draw_coverage,
+        resources.figure_draw_coverage,
+        state.upload_ready.is_some(),
+    );
     {
+        use std::sync::Mutex;
+        static LAST: Mutex<Option<(bool, bool, bool, bool)>> = Mutex::new(None);
+        if let Ok(mut last) = LAST.lock()
+            && *last != Some(conjuncts)
+        {
+            tracing::info!(
+                generation_match = conjuncts.0,
+                observed_generation = ?resources.presentation_generation,
+                expected_generation = state.next_generation,
+                terrain_coverage = conjuncts.1,
+                figure_coverage = conjuncts.2,
+                upload_ready = conjuncts.3,
+                "bastion: observe_visible_scene conjuncts changed"
+            );
+            *last = Some(conjuncts);
+        }
+    }
+    if conjuncts.0 && conjuncts.1 && conjuncts.2 && conjuncts.3 {
         state.stable_resource_frames = state
             .stable_resource_frames
             .checked_add(1)

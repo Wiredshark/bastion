@@ -5157,6 +5157,26 @@ impl PlayState for SessionState {
                 }
             }
 
+            // W5 autopause: with BASTION_R0D_AUTOPAUSE=1 the session
+            // pauses ITSELF (the same call the Space toggle makes) once a
+            // configured capture is waiting on pause — the unattended
+            // flow no longer depends on a focus-stealable keystroke.
+            {
+                use std::sync::atomic::{AtomicBool, Ordering};
+                static AUTOPAUSED: AtomicBool = AtomicBool::new(false);
+                if std::env::var_os("BASTION_R0D_AUTOPAUSE").is_some()
+                    && crate::render::bastion_r0d::capture_config().is_some()
+                    && crate::render::bastion_r0d::capture_waits_for_pause_v1(
+                        std::env::var_os("BASTION_FLAT_ARENA").is_some(),
+                        crate::render::bastion_r0d::absolute_time_capture_selected(),
+                    )
+                    && !global_state.paused()
+                    && !AUTOPAUSED.swap(true, Ordering::Relaxed)
+                {
+                    self.bastion_set_sim_speed(global_state, None);
+                    tracing::info!("bastion: r0d AUTOPAUSE engaged (unattended capture flow)");
+                }
+            }
             let r1a_ready = crate::r1a_presentation::ready_for_capture_measurement();
             let weather_ready = crate::r1f_weather::certification_fixture_ready_for_capture();
             let fog_ready = crate::r1f_fog::certification_fixture_ready_for_capture();
