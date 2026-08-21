@@ -5916,6 +5916,13 @@ pub struct JobBoard {
     /// THIS number and nothing computes a second copy of it (the same
     /// same-source law that keeps the dashboard and the death check honest).
     pub colony_wealth: u32,
+    /// bastion (ARC 11 item 39): the last N ticks' own cost, in microseconds.
+    /// The row is SUB-THRESHOLD degradation: a guard that only fires at a
+    /// ceiling tells you nothing until the game is already bad, and a play
+    /// session measured the colony slowing from 30.0 to 25.2 ticks/s under
+    /// load with no in-game signal at all. A ring, so the emit can report a
+    /// DISTRIBUTION rather than one lucky sample.
+    pub tick_cost_us: std::collections::VecDeque<u64>,
     pub pending_sentiments: Vec<(
         common::rtsim::RtSimEntity,
         common::rtsim::RtSimEntity,
@@ -8037,6 +8044,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             ),
         ): Self::SystemData,
     ) {
+        // ITEM 39: start the tick's own stopwatch before any work. Wall-clock
+        // is the right unit here and nowhere else — the question this row
+        // asks is whether the SERVER is keeping up, which sim time cannot
+        // answer. It gates nothing.
+        let tick_started = std::time::Instant::now();
         let mut item_drop_emitter = item_drop_events.emitter();
         let mut chat_emitter = chat_events.emitter();
         let mut inv_manip_emitter = inventory_manip_events.emitter();
@@ -11526,6 +11538,39 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // casts landed including one at t=0) — the pin holds the pool at
         // zero so a refusal leg can exist at all.
         if !favor_zero_pin() {
+            // ── ITEM 39: SUB-THRESHOLD TICK COST ────────────────────────
+            // What this system costs, per tick, as a distribution beside the
+            // LOAD that explains it. Wall-clock is legitimate here and only
+            // here: the question is literally "is the server keeping up",
+            // which no sim-time measure can answer. It never gates anything —
+            // reading it must not change it.
+            {
+                const RING: usize = 300;
+                let cost_us = tick_started.elapsed().as_micros() as u64;
+                if board.tick_cost_us.len() >= RING {
+                    board.tick_cost_us.pop_front();
+                }
+                board.tick_cost_us.push_back(cost_us);
+                if tick.0 % (ARBITRATION_INTERVAL as u64 * 20) == 12
+                    && board.tick_cost_us.len() >= 30
+                {
+                    let mut v: Vec<u64> = board.tick_cost_us.iter().copied().collect();
+                    v.sort_unstable();
+                    let p = |q: f32| v[((v.len() - 1) as f32 * q) as usize];
+                    info!(
+                        tick = tick.0,
+                        samples = v.len(),
+                        p50_us = p(0.50),
+                        p95_us = p(0.95),
+                        max_us = v[v.len() - 1],
+                        jobs = board.jobs.len(),
+                        colonists = (&colonists).join().count(),
+                        designations = board.designated.len(),
+                        "bastion: ITEM 39 tick cost"
+                    );
+                }
+            }
+
             // ── ITEM 34: the WEALTH SIGNAL ──────────────────────────────
             // Raids scale with what a colony is worth stealing, so wealth
             // needs one honest producer before pressure can read it: every
