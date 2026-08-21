@@ -12,6 +12,7 @@
 mod all;
 mod block;
 pub mod apex_worldgen_vocabulary;
+pub mod bastion_flat_world;
 pub mod canvas;
 pub mod civ;
 mod column;
@@ -151,6 +152,25 @@ impl World {
             let mut sim = sim::WorldSim::generate(seed, opts, threadpool, &|stage| {
                 report_stage(WorldGenerateStage::WorldSimGenerate(stage))
             });
+
+            // bastion (FLAT TOWN, Ben 2026-08-21: "we should place the town on
+            // our flat arena" + "veloren actual town support pretty much all
+            // these systems"). BOTH points at once: do NOT hand-build a town,
+            // and do NOT use the arena's chunk override -- that returns before
+            // `world.generate_chunk`, which is the call that renders site
+            // structures, so a village inside the arena is simply not drawn.
+            //
+            // Instead flatten the SIM's altitude here, in the gap between
+            // terrain generation and civ placement, and let the REAL generator
+            // put a real village on it. Houses, doors, roads, farm fields and
+            // workshops all arrive with everything Veloren already supports.
+            //
+            // ORDER IS THE WHOLE DESIGN. Site altitudes are derived DURING civ
+            // placement, so flattening afterwards moves the ground out from
+            // under buildings whose heights are already baked -- floating or
+            // buried houses. It has to happen before this line and after the
+            // sim exists, which is exactly here.
+            bastion_flat_world::flatten(&mut sim);
 
             let civs =
                 civ::Civs::generate(seed, &mut sim, &mut index, calendar.as_ref(), &|stage| {
