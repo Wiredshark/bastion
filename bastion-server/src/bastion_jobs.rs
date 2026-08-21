@@ -8701,10 +8701,36 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let (mut working, mut moving, mut stuck, mut idle) =
                         (0u32, 0u32, 0u32, 0u32);
                     let (mut fed, mut rested, mut total) = (0u32, 0u32, 0u32);
+                    // ★ ITEM 36 (2026-08-21): DOWNED colonists, surfaced.
+                    //
+                    // A lethal plant proved the death transition fires
+                    // correctly (`COLONIST DIED … protected=true`) and that
+                    // the colony then carries on counting the body as a
+                    // worker: population held at 8 with one colonist on the
+                    // floor. Every colonist is a `Body::Humanoid`, and
+                    // `has_death_protection()` is true for humanoids, so
+                    // vanilla's player-downed mechanic applies — they go DOWN,
+                    // not dead. That is the whole of row F11's "health reached
+                    // 0.0 … no death event, no despawn, population unchanged".
+                    //
+                    // ADDED, NOT SUBTRACTED FROM `total`, on purpose: changing
+                    // `total` would silently rebase every banked corpus number
+                    // that quotes this census. A new field surfaces the state
+                    // without invalidating history, and a downed colonist
+                    // stops being invisible — which is the actual defect,
+                    // since food-per-cap, beds-short and the drive are all
+                    // computed against a body that cannot work.
+                    //
+                    // Whether colonists SHOULD be downed-and-revivable or die
+                    // outright is a gameplay ruling and is banked for Ben.
+                    let mut downed = 0u32;
                     for (_, entity, needs) in
                         (&colonists, &entities, (&needs_storage).maybe()).join()
                     {
                         total += 1;
+                        if healths.get(entity).is_some_and(|h| h.is_dead) {
+                            downed += 1;
+                        }
                         if let Some(n) = needs {
                             if n.hunger > 0.3 {
                                 fed += 1;
@@ -8729,6 +8755,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     info!(
                         tick = tick.0,
                         total,
+                        downed,
                         working,
                         moving,
                         stuck,
@@ -19195,6 +19222,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             ))
                             .is_some_and(|(want, have)| want == have)
                     {
+                        // ★ ITEM 28's WITNESS (2026-08-21). This path damaged
+                        // the tool and emitted NOTHING, so the row was
+                        // unmeasurable from any leg and its "BUILT" claim
+                        // rested on reading the code. A silent field change is
+                        // not evidence. `durability_mult` is the number that
+                        // decides whether wear PAYS — it is read at the
+                        // progress site, so printing it here ties the wear
+                        // event to its own consequence in one line.
+                        let durability_mult = inv
+                            .equipped(comp::slot::EquipSlot::ActiveMainhand)
+                            .map(|i| i.stats_durability_multiplier().0)
+                            .unwrap_or(1.0);
+                        info!(
+                            work = ?job.work,
+                            durability_mult,
+                            "bastion: ITEM 28 tool wore a durability step"
+                        );
                         inv.damage_item_at_equip_slot(
                             comp::slot::EquipSlot::ActiveMainhand,
                             &ability_map,
