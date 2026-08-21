@@ -8752,17 +8752,47 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             None => idle += 1,
                         }
                     }
+                    // ★ `working` IS NOT A PRODUCTIVITY FIGURE, AND READING
+                    // IT AS ONE COST TWO SESSIONS A WRONG DIAGNOSIS
+                    // (2026-08-21). The match above classifies every
+                    // `Traveling` colonist as moving-or-stuck, so `working`
+                    // counts only colonists who are NOT walking. A haul is
+                    // travel-dominated by construction -- walk to the pickup,
+                    // walk to the deposit -- so a haul-heavy colony samples as
+                    // `moving` and essentially never as `working`.
+                    //
+                    // A leg measured 13 consecutive samples of `working=0`
+                    // (3,900 ticks) that read as a total work stoppage. The
+                    // same 3,900 ticks carry 31 "arrived at job site", 23
+                    // "job claimed", 15 "haul delivered" and 15 "haul
+                    // deposited". The colony was working the entire time the
+                    // census said it was not. I proposed a per-job re-offer
+                    // backoff on the strength of that zero; it would have been
+                    // a fix for a bug that did not exist.
+                    //
+                    // `engaged` is the field that means what a reader thinks
+                    // `working` means: has an active job and is not stuck.
+                    // ADDED, NOT SUBTRACTED -- `working`/`moving`/`stuck`/
+                    // `idle` keep their exact previous meanings so no banked
+                    // corpus number is silently rebased, the same discipline
+                    // `downed` used above. The value was always derivable as
+                    // working+moving; nobody derived it, including three
+                    // sessions who quoted `working` as productivity. A number
+                    // that is only correct after a step no reader takes is a
+                    // number that will be misread.
+                    let engaged = working + moving;
                     info!(
                         tick = tick.0,
                         total,
                         downed,
+                        engaged,
                         working,
                         moving,
                         stuck,
                         idle,
                         fed,
                         rested,
-                        "bastion EXPERIENCE census"
+                        "bastion EXPERIENCE census (engaged = has a job and is not stuck;                          `working` EXCLUDES travel, so hauling reads as `moving`)"
                     );
                 }
                 // ITEM8-V4 sentinel S1 (Fable-ruled, LOG-ONLY -- never
