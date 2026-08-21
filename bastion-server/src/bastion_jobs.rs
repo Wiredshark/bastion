@@ -12235,6 +12235,52 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             }
         }
 
+        // ── THE UNREACHABLE RETRY SWEEP ──────────────────────────────────
+        // ★ `job.unreachable` WAS A ONE-WAY LATCH, and two independent play
+        // sessions found its consequence the same hour. It is set to `true`
+        // when ONE colonist's access request fails to route, is initialised
+        // `false` only at construction, and nothing anywhere ever set it back.
+        // So a single colonist stranded in open ground marked jobs unreachable
+        // FOR THE WHOLE COLONY, PERMANENTLY.
+        //
+        // Measured: `jobs_total=15 jobs_unreachable=15` (100%) with
+        // `working=0 idle=8`, and BOTH player-facing why-fields reading zero
+        // (`blocked_materials=0 blocked_stance=0`). One colonist released 13
+        // different jobs as unreachable from a single spot; 261 unreachable
+        // releases against 176 rescue attempts that fixed nothing.
+        //
+        // It is NOT simply "pathfinding is broken": the same session found
+        // that painting FRESH work un-froze all four stranded colonists. They
+        // could move. The jobs were POISONED, not unwalkable — and the colony
+        // "recovered then relapsed" exactly as it would if recovery came from
+        // NEW jobs (born `unreachable: false`) rather than old ones clearing.
+        //
+        // A FAILURE MUST NOT COMPOSE THROUGH SHARED EXCLUSIVE STATE: one
+        // colonist's bad position must not be a permanent verdict binding
+        // every other colonist. Retrying is also what this file already says
+        // it does — the churn-release site's own comment reads "Retries are
+        // the mechanism" — which the latch quietly contradicted.
+        //
+        // Slow cadence on purpose: clearing every tick would re-run route
+        // planning constantly, which is the cost the flag exists to avoid.
+        if tick.0 % (ARBITRATION_INTERVAL as u64 * 40) == 23 {
+            let mut cleared = 0u32;
+            for job in board.jobs.values_mut() {
+                if job.unreachable {
+                    job.unreachable = false;
+                    job.carve_attempted = false;
+                    cleared += 1;
+                }
+            }
+            if cleared > 0 {
+                info!(
+                    cleared,
+                    total_jobs = board.jobs.len(),
+                    "bastion: UNREACHABLE RETRY — re-offering jobs one colonist could not reach"
+                );
+            }
+        }
+
         // ── ITEM 35: the TEND generator ──────────────────────────────────
         // A wounded colonist in a bed is a PATIENT, and a patient is work
         // someone can choose. One job per occupied bed whose occupant is
