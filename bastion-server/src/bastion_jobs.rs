@@ -6840,6 +6840,22 @@ impl JobBoard {
                             occupant: None,
                         });
                         beds += 1;
+                        // ★ FOUND BY A PLAY SESSION (2026-08-21). This scan
+                        // registered beds, hearths and container zones with
+                        // NO per-item witness — only the caller's aggregate
+                        // counts. The BUILT path emits "bed registered
+                        // (built)" / "cook station registered (built)" per
+                        // item, so a log reader could locate a built bed and
+                        // not an adopted one, and the adopted CONTAINER zones
+                        // were the only zone allocations in this file with no
+                        // line at all: the session watched zones 10-15
+                        // announce themselves while 8 and 9 appeared from
+                        // nowhere. An id with no registration line reads as
+                        // "created outside the registration path", which is
+                        // exactly what it looked like and exactly what it
+                        // was not. Same vocabulary as the built twins,
+                        // qualified `(adopted)`.
+                        info!(pos = ?pos, "bastion: bed registered (adopted)");
                     }
                     // A hearth. `Ember` is what a house actually has — a lit
                     // fireplace — and is the reason a village kitchen was
@@ -6850,6 +6866,7 @@ impl JobBoard {
                     {
                         self.cook_stations.push(pos);
                         pots += 1;
+                        info!(pos = ?pos, "bastion: cook station registered (adopted)");
                     }
                     // Household storage, as the generator actually places it.
                     if matches!(
@@ -6873,6 +6890,21 @@ impl JobBoard {
                             self.next_zone += 1;
                             self.stockpiles.push((sid, one));
                             chests += 1;
+                            // THE line the session went looking for and did
+                            // not find. Named `zone` and phrased "stockpile
+                            // zone registered" like every other stockpile
+                            // allocation in this file, so one grep covers
+                            // painted and adopted alike; `?sprite` because an
+                            // adopted container is whatever the generator put
+                            // in the house, and which one it was is the fact
+                            // a scan-vocabulary bug hides (see this
+                            // function's own doc on Chest vs Crate).
+                            info!(
+                                zone = sid,
+                                region = ?one,
+                                ?sprite,
+                                "bastion: stockpile zone registered (adopted)"
+                            );
                         }
                     }
                 }

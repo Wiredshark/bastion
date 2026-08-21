@@ -2,7 +2,10 @@ use common_net::msg::{ActiveSessionBindingV1, ClientType, SemanticReceiveStateV1
 use network::{ConnectAddr, Message, Participant, Stream, StreamError, StreamParams};
 use serde::{Serialize, de::DeserializeOwned};
 use specs::Component;
-use std::{net::SocketAddr, sync::atomic::AtomicBool};
+use std::{
+    net::SocketAddr,
+    sync::{Mutex, atomic::AtomicBool},
+};
 
 /// Client handles ALL network related information of everything that connects
 /// to the server Client DOES NOT handle game states
@@ -18,6 +21,32 @@ pub struct Client {
     pub last_ping: f64,
     pub login_msg_sent: AtomicBool,
     pub locale: Option<String>,
+    /// bastion (ADOPT-A-TOWN visibility, found by a play session 2026-08-21):
+    /// the designation set this server has actually SENT to this client —
+    /// the server's own model of the client's overlay mirror
+    /// (`Client::bastion_designations` on the other side).
+    ///
+    /// It exists because designation sync was ECHO-ONLY: the three
+    /// `ServerGeneral::BastionDesignation` sends live inside the
+    /// `BastionPlaceDesignation` handler, so a client only ever heard about
+    /// designations IT placed. Everything the board grows on its own —
+    /// ADOPT-A-TOWN's deferred surface drain, colony-persistence restore,
+    /// AUTON-1 build plans, another player's paint — reached
+    /// `JobBoard::designated` and never reached any client. The measured
+    /// symptom: `inspect_colony` reporting `designations=5` (server truth)
+    /// beside `list_designations` reporting `[]` (client mirror), on a fresh
+    /// connection to a colony that had adopted a town.
+    ///
+    /// The reconcile in `sys::msg::in_game` compares this against the board
+    /// each tick. It is a MODEL, not a cache: the place/cancel echoes push
+    /// and subtract here exactly as the client's own handlers do, so in the
+    /// steady state it equals the board and the reconcile sends NOTHING.
+    /// A resumed connection gets a brand-new `Client` (see
+    /// `attach_semantic_v1`'s note on that), so it starts empty and the
+    /// first reconcile ships the whole set — which is the join snapshot,
+    /// falling out of the same code rather than being a second mechanism.
+    pub bastion_designations_sent:
+        Mutex<Vec<(common::bastion::Region, common::bastion::DesignationKind)>>,
 
     //TODO: Consider splitting each of these out into their own components so all the message
     //processing systems can run in parallel with each other (though it may turn out not to
@@ -86,6 +115,7 @@ impl Client {
             last_ping,
             locale,
             login_msg_sent: AtomicBool::new(false),
+            bastion_designations_sent: Mutex::new(Vec::new()),
             general_stream,
             ping_stream,
             register_stream,
@@ -239,6 +269,68 @@ impl Client {
 
     /// Like `send` but any errors are explicitly ignored.
     pub(crate) fn send_fallible<M: Into<ServerMsg>>(&self, msg: M) { let _ = self.send(msg); }
+
+    /// bastion: [`Client::bastion_designations_sent`], with a poisoned lock
+    /// recovered rather than propagated. A panic elsewhere while holding it
+    /// leaves a STALE model, and a stale model self-corrects at the next
+    /// reconcile; refusing to sync at all would not.
+    pub(crate) fn bastion_designations_mirror(
+        &self,
+    ) -> std::sync::MutexGuard<
+        '_,
+        Vec<(common::bastion::Region, common::bastion::DesignationKind)>,
+    > {
+        self.bastion_designations_sent
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// bastion: echo a placed designation AND record it in this client's
+    /// mirror model, in ONE call.
+    ///
+    /// Deliberately not two calls: "send a designation and forget to record
+    /// it" is the precise shape of the bug this pair exists to close, and a
+    /// separate record step is a second thing that must be remembered
+    /// forever. The reconcile in `sys::msg::in_game` treats any
+    /// mirror/board difference as "resync this client", so an unrecorded
+    /// send would cost a spurious clear-and-refill every tick.
+    pub(crate) fn send_bastion_designation(
+        &self,
+        region: common::bastion::Region,
+        kind: common::bastion::DesignationKind,
+        z_extent: Option<common::bastion::ZExtent>,
+    ) -> Result<(), StreamError> {
+        self.send(ServerGeneral::BastionDesignation {
+            region,
+            kind,
+            z_extent,
+        })?;
+        self.bastion_designations_mirror().push((region, kind));
+        Ok(())
+    }
+
+    /// bastion: echo a removed region AND apply the same AABB subtraction to
+    /// the mirror model that the CLIENT applies to the real mirror.
+    ///
+    /// Both sides call `Region::subtract`, the one unit-tested subtraction —
+    /// a re-derivation here would be a second implementation that must agree
+    /// with the first forever, which is the drift this codebase has paid for
+    /// more than once.
+    pub(crate) fn send_bastion_designation_removed(
+        &self,
+        region: common::bastion::Region,
+    ) -> Result<(), StreamError> {
+        self.send(ServerGeneral::BastionDesignationRemoved { region })?;
+        let mut mirror = self.bastion_designations_mirror();
+        for (r, kind) in std::mem::take(&mut *mirror) {
+            if r.intersects(&region) {
+                mirror.extend(r.subtract(&region).into_iter().map(|p| (p, kind)));
+            } else {
+                mirror.push((r, kind));
+            }
+        }
+        Ok(())
+    }
 
     pub(crate) fn send_prepared(&self, msg: &PreparedMsg) -> Result<(), StreamError> {
         match msg.stream_id {
