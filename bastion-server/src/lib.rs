@@ -30,6 +30,7 @@ pub mod bastion_recipes;
 pub mod bastion_path;
 pub mod bastion_piles;
 pub mod bastion_traversal;
+pub mod bastion_tick_cost;
 pub mod bastion_traversal_tooling;
 #[cfg(not(feature = "worldgen"))] pub mod test_world;
 

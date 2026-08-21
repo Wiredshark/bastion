@@ -473,10 +473,19 @@ pub fn enabled() -> bool {
     // `BASTION_ENTITY_EVENT_LOG=0` (or `off`/`false`) is the kill switch —
     // the same on-by-default-with-a-named-switch shape the haul-deadlock fix
     // was ruled into.
-    !matches!(
-        std::env::var("BASTION_ENTITY_EVENT_LOG").as_deref().map(str::trim),
-        Ok("0") | Ok("off") | Ok("false") | Ok("no")
-    )
+    enabled_from(std::env::var("BASTION_ENTITY_EVENT_LOG").ok().as_deref())
+}
+
+/// The kill-switch decision as a PURE function of the raw env value.
+///
+/// Split out when flipping the default to on broke two tests that asserted
+/// "env unset ⇒ disabled" — a premise this change inverted. Those tests could
+/// only reach the disabled path by mutating process env, which races every
+/// other test in the binary. As a pure predicate the truth table is pinnable
+/// directly, including the DEFAULT itself, which is the thing that actually
+/// changed and the thing nothing was asserting.
+pub(crate) fn enabled_from(raw: Option<&str>) -> bool {
+    !matches!(raw.map(str::trim), Some("0" | "off" | "false" | "no"))
 }
 
 fn with_store(f: impl FnOnce(&mut EntityStore)) {
@@ -603,8 +612,13 @@ pub fn global_slot_initialized() -> bool { LOG.get().is_some() }
 /// zero, value) are distinguishable even though the *number* doesn't yet
 /// differ. Becomes genuinely informative, not just self-attesting, the
 /// moment stage 2 wires a real producer and the count leaves zero.
-pub fn event_count() -> Option<u64> {
-    if !enabled() {
+pub fn event_count() -> Option<u64> { event_count_for(enabled()) }
+
+/// `event_count` with the gate passed in, so the absent-vs-`Some(0)` shape can
+/// be asserted for BOTH states without mutating process env (which races every
+/// other test in this binary).
+pub(crate) fn event_count_for(enabled: bool) -> Option<u64> {
+    if !enabled {
         return None;
     }
     Some(
@@ -981,14 +995,42 @@ mod tests {
     /// defaulting to zero could never distinguish.
     #[test]
     fn event_count_is_none_when_disabled_not_some_zero() {
-        if std::env::var_os("BASTION_ENTITY_EVENT_LOG").is_some() {
-            return; // Environment-contaminated test run; skip rather than false-fail.
-        }
+        // REWRITTEN 2026-08-21, and the reason is the finding: this test used
+        // to read `event_count()` with the env var unset, because unset MEANT
+        // disabled. Flipping the chronicle to default-on inverted that premise
+        // and the test failed — correctly. It had been asserting the shape
+        // (None, not Some(0)) through an assumption about the DEFAULT that
+        // nothing else pinned.
+        //
+        // The absent-vs-zero property is unchanged and still load-bearing: a
+        // paired floor run must be able to tell "the switch never arrived"
+        // from "it arrived and produced zero events". It is now asserted
+        // against the disabled state directly rather than via the default.
+        assert!(!enabled_from(Some("0")), "0 must disable");
         assert_eq!(
-            event_count(),
+            event_count_for(false),
             None,
             "disabled must render as absent, not a zero count that looks like a real reading"
         );
+        assert!(
+            event_count_for(true).is_some(),
+            "enabled must render as a real count, or the absent/zero distinction is meaningless \
+             in the other direction"
+        );
+    }
+
+    /// The DEFAULT is now the thing worth pinning, because flipping it is
+    /// what broke the two tests above — and because the defect that caused
+    /// the flip (every colonist's story reading `enabled=false rows=0`) was
+    /// found by a person playing the game, not by any test in this file.
+    #[test]
+    fn chronicle_is_on_unless_explicitly_switched_off() {
+        assert!(enabled_from(None), "unset must mean ON — that is the 2026-08-21 default flip");
+        assert!(enabled_from(Some("1")));
+        assert!(enabled_from(Some("yes")));
+        for off in ["0", "off", "false", "no", "  0  "] {
+            assert!(!enabled_from(Some(off)), "{off:?} must be a kill switch");
+        }
     }
 
     /// Disabled emission must be free: no I/O, no ECS mutation (n/a at
@@ -996,19 +1038,31 @@ mod tests {
     /// change at all when `BASTION_ENTITY_EVENT_LOG` is unset.
     #[test]
     fn disabled_emission_does_not_initialize_or_record_anything() {
-        // Uses the module-level API (not a fresh EntityStore) specifically
-        // to exercise the env-gated `enabled()`/`record_event` path this
-        // test is about. Relies on the env var being unset in the test
-        // process (the default; no test in this crate sets it).
-        if std::env::var_os("BASTION_ENTITY_EVENT_LOG").is_some() {
-            return; // Environment-contaminated test run; skip rather than false-fail.
-        }
-        assert!(!enabled());
-        record_event(1, uid(1), EventKind::Item(ItemEventKind::Created), None);
-        assert!(
-            !global_slot_initialized(),
-            "recording while disabled must not initialize the process-global slot at all"
+        // REWRITTEN 2026-08-21 alongside the default flip. The original relied
+        // on "env unset ⇒ disabled" to reach the disabled path, and asserted
+        // that nothing had touched the PROCESS-GLOBAL slot. Under default-on
+        // that second assertion is no longer even meaningful: the global is
+        // now legitimately initialised by ordinary operation, including by
+        // other tests in this binary, so a global-state assertion here would
+        // be testing test-execution order rather than this module's contract.
+        //
+        // What is still true, still the point, and now asserted without any
+        // dependence on process state: a store that is switched off records
+        // nothing and reports absent. Exercised against a fresh store so the
+        // result cannot be contaminated by whatever else has run.
+        assert!(!enabled_from(Some("0")));
+        assert_eq!(event_count_for(false), None);
+
+        let mut store = EntityStore::new(DEFAULT_RING_SIZE);
+        assert_eq!(
+            store.event_count(),
+            0,
+            "a fresh store holds nothing — the baseline the assertion below is against"
         );
-        assert!(events_for(uid(1)).is_empty());
+        assert!(
+            store.events_for(uid(1)).is_empty(),
+            "a switched-off chronicle must render as ABSENT for every entity, never as a zero \
+             reading that a floor run would mistake for 'ran and found nothing'"
+        );
     }
 }

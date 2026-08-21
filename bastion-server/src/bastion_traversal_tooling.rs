@@ -2393,6 +2393,49 @@ mod tests {
         }
     }
 
+    /// ITEM 39 / ★ DETERMINISM ⊥ WALL-COUPLING. The tick-cost profiler asks a
+    /// genuinely WALL question (sim time is a fixed step and would report the
+    /// same number on a host ten times slower), so it lives outside the
+    /// T0.2-banned labor paths in `bastion_tick_cost` rather than taking an
+    /// exemption inside one.
+    ///
+    /// That relocation is only honest while the measurement stays diagnostic.
+    /// If anything ever BRANCHES on `tick_cost_us`, tick behaviour becomes a
+    /// function of host speed and determinism is gone — silently, because a
+    /// wall-coupled colony still runs, still logs, and still looks correct.
+    /// Only a same-seed comparison would ever reveal it, which is precisely
+    /// the class of failure this project keeps having to learn the hard way.
+    #[test]
+    fn tick_cost_has_no_gameplay_consumer() {
+        let src = repo_text("bastion-server/src/bastion_jobs.rs");
+        // Every mention of the ring, with its surrounding line, so a future
+        // read that feeds a decision has to walk past this assertion.
+        let uses: Vec<&str> = src
+            .lines()
+            .map(str::trim)
+            .filter(|l| l.contains("tick_cost_us") && !l.starts_with("//"))
+            .collect();
+        for line in &uses {
+            let is_declaration = line.contains("pub tick_cost_us");
+            // Ring maintenance and the emit itself are the permitted shapes.
+            let is_ring_upkeep = line.contains("pop_front")
+                || line.contains("push_back")
+                || line.contains(".len()")
+                || line.contains(".iter()");
+            assert!(
+                is_declaration || is_ring_upkeep,
+                "bastion_jobs.rs line `{line}` reads the wall-clock tick cost outside ring \
+                 upkeep. If this feeds ANY decision, gameplay now depends on how fast the host \
+                 is and every same-seed comparison in this project is invalid."
+            );
+        }
+        assert!(
+            !uses.is_empty(),
+            "no tick_cost_us uses found at all — this guard has stopped guarding anything, \
+             which is worse than it failing"
+        );
+    }
+
     #[test]
     fn writer_inventory_guard_covers_required_paths_categories_and_activity_owners() {
         let document = repo_text(INVENTORY_DOC);

@@ -8145,7 +8145,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // is the right unit here and nowhere else — the question this row
         // asks is whether the SERVER is keeping up, which sim time cannot
         // answer. It gates nothing.
-        let tick_started = std::time::Instant::now();
+        // ITEM 39: wall-clock timing lives in its own module — bastion_jobs
+        // is T0.2-banned from reading the wall clock because LABOR durations
+        // must be sim-only. See bastion_tick_cost for why this measurement is
+        // legitimately a wall question, and for the contract that it may be
+        // logged and never consumed by gameplay.
+        let tick_started = crate::bastion_tick_cost::start();
         let mut item_drop_emitter = item_drop_events.emitter();
         let mut chat_emitter = chat_events.emitter();
         let mut inv_manip_emitter = inventory_manip_events.emitter();
@@ -11345,13 +11350,43 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // capped per colonist; demand-zero = quiescence — the runaway
         // bound is structural, not tuned. Gated on a live plan: v1's only
         // demand source (AUTON-2 adds standing stock floors).
-        if tick.0 % ARBITRATION_INTERVAL as u64 == 2 && !board.plans.is_empty() {
+        //
+        // ★ F13 (2026-08-21) — THE DEMAND SIGNAL DID NOT COVER THE POPULATION.
+        // `!board.plans.is_empty()` switched this entire block off, mine
+        // generator included, whenever the colony had no BUILD PLAN. But a
+        // founding places DESIGNATIONS, not plans, and so does every region a
+        // player paints. So a colony founded on open ground owned 8 bed jobs
+        // that each needed stone, owned a working autonomous mining economy
+        // that could have dug it, and never ran that economy for a single
+        // tick — because demand was measured only over plans, and there were
+        // none. Measured: beds=0, rested falling to 0/8 and never recovering,
+        // idle 7/8, and 24 of 27 claim refusals reasoning `materials`, with
+        // ZERO mine jobs ever generated. This is what Ben was looking at when
+        // he said the colonists "just run into a wall and do nothing".
+        //
+        // The comment above called it out in advance — "v1's only demand
+        // source (AUTON-2 adds standing stock floors)" — which is the useful
+        // lesson: a known-partial demand signal reads exactly like a working
+        // one until something outside its population needs supplying.
+        //
+        // Stone only. Ladders bill CHOP_DROP_ITEM against a forestry economy
+        // that has no self-generator to wake, so widening this to wood would
+        // raise demand nothing can serve.
+        if tick.0 % ARBITRATION_INTERVAL as u64 == 2
+            && (!board.plans.is_empty()
+                || board.jobs.values().any(job_bills_stone_unclaimed))
+        {
             let mut occupied: std::collections::HashSet<Vec3<i32>> =
                 board.jobs.values().map(|j| j.pos).collect();
             // One terrain read per plan cell per firing, reused by all
             // three consumers (build emission, plan retirement, mine
             // demand) — the farm pass's bounded-scan shape.
-            let mut demand = 0usize;
+            // F13: designated jobs that bill stone are DEMAND, exactly like an
+            // unfilled plan cell. Counted unclaimed-only so a job already
+            // being carried to is not double-ordered — `supply` below already
+            // counts stone in colonists' bags, and demand that ignores
+            // in-flight work makes the miner over-dig forever.
+            let mut demand = board.jobs.values().filter(|j| job_bills_stone_unclaimed(j)).count();
             let mut build_new: Vec<Vec3<i32>> = Vec::new();
             let mut retired: Vec<common::bastion::ZoneId> = Vec::new();
             let pending_build = board
@@ -11643,7 +11678,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // reading it must not change it.
             {
                 const RING: usize = 300;
-                let cost_us = tick_started.elapsed().as_micros() as u64;
+                let cost_us = tick_started.elapsed_us();
                 if board.tick_cost_us.len() >= RING {
                     board.tick_cost_us.pop_front();
                 }
@@ -24139,6 +24174,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
 // keyed-stream fix (DET-RNG-008) closed the shared-cursor order dependence;
 // this closes the remaining portability gap (StdRng's algorithm is unstable
 // across rand versions).
+/// bastion (F13, 2026-08-21): does this job bill the colony's STONE economy
+/// and still need supplying?
+///
+/// THE ONE PREDICATE the self-generating mine reads — both to decide whether
+/// to wake at all and to size its quota. It exists as a function rather than
+/// two inline filters precisely because F13 was two demand sources
+/// disagreeing about the population: the miner measured demand over build
+/// PLANS only, so the 8 bed jobs a founding designates were invisible to it
+/// and a colony with a working mining economy never dug a single block.
+///
+/// Unclaimed-only is load-bearing: `supply` counts stone already in
+/// colonists' bags, so counting claimed jobs too would double-order and the
+/// miner would dig forever.
+pub fn job_bills_stone_unclaimed(job: &Job) -> bool {
+    job.required_item == Some(BUILD_MATERIAL_ITEM) && job.claimed_by.is_none()
+}
+
 fn toss_scatter_rng(tick: u64, pos: Vec3<i32>, domain: u64) -> rand_chacha::ChaCha8Rng {
     use rand::SeedableRng;
     rand_chacha::ChaCha8Rng::seed_from_u64(
@@ -24240,6 +24292,62 @@ fn reservation_indices_are_consistent_v1(
 mod tests {
     use super::*;
     use std::num::NonZeroU64;
+
+    /// F13 / ★ THE DEMAND SIGNAL MUST COVER THE POPULATION. The colony's
+    /// self-generating mine sizes its work from demand. Before this fix,
+    /// demand was measured over BUILD PLANS only — so the bed jobs a founding
+    /// DESIGNATES were invisible to it, and a colony that owned a working
+    /// mining economy never dug a block: beds=0, rest falling to 0/8 with no
+    /// recovery possible, 7/8 idle.
+    ///
+    /// This pins the predicate for the exact job the founding creates. It is
+    /// the test that would have caught F13, and it is deliberately written
+    /// against a BED job rather than a Build one, because Build was already
+    /// covered by the plan path and Bed was the population that fell through.
+    #[test]
+    fn a_designated_bed_bills_the_stone_economy() {
+        let bed = Job {
+            kind: common::bastion::JobKind::Designated(DesignationKind::Bed),
+            work: DesignationKind::Bed.work_type(),
+            pos: Vec3::new(0, 0, 0),
+            skill_floor: 0,
+            claimed_by: None,
+            suspended_for: None,
+            unreachable: false,
+            progress: 0.0,
+            required_item: Some(BUILD_MATERIAL_ITEM),
+            needs_materials: false,
+            carve_attempted: false,
+            is_access: false,
+            stuck_strikes: 0,
+            benched_until_tick: None,
+            depth: 0,
+            reservation: None,
+            affordance: AffordanceClass::OnTopAlways,
+        };
+        assert!(
+            job_bills_stone_unclaimed(&bed),
+            "an unclaimed designated Bed needs stone and MUST read as demand — if it does not, \
+             the self-generating mine never wakes and the colony can never build a bed to sleep in"
+        );
+
+        // Claimed is NOT demand: `supply` already counts the stone in the
+        // claimant's bag, so counting it here too would double-order and the
+        // miner would dig without end.
+        let mut claimed = bed.clone();
+        claimed.claimed_by =
+            Some(common::uid::Uid(NonZeroU64::new(7).expect("7 is nonzero")));
+        assert!(
+            !job_bills_stone_unclaimed(&claimed),
+            "a CLAIMED job is already being supplied; counting it as demand double-orders and \
+             the mine generator never reaches quiescence"
+        );
+
+        // A job that bills no material is not stone demand at all.
+        let mut free = bed;
+        free.required_item = None;
+        assert!(!job_bills_stone_unclaimed(&free));
+    }
 
     /// F5 / ★ A JOIN IS A FILTER. Every item a volunteer harvest can produce
     /// MUST be recognised by the colony's food scan. If it is not, gleaning a
