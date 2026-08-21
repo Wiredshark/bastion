@@ -24422,26 +24422,62 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // session lost a whole farming arm unable to tell
                         // them apart.
                         //
-                        // `in_world` is the separator: units of the def that
-                        // exist ANYWHERE against the units the gate can see.
-                        // stocked=0 in_world=40 says the material exists and
-                        // is out of bounds; stocked=0 in_world=0 says the
-                        // colony simply has none.
-                        let in_world: u32 = (&pickup_items)
+                        // ★ AND A JOIN IS A FILTER, so ONE separator is not
+                        // enough. The gate's population comes from
+                        // `(&pickup_items, &positions, &uids).join()`; an
+                        // entity missing ANY of those three is dropped
+                        // silently, and that renders exactly like "the item
+                        // is not inside a stockpile region". A single
+                        // `in_world` number cannot tell those apart — it
+                        // only proves the material exists somewhere.
+                        //
+                        // So emit the LADDER instead, in units at every rung.
+                        // Each drop between adjacent rungs names its own
+                        // cause, and the run answers the question in one
+                        // pass rather than two:
+                        //
+                        //   units_in_world → units_with_pos   lost `Pos`
+                        //   units_with_pos → units_in_join    lost `Uid`
+                        //   units_in_join  → units            outside every
+                        //                                     stockpile region
+                        //   units          → reserved_units   every unit
+                        //                                     already claimed
+                        //
+                        // Suggested by the session that wrote the adoption
+                        // scan, and it is the better instrument: the
+                        // membership bits are what separate a component
+                        // defect from a geometry one.
+                        let units_in_world: u32 = (&pickup_items)
                             .join()
                             .filter(|pi| {
                                 pi.item().item_definition_id().itemdef_id() == Some(req)
                             })
                             .map(|pi| pi.amount() as u32)
                             .sum();
+                        let units_with_pos: u32 = (&pickup_items, &positions)
+                            .join()
+                            .filter(|(pi, _)| {
+                                pi.item().item_definition_id().itemdef_id() == Some(req)
+                            })
+                            .map(|(pi, _)| pi.amount() as u32)
+                            .sum();
+                        let units_in_join: u32 = (&pickup_items, &positions, &uids)
+                            .join()
+                            .filter(|(pi, _, _)| {
+                                pi.item().item_definition_id().itemdef_id() == Some(req)
+                            })
+                            .map(|(pi, _, _)| pi.amount() as u32)
+                            .sum();
                         info!(
                             colonist = %uid,
                             req,
                             stocked,
                             reserved,
+                            units_in_world,
+                            units_with_pos,
+                            units_in_join,
                             units,
                             reserved_units,
-                            in_world,
                             "bastion: ITEM 27 materials refusal census"
                         );
                     }
