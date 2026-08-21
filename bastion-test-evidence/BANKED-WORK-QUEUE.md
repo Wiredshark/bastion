@@ -355,6 +355,9 @@ without crossing that routing.
 | Item 31 (god POWER-0) | **bars 1+4 measured live** (health 1.0→0.39996 = exactly the specced 0.6 max-fraction; favor paid 5.16→0.16 and 15→10; lightning emitted; target's drive/activity untouched). Bar 2 rides the t=0-cast script in chain16; twin banked. Note: the target healed to full between casts (vanilla regen) — a Smite is a wound, not an execution, at current numbers |
 | #107 colony mind | **v1 BUILT** (four live producers, precedence + hysteresis, deciding-input transition witness, claim-score tilt consumer); first transitions expected in any chain16+ leg |
 | Item 40 (scale) | arms staged (scale16/scale32 vs the re-based tick guard; item 39 reads the same soak stats) — chain17 |
+| Item 27 | **bars 1–2 PASS: 32 dishes, 0 stalls, 32:32 XP** (five measured roots in the disposition); bars 3–4 = one def-carrying eat witness + A/B |
+| Item 31 | bar 2's refusal is UNREACHABLE by script timing (the pool fills during the ~2-min boot; 3/3 casts landed incl. t=0) — needs `BASTION_FAVOR_ZERO` (skip trickle) + a `smiteref` arm. **Cast 3 KILLED Osric — see item 36's premise below** |
+| Item 36 premise | **MEASURED: colonist death does not exist** — health 0.0, no death event, no despawn, population still 8. The row's first build step is death itself (health 0 → is_dead → consequences), not the consequences |
 | Item 27 | thief WINDOW closed to the work second (carried 2-64 at arrival, 0 at consume); per-tick watch lands in chain15 |
 
 ## YEAR-LEG FINDING — starved beside a full larder (2026-08-20, NEW ROW)
