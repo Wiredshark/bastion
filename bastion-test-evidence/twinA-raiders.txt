@@ -1,0 +1,4 @@
+raider placed raider=0 pos=Vec3 { x: 16432.5, y: 16382.5, z: 400.0 }
+raider placed raider=0 pos=Vec3 { x: 16432.5, y: 16382.5, z: 400.0 }
+raider placed raider=0 pos=Vec3 { x: 16432.5, y: 16382.5, z: 400.0 }
+raider placed raider=0 pos=Vec3 { x: 16432.5, y: 16382.5, z: 400.0 }
