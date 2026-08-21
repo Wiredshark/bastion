@@ -1,0 +1,190 @@
+note THREE-MODE PLAYTEST -- modes 1+2, FLAT ARENA deep dive.
+note ONE leg feeds BOTH readers: the inspects are mode 1 (LLM text play), the
+note `ascii` frames are mode 2 (DF-style map play). They must agree; where a
+note counter says "alive" and the frame says "frozen", THE FRAME WINS and the
+note counter's producer is the thing under suspicion.
+note
+note WHY THIS SCRIPT EXISTS: every arena fixture to date scored a COUNTER, and
+note a counter cannot answer "does this colony look alive?". Eight frames on a
+note fixed cadence can -- a working colony and a stuck one render differently
+note even when their totals agree. These notes are the playtest's HYPOTHESES;
+note they are written before the run and are scored against it afterwards.
+note
+note DECLARED RUN LENGTH (declare-run-length-before-launch):
+note   600 settle + 8 x 1500 cycle + 300 intervention ack = 12,900 ticks
+note   = 430 game-seconds = ~7 game-minutes. Wall time is deliberately NOT
+note   declared: headless compression is a harness property, not this
+note   script's. Extending the run because a frame looks interesting is NOT
+note   allowed -- the length is fixed here and scored at this length.
+note
+note ARENA GEOMETRY (script-arena-chop.txt's measured datum, unchanged):
+note   centre (16384,16384), spawn 16384.5, ground z 399/400.
+note   EXPECT `ascii 40` to cover x/y [16344,16424] -- the founding preset,
+note   the cookstation and the farm painted below all fall inside ONE frame,
+note   so no sample needs a second viewpoint to be complete.
+note
+note VOID CONDITIONS, named BEFORE the run so a void cannot be read as a fail:
+note   V1 a frame that is mostly `?` is UNLOADED TERRAIN, not an empty arena.
+note      If cycle 1 renders mostly `?`, the presence radius is the defect,
+note      every later frame is uninterpretable, and NOTHING is scored.
+note   V2 `count_items` flat at zero for the whole leg with SEED_FOOD set
+note      means the seed never landed. The build->cook->eat axis is then
+note      VOID, not FAIL -- there was no input for the pipeline to conserve.
+note   V3 if `ascii` renders colonists but NOT their job state, "is anyone
+note      standing still" is answerable ONLY by comparing consecutive frames.
+note      A single frame cannot distinguish idle from mid-path; say so rather
+note      than scoring stillness off one picture.
+note
+note NOT AVAILABLE, and therefore not asked for below: this driver has no verb
+note   to follow ONE colonist, to highlight a uid on the map, or to ask which
+note   structure a colonist is standing inside. Every identity question below
+note   is answered by CROSS-READING an `ascii` frame against the
+note   `inspect_colonists` payload printed beside it. If that cross-read turns
+note   out to be ambiguous in practice, THAT is the finding to report.
+anchor
+wait 600
+note
+note --- CYCLE 1 (t=2100, 70 game-seconds) -- THE FOUNDING FRAME ------------
+note Q: does the preset render as SHAPES -- beds, stockpile, farm plots as
+note   recognisable contiguous blocks -- or as scattered single cells? A
+note   preset that reads as confetti is a placement defect no counter sees.
+note Q: are the colonists still stacked on the spawn point, or dispersed? At
+note   70 game-seconds EXPECT partial dispersal: some at jobs, some in transit.
+note   All eight on one glyph = founding placed them and nothing pulled them.
+wait 1500
+ascii 40
+inspect_colonists
+count_items
+note
+note --- CYCLE 2 (t=3600, 120 game-seconds) -- FIRST PRODUCT ----------------
+note Q: has `count_items` MOVED off its cycle-1 value? EXPECT movement in at
+note   least one line; a stock identical to cycle 1 means 1,500 ticks of work
+note   produced nothing, and the next question is whether jobs were claimed
+note   at all or claimed and refused.
+note Q: comparing frame 2 against frame 1 -- has any colonist glyph CHANGED
+note   POSITION? Any glyph at the same cell in both frames is a standing-still
+note   candidate; name it and watch it for the rest of the leg.
+wait 1500
+ascii 40
+inspect_colonists
+count_items
+note
+note --- CYCLE 3 (t=5100, 170 game-seconds) -- SPREAD OR SWARM --------------
+note Q: are the colonists CLUSTERED at one job or SPREAD across the board?
+note   EXPECT spread: the preset ships several job kinds, so a single cluster
+note   means one kind is out-scoring every other in arbitration and the
+note   colony is effectively single-tasking.
+note Q: is anyone standing still across cycles 1-3? Three frames is enough to
+note   separate "idle" from "mid-path"; a glyph fixed for all three is idle,
+note   and the question becomes WHY -- no claimable job, or a refused one?
+wait 1500
+ascii 40
+inspect_colonists
+count_items
+note
+note --- CYCLE 4 (t=6600, 220 game-seconds) -- NEEDS MUST MOVE --------------
+note Q: have hunger/energy in `inspect_colonists` moved DOWN since cycle 1?
+note   EXPECT monotone decay absent an eat/sleep event. Fields constant across
+note   220 game-seconds mean needs are inert and the eat leg below cannot be
+note   scored -- an eat that never became necessary proves nothing.
+note Q: does `count_items` show any MATERIAL (not food)? This is the
+note   precondition for the intervention: the adopted-town legs refused
+note   12,152/12,152 claims at the materials gate, so a zero here predicts a
+note   cookstation that is painted, never claimed, and never built -- and that
+note   outcome is VOID on the build axis, not a failure of cooking.
+wait 1500
+ascii 40
+inspect_colonists
+count_items
+note
+note --- PLAYER INTERVENTION (t=6600) -- THE ONE THING THE PLAYER DOES ------
+note The whole leg has been observation. Here the player acts ONCE, mid-run,
+note so the second half of the frames answers a question the first half
+note cannot: does player-painted work enter the SAME queue as founding work?
+note
+note Cookstation coords are script-cook.txt's known-good rectangle, unchanged.
+note The farm sits clear of the preset footprint (preset occupies roughly
+note x[16378,16390] y[16376,16390] per script-zones.txt's cancel region), so
+note EXPECT `list_designations` to show it as a NEW plot and not a merge into
+note an existing one.
+note
+note HONEST LIMIT on the farm: founding already ships farm plots, so this
+note   paint does NOT prove "farming works". It answers the narrower question:
+note   does a PLAYER-PAINTED plot get sown and tended like a preset one, or
+note   does the work queue only ever serve what founding placed?
+note
+note WHAT SUCCESS LOOKS LIKE, registered now:
+note   PASS  by cycle 6 the cookstation reads as built (no longer pending in
+note         `list_designations`), by cycle 7 `count_items` shows a cooked
+note         item absent at cycle 4, and by cycle 8 at least one colonist's
+note         hunger has RESET upward -- build -> cook -> eat, all three ends
+note         witnessed, none inferred from the others.
+note   PARTIAL station builds, nothing cooks -> the broken-link half; the
+note         refusal reason in the server log names which gate held.
+note   FAIL  station builds, food exists, colonists starve beside it.
+note   VOID  no materials at cycle 4 (see above) -- nothing on this axis is
+note         scored, and the leg still reports its eight frames.
+designate cookstation 16388 16384 399 16390 16386 400
+designate farm 16392 16376 399 16398 16382 400
+wait 300
+list_designations
+note
+note --- CYCLE 5 (t=8400, 280 game-seconds) -- DOES THE PAINT PULL? ---------
+note Q: has any colonist WALKED TO either painted rectangle? EXPECT at least
+note   one glyph inside or adjacent to x[16388,16390] y[16384,16386] or
+note   x[16392,16398] y[16376,16382]. Nobody within 1,800 ticks of the paint
+note   means the new designations are not competing in arbitration at all.
+note Q: did the colony ABANDON its other jobs to serve the new paint? A frame
+note   where every glyph has migrated to the two rectangles is over-pull, and
+note   is as much a defect as no pull.
+wait 1500
+ascii 40
+inspect_colonists
+count_items
+note
+note --- CYCLE 6 (t=9900, 330 game-seconds) -- IS THE STATION BUILT? -------
+note Q: does the cookstation still appear as a PENDING designation? EXPECT it
+note   gone from the pending set by now; still pending at 3,300 ticks after
+note   the paint is the build-claim question, and the reason belongs in the
+note   report by name (materials / access / arbitration), not as "slow".
+note Q: does the built station render DIFFERENTLY on the map than the painted
+note   outline did at cycle 5? If paint and structure are the same glyph, mode
+note   2 cannot see the build complete and must defer to list_designations --
+note   which is itself a finding about the renderer worth reporting.
+wait 1500
+ascii 40
+inspect_colonists
+count_items
+note
+note --- CYCLE 7 (t=11400, 380 game-seconds) -- OUTPUT --------------------
+note Q: does `count_items` contain a COOKED item that was absent at cycle 4?
+note   EXPECT the raw input to fall as the cooked line rises; a cooked count
+note   rising with NO raw fall would mean the pipeline mints rather than
+note   converts, and conservation fails in the generous direction.
+note Q: is the painted farm plot showing any sign of tending -- a glyph change
+note   in the rectangle, or a colonist standing in it two frames running?
+note   Untouched at 4,800 ticks after paint answers the player-paint question
+note   in the negative, and that is a real answer, not a null.
+wait 1500
+ascii 40
+inspect_colonists
+count_items
+note
+note --- CYCLE 8 (t=12900, 430 game-seconds) -- THE WHOLE-LOOP FRAME -------
+note Q: put frame 8 beside frame 1. Does the arena look LIVED IN -- stock
+note   moved, a station standing where there was bare ground, colonists in
+note   different places doing different things? EXPECT visible difference; two
+note   frames a reader cannot tell apart after 430 game-seconds is the single
+note   most damning outcome this script can produce, and it should be reported
+note   that plainly.
+note Q: has any colonist EATEN in-window (hunger reset upward in a payload)?
+note   This is the last of the three build->cook->eat ends; absent it, the
+note   chain is scored PARTIAL no matter how good the frames look.
+note Q: is the standing-still candidate from cycle 2 still standing still? A
+note   colonist stationary for all eight frames is a stuck-agent report with
+note   its own uid, and it outranks every aggregate on this page.
+wait 1500
+ascii 40
+inspect_colonists
+count_items
+inspect_colony
