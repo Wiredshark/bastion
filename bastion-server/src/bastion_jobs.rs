@@ -2362,6 +2362,15 @@ pub const DETOUR_SEARCHES_PER_TICK: usize = 1;
 /// (a bedroll's 0.6 scales it down) — 0→comfort in ~40s on a bedroll.
 /// Tunable; the BedKind quality split is the design's lever.
 pub const BED_REST_RECOVERY_PER_SEC: f32 = 0.02;
+/// bastion (ITEM 35 v1, 2026-08-21): health restored per second of BED REST,
+/// as a fraction of maximum. DERIVED, not chosen: a colonist crushed by a
+/// cave-in loses `CAVEIN_DAMAGE_FRAC` of max health, and the requirement is
+/// that ONE full night's sleep undoes ONE cave-in. A full sleep is the rest
+/// meter climbing its comfort band at `BED_REST_RECOVERY_PER_SEC`, i.e. about
+/// 0.5 / 0.02 = 25 s of bed time on a quality-1 frame, so the rate is
+/// CAVEIN_DAMAGE_FRAC / 25. Wounds heal in bed and nowhere else — that is
+/// what makes a bed worth building rather than a decoration.
+pub const BED_HEAL_FRAC_PER_SEC: f32 = CAVEIN_DAMAGE_FRAC / 25.0;
 /// Sleep past the comfort band by this much — waking AT the band would
 /// re-cross it within seconds of decay (rested, not barely-at-band).
 pub const SLEEP_MARGIN: f32 = 0.1;
@@ -16914,6 +16923,37 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     slot.occupant = Some(u);
                                 }
                                 let mut slept = false;
+                                // ITEM 35 v1: a bed is where wounds close.
+                                // Before this, a colonist crushed by a
+                                // cave-in or struck by a god-power carried
+                                // that damage forever — vanilla regen is not
+                                // wired for them, and nothing in the colony
+                                // answered a hurt colonist at all. Healing
+                                // rides the sleep the colonist already seeks,
+                                // so it needs no new job kind and no new
+                                // need: the response loop is REST.
+                                if let Some(mut health) = healths.get_mut(entity) {
+                                    let frac = health.fraction();
+                                    if frac < 1.0 {
+                                        let heal = health.maximum()
+                                            * BED_HEAL_FRAC_PER_SEC
+                                            * kind.quality()
+                                            * dt.0;
+                                        health_change_events.emit_now(
+                                            common::event::HealthChangeEvent {
+                                                entity,
+                                                change: comp::HealthChange {
+                                                    amount: heal,
+                                                    by: None,
+                                                    cause: None,
+                                                    precise: false,
+                                                    time: *time,
+                                                    instance: 0,
+                                                },
+                                            },
+                                        );
+                                    }
+                                }
                                 if let Some(needs) = needs_storage.get_mut(entity) {
                                     let cfg = common::bastion::MoodConfig::current();
                                     needs.rest = (needs.rest
@@ -16948,6 +16988,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         job = active.job,
                                         pos = ?bed_pos,
                                         owned = (owner == Some(u)),
+                                        // ITEM 35: treatment beside outcome —
+                                        // a sleep that healed and one that
+                                        // merely rested must not read alike.
+                                        health = healths
+                                            .get(entity)
+                                            .map(|h| h.fraction())
+                                            .unwrap_or(-1.0),
                                         "bastion: slept — rest restored"
                                     );
                                     board.remove_job(active.job);
