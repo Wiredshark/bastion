@@ -1429,12 +1429,36 @@ impl Server {
                 no_inventory += 1;
                 continue;
             };
-            // Already holding a tool? Leave them alone — this is a founding
-            // kit, not an endless supply.
-            if inv
+            // Already holding a WORK tool? Leave them alone — this is a
+            // founding kit, not an endless supply.
+            //
+            // ★ "A TOOL" IS NOT THE SAME QUESTION AS "A WORK TOOL", and the
+            // leg said so: `colonists_seen=8 armed=0 already_armed=8`. Every
+            // colonist spawns with a WEAPON in the mainhand, and a Veloren
+            // weapon is an `ItemKind::Tool` too — so a guard testing for "a
+            // Tool" skipped the entire colony while none of them could mine.
+            // Wear and `tool_factor` both key on the tool KIND matching the
+            // WORK kind, so a sword is, for every purpose this grant cares
+            // about, an empty hand.
+            //
+            // Tested against the same `work_tool_kind` mapping the wear site
+            // uses, rather than a second list of kinds that could drift from it.
+            let holds_work_tool = inv
                 .equipped(comp::slot::EquipSlot::ActiveMainhand)
-                .is_some_and(|i| matches!(&*i.kind(), comp::item::ItemKind::Tool(_)))
-            {
+                .and_then(|i| match &*i.kind() {
+                    comp::item::ItemKind::Tool(t) => Some(t.kind),
+                    _ => None,
+                })
+                .is_some_and(|have| {
+                    [
+                        common::bastion::WorkType::Mine,
+                        common::bastion::WorkType::Chop,
+                        common::bastion::WorkType::Build,
+                    ]
+                    .iter()
+                    .any(|w| common::bastion::work_tool_kind(*w) == Some(have))
+                });
+            if holds_work_tool {
                 already_armed += 1;
                 continue;
             }
