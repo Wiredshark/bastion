@@ -124,3 +124,4 @@ __pycache__/
 userdata-rbench-*/
 readme/renderer-bench/smoke/
 *.log
+rustc-ice-*.txt
