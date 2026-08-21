@@ -1,0 +1,22 @@
+note ITEM 14 BAR 1B RE-RUN, turn 1. Pre-registered at ITEM14-BAR1B-RERUN-PREREGISTRATION.md.
+note PASS needs three things: the guard assignment SURVIVES 60s+, Guard XP > 0, and brave-holds/timid-flees at IDENTICAL health.
+note This turn establishes ONLY the first, because it is the one the moot bug made impossible. Before 703039d927 a guard post was destroyed 6.0/(1+0.2*level) seconds after arrival -- 6.00s at level 0 -- so "the assignment still exists a minute later" is the precondition every other bar-1b measurement rested on and never had.
+anchor
+inspect_colony
+note --- BASELINE BEFORE ANY PAINT. If Guard XP is already non-zero the post-paint reading cannot be attributed to this post.
+inspect_colonists
+note --- ONE GUARD POST, east of camp on flat arena ground. ONE, not a patrol: a patrol designation is a separate open finding (it pins a colonist oscillating at tick rate) and mixing it in would confound the survival reading.
+designate guardpost 16394 16384 399 16396 16386 400
+note --- Immediately after the paint: the job should exist and be claimable.
+inspect_colony
+wait 300
+note --- ~10s in. Under the OLD code a level-0 guard was already destroyed by now (6.00s). If the job is still here, the moot fix is live.
+inspect_colony
+wait 900
+note --- ~40s in.
+inspect_colony
+wait 1200
+note --- ~80s in. This is past every destruction time in the derived range (6.00s at level 0 down to 3.00s at level 5), so a surviving job here is the precondition MET.
+inspect_colony
+inspect_colonists
+count_items
