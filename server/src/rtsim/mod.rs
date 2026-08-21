@@ -487,7 +487,7 @@ impl RtSim {
         seed_tick: u64,
     ) -> Vec<String> {
         use common::rtsim::{Profession, Role};
-        use common::bastion::{ADOPTED_TRADE_XP, WorkType};
+        use common::bastion::{ADOPTED_TRADE_XP, ADOPT_TOWN_RADIUS, WorkType};
 
         let data = self.state.get_data_mut();
         let mut rng = ::rtsim::tick_rng(self.world_seed, seed_tick, 0xBA57_C012);
@@ -496,7 +496,7 @@ impl RtSim {
         // — the same "nearest site to a position" rule the plot lookup uses,
         // so the people adopted and the plots adopted can never be different
         // villages.
-        let Some(site_id) = data
+        let Some((site_id, site_wpos)) = data
             .sites
             .iter()
             .min_by_key(|(_, site)| {
@@ -504,7 +504,7 @@ impl RtSim {
                     .map(|e| e as i64)
                     .distance_squared(near.map(|e| e as i64))
             })
-            .map(|(id, _)| id)
+            .map(|(id, site)| (id, site.wpos))
         else {
             tracing::warn!("bastion: ADOPT-NPCS — no rtsim site near the target; adopted nobody");
             return Vec::new();
@@ -527,7 +527,29 @@ impl RtSim {
         let mut residents: Vec<::rtsim::data::npc::NpcId> = Vec::new();
         for (id, npc) in data.npcs.npcs.iter() {
             total += 1;
-            if npc.home != Some(site_id) {
+            // ★ POSITION, NOT `home` (2026-08-21). The first version required
+            // `npc.home == Some(site_id)` and adopted NOBODY: the census said
+            // `npcs_total=252 eligible=0 rej_wrong_home=252` — every single NPC
+            // in the world refused on that one clause, including the villagers
+            // a play session then confirmed WERE homed to exactly this site.
+            //
+            // The clause was not wrong, it was EARLY. Adoption runs at
+            // founding, ~10 seconds after boot; rtsim has not finished
+            // assigning homes yet. The session checked `home` minutes later
+            // and saw it populated, which is why the field looked reliable and
+            // the bug looked impossible.
+            //
+            // Position is true immediately and is also what a player MEANS by
+            // "the people in that town" — they are the ones standing in it.
+            // `home` is still accepted when it happens to be set, so a
+            // resident who has wandered out of the radius is not disowned.
+            let in_town = npc
+                .wpos
+                .xy()
+                .map(|e| e as i64)
+                .distance_squared(site_wpos.map(|e| e as i64))
+                < (ADOPT_TOWN_RADIUS as i64).pow(2);
+            if !in_town && npc.home != Some(site_id) {
                 wrong_home += 1;
                 continue;
             }

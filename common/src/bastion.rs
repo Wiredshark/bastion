@@ -1494,6 +1494,15 @@ pub fn drive_work_factor(drive: ColonyDrive, work: WorkType) -> f32 {
 /// bastion (ITEM 28): the ONE work→tool mapping — `tool_factor` (the rate
 /// bonus) and the wear site (one durability step per completion) both read
 /// it, so they cannot drift onto different tools.
+/// bastion (ADOPT-A-TOWN): how far from a village centre a person counts as
+/// one of its residents.
+///
+/// Adoption runs at founding, before rtsim finishes assigning `home`, so
+/// position is the only fact available — and it is also what a player means by
+/// "the people in that town": the ones standing in it. Sized to cover a
+/// village and its immediate fields without reaching the next settlement.
+pub const ADOPT_TOWN_RADIUS: i32 = 160;
+
 /// bastion (ADOPT-A-TOWN, Ben RULED 2026-08-21: adopting a town adopts its
 /// people): how much of their trade an adopted villager already knows.
 ///
