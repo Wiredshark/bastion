@@ -14730,6 +14730,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         info!(
                             colonist = %uid,
                             bed = ?bed_pos,
+                            // ★ HEALTH AT THE MOMENT THE BED IS WANTED (Ben's
+                            // ruling 2: a wounded colonist should seek rest).
+                            // The `slept` emit carries health at COMPLETION,
+                            // by which time bed healing may already have
+                            // restored it — so a leg showing every sleeper at
+                            // 1.0 cannot tell "the wounded never went to bed"
+                            // from "they went hurt and woke up mended". Those
+                            // are a broken feature and a working one.
+                            // `rest_th` rides along because it is the number
+                            // injury actually moves: a wounded colonist's
+                            // threshold should be visibly higher than a
+                            // healthy one's in the same run.
+                            health = healths.get(entity).map(|h| h.fraction()).unwrap_or(-1.0),
+                            rest_th,
                             "bastion: need preempt — rest below interrupt"
                         );
                         preempt_pending.push((entity, *uid, PendingNeed::Rest(bed_pos)));
