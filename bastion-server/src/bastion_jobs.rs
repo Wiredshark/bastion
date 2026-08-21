@@ -2396,7 +2396,62 @@ pub const FOOD_DEFS: &[&str] = &[
     // ITEM 27 (2026-08-20): the cooked dish is FOOD — without this entry
     // cooking produced output no eat scan could see (decorative industry).
     COOKED_DISH_ITEM,
+    // F5 (2026-08-21): the adopted village's own produce. A JOIN IS A
+    // FILTER — harvesting a tomato the colony's food scan does not
+    // recognise would create food that cannot be counted, cannot be
+    // stocked and cannot be eaten, which is a WORSE bug than not
+    // harvesting at all: the field would empty and the colony would still
+    // starve. These three entries are what make the harvest arm below
+    // mean anything.
+    VOLUNTEER_TOMATO_ITEM,
+    VOLUNTEER_CARROT_ITEM,
+    VOLUNTEER_LETTUCE_ITEM,
 ];
+
+/// bastion (F5): vanilla produce a village field actually contains, and for
+/// which the game already ships a real item. Named separately so the mapping
+/// below is the ONE place a crop becomes an item.
+pub const VOLUNTEER_TOMATO_ITEM: &str = "common.items.food.tomato";
+pub const VOLUNTEER_CARROT_ITEM: &str = "common.items.food.carrot";
+pub const VOLUNTEER_LETTUCE_ITEM: &str = "common.items.food.lettuce";
+/// bastion (F5): a volunteer yields less than a tended crop — you are
+/// gleaning someone else's field, not running a farm cycle — and yields NO
+/// seed, because a tomato does not produce this colony's wheat seed and
+/// pretending otherwise would put a free seed press in every village.
+pub const VOLUNTEER_YIELD: u32 = 2;
+
+/// bastion (F5, Ben direct 2026-08-21: "shouldn't the colonists be … using
+/// the existing farm land"): the crop sprite a village field is planted with
+/// → the item harvesting it actually produces.
+///
+/// THE DISCRIMINATOR, and why this needs no new state: the colony only ever
+/// sows `WheatYellow`. Therefore ANY other crop sprite standing in a
+/// registered farm column is, by construction, a volunteer the colony did not
+/// plant. The founded-colony rule (`WheatYellow` at `FARM_GROWTH_MAX`) is a
+/// separate match arm and is left exactly as it was.
+///
+/// Worldgen crops sit at `Growth 0` because 0 is the RESERVED "mature look"
+/// stage (see `FARM_STAGE_SECS`' doc) — a village field is RIPE, not unripe,
+/// which is precisely why colonists standing in one and doing nothing looked
+/// so wrong.
+///
+/// SCOPE, deliberately narrow and honest: only crops the game ships a real
+/// item for. `Corn`/`Pumpkin`/`Radish`/`Turnip` have sprites but no plain
+/// vanilla food item, and `Flax`/`Cotton` are fibre rather than food — mapping
+/// any of them onto wheat would put the wrong thing in the player's inventory,
+/// so they are left alone and banked as a content question. `WheatGreen` maps
+/// to wheat because it IS wheat; the engine's own sprite table carries a TODO
+/// saying it should have been a `Growth` attribute all along.
+pub fn volunteer_crop_item(sprite: common::terrain::SpriteKind) -> Option<&'static str> {
+    use common::terrain::SpriteKind as S;
+    match sprite {
+        S::WheatGreen => Some(FARM_WHEAT_ITEM),
+        S::Tomato => Some(VOLUNTEER_TOMATO_ITEM),
+        S::Carrot => Some(VOLUNTEER_CARROT_ITEM),
+        S::Lettuce => Some(VOLUNTEER_LETTUCE_ITEM),
+        _ => None,
+    }
+}
 /// bastion (ITEM 27): RAW inputs the cook generator scans — a strict subset
 /// of `FOOD_DEFS`. Kept separate so the pot can never cook its own output
 /// (the dish matching a raw scan would loop curry→curry forever).
@@ -13112,6 +13167,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // vanilla encoding (run-1 find: a None-only arm
                         // silently skipped every empty field cell).
                         match crop.get_sprite() {
+                            // F5: a VOLUNTEER — a crop standing in a
+                            // registered farm column that this colony never
+                            // sowed (it only ever sows WheatYellow). Ripe by
+                            // construction: worldgen plants at the reserved
+                            // Growth-0 "mature look" stage. One harvest job,
+                            // same shape as the mature-wheat arm below; it
+                            // must be tested BEFORE that arm's growth logic
+                            // so a volunteer never falls into the sown
+                            // colony's stage machine and gets "advanced".
+                            Some(s) if volunteer_crop_item(s).is_some() => {
+                                if !occupied.contains(&cpos) {
+                                    new_jobs.push((cpos, None, AffordanceClass::OnTopAlways));
+                                }
+                            },
                             Some(SpriteKind::WheatYellow) => {
                                 let g = crop.get_attr::<Growth>().map(|g| g.0).unwrap_or(0);
                                 if g >= FARM_GROWTH_MAX {
@@ -17985,6 +18054,41 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 info!(
                                     pos = ?job.pos,
                                     "bastion: harvested (cell returns to                                      tilled)"
+                                );
+                            },
+                            // F5: GLEANING an adopted village field. Yields
+                            // the crop's OWN item — a tomato plant gives
+                            // tomatoes — and no seed: see VOLUNTEER_YIELD.
+                            // The cell is cleared rather than re-sown, which
+                            // hands it to the ordinary sow arm, so a gleaned
+                            // village field becomes a working colony farm
+                            // instead of a one-time windfall that never
+                            // regrows.
+                            Some(c) if c.get_sprite().and_then(volunteer_crop_item).is_some() => {
+                                let def = c
+                                    .get_sprite()
+                                    .and_then(volunteer_crop_item)
+                                    .expect("guarded by the arm above");
+                                block_change.set(job.pos, Block::empty());
+                                board.farm_growth.remove(&(job.pos.x, job.pos.y, job.pos.z));
+                                // DET-RNG-008 shape: its own keyed stream, so
+                                // adding this arm cannot shift the draws the
+                                // wheat harvest above makes.
+                                let mut rng = toss_scatter_rng(tick.0, job.pos, 0xFA47_0002);
+                                for _ in 0..VOLUNTEER_YIELD {
+                                    crate::bastion_actions::emit_drop(
+                                        &mut item_drop_emitter,
+                                        job.pos,
+                                        Item::new_from_asset_expect(def),
+                                        *program_time,
+                                        &mut rng,
+                                    );
+                                }
+                                acted = true;
+                                info!(
+                                    pos = ?job.pos,
+                                    def,
+                                    "bastion: F5 volunteer gleaned from an adopted field"
                                 );
                             },
                             _ => {}, // foreign/moot — release below
@@ -24136,6 +24240,62 @@ fn reservation_indices_are_consistent_v1(
 mod tests {
     use super::*;
     use std::num::NonZeroU64;
+
+    /// F5 / ★ A JOIN IS A FILTER. Every item a volunteer harvest can produce
+    /// MUST be recognised by the colony's food scan. If it is not, gleaning a
+    /// village field empties the field and creates produce that cannot be
+    /// counted, stocked or eaten — strictly worse than never harvesting,
+    /// because the food is gone AND the colony still starves. This coupling
+    /// is invisible at both call sites (one maps sprites, the other filters
+    /// defs), which is exactly the kind of pair that drifts apart silently.
+    #[test]
+    fn every_volunteer_yield_is_recognised_as_food() {
+        use common::terrain::SpriteKind as S;
+        let planted = [
+            S::WheatGreen,
+            S::Tomato,
+            S::Carrot,
+            S::Lettuce,
+            // Sprites deliberately OUT of scope — they must map to nothing,
+            // so that "no item exists for it" can never quietly become
+            // "harvest it as wheat".
+            S::Corn,
+            S::Pumpkin,
+            S::Flax,
+            S::Cotton,
+        ];
+        let mut mapped = 0;
+        for sprite in planted {
+            let Some(def) = volunteer_crop_item(sprite) else {
+                continue;
+            };
+            mapped += 1;
+            assert!(
+                FOOD_DEFS.contains(&def),
+                "volunteer {sprite:?} yields {def}, which the colony's food scan cannot see — \
+                 gleaning it would destroy the crop and feed nobody"
+            );
+        }
+        assert_eq!(
+            mapped, 4,
+            "expected exactly the four in-scope volunteers to map; a change here means the \
+             scope moved and its honesty argument needs re-reading"
+        );
+    }
+
+    /// F5: the founded-colony rule must be UNTOUCHED. `WheatYellow` is what
+    /// this colony sows itself, and it is the discriminator the whole
+    /// volunteer arm rests on — if it ever became a volunteer, the colony
+    /// would glean its own seed crop at Growth 0 the instant it sowed it,
+    /// destroying the farm cycle rather than extending it.
+    #[test]
+    fn the_colonys_own_crop_is_never_a_volunteer() {
+        assert!(
+            volunteer_crop_item(common::terrain::SpriteKind::WheatYellow).is_none(),
+            "WheatYellow is what the colony SOWS — treating it as a volunteer would make every \
+             freshly sown cell instantly harvestable and the farm cycle would eat itself"
+        );
+    }
 
     /// SHAFT FIXTURE (SHAFT-FIXTURE-PREREG.md) G1: the geometry arithmetic,
     /// pinned BEFORE any fixture code exists.
