@@ -5911,6 +5911,11 @@ pub struct JobBoard {
     /// it last TRANSITIONED (hysteresis reads the age; the claim selector
     /// reads the drive). Session state — recomputed from live producers.
     pub colony_drive: (common::bastion::ColonyDrive, u64),
+    /// bastion (ARC 8 item 34): the colony's WEALTH — stockpiled item units,
+    /// sampled on the colony-mind cadence. ONE producer: raid pressure reads
+    /// THIS number and nothing computes a second copy of it (the same
+    /// same-source law that keeps the dashboard and the death check honest).
+    pub colony_wealth: u32,
     pub pending_sentiments: Vec<(
         common::rtsim::RtSimEntity,
         common::rtsim::RtSimEntity,
@@ -11521,6 +11526,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // casts landed including one at t=0) — the pin holds the pool at
         // zero so a refusal leg can exist at all.
         if !favor_zero_pin() {
+            // ── ITEM 34: the WEALTH SIGNAL ──────────────────────────────
+            // Raids scale with what a colony is worth stealing, so wealth
+            // needs one honest producer before pressure can read it: every
+            // item UNIT sitting in a stockpile (units, not entities — a
+            // 64-stone pile is wealth, not one thing). Sampled on the colony
+            // mind's own cadence so wealth, drive and the dashboard all
+            // describe the same instant.
+            if tick.0 % (ARBITRATION_INTERVAL as u64 * 10) == 21 {
+                let mut wealth = 0u32;
+                for (pi, ipos) in (&pickup_items, &positions).join() {
+                    if board
+                        .stockpile_at(ipos.0.map(|e| e.floor() as i32))
+                        .is_some()
+                    {
+                        wealth = wealth.saturating_add(pi.amount());
+                    }
+                }
+                if wealth != board.colony_wealth {
+                    info!(
+                        wealth,
+                        previous = board.colony_wealth,
+                        "bastion: ITEM 34 colony wealth"
+                    );
+                }
+                board.colony_wealth = wealth;
+            }
+
             // ★ ITEM 32 v1 — FAITH IS EARNED, NOT FREE (2026-08-21). Ruling
             // #4 is "no FREE magic", and a favor pool that fills from nothing
             // while powers cost from it is exactly free magic wearing a

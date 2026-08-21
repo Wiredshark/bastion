@@ -5283,6 +5283,10 @@ impl Server {
         #[cfg(feature = "worldgen")]
         self.bastion_trade_price_tick();
 
+        // bastion (ITEM 34): raids, scaled by the wealth signal.
+        #[cfg(feature = "worldgen")]
+        self.bastion_raid_tick();
+
         // bastion (det-capture): env-gated AUTO-FOUND a colony for NON-INTERACTIVE
         // determinism runs. server-cli has no client to found a colony via the
         // normal command, so on a flat-arena boot with BASTION_AUTOFOUND_COLONY=N
@@ -6910,6 +6914,93 @@ impl Server {
     /// reads. The ratio is the site's OWN `SitePrices` (bar 2's audit); z
     /// comes from sim alt (terrain-independent — the adoption lesson).
     #[cfg(feature = "worldgen")]
+    /// bastion (ARC 8 item 34 v1): RAIDS SCALE WITH WEALTH. The colony's
+    /// wealth (one producer: `JobBoard::colony_wealth`, stockpiled units) puts
+    /// it in a band, and the band sets how often a raid comes and how many
+    /// raiders it brings. Spawning rides the SAME vanilla door the spawn
+    /// command uses (`CreateNpcEvent` from an entity config) rather than a
+    /// second creation path.
+    ///
+    /// ON by default with a named kill switch (`BASTION_NO_RAIDS=1`) — the
+    /// shape ruling #2 established. A colony with nothing worth taking is
+    /// never raided: band 0 is silence, which is also the null this row's
+    /// bar needs.
+    #[cfg(feature = "worldgen")]
+    fn bastion_raid_tick(&mut self) {
+        if std::env::var_os("BASTION_NO_RAIDS").is_some() {
+            return;
+        }
+        let tick = self.state.ecs().read_resource::<Tick>().0;
+        // Slow cadence: a raid is an EVENT, not weather.
+        if tick % 1800 != 137 {
+            return;
+        }
+        let (wealth, origin) = {
+            let ecs = self.state.ecs();
+            let board = ecs.read_resource::<bastion_jobs::JobBoard>();
+            let origin = board
+                .stockpiles
+                .first()
+                .map(|(_, r)| (r.min + r.max) / 2)
+                .map(|c| Vec3::new(c.x as f32 + 0.5, c.y as f32 + 0.5, c.z as f32 + 1.0));
+            (board.colony_wealth, origin)
+        };
+        // BANDS (data, not branches): 0 = nothing to steal, then a raider per
+        // band step. Deliberately coarse — this is the shape of the rule, and
+        // its numbers are the first thing a balance pass will want to move.
+        let raiders = match wealth {
+            0..=63 => 0,
+            64..=255 => 1,
+            256..=1023 => 2,
+            _ => 3,
+        };
+        if raiders == 0 {
+            return;
+        }
+        let Some(origin) = origin else { return };
+        let config_path = "common.entity.wild.aggressive.wolf";
+        // Same door the /spawn command uses: a RON-wrapped EntityConfig.
+        let Ok(config) = common::assets::Ron::<common::generation::EntityConfig>::load(
+            config_path,
+        ) else {
+            tracing::warn!(
+                config_path,
+                "bastion: ITEM 34 raid REFUSED — entity config would not load"
+            );
+            return;
+        };
+        // `.read()` yields the Ron wrapper; `into_inner()` is the config the
+        // spawn path actually consumes (the /spawn command does the same).
+        let config = config.read().clone().into_inner();
+        let mut rng = rand::rng();
+        for i in 0..raiders {
+            // Raiders arrive from OUTSIDE, not on top of the pantry.
+            let angle = std::f32::consts::TAU * (i as f32 / raiders as f32);
+            let pos = origin + Vec3::new(angle.cos() * 48.0, angle.sin() * 48.0, 0.0);
+            let info = common::generation::EntityInfo::at(pos, &mut rng)
+                .with_entity_config(config.clone(), Some(config_path), &mut rng, None);
+            if let crate::sys::terrain::SpawnEntityData::Npc(data) =
+                crate::sys::terrain::SpawnEntityData::from_entity_info(info)
+            {
+                let (npc, _) = data.to_npc_builder();
+                self.state
+                    .ecs()
+                    .read_resource::<common::event::EventBus<common::event::CreateNpcEvent>>()
+                    .emit_now(common::event::CreateNpcEvent {
+                        pos: comp::Pos(pos),
+                        ori: comp::Ori::default(),
+                        npc,
+                    });
+            }
+        }
+        tracing::info!(
+            wealth,
+            raiders,
+            ?origin,
+            "bastion: ITEM 34 RAID — pressure scaled to what the colony is worth taking"
+        );
+    }
+
     fn bastion_trade_price_tick(&mut self) {
         let tick = self.state.ecs().read_resource::<Tick>().0;
         if tick % 600 != 23 {
