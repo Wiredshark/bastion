@@ -68,6 +68,69 @@ predates the fix, and its two rerun attempts both failed the staleness gate).
 Both errors are the same shape: **reading the most recent lines and calling it
 the run.** Aggregate first, then look at the trend, then quote a line.
 
+## THE ROOT CAUSE, found after this disposition was first written
+
+The answer above ("the founding ships no materials") was the **symptom**. The
+cause, found by reading the generator rather than the founding:
+
+**The colony already owns an autonomous mining economy.** It scans for exposed
+rock near home and emits Mine jobs, demand-driven and capped per colonist. It
+never ran for a single tick, because the whole block is gated on
+
+```
+tick % ARBITRATION_INTERVAL == 2 && !board.plans.is_empty()
+```
+
+and `demand` was accumulated **only over `board.plans`**. A founding places
+DESIGNATIONS, not plans — and so does every region a player paints. So the
+colony owned 8 bed jobs each billing stone, owned a miner that could have dug
+it, and the miner never woke.
+
+The code said so in advance: *"Gated on a live plan: v1's only demand source
+(AUTON-2 adds standing stock floors)."* A known-partial demand signal reads
+exactly like a working one until something outside its population needs
+supplying. The comment knew; nothing asserted it.
+
+This makes decision 112's fork mostly **moot**, and that is recorded rather
+than quietly banked as a win: I posed it as "ship a starter cache vs. build an
+autonomous system". The autonomous system already existed and was blind to half
+its demand. That is a defect, not a game-design fork.
+
+### THE REGISTERED PREDICTION for the fix (written before its leg ran)
+
+Re-run the **original `injury` arm** — the one with NO seeded materials, the
+arm that produced `beds=0` and `rested→0`. If the demand fix is right, that
+arm should now reproduce `matbeds` **without being handed anything**:
+
+- `bastion: designation placed` for Mine jobs the colony generated *itself*
+- `bed registered (built)` reaching 8
+- `rested` dipping at ~tick 9300 and then **recovering**, not pinning at 0
+- `idle` falling well below the 6.00 mean it held
+
+If beds still do not appear, the demand fix is not sufficient and something
+else also gates the miner — which is the result worth finding, because the
+alternative is shipping a fix that reads as working because a *different* arm
+was fed by hand.
+
+### Independently confirmed, three times, before the fix existed
+
+Three play sessions run the same night reached this defect separately:
+
+- **Founder** (arena, 56,700 ticks): "founding gives you eight bed jobs and no
+  way on earth to build them" — 64 of 64 claim considerations refused at the
+  materials gate, `working=0 idle=8` on 29 of 49 samples. Then it painted a
+  quarry by hand and the colony came alive within ~1,000 ticks:
+  `working=6 moving=1 stuck=0 idle=1`, `blocked_materials` 8→0, all 8 beds
+  registered inside four minutes. **That is the transition the fix must now
+  produce with no player intervention** — and it also proves the rest of the
+  pipeline was never broken, only starved.
+- **Survivor** (arena, 87,600 ticks): all 8 bed jobs swept as unclaimable after
+  930 seconds and never regenerated; `beds=0` in all 29 drive samples;
+  `rested=0` for the final ~40,000 ticks; population fell 8 → 1.
+- **Villager** (adopted town): the same starvation from the other direction —
+  an adopted village mints no work at all, `working=0` in all 193 samples until
+  a region was painted by hand.
+
 ## What is proven, and what is NOT
 
 **Proven.** The defect is real and materials are *sufficient* to clear it. The
