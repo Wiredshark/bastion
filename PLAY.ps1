@@ -57,6 +57,35 @@ if (-not (Test-Path "$Bin\veloren-server-cli.exe")) {
     Write-Host "server binary missing: $Bin\veloren-server-cli.exe"; return
 }
 
+# ★ REFUSE A MISMATCHED PAIR (2026-08-21). A server and client built from
+# different source produce "Network error: deserialize error on message:
+# UnexpectedEnd { additional: 8 }" at the join screen, which looks exactly like
+# a protocol bug and is not. I caused this for Ben by rebuilding ONLY
+# veloren-server-cli for a server-side fix and leaving voxygen 11 minutes
+# behind. There was nothing on screen to suggest the cause, so he had no way to
+# tell it from a real network fault.
+#
+# Compare BUILD TIMES, and fail loudly rather than launching into the error.
+$srv = (Get-Item "$Bin\veloren-server-cli.exe").LastWriteTime
+$cli = if (Test-Path "$Bin\veloren-voxygen.exe") { (Get-Item "$Bin\veloren-voxygen.exe").LastWriteTime } else { $null }
+if ($null -eq $cli) {
+    Write-Host "client binary missing: $Bin\veloren-voxygen.exe"; return
+}
+$skewMin = [Math]::Abs(($srv - $cli).TotalMinutes)
+if ($skewMin -gt 3) {
+    Write-Host ''
+    Write-Host 'REFUSING TO LAUNCH - server and client were built from different source.'
+    Write-Host ("  veloren-server-cli.exe  {0}" -f $srv)
+    Write-Host ("  veloren-voxygen.exe     {0}" -f $cli)
+    Write-Host ("  skew: {0:N1} minutes" -f $skewMin)
+    Write-Host ''
+    Write-Host 'This produces "deserialize error on message: UnexpectedEnd" at the join'
+    Write-Host 'screen, which is NOT a network problem. Rebuild BOTH together:'
+    Write-Host '  cargo build --profile no_overflow -p veloren-server-cli -p veloren-voxygen'
+    Write-Host ''
+    return
+}
+
 # The two worlds.
 $EnvVars = if ($Mode -eq 'town') {
     @{
@@ -88,11 +117,23 @@ foreach ($k in $EnvVars.Keys) { Set-Item -Path "Env:$k" -Value $EnvVars[$k] }
 
 Write-Host "booting a '$Mode' world... (worldgen takes a few minutes the first time)"
 
-# ★ ITS OWN WINDOW, NO REDIRECTION. server-cli is an interactive TUI; capturing
-# its stdout with -RedirectStandardOutput/-NoNewWindow is what crashed it on
-# launch. It writes its own logs under userdata regardless, so nothing is lost.
+# ★ ITS OWN WINDOW (never -NoNewWindow: server-cli is an interactive TUI and
+# starving it of a console is what crashed it on launch), BUT the output IS
+# captured. The earlier note here said "it writes its own logs under userdata
+# regardless, so nothing is lost" -- that is FALSE, and I checked rather than
+# trusted it: after a boot, userdata holds rtsim/, saves/ and save_universe/
+# and NO log file anywhere. Everything the server said about founding, adoption
+# and the colony went to a console window and was gone.
+#
+# That cost a verification pass: the adopt-a-town census prints ONCE at
+# founding, so "did the villagers get adopted" was unanswerable from a world
+# that was running correctly. Redirecting with a new window is fine -- it was
+# only the -NoNewShell/-NoNewWindow combination that broke the TUI.
+$Log = Join-Path $WT 'play-server.log'
+if (Test-Path $Log) { Remove-Item $Log -Force }
 Start-Process -FilePath "$Bin\veloren-server-cli.exe" -ArgumentList '--no-auth' `
-    -WorkingDirectory $WT | Out-Null
+    -WorkingDirectory $WT -RedirectStandardOutput $Log `
+    -RedirectStandardError (Join-Path $WT 'play-server.err.log') | Out-Null
 
 # ★ WAIT ON THE PORT, not on a log line. The log is in the server's own window
 # now, and "is it accepting connections" is exactly what the port answers.
