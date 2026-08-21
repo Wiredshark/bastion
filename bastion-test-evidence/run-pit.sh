@@ -333,6 +333,10 @@ case "$ARM" in
   # Item 31 (POWER-0): both favor-gate branches in one flat-arena leg.
   smite)        PITVAR=" BASTION_SEED_FOOD=64"
               SCRIPT="script-smite.txt" ;;
+  # Item 31 bar 2: the refusal branch — FAVOR_ZERO holds the pool empty
+  # so a cast can finally be unaffordable.
+  smiteref)     PITVAR=" BASTION_SEED_FOOD=64 BASTION_FAVOR_ZERO=1"
+              SCRIPT="script-smite.txt" ;;
   # Item 40 (colony scale): the 16- and 32-colonist tick-cost measurements
   # against the re-based avg_tick_ms guard (12). Same script as cookery so
   # the workload shape is comparable; the b5_soak tick stats ARE the read.
