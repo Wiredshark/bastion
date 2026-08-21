@@ -130,6 +130,37 @@ impl Region {
         }
         pieces
     }
+
+    /// The smallest region containing every region in `regions`, or `None`
+    /// when there are none.
+    ///
+    /// The PARTNER of [`Region::subtract`], and only useful because of it: a
+    /// cut that covers a rect removes that rect entirely
+    /// (`subtract_full_cover_returns_empty`), so subtracting the bounding
+    /// region of a SET removes every member of the set. That is how the
+    /// designation-overlay reconcile in `server::sys::msg::in_game` empties
+    /// a client's mirror with ONE `BastionDesignationRemoved` — no sentinel
+    /// "whole world" rect, and so nothing anywhere near `i32::MIN`/`MAX`,
+    /// where `subtract`'s `± 1` piece edges would overflow.
+    ///
+    /// The covering property is pinned by this function's own test rather
+    /// than left as a comment: it is the single load-bearing claim under
+    /// that clear, and if it failed the client would keep its old rects and
+    /// the refill would DOUBLE them.
+    pub fn bounding(regions: impl IntoIterator<Item = Region>) -> Option<Region> {
+        let mut iter = regions.into_iter();
+        let first = iter.next()?;
+        let (mut min, mut max) = (first.min, first.max);
+        for r in iter {
+            min.x = min.x.min(r.min.x);
+            min.y = min.y.min(r.min.y);
+            min.z = min.z.min(r.min.z);
+            max.x = max.x.max(r.max.x);
+            max.y = max.y.max(r.max.y);
+            max.z = max.z.max(r.max.z);
+        }
+        Some(Region { min, max })
+    }
 }
 
 /// Max designation volume the server accepts (validation cap; keeps a stray
@@ -2379,6 +2410,46 @@ mod tests {
         let a = r((1, 1, 1), (3, 3, 3));
         let b = r((0, 0, 0), (5, 5, 5));
         assert!(a.subtract(&b).is_empty());
+    }
+
+    #[test]
+    fn bounding_of_none_is_none() {
+        assert!(Region::bounding(std::iter::empty()).is_none());
+    }
+
+    /// THE property the designation-overlay reconcile's one-message clear
+    /// rests on. Not "bounding returns a plausible box" — the two facts
+    /// composed: the box contains every member, AND subtracting it removes
+    /// every member, leaving nothing for the refill to double up against.
+    ///
+    /// Includes a disjoint set (the bbox spans empty space between members),
+    /// nested and overlapping members, a single member, and a negative-
+    /// coordinate member — the world has those, and a bbox built with the
+    /// wrong comparison direction passes on all-positive input.
+    #[test]
+    fn bounding_covers_every_member_so_one_subtract_clears_the_set() {
+        for set in [
+            vec![r((0, 0, 0), (2, 2, 2))],
+            vec![r((0, 0, 0), (2, 2, 2)), r((50, 50, 50), (52, 52, 52))],
+            vec![r((0, 0, 0), (9, 9, 9)), r((3, 3, 3), (4, 4, 4))],
+            vec![r((0, 0, 0), (5, 5, 5)), r((3, 3, 3), (8, 8, 8))],
+            vec![r((-40, -40, -12), (-38, -38, -10)), r((7, 7, 7), (9, 9, 9))],
+        ] {
+            let bounds = Region::bounding(set.iter().copied()).expect("non-empty set");
+            for member in &set {
+                assert_eq!(
+                    bounds.intersection(member),
+                    Some(*member),
+                    "bounding box {bounds:?} does not contain member {member:?}"
+                );
+                assert!(
+                    member.subtract(&bounds).is_empty(),
+                    "member {member:?} survived subtraction of the set's bounding box \
+                     {bounds:?} — the reconcile's clear would leave stale rects on the \
+                     client and the refill would double them"
+                );
+            }
+        }
     }
 
     #[test]

@@ -7116,6 +7116,22 @@ impl JobBoard {
                             occupant: None,
                         });
                         beds += 1;
+                        // ★ FOUND BY A PLAY SESSION (2026-08-21). This scan
+                        // registered beds, hearths and container zones with
+                        // NO per-item witness — only the caller's aggregate
+                        // counts. The BUILT path emits "bed registered
+                        // (built)" / "cook station registered (built)" per
+                        // item, so a log reader could locate a built bed and
+                        // not an adopted one, and the adopted CONTAINER zones
+                        // were the only zone allocations in this file with no
+                        // line at all: the session watched zones 10-15
+                        // announce themselves while 8 and 9 appeared from
+                        // nowhere. An id with no registration line reads as
+                        // "created outside the registration path", which is
+                        // exactly what it looked like and exactly what it
+                        // was not. Same vocabulary as the built twins,
+                        // qualified `(adopted)`.
+                        info!(pos = ?pos, "bastion: bed registered (adopted)");
                     }
                     // A hearth. `Ember` is what a house actually has — a lit
                     // fireplace — and is the reason a village kitchen was
@@ -7131,6 +7147,7 @@ impl JobBoard {
                         && register_cook_station(&mut self.cook_stations, pos)
                     {
                         pots += 1;
+                        info!(pos = ?pos, "bastion: cook station registered (adopted)");
                     }
                     // Household storage, as the generator actually places it.
                     if matches!(
@@ -7191,22 +7208,31 @@ impl JobBoard {
                             self.next_zone += 1;
                             self.stockpiles.push((sid, one));
                             chests += 1;
-                            // ★ THE MISSING REGISTRATION WITNESS. These
-                            // zones were minted silently, so a play session
-                            // that watched every load route into zone 9
-                            // could not learn from the log that zone 9
-                            // existed, let alone where it was or what made
-                            // it. Zones 10-15 printed; 0-9 did not, and the
-                            // gap read as corruption rather than as a
-                            // second, unlogged creation path.
+                            // THE MISSING REGISTRATION WITNESS. Two sessions
+                            // found this gap independently and fixed it
+                            // differently; this keeps what each was right
+                            // about. These zones were minted SILENTLY, so a
+                            // play session that watched every load route into
+                            // zone 9 could not learn from the log that zone 9
+                            // existed, let alone where it was or what made it.
+                            // Zones 10-15 printed; 0-9 did not, and the gap
+                            // read as corruption rather than as a second,
+                            // unlogged creation path.
+                            //
+                            // Named like every other stockpile allocation in
+                            // this file so ONE grep covers painted and adopted
+                            // alike -- and carries solid_below, the number the
+                            // admission gate above decides on, so a run can
+                            // tell "refused correctly" from "refused
+                            // everything" without a second instrument.
                             info!(
                                 zone = sid,
+                                region = ?one,
                                 ?pos,
                                 surface,
                                 solid_below,
                                 ?sprite,
-                                "bastion: ADOPT-IN-PLACE container zone registered"
-                            );
+                                "bastion: stockpile zone registered (adopted ADOPT-IN-PLACE container)"                            );
                         }
                     }
                 }

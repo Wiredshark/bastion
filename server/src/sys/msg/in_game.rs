@@ -463,11 +463,7 @@ impl Sys {
                         }
                     }
                     if let Some(bounds) = resolved {
-                        client.send(ServerGeneral::BastionDesignation {
-                            region: bounds,
-                            kind,
-                            z_extent: Some(extent),
-                        })?;
+                        client.send_bastion_designation(bounds, kind, Some(extent))?;
                         bastion_designations.push((region, Some(kind), Some(extent), None));
                     } else {
                         client.send(ServerGeneral::server_msg(
@@ -550,11 +546,7 @@ impl Sys {
                             ))?;
                         }
                         for (aabb, base, cells) in trees {
-                            client.send(ServerGeneral::BastionDesignation {
-                                region: aabb,
-                                kind,
-                                z_extent: None,
-                            })?;
+                            client.send_bastion_designation(aabb, kind, None)?;
                             bastion_designations.push((
                                 aabb,
                                 Some(kind),
@@ -566,11 +558,7 @@ impl Sys {
                 } else {
                     let volume = region.volume();
                     if volume > 0 && volume <= common::bastion::MAX_DESIGNATION_VOLUME {
-                        client.send(ServerGeneral::BastionDesignation {
-                            region,
-                            kind,
-                            z_extent: None,
-                        })?;
+                        client.send_bastion_designation(region, kind, None)?;
                         // bastion (B4): job generation happens post-loop.
                         bastion_designations.push((region, Some(kind), None, None));
                     } else {
@@ -605,7 +593,7 @@ impl Sys {
                 bastion_designations.push((region, None, None, None));
                 // bastion (B5.5): echo the removal so the client subtracts
                 // it from its overlay rects (mirrors the place echo above).
-                client.send(ServerGeneral::BastionDesignationRemoved { region })?;
+                client.send_bastion_designation_removed(region)?;
                 client.send(ServerGeneral::server_msg(
                     common::comp::ChatType::CommandInfo,
                     common::comp::Content::Plain("Designations cancelled.".to_string()),
@@ -2035,6 +2023,75 @@ impl<'a> System<'a> for Sys {
                 }
             },
         );
+        // ── bastion: RECONCILE the designation overlay ────────────────────
+        // ★ FOUND BY A PLAY SESSION (2026-08-21), on the adopt-town arm.
+        // `inspect_colony` said `designations=5` and `list_designations` said
+        // `[]`, on a fresh connection, twice. Both numbers were right: the
+        // first is `JobBoard::designated`, the second is the client's mirror,
+        // and NOTHING connected them. Designation sync was ECHO-ONLY — the
+        // sends live inside the place/cancel handlers above, so a client
+        // heard about designations IT placed and nothing else. Every other
+        // producer was invisible by construction: ADOPT-A-TOWN's deferred
+        // surface drain (which places as chunks load — i.e. AFTER the player
+        // has joined, so a join-time snapshot would have missed it too),
+        // colony-persistence restore, AUTON-1 build plans, another player's
+        // paint.
+        //
+        // The cost in play: adopting a town MEANS inheriting its beds,
+        // fields and barn, and the player could not ask what they had
+        // inherited, see it on the map or minimap, or right-click a zone to
+        // cancel it — every one of those reads this same mirror. The zones
+        // were only locatable by reading the SERVER's own log.
+        //
+        // Server truth wins, always, and the comparison is the whole set:
+        // no revision counter to keep honest across `designated`'s many
+        // mutators (place, cancel's `retain`, the adopt drain, restore), no
+        // hash to collide. `Region` and `DesignationKind` are both `Eq`, so
+        // the steady state — mirror equals board — costs one slice compare
+        // per client per tick and sends nothing at all.
+        //
+        // Divergence resyncs as CLEAR + REFILL rather than a computed delta:
+        // one removal covering the bounding box of everything we have sent
+        // (a region that contains a rect subtracts it to nothing — see
+        // `Region::subtract`), then the board's set. A delta would have to
+        // re-derive the client's AABB-subtraction state, which is a second
+        // implementation of a thing that must agree with the first forever.
+        {
+            let truth = job_board.designated.as_slice();
+            for (client, _presence) in (&clients, &presences).join() {
+                // Scoped so the guard is released before the sends below —
+                // the send helpers take the same lock to keep the mirror in
+                // step, and a re-entrant lock is a deadlock, not an error.
+                let bounds = {
+                    let mirror = client.bastion_designations_mirror();
+                    if mirror.as_slice() == truth {
+                        continue;
+                    }
+                    common::bastion::Region::bounding(mirror.iter().map(|(r, _)| *r))
+                };
+                if let Some(bounds) = bounds {
+                    // Subtracts the mirror to nothing on both sides — the
+                    // helper applies the client's own `Region::subtract`,
+                    // and `Region::bounding`'s own test pins that a set's
+                    // bounding box clears every member of that set.
+                    // NOT force-cleared here: if the send fails the mirror
+                    // must keep describing what the client still holds, or
+                    // the refill below would double it up. A failed clear
+                    // leaves mirror = old + truth, which the next tick sees
+                    // as divergent and clears for real.
+                    let _ = client.send_bastion_designation_removed(bounds);
+                }
+                for (region, kind) in truth {
+                    // `z_extent: None` — the resolved bounds ARE the volume
+                    // (every `designated` entry is stored resolved), and no
+                    // consumer reads the extent: voxygen's overlay counts
+                    // levels from `region.max.z - region.min.z`, and the
+                    // map, minimap and radial-cancel paths destructure it
+                    // away entirely.
+                    let _ = client.send_bastion_designation(*region, *kind, None);
+                }
+            }
+        }
         // Finally, drop the deferred updates in another thread.
         slow_jobs.spawn("CHUNK_DROP", move || {
             drop(deferred_updates);
