@@ -1,0 +1,14 @@
+=== RUN ATTESTATION 2026-08-21 11:03:13 ===
+HEAD          : ffcc6d74be
+dirty .rs     : 0
+run config    : BASTION_DETERMINISTIC=1 BASTION_AUTOFOUND_COLONY=32 BASTION_FLAT_ARENA=1 BASTION_FLAT_ARENA_RESOURCED=1 BASTION_UNCAPPED_TPS=1 BASTION_SEED_FOOD=256 BASTION_SEED_MATERIALS=256 BASTION_NEED_SKIP_DIAG=1
+  vars declared : 8
+outputs       : 4
+output        : /e/veloren-master/.item29-wt/bastion-test-evidence/server-pit-scale32diag.log
+output        : /e/veloren-master/.item29-wt/bastion-test-evidence/pit-scale32diag.log
+output        : /e/veloren-master/.item29-wt/bastion-test-evidence/driver-pit-scale32diag.log
+output        : /e/veloren-master/.item29-wt/bastion-test-evidence/driverout-pit-scale32diag.log
+binary        : veloren-server-cli.exe  built 2026-08-21 10:50:58
+  fresh: no tracked .rs source is newer than the binary
+binary        : bastion_playtest.exe  built 2026-08-21 08:46:41
+  fresh: no tracked .rs source is newer than the binary
