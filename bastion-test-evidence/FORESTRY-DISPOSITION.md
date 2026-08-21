@@ -68,11 +68,14 @@ twin never had the hole.
 - **Fixed radius, again.** 24 blocks. A colony founded on open plain with its
   nearest forest 60 blocks off will report `trees_seen=0` forever. Same
   residual the mine carries; the real answer is ranging, which is a design row.
-- **The standing par-stock floor is NOT built.** This is demand-PULL only:
-  something must want wood. A colony with no timber job stockpiles no timber.
-  Said in the pre-registration and repeated here so no green leg is ever read
-  as proof of a floor that does not exist.
-- **Quiescence-while-supplied is unobserved** (see prediction 3).
+- ~~**The standing par-stock floor is NOT built.**~~ **BUILT the same day** —
+  see the disposition appended below. Struck rather than deleted: this row was
+  genuinely demand-PULL only when it passed, and a reader should be able to see
+  that the floor came after, not that this row silently included it.
+- ~~**Quiescence-while-supplied is unobserved**~~ — **now observed**, by the
+  floor's leg: `demand=8 supply=8 pending_mine=0 quota=0`, held. That is the
+  transition to silence-while-supplied this row could not demonstrate, because
+  its own arena ran out of trees before the colony ran out of need.
 
 ---
 
