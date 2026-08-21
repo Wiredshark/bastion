@@ -7453,6 +7453,11 @@ pub const FAVOR_CAP: f32 = 20.0;
 /// One Smite's cost — 25 game-seconds of trickle.
 pub const SMITE_COST: f32 = 5.0;
 
+fn favor_zero_pin() -> bool {
+    static PIN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *PIN.get_or_init(|| std::env::var_os("BASTION_FAVOR_ZERO").is_some())
+}
+
 /// bastion (ITEM 29): mint a mission when colony food drops below this.
 /// A PAR, not a balance tweak — the par-stock pull the charter names.
 pub const TRADE_FOOD_PAR: u32 = 16;
@@ -11068,7 +11073,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // ── ITEM 31: divine favor trickle (POWER-0's cost pool) ──────────
         // Per-tick, dt-scaled, capped — the identity shape (no cast, no
         // change beyond the trickle; casts deduct in the command handler).
-        divine_favor.0 = (divine_favor.0 + FAVOR_REGEN_PER_SEC * dt.0).min(FAVOR_CAP);
+        // BASTION_FAVOR_ZERO (FIXTURE): the refusal branch is unreachable
+        // by script timing (the pool fills during the ~2-minute boot; 3/3
+        // casts landed including one at t=0) — the pin holds the pool at
+        // zero so a refusal leg can exist at all.
+        if !favor_zero_pin() {
+            divine_favor.0 =
+                (divine_favor.0 + FAVOR_REGEN_PER_SEC * dt.0).min(FAVOR_CAP);
+        }
 
         // ── #107 COLONY MIND v1: the reactive drive arbiter ──────────────
         // Four LIVE producers, fixed thresholds, strict precedence
@@ -11135,6 +11147,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // own book entry (bar 2's audit line); the B6 fetch contract
         // delivers the sold log; the completion drops the bought food at
         // the site and the standard haul pipeline carries it home.
+        if tick.0 % ARBITRATION_INTERVAL as u64 == 19 {
+            // Gate witness (throttled): tradefed had book=194 sites, food 8
+            // < par 16, wood delivered IN-zone and fetchable — and minted=0.
+            // One of the four conditions is lying; print all four so the
+            // false one names itself.
+            if tick.0 % (ARBITRATION_INTERVAL as u64 * 40) == 19 {
+                let mission_live = board
+                    .jobs
+                    .values()
+                    .any(|j| matches!(j.kind, common::bastion::JobKind::TradeMission { .. }));
+                let fs = colony_food_stock((&pickup_items, &positions).join(), &board);
+                let wood = stockpile_has_material(
+                    CHOP_DROP_ITEM,
+                    (&pickup_items, &positions, &uids).join(),
+                    &board,
+                );
+                info!(
+                    book = trade_price_book.0.len(),
+                    mission_live,
+                    food_stock = fs,
+                    par = TRADE_FOOD_PAR,
+                    wood_stocked = wood,
+                    "bastion: ITEM 29 mint-gate witness"
+                );
+            }
+        }
         if tick.0 % ARBITRATION_INTERVAL as u64 == 19
             && !trade_price_book.0.is_empty()
             && !board
@@ -11244,9 +11282,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 if already {
                     continue;
                 }
-                // Raw input available? Any FOOD_DEFS item inside a stockpile.
-                // Return the &'static str FROM FOOD_DEFS, not the item's own
-                // borrowed id — the item borrow must not escape the closure.
+                // ITEM 26: raw availability now reads THE RECIPE TABLE —
+                // first registered recipe for this station whose input sits
+                // stockpiled wins (multi-recipe dispatch is data). The
+                // &'static comes from the leaked table entry, so the item
+                // borrow still never escapes the closure.
                 let raw: Option<&'static str> =
                     (&pickup_items, &positions).join().find_map(|(it, ip)| {
                         let def = it.item().item_definition_id();
@@ -11257,7 +11297,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         {
                             return None;
                         }
-                        RAW_FOOD_DEFS.iter().find(|f| **f == def).copied()
+                        crate::bastion_recipes::recipes_for(
+                            common::bastion::DesignationKind::CookStation,
+                        )
+                        .find(|r| r.input_def == def)
+                        .map(|r| r.input_def)
                     });
                 let Some(raw_def) = raw else {
                     // The couldn't-happen witness for the broken-link bar:
@@ -11272,7 +11316,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 it.item()
                                     .item_definition_id()
                                     .itemdef_id()
-                                    .is_some_and(|d| RAW_FOOD_DEFS.contains(&d))
+                                    .is_some_and(|d| {
+                                        // ITEM 26: the witness counts what
+                                        // the TABLE recognizes — same
+                                        // source as the scan above.
+                                        crate::bastion_recipes::recipes_for(
+                                            common::bastion::DesignationKind::CookStation,
+                                        )
+                                        .any(|r| r.input_def == d)
+                                    })
                                     && board
                                         .stockpile_at(ip.0.map(|e| e.floor() as i32))
                                         .is_some()
@@ -17291,19 +17343,45 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // a 2-raw-per-dish double-charge. The completion
                             // PRODUCES only; the arrival consume IS the
                             // "raw consumed" half of the conservation pair.
-                            let mut rng = toss_scatter_rng(tick.0, station, 0x30E_0003);
-                            crate::bastion_actions::emit_drop(
-                                &mut item_drop_emitter,
-                                station,
-                                Item::new_from_asset_expect(COOKED_DISH_ITEM),
-                                *program_time,
-                                &mut rng,
-                            );
-                            info!(
-                                ?station,
-                                raw = ?job.required_item,
-                                "bastion: ITEM 27 cooked — raw consumed (at arrival), dish produced"
-                            );
+                            //
+                            // ITEM 26: the PRODUCT comes from the recipe
+                            // table, keyed by the consumed input — the same
+                            // row the generator chose, so generator/fetch/
+                            // completion cannot disagree about the chain.
+                            let recipe = crate::bastion_recipes::recipes_for(
+                                common::bastion::DesignationKind::CookStation,
+                            )
+                            .find(|r| Some(r.input_def) == job.required_item);
+                            if let Some(r) = recipe {
+                                let mut rng =
+                                    toss_scatter_rng(tick.0, station, 0x30E_0003);
+                                for _ in 0..r.output_n {
+                                    crate::bastion_actions::emit_drop(
+                                        &mut item_drop_emitter,
+                                        station,
+                                        Item::new_from_asset_expect(r.output_def),
+                                        *program_time,
+                                        &mut rng,
+                                    );
+                                }
+                                info!(
+                                    ?station,
+                                    raw = ?job.required_item,
+                                    product = r.output_def,
+                                    n = r.output_n,
+                                    "bastion: ITEM 27 cooked — raw consumed (at arrival), dish produced"
+                                );
+                            } else {
+                                // A Cook job whose input has no table row:
+                                // the couldn't-happen witness (a hot-edited
+                                // table or a stale job) — nothing produced,
+                                // said out loud.
+                                info!(
+                                    ?station,
+                                    raw = ?job.required_item,
+                                    "bastion: ITEM 26 completion has NO RECIPE for its input — nothing produced"
+                                );
+                            }
                         }
                         // ITEM 29: a completed TRADE MISSION — the arrival-side
                         // consume already took the sold log (the generic

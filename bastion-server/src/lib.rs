@@ -26,6 +26,7 @@ pub mod bastion_flight_recorder;
 pub mod bastion_founding_preset;
 pub mod bastion_jobs;
 pub mod bastion_mood;
+pub mod bastion_recipes;
 pub mod bastion_path;
 pub mod bastion_piles;
 pub mod bastion_traversal;

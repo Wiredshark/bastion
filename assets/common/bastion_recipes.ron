@@ -1,0 +1,21 @@
+// bastion (ARC 5 item 26): the crafting-chain table — station kind →
+// (input def, n) → (output def, n). The cook pipeline generalized to DATA
+// (the thought-table pattern): the generator's raw gate, the fetch's
+// required_item, and the completion's product all read THIS row, so a new
+// chain is a new entry, not new Rust. v1 recipes are single-input.
+(
+    recipes: [
+        (
+            station: CookStation,
+            input: ("common.items.food.mushroom", 1),
+            output: ("common.items.food.apple_mushroom_curry", 1),
+        ),
+        // Wheat is also cookable (the second FOOD_DEFS raw) — same station,
+        // proving multi-recipe-per-station dispatch as data.
+        (
+            station: CookStation,
+            input: ("common.items.bastion.wheat", 1),
+            output: ("common.items.food.apple_mushroom_curry", 1),
+        ),
+    ],
+)
