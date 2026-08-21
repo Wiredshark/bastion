@@ -11785,6 +11785,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // closes the harvest->haul->fetch->re-sow cycle.
                         Some(d) if d == FARM_SEED_ITEM => Some(FARM_SEED_ITEM),
                         Some(d) if d == FARM_WHEAT_ITEM => Some(FARM_WHEAT_ITEM),
+                        // ★ COOKED FOOD IS COLONY STOCK TOO (2026-08-21,
+                        // found by a 141-game-day play session): 976 dishes
+                        // were cooked and 39 were eaten, because a dish is
+                        // dropped AT the station and no haul kind matched it —
+                        // three curries lay untouched at one station for
+                        // 114,000 ticks while the pantry read zero edible
+                        // food and the colony's own death sentinel fired.
+                        // Anything a colonist can EAT belongs in the pantry;
+                        // the eat scan looks there first.
+                        Some(d) if FOOD_DEFS.contains(&d) => FOOD_DEFS
+                            .iter()
+                            .find(|f| **f == d)
+                            .copied(),
                         _ => None,
                     };
                     let Some(static_def) = matched else { continue };

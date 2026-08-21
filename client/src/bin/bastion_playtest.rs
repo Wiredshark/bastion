@@ -1453,11 +1453,22 @@ fn main() {
                             // What SITS ON the surface classifies the column:
                             // water is a fluid, so the downward scan passes
                             // through it to the bed and finds it here.
+                            // ★ THE MAP USED TO HIDE EVERY WALL (2026-08-21,
+                            // caught by a play session that concluded the
+                            // arena had no trees — it had three). The old
+                            // test asked whether the cell ABOVE the surface
+                            // was filled, which the downward scan has already
+                            // ruled out by stopping at the first filled cell:
+                            // '#' was unreachable by construction and every
+                            // tree, wall and outcrop drew as bare ground.
+                            // Classify by HEIGHT relative to the observer
+                            // instead — anything standing two blocks or more
+                            // above the player's own level is structure.
                             Some(sz) => match terrain.get(Vec3::new(wx, wy, sz + 1)) {
                                 Err(_) => '?',
-                                Ok(b) if b.is_filled() => '#',
                                 Ok(b) if b.is_liquid() => '~',
-                                Ok(_) => '.',
+                                _ if sz >= cz + 2 => '#',
+                                _ => '.',
                             },
                         };
                         match ch {
