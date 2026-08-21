@@ -12,6 +12,13 @@ working — the EXPERIENCE census is the floor, a played session is the bar.
 available):** `total=8 working=0 moving=2 stuck=1 idle=6 fed=8 rested=8`.
 Zero working. That number is the headline this list exists to move.
 
+**MOVED (2026-08-21, arm `injury`, founded colony, nothing handed to it):**
+`mean working 1.30 → 2.88`, `mean idle 6.00 → 3.70`, `beds built 0 → 8`,
+`rested` recovering instead of pinning at 0, six completed sleeps. The
+autonomous colony now beats the arm that was handed its materials by a test
+env var. See `F13-DISPOSITION.md` — four stacked blockers, each sufficient on
+its own, each hiding the next behind the identical symptom.
+
 ---
 
 ## P0 — the colony does not look alive
@@ -57,9 +64,9 @@ DEFECT; the ruling picks the repair.
 
 | # | Broken thing | Root cause | State |
 |---|---|---|---|
-| F5 | Colonists stand in a ripe field and do nothing | Harvest fires only on `WheatYellow` at `Growth >= FARM_GROWTH_MAX` in a registered column; village fields are `WheatGreen`/`Flax`/`Corn`/`Tomato` at Growth 0, explicitly reserved by a code comment | OPEN — Ben's own words authorise using existing farmland; policy nuance banked |
-| F6 | A furnished kitchen is invisible | `cook_stations` has exactly ONE writer: a completed CookStation *build* | OPEN — two-line push in the bed-scan arm |
-| F7 | An adopted barn is a decorative rectangle | `stockpiles` only ever holds painted regions; no chest/container sprite is read | OPEN — 1-block Region per chest |
+| F5 | Colonists stand in a ripe field and do nothing | Harvest fires only on `WheatYellow` at `Growth >= FARM_GROWTH_MAX` in a registered column; village fields are `WheatGreen`/`Flax`/`Corn`/`Tomato` at Growth 0, explicitly reserved by a code comment | BUILT (`3e28e7f71d`) — volunteer arm mints harvest jobs for WheatGreen/Tomato/Carrot/Lettuce and the yields joined FOOD_DEFS; **awaiting live confirmation** |
+| F6 | A furnished kitchen is invisible | `cook_stations` has exactly ONE writer: a completed CookStation *build* | BUILT (`623bf76b3f`) — and my FIRST version was on a path houses never take, with a vocabulary (`CookingPot`) worldgen never places in a house; now one shared scan keyed on `Ember`; **awaiting live confirmation** |
+| F7 | An adopted barn is a decorative rectangle | `stockpiles` only ever holds painted regions; no chest/container sprite is read | BUILT (`623bf76b3f`) — 1-block stockpile per container, vocabulary corrected to what house.rs actually places (`Crate`/`Drawer*`/`Wardrobe*`); **awaiting live confirmation** |
 | F8 | Colonists sleep on the ground beside made beds | *(was broken; the plot scan now registers village beds)* | FIXED — `adopted_beds=2`/house live |
 
 ## P2 — systems that exist but cannot be believed
