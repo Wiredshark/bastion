@@ -7044,9 +7044,45 @@ impl Server {
         }
         #[cfg(feature = "worldgen")]
         {
+            // ★ THE PLAYER CHOOSES THE TOWN (Ben, 2026-08-21: "shouldn't we be
+            // able to use the existing player map selection for choosing the
+            // town we want").
+            //
+            // Adoption used to take whatever village was NEAREST the spawn --
+            // `min_by_key(distance)` -- so the player had no say, and with two
+            // villages close together could not express which they meant. That
+            // is also a SILENT wrong answer: adopting the wrong village looks
+            // exactly like adopting the right one.
+            //
+            // No new plumbing was needed. Voxygen already lets the player drop
+            // a map marker, the client already sends it
+            // (`ClientGeneral::UpdateMapMarker`), and the server already stores
+            // it as `comp::MapMarker(Vec2<i32>)` on the entity. The lookup
+            // already took a POSITION -- it was simply being handed the spawn
+            // instead of the choice. Reading a component that was already
+            // there beats inventing a selection channel beside it.
+            //
+            // Falls back to the spawn when no marker is set, so every existing
+            // fixture and every banked corpus leg behaves byte-identically.
+            let chosen = {
+                let ecs = self.state.ecs();
+                let markers = ecs.read_storage::<comp::MapMarker>();
+                let mut found = None;
+                for marker in markers.join() {
+                    found = Some(marker.0);
+                    break;
+                }
+                found
+            };
+            let near = chosen.unwrap_or_else(|| sp.xy().map(|e| e as i32));
+            tracing::info!(
+                ?near,
+                player_chose = chosen.is_some(),
+                "bastion: ADOPT-A-TOWN target — map marker if the player set one, else spawn"
+            );
             let (town_origin, plots) = Self::bastion_adoptable_town_plots(
                 self.index.as_index_ref(),
-                sp.xy().map(|e| e as i32),
+                near,
                 // 4096: the first live leg MEASURED the nearest adoptable
                 // site at 1,224 blocks against a 1,024 radius — 200 short.
                 // The re-anchor moves the whole founding to the town, so a
