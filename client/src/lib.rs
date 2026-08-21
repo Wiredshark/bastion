@@ -2808,6 +2808,17 @@ impl Client {
         self.bastion_inspect.as_ref()
     }
 
+    /// bastion (2026-08-21, found by playing): DISCARD the stored reply before
+    /// asking again. The slot holds only the LATEST reply, and a consumer that
+    /// waits for "a reply whose target matches" cannot tell a fresh answer from
+    /// the one still sitting there — every target of a given kind looks alike.
+    /// For `Target::Colony` (one target, asked repeatedly) that made the whole
+    /// dashboard freeze at its first answer: a play session read the same
+    /// `tick=` and the same food number for 23 game-minutes while the colony's
+    /// real stock swung 32 → 0 → 284 → 715, and steered by it. Clearing first
+    /// makes "no reply yet" distinguishable from "the old reply".
+    pub fn bastion_inspect_clear(&mut self) { self.bastion_inspect = None; }
+
     /// bastion (B2a): paint a designation region (server validates + echoes).
     /// B5.6b-2: `z_extent: Some(_)` switches to the surface-relative path —
     /// `region`'s XY is the footprint, `max.z` the paint-plane hint; the

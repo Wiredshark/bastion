@@ -923,6 +923,11 @@ fn main() {
                 log.log(&format!("sent BastionCancelDesignation region={region:?}"));
             },
             ScriptCmd::InspectCell(pos) => {
+                // Stale-slot guard (2026-08-21): the reply slot holds only the
+                // LATEST answer, so asking again without clearing can match the
+                // PREVIOUS one — that is how the colony dashboard froze for a
+                // whole play session.
+                client.bastion_inspect_clear();
                 client.bastion_inspect_request(BastionInspectTarget::Cell(pos));
                 // One tick round-trip to receive the echoed reply.
                 let _ = client.tick(comp::ControllerInputs::default(), driver_dt(&clock));
@@ -951,6 +956,11 @@ fn main() {
                 };
                 let mut found = 0usize;
                 for uid in uids {
+                    // Stale-slot guard (2026-08-21): the reply slot holds only the
+                    // LATEST answer, so asking again without clearing can match the
+                    // PREVIOUS one — that is how the colony dashboard froze for a
+                    // whole play session.
+                    client.bastion_inspect_clear();
                     client.bastion_inspect_request(BastionInspectTarget::Entity(uid));
                     // THE REPLY MUST ANSWER THIS REQUEST. `bastion_inspect()`
                     // is a single latest-reply slot, so reading it after a
@@ -1113,6 +1123,11 @@ fn main() {
                 };
                 log.log(&format!("CHRONICLE requesting {} colonists", uids.len()));
                 for uid in uids {
+                    // Stale-slot guard (2026-08-21): the reply slot holds only the
+                    // LATEST answer, so asking again without clearing can match the
+                    // PREVIOUS one — that is how the colony dashboard froze for a
+                    // whole play session.
+                    client.bastion_inspect_clear();
                     client.bastion_inspect_request(BastionInspectTarget::Chronicle(uid));
                     let mut got = None;
                     for _ in 0..60 {
@@ -1158,6 +1173,11 @@ fn main() {
                 // ARC 2 item 10. Same protocol, same reply-matching
                 // discipline as inspect_colonists -- the single-slot API
                 // makes "read after one tick" quietly wrong.
+                // Stale-slot guard (2026-08-21): the reply slot holds only the
+                // LATEST answer, so asking again without clearing can match the
+                // PREVIOUS one — that is how the colony dashboard froze for a
+                // whole play session.
+                client.bastion_inspect_clear();
                 client.bastion_inspect_request(BastionInspectTarget::Colony);
                 let mut got = None;
                 for _ in 0..60 {
