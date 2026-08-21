@@ -1080,6 +1080,40 @@ mod bastion_b70_tests {
     /// not invent a flee), and Idle's ceiling (most-social 0.13) under
     /// Work's floor (least-greedy 0.4) — work-when-available always
     /// wins.
+    /// INJURY-REST (Ben ruled 2026-08-21: a wounded colonist should seek
+    /// rest). The IDENTITY branch is the load-bearing one: a healthy colony
+    /// must behave exactly as every banked corpus leg recorded it, or this
+    /// change silently rebases the corpus while looking like a feature.
+    #[test]
+    fn injury_raises_the_wish_for_a_bed_and_leaves_the_healthy_untouched() {
+        use crate::bastion::injury_adjusted_rest_interrupt as f;
+        let base = 0.3_f32;
+
+        // IDENTITY at full health — the corpus-safety branch.
+        assert!(
+            (f(base, 1.0) - base).abs() < 1e-6,
+            "a healthy colonist's rest threshold must be untouched"
+        );
+
+        // Monotone: the worse the wound, the sooner a bed is wanted.
+        assert!(f(base, 0.75) > f(base, 1.0));
+        assert!(f(base, 0.50) > f(base, 0.75));
+        assert!(f(base, 0.25) > f(base, 0.50));
+
+        // A dying colonist always wants to lie down.
+        assert!(
+            (f(base, 0.0) - 1.0).abs() < 1e-6,
+            "at zero health the wish for rest is total"
+        );
+
+        // Bounded whatever health reports — a threshold outside [0,1] would
+        // make the gate either never or always fire.
+        for h in [-1.0_f32, 0.0, 0.5, 1.0, 2.0] {
+            let v = f(base, h);
+            assert!((0.0..=1.0).contains(&v), "threshold {v} out of range for health {h}");
+        }
+    }
+
     #[test]
     fn auton3_drive_order_guard() {
         use crate::bastion::Value;

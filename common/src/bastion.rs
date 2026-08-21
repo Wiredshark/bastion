@@ -1494,6 +1494,36 @@ pub fn drive_work_factor(drive: ColonyDrive, work: WorkType) -> f32 {
 /// bastion (ITEM 28): the ONE work→tool mapping — `tool_factor` (the rate
 /// bonus) and the wear site (one durability step per completion) both read
 /// it, so they cannot drift onto different tools.
+/// bastion (INJURY-REST, Ben RULED 2026-08-21: a wounded colonist should seek
+/// rest; *"eventually we'll need medical care system for deeper wounds"*).
+///
+/// How much a colonist WANTS a bed, raised by how badly they are hurt.
+///
+/// WHY: before this, being injured changed a colonist's behaviour not at all.
+/// Someone at 30% health kept swinging a pick exactly as if untouched, because
+/// only low `rest` drives sleep. A leg measured the consequence precisely —
+/// wounded colonists (health 0.39/0.73/0.76) coexisted with 8 beds and
+/// produced ZERO tend jobs, because all seven sleepers were at `health=1.0`.
+/// Bed healing and item 35's 2.5x tend multiplier were both real and both sat
+/// behind a door nothing opened. Tending could only ever happen by
+/// coincidence: someone tired and hurt in the same moment.
+///
+/// Shape: at full health the threshold is untouched, so a healthy colony
+/// behaves exactly as every banked corpus leg recorded it. As health falls the
+/// threshold rises toward 1.0 — a dying colonist always wants to lie down.
+///
+/// PURE and RNG-free (the determinism house invariant), so both consumers can
+/// read it and neither can drift.
+pub fn injury_adjusted_rest_interrupt(base: f32, health_fraction: f32) -> f32 {
+    let hurt = (1.0 - health_fraction).clamp(0.0, 1.0);
+    (base + (1.0 - base) * hurt * INJURY_REST_WEIGHT).clamp(0.0, 1.0)
+}
+
+/// How hard injury pulls toward a bed. 1.0 = a colonist at zero health always
+/// wants rest. A balance number: banked as tunable, and the successor Ben
+/// named (a medical-care system for deeper wounds) is where it properly lives.
+pub const INJURY_REST_WEIGHT: f32 = 1.0;
+
 pub fn work_tool_kind(work: WorkType) -> Option<crate::comp::item::tool::ToolKind> {
     use crate::comp::item::tool::ToolKind;
     match work {

@@ -1361,6 +1361,88 @@ impl Server {
             bastion_jobs::FARM_SEED_ITEM,
             bastion_jobs::FOUNDING_SEED_STOCK,
         );
+        self.bastion_found_colony_tool_kit();
+    }
+
+    /// ★ THE FOUNDING TOOL KIT (Ben RULED 2026-08-21: "yes colonist start with
+    /// tools").
+    ///
+    /// WHY THIS EXISTS: item 28 (tool wear) and the whole tool-SPEED economy
+    /// were correct code that could never run, because **nothing in the game
+    /// ever put a tool in a colonist's hand**. The only equip path was
+    /// `bastion_equip_tool`, a harness hook called from scenarios. A leg
+    /// proved it: the wear witness fired ZERO times while mining demonstrably
+    /// worked. Two whole systems sat inert behind a missing grant.
+    ///
+    /// Same shape as the founding SEED stock (#105) that made farming viable
+    /// by construction — a colony is founded able to do its work, not able to
+    /// theoretically do its work.
+    ///
+    /// DETERMINISM: the tool a colonist gets is chosen from their own SKILLS,
+    /// which are seeded deterministically, with a fixed tie-break order. No
+    /// RNG, no join-order dependence — two runs of one seed arm the same
+    /// colonists with the same tools, or every A/B that crosses a work rate is
+    /// incomparable.
+    ///
+    /// Each colonist carries all three and EQUIPS the one matching their
+    /// strongest trade. Wear and `tool_factor` both key on the *equipped*
+    /// mainhand, so equipping the wrong one would grant nothing — the bag
+    /// copies exist so a later swap system has something to swap to.
+    fn bastion_found_colony_tool_kit(&mut self) {
+        use specs::Join;
+        const PICK: &str = "common.items.tool.pickaxe_stone";
+        const AXE: &str = "common.items.weapons.axe.starter_axe";
+        const HAMMER: &str = "common.items.tool.craftsman_hammer";
+
+        let time = *self.state.ecs().read_resource::<common::resources::Time>();
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let entities = ecs.entities();
+        let mut inventories = ecs.write_storage::<comp::Inventory>();
+        let mut armed = 0u32;
+        for (entity, colonist) in (&entities, &colonists).join() {
+            let Some(mut inv) = inventories.get_mut(entity) else {
+                continue;
+            };
+            // Strongest trade wins the mainhand. Read through `level_for`, the
+            // same accessor arbitration and the work-rate use, so the tool a
+            // colonist carries cannot disagree with the skill the board scores
+            // them on. Ties break mine > chop > build, a FIXED order — a tie
+            // broken by iteration order would be a silent determinism hole of
+            // exactly the kind this project keeps finding.
+            let (mine, chop, build) = (
+                colonist.0.skills.level_for(common::bastion::WorkType::Mine),
+                colonist.0.skills.level_for(common::bastion::WorkType::Chop),
+                colonist.0.skills.level_for(common::bastion::WorkType::Build),
+            );
+            let equip = if mine >= chop && mine >= build {
+                PICK
+            } else if chop >= build {
+                AXE
+            } else {
+                HAMMER
+            };
+            for asset in [PICK, AXE, HAMMER] {
+                if asset == equip {
+                    continue;
+                }
+                if let Ok(item) = comp::Item::new_from_asset(asset) {
+                    let _ = inv.push(item);
+                }
+            }
+            if let Ok(item) = comp::Item::new_from_asset(equip) {
+                let _ = inv.replace_loadout_item(
+                    comp::slot::EquipSlot::ActiveMainhand,
+                    Some(item),
+                    time,
+                );
+                armed += 1;
+            }
+        }
+        tracing::info!(
+            armed,
+            "bastion: FOUNDING TOOL KIT — colonists armed with the trade they are best at"
+        );
     }
 
     /// bastion (ROW-COLONY-PRESENCE, DECISIONS #106): mints the
