@@ -510,19 +510,52 @@ impl RtSim {
             return Vec::new();
         };
 
+        // ★ COUNT THE REJECTIONS BY CLAUSE. The first version of this filter
+        // returned ZERO on a village a play session then proved was full of
+        // eligible residents -- same site id, Role::Civilised(Herbalist),
+        // homed to exactly the site adoption had named. Four clauses, all of
+        // which should have passed, and no way to tell which one did not.
+        //
+        // A filter that returns nothing is the same unreadable null this
+        // session has met all night: it cannot say whether the population is
+        // absent, or present and refused. So it now says.
+        let mut total = 0u32;
+        let mut wrong_home = 0u32;
+        let mut already = 0u32;
+        let mut not_civilised = 0u32;
+        let mut not_humanoid = 0u32;
+        let mut residents: Vec<::rtsim::data::npc::NpcId> = Vec::new();
+        for (id, npc) in data.npcs.npcs.iter() {
+            total += 1;
+            if npc.home != Some(site_id) {
+                wrong_home += 1;
+                continue;
+            }
+            if npc.bastion_colonist.is_some() {
+                already += 1;
+                continue;
+            }
+            if !matches!(npc.role, Role::Civilised(_)) {
+                not_civilised += 1;
+                continue;
+            }
+            if !matches!(npc.body, common::comp::Body::Humanoid(_)) {
+                not_humanoid += 1;
+                continue;
+            }
+            residents.push(id);
+        }
+        tracing::info!(
+            npcs_total = total,
+            eligible = residents.len(),
+            rej_wrong_home = wrong_home,
+            rej_already_colonist = already,
+            rej_not_civilised = not_civilised,
+            rej_not_humanoid = not_humanoid,
+            ?site_id,
+            "bastion: ADOPT-NPCS census — who is eligible to be adopted, and why not"
+        );
         // Sorted for determinism: a DenseSlotMap's order is not a promise.
-        let mut residents: Vec<::rtsim::data::npc::NpcId> = data
-            .npcs
-            .npcs
-            .iter()
-            .filter(|(_, npc)| {
-                npc.home == Some(site_id)
-                    && npc.bastion_colonist.is_none()
-                    && matches!(npc.role, Role::Civilised(_))
-                    && matches!(npc.body, common::comp::Body::Humanoid(_))
-            })
-            .map(|(id, _)| id)
-            .collect();
         residents.sort();
 
         let mut names = Vec::new();
