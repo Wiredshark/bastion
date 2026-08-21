@@ -75,7 +75,7 @@ DEFECT; the ruling picks the repair.
 |---|---|---|---|
 | F9 | Every village pays exactly the same for wood | `ratio_min=1.0 ratio_max=1.0 ratio_distinct=1` across all 194 sites — a constant wearing a site's clothes; item 29 bar 2 FAILS | OPEN |
 | F10 | Starving has no consequence | Nothing reads hunger=0 except mood; no health pressure, no death | OPEN — needs a design ruling on lethality, banked |
-| F11 | Colonists cannot die | Health reached 0.0 under repeated smite: no death event, no despawn, population unchanged | OPEN — item 36's true first step |
+| F11 | Colonists cannot die | **MISDIAGNOSED — RESOLVED.** Death detection works: a lethal plant produced `COLONIST DIED uid=3 … protected=true`. Colonists are `Body::Humanoid`, and vanilla's `has_death_protection()` is true for humanoids, so they inherit the PLAYER'S downed mechanic — `DownedEvent`, not `DestroyEvent`. "Health 0.0, no despawn, population unchanged" is exactly what being downed looks like from outside. The original reading also rested on a treatment that never landed: smite does ~4% health a cast | **CLOSED** — see `ITEM36-DEATH-DISPOSITION.md`; die-vs-downed banked for Ben; census now reports `downed=` |
 | F12 | Colony scale is unmeasured | The 8/16/32 legs ran under different co-load; VOID for the guard question | OPEN — re-run on the VM fleet, which is now quiet |
 
 ## P3 — found by an adversarial play session (12 turns, town arm, 2026-08-21)
