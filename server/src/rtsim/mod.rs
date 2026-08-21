@@ -567,9 +567,33 @@ impl RtSim {
             }
             residents.push(id);
         }
+        // ★ WHY IS NOBODY NEAR THE TOWN? The position match ALSO returned
+        // zero, so the question is no longer "which clause" but "where is
+        // everyone". Printing the site's own position beside the nearest NPC's
+        // distance separates the two remaining candidates in one line: a
+        // COORDINATE-SPACE mismatch (site.wpos and npc.wpos in different
+        // units) shows an absurd nearest distance, while "rtsim has not placed
+        // them yet" shows a plausible one that is merely larger than the
+        // radius.
+        let nearest = data
+            .npcs
+            .npcs
+            .iter()
+            .map(|(_, n)| {
+                n.wpos
+                    .xy()
+                    .map(|e| e as i64)
+                    .distance_squared(site_wpos.map(|e| e as i64))
+            })
+            .min()
+            .map(|d2| (d2 as f64).sqrt() as i64)
+            .unwrap_or(-1);
         tracing::info!(
             npcs_total = total,
             eligible = residents.len(),
+            ?site_wpos,
+            nearest_npc_blocks = nearest,
+            radius = ADOPT_TOWN_RADIUS,
             rej_wrong_home = wrong_home,
             rej_already_colonist = already,
             rej_not_civilised = not_civilised,

@@ -27,6 +27,16 @@ case "$MODE" in
   *) echo "usage: bash PLAY.sh <town|arena> [client]"; exit 2 ;;
 esac
 
+# ★ CHECK THE BINARY BEFORE DESTROYING THE SAVE (2026-08-21). A goal-driven
+# play session lost its best world to exactly this ordering: boot wiped
+# userdata FIRST, then failed because a concurrent build had removed the server
+# exe. The world was gone and the reboot failed anyway — a destructive step
+# gated on nothing, with the check sitting three lines too late.
+if [ ! -x "$B/veloren-server-cli.exe" ]; then
+  echo "REFUSING: no server binary at $B/veloren-server-cli.exe"
+  echo "(a build may be in progress — your existing world is untouched)"
+  exit 1
+fi
 rm -rf "$UD"
 VELOREN_USERDATA=$UD VELOREN_ASSETS=$WT/assets \
   "$B/veloren-server-cli.exe" --no-auth admin add player admin >/dev/null 2>&1
