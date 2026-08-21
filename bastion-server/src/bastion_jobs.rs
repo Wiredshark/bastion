@@ -11866,6 +11866,102 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             }
         }
 
+        // ── B7-2: THE BED ASSIGNER ───────────────────────────────────────
+        // The sleep completion has always branched on bed OWNERSHIP — an
+        // owned bed deposits a `SleptInBed` thought, communal sleep deposits
+        // none, "the ownership mood-delta the design wants" — and its comment
+        // promised "B7-2's assigner re-routes later". That assigner was never
+        // built, so `owner` had exactly no writer and every sleep in the
+        // game's history was communal. A play session measured the
+        // consequence: seven sleeps, every one `owned=false`, and FIVE of them
+        // in the same single bed while seven others stood empty. The reward
+        // branch existed, was reachable, and could never be reached.
+        //
+        // A designed branch with no writer is indistinguishable from a
+        // deleted feature, and reads in code review as if it works.
+        if tick.0 % ARBITRATION_INTERVAL as u64 == 8 && !board.beds.is_empty() {
+            let live: std::collections::HashSet<common::uid::Uid> = (&entities, &colonists)
+                .join()
+                .filter_map(|(e, _)| uids.get(e).copied())
+                .collect();
+            // Release beds whose owner no longer exists, FIRST — otherwise a
+            // dead colonist's bed is locked forever and the colony slowly
+            // loses its housing to its own history.
+            let mut released = 0u32;
+            for slot in board.beds.values_mut() {
+                if slot.owner.is_some_and(|o| !live.contains(&o)) {
+                    slot.owner = None;
+                    released += 1;
+                }
+            }
+            let owned: std::collections::HashSet<common::uid::Uid> =
+                board.beds.values().filter_map(|s| s.owner).collect();
+            // ★ OWNERSHIP IS WRITTEN IN TWO PLACES AND BOTH MUST AGREE.
+            // `BedSlot.owner` is what the sleep COMPLETION reads to decide
+            // whether to deposit the `SleptInBed` thought; `Colonist.owned_bed`
+            // is what the sleep TARGETING reads to send someone to their own
+            // bed. Setting only the first would have produced the exact bug
+            // class this session has spent all night fixing: a colonist who
+            // "owns" a bed by one field and walks to the nearest free one by
+            // the other, earning no reward and looking, in every log line,
+            // like the assigner works.
+            //
+            // DETERMINISM: both sides are sorted before pairing. `board.beds`
+            // is a HashMap and the ECS join order is not a promise, so an
+            // unsorted zip would hand different colonists different beds on
+            // two runs of the same seed — a silent divergence, since every
+            // colonist still gets exactly one bed either way and no count
+            // would ever differ.
+            let mut homeless: Vec<(common::uid::Uid, specs::Entity)> = (&entities, &colonists)
+                .join()
+                .filter_map(|(e, _)| uids.get(e).copied().map(|u| (u, e)))
+                .filter(|(u, _)| !owned.contains(u))
+                .collect();
+            homeless.sort_by_key(|(u, _)| u.0.get());
+            let mut free: Vec<Vec3<i32>> = board
+                .beds
+                .iter()
+                .filter(|(_, s)| s.owner.is_none())
+                .map(|(p, _)| *p)
+                .collect();
+            free.sort_by_key(|p| (p.x, p.y, p.z));
+
+            let mut assigned = 0u32;
+            for ((u, ent), pos) in homeless.into_iter().zip(free) {
+                if let Some(slot) = board.beds.get_mut(&pos) {
+                    slot.owner = Some(u);
+                    if let Some(mut c) = colonists.get_mut(ent) {
+                        c.0.owned_bed = Some(pos);
+                    }
+                    assigned += 1;
+                }
+            }
+            // And the other direction: a colonist pointing at a bed that no
+            // longer exists (cancelled, mined out) must forget it, or the
+            // targeting sends them to a bed that is not there while the
+            // nearest-free fallback never runs.
+            // Collected first, then cleared: `Colonist` is a flagged storage
+            // and does not offer a mutable join here.
+            let stale: Vec<specs::Entity> = (&entities, &colonists)
+                .join()
+                .filter(|(_, c)| c.0.owned_bed.is_some_and(|p| !board.beds.contains_key(&p)))
+                .map(|(e, _)| e)
+                .collect();
+            for e in stale {
+                if let Some(mut c) = colonists.get_mut(e) {
+                    c.0.owned_bed = None;
+                }
+            }
+            if assigned > 0 || released > 0 {
+                info!(
+                    assigned,
+                    released,
+                    beds = board.beds.len(),
+                    "bastion: B7-2 beds assigned to their sleepers"
+                );
+            }
+        }
+
         // ── ITEM 35: the TEND generator ──────────────────────────────────
         // A wounded colonist in a bed is a PATIENT, and a patient is work
         // someone can choose. One job per occupied bed whose occupant is
