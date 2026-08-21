@@ -1350,6 +1350,21 @@ impl SessionState {
                         "- Tree (marked to fell) -".to_string(),
                         format!("{} / {} cells standing", fs.remaining, fs.total),
                     ],
+                    // ARC 2 item 12: the chronicle — v1 renders the entry
+                    // count; the full scrollback is the chronicle panel's
+                    // own widget (out of this repaired match's scope).
+                    Kind::Chronicle(c) => vec![
+                        "- CHRONICLE -".to_string(),
+                        // enabled/truncated ride the payload's own honesty
+                        // flags: an empty list with enabled=false says
+                        // NOTHING, and truncated means suffix-not-history.
+                        format!(
+                            "{} event(s){}{}",
+                            c.events.len(),
+                            if c.enabled { "" } else { " (log disabled)" },
+                            if c.truncated { " (truncated)" } else { "" },
+                        ),
+                    ],
                 },
                 // Reply pending, stale, or an empty target (payload: None) —
                 // show nothing, never crash.
