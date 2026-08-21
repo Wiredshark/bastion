@@ -6885,6 +6885,36 @@ impl Server {
                 Some((kind, min, max))
             })
             .collect::<Vec<_>>();
+        // ★ ENUMERATE WHAT THE INSTRUMENT CAN SEE (2026-08-21). A leg meant to
+        // confirm crop gleaning (F5) came back with `farm plot registered = 0`
+        // and no way to tell WHY: does this settlement have no field, or does
+        // adoption not map fields at all? Those are a worldgen fact and a
+        // feature bug, and the log rendered them identically — as silence.
+        //
+        // The mapping does handle FarmField; this hamlet simply has none. That
+        // is a one-line answer the run should have given on its own, so it now
+        // reports the full plot census: every kind present, how many were
+        // adopted, and how many were skipped for want of a mapping.
+        let mut farms = 0usize;
+        let mut houses = 0usize;
+        let mut barns = 0usize;
+        let mut unmapped = 0usize;
+        for p in site.plots() {
+            match p.kind() {
+                PlotKind::FarmField(_) => farms += 1,
+                PlotKind::House(_) => houses += 1,
+                PlotKind::Barn(_) => barns += 1,
+                _ => unmapped += 1,
+            }
+        }
+        tracing::info!(
+            adopted = plots.len(),
+            farm_fields = farms,
+            houses,
+            barns,
+            unmapped_plots = unmapped,
+            "bastion: ADOPT-A-TOWN plot census — what this settlement actually offers"
+        );
         Some((site.origin, plots))
     }
 
