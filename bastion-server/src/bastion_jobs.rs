@@ -11686,6 +11686,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     sum += pos.map(|e| e as i64);
                     n += 1;
                 }
+                // Unconditional state emit, low cadence. The WANTED-stone
+                // witness lives INSIDE the `quota > 0 && n > 0` branch, so it
+                // is silent whenever the generator declines to run at all —
+                // and two legs in a row came back unable to distinguish
+                // "declined" from "ran and found nothing", which is the same
+                // didn't/couldn't ambiguity this instrument was added to kill.
+                // A witness that can only speak from inside the branch it is
+                // meant to explain is not a witness.
+                if tick.0 % (ARBITRATION_INTERVAL as u64 * 20) == 2 {
+                    info!(
+                        demand,
+                        supply,
+                        pending_mine,
+                        quota,
+                        cap,
+                        anchor_sources = n,
+                        beds = board.beds.len(),
+                        stockpiles = board.stockpiles.len(),
+                        "bastion: AUTON-1 mine generator STATE"
+                    );
+                }
                 if quota > 0 && n > 0 {
                     let anchor = (sum / n).map(|e| e as i32);
                     // Columns the colony's intent occupies are off-limits
