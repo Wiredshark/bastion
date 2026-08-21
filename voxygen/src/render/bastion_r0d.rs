@@ -1353,6 +1353,21 @@ pub fn drive_capture(
 
     let authority = certification_server_latch_v1();
     let Some(presentation) = crate::r1a_presentation::ready_token() else {
+        // W5 (lw-port fix, print-the-precondition): this gate refused
+        // SILENTLY forever — a capture leg that never fires and never
+        // says why is indistinguishable from one still warming up. Log
+        // the refusal once so a stuck leg names its blocker.
+        {
+            use std::sync::atomic::{AtomicBool, Ordering};
+            static LOGGED: AtomicBool = AtomicBool::new(false);
+            if !LOGGED.swap(true, Ordering::Relaxed) {
+                tracing::warn!(
+                    "bastion r0d capture: WAITING on r1a presentation ready_token \
+                     (logged once; captures cannot fire until the presentation \
+                     handoff is ready)"
+                );
+            }
+        }
         return false;
     };
     let semantic_trace = LATEST_SEMANTIC_TRACE.lock().ok().and_then(|value| *value);

@@ -34,13 +34,35 @@ pre-allocated `PassDraw = 12` and `VisualStructure = 13`.
    is provably visual-neutral per-domain, and one that does names what
    moved.
 
-## Gates
-- [ ] Independent Python producer for both leaf/owner/domain shapes;
-      Rust reproduces byte-exact.
-- [ ] Wire golden for the extended ack recomputed (deliberate shape
-      change, fork-internal message pair — noted, not hidden).
-- [ ] Red-demo: mutate the PassDraw leaf id → exactly its consumers fail.
-- [ ] Headless three-leg suite still green (acks carry visual: None;
-      run_root untouched).
-- [ ] One voxygen ack leg: acks carry Some(visual) with stable roots on
-      the static spectator scene.
+## Gates — ALL GREEN (2026-08-21)
+- [x] Independent Python producer reproduced byte-exact, 16/16 FIRST RUN
+      (`w4_visual_domain_vectors_v1.py` → checked-in JSON).
+- [x] Wire golden recomputed deliberately (`cc14325a…`), noted in place.
+- [x] Red-demo EXACT: PassDraw leaf id 0x…01→0x…99 → 1 failed by name,
+      15 green; restored 16/16.
+- [x] Headless three-leg suite GREEN on this tree (twins identical,
+      neutrality identical, acks green with visual honestly absent).
+- [x] Voxygen ack leg GREEN: **20/20 acks carry Some(visual), all echoes
+      matched, both entities resolved from frame 1, PassDraw root STABLE
+      across the settled tail** — a live renderer fingerprinting its own
+      draw decisions through the bench channel.
+
+## W6 (built + DOGFOODED the same session)
+`--renderer-bench-promote <cand> <golden> --attest "<who/why>"`:
+refuses unattested / malformed; every promotion appends an audit line
+(PROMOTIONS.log: epoch, sha256, run_root, frames, replaced, attest).
+First blessed golden: `goldens/walk-and-seek-v2.json` (the headless twin
+witness), and the INDEPENDENT twin tape PASSES against it. Comparator
+now names the divergent DOMAIN on mismatch (3/3 module tests).
+
+## W5 honest state
+Schema/oracle/readback-registry/shutdown/artifact-transaction substance
+is on the fork (r0d modules, 292/292; exactly-once registry; atomic
+tmp→rename tape). The automated CAPTURE leg is blocked at a NAMED gate:
+in pause-mode the design waits for the OPERATOR's pause (works by
+design — launch the freeze leg, press ESC at tick 300); in absolute
+mode (`BASTION_R0D_CAPTURE_AT=1`) the SETTLED_TRACE_GATE never reached
+`Open{advanced}` under the automated spectator flow — that gate's
+observability (state witnesses inside `observe()`) is the single named
+follow-up. A ready_token witness was added this session (the first
+silent gate found by the same hunt).
