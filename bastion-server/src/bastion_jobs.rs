@@ -6552,6 +6552,55 @@ impl JobBoard {
                     "bastion: farm plot registered (surface), per-column surface resolved"
                 );
             }
+            // ADOPT-IN-PLACE (Ben direct, 2026-08-21: "shouldn't the
+            // colonists be sleeping in houses… using the existing land" —
+            // and the feature's own charter: exercise USE without first
+            // building BUILD). Scan the placed plot for the village's OWN
+            // beds and register them sleepable — head pieces only for the
+            // multi-part frames (one bed, one slot), plus bedrolls. Frame
+            // kind: a furnished house bed outranks a built bedroll, which
+            // is exactly the adopted-town promise.
+            {
+                use common::terrain::sprite::SpriteKind as S;
+                let mut adopted_beds = 0u32;
+                for y in region.min.y..=region.max.y {
+                    for x in region.min.x..=region.max.x {
+                        let Some(surface) = column_surface_z(terrain, x, y, hint_z) else {
+                            continue;
+                        };
+                        for z in (surface - 2)..=(surface + 8) {
+                            let pos = Vec3::new(x, y, z);
+                            let Ok(block) = terrain.get(pos) else { continue };
+                            let is_bed = matches!(
+                                block.get_sprite(),
+                                Some(
+                                    S::Bedroll
+                                        | S::BedrollSnow
+                                        | S::BedrollPirate
+                                        | S::BedMesa
+                                        | S::BedWoodWoodlandHead
+                                        | S::BedCliffHead
+                                )
+                            );
+                            if is_bed && !self.beds.contains_key(&pos) {
+                                self.beds.insert(pos, common::bastion::BedSlot {
+                                    kind: common::bastion::BedKind::Frame,
+                                    owner: None,
+                                    occupant: None,
+                                });
+                                adopted_beds += 1;
+                            }
+                        }
+                    }
+                }
+                if adopted_beds > 0 {
+                    info!(
+                        ?kind,
+                        adopted_beds,
+                        "bastion: ADOPT-IN-PLACE — existing village beds registered sleepable"
+                    );
+                }
+            }
         } else {
             // No column resolved: the paint delivered NOTHING — say so
             // (a zone that silently fails to register is this exact bug).
