@@ -2912,6 +2912,118 @@ impl Server {
     /// detection the paint handler runs ([`bastion_chop::detect_trees`] — one
     /// implementation, registry B17) over an XY footprint and place the
     /// fell-set jobs. Returns `(trees, cells, jobs created)`.
+    /// FORESTRY SELF-GENERATOR (2026-08-21, pre-registered in
+    /// `FORESTRY-PREREGISTRATION.md`): the WOOD half of the par-stock pull
+    /// economy, and the direct twin of the mine generator F13 spent five legs
+    /// repairing.
+    ///
+    /// A designated job that bills `CHOP_DROP_ITEM` — a ladder, say — used to
+    /// wait forever, because nothing woke a forestry economy. Stone got its
+    /// loop closed by F13; this is wood's.
+    ///
+    /// It lives HERE rather than in the jobs system because `detect_trees`
+    /// needs `world` and `index`, and that system is deliberately terrain-only.
+    /// Hand-rolling a tree probe inside it instead would be exactly the drift
+    /// that produced F13's fourth blocker: a generator answering an easier
+    /// question than the consumer.
+    ///
+    /// Deficit arithmetic mirrors the mine's, and quiescence is a REAL bar:
+    /// a forestry loop that does not stop clear-cuts the map.
+    #[cfg(feature = "worldgen")]
+    fn bastion_forestry_tick(&mut self) {
+        let tick = self.state.ecs().read_resource::<Tick>().0;
+        // Slow cadence; felling a tree is a large, visible act.
+        if tick % 150 != 43 {
+            return;
+        }
+        let (demand, pending, supply, anchor) = {
+            let ecs = self.state.ecs();
+            let board = ecs.read_resource::<bastion_jobs::JobBoard>();
+            let (demand, pending) = bastion_jobs::wood_demand(&board);
+            if demand == 0 {
+                return;
+            }
+            let items = ecs.read_storage::<comp::PickupItem>();
+            let inventories = ecs.read_storage::<comp::Inventory>();
+            let mut supply = 0usize;
+            for item in (&items).join() {
+                if item.item().item_definition_id().itemdef_id()
+                    == Some(common::bastion::CHOP_DROP_ITEM)
+                {
+                    supply += item.amount() as usize;
+                }
+            }
+            for inv in (&inventories).join() {
+                supply += inv
+                    .slots()
+                    .flatten()
+                    .filter(|i| {
+                        i.item_definition_id().itemdef_id()
+                            == Some(common::bastion::CHOP_DROP_ITEM)
+                    })
+                    .map(|i| i.amount() as usize)
+                    .sum::<usize>();
+            }
+            // Anchor on the colony's placed intent, exactly as the mine does.
+            let anchor = board
+                .stockpiles
+                .first()
+                .map(|(_, r)| ((r.min + r.max) / 2).xy());
+            (demand, pending, supply, anchor)
+        };
+        // Quiescence: everything already coming counts against the need.
+        if demand <= supply + pending {
+            return;
+        }
+        let Some(anchor) = anchor else { return };
+        const FORESTRY_RADIUS: i32 = 24;
+        let (min_xy, max_xy) = (
+            anchor - vek::Vec2::broadcast(FORESTRY_RADIUS),
+            anchor + vek::Vec2::broadcast(FORESTRY_RADIUS),
+        );
+        let (trees_seen, felled) = {
+            let ecs = self.state.ecs();
+            let world = ecs.read_resource::<Arc<World>>();
+            let index = ecs.read_resource::<IndexOwned>();
+            let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
+            let trees = bastion_chop::detect_trees(&world, &index, &terrain, min_xy, max_xy);
+            let seen = trees.len();
+            let mut board = ecs.write_resource::<bastion_jobs::JobBoard>();
+            // ONE tree per firing. The deficit is re-read next cadence, so the
+            // loop self-limits instead of felling a forest in a tick.
+            let felled = trees
+                .iter()
+                .find_map(|(_aabb, base, cells)| {
+                    board.place_chop_fell(&terrain, *base, cells)
+                })
+                .is_some();
+            (seen, felled)
+        };
+        // ★ THE WITNESS SHIPS WITH THE FEATURE, not after it. F13 burned three
+        // legs on a null that could not say whether the resource was ABSENT or
+        // merely REFUSED. `trees_seen=0` is a worldgen fact; `trees_seen>0`
+        // with nothing felled is a bug, and they must never render alike.
+        if !felled {
+            tracing::info!(
+                demand,
+                supply,
+                pending,
+                trees_seen,
+                radius = FORESTRY_RADIUS,
+                ?anchor,
+                "bastion: FORESTRY wanted wood and felled NOTHING"
+            );
+        } else {
+            tracing::info!(
+                demand,
+                supply,
+                pending,
+                trees_seen,
+                "bastion: FORESTRY felled a tree for a job that billed wood"
+            );
+        }
+    }
+
     pub fn bastion_place_chop_area(
         &mut self,
         min_xy: vek::Vec2<i32>,
@@ -5286,6 +5398,12 @@ impl Server {
         // bastion (ITEM 34): raids, scaled by the wealth signal.
         #[cfg(feature = "worldgen")]
         self.bastion_raid_tick();
+
+        // bastion (FORESTRY): the WOOD half of the par-stock pull economy —
+        // the twin of the mine generator F13 repaired. A job billing timber
+        // used to wait forever because nothing woke a forestry economy.
+        #[cfg(feature = "worldgen")]
+        self.bastion_forestry_tick();
 
         // bastion (det-capture): env-gated AUTO-FOUND a colony for NON-INTERACTIVE
         // determinism runs. server-cli has no client to found a colony via the

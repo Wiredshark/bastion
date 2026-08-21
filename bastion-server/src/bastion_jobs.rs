@@ -24665,6 +24665,37 @@ pub fn job_bills_stone_unclaimed(job: &Job) -> bool {
         && (job.claimed_by.is_none() || job.needs_materials)
 }
 
+/// FORESTRY: does this job bill the colony's WOOD economy and still need
+/// supplying?
+///
+/// The exact twin of [`job_bills_stone_unclaimed`], written with that
+/// predicate's correction ALREADY APPLIED rather than rediscovered: a job that
+/// is claimed but flagged `needs_materials` IS demand. The stone version
+/// shipped as unclaimed-only, and the moment colonists could reach their jobs
+/// the claims flipped every one of them out of the demand set and silenced the
+/// generator — a fix that made the numbers go DOWN. There is no reason to pay
+/// for that lesson twice.
+pub fn job_bills_wood_unsupplied(job: &Job) -> bool {
+    job.required_item == Some(CHOP_DROP_ITEM)
+        && (job.claimed_by.is_none() || job.needs_materials)
+}
+
+/// FORESTRY: the colony's wood demand, supply and pending-fell counts — the
+/// deficit arithmetic, in one place, so the generator and any future
+/// par-stock floor cannot disagree about what "short of wood" means.
+///
+/// Returns `(demand, pending_fell)`. Supply is counted by the caller, which
+/// owns the item joins.
+pub fn wood_demand(board: &JobBoard) -> (usize, usize) {
+    let demand = board.jobs.values().filter(|j| job_bills_wood_unsupplied(j)).count();
+    let pending = board
+        .jobs
+        .values()
+        .filter(|j| j.kind.is(DesignationKind::Chop))
+        .count();
+    (demand, pending)
+}
+
 fn toss_scatter_rng(tick: u64, pos: Vec3<i32>, domain: u64) -> rand_chacha::ChaCha8Rng {
     use rand::SeedableRng;
     rand_chacha::ChaCha8Rng::seed_from_u64(
@@ -24888,6 +24919,58 @@ mod tests {
             "a haul aimed at a DESTROYED zone survived the cancel — it can never complete, and \
              the colonist carrying it walks food out of the colony and freezes"
         );
+    }
+
+    /// FORESTRY: the wood predicate must ship with the stone predicate's
+    /// CORRECTION already applied, not rediscover it.
+    ///
+    /// `job_bills_stone_unclaimed` shipped as unclaimed-only. The moment
+    /// colonists could actually reach their jobs, every claim flipped a job
+    /// out of the demand set, demand fell to zero and the generator went
+    /// silent — a fix that made the measured numbers go DOWN. This asserts the
+    /// wood twin never has that hole, because paying for the same lesson twice
+    /// in one file would be indefensible.
+    #[test]
+    fn a_claimed_but_unsupplied_wood_job_is_still_demand() {
+        let mut ladder = Job {
+            kind: common::bastion::JobKind::Designated(DesignationKind::Ladder),
+            work: DesignationKind::Ladder.work_type(),
+            pos: Vec3::new(0, 0, 0),
+            skill_floor: 0,
+            claimed_by: None,
+            suspended_for: None,
+            unreachable: false,
+            progress: 0.0,
+            required_item: Some(CHOP_DROP_ITEM),
+            needs_materials: false,
+            carve_attempted: false,
+            is_access: false,
+            stuck_strikes: 0,
+            benched_until_tick: None,
+            depth: 0,
+            reservation: None,
+            affordance: AffordanceClass::OnTopAlways,
+        };
+        assert!(job_bills_wood_unsupplied(&ladder), "unclaimed timber job is demand");
+
+        ladder.claimed_by = Some(common::uid::Uid(NonZeroU64::new(3).expect("nonzero")));
+        assert!(
+            !job_bills_wood_unsupplied(&ladder),
+            "a claimed job that is progressing is already supplied"
+        );
+
+        ladder.needs_materials = true;
+        assert!(
+            job_bills_wood_unsupplied(&ladder),
+            "a colonist standing on a ladder job with no timber is demand — this is the exact              hole the stone predicate shipped with, and it silenced the generator the moment the              colony started working"
+        );
+
+        // Stone and wood must not be confused for each other: the two
+        // economies have separate generators and a crossed predicate would
+        // wake the wrong one.
+        ladder.required_item = Some(BUILD_MATERIAL_ITEM);
+        assert!(!job_bills_wood_unsupplied(&ladder));
+        assert!(job_bills_stone_unclaimed(&ladder));
     }
 
     /// F13 / ★ THE DEMAND SIGNAL MUST COVER THE POPULATION. The colony's
