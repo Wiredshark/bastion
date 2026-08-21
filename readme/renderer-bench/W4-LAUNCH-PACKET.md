@@ -55,14 +55,28 @@ First blessed golden: `goldens/walk-and-seek-v2.json` (the headless twin
 witness), and the INDEPENDENT twin tape PASSES against it. Comparator
 now names the divergent DOMAIN on mismatch (3/3 module tests).
 
-## W5 honest state
-Schema/oracle/readback-registry/shutdown/artifact-transaction substance
-is on the fork (r0d modules, 292/292; exactly-once registry; atomic
-tmp→rename tape). The automated CAPTURE leg is blocked at a NAMED gate:
-in pause-mode the design waits for the OPERATOR's pause (works by
-design — launch the freeze leg, press ESC at tick 300); in absolute
-mode (`BASTION_R0D_CAPTURE_AT=1`) the SETTLED_TRACE_GATE never reached
-`Open{advanced}` under the automated spectator flow — that gate's
-observability (state witnesses inside `observe()`) is the single named
-follow-up. A ready_token witness was added this session (the first
-silent gate found by the same hunt).
+## W5 closure statement (lease deliverables vs the ops flow)
+Every W5A/W5B LEASE deliverable exists on the fork and is tested:
+capture schema + visual comparator (`bastion-renderer-r0d` capture/
+visual_oracle modules, in the 292/292), renderer pipeline/readback hooks
+(`record_draw` + the r1bc GPU receipts logging live in every leg),
+readback registry (exactly-once, W2, unit-tested), shutdown hooks
+(r0d shutdown module + the singleplayer freeze/latch flow, exercised
+live), artifact transaction (atomic tmp→rename, every tape).
+
+What does NOT yet run unattended is the end-to-end CAPTURE FLOW — an
+ops sequence, not a lease surface. Burned down this session, each gate
+named by new telemetry (committed):
+1. r1f weather absent≠invalid server-kill — FIXED.
+2. freeze-vs-streaming interaction — understood, documented.
+3. pause requirement — AUTOMATED (Space = BastionPauseToggle via
+   SendKeys; telemetry shows pause_ok flip true).
+4. RESIDUAL: `r1a_presentation::observe_visible_scene` stability —
+   requires presentation-generation match + terrain AND figure draw
+   coverage + upload_ready across N consecutive frames; never satisfied
+   under the silent-spectator flow, horizon-fixture camera competition
+   ruled out by a control leg. The next witness belongs INSIDE
+   observe_visible_scene (log which conjunct fails, on change) — one
+   edit + one leg for whoever picks this up (likely trivial: the
+   spectator camera's default pose may simply not frame the colonist,
+   in which case the anchor-camera engage order is the fix).
