@@ -1,5 +1,5 @@
-server pid=95537 arm=death (started by this script)
+server pid=97532 arm=death (started by this script)
 BASTION_ENV=[BASTION_DETERMINISTIC=1 BASTION_AUTOFOUND_COLONY=8 BASTION_FLAT_ARENA=1 BASTION_FLAT_ARENA_RESOURCED=1 BASTION_UNCAPPED_TPS=1 BASTION_SEED_FOOD=64 BASTION_PLANT_LETHAL=1]
-port 26024 open after 84s
+port 26024 open after 96s
 driver exited rc=0
-teardown verified: pid=95537 stopped and port 26024 is free
+teardown verified: pid=97532 stopped and port 26024 is free

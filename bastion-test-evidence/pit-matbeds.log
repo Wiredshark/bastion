@@ -1,5 +1,5 @@
-server pid=86526 arm=matbeds (started by this script)
+server pid=96312 arm=matbeds (started by this script)
 BASTION_ENV=[BASTION_DETERMINISTIC=1 BASTION_AUTOFOUND_COLONY=8 BASTION_FLAT_ARENA=1 BASTION_FLAT_ARENA_RESOURCED=1 BASTION_UNCAPPED_TPS=1 BASTION_SEED_FOOD=64 BASTION_NEEDS_DECAY_MULT=6 BASTION_SEED_MATERIALS=64]
-port 26024 open after 93s
+port 26024 open after 81s
 driver exited rc=0
-teardown verified: pid=86526 stopped and port 26024 is free
+teardown verified: pid=96312 stopped and port 26024 is free
