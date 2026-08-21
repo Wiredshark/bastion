@@ -377,6 +377,13 @@ case "$ARM" in
   # (is the material absent, or present-but-entirely-reserved?). Checking for an
   # existing instrument before building a second one is the cheaper half of this
   # project's own "read the producer" law.
+  # ITEM 40 FOLLOW-UP: the long window that separates "throughput does not
+  # scale" from "the first crop had not come in yet". ~33,000 ticks against the
+  # 12,000 of the original, with food sampled six times across the run so the
+  # TREND is visible rather than one end-state reading.
+  scalelong)    PITVAR=" BASTION_SEED_FOOD=256 BASTION_SEED_MATERIALS=256 BASTION_NEED_SKIP_DIAG=1"
+              PITFOUND="BASTION_AUTOFOUND_COLONY=32 "
+              SCRIPT="script-scalelong.txt" ;;
   scale32diag)  PITVAR=" BASTION_SEED_FOOD=256 BASTION_SEED_MATERIALS=256 BASTION_NEED_SKIP_DIAG=1"
               PITFOUND="BASTION_AUTOFOUND_COLONY=32 "
               SCRIPT="script-injury.txt" ;;

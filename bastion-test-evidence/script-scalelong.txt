@@ -1,0 +1,33 @@
+note === ITEM 40 FOLLOW-UP: is the food shortage at 32 colonists a SCALING
+note === property or a WARM-UP artifact? The 12,000-tick leg found the wheat
+note === stockpile holding 2-4 units, fully reserved, with 30 colonists
+note === refusing for materials. Wheat is FARMED, and harvests take time.
+note === This window is ~5x longer and samples food throughout, so a colony
+note === that is merely still growing its first crop separates from one whose
+note === throughput genuinely does not scale.
+anchor
+wait 3000
+note --- sample 1 ---
+inspect_colony
+foodstore
+wait 6000
+note --- sample 2 ---
+inspect_colony
+foodstore
+wait 6000
+note --- sample 3 ---
+inspect_colony
+foodstore
+wait 6000
+note --- sample 4 ---
+inspect_colony
+foodstore
+wait 6000
+note --- sample 5 ---
+inspect_colony
+foodstore
+wait 6000
+note --- sample 6 (end) ---
+inspect_colony
+foodstore
+inspect_colonists
