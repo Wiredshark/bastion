@@ -11147,6 +11147,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // own book entry (bar 2's audit line); the B6 fetch contract
         // delivers the sold log; the completion drops the bought food at
         // the site and the standard haul pipeline carries it home.
+        if tick.0 % ARBITRATION_INTERVAL as u64 == 19 {
+            // Gate witness (throttled): tradefed had book=194 sites, food 8
+            // < par 16, wood delivered IN-zone and fetchable — and minted=0.
+            // One of the four conditions is lying; print all four so the
+            // false one names itself.
+            if tick.0 % (ARBITRATION_INTERVAL as u64 * 40) == 19 {
+                let mission_live = board
+                    .jobs
+                    .values()
+                    .any(|j| matches!(j.kind, common::bastion::JobKind::TradeMission { .. }));
+                let fs = colony_food_stock((&pickup_items, &positions).join(), &board);
+                let wood = stockpile_has_material(
+                    CHOP_DROP_ITEM,
+                    (&pickup_items, &positions, &uids).join(),
+                    &board,
+                );
+                info!(
+                    book = trade_price_book.0.len(),
+                    mission_live,
+                    food_stock = fs,
+                    par = TRADE_FOOD_PAR,
+                    wood_stocked = wood,
+                    "bastion: ITEM 29 mint-gate witness"
+                );
+            }
+        }
         if tick.0 % ARBITRATION_INTERVAL as u64 == 19
             && !trade_price_book.0.is_empty()
             && !board
