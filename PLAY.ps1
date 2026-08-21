@@ -44,12 +44,26 @@ if ($Stop) {
     return
 }
 
-# Refuse rather than start a second server nobody asked for.
+# Refuse rather than start a second server nobody asked for -- but if the
+# caller asked for the CLIENT, give them the client. The first version bailed
+# out here unconditionally, so `.\PLAY.ps1 town -Client` against an
+# already-running world printed "a server is ALREADY on port 14004" and
+# launched nothing at all. That is the single most likely way to run this
+# script -- the world is up, you want to go and look at it -- and it was the
+# one path that did nothing.
 $held = Test-PortHeld
 if ($held) {
-    Write-Host "A server is ALREADY on port $Port :"
-    Write-Host "  $held"
-    Write-Host "Run  .\PLAY.ps1 -Stop  first, or just join localhost:$Port as 'player'."
+    Write-Host "A server is already on port $Port (that's fine - it's your world)."
+    if ($Client) {
+        Write-Host 'Launching the game against it...'
+        $env:VELOREN_ASSETS = Join-Path $WT 'assets'
+        Start-Process -FilePath "$Bin\veloren-voxygen.exe" -WorkingDirectory $WT
+        Write-Host ''
+        Write-Host "  In game: Multiplayer -> localhost:$Port -> username 'player' (no password)"
+    } else {
+        Write-Host "Join localhost:$Port as 'player', or run  .\PLAY.ps1 -Stop  to end it."
+        Write-Host "To launch the game against it:  .\PLAY.ps1 town -Client"
+    }
     return
 }
 
