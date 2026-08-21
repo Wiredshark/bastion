@@ -7320,23 +7320,62 @@ impl Server {
             PlotKind::Barn(_) => Some(D::Stockpile),
             _ => None,
         };
-        let (site, d2) = index
+        // ★ PICK THE VILLAGE WITH THE MOST HOUSES, NOT THE NEAREST ONE
+        // (2026-08-21). This took `min_by_key(distance)`, so a two-house hamlet
+        // a hundred blocks away beat a twenty-house village five hundred blocks
+        // away -- and a measured leg adopted exactly that: houses=2, barns=0,
+        // for EIGHT colonists. Four to a room.
+        //
+        // Ben's first acceptance criterion for the town is "colonists occupy
+        // homes -- each one has a house". A colony cannot satisfy it if the
+        // selection hands it a hamlet, no matter what the rest of the pipeline
+        // does. Distance is still the tiebreak; it just stops outranking
+        // whether the place can house anybody.
+        let mut candidates: Vec<(&world::site::Site, i32, usize)> = index
             .sites
             .iter()
             .filter_map(|(_, site)| {
-                let has_mapped = site.plots().any(|p| map_kind(p.kind()).is_some());
-                has_mapped.then(|| (site, site.origin.distance_squared(near)))
+                if !site.plots().any(|p| map_kind(p.kind()).is_some()) {
+                    return None;
+                }
+                let d2 = site.origin.distance_squared(near);
+                // The radius filter moves INSIDE the search: with a scoring
+                // pick, "the best site" and "the best site within reach" are
+                // different questions, and answering the first then checking
+                // the second would reject a perfectly good near village
+                // because a better far one existed.
+                if d2 > radius * radius {
+                    return None;
+                }
+                let houses = site
+                    .plots()
+                    .filter(|p| matches!(map_kind(p.kind()), Some(D::Bed)))
+                    .count();
+                Some((site, d2, houses))
             })
-            .min_by_key(|(_, d2)| *d2)?;
-        if d2 > radius * radius {
+            .collect();
+        if candidates.is_empty() {
             tracing::warn!(
                 ?near,
                 radius,
-                nearest_d = (d2 as f32).sqrt() as i32,
-                "bastion: ADOPT-A-TOWN VOID — nearest adoptable site is outside                  the search radius (a worldgen fact, not a feature failure)"
+                "bastion: ADOPT-A-TOWN VOID — no adoptable site inside the search                  radius (a worldgen fact, not a feature failure)"
             );
             return None;
         }
+        // Most houses wins; nearest breaks the tie.
+        candidates.sort_by_key(|(_, d2, houses)| (std::cmp::Reverse(*houses), *d2));
+        tracing::info!(
+            considered = candidates.len(),
+            chosen_houses = candidates[0].2,
+            chosen_dist = (candidates[0].1 as f32).sqrt() as i32,
+            // The runner-up, so the choice is auditable: "we took a 2-house
+            // village" and "2 houses was the best on offer" are different
+            // facts and only one of them is a defect.
+            runner_up_houses = candidates.get(1).map(|c| c.2).unwrap_or(0),
+            "bastion: ADOPT-A-TOWN site chosen — MOST HOUSES first, distance as tiebreak"
+        );
+        let (site, d2) = (candidates[0].0, candidates[0].1);
+        let _ = d2;
         let plots = site
             .plots()
             .filter_map(|p| {
