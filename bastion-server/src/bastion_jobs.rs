@@ -11282,9 +11282,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 if already {
                     continue;
                 }
-                // Raw input available? Any FOOD_DEFS item inside a stockpile.
-                // Return the &'static str FROM FOOD_DEFS, not the item's own
-                // borrowed id — the item borrow must not escape the closure.
+                // ITEM 26: raw availability now reads THE RECIPE TABLE —
+                // first registered recipe for this station whose input sits
+                // stockpiled wins (multi-recipe dispatch is data). The
+                // &'static comes from the leaked table entry, so the item
+                // borrow still never escapes the closure.
                 let raw: Option<&'static str> =
                     (&pickup_items, &positions).join().find_map(|(it, ip)| {
                         let def = it.item().item_definition_id();
@@ -11295,7 +11297,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         {
                             return None;
                         }
-                        RAW_FOOD_DEFS.iter().find(|f| **f == def).copied()
+                        crate::bastion_recipes::recipes_for(
+                            common::bastion::DesignationKind::CookStation,
+                        )
+                        .find(|r| r.input_def == def)
+                        .map(|r| r.input_def)
                     });
                 let Some(raw_def) = raw else {
                     // The couldn't-happen witness for the broken-link bar:
@@ -11310,7 +11316,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 it.item()
                                     .item_definition_id()
                                     .itemdef_id()
-                                    .is_some_and(|d| RAW_FOOD_DEFS.contains(&d))
+                                    .is_some_and(|d| {
+                                        // ITEM 26: the witness counts what
+                                        // the TABLE recognizes — same
+                                        // source as the scan above.
+                                        crate::bastion_recipes::recipes_for(
+                                            common::bastion::DesignationKind::CookStation,
+                                        )
+                                        .any(|r| r.input_def == d)
+                                    })
                                     && board
                                         .stockpile_at(ip.0.map(|e| e.floor() as i32))
                                         .is_some()
@@ -17329,19 +17343,45 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // a 2-raw-per-dish double-charge. The completion
                             // PRODUCES only; the arrival consume IS the
                             // "raw consumed" half of the conservation pair.
-                            let mut rng = toss_scatter_rng(tick.0, station, 0x30E_0003);
-                            crate::bastion_actions::emit_drop(
-                                &mut item_drop_emitter,
-                                station,
-                                Item::new_from_asset_expect(COOKED_DISH_ITEM),
-                                *program_time,
-                                &mut rng,
-                            );
-                            info!(
-                                ?station,
-                                raw = ?job.required_item,
-                                "bastion: ITEM 27 cooked — raw consumed (at arrival), dish produced"
-                            );
+                            //
+                            // ITEM 26: the PRODUCT comes from the recipe
+                            // table, keyed by the consumed input — the same
+                            // row the generator chose, so generator/fetch/
+                            // completion cannot disagree about the chain.
+                            let recipe = crate::bastion_recipes::recipes_for(
+                                common::bastion::DesignationKind::CookStation,
+                            )
+                            .find(|r| Some(r.input_def) == job.required_item);
+                            if let Some(r) = recipe {
+                                let mut rng =
+                                    toss_scatter_rng(tick.0, station, 0x30E_0003);
+                                for _ in 0..r.output_n {
+                                    crate::bastion_actions::emit_drop(
+                                        &mut item_drop_emitter,
+                                        station,
+                                        Item::new_from_asset_expect(r.output_def),
+                                        *program_time,
+                                        &mut rng,
+                                    );
+                                }
+                                info!(
+                                    ?station,
+                                    raw = ?job.required_item,
+                                    product = r.output_def,
+                                    n = r.output_n,
+                                    "bastion: ITEM 27 cooked — raw consumed (at arrival), dish produced"
+                                );
+                            } else {
+                                // A Cook job whose input has no table row:
+                                // the couldn't-happen witness (a hot-edited
+                                // table or a stale job) — nothing produced,
+                                // said out loud.
+                                info!(
+                                    ?station,
+                                    raw = ?job.required_item,
+                                    "bastion: ITEM 26 completion has NO RECIPE for its input — nothing produced"
+                                );
+                            }
                         }
                         // ITEM 29: a completed TRADE MISSION — the arrival-side
                         // consume already took the sold log (the generic
