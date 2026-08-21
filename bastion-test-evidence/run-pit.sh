@@ -331,6 +331,11 @@ case "$ARM" in
               PITARENA=""
               SCRIPT="script-adopt.txt" ;;
   # Item 31 (POWER-0): both favor-gate branches in one flat-arena leg.
+  # Item 35 (injuries): one wound, then bed recovery + the tend job. The
+  # decay multiplier only makes a colonist actually go to bed inside the
+  # window; it changes no consequence logic.
+  injury)       PITVAR=" BASTION_SEED_FOOD=64 BASTION_NEEDS_DECAY_MULT=6"
+              SCRIPT="script-injury.txt" ;;
   smite)        PITVAR=" BASTION_SEED_FOOD=64"
               SCRIPT="script-smite.txt" ;;
   guardwound)   PITVAR=" BASTION_ACCESS_CLAIM_DIAG=1 BASTION_GUARD_BRAVERY=0.8,0.2 BASTION_GUARD_HOLD_DIAG=1 BASTION_GUARD_PLANT_WOUND=0.5"
