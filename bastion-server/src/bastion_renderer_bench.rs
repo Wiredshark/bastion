@@ -72,7 +72,10 @@ pub struct RendererBenchRun {
     start_tick: u64,
     run_ticks: u64,
     cadence: u64,
-    frames: Vec<(u64, Vec<u8>, [u8; 32])>,
+    /// (rel_tick, token bytes, frame_root, [script, movement, identity]
+    /// domain roots — W4: exposed in the tape envelope for the
+    /// domain-attributing comparator; run_root never reads them here).
+    frames: Vec<(u64, Vec<u8>, [u8; 32], [[u8; 32]; 3])>,
     parent_frame_root: [u8; 32],
     out_path: PathBuf,
     finished: bool,
@@ -540,7 +543,11 @@ impl<'a> System<'a> for Sys {
             ];
             let froot = frame_root(&run.schema, &token, &domains);
             run.parent_frame_root = froot;
-            run.frames.push((rel_tick, token, froot));
+            run.frames.push((rel_tick, token, froot, [
+                domains[0].1,
+                domains[1].1,
+                domains[2].1,
+            ]));
             // W3: announce the frame to every in-game client (drained by
             // the server crate's net sys — bastion-server cannot see
             // `Client`). Ack content is observational; run_root is closed
@@ -562,18 +569,24 @@ impl<'a> System<'a> for Sys {
             let frames_ref: Vec<(Vec<u8>, [u8; 32])> = run
                 .frames
                 .iter()
-                .map(|(_, t, f)| (t.clone(), *f))
+                .map(|(_, t, f, _)| (t.clone(), *f))
                 .collect();
             let rroot = run_root(&run.schema, &run.manifest.scenario_id, &frames_ref, 0);
             let hex = |b: &[u8]| -> String { b.iter().map(|x| format!("{x:02x}")).collect() };
             let frames_json: Vec<String> = run
                 .frames
                 .iter()
-                .map(|(t, tok, fr)| {
+                .map(|(t, tok, fr, doms)| {
+                    // W4: the per-domain roots ride the ENVELOPE so the
+                    // comparator can NAME the divergent domain; run_root
+                    // is computed above from token+root only, unchanged.
                     format!(
-                        "{{\"tick\":{t},\"token\":\"{}\",\"frame_root\":\"{}\"}}",
+                        "{{\"tick\":{t},\"token\":\"{}\",\"frame_root\":\"{}\",\"domains\":{{\"script\":\"{}\",\"movement\":\"{}\",\"identity\":\"{}\"}}}}",
                         hex(tok),
-                        hex(fr)
+                        hex(fr),
+                        hex(&doms[0]),
+                        hex(&doms[1]),
+                        hex(&doms[2])
                     )
                 })
                 .collect();
@@ -589,15 +602,29 @@ impl<'a> System<'a> for Sys {
                     let echo_match = run
                         .frames
                         .get(a.frame_index as usize)
-                        .map(|(_, _, fr)| *fr == a.frame_root_echo)
+                        .map(|(_, _, fr, _)| *fr == a.frame_root_echo)
                         .unwrap_or(false);
+                    // W4: visual domains present only from a RENDERING
+                    // client (headless acks honestly omit them).
+                    let visual = a
+                        .visual
+                        .as_ref()
+                        .map(|v| {
+                            format!(
+                                ",\"pass_draw_root\":\"{}\",\"visual_structure_root\":\"{}\"",
+                                hex(&v.pass_draw_root),
+                                hex(&v.visual_structure_root)
+                            )
+                        })
+                        .unwrap_or_default();
                     format!(
-                        "{{\"frame_index\":{},\"sim_tick\":{},\"echo_match\":{},\"client_projection_root\":\"{}\",\"entities_resolved\":{}}}",
+                        "{{\"frame_index\":{},\"sim_tick\":{},\"echo_match\":{},\"client_projection_root\":\"{}\",\"entities_resolved\":{}{}}}",
                         a.frame_index,
                         a.sim_tick,
                         echo_match,
                         hex(&a.client_projection_root),
-                        a.entities_resolved
+                        a.entities_resolved,
+                        visual
                     )
                 })
                 .collect();

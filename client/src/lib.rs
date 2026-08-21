@@ -392,6 +392,9 @@ pub struct Client {
     client_type: ClientType,
     registered: bool,
     presence: Option<PresenceKind>,
+    /// W4 renderer-bench: the frontend's latest scene note (None on a
+    /// headless client — absence is honest, never zeros).
+    renderer_bench_scene: Option<common::renderer_bench::BenchSceneStatsV1>,
     runtime: Arc<Runtime>,
     server_info: ServerInfo,
     /// `APEX-T3.3.06`: `Some` only while a `NetEnvelopeV1` attachment is
@@ -1557,6 +1560,7 @@ impl Client {
             client_type,
             registered: true,
             presence: None,
+            renderer_bench_scene: None,
             runtime,
             server_info,
             semantic_send_state: semantic_state_binding.map(common_net::msg::SemanticSendStateV1::new),
@@ -2091,6 +2095,16 @@ impl Client {
         self.send_msg(ClientGeneral::RendererBenchReady);
     }
 
+    /// W4 renderer-bench: the frontend's per-tick scene note (the
+    /// semantic observer hook). The next ack carries domains built from
+    /// the latest note.
+    pub fn renderer_bench_note_scene(
+        &mut self,
+        stats: common::renderer_bench::BenchSceneStatsV1,
+    ) {
+        self.renderer_bench_scene = Some(stats);
+    }
+
     /// W3 renderer-bench: one announce → one ack. The projection root is
     /// computed from the CLIENT's replicated ECS at receipt time (a
     /// wall-coupled observation — recorded beside the tape, never inside
@@ -2135,6 +2149,11 @@ impl Client {
             owners.into_iter().map(|(_, e)| e).collect();
         let client_projection_root =
             rb::domain_root(&schema, rb::Domain::ClientProjection, &owner_entries);
+        // W4: visual domains from the frontend's latest scene note.
+        let visual = self
+            .renderer_bench_scene
+            .as_ref()
+            .map(|s| rb::visual_domains(&schema, ann.frame_index, s));
         self.send_msg(ClientGeneral::RendererBenchProjectionAck(
             rb::BenchProjectionAckV1 {
                 frame_index: ann.frame_index,
@@ -2142,6 +2161,7 @@ impl Client {
                 frame_root_echo: ann.frame_root,
                 client_projection_root,
                 entities_resolved,
+                visual,
             },
         ));
     }

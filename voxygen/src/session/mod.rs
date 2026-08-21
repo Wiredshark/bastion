@@ -2342,6 +2342,43 @@ impl PlayState for SessionState {
                 READY_SENT.get_or_init(|| {
                     self.client.borrow_mut().renderer_bench_ready();
                 });
+                // W4: the semantic observer hook — feed the client the
+                // frame's scene note so its next ack carries the
+                // PassDraw/VisualStructure domains. pass_count v1 = the
+                // count of draw KINDS observed (mask popcount), the
+                // aggregate granularity the packet registers.
+                let cov = crate::render::bastion_r0d::latest_semantic_trace_v1()
+                    .map(|t| t.visible_scene_coverage)
+                    .unwrap_or_default();
+                self.client.borrow_mut().renderer_bench_note_scene(
+                    common::renderer_bench::BenchSceneStatsV1 {
+                        pass_count: u32::from(cov.mask.count_ones() as u8),
+                        draw_count: cov
+                            .figure_draw_count
+                            .saturating_add(cov.terrain_draw_count)
+                            .saturating_add(cov.lod_terrain_draw_count),
+                        instances: u32::try_from(
+                            cov.figure_instances
+                                + cov.terrain_instances
+                                + cov.lod_terrain_instances,
+                        )
+                        .unwrap_or(u32::MAX),
+                        geometry_units: cov.figure_units
+                            + cov.terrain_units
+                            + cov.lod_terrain_units,
+                        terrain_chunks: u32::try_from(self.scene.terrain().chunk_count())
+                            .unwrap_or(u32::MAX),
+                        visible_terrain_chunks: u32::try_from(
+                            self.scene.terrain().visible_chunk_count(),
+                        )
+                        .unwrap_or(u32::MAX),
+                        shadow_terrain_chunks: u32::try_from(
+                            self.scene.terrain().shadow_chunk_count(),
+                        )
+                        .unwrap_or(u32::MAX),
+                        figure_draw_count: cov.figure_draw_count,
+                    },
+                );
             }
         }
         // TODO: let mut client = self.client.borrow_mut();

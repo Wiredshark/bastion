@@ -1515,6 +1515,22 @@ fn main() -> ExitCode {
         };
         std::process::exit(renderer_bench_golden::run_cli(&cand, &gold));
     }
+    // W6: privileged golden promotion — refuses without an --attest note;
+    // every promotion appends an audit line beside the golden.
+    if let Some(pos) = std::env::args().position(|a| a == "--renderer-bench-promote") {
+        let cand = std::env::args().nth(pos + 1);
+        let gold = std::env::args().nth(pos + 2);
+        let attest = std::env::args()
+            .position(|a| a == "--attest")
+            .and_then(|p| std::env::args().nth(p + 1));
+        let (Some(cand), Some(gold)) = (cand, gold) else {
+            eprintln!(
+                "usage: --renderer-bench-promote <candidate.json> <golden.json> --attest \"<who/why>\""
+            );
+            std::process::exit(2);
+        };
+        std::process::exit(renderer_bench_golden::promote_cli(&cand, &gold, attest.as_deref()));
+    }
     // T0.52: the probe flag must be visible before State construction —
     // scan argv directly (Args::parse happens later in some paths).
     if std::env::args().any(|a| a == "--deterministic-parallel") {

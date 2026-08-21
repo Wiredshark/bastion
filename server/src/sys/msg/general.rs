@@ -223,6 +223,7 @@ mod semantic {
                     frame_root_echo: [0; 32],
                     client_projection_root: [0; 32],
                     entities_resolved: 0,
+                    visual: None,
                 }
             )
             .semantic_stream(),

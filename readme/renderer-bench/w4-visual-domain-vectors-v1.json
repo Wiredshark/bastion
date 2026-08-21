@@ -1,0 +1,37 @@
+{
+ "schema": "w4-visual-domain-vectors-v1",
+ "tags": {
+  "pass_draw": {
+   "domain": 12,
+   "leaf_id": 201326593,
+   "owner_kind": 6
+  },
+  "visual_structure": {
+   "domain": 13,
+   "leaf_id": 218103809,
+   "owner_kind": 2
+  },
+  "wire_type": 15
+ },
+ "stats": {
+  "pass_count": 3,
+  "draw_count": 2615,
+  "instances": 516,
+  "geometry_units": 987654321,
+  "terrain_chunks": 1801,
+  "visible_terrain_chunks": 516,
+  "shadow_terrain_chunks": 1200,
+  "figure_draw_count": 27
+ },
+ "frame_index": 7,
+ "pass_draw": {
+  "leaf": "b74c63158346998e7dcef9746c7ecf87de630ec2cdcae9dc1eb1ec3e8f9c5b17",
+  "owner_root": "313988137b10a6109977bfd2b876089342181c9ec56837cae3e69ea6f966dc32",
+  "domain_root": "af58042ee14601bdc91587dd0c6aa19c2dbf185657b225ea453e734b36d58b89"
+ },
+ "visual_structure": {
+  "leaf": "e81c8f83d67f6ae617b81de6871e22ce773f0de2ecc93c8d641194e6312bf087",
+  "owner_root": "b86f4d04e62e30c5fa7bf49f3cd1760a0e671c52e11fb43f9211899cdbaf2982",
+  "domain_root": "8d9be4d8ba570ecde08f61697d0b1aa38363e8d070efa2f080aa5fca260343d3"
+ }
+}

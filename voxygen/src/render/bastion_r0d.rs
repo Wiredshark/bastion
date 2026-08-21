@@ -1248,6 +1248,13 @@ pub fn capture_anchor_v1() -> Option<CaptureAnchorEvidenceV1> {
     CAPTURE_ANCHOR.lock().ok().and_then(|anchor| anchor.clone())
 }
 
+/// W4: the whole latest per-frame semantic trace (draw coverage included)
+/// for the session's bench scene note.
+#[must_use]
+pub fn latest_semantic_trace_v1() -> Option<SemanticTraceSnapshotV1> {
+    LATEST_SEMANTIC_TRACE.lock().ok().and_then(|trace| *trace)
+}
+
 #[must_use]
 pub fn latest_visible_resource_coverage_v1() -> (Option<u64>, bool, bool) {
     LATEST_SEMANTIC_TRACE

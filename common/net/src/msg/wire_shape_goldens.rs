@@ -574,7 +574,9 @@ pub const WIRE_SHAPE_GOLDENS: &[WireShapeGoldenV1] = &[
     WireShapeGoldenV1 {
         payload_schema: "ClientGeneral",
         variant: "RendererBenchProjectionAck",
-        digest_hex: "sha256:b80863e438de9ec98703f40fe08032a2881f73a250edec350c92823faaaa4eae",
+        // W4 (deliberate recompute, fork-internal pair): the ack gained
+        // `visual: Option<BenchVisualDomainsV1>` — see W4-LAUNCH-PACKET.md.
+        digest_hex: "sha256:cc14325aca6234e1edecd785e2f2f8bba73eeca2405ab1d206e5ac475abb37e5",
     },
     WireShapeGoldenV1 {
         payload_schema: "ServerGeneral",
@@ -745,6 +747,11 @@ mod wire_shape_goldens_v1 {
             frame_root_echo: [0xAB; 32],
             client_projection_root: [0xCD; 32],
             entities_resolved: 3,
+            // W4: a fixed Some so the golden covers the extended shape.
+            visual: Some(common::renderer_bench::BenchVisualDomainsV1 {
+                pass_draw_root: [0xEE; 32],
+                visual_structure_root: [0xF0; 32],
+            }),
         })
     }
 

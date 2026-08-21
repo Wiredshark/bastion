@@ -1356,6 +1356,104 @@ pub struct BenchProjectionAckV1 {
     /// entities (study data — never asserted equal to the server's).
     pub client_projection_root: [u8; 32],
     pub entities_resolved: u32,
+    /// W4: PassDraw/VisualStructure roots from a RENDERING client's own
+    /// scene (`W4-LAUNCH-PACKET.md`). A headless client has no renderer
+    /// and sends `None` — absence is honest, never zeros.
+    pub visual: Option<BenchVisualDomainsV1>,
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// W4 — PassDraw + VisualStructure (client-side visual observation).
+// ─────────────────────────────────────────────────────────────────────────
+
+pub const PASS_DRAW_LEAF: u32 = 0x0C00_0001;
+pub const VISUAL_STRUCTURE_LEAF: u32 = 0x0D00_0001;
+
+/// The per-tick scene note voxygen's session feeds the client (the W4
+/// semantic observer hook). Frame-aggregate granularity in v1.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct BenchSceneStatsV1 {
+    pub pass_count: u32,
+    pub draw_count: u32,
+    pub instances: u32,
+    pub geometry_units: u64,
+    pub terrain_chunks: u32,
+    pub visible_terrain_chunks: u32,
+    pub shadow_terrain_chunks: u32,
+    pub figure_draw_count: u32,
+}
+
+/// The two visual domain roots an ack may carry.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BenchVisualDomainsV1 {
+    pub pass_draw_root: [u8; 32],
+    pub visual_structure_root: [u8; 32],
+}
+
+/// PassDraw owner entry (v1: the single frame-aggregate pass, ordinal 0).
+pub fn pass_draw_owner(schema: &[u8; 32], ordinal: u32, s: &BenchSceneStatsV1) -> (Vec<u8>, [u8; 32]) {
+    let owner_key = ordinal.to_le_bytes();
+    let mut payload = Vec::with_capacity(20);
+    payload.extend_from_slice(&s.pass_count.to_le_bytes());
+    payload.extend_from_slice(&s.draw_count.to_le_bytes());
+    payload.extend_from_slice(&s.instances.to_le_bytes());
+    payload.extend_from_slice(&s.geometry_units.to_le_bytes());
+    let leaf = leaf_hash(
+        schema,
+        Domain::PassDraw,
+        PASS_DRAW_LEAF,
+        WireType::Struct,
+        OwnerKind::Pass,
+        &owner_key,
+        &payload,
+    );
+    let mut composite = vec![OwnerKind::Pass as u8];
+    composite.extend_from_slice(&(owner_key.len() as u32).to_le_bytes());
+    composite.extend_from_slice(&owner_key);
+    (
+        composite,
+        owner_root(schema, OwnerKind::Pass, &owner_key, &[(PASS_DRAW_LEAF, leaf)]),
+    )
+}
+
+/// VisualStructure owner entry (owner = the frame itself).
+pub fn visual_structure_owner(
+    schema: &[u8; 32],
+    frame_index: u32,
+    s: &BenchSceneStatsV1,
+) -> (Vec<u8>, [u8; 32]) {
+    let owner_key = frame_index.to_le_bytes();
+    let mut payload = Vec::with_capacity(16);
+    payload.extend_from_slice(&s.terrain_chunks.to_le_bytes());
+    payload.extend_from_slice(&s.visible_terrain_chunks.to_le_bytes());
+    payload.extend_from_slice(&s.shadow_terrain_chunks.to_le_bytes());
+    payload.extend_from_slice(&s.figure_draw_count.to_le_bytes());
+    let leaf = leaf_hash(
+        schema,
+        Domain::VisualStructure,
+        VISUAL_STRUCTURE_LEAF,
+        WireType::Struct,
+        OwnerKind::Frame,
+        &owner_key,
+        &payload,
+    );
+    let mut composite = vec![OwnerKind::Frame as u8];
+    composite.extend_from_slice(&(owner_key.len() as u32).to_le_bytes());
+    composite.extend_from_slice(&owner_key);
+    (
+        composite,
+        owner_root(schema, OwnerKind::Frame, &owner_key, &[(VISUAL_STRUCTURE_LEAF, leaf)]),
+    )
+}
+
+/// Both visual domain roots from one scene note.
+pub fn visual_domains(schema: &[u8; 32], frame_index: u32, s: &BenchSceneStatsV1) -> BenchVisualDomainsV1 {
+    let pd = pass_draw_owner(schema, 0, s);
+    let vs = visual_structure_owner(schema, frame_index, s);
+    BenchVisualDomainsV1 {
+        pass_draw_root: domain_root(schema, Domain::PassDraw, &[pd]),
+        visual_structure_root: domain_root(schema, Domain::VisualStructure, &[vs]),
+    }
 }
 
 /// The composite owner key `u8(kind) ‖ lp(key)` used at the domain level.

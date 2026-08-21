@@ -651,6 +651,61 @@ fn w3_client_projection_reproduces_python_vectors() {
     assert_eq!(hex(&droot), v["empty_domain_root"].as_str().unwrap(), "empty domain_root");
 }
 
+// ── W4: PassDraw + VisualStructure vectors (independent producer:
+// readme/renderer-bench/w4_visual_domain_vectors_v1.py) ──
+
+#[test]
+fn w4_visual_domains_reproduce_python_vectors() {
+    let v = vectors("w4-visual-domain-vectors-v1.json");
+    let schema = oracle_schema_hash();
+
+    // Pin the contractual tags against the JSON.
+    assert_eq!(Domain::PassDraw as u64, v["tags"]["pass_draw"]["domain"].as_u64().unwrap());
+    assert_eq!(PASS_DRAW_LEAF as u64, v["tags"]["pass_draw"]["leaf_id"].as_u64().unwrap());
+    assert_eq!(
+        Domain::VisualStructure as u64,
+        v["tags"]["visual_structure"]["domain"].as_u64().unwrap()
+    );
+    assert_eq!(
+        VISUAL_STRUCTURE_LEAF as u64,
+        v["tags"]["visual_structure"]["leaf_id"].as_u64().unwrap()
+    );
+    assert_eq!(WireType::Struct as u64, v["tags"]["wire_type"].as_u64().unwrap());
+
+    let s = &v["stats"];
+    let stats = BenchSceneStatsV1 {
+        pass_count: s["pass_count"].as_u64().unwrap() as u32,
+        draw_count: s["draw_count"].as_u64().unwrap() as u32,
+        instances: s["instances"].as_u64().unwrap() as u32,
+        geometry_units: s["geometry_units"].as_u64().unwrap(),
+        terrain_chunks: s["terrain_chunks"].as_u64().unwrap() as u32,
+        visible_terrain_chunks: s["visible_terrain_chunks"].as_u64().unwrap() as u32,
+        shadow_terrain_chunks: s["shadow_terrain_chunks"].as_u64().unwrap() as u32,
+        figure_draw_count: s["figure_draw_count"].as_u64().unwrap() as u32,
+    };
+    let frame_index = v["frame_index"].as_u64().unwrap() as u32;
+
+    let (_, pd_owner) = pass_draw_owner(&schema, 0, &stats);
+    assert_eq!(hex(&pd_owner), v["pass_draw"]["owner_root"].as_str().unwrap(), "pd owner");
+    let (_, vs_owner) = visual_structure_owner(&schema, frame_index, &stats);
+    assert_eq!(
+        hex(&vs_owner),
+        v["visual_structure"]["owner_root"].as_str().unwrap(),
+        "vs owner"
+    );
+    let domains = visual_domains(&schema, frame_index, &stats);
+    assert_eq!(
+        hex(&domains.pass_draw_root),
+        v["pass_draw"]["domain_root"].as_str().unwrap(),
+        "pd domain"
+    );
+    assert_eq!(
+        hex(&domains.visual_structure_root),
+        v["visual_structure"]["domain_root"].as_str().unwrap(),
+        "vs domain"
+    );
+}
+
 #[test]
 fn w3_shared_composite_matches_python_shape() {
     // The ONE owner-key implementation both sides call: kind byte then
