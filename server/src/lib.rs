@@ -2939,10 +2939,7 @@ impl Server {
         let (demand, pending, supply, anchor) = {
             let ecs = self.state.ecs();
             let board = ecs.read_resource::<bastion_jobs::JobBoard>();
-            let (demand, pending) = bastion_jobs::wood_demand(&board);
-            if demand == 0 {
-                return;
-            }
+            let (job_demand, pending) = bastion_jobs::wood_demand(&board);
             let items = ecs.read_storage::<comp::PickupItem>();
             let inventories = ecs.read_storage::<comp::Inventory>();
             let mut supply = 0usize;
@@ -2969,9 +2966,30 @@ impl Server {
                 .stockpiles
                 .first()
                 .map(|(_, r)| ((r.min + r.max) / 2).xy());
+            // ★ THE PAR-STOCK FLOOR (2026-08-21). Until now both material
+            // generators were demand-PULL ONLY: the mine woke when a job
+            // billed stone, forestry when a job billed timber. So a colony
+            // with no timber job stockpiled no timber and was caught
+            // flat-footed the moment it wanted a ladder — it then waited out a
+            // whole fell-and-haul cycle before the first block was placed.
+            //
+            // The floor is a STANDING demand: keep a little on hand with
+            // nothing asking. Deliberately small (one structure's worth). A
+            // large floor turns the colony into a strip-miner that fells every
+            // tree in sight for a rainy day, and destroys the property that
+            // makes this economy readable — that work has a VISIBLE REASON.
+            // The level is a balance number and is banked for Ben; only the
+            // mechanism is mine.
+            let floor_short = bastion_jobs::PAR_STOCK_WOOD.saturating_sub(supply);
+            let demand = job_demand.max(floor_short);
             (demand, pending, supply, anchor)
         };
-        // Quiescence: everything already coming counts against the need.
+        if demand == 0 {
+            return;
+        }
+        // Quiescence: everything already coming counts against the need. This
+        // is what stops a floor from becoming a clear-cut — the floor raises
+        // the target, it does not remove the brake.
         if demand <= supply + pending {
             return;
         }

@@ -11548,10 +11548,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // Stone only. Ladders bill CHOP_DROP_ITEM against a forestry economy
         // that has no self-generator to wake, so widening this to wood would
         // raise demand nothing can serve.
-        if tick.0 % ARBITRATION_INTERVAL as u64 == 2
-            && (!board.plans.is_empty()
-                || board.jobs.values().any(job_bills_stone_unclaimed))
-        {
+        // PAR-STOCK: the gate no longer requires that SOMETHING IS ASKING.
+        // A colony below its stone floor has standing demand even with an
+        // empty board, which is the whole point of a floor — being caught
+        // flat-footed with nothing on hand was the failure it exists to
+        // prevent. The deficit arithmetic inside still subtracts supply and
+        // pending work, so an idle colony at par does nothing at all.
+        if tick.0 % ARBITRATION_INTERVAL as u64 == 2 {
             let mut occupied: std::collections::HashSet<Vec3<i32>> =
                 board.jobs.values().map(|j| j.pos).collect();
             // One terrain read per plan cell per firing, reused by all
@@ -11562,7 +11565,31 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // being carried to is not double-ordered — `supply` below already
             // counts stone in colonists' bags, and demand that ignores
             // in-flight work makes the miner over-dig forever.
-            let mut demand = board.jobs.values().filter(|j| job_bills_stone_unclaimed(j)).count();
+            let job_demand = board.jobs.values().filter(|j| job_bills_stone_unclaimed(j)).count();
+            // Stone supply, counted BEFORE the floor so the floor can be a
+            // deficit rather than a target. Loose piles plus colonists' bags —
+            // the same population the mine's own `supply` reads below, kept
+            // consistent so the floor and the quota cannot disagree.
+            let stone_on_hand: usize = (&pickup_items)
+                .join()
+                .filter(|i| {
+                    i.item().item_definition_id().itemdef_id() == Some(MINE_DROP_ITEM)
+                })
+                .map(|i| i.amount() as usize)
+                .sum::<usize>()
+                + (&colonists, &inventories)
+                    .join()
+                    .map(|(_, inv)| {
+                        inv.slots()
+                            .flatten()
+                            .filter(|i| {
+                                i.item_definition_id().itemdef_id() == Some(MINE_DROP_ITEM)
+                            })
+                            .map(|i| i.amount() as usize)
+                            .sum::<usize>()
+                    })
+                    .sum::<usize>();
+            let mut demand = job_demand.max(PAR_STOCK_STONE.saturating_sub(stone_on_hand));
             let mut build_new: Vec<Vec3<i32>> = Vec::new();
             let mut retired: Vec<common::bastion::ZoneId> = Vec::new();
             let pending_build = board
@@ -24664,6 +24691,22 @@ pub fn job_bills_stone_unclaimed(job: &Job) -> bool {
     job.required_item == Some(BUILD_MATERIAL_ITEM)
         && (job.claimed_by.is_none() || job.needs_materials)
 }
+
+/// ★ PAR-STOCK FLOOR (2026-08-21): what the colony keeps on hand with NOTHING
+/// asking for it.
+///
+/// Deliberately small — roughly one structure's worth. A large floor turns the
+/// colony into a strip-miner hoarding against a rainy day and destroys the
+/// property that makes this economy legible: that every felled tree and every
+/// dug block has a visible reason. The LEVEL is a balance number and is banked
+/// for Ben in `DECISIONS-FOR-BEN.md`; only the mechanism is decided here.
+///
+/// The floor RAISES THE TARGET, it does not remove the brake: both generators
+/// still subtract supply and in-flight work before acting, so a floor can
+/// never become a clear-cut.
+pub const PAR_STOCK_WOOD: usize = 8;
+/// See [`PAR_STOCK_WOOD`]. Stone's floor, same reasoning.
+pub const PAR_STOCK_STONE: usize = 8;
 
 /// FORESTRY: does this job bill the colony's WOOD economy and still need
 /// supplying?
