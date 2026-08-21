@@ -237,6 +237,9 @@ pub struct HealthChangeEventData<'a> {
     #[cfg(feature = "worldgen")]
     rtsim_entities: ReadStorage<'a, RtSimEntity>,
     inventories: ReadStorage<'a, Inventory>,
+    /// bastion: colonist membership, so the death emit below names a SETTLER
+    /// and not every wolf that falls in the woods.
+    colonists: ReadStorage<'a, comp::Colonist>,
     agents: WriteStorage<'a, Agent>,
     healths: WriteStorage<'a, Health>,
     heads: WriteStorage<'a, Heads>,
@@ -333,6 +336,33 @@ impl ServerEvent for HealthChangeEvent {
                 }
 
                 if !health.is_dead && health.should_die() {
+                    // ★ A COLONY THAT CANNOT SEE ITS OWN DEAD (2026-08-21).
+                    // THREE independent play sessions reported the same gap:
+                    // one watched population fall 8 → 1, with four deaths
+                    // inside a 600-tick window, and could not determine what
+                    // killed anyone because NOTHING in the build emits a
+                    // death. Its report says so plainly — "there is no death
+                    // emitter in this build", so "starved" and "eaten" are
+                    // indistinguishable after the fact. A colony sim whose
+                    // most consequential event is unlogged cannot be
+                    // diagnosed, only guessed at.
+                    //
+                    // This is the single authoritative death transition (the
+                    // only place `!is_dead && should_die()` runs), so the
+                    // emit belongs HERE rather than in a bastion-side scan
+                    // that would be a second sequence to drift.
+                    //
+                    // Colonists only — a line per dead wolf would drown the
+                    // signal this exists to carry.
+                    if data.colonists.contains(ev.entity) {
+                        tracing::info!(
+                            uid = ?data.uids.get(ev.entity).map(|u| u.0.get()),
+                            damage = ev.change.amount,
+                            by = ?ev.change.by,
+                            protected = health.death_protection,
+                            "bastion: COLONIST DIED"
+                        );
+                    }
                     if health.death_protection {
                         emitters.emit(DownedEvent { entity: ev.entity });
                     } else {

@@ -6707,42 +6707,9 @@ impl JobBoard {
         max_xy: Vec2<i32>,
         hint_z: i32,
     ) -> Vec<JobId> {
-        use common::terrain::sprite::SpriteKind as S;
-        let mut adopted = 0u32;
-        let mut z_lo = None::<i32>;
-        let mut z_hi = None::<i32>;
-        for y in min_xy.y..=max_xy.y {
-            for x in min_xy.x..=max_xy.x {
-                let Some(surface) = column_surface_z(terrain, x, y, hint_z) else {
-                    continue;
-                };
-                z_lo = Some(z_lo.map_or(surface, |v: i32| v.min(surface)));
-                z_hi = Some(z_hi.map_or(surface, |v: i32| v.max(surface + 8)));
-                for z in (surface - 2)..=(surface + 8) {
-                    let pos = Vec3::new(x, y, z);
-                    let Ok(block) = terrain.get(pos) else { continue };
-                    let is_bed = matches!(
-                        block.get_sprite(),
-                        Some(
-                            S::Bedroll
-                                | S::BedrollSnow
-                                | S::BedrollPirate
-                                | S::BedMesa
-                                | S::BedWoodWoodlandHead
-                                | S::BedCliffHead
-                        )
-                    );
-                    if is_bed && !self.beds.contains_key(&pos) {
-                        self.beds.insert(pos, common::bastion::BedSlot {
-                            kind: common::bastion::BedKind::Frame,
-                            owner: None,
-                            occupant: None,
-                        });
-                        adopted += 1;
-                    }
-                }
-            }
-        }
+        let (adopted, pots, chests, z_lo, z_hi) =
+            self.adopt_furniture_surface(terrain, min_xy, max_xy, hint_z);
+        let _ = (pots, chests);
         if let (Some(lo), Some(hi)) = (z_lo, z_hi) {
             self.designated.push((
                 Region {
@@ -6758,9 +6725,121 @@ impl JobBoard {
             ?min_xy,
             ?max_xy,
             adopted_beds = adopted,
+            adopted_pots = pots,
+            adopted_chests = chests,
             "bastion: ADOPT-IN-PLACE house registered (no build jobs minted)"
         );
         Vec::new()
+    }
+
+    /// THE ONE FURNITURE SCAN. Registers a village's own beds, hearths and
+    /// containers as things the colony can USE, and returns
+    /// `(beds, pots, chests, z_lo, z_hi)`.
+    ///
+    /// ★ FOUND BY A PLAY SESSION, and it was a defect in MY OWN FIX
+    /// (2026-08-21). I added pot/chest adoption to the scan inside
+    /// `place_designation_surface` — but the adoption drain routes
+    /// `DesignationKind::Bed` to `adopt_beds_surface`, a SECOND, duplicated
+    /// scan that only ever looked for beds. So every adopted house went
+    /// through the one path my fix was not on, and the session measured the
+    /// result exactly: `cook station registered` 0, `dish produced` 0 in
+    /// 99,000 ticks, while the colony held 32 raw mushrooms and a colonist
+    /// whose strongest desire was to cook. **TREATMENT MUST REACH THE
+    /// POPULATION UNDER TEST** — the code was right and ran nowhere near a
+    /// house. Two scans that must agree is the drift this project keeps
+    /// paying for; there is now one, and both callers use it.
+    ///
+    /// ★ AND THE VOCABULARY WAS WRONG TOO. The same session read worldgen and
+    /// found a house contains no `Chest` and no `CookingPot` at all — it has
+    /// `Crate`, `DrawerWoodWoodlandS`/`L`, `WardrobedoubleWoodWoodland`, and
+    /// an `Ember` fireplace. So even on the right path the scan would have
+    /// adopted NOTHING. Matching a sprite that the generator never places is
+    /// a fix that cannot fail and cannot work; the vocabulary below is what
+    /// `house.rs` actually puts in a house, with `Chest`/`CookingPot` kept for
+    /// the plot types that do use them.
+    ///
+    /// Locked, dungeon, pirate and witch chests stay EXCLUDED: adopting them
+    /// would make the colony a looter by default, which is a gameplay ruling
+    /// and not one a terrain scan should make.
+    pub fn adopt_furniture_surface(
+        &mut self,
+        terrain: &TerrainGrid,
+        min_xy: Vec2<i32>,
+        max_xy: Vec2<i32>,
+        hint_z: i32,
+    ) -> (u32, u32, u32, Option<i32>, Option<i32>) {
+        use common::terrain::sprite::SpriteKind as S;
+        let (mut beds, mut pots, mut chests) = (0u32, 0u32, 0u32);
+        let mut z_lo = None::<i32>;
+        let mut z_hi = None::<i32>;
+        for y in min_xy.y..=max_xy.y {
+            for x in min_xy.x..=max_xy.x {
+                let Some(surface) = column_surface_z(terrain, x, y, hint_z) else {
+                    continue;
+                };
+                z_lo = Some(z_lo.map_or(surface, |v: i32| v.min(surface)));
+                z_hi = Some(z_hi.map_or(surface, |v: i32| v.max(surface + 8)));
+                for z in (surface - 2)..=(surface + 8) {
+                    let pos = Vec3::new(x, y, z);
+                    let Ok(block) = terrain.get(pos) else { continue };
+                    let sprite = block.get_sprite();
+                    let is_bed = matches!(
+                        sprite,
+                        Some(
+                            S::Bedroll
+                                | S::BedrollSnow
+                                | S::BedrollPirate
+                                | S::BedMesa
+                                | S::BedWoodWoodlandHead
+                                | S::BedCliffHead
+                        )
+                    );
+                    if is_bed && !self.beds.contains_key(&pos) {
+                        self.beds.insert(pos, common::bastion::BedSlot {
+                            kind: common::bastion::BedKind::Frame,
+                            owner: None,
+                            occupant: None,
+                        });
+                        beds += 1;
+                    }
+                    // A hearth. `Ember` is what a house actually has — a lit
+                    // fireplace — and is the reason a village kitchen was
+                    // invisible: the scan was looking for a cooking pot that
+                    // houses do not contain.
+                    if matches!(sprite, Some(S::Ember | S::CookingPot | S::Cauldron))
+                        && !self.cook_stations.contains(&pos)
+                    {
+                        self.cook_stations.push(pos);
+                        pots += 1;
+                    }
+                    // Household storage, as the generator actually places it.
+                    if matches!(
+                        sprite,
+                        Some(
+                            S::Crate
+                                | S::DrawerWoodWoodlandS
+                                | S::DrawerWoodWoodlandM1
+                                | S::DrawerWoodWoodlandM2
+                                | S::DrawerWoodWoodlandL1
+                                | S::DrawerWoodWoodlandL2
+                                | S::WardrobedoubleWoodWoodland
+                                | S::WardrobedoubleWoodWoodland2
+                                | S::Chest
+                                | S::ChestWoodDouble
+                        )
+                    ) {
+                        let one = Region { min: pos, max: pos };
+                        if !self.stockpiles.iter().any(|(_, r)| *r == one) {
+                            let sid = self.next_zone;
+                            self.next_zone += 1;
+                            self.stockpiles.push((sid, one));
+                            chests += 1;
+                        }
+                    }
+                }
+            }
+        }
+        (beds, pots, chests, z_lo, z_hi)
     }
 
     pub fn place_designation_surface(
@@ -6906,78 +6985,19 @@ impl JobBoard {
             // kind: a furnished house bed outranks a built bedroll, which
             // is exactly the adopted-town promise.
             {
-                use common::terrain::sprite::SpriteKind as S;
-                let mut adopted_beds = 0u32;
-                // F6 / F7: the SAME pass adopts the village's kitchens and its
-                // storage. Both registries had exactly one writer — a
-                // completed BUILD — so a house full of cooking pots and a barn
-                // full of chests were invisible to a colony standing inside
-                // them: `cook_stations` empty means the cook generator's own
-                // `!board.cook_stations.is_empty()` guard is never satisfied,
-                // and `stockpiles` empty means every material claim refuses
-                // for want of somewhere to put things. Neither was a case of
-                // the colony DECLINING to use the village; neither could ever
-                // have been reached. One scan, three registries — a second
-                // pass over the same columns would be a second thing to drift.
-                let mut adopted_pots = 0u32;
-                let mut adopted_chests = 0u32;
-                for y in region.min.y..=region.max.y {
-                    for x in region.min.x..=region.max.x {
-                        let Some(surface) = column_surface_z(terrain, x, y, hint_z) else {
-                            continue;
-                        };
-                        for z in (surface - 2)..=(surface + 8) {
-                            let pos = Vec3::new(x, y, z);
-                            let Ok(block) = terrain.get(pos) else { continue };
-                            let sprite = block.get_sprite();
-                            let is_bed = matches!(
-                                sprite,
-                                Some(
-                                    S::Bedroll
-                                        | S::BedrollSnow
-                                        | S::BedrollPirate
-                                        | S::BedMesa
-                                        | S::BedWoodWoodlandHead
-                                        | S::BedCliffHead
-                                )
-                            );
-                            if is_bed && !self.beds.contains_key(&pos) {
-                                self.beds.insert(pos, common::bastion::BedSlot {
-                                    kind: common::bastion::BedKind::Frame,
-                                    owner: None,
-                                    occupant: None,
-                                });
-                                adopted_beds += 1;
-                            }
-                            // F6: a village hearth is a cook station. The
-                            // built-station path pushes a bare position and
-                            // nothing else, so this is the identical shape —
-                            // dedup by position, because the plot scan can run
-                            // more than once as terrain streams in.
-                            if matches!(sprite, Some(S::CookingPot | S::Cauldron))
-                                && !self.cook_stations.contains(&pos)
-                            {
-                                self.cook_stations.push(pos);
-                                adopted_pots += 1;
-                            }
-                            // F7: a chest is a one-block stockpile. Scope is
-                            // deliberately the PLAIN household containers —
-                            // locked, dungeon, pirate and witch chests are
-                            // someone else's property and adopting them would
-                            // make the colony a looter by default, which is a
-                            // gameplay ruling and not mine to make in a scan.
-                            if matches!(sprite, Some(S::Chest | S::ChestWoodDouble)) {
-                                let one = Region { min: pos, max: pos };
-                                if !self.stockpiles.iter().any(|(_, r)| *r == one) {
-                                    let sid = self.next_zone;
-                                    self.next_zone += 1;
-                                    self.stockpiles.push((sid, one));
-                                    adopted_chests += 1;
-                                }
-                            }
-                        }
-                    }
-                }
+                // ONE SCAN, shared with `adopt_beds_surface` — see its doc
+                // for why this was duplicated and what that cost. A player
+                // painting over a furnished house reaches this path; the
+                // adoption drain reaches the other; both must register the
+                // same furniture or the two paths disagree about what the
+                // village contains.
+                let (adopted_beds, adopted_pots, adopted_chests, _, _) = self
+                    .adopt_furniture_surface(
+                        terrain,
+                        region.min.xy(),
+                        region.max.xy(),
+                        hint_z,
+                    );
                 if adopted_beds > 0 || adopted_pots > 0 || adopted_chests > 0 {
                     info!(
                         ?kind,
@@ -8564,6 +8584,70 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     generic_claim_leak_releases = board.generic_claim_leak_releases,
                     emergency_access_completions = board.emergency_access_completions,
                     "bastion food stock sample"
+                );
+                // ★ THE FOOD-WIPE DISCRIMINATOR (2026-08-21). Three
+                // independent play sessions reported the food store dropping
+                // to exactly 0 in a single sample interval — six times in one
+                // 87,600-tick run, with the colony dying on the sixth — and
+                // NONE of them could name the cause, because every instrument
+                // reports the same one number. Candidate explanations that
+                // all look identical from `food_stock` alone:
+                //
+                //   1. the food was DESTROYED or stolen
+                //   2. the food is fine but IN FLIGHT — `colony_food_stock`
+                //      counts only items at rest INSIDE a stockpile, so a
+                //      mass haul empties the number without losing a crumb
+                //   3. the food is fine and the STOCKPILE stopped existing,
+                //      so every item fails the zone test at once
+                //   4. it moved into colonists' BAGS, which the count ignores
+                //
+                // STOP PROPOSING AND INSTRUMENT: these are four different
+                // bugs with four different fixes, and a fitting story is the
+                // weakest possible evidence for choosing between them. This
+                // line makes them mutually exclusive by measuring the SAME
+                // food four ways — in the world, in stockpiles, in bags, and
+                // how many zones exist to be counted against. Emitted beside
+                // the number it explains, because a discriminator in a
+                // different log at a different cadence is one join away from
+                // being useless.
+                let food_world: u32 = (&pickup_items)
+                    .join()
+                    .filter(|i| {
+                        i.item()
+                            .item_definition_id()
+                            .itemdef_id()
+                            .is_some_and(|d| FOOD_DEFS.contains(&d))
+                    })
+                    .map(|i| i.amount() as u32)
+                    .sum();
+                let food_bags: u32 = (&colonists, &inventories)
+                    .join()
+                    .map(|(_, inv)| {
+                        inv.slots()
+                            .flatten()
+                            .filter(|i| {
+                                i.item_definition_id()
+                                    .itemdef_id()
+                                    .is_some_and(|d| FOOD_DEFS.contains(&d))
+                            })
+                            .map(|i| i.amount() as u32)
+                            .sum::<u32>()
+                    })
+                    .sum();
+                info!(
+                    tick = tick.0,
+                    in_stockpile = food_stock,
+                    // Everything on the ground anywhere, zone or not. If this
+                    // holds while `in_stockpile` collapses, nothing was
+                    // destroyed and the defect is in the COUNT (2 or 3).
+                    on_ground_total = food_world,
+                    // Carried. Hauling moves food from ground to bag and back.
+                    in_bags = food_bags,
+                    // If this is 0, hypothesis 3 is the answer outright and
+                    // the food never moved at all.
+                    stockpile_zones = board.stockpiles.len(),
+                    colonists = (&colonists).join().count(),
+                    "bastion FOOD-WIPE DISCRIMINATOR — the same food counted four ways"
                 );
                 // THE EXPERIENCE CENSUS (Ben direct, 2026-08-21: "you need
                 // to actually play test the game"). Mechanisms passing while

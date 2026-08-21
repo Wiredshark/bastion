@@ -2393,6 +2393,44 @@ mod tests {
         }
     }
 
+    /// ★ ONE FURNITURE SCAN, NOT TWO — and the reason is a fix of mine that
+    /// ran nowhere near the thing it was fixing.
+    ///
+    /// Pot and chest adoption was added to the scan inside
+    /// `place_designation_surface`, but the adoption drain routes an adopted
+    /// house to `adopt_beds_surface`, a second duplicated scan that only ever
+    /// looked for beds. Every village house therefore went down the one path
+    /// the fix was not on. A play session measured it: `cook station
+    /// registered` 0 and `dish produced` 0 across 99,000 ticks, in a colony
+    /// holding raw food and a colonist whose strongest desire was to cook.
+    ///
+    /// TREATMENT MUST REACH THE POPULATION UNDER TEST. Nothing was red; the
+    /// code was correct and unreachable. This asserts the structure that makes
+    /// the failure impossible rather than the behaviour that made it invisible:
+    /// exactly one function may own the sprite vocabulary, and both callers
+    /// must go through it.
+    #[test]
+    fn village_furniture_has_exactly_one_scan() {
+        let src = repo_text("bastion-server/src/bastion_jobs.rs");
+        assert_eq!(
+            src.matches("S::BedWoodWoodlandHead").count(),
+            1,
+            "the bed sprite vocabulary appears in more than one place — that is two scans that \
+             must agree, which is exactly how adopted houses ended up with beds but no kitchen"
+        );
+        assert_eq!(
+            src.matches("pub fn adopt_furniture_surface").count(),
+            1,
+            "there must be exactly one furniture scan"
+        );
+        // Both entry points must delegate to it.
+        assert!(
+            src.matches("adopt_furniture_surface(").count() >= 3,
+            "the shared scan should have at least two callers besides its own definition — if a \
+             caller stopped delegating, one of the two adoption paths has silently gone blind"
+        );
+    }
+
     /// ITEM 39 / ★ DETERMINISM ⊥ WALL-COUPLING. The tick-cost profiler asks a
     /// genuinely WALL question (sim time is a fixed step and would report the
     /// same number on a host ten times slower), so it lives outside the
