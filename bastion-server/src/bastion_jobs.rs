@@ -2874,7 +2874,35 @@ pub enum GeneratorKind {
 pub fn generator_enabled(_kind: GeneratorKind) -> bool { true }
 /// bastion (AUTON-1): the mine generator's scan half-width around the
 /// colony anchor (blocks, xy).
-pub const MINE_GEN_RADIUS: i32 = 12;
+/// RAISED 12 → 24 on 2026-08-21, on a measurement rather than a taste.
+///
+/// The `AUTON-1 mine generator WANTED stone and emitted NOTHING` witness fired
+/// **778 times** in one leg with `demand=8 supply=0 quota=8 rock_seen=0`: the
+/// demand gate was open, the generator was running every cycle, and it scanned
+/// all nine z-slabs of its volume without seeing a single rock-class cell. The
+/// colony was not refusing to mine and was not failing to mine — there was
+/// nothing inside its reach to mine. A play session independently located the
+/// arena's stone outcrop at roughly **20 blocks** west of the founding, which
+/// is outside a 12-block radius and inside a 24-block one.
+///
+/// 12 was never derived; it was a first number. It is smaller than a sensible
+/// walk from the colony's own centre, and it made a colony founded on open
+/// ground permanently inert by construction — the same shape as the demand bug
+/// it sat behind: a bound that looks like a working system until something
+/// falls outside it.
+///
+/// KNOWN RESIDUAL, and it is a registered prediction rather than a claim of
+/// completeness: this is still a FIXED radius. A colony founded in the middle
+/// of a genuinely large plain, with its nearest stone 60 blocks off, will
+/// deadlock exactly as before and the witness above will say so in one line.
+/// The real answer is ranging — sending colonists to fetch resources at
+/// distance rather than scanning a box — and that is a design row, not a
+/// constant. Banked for Ben.
+///
+/// Cost: the scan is one z-slab per firing, so this is (2r+1)² cells per
+/// firing — 625 → 2,401, about 4×, still bounded and still cursor-swept. The
+/// per-firing budget discipline the original design chose is unchanged.
+pub const MINE_GEN_RADIUS: i32 = 24;
 /// bastion (AUTON-1): scan volume top, relative to the anchor's z.
 pub const MINE_GEN_Z_TOP: i32 = 2;
 /// bastion (AUTON-1): scan volume height — one z-slab per firing (the
