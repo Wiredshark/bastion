@@ -172,8 +172,15 @@ pub fn place_preset(
 /// literals against each other would merely re-encode the drift it exists to
 /// catch.
 pub fn bed_capacity() -> usize {
-    FOUNDING_PRESET_V1
-        .iter()
+    // Reads the PLAN, not the fixed table. Caught while wiring the plan in:
+    // `preset_regions` had been switched to `founding_plan` while this still
+    // read `FOUNDING_PRESET_V1`, so for any colony larger than 8 the founding
+    // would have PLACED a scaled dormitory while this function reported the
+    // old fixed 8 — the exact "two things that must agree, drifting silently"
+    // shape this function's own doc was written to prevent. It derives from
+    // the same source the placement uses, or it derives from nothing.
+    founding_plan(planned_colonists())
+        .into_iter()
         .filter(|element| element.role == PresetRole::Bed)
         .map(|element| {
             let span = |min: i32, max: i32| (max - min + 1).max(0) as usize;
@@ -377,8 +384,31 @@ pub fn founding_plan(colonists: u8) -> Vec<PresetElement> {
     plan
 }
 
+/// How many colonists this founding is being laid out FOR.
+///
+/// The same env var the autofound path reads, defaulting to the corpus size of
+/// 8 so every banked leg keeps describing the layout it was recorded against
+/// (`plan_matches_preset_at_eight` pins that n=8 reproduces the hand-placed
+/// preset element-for-element).
+fn planned_colonists() -> u8 {
+    std::env::var("BASTION_AUTOFOUND_COLONY")
+        .ok()
+        .and_then(|v| v.trim().parse::<u8>().ok())
+        .filter(|n| *n > 0)
+        .unwrap_or(8)
+}
+
 pub fn preset_regions(origin: Vec3<i32>) -> Vec<(PresetRole, DesignationKind, Region)> {
-    FOUNDING_PRESET_V1
+    // ARC 10 v1, wired 2026-08-21. This read `FOUNDING_PRESET_V1` — a fixed
+    // five-element table — which a play session caught directly: "a founded
+    // colony has no kitchen … the code contains a Hearth role and a
+    // founding_plan() that places one, but the live placement path reads
+    // FOUNDING_PRESET_V1". The plan layer existed and was not plugged in, so
+    // every one of that session's 28 dishes was cooked at a hearth the PLAYER
+    // painted. Founding now lays out the computed plan: beds scaled to
+    // population, pantry and farm grown with it, and a hearth so a new colony
+    // can cook without being handed a kitchen.
+    founding_plan(planned_colonists())
         .iter()
         .filter(|element| !(farm_suppressed() && element.role == PresetRole::Farm))
         .map(|element| {
@@ -712,7 +742,21 @@ mod tests {
     #[test]
     fn preset_reproduces_script_15_absolute_numbers() {
         let regions = preset_regions(script_15_origin());
-        assert_eq!(regions.len(), 3, "the template is three plots");
+        // 3 → 4 on 2026-08-21: the founding gained a hearth. The three
+        // coordinate assertions below are the ones that matter and they are
+        // UNCHANGED — the original plots are still at the exact absolute
+        // positions the v3/v4/v5 corpus scripts painted them at, which is what
+        // makes growing this count a safe re-baseline rather than a silent
+        // rewrite of what those legs were measuring.
+        assert_eq!(
+            regions.len(),
+            4,
+            "the template is the original three plots plus the hearth"
+        );
+        assert!(
+            regions.iter().any(|(role, ..)| *role == PresetRole::Hearth),
+            "the hearth is the added plot — a founded colony that cannot cook was the defect"
+        );
 
         let stockpile = regions
             .iter()
@@ -1043,13 +1087,23 @@ mod tests {
     /// and stockpile −2..+2 are contiguous, bed is strictly inside); this
     /// makes that derivation fail loudly if the table ever changes, instead
     /// of silently re-basing every percentage that cites it.
+    ///
+    /// RE-BASELINED 2026-08-21, 60 → 64, and the delta is stated here rather
+    /// than silently absorbed: the founding gained a HEARTH (a 2×2 CookStation
+    /// plot), because a play session measured that a founded colony has no
+    /// kitchen and cannot cook until the player paints one. That is +1 plot
+    /// and +4 columns. NOTHING ELSE MOVED — `plan_matches_preset_at_eight`
+    /// independently pins that the pantry, farm and bed plots still reproduce
+    /// the original hand-placed preset element-for-element at population 8,
+    /// so every banked corpus leg still describes the layout it was recorded
+    /// against, plus one new plot it did not have.
     #[test]
-    fn survey_reports_sixty_columns() {
+    fn survey_reports_every_footprint_column() {
         let origin = Vec3::new(15216, 16016, 419);
         let world = flat_world(419, &footprint_keys(origin));
         let relief = survey_site(&world, origin);
-        assert_eq!(relief.columns, 60, "footprint column count");
-        assert_eq!(relief.resolved, 60, "flat ground resolves every column");
+        assert_eq!(relief.columns, 64, "footprint column count (60 + the hearth's 4)");
+        assert_eq!(relief.resolved, 64, "flat ground resolves every column");
     }
 
     /// W5's GEOMETRY CLAIM, at unit level: an origin on the 32-block chunk
@@ -1136,8 +1190,8 @@ mod tests {
         let world = flooded_world(419, &footprint_keys(origin));
         let relief = survey_site(&world, origin);
 
-        assert_eq!(relief.submerged, 60, "every column carries water above it");
-        assert_eq!(relief.resolved, 60, "the lakebed still resolves");
+        assert_eq!(relief.submerged, 64, "every column carries water above it");
+        assert_eq!(relief.resolved, 64, "the lakebed still resolves");
         assert_eq!(relief.max_dev, Some(0), "a flat bed deviates by nothing");
         assert_eq!(relief.branch(), ReliefBranch::Submerged);
         assert_eq!(
@@ -1248,7 +1302,7 @@ mod tests {
     fn an_unloaded_chunk_reports_absence_not_deviation() {
         let world = flat_world(419, &[]);
         let relief = survey_site(&world, Vec3::new(15216, 16016, 419));
-        assert_eq!(relief.columns, 60, "the footprint is still 60 columns");
+        assert_eq!(relief.columns, 64, "the footprint is still the whole footprint");
         assert_eq!(relief.resolved, 0, "no chunk is loaded, so nothing resolves");
         assert_eq!(relief.min_dev, None);
         assert_eq!(relief.branch(), ReliefBranch::Absence);
@@ -1268,7 +1322,7 @@ mod tests {
 
         let one = stepped_world(419, origin, &[(stepped, 420)]);
         let relief = survey_site(&one, origin);
-        assert_eq!(relief.resolved, 60, "a step is not an absence");
+        assert_eq!(relief.resolved, 64, "a step is not an absence");
         assert_eq!(relief.max_dev, Some(1), "a one-block step deviates by one");
         assert!(
             relief.verdict().is_ok(),
@@ -1297,7 +1351,7 @@ mod tests {
         let relief = survey_site(&world, origin);
 
         assert_eq!(relief.branch(), ReliefBranch::Deviation);
-        assert_eq!(relief.resolved, 60, "a step is not an absence");
+        assert_eq!(relief.resolved, 64, "a step is not an absence");
         assert_eq!(relief.min_dev, Some(0), "the unstepped chunks stay at datum");
         let (column, dev) = relief.worst.expect("a stepped world has a worst column");
         assert_eq!(dev, 4, "raising first_air by 4 deviates by 4");

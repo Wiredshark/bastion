@@ -2406,7 +2406,28 @@ pub const FOOD_DEFS: &[&str] = &[
     VOLUNTEER_TOMATO_ITEM,
     VOLUNTEER_CARROT_ITEM,
     VOLUNTEER_LETTUCE_ITEM,
+    // F23 (2026-08-21, found by a play session): RAW MEAT IS FOOD. A wolf
+    // mauled a colonist to 0.72 health, died, and dropped meat the colony
+    // could not see — ~10 piles of `beast_small_raw` lay around the arena for
+    // the whole session while three colonists starved beside a full pantry.
+    // The colony paid the price of a fight and got nothing for it, which is
+    // the opposite of what a predator attack should mean.
+    //
+    // Raw meat only, and deliberately not the cooked variants: the cook
+    // completion mints exactly one dish item, so a cooked meat def would be
+    // food nothing produces. Scope stays at what actually drops.
+    MEAT_SMALL_RAW_ITEM,
+    MEAT_LARGE_RAW_ITEM,
+    MEAT_BIRD_RAW_ITEM,
+    MEAT_TOUGH_RAW_ITEM,
 ];
+
+/// bastion (F23): raw meat dropped by dead animals — real drops from the
+/// vanilla loot tables, which is why these four and not the whole meat folder.
+pub const MEAT_SMALL_RAW_ITEM: &str = "common.items.food.meat.beast_small_raw";
+pub const MEAT_LARGE_RAW_ITEM: &str = "common.items.food.meat.beast_large_raw";
+pub const MEAT_BIRD_RAW_ITEM: &str = "common.items.food.meat.bird_raw";
+pub const MEAT_TOUGH_RAW_ITEM: &str = "common.items.food.meat.tough_raw";
 
 /// bastion (F5): vanilla produce a village field actually contains, and for
 /// which the game already ships a real item. Named separately so the mapping
@@ -2455,7 +2476,17 @@ pub fn volunteer_crop_item(sprite: common::terrain::SpriteKind) -> Option<&'stat
 /// bastion (ITEM 27): RAW inputs the cook generator scans — a strict subset
 /// of `FOOD_DEFS`. Kept separate so the pot can never cook its own output
 /// (the dish matching a raw scan would loop curry→curry forever).
-pub const RAW_FOOD_DEFS: &[&str] = &["common.items.food.mushroom", FARM_WHEAT_ITEM];
+pub const RAW_FOOD_DEFS: &[&str] = &[
+    "common.items.food.mushroom",
+    FARM_WHEAT_ITEM,
+    // F23: meat is the archetypal thing you cook. Adding it here is what makes
+    // a kill feed the KITCHEN rather than just the hand — and it gives the
+    // hearth a second input, so a colony whose farm fails can still eat.
+    MEAT_SMALL_RAW_ITEM,
+    MEAT_LARGE_RAW_ITEM,
+    MEAT_BIRD_RAW_ITEM,
+    MEAT_TOUGH_RAW_ITEM,
+];
 /// bastion (ITEM 27): the cook completion's output item.
 pub const COOKED_DISH_ITEM: &str = "common.items.food.apple_mushroom_curry";
 /// bastion (B7-3): hunger restored per food item eaten.
@@ -11812,16 +11843,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     threats += 1;
                 }
             }
-            use common::bastion::ColonyDrive as D;
-            let (want, deciding, value) = if food_per_cap < 2.0 {
-                (D::Sustain, "food_per_cap", food_per_cap)
-            } else if threats > 0 {
-                (D::Defend, "threats", threats as f32)
-            } else if beds < pop {
-                (D::Grow, "beds_short", (pop - beds) as f32)
-            } else {
-                (D::Expand, "satisfied", 0.0)
-            };
+            // F16: the ladder is a pure function so its ORDER can be pinned —
+            // the order is the entire content of the decision, and getting it
+            // wrong made a starving colony unable to defend itself.
+            let (want, deciding, value) = colony_drive_for(food_per_cap, threats, beds, pop);
             let (cur, since) = board.colony_drive;
             if want != cur
                 && tick.0.saturating_sub(since) >= ARBITRATION_INTERVAL as u64 * 20
@@ -24209,6 +24234,54 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
 /// Unclaimed-only is load-bearing: `supply` counts stone already in
 /// colonists' bags, so counting claimed jobs too would double-order and the
 /// miner would dig forever.
+/// bastion (#107 / F16): which drive the colony's condition calls for.
+///
+/// Pure so the ORDER can be pinned. The order is the whole content of this
+/// function — the drive is a SINGLE EXCLUSIVE slot, so whichever condition
+/// wins, the others go unaddressed until it clears.
+///
+/// ★ F16, found by an adversarial play session (2026-08-21): this ladder used
+/// to test `food_per_cap` FIRST, which made a starving colony structurally
+/// incapable of entering `Defend`. Five wolves killed half a colony
+/// (population 8 → 4) while the drive sat pinned at `Sustain` and never once
+/// transitioned. It was not a broken threat sensor — earlier in the same
+/// session, with a healthy larder, a single passing animal flipped the drive
+/// to `Defend` correctly.
+///
+/// Why threats now outrank food, which is a stronger argument than a taste
+/// call about priorities:
+///
+/// 1. **The two failure modes COMPOSE.** Anything that empties the larder also
+///    disarms the colony's defence. The same session's other finding (a cancel
+///    brush destroying the food store) is therefore a sufficient trigger for
+///    being eaten — one bug arming another through shared exclusive state.
+/// 2. **It ranked the harmless above the lethal.** In the game as it actually
+///    stands, starvation has NO consequence — nothing reads hunger 0 except
+///    mood, there is no health pressure and colonists cannot starve to death
+///    (row F10). Threats demonstrably kill. The ladder was preferring the
+///    survivable condition over the fatal one.
+///
+/// REVISIT WHEN F10 LANDS: once starvation can actually kill, "being eaten now
+/// beats being hungry now" stops being obvious, and this order deserves a
+/// genuine ruling rather than the correctness argument above. Banked for Ben.
+pub fn colony_drive_for(
+    food_per_cap: f32,
+    threats: u32,
+    beds: u32,
+    pop: u32,
+) -> (common::bastion::ColonyDrive, &'static str, f32) {
+    use common::bastion::ColonyDrive as D;
+    if threats > 0 {
+        (D::Defend, "threats", threats as f32)
+    } else if food_per_cap < 2.0 {
+        (D::Sustain, "food_per_cap", food_per_cap)
+    } else if beds < pop {
+        (D::Grow, "beds_short", (pop - beds) as f32)
+    } else {
+        (D::Expand, "satisfied", 0.0)
+    }
+}
+
 pub fn job_bills_stone_unclaimed(job: &Job) -> bool {
     job.required_item == Some(BUILD_MATERIAL_ITEM) && job.claimed_by.is_none()
 }
@@ -24314,6 +24387,42 @@ fn reservation_indices_are_consistent_v1(
 mod tests {
     use super::*;
     use std::num::NonZeroU64;
+
+    /// ★ F16: A STARVING COLONY MUST STILL BE ABLE TO DEFEND ITSELF.
+    ///
+    /// The colony drive is a single exclusive slot, so the ladder's ORDER
+    /// decides which problems can be addressed at all. Testing food first made
+    /// `Defend` unreachable whenever the larder was low: an adversarial play
+    /// session emptied the food store, spawned five wolves, and watched the
+    /// population fall 8 → 4 with the drive pinned at `Sustain` and not one
+    /// transition logged.
+    ///
+    /// The first assertion is the defect itself. The rest pin that fixing it
+    /// did not simply invert the bug — a colony that is merely hungry must
+    /// still reach `Sustain`.
+    #[test]
+    fn threats_outrank_hunger_so_a_starving_colony_can_still_defend() {
+        use common::bastion::ColonyDrive as D;
+
+        // The exact case that killed half a colony: no food AND under attack.
+        let (drive, deciding, _) = colony_drive_for(0.0, 5, 8, 8);
+        assert_eq!(
+            drive,
+            D::Defend,
+            "starving AND under attack must DEFEND — this is the composition that let one bug \
+             (a cancel destroying the food store) disarm the colony against another"
+        );
+        assert_eq!(deciding, "threats");
+
+        // Not inverted: hunger alone still drives Sustain.
+        assert_eq!(colony_drive_for(0.0, 0, 8, 8).0, D::Sustain);
+        // And the rest of the ladder is untouched.
+        assert_eq!(colony_drive_for(9.0, 0, 2, 8).0, D::Grow);
+        assert_eq!(colony_drive_for(9.0, 0, 8, 8).0, D::Expand);
+        // A single threat is enough, matching the observed sensor behaviour
+        // (one passing animal flipped the drive when food was healthy).
+        assert_eq!(colony_drive_for(9.0, 1, 8, 8).0, D::Defend);
+    }
 
     /// ★ A COUNT CANNOT ANSWER "WHICH ONE DIED" — found by an adversarial play
     /// session, 2026-08-21.
