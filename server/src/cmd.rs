@@ -6365,24 +6365,43 @@ fn handle_bastion_smite(
         return Err(action.help_content());
     };
     let time = *ecs.read_resource::<common::resources::Time>();
-    let mut healths = ecs.write_storage::<comp::Health>();
     let uids = ecs.read_storage::<Uid>();
-    if let Some(mut health) = healths.get_mut(entity) {
-        let before = health.fraction();
-        let dmg = health.maximum() * 0.6;
+    // ★ DAMAGE MUST GO THROUGH THE EVENT (2026-08-21, found by an adversarial
+    // play session): writing `health.change_by(..)` directly on the component
+    // skips `entity_manipulation`'s handler, which is where `!is_dead &&
+    // should_die()` lives — so five smites drove a colonist to health 0.0
+    // FOUR TIMES and he simply kept working, regenerating to ~5% between
+    // casts. A god-power that cannot kill is a light show, which is the exact
+    // failure the dispatch spec's own ★(f) warned about. Emitting the event
+    // gives death, the downed state and every other vanilla consequence for
+    // free — and the same correction is owed by the cave-in damage path.
+    let (before, dmg, instance) = {
+        let healths = ecs.read_storage::<comp::Health>();
+        let Some(health) = healths.get(entity) else {
+            return Err(action.help_content());
+        };
         let instance = uids.get(entity).map_or(0, |target_uid| {
             combat::derive_attack_instance("bastion/smite/v1", None, *target_uid, time, 0)
         });
-        health.change_by(comp::HealthChange {
-            amount: -dmg,
-            by: None,
-            cause: None,
-            precise: false,
-            time,
-            instance,
-        });
-        let after = health.fraction();
-        drop(healths);
+        (health.fraction(), health.maximum() * 0.6, instance)
+    };
+    {
+        ecs.read_resource::<EventBus<common::event::HealthChangeEvent>>()
+            .emit_now(common::event::HealthChangeEvent {
+                entity,
+                change: comp::HealthChange {
+                    amount: -dmg,
+                    by: None,
+                    cause: None,
+                    precise: false,
+                    time,
+                    instance,
+                },
+            });
+        // The health component is written when the event is handled, so the
+        // "after" reading here is the PRE-state — print it as such rather
+        // than reporting a number the cast has not applied yet.
+        let after = before;
         ecs.read_resource::<EventBus<Outcome>>()
             .emit_now(Outcome::Lightning { pos });
         let mut favor = ecs.write_resource::<crate::bastion_jobs::DivineFavor>();
@@ -6390,15 +6409,14 @@ fn handle_bastion_smite(
         tracing::info!(
             target = %name,
             health_before = before,
-            health_after = after,
+            health_after_pre_apply = after,
+            damage = dmg,
             cost = crate::bastion_jobs::SMITE_COST,
             favor_after = favor.0,
             "bastion: ITEM 31 SMITE cast — real damage applied, VFX emitted, favor paid"
         );
-        Ok(())
-    } else {
-        Err(action.help_content())
     }
+    Ok(())
 }
 
 /// bastion (ITEM 23): the deposit-thought harness hook on the wire — kind

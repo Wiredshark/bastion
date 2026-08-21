@@ -4724,6 +4724,12 @@ pub fn cavein_eject_and_injure<'a, D>(
     positions: &mut WriteStorage<'a, comp::Pos>,
     velocities: &mut WriteStorage<'a, comp::Vel>,
     healths: &mut WriteStorage<'a, comp::Health>,
+    // ★ 2026-08-21: damage is EMITTED, not written. A direct `change_by`
+    // skips `entity_manipulation`'s handler, which is the only place
+    // `!is_dead && should_die()` runs — so a colonist crushed to zero simply
+    // kept working (measured: health 0.0 four times, no death, no despawn).
+    // The bus is threaded in so a cave-in can actually kill.
+    health_events: &common::event::EventBus<common::event::HealthChangeEvent>,
     moods: &mut WriteStorage<'a, comp::bastion::Mood>,
 ) -> Vec<specs::Entity>
 where
@@ -4764,13 +4770,16 @@ where
             let instance = uids.get(entity).map_or(0, |target_uid| {
                 combat::derive_attack_instance("bastion/cavein/v1", None, *target_uid, time, 0)
             });
-            health.change_by(comp::HealthChange {
-                amount: -dmg,
-                by: None,
-                cause: None,
-                precise: false,
-                time,
-                instance,
+            health_events.emit_now(common::event::HealthChangeEvent {
+                entity,
+                change: comp::HealthChange {
+                    amount: -dmg,
+                    by: None,
+                    cause: None,
+                    precise: false,
+                    time,
+                    instance,
+                },
             });
         }
         if let Some(mood) = moods.get_mut(entity) {
@@ -7867,6 +7876,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // the diverging quantity the tapes were blind to).
             ReadStorage<'a, comp::LootOwner>,
             ReadExpect<'a, common::event::EventBus<common::event::InventoryManipEvent>>,
+            // Cave-in damage is EMITTED (not written) so vanilla's death
+            // check in entity_manipulation actually sees it.
+            ReadExpect<'a, common::event::EventBus<common::event::HealthChangeEvent>>,
             // ARCH-003: pins job-decision-order ties (equal-score claims,
             // same-depth access plans) deterministically in harness mode —
             // HashMap iteration order is otherwise unspecified.
@@ -7969,6 +7981,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 bastion_piles,
                 loot_owners_view,
                 inventory_manip_events,
+                health_change_events,
                 _execution_mode,
                 mut activity_zones,
                 mut needs_storage,
@@ -18857,6 +18870,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 &mut positions,
                 &mut velocities,
                 &mut healths,
+                &health_change_events,
                 &mut moods,
             );
             // B7-0 (the FIRST thought emitter, fork ruling (a)): the
