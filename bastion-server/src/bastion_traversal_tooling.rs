@@ -2220,11 +2220,26 @@ mod tests {
             .split("pub fn tick(&mut self, _input: Input")
             .nth(1)
             .expect("Server::tick body");
-        let window = &body[..body.len().min(20_000)];
+        // THE WINDOW WAS A SECOND FACT WEARING THE FIRST ONE'S MESSAGE
+        // (2026-08-21). This searched the first 20,000 bytes and panicked
+        // "lost phase landmark" on a miss. Adding ~2,000 bytes of founding
+        // logic to `tick` pushed `before_world_tick` to byte 20,154 -- 154
+        // past the boundary -- and the test reported the phase contract
+        // BROKEN when every landmark was present and in order.
+        //
+        // "Not in the body at all" and "in the body, in order, beyond an
+        // arbitrary search bound" are different facts, and a bar that prints
+        // the first when the second is true sends the next person to fix a
+        // phase order that was never wrong. The order assertion below IS the
+        // contract; the bound only stops a landmark that has drifted absurdly
+        // far from standing in for one in place. So: search the whole body,
+        // and say which fact failed.
         let pos = |needle: &str| {
-            window
+            let at = body
                 .find(needle)
-                .unwrap_or_else(|| panic!("Server::tick lost phase landmark `{needle}`"))
+                .unwrap_or_else(|| panic!("Server::tick lost phase landmark `{needle}`"));
+            assert!(at < 40_000, "phase landmark `{needle}` is at byte {at} of Server::tick -- PRESENT but drifted out of the timing region; check whether it still anchors the phase it names");
+            at
         };
         let order = [
             "before_state_tick",

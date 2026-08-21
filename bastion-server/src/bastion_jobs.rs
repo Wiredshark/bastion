@@ -7208,17 +7208,12 @@ impl JobBoard {
                             self.next_zone += 1;
                             self.stockpiles.push((sid, one));
                             chests += 1;
-                            // THE MISSING REGISTRATION WITNESS. Two sessions
-                            // found this gap independently and fixed it
-                            // differently; this keeps what each was right
-                            // about. These zones were minted SILENTLY, so a
-                            // play session that watched every load route into
-                            // zone 9 could not learn from the log that zone 9
-                            // existed, let alone where it was or what made it.
-                            // Zones 10-15 printed; 0-9 did not, and the gap
-                            // read as corruption rather than as a second,
-                            // unlogged creation path.
-                            //
+                            // THE MISSING REGISTRATION WITNESS. These zones
+                            // were minted SILENTLY: zones 10-15 printed, 0-9
+                            // did not, and a session watching every load route
+                            // into zone 9 could not learn from the log that
+                            // zone 9 existed. The gap read as corruption
+                            // rather than a second, unlogged creation path.
                             // Named like every other stockpile allocation in
                             // this file so ONE grep covers painted and adopted
                             // alike -- and carries solid_below, the number the
