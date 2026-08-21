@@ -24228,8 +24228,35 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     .stockpile_at(ipos.0.map(|e| e.floor() as i32))
                                     .is_some()
                         })
+                        // ★ THE INSTRUMENT MUST ASK THE GATE'S OWN QUESTION
+                        // (2026-08-21). `rs` counted entities with ANY
+                        // reservation via `is_reserved` — a BOOLEAN — while
+                        // the gate it explains (`stockpile_has_material`) is
+                        // UNIT-aware: `reserved_count(uid) < amount`. So
+                        // `stocked=1 reserved=1` meant only "one stack, and
+                        // something is reserved on it", and I read it as
+                        // "every unit is reserved" and published a wrong
+                        // diagnosis from it.
+                        //
+                        // An instrument that asks a different question from
+                        // the decision it explains will agree with any story
+                        // you bring it. Now it reports the same two numbers
+                        // the gate compares — units reserved, and units
+                        // present — so `reserved_units >= units` is the
+                        // actual refusal condition, visible directly.
                         .fold((0u32, 0u32), |(st, rs), (_, _, iuid)| {
                             (st + 1, rs + u32::from(board.is_reserved(*iuid)))
+                        });
+                    let (units, reserved_units) = (&pickup_items, &positions, &uids)
+                        .join()
+                        .filter(|(pi, ipos, _)| {
+                            pi.item().item_definition_id().itemdef_id() == Some(req)
+                                && board
+                                    .stockpile_at(ipos.0.map(|e| e.floor() as i32))
+                                    .is_some()
+                        })
+                        .fold((0u32, 0u32), |(u, r), (pi, _, iuid)| {
+                            (u + pi.amount() as u32, r + board.reserved_count(*iuid))
                         });
                     if stocked > 0
                         && std::env::var_os("BASTION_NEED_SKIP_DIAG").is_some()
@@ -24239,6 +24266,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             req,
                             stocked,
                             reserved,
+                            units,
+                            reserved_units,
                             "bastion: ITEM 27 materials refusal is RESERVATION-ONLY"
                         );
                     }
