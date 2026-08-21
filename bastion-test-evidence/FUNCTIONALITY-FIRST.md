@@ -71,6 +71,33 @@ DEFECT; the ruling picks the repair.
 | F11 | Colonists cannot die | Health reached 0.0 under repeated smite: no death event, no despawn, population unchanged | OPEN — item 36's true first step |
 | F12 | Colony scale is unmeasured | The 8/16/32 legs ran under different co-load; VOID for the guard question | OPEN — re-run on the VM fleet, which is now quiet |
 
+## P3 — found by an adversarial play session (12 turns, town arm, 2026-08-21)
+
+An agent played the game specifically trying to break it, the way a real
+player does: legitimate actions in awkward orders. Every row below is backed
+by a log line or number it read directly. Two are already fixed (`11577a48d8`).
+
+| # | Broken thing (player language) | Root cause (measured) | State |
+|---|---|---|---|
+| F14 | Cancelling near your barn kills hauling forever; the food store reads 0 while the food lies visibly on the ground | The orphaned-haul sweep was gated on a stockpile piece COUNT, and delete-one (−1) + split-another (+1) leaves the count identical. Logged its own proof: `zones_before=2 zones_after=2` with a zone destroyed | **FIXED** — compares zone identity; regression test asserts the trap arithmetic occurs before asserting the sweep |
+| F15 | Paint a chop order on bare grass, lumberjacks fell a tree half a screen away | `get_area_trees` is a rough superset by its own comment; only `tree_valid_at` (an *environment* gate that cannot know the requested region) filtered it. Three paints, trees 20–46 blocks outside, zero x-overlap | **FIXED** — intersect the superset with the request |
+| F16 | A starving colony cannot defend itself | Drive ladder is `food_per_cap < 2.0 ⇒ Sustain` **before** `threats > 0 ⇒ Defend`, so food strictly dominates. Five wolves, population 8→4, drive pinned `Sustain` throughout, no `Defend` transition. Not a broken sensor — a single animal DID flip the drive earlier the same session while food was healthy | OPEN — **the two failure modes compose**: any food loss disarms defence. Ladder order is a gameplay ruling |
+| F17 | The colonist panel shows "Mining, 4%" for a colonist fleeing wolves | `activity` never cleared: byte-identical progress floats 3,828 ticks apart across two reconnects, while the colony reported `jobs_claimed=1` and *two* colonists displayed a mining job. The source comment claims the release drain clears it; it does not | OPEN |
+| F18 | Rejoin your fort and every order you painted is invisible | `list_designations` returns `rev=0 []` on every fresh connection while the server holds 11; only designations made *this session* ever appear | OPEN |
+| F19 | Eight colonists idle beside four jobs, and the dashboard explains nothing | All 32 considerations refused on `affordance` (no standable stance), but the player-facing counters read `jobs_unreachable=0 blocked_materials=0` — there is no bucket for this state | OPEN — a refusal reason with no dashboard category is invisible by construction |
+| F20 | Cancelling your own mine order mutilates a town plot and *raises* the designation count | The brush clipped an adopted house plot, splitting one region into two: `designations 10 → 11` after a cancel | OPEN |
+| F21 | Half a freshly painted mine is dead on arrival | 153 of 311 jobs flagged unreachable within 500 ticks of painting an ordinary 12×12×3 region, with the same job ids churning claim/release | OPEN — related to F1 |
+| F22 | Colonists freeze and get teleported by magic | 7 stranding teleports in ~25 min, several with `character_state=Idle`, velocity ≈ 0, `on_ground=true` after a full 60s. The engine's own message calls it a design violation | OPEN — known, but the rate is the news |
+
+**What survived deliberate attack** (recorded so the fix list is not
+distorted): zero claim leaks across the whole session, including a mass cancel
+of 291 in-flight jobs; 312 jobs minted in one tick without a stall; the
+phantom-job and unclaimed-designation backstops never had to fire;
+partial-overlap zone cancel genuinely works (pieces keep their ZoneId); the
+per-colonist flee response and its bravery thresholds are sound; the
+starvation *signal* is correct and even minted a trade mission to sell wood
+for food. F16 is a priority defect, not a sensing one.
+
 ---
 
 ## The loop this list is worked with
