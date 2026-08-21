@@ -18817,7 +18817,49 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     if let common::bastion::JobKind::DepositRun { destination } = job.kind {
                         if board.stockpiles.iter().any(|(z, _)| *z == destination) {
                             if let Some(u) = uids.get(entity).copied() {
-                                let defs = board.gathered_defs.remove(&u).unwrap_or_default();
+                                // ★ HALF-APPLIED FIX, CAUGHT LIVE (2026-08-21).
+                                // I widened the deposit-run GENERATOR earlier
+                                // today so a colonist carrying FETCH SURPLUS
+                                // gets a trip home, not just one carrying
+                                // recorded forage -- and then left this, the
+                                // deposit itself, reading `gathered_defs` only.
+                                // A surplus carrier has no entry there, so the
+                                // run was created, walked, and deposited
+                                // NOTHING: "forage deposited defs=0 amount=0"
+                                // in the very first leg that exercised it.
+                                //
+                                // Worse than useless: it burns a job cycle and
+                                // sends someone across the colony to do nothing,
+                                // which is exactly the aimless scramble the town
+                                // goal forbids. The creation and the completion
+                                // are one fix and I shipped half of it.
+                                //
+                                // Deposit the recorded forage AND any food the
+                                // colonist is carrying. `deposit_all_of` is a
+                                // no-op for a def they do not hold, so the union
+                                // is safe even when the two overlap.
+                                let mut defs = board.gathered_defs.remove(&u).unwrap_or_default();
+                                if let Some(inv) = inventories.get(entity) {
+                                    for slot in inv.slots().flatten() {
+                                        // Bound in the LOOP BODY, not an
+                                        // iterator chain: itemdef_id() borrows
+                                        // a temporary that does not outlive a
+                                        // filter_map closure.
+                                        // The intermediate MUST be bound: the
+                                        // ItemDefinitionId is a temporary, and
+                                        // borrowing through it in one expression
+                                        // drops it at the semicolon.
+                                        let id = slot.item_definition_id();
+                                        let Some(d) = id.itemdef_id() else {
+                                            continue;
+                                        };
+                                        // A SET, so it dedups itself and the
+                                        // union with recorded forage is free.
+                                        if let Some(f) = FOOD_DEFS.iter().find(|f| **f == d) {
+                                            defs.insert((*f).to_string());
+                                        }
+                                    }
+                                }
                                 let mut total = 0u32;
                                 if let Some(mut inv) = inventories.get_mut(entity) {
                                     for def in &defs {
