@@ -1,0 +1,18 @@
+note ITEM 35 (injuries) live leg: wound one colonist, watch a bed close it.
+note BARS: (1) a smitten colonist's health RISES again while it sleeps —
+note   the sleep witness carries health= and tended=; (2) a Tend job is
+note   minted for the occupied bed and claimed by someone else; (3) the null
+note   — before the cast, ZERO tend jobs exist in a healthy colony.
+anchor
+wait 900
+note --- the null: nobody is hurt yet, so no tend job should exist ---
+inspect_colonists
+cmd bastion_smite Osric of the Vale
+wait 300
+note --- wounded: health should read ~0.4 and a tend job should appear ---
+inspect_colonists
+wait 3000
+note --- after bed time: health should be climbing, not stuck ---
+inspect_colonists
+wait 3000
+inspect_colonists
