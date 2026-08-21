@@ -347,7 +347,21 @@ pub fn founding_plan(colonists: u8) -> Vec<PresetElement> {
     // The pantry and the field grow with the mouths they feed, but slowly —
     // area scales with the square root of population, which is what keeps a
     // 32-colonist camp from becoming a farm the size of the map.
-    let grow = |base: i32| base + ((n as f32).sqrt() as i32 - 2).max(0);
+    // ★ MULTIPLICATIVE, NOT ADDITIVE (2026-08-21). This was
+    // `base + (sqrt(n) - 2)`, chosen without deriving it, and a 33,900-tick
+    // leg at 32 colonists showed the cost: farm AREA grew 2.4x for a 4x
+    // population (30 cells -> 72), and since farming is the colony's only
+    // RENEWABLE work, the working share fell to 12% with 26 of 32 colonists
+    // holding nothing to claim (`materials=0 already_claimed=192`).
+    //
+    // For area to track population a square plot's side must scale as sqrt(n)
+    // MULTIPLIED THROUGH THE BASE, not have sqrt(n)-2 added to it:
+    //   n=8  -> base x 1.0 = base   (IDENTICAL to before -- the corpus is safe
+    //                                and `plan_matches_preset_at_eight` proves
+    //                                it, having already caught me moving the
+    //                                pantry once tonight)
+    //   n=32 -> base x 2.0          (4x the area for 4x the people)
+    let grow = |base: i32| ((base as f32) * ((n as f32) / 8.0).sqrt()).round() as i32;
     let mut plan = vec![
         PresetElement {
             role: PresetRole::Stockpile,
