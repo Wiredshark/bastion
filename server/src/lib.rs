@@ -1361,7 +1361,6 @@ impl Server {
             bastion_jobs::FARM_SEED_ITEM,
             bastion_jobs::FOUNDING_SEED_STOCK,
         );
-        self.bastion_found_colony_tool_kit();
     }
 
     /// ★ THE FOUNDING TOOL KIT (Ben RULED 2026-08-21: "yes colonist start with
@@ -1390,6 +1389,27 @@ impl Server {
     /// copies exist so a later swap system has something to swap to.
     fn bastion_found_colony_tool_kit(&mut self) {
         use specs::Join;
+        // ★ CADENCED, NOT FOUNDING-TIME — and the leg caught why. The first
+        // version ran inside `bastion_found_colony_seed_stock` and reported
+        // `armed=0`: rtsim spawns the colony, but ECS `Colonist` components do
+        // not exist yet at that instant, so the grant iterated an empty join.
+        // Seeds could be granted there because they are ground ITEMS and need
+        // nobody to exist; tools need hands.
+        //
+        // Rather than thread a pending-drain flag, the grant is IDEMPOTENT and
+        // self-correcting: any colonist holding no mainhand tool gets the kit.
+        // That fixes the ordering by construction, and it will also arm
+        // colonists that arrive by paths the founding never runs at all —
+        // including the NPC-CONVERSION charter Ben raised, where colonists
+        // come from the world rather than from a founding.
+        //
+        // TRADE-OFF, stated: a colonist who deliberately unequips is re-armed.
+        // Acceptable while nothing can unequip; it becomes a real question the
+        // moment tools are craftable or tradeable.
+        let tick = self.state.ecs().read_resource::<Tick>().0;
+        if tick % 300 != 57 {
+            return;
+        }
         const PICK: &str = "common.items.tool.pickaxe_stone";
         const AXE: &str = "common.items.weapons.axe.starter_axe";
         const HAMMER: &str = "common.items.tool.craftsman_hammer";
@@ -1404,6 +1424,14 @@ impl Server {
             let Some(mut inv) = inventories.get_mut(entity) else {
                 continue;
             };
+            // Already holding a tool? Leave them alone — this is a founding
+            // kit, not an endless supply.
+            if inv
+                .equipped(comp::slot::EquipSlot::ActiveMainhand)
+                .is_some_and(|i| matches!(&*i.kind(), comp::item::ItemKind::Tool(_)))
+            {
+                continue;
+            }
             // Strongest trade wins the mainhand. Read through `level_for`, the
             // same accessor arbitration and the work-rate use, so the tool a
             // colonist carries cannot disagree with the skill the board scores
@@ -1439,10 +1467,12 @@ impl Server {
                 armed += 1;
             }
         }
-        tracing::info!(
-            armed,
-            "bastion: FOUNDING TOOL KIT — colonists armed with the trade they are best at"
-        );
+        if armed > 0 {
+            tracing::info!(
+                armed,
+                "bastion: FOUNDING TOOL KIT — colonists armed with the trade they are best at"
+            );
+        }
     }
 
     /// bastion (ROW-COLONY-PRESENCE, DECISIONS #106): mints the
@@ -5507,6 +5537,10 @@ impl Server {
         // used to wait forever because nothing woke a forestry economy.
         #[cfg(feature = "worldgen")]
         self.bastion_forestry_tick();
+
+        // bastion (Ben RULED: colonists start with tools). Cadenced because
+        // colonists do not exist as ECS entities at founding time.
+        self.bastion_found_colony_tool_kit();
 
         // bastion (det-capture): env-gated AUTO-FOUND a colony for NON-INTERACTIVE
         // determinism runs. server-cli has no client to found a colony via the
