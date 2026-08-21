@@ -18860,6 +18860,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // ITEM 29: same — the exchange arm owns validity.
                         common::bastion::JobKind::TradeMission { .. } => true,
                         common::bastion::JobKind::Tend { .. } => true,
+                        // ★★ ITEM 14 (the guard-post destruction, found in the
+                        // adopt-town play session 2026-08-21): a guard HOLDS —
+                        // "a guard consumes nothing and completes nothing" (the
+                        // creation site says exactly that). It has no terrain
+                        // precondition, so it belongs HERE with the other
+                        // no-precondition kinds.
+                        //
+                        // It was previously grouped with the self-jobs below on
+                        // the stated reasoning "no terrain precondition to
+                        // re-check, exactly like the self-jobs below it" — but
+                        // those return `false` SAFELY only because each one
+                        // completes in its own arm above and never reaches this
+                        // line. Guard has no such arm: it accrues generic
+                        // progress at the post and lands here at threshold, one
+                        // work-second after arriving. `false` therefore read as
+                        // "always moot" and DESTROYED the assignment ~3–6s after
+                        // the colonist reached it (6.0/(1+0.2·level) seconds).
+                        // Nothing re-mints a guard assignment — it is created
+                        // only by the paint — so defence was permanently
+                        // impossible for the rest of the run.
+                        common::bastion::JobKind::Guard { .. } => true,
                         common::bastion::JobKind::Designated(d) => match d {
                             // ITEM 14: no terrain precondition to re-check —
                             // `still_valid` is about a designation's target
@@ -18892,12 +18913,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             DesignationKind::Farm => false,
                         },
                         // Self-jobs complete in their own arms above —
-                        // defensive.
-                        // ITEM 14: a guard assignment has no terrain
-                        // precondition to re-check, exactly like the self-jobs
-                        // below it.
-                        common::bastion::JobKind::Guard { .. }
-                        | common::bastion::JobKind::Haul { .. }
+                        // defensive. `false` is safe here ONLY for kinds that
+                        // never reach this line; anything that does reach it
+                        // and must survive belongs in the `true` group above
+                        // (see the ITEM 14 Guard arm).
+                        common::bastion::JobKind::Haul { .. }
                         | common::bastion::JobKind::DepositRun { .. }
                         | common::bastion::JobKind::RestAt { .. }
                         | common::bastion::JobKind::EatFrom { .. }
