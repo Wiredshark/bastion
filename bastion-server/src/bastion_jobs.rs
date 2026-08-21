@@ -1125,6 +1125,43 @@ pub fn colony_food_stock<'a>(
     food_stock
 }
 
+/// bastion (2026-08-21, found by a 141-game-day play session): the food the
+/// colony can actually EAT, wherever it is — pantry, ground, or a colonist's
+/// own bag. [`colony_food_stock`] deliberately counts only what is inside a
+/// stockpile (that is the pantry number the dashboard shows), and the famine
+/// sentinel was consuming THAT: it fired three times on a colony of eight
+/// living people with `fed=8`, because their food was in transit or in hand.
+/// An invariant must consume the quantity it is actually about.
+pub fn colony_food_total<'a>(
+    items: impl IntoIterator<Item = &'a PickupItem>,
+    inventories: impl IntoIterator<Item = &'a comp::Inventory>,
+) -> u32 {
+    let mut total: u32 = 0;
+    for item in items {
+        if item
+            .item()
+            .item_definition_id()
+            .itemdef_id()
+            .is_some_and(|d| FOOD_DEFS.contains(&d))
+        {
+            total += item.amount() as u32;
+        }
+    }
+    for inv in inventories {
+        total += inv
+            .slots()
+            .flatten()
+            .filter(|i| {
+                i.item_definition_id()
+                    .itemdef_id()
+                    .is_some_and(|d| FOOD_DEFS.contains(&d))
+            })
+            .map(|i| i.amount() as u32)
+            .sum::<u32>();
+    }
+    total
+}
+
 pub(crate) fn colony_terminal_step(streak: &mut u32, food_stock: u32, threshold: u32) -> bool {
     if food_stock == 0 {
         *streak += 1;
@@ -8387,14 +8424,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // sequence bars drive the SAME machine that ships. Keeping
                 // the arms inline here beside an extracted copy would let
                 // the tests pass while this code went unexercised.
+                // The sentinel consumes TOTAL food, not pantry food (see
+                // `colony_food_total`): three false famines were declared over
+                // colonies whose food was simply in transit. Both numbers are
+                // printed, because "the pantry is empty" and "the colony is
+                // out of food" are different facts and only one is terminal.
+                let food_total = colony_food_total(
+                    (&pickup_items).join(),
+                    (&colonists, &inventories).join().map(|(_, inv)| inv),
+                );
                 if colony_terminal_step(
                     &mut board.colony_terminal_zero_streak,
-                    food_stock,
+                    food_total,
                     COLONY_TERMINAL_ZERO_STREAK_SAMPLES,
                 ) {
                     info!(
                         tick = tick.0,
                         consecutive_zero_samples = board.colony_terminal_zero_streak,
+                        food_total,
+                        food_in_pantry = food_stock,
                         "bastion: COLONY TERMINAL (sentinel S1, log-only)"
                     );
                 }
