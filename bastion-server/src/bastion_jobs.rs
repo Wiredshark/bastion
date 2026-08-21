@@ -6526,6 +6526,81 @@ impl JobBoard {
     /// [`Self::place_designation`] did before. Columns with no resolvable
     /// surface (open water, void) are skipped, same as out-of-bounds blocks
     /// in the region path.
+    /// bastion (ADOPT-IN-PLACE, 2026-08-21): register an adopted house's
+    /// EXISTING beds and paint nothing. Returns an empty job list by
+    /// construction — the point is that a furnished house needs no
+    /// carpentry. The colony still learns the plot (the designation mask
+    /// records it, so the region reads as claimed ground), and every bed
+    /// sprite inside becomes a sleepable slot.
+    ///
+    /// Why this exists as its own method rather than a flag on
+    /// `place_designation_surface`: that function's contract is "turn a
+    /// painted region into work", and adoption is the opposite request.
+    /// Overloading it with a no-jobs mode would have made every caller read
+    /// the flag to know what it does.
+    pub fn adopt_beds_surface(
+        &mut self,
+        terrain: &TerrainGrid,
+        min_xy: Vec2<i32>,
+        max_xy: Vec2<i32>,
+        hint_z: i32,
+    ) -> Vec<JobId> {
+        use common::terrain::sprite::SpriteKind as S;
+        let mut adopted = 0u32;
+        let mut z_lo = None::<i32>;
+        let mut z_hi = None::<i32>;
+        for y in min_xy.y..=max_xy.y {
+            for x in min_xy.x..=max_xy.x {
+                let Some(surface) = column_surface_z(terrain, x, y, hint_z) else {
+                    continue;
+                };
+                z_lo = Some(z_lo.map_or(surface, |v: i32| v.min(surface)));
+                z_hi = Some(z_hi.map_or(surface, |v: i32| v.max(surface + 8)));
+                for z in (surface - 2)..=(surface + 8) {
+                    let pos = Vec3::new(x, y, z);
+                    let Ok(block) = terrain.get(pos) else { continue };
+                    let is_bed = matches!(
+                        block.get_sprite(),
+                        Some(
+                            S::Bedroll
+                                | S::BedrollSnow
+                                | S::BedrollPirate
+                                | S::BedMesa
+                                | S::BedWoodWoodlandHead
+                                | S::BedCliffHead
+                        )
+                    );
+                    if is_bed && !self.beds.contains_key(&pos) {
+                        self.beds.insert(pos, common::bastion::BedSlot {
+                            kind: common::bastion::BedKind::Frame,
+                            owner: None,
+                            occupant: None,
+                        });
+                        adopted += 1;
+                    }
+                }
+            }
+        }
+        if let (Some(lo), Some(hi)) = (z_lo, z_hi) {
+            self.designated.push((
+                Region {
+                    min: Vec3::new(min_xy.x, min_xy.y, lo),
+                    max: Vec3::new(max_xy.x, max_xy.y, hi),
+                },
+                DesignationKind::Bed,
+            ));
+        }
+        // Counts, both branches: a furnished house and an empty shell must
+        // not read alike — an empty shell is a real finding about worldgen.
+        info!(
+            ?min_xy,
+            ?max_xy,
+            adopted_beds = adopted,
+            "bastion: ADOPT-IN-PLACE house registered (no build jobs minted)"
+        );
+        Vec::new()
+    }
+
     pub fn place_designation_surface(
         &mut self,
         terrain: &TerrainGrid,
@@ -7996,14 +8071,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             .get(vek::Vec3::new(max_xy.x, max_xy.y, hint_z))
                             .is_ok();
                     if ready {
-                        let created = board.place_designation_surface(
-                            &terrain,
-                            min_xy,
-                            max_xy,
-                            hint_z,
-                            common::bastion::ZExtent::default_for(kind),
-                            kind,
-                        );
+                        // ★ AN ADOPTED HOUSE IS FURNISHED (2026-08-21, found
+                        // by playing a village): mapping House -> Bed painted
+                        // a BUILD-A-BED job in every cell of every house —
+                        // 1,519 of them, each needing stone the colony did not
+                        // have, in a village whose beds the colonists were
+                        // already sleeping in. The claim gate saturated on
+                        // them and the colony went `working=0 idle=8` for
+                        // 10,000 ticks; it only came alive when the player
+                        // cancelled the whole queue by hand. Adoption's job is
+                        // to REGISTER what the village has, not to re-furnish
+                        // it: the bed scan inside `place_designation_surface`
+                        // still runs (it is what makes village beds sleepable),
+                        // but no build jobs are minted for an adopted house.
+                        // A player painting Bed themselves is unaffected.
+                        let created = if kind == DesignationKind::Bed {
+                            board.adopt_beds_surface(&terrain, min_xy, max_xy, hint_z)
+                        } else {
+                            board.place_designation_surface(
+                                &terrain,
+                                min_xy,
+                                max_xy,
+                                hint_z,
+                                common::bastion::ZExtent::default_for(kind),
+                                kind,
+                            )
+                        };
                         placed += created.len();
                     } else {
                         still_waiting.push((min_xy, max_xy, hint_z, kind));
