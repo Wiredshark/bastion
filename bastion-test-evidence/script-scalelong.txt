@@ -9,25 +9,25 @@ anchor
 wait 3000
 note --- sample 1 ---
 inspect_colony
-foodstore
+count_items
 wait 6000
 note --- sample 2 ---
 inspect_colony
-foodstore
+count_items
 wait 6000
 note --- sample 3 ---
 inspect_colony
-foodstore
+count_items
 wait 6000
 note --- sample 4 ---
 inspect_colony
-foodstore
+count_items
 wait 6000
 note --- sample 5 ---
 inspect_colony
-foodstore
+count_items
 wait 6000
 note --- sample 6 (end) ---
 inspect_colony
-foodstore
+count_items
 inspect_colonists
