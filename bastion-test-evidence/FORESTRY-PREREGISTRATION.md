@@ -67,3 +67,23 @@ The **standing par-stock floor** (keep ~N wood with no job asking) is the
 charter's remaining third. This row is demand-PULL only: something must want
 wood. Saying so now stops a later reading of a green leg as proof of a floor
 that was never built.
+
+---
+
+# PAR-STOCK FLOOR — prediction, registered before its leg is scored
+
+Arm `injury` (founded arena colony). The floor is 8 stone / 8 wood.
+
+1. **The colony stockpiles with nothing asking.** Stone on hand reaches the
+   par level even after every bed job is satisfied.
+2. **IT STOPS.** This is the safety bar and the one that matters: mine job
+   generation must go quiescent at par. A floor that keeps digging is a
+   strip-miner, and it would be a WORSE outcome than not having a floor —
+   the colony would spend its whole life mining for a stockpile nobody uses.
+3. **No F13 regression:** 8 beds still built.
+
+**Falsifier.** If mine jobs keep being generated after supply reaches par, the
+`deficit = demand − supply − pending` arithmetic is not actually holding the
+floor back and the row FAILS, floor removed. "It stockpiled successfully" is
+NOT a pass on its own; unbounded stockpiling is the failure mode, and it looks
+identical to success in any metric that only counts stone.
