@@ -7186,6 +7186,24 @@ impl Server {
                         ori: comp::Ori::default(),
                         npc,
                     });
+                // ★ LOG WHERE THE RAIDER ACTUALLY LANDED (2026-08-21). The
+                // raid emit printed only `origin` — the colony's stockpile
+                // centre — and never `pos`. An adversarial play session read
+                // that line and reported raiders "spawning on top of the
+                // colony's own stockpile", which is a FALSE DEFECT caused
+                // purely by an ambiguous log: they spawn 48 blocks out.
+                //
+                // A correct system that reads as broken costs exactly as much
+                // investigator time as a broken one, and this one cost a
+                // play session's credibility on an otherwise excellent
+                // report. `dist_from_origin` is printed so the claim is
+                // settled in the line itself rather than by arithmetic.
+                tracing::info!(
+                    raider = i,
+                    ?pos,
+                    dist_from_origin = (pos - origin).magnitude(),
+                    "bastion: ITEM 34 raider placed"
+                );
             }
         }
         tracing::info!(
