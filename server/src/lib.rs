@@ -3589,6 +3589,11 @@ impl Server {
         let mut healths = ecs.write_storage::<comp::Health>();
         let mut moods = ecs.write_storage::<comp::bastion::Mood>();
         let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
+        // The harness hook must feed the SAME bus the live caller does —
+        // "the tested path IS the shipping path" is this function's own rule,
+        // and damage that skips the bus skips death.
+        let health_events =
+            ecs.read_resource::<common::event::EventBus<common::event::HealthChangeEvent>>();
         let victims = bastion_jobs::cavein_eject_and_injure(
             &cells,
             &terrain,
@@ -3599,6 +3604,7 @@ impl Server {
             &mut positions,
             &mut velocities,
             &mut healths,
+            &health_events,
             &mut moods,
         );
         // B7-0: queue the fear thoughts EXACTLY like the live mine-
