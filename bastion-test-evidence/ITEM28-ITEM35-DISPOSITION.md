@@ -117,3 +117,61 @@ this leg's sleeps still read `health=1.0`, i.e. nobody was hurt while a bed was
 free. The tend economy needs a wounded colonist and a bed in the same window —
 the lethal-plant fixture can now produce exactly that, and it is the natural
 next leg.
+
+---
+
+# ITEM 35 / RULING 2 — built, pinned, and **INERT**: passive regen outruns the rest cycle
+
+Ben ruled a wounded colonist should seek rest. It is built
+(`injury_adjusted_rest_interrupt`, read by both the rest gate and the rest
+severity score) and pinned. It has **no live effect**, and the reason is
+measured rather than guessed.
+
+## The evidence: one colonist, health and rest side by side
+
+```
+rest=0.8411  health=1.0
+rest=0.5032  health=0.7314   ← wounded
+rest=0.2209  health=1.0      ← fully healed, no bed involved
+rest=0.0000  health=1.0
+```
+
+At `health=0.73` the injury-raised threshold is ≈0.49 and rest was 0.50 — it
+missed by a hair. By the next sample rest had crossed, but **health was already
+back to 1.0**. Veloren regenerates health passively, and here it outran the
+rest cycle.
+
+Confirmed at the preempt itself: every one of the run's rest preempts logged
+`health=1.0`, with thresholds 0.169–0.278 — the healthy baselines, which is the
+function behaving exactly correctly at full health. Zero tend jobs followed,
+correctly, because no wounded colonist ever occupied a bed.
+
+## What this means, stated carefully
+
+The mechanism is **not broken**. Given a colonist who is still hurt when rest
+runs low, it fires — a colonist at `health=0.1` gets a threshold of ~0.93 and
+would go to bed almost immediately. The problem is that such a colonist barely
+exists: wounds evaporate on their own within one rest cycle.
+
+So **injury currently has no lasting behavioural consequence**, and bed
+healing, the tend job and the 2.5× multiplier remain effectively unreachable —
+not for want of the door I just built, but because the wound is gone before
+anyone reaches it.
+
+## Banked — this is a real design question and it is Ben's
+
+**Should a colonist's wounds PERSIST?** Right now they self-heal fully within
+one rest cycle, which makes injury a momentary status rather than a state. Two
+ways to give Ben's ruling teeth:
+
+1. **Slow or stop passive regen for colonists**, so healing is something the
+   colony *does* (beds, tending, the medical-care system Ben already named as
+   this ruling's successor) rather than something that happens anyway. This is
+   the one I'd recommend — it makes every healing system built for this arc
+   matter, and it is exactly what a medical arc presupposes.
+2. **Preempt on injury directly**, so a badly hurt colonist downs tools at once
+   regardless of rest. Simpler, but it leaves regen making the wound moot
+   shortly after.
+
+Recorded rather than chosen: "do wounds last?" decides whether injury is a
+system or a flicker, and that is a design identity call.
