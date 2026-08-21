@@ -1494,6 +1494,15 @@ pub fn drive_work_factor(drive: ColonyDrive, work: WorkType) -> f32 {
 /// bastion (ITEM 28): the ONE work→tool mapping — `tool_factor` (the rate
 /// bonus) and the wear site (one durability step per completion) both read
 /// it, so they cannot drift onto different tools.
+/// bastion (ADOPT-A-TOWN, Ben RULED 2026-08-21: adopting a town adopts its
+/// people): how much of their trade an adopted villager already knows.
+///
+/// A village blacksmith should not have to be taught to build. Enough XP to
+/// arrive competent, not enough to arrive a master — the colony still has
+/// somewhere to grow, and a founded colony's own colonists are not made
+/// pointless by comparison.
+pub const ADOPTED_TRADE_XP: f32 = 60.0;
+
 /// bastion (DEATH v2, Ben RULED 2026-08-21: *"they get downed and can
 /// eventually die, we should have rng (deterministic) where a colonist may
 /// just die outright depending on factors with no chance to revive"*).

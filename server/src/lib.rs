@@ -1332,6 +1332,25 @@ impl Server {
         names
     }
 
+    /// ★ ADOPT A TOWN'S PEOPLE instead of spawning strangers beside them
+    /// (Ben, 2026-08-21: *"when you adopt a town you should adopt the existing
+    /// npc in that town"*).
+    ///
+    /// The adoption twin of [`Self::bastion_spawn_colony_seeded`]: it converts
+    /// the village's own residents and spawns NOBODY. Seed stock and colony
+    /// presence still apply — an adopted colony needs its seeds and needs to
+    /// stay loaded exactly as a founded one does.
+    pub fn bastion_adopt_town_people(&mut self, wpos: Vec3<f32>, near: Vec2<i32>) -> Vec<String> {
+        let names = self
+            .state
+            .ecs()
+            .write_resource::<rtsim::RtSim>()
+            .bastion_adopt_town_npcs(near, 0);
+        self.bastion_found_colony_seed_stock(wpos);
+        self.bastion_found_colony_presence(wpos);
+        names
+    }
+
     /// bastion (#105, DECISIONS-FOR-BEN: FOUNDING SEED STOCK): the shared
     /// half of colony founding both spawn paths above call -- a persistent
     /// loose drop (same mechanism as a player's own `/dropall true`, item
@@ -6946,7 +6965,36 @@ impl Server {
                         tracing::info!(?sp, arena = bastion_flat_arena::enabled(),
                             adopted = adoption.is_some(),
                             "bastion: autofound spawn resolved");
-                        self.bastion_spawn_colony_seeded(sp, n, 0);
+                        // ★ ADOPTION ADOPTS PEOPLE. When a town was adopted we
+                        // spawn NOBODY — the villagers already there become the
+                        // colony. Spawning 8 strangers beside 22 residents who
+                        // are ignored is what "adopt a town" used to mean, and
+                        // it is the shape behind a whole night of adoption
+                        // defects (no tools, no homes, no skills, village as
+                        // scenery): we were re-deriving everything the village
+                        // already had, for people who should not have existed.
+                        let adopted_names = if let Some((asp, ..)) = adoption.as_ref() {
+                            let names = self
+                                .bastion_adopt_town_people(*asp, asp.xy().map(|e| e as i32));
+                            if names.is_empty() {
+                                // A named refusal, never silence: a village with
+                                // no adoptable residents must not look like a
+                                // successful adoption of nobody.
+                                tracing::warn!(
+                                    "bastion: ADOPT-A-TOWN adopted ZERO residents — falling back                                      to spawning a colony so the run is not empty"
+                                );
+                                self.bastion_spawn_colony_seeded(sp, n, 0)
+                            } else {
+                                names
+                            }
+                        } else {
+                            self.bastion_spawn_colony_seeded(sp, n, 0)
+                        };
+                        tracing::info!(
+                            colonists = adopted_names.len(),
+                            adopted = adoption.is_some(),
+                            "bastion: colony population established"
+                        );
                         // THE PRESET, TOO — otherwise this path spawns
                         // colonists into a world with NO WORK, and every
                         // scored counter reads zero. Two deterministic runs

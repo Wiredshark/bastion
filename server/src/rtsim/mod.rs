@@ -454,6 +454,114 @@ impl RtSim {
     /// at boot in a real server (rtsim generation advances it a variable amount
     /// before the colony is founded), so a fixed `seed_tick` pins colonist
     /// identities and spawn positions across runs.
+    /// ★ ADOPT A TOWN = ADOPT ITS PEOPLE (Ben direct, 2026-08-21: *"when you
+    /// adopt a town you should adopt the existing npc in that town"*).
+    ///
+    /// Converts the residents of the site nearest `near` into colonists,
+    /// **spawning nobody**. Returns their names.
+    ///
+    /// WHY THIS REPLACES A SPAWN RATHER THAN JOINING ONE: adoption used to
+    /// walk to a village of ~22 residents and spawn 8 strangers beside them,
+    /// who owned nothing, knew nothing, and stood about while the actual
+    /// inhabitants went about their lives. Nobody would design that — it is
+    /// what you get when "adopt a town" is implemented as "found a colony, but
+    /// over there". A whole night of adoption defects had this shape: no
+    /// tools, no homes, no skills, village-as-scenery. We were re-deriving,
+    /// badly, everything the village already had, for people who should never
+    /// have been spawned.
+    ///
+    /// WHAT IS INHERITED, rather than invented:
+    /// - **their name** — `get_name()`, so a colonist is the villager the
+    ///   player already saw, not a stranger wearing their coordinates;
+    /// - **their home** — already set, so they stay where they live;
+    /// - **their trade** — `Role::Civilised(profession)` seeds the matching
+    ///   skill, so the village blacksmith arrives knowing how to build.
+    ///
+    /// DETERMINISM: keyed on `(world_seed, seed_tick, domain)` like every other
+    /// rtsim draw, and the conversion order is sorted by NpcId — a slotmap's
+    /// iteration order is not a promise, and two runs of one seed must adopt
+    /// the same villagers with the same skills.
+    pub fn bastion_adopt_town_npcs(
+        &mut self,
+        near: Vec2<i32>,
+        seed_tick: u64,
+    ) -> Vec<String> {
+        use common::rtsim::{Profession, Role};
+        use common::bastion::{ADOPTED_TRADE_XP, WorkType};
+
+        let data = self.state.get_data_mut();
+        let mut rng = ::rtsim::tick_rng(self.world_seed, seed_tick, 0xBA57_C012);
+
+        // The site the player chose (or the nearest, when they chose nothing)
+        // — the same "nearest site to a position" rule the plot lookup uses,
+        // so the people adopted and the plots adopted can never be different
+        // villages.
+        let Some(site_id) = data
+            .sites
+            .iter()
+            .min_by_key(|(_, site)| {
+                site.wpos
+                    .map(|e| e as i64)
+                    .distance_squared(near.map(|e| e as i64))
+            })
+            .map(|(id, _)| id)
+        else {
+            tracing::warn!("bastion: ADOPT-NPCS — no rtsim site near the target; adopted nobody");
+            return Vec::new();
+        };
+
+        // Sorted for determinism: a DenseSlotMap's order is not a promise.
+        let mut residents: Vec<::rtsim::data::npc::NpcId> = data
+            .npcs
+            .npcs
+            .iter()
+            .filter(|(_, npc)| {
+                npc.home == Some(site_id)
+                    && npc.bastion_colonist.is_none()
+                    && matches!(npc.role, Role::Civilised(_))
+                    && matches!(npc.body, common::comp::Body::Humanoid(_))
+            })
+            .map(|(id, _)| id)
+            .collect();
+        residents.sort();
+
+        let mut names = Vec::new();
+        for id in residents {
+            let Some(npc) = data.npcs.npcs.get_mut(id) else { continue };
+            let mut colonist = common::bastion::BastionColonist::generate(&mut rng);
+            // Their OWN name, not a generated one. This is the whole point:
+            // the player adopts people they can already see.
+            if let Some(name) = npc.get_name() {
+                colonist.name = name;
+            }
+            // Their trade becomes their skill. A village that already has a
+            // blacksmith should not have to teach him to build.
+            if let Role::Civilised(Some(profession)) = npc.role {
+                let work = match profession {
+                    Profession::Farmer => Some(WorkType::Farm),
+                    Profession::Chef => Some(WorkType::Cook),
+                    Profession::Blacksmith => Some(WorkType::Build),
+                    // No Miner profession exists in vanilla — checked, not
+                    // assumed. Mining stays a skill the colony teaches.
+                    Profession::Hunter | Profession::Guard => Some(WorkType::Guard),
+                    Profession::Merchant => Some(WorkType::Haul),
+                    _ => None,
+                };
+                if let Some(w) = work {
+                    colonist.skills.grant_xp(w, ADOPTED_TRADE_XP);
+                }
+            }
+            names.push(colonist.name.clone());
+            npc.bastion_colonist = Some(colonist);
+        }
+        tracing::info!(
+            adopted = names.len(),
+            ?site_id,
+            "bastion: ADOPT-A-TOWN — the village's own people are the colony now"
+        );
+        names
+    }
+
     pub fn bastion_spawn_colony_seeded(
         &mut self,
         wpos: Vec3<f32>,
