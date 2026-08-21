@@ -1,4 +1,39 @@
-# F13 — "a founded colony never sleeps and finishes nothing" — DISPOSITION: **CONFIRMED**
+# F13 — "a founded colony never sleeps and finishes nothing" — **CLOSED, PASS**
+
+## FINAL RESULT (2026-08-21, arm `injury`, attested fresh, `dirty .rs 0`)
+
+**A colony founded on open ground now mines its own stone, builds its own
+beds, and sleeps in them — with nothing handed to it.** All four blockers
+cleared; the last one was the generator asking an easier question than the
+claim path.
+
+The comparison that matters is three arms, where `matbeds` is the *hand-fed*
+control that was given materials by a test env var:
+
+| | injury (original) | matbeds (hand-fed) | **injury (now, autonomous)** |
+|---|---|---|---|
+| `bed registered (built)` | 0 | 8 | **8** |
+| `beds=` in the drive line | 0 | 8 | **8** |
+| mean working | 1.30 | 2.24 | **2.88** |
+| mean idle | 6.00 | 4.92 | **3.70** |
+| mean rested | 5.20 | 6.86 | **6.58** |
+| rested trend | 8→0, **never recovers** | 8→5→7 | **8→2→6, recovers** |
+| completed sleeps | — | — | **6** |
+
+The autonomous colony now **beats the hand-fed one** on working (2.88 vs 2.24)
+and idle (3.70 vs 4.92) and matches it on rest recovery — which is the outcome
+that distinguishes a real fix from a pre-stocked demo. Decision 112's warning
+("green numbers from a pre-stocked colony do not prove autonomy") is answered:
+these numbers come from a colony that was handed nothing.
+
+The generator's own witness shows the last fix working as designed:
+`rock_seen=25 rock_unstandable=16` — it found 25 rock cells, rejected the 16
+no colonist could stand at, and mined the remaining 9. Bed ownership (B7-2)
+also fired live: `beds assigned to their sleepers assigned=1 … beds=8`.
+
+---
+
+# Original disposition — **CONFIRMED**
 
 The prediction was registered in `FUNCTIONALITY-FIRST.md` and committed
 (`387326c9b0`) **before** this leg was scored. Every branch of it landed. The
