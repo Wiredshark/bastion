@@ -11738,6 +11738,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // Every rock-class cell the scan LOOKED AT, whether or not it
                     // was emitted — the denominator for the witness below.
                     let mut rock_seen = 0usize;
+                    // Rock the scan SAW but could not offer, because no colonist
+                    // could stand to mine it. Separates "there is no stone"
+                    // from "the stone is unworkable" — two different bugs.
+                    let mut rock_unstandable = 0usize;
                     'scan: for y in (anchor.y - MINE_GEN_RADIUS)..=(anchor.y + MINE_GEN_RADIUS) {
                         for x in (anchor.x - MINE_GEN_RADIUS)..=(anchor.x + MINE_GEN_RADIUS) {
                             if emitted >= quota {
@@ -11770,6 +11774,31 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             .iter()
                             .any(|d| terrain.get(pos + *d).ok().is_some_and(|b| !b.is_filled()));
                             if !exposed {
+                                continue;
+                            }
+                            // ★ THE GENERATOR MUST ASK THE CLAIM PATH'S OWN
+                            // QUESTION (2026-08-21). `exposed` means "some
+                            // neighbour is open" — the claim path asks
+                            // something strictly harder: is there a cell a
+                            // colonist can actually STAND in to work this
+                            // block. Those are different questions, and this
+                            // generator was answering the easier one, so it
+                            // minted 8 mine jobs that every colonist refused
+                            // on affordance, every census, forever
+                            // (`pending_mine=8` with `affordance=56`
+                            // refusals). Because pending jobs count against
+                            // the quota, those 8 unclaimable jobs then
+                            // BLOCKED the generator from proposing anything
+                            // better — the board filled up with work nobody
+                            // could take and the colony deadlocked with its
+                            // own generator satisfied.
+                            //
+                            // Same shape as F13's original root cause: two
+                            // predicates that must agree about availability
+                            // and don't. Calling the claim path's own
+                            // function is the only way they cannot drift.
+                            if has_standable_stance(&terrain, pos).is_none() {
+                                rock_unstandable += 1;
                                 continue;
                             }
                             let surface = resolve_column_surface(
@@ -11830,6 +11859,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             slab_z,
                             radius = MINE_GEN_RADIUS,
                             rock_seen,
+                            rock_unstandable,
                             ?anchor,
                             "bastion: AUTON-1 mine generator WANTED stone and emitted NOTHING"
                         );
