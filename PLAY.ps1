@@ -57,7 +57,13 @@ if ($held) {
     if ($Client) {
         Write-Host 'Launching the game against it...'
         $env:VELOREN_ASSETS = Join-Path $WT 'assets'
-        Start-Process -FilePath "$Bin\veloren-voxygen.exe" -WorkingDirectory $WT
+        # --bastion-overseer: the god view. It is NOT on by default -- the flag
+        # is auto-enabled for the asset-arena and flat-arena paths only, and the
+        # TOWN path (the one Ben actually plays) never got it. So F9 did
+        # nothing, because the toggle itself is gated on this flag, and the
+        # session started in third-person with no way into the overseer camera.
+        Start-Process -FilePath "$Bin\veloren-voxygen.exe" `
+            -ArgumentList '--bastion-overseer' -WorkingDirectory $WT
         Write-Host ''
         Write-Host "  In game: Multiplayer -> localhost:$Port -> username 'player' (no password)"
     } else {
@@ -168,5 +174,8 @@ Write-Host "  Stop it:  .\PLAY.ps1 -Stop"
 Write-Host ''
 
 if ($Client -and $ready) {
-    Start-Process -FilePath "$Bin\veloren-voxygen.exe" -WorkingDirectory $WT
+    # Same reason as above: without --bastion-overseer there is no god view and
+    # F9 is inert.
+    Start-Process -FilePath "$Bin\veloren-voxygen.exe" `
+        -ArgumentList '--bastion-overseer' -WorkingDirectory $WT
 }
