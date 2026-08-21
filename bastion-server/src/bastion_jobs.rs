@@ -7153,6 +7153,23 @@ impl JobBoard {
         // ITEM, not the zone — pos-based cancel below can't catch them)
         // and their reservations released.
         let before = self.stockpiles.len();
+        // ★ FOUND BY AN ADVERSARIAL PLAY SESSION (2026-08-21). The sweep below
+        // used to be gated on `self.stockpiles.len() != before` — a COUNT. But
+        // this vec holds (id, piece) pairs and one zone can split into several
+        // pieces that all keep their id, so a brush that fully swallows one
+        // zone (−1 entry) while splitting another (+1 entry) leaves the count
+        // IDENTICAL and the sweep never runs. The session engineered exactly
+        // that arithmetic and logged `zones_before=2 zones_after=2` with a
+        // zone genuinely destroyed.
+        //
+        // A count cannot answer "which zone died"; only identity can. Note the
+        // player-visible consequence (orphaned hauls aimed at a dead zone) was
+        // NOT directly observed — no such haul happened to be live at that
+        // instant — so this is a mechanism confirmed by its own numbers and a
+        // consequence reasoned from it, which is the weaker of the two and is
+        // recorded as such rather than dressed up as a caught bug.
+        let before_ids: HashSet<common::bastion::ZoneId> =
+            self.stockpiles.iter().map(|(z, _)| *z).collect();
         // ★ FOUND BY PLAYING (2026-08-21): this used to DELETE any zone the
         // brush touched at all. A player cancelling a mine that overlapped
         // their base lost the entire food store — `food_stock` fell 192 → 0
@@ -7195,9 +7212,10 @@ impl JobBoard {
         // half-erased blueprint is not a smaller blueprint, it's a mistake).
         self.plans
             .retain(|(_, cells)| !cells.iter().any(|c| region.contains_point(*c)));
-        if self.stockpiles.len() != before {
-            let live: HashSet<common::bastion::ZoneId> =
-                self.stockpiles.iter().map(|(z, _)| *z).collect();
+        let live: HashSet<common::bastion::ZoneId> =
+            self.stockpiles.iter().map(|(z, _)| *z).collect();
+        let zones_lost = before_ids.difference(&live).count();
+        if zones_lost > 0 {
             let dead: Vec<JobId> = self
                 .jobs
                 .iter()
@@ -7217,9 +7235,13 @@ impl JobBoard {
         // ★ SAY WHAT THE BRUSH DID (2026-08-21): a cancel used to report only
         // the thing the player INTENDED ("Designations cancelled.") and never
         // the thing it destroyed. Zones lost/shrunk are the expensive half.
-        if zones_shrunk > 0 || self.stockpiles.len() != before {
+        if zones_shrunk > 0 || zones_lost > 0 {
             info!(
                 zones_shrunk,
+                // The number that actually matters, and the one the old line
+                // could not express: how many zones ceased to EXIST. Piece
+                // counts move for harmless reasons (a split is not a loss).
+                zones_lost,
                 zones_before = before,
                 zones_after = self.stockpiles.len(),
                 ?region,
@@ -24292,6 +24314,93 @@ fn reservation_indices_are_consistent_v1(
 mod tests {
     use super::*;
     use std::num::NonZeroU64;
+
+    /// ★ A COUNT CANNOT ANSWER "WHICH ONE DIED" — found by an adversarial play
+    /// session, 2026-08-21.
+    ///
+    /// `cancel_region`'s orphaned-haul sweep was gated on
+    /// `self.stockpiles.len() != before`. That vec holds (id, piece) pairs and
+    /// one zone can split into several pieces sharing an id, so a brush that
+    /// fully swallows one zone (−1 entry) while splitting another (+1 entry)
+    /// leaves the length IDENTICAL and the sweep silently never runs. The
+    /// session engineered exactly this and logged `zones_before=2
+    /// zones_after=2` with a zone genuinely destroyed.
+    ///
+    /// This reproduces that arithmetic: after the cancel the piece count is
+    /// unchanged, and a haul aimed at the destroyed zone must still be swept.
+    #[test]
+    fn a_cancel_that_deletes_one_zone_and_splits_another_still_sweeps_orphaned_hauls() {
+        let mut board = JobBoard::default();
+        // Zone 1: swallowed whole by the brush below.
+        let doomed = Region {
+            min: Vec3::new(0, 0, 0),
+            max: Vec3::new(4, 4, 0),
+        };
+        // Zone 2: a long bar the brush cuts a band out of the MIDDLE of, so it
+        // survives as two pieces — the +1 that hides the −1.
+        let split = Region {
+            min: Vec3::new(0, 20, 0),
+            max: Vec3::new(40, 24, 0),
+        };
+        board.stockpiles.push((1, doomed));
+        board.stockpiles.push((2, split));
+
+        let haul = Job {
+            kind: common::bastion::JobKind::Haul {
+                item: common::uid::Uid(NonZeroU64::new(11).expect("nonzero")),
+                destination: 1, // the zone about to die
+            },
+            work: DesignationKind::Stockpile.work_type(),
+            pos: Vec3::new(2, 2, 1),
+            skill_floor: 0,
+            claimed_by: None,
+            suspended_for: None,
+            unreachable: false,
+            progress: 0.0,
+            required_item: None,
+            needs_materials: false,
+            carve_attempted: false,
+            is_access: false,
+            stuck_strikes: 0,
+            benched_until_tick: None,
+            depth: 0,
+            reservation: None,
+            affordance: AffordanceClass::OnTopAlways,
+        };
+        let haul_id = board.next_id;
+        board.next_id += 1;
+        board.jobs.insert(haul_id, haul);
+
+        let before_pieces = board.stockpiles.len();
+        // One brush: covers zone 1 entirely, and a band through zone 2.
+        board.cancel_region(Region {
+            min: Vec3::new(0, 0, 0),
+            max: Vec3::new(10, 22, 0),
+        });
+
+        // The arithmetic that defeated the old guard must actually occur, or
+        // this test is passing for the wrong reason.
+        assert_eq!(
+            board.stockpiles.len(),
+            before_pieces,
+            "the piece COUNT must be unchanged here — that is the whole trap. If this assert \
+             fails the fixture no longer reproduces the delete+split case and the guard below \
+             is being tested against a case the old code would also have passed."
+        );
+        assert!(
+            !board.stockpiles.iter().any(|(z, _)| *z == 1),
+            "zone 1 was fully covered by the brush and must be gone"
+        );
+        assert!(
+            board.stockpiles.iter().any(|(z, _)| *z == 2),
+            "zone 2 was only clipped and must survive"
+        );
+        assert!(
+            !board.jobs.contains_key(&haul_id),
+            "a haul aimed at a DESTROYED zone survived the cancel — it can never complete, and \
+             the colonist carrying it walks food out of the colony and freezes"
+        );
+    }
 
     /// F13 / ★ THE DEMAND SIGNAL MUST COVER THE POPULATION. The colony's
     /// self-generating mine sizes its work from demand. Before this fix,

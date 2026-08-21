@@ -59,9 +59,31 @@ pub fn detect_trees(
         let mut candidates: Vec<(Vec2<i32>, i32)> = Vec::new();
 
         for attr in sim.get_area_trees(min_xy, max_xy) {
-            // The oracle is a rough superset ("needs to be reworked",
-            // all.rs:188) — confirm with the engine's own env-filter, the
-            // same resolve the LOD tree layer uses (world/src/lib.rs).
+            // ★ FOUND BY AN ADVERSARIAL PLAY SESSION (2026-08-21): the oracle
+            // is a rough SUPERSET by its own admission, and returns trees from
+            // any grid cell that merely OVERLAPS the query — but nothing here
+            // ever re-checked that the tree it handed back was inside the box
+            // the player actually painted. `tree_valid_at` below is an
+            // ENVIRONMENT filter (alt/water/spawn-rate); it has no idea what
+            // region was requested, so it cannot catch this and never did.
+            //
+            // Measured: a brush over bare walkable ground with no tree in it
+            // produced two chop designations 20–46 blocks away with ZERO
+            // x-overlap with the brush. A player paints a chop order on empty
+            // grass and lumberjacks walk off to fell a tree half a screen away
+            // that was never selected.
+            //
+            // A superset must be intersected with the request. Cheap, and it
+            // runs before the sampler so it also saves the column resolve.
+            if attr.pos.x < min_xy.x
+                || attr.pos.x > max_xy.x
+                || attr.pos.y < min_xy.y
+                || attr.pos.y > max_xy.y
+            {
+                continue;
+            }
+            // Confirm with the engine's own env-filter, the same resolve the
+            // LOD tree layer uses (world/src/lib.rs).
             let Some(col) = sampler.get((attr.pos, index_ref, calendar)) else {
                 continue;
             };
