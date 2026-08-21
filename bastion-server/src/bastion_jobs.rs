@@ -13433,11 +13433,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             let (consc, neur) = arb_data
                                 .as_ref()
                                 .map_or((false, false), |d| stagger_traits_of(d, entity));
-                            let rest_interrupt = comp::bastion::stagger_interrupt(
-                                mood_cfg.rest.interrupt,
-                                &colonist.0.values,
-                                consc,
-                                neur,
+                            // SAME function as the gate below, deliberately:
+                            // a severity that scored on one threshold while
+                            // the gate fired on another is the two-consumers-
+                            // disagree defect this file has paid for all day.
+                            let rest_interrupt = common::bastion::injury_adjusted_rest_interrupt(
+                                comp::bastion::stagger_interrupt(
+                                    mood_cfg.rest.interrupt,
+                                    &colonist.0.values,
+                                    consc,
+                                    neur,
+                                ),
+                                healths.get(entity).map(|h| h.fraction()).unwrap_or(1.0),
                             );
                             let hunger_interrupt = comp::bastion::stagger_interrupt(
                                 mood_cfg.hunger.interrupt,
@@ -14228,11 +14235,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .is(common::rtsim::PersonalityTrait::Neurotic),
                         )
                     });
-                let rest_th = comp::bastion::stagger_interrupt(
-                    mood_cfg.rest.interrupt,
-                    &colonist.0.values,
-                    consc,
-                    neur,
+                let rest_th = common::bastion::injury_adjusted_rest_interrupt(
+                    comp::bastion::stagger_interrupt(
+                        mood_cfg.rest.interrupt,
+                        &colonist.0.values,
+                        consc,
+                        neur,
+                    ),
+                    healths.get(entity).map(|h| h.fraction()).unwrap_or(1.0),
                 );
                 let hunger_th = comp::bastion::stagger_interrupt(
                     mood_cfg.hunger.interrupt,
@@ -19230,15 +19240,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // decides whether wear PAYS — it is read at the
                         // progress site, so printing it here ties the wear
                         // event to its own consequence in one line.
-                        let durability_mult = inv
+                        // ★ READ BOTH SIDES OF THE EVENT. The first version
+                        // logged the multiplier BEFORE damaging, which reads
+                        // the value the wear step has not affected yet — a leg
+                        // came back with ten wear events all reporting
+                        // `durability_mult=1.0`, which cannot distinguish "the
+                        // step did nothing" from "I measured before it
+                        // happened". Before AND after in one line makes the
+                        // delta the evidence, so bar 2 ("wear must PAY") is
+                        // answered by the emit rather than inferred across it.
+                        let mult_before = inv
                             .equipped(comp::slot::EquipSlot::ActiveMainhand)
                             .map(|i| i.stats_durability_multiplier().0)
                             .unwrap_or(1.0);
-                        info!(
-                            work = ?job.work,
-                            durability_mult,
-                            "bastion: ITEM 28 tool wore a durability step"
-                        );
                         inv.damage_item_at_equip_slot(
                             comp::slot::EquipSlot::ActiveMainhand,
                             &ability_map,
@@ -19247,9 +19261,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         let lost = inv
                             .equipped(comp::slot::EquipSlot::ActiveMainhand)
                             .and_then(|i| i.durability_lost());
+                        let mult_after = inv
+                            .equipped(comp::slot::EquipSlot::ActiveMainhand)
+                            .map(|i| i.stats_durability_multiplier().0)
+                            .unwrap_or(1.0);
                         info!(
                             work = ?job.work,
                             durability_lost = ?lost,
+                            // BOTH SIDES OF THE EVENT, in one line. Item 28's
+                            // bar 2 is "wear must PAY" — the multiplier is
+                            // read at the progress site, so it is the number
+                            // that decides whether a worn tool actually works
+                            // slower. A leg reporting ten wear events all at
+                            // `1.0` could not distinguish "the step did
+                            // nothing" from "I measured before it happened";
+                            // the delta settles it inside the emit.
+                            mult_before,
+                            mult_after,
                             "bastion: ITEM 28 tool wear — one step per completion"
                         );
                     }
