@@ -5002,6 +5002,19 @@ fn surface_egress_dest_impl(
 /// closure pattern): `surface_z(x, y)` resolves a column's surface,
 /// `open(cell)` is "this cell is loaded air". ONE implementation — the
 /// `TerrainGrid` wrapper above is the shipping path.
+/// bastion (2026-08-22): the A/B switch for the level-ground rescue, DEFAULT
+/// ON, disabled by `BASTION_NO_LEVEL_RESCUE=1`.
+///
+/// It exists because colony event-counts vary 2-3x between IDENTICAL legs
+/// (wall-coupling, not RNG — measured: strandings 8/11/24, ate 12/18/26 across
+/// three replicates of one build), so no single-leg comparison can settle
+/// whether this change helps. Running both arms from ONE binary removes the
+/// build as a variable; only the env differs.
+fn level_rescue_enabled() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var_os("BASTION_NO_LEVEL_RESCUE").is_none())
+}
+
 fn surface_teleport_dest_impl(
     surface_z: impl Fn(i32, i32) -> Option<i32>,
     open: impl Fn(Vec3<i32>) -> bool,
@@ -5042,7 +5055,11 @@ fn surface_teleport_dest_impl(
                     // of the pit case: a pitted colonist still cannot be handed
                     // its own floor, and the surrounding rim (r>=1, genuinely
                     // higher) still satisfies `>=` exactly as it satisfied `>`.
-                    && if r == 0 { s + 1 > feet.z } else { s + 1 >= feet.z }
+                    && if r == 0 || !level_rescue_enabled() {
+                        s + 1 > feet.z
+                    } else {
+                        s + 1 >= feet.z
+                    }
                     // CASE-003: TRUE-STANDABLE dest — feet + head cells must
                     // be air (a tree trunk / any non-surface solid standing
                     // on the scanned surface occupies them; skip the column).
