@@ -2854,6 +2854,31 @@ pub const DETOUR_SEARCHES_PER_TICK: usize = 1;
 /// (a bedroll's 0.6 scales it down) — 0→comfort in ~40s on a bedroll.
 /// Tunable; the BedKind quality split is the design's lever.
 pub const BED_REST_RECOVERY_PER_SEC: f32 = 0.02;
+
+/// Rest level at which a colonist COLLAPSES and sleeps where it stands.
+///
+/// ★ RESEARCHED, not invented (Ben's hard rule). RimWorld: "when a character's
+/// rest level reaches 0, they may collapse from exhaustion and will immediately
+/// begin sleeping on the ground wherever they are." DF dwarves sleep on the
+/// floor rather than remain awake. No shipped colony sim leaves a body standing
+/// upright and conscious at zero rest — which is exactly what four of eight
+/// colonists did here, all night, with an owned ground-level bed and a schedule
+/// telling them to sleep.
+///
+/// ★ THE TRIGGER IS WHAT KEEPS THIS A SAFETY NET. A colonist that can reach its
+/// bed sleeps long before rest hits this floor, so the path never fires for
+/// them. It catches only the ones the bed path already failed.
+pub const EXHAUSTION_COLLAPSE_REST: f32 = 0.02;
+
+/// How much of a bed's recovery rate sleeping rough gives.
+///
+/// ★ DELIBERATELY POOR, so beds remain worth having. A bed also scales by
+/// quality and deposits the `SleptInBed` thought; the ground gives neither.
+/// If this were generous the colony would stop caring about bedrooms, and
+/// "colonists occupy homes" is one of the six things Ben is actually asking
+/// for — a fix that satisfied the sleep metric by making houses pointless
+/// would be a worse outcome than the bug.
+pub const ROUGH_SLEEP_RATE_FRACTION: f32 = 0.35;
 /// bastion (ITEM 35 v1, 2026-08-21): health restored per second of BED REST,
 /// as a fraction of maximum. DERIVED, not chosen: a colonist crushed by a
 /// cave-in loses `CAVEIN_DAMAGE_FRAC` of max health, and the requirement is
@@ -9666,6 +9691,37 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 (&colonists, &mut needs_storage, active_jobs.maybe()).join()
             {
                 comp::bastion::decay_needs(needs, dt.0, &mood_cfg);
+                // ★ COLLAPSE FROM EXHAUSTION (researched, Ben's hard rule:
+                // adversarial research after a failure, and prefer the
+                // well-trodden solution).
+                //
+                // RimWorld: "when a character's rest level reaches 0, they may
+                // collapse from exhaustion and will immediately begin sleeping
+                // on the ground wherever they are", carrying a -4 mood penalty
+                // for sleeping rough. DF dwarves likewise sleep on the floor
+                // rather than stay awake.
+                //
+                // MEASURED HERE: through a full night at real 1x rates, FOUR OF
+                // EIGHT colonists sat at rest 0.000 — awake, all night, with a
+                // bed owned, nearest, ground-level, and a schedule explicitly
+                // telling them to sleep. 81 rest jobs converted to 32 sleeps
+                // (40%); the rest never arrived. Every fix so far has tried to
+                // get them TO the bed. No shipped colony sim relies on that
+                // succeeding.
+                //
+                // ★ IT IS A SAFETY NET, NOT A REPLACEMENT, and the trigger is
+                // what makes it one: a colonist who can reach a bed never
+                // reaches rest 0, so this cannot fire for them. Beds stay
+                // strictly better (full recovery rate, quality scaling, the
+                // SleptInBed thought); sleeping rough recovers at a fraction
+                // and earns nothing. Ben's "colonists occupy homes" stays the
+                // thing worth achieving — this only stops the failure mode
+                // being a colonist standing motionless until dawn.
+                if needs.rest <= EXHAUSTION_COLLAPSE_REST {
+                    needs.rest = (needs.rest
+                        + BED_REST_RECOVERY_PER_SEC * ROUGH_SLEEP_RATE_FRACTION * dt.0)
+                        .min(1.0);
+                }
                 // Restore AFTER decay, in the same tick, so the net is exactly
                 // `comfort / RECREATION_BREAK_SECS` per second -- the rate
                 // `restore_recreation`'s own doc derives. Restoring before
