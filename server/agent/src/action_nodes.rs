@@ -1247,7 +1247,25 @@ impl AgentData<'_> {
             }
 
             // Sit
-            if hazard(rng, read_data.dt.0, IDLE_SIT_RATE) {
+            // COLONISTS DO NOT IDLE-SIT (2026-08-21). A live town measured
+            // mean_stuck = 3.04 of 8 -- 38% holding a job and not moving --
+            // alongside 261 GOTO-STAND-RESCUE emits. That emit is NOT a failed
+            // rescue, whatever the improvement list said: it is the precondition
+            // witness for #94, and it fires ONLY when a colonist under a Goto is
+            // found SITTING. 261 firings = 261 times someone sat down mid-errand.
+            //
+            // #94 fixed the symptom at the consumer (every Goto pushes Stand
+            // first), but the sit still happens, and a colonist repeatedly seated
+            // and stood reads as speed < 0.2 -- EXACTLY how the census defines
+            // `stuck`. Standing them up afterwards cannot make them look
+            // purposeful; it can only stop them being permanently seated.
+            //
+            // A colonist's rest is MODELLED: a RestAt self-job in an owned bed.
+            // Vanilla idle-sitting is villager flavour that fights that system.
+            // Vanilla NPCs keep it -- they have no job to interrupt.
+            if !read_data.colonists.contains(*self.entity)
+                && hazard(rng, read_data.dt.0, IDLE_SIT_RATE)
+            {
                 controller.push_action(ControlAction::Sit);
             }
         }
