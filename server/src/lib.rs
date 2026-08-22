@@ -4643,7 +4643,25 @@ impl Server {
             .state
             .ecs()
             .read_resource::<bastion_jobs::JobBoard>();
-        let get = |r: ReleaseReason| board.release_reason_counts.get(&r).copied().unwrap_or(0);
+        // bastion (2026-08-22): the key is now (job class, reason, site line),
+        // so this SUMS over class and site rather than looking up a bare
+        // reason. The tuple's contract is unchanged -- it is still "how many
+        // releases carried each reason" -- which is exactly why the widening
+        // had to be absorbed here instead of changing what callers receive.
+        //
+        // ★ AND THIS FUNCTION IS WHY THE WIDENING BROKE THE BUILD. I widened
+        // the key after grepping `release_reason_counts` in bastion_jobs.rs
+        // ONLY, concluded it had no consumer, and said so in a commit message.
+        // It has one, in a different crate: a grep miss inside one file is not
+        // absence across a workspace.
+        let get = |r: ReleaseReason| {
+            board
+                .release_reason_counts
+                .iter()
+                .filter(|((_, reason, _), _)| *reason == r)
+                .map(|(_, n)| *n)
+                .sum()
+        };
         (
             get(ReleaseReason::Other),
             get(ReleaseReason::TimedOut),

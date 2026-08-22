@@ -90,6 +90,87 @@ I would rather find that now than build a fix on top of it.
 - Whether the 24 snipes and the 59 silent deaths share a cause.
 - Sleep, pathing, teleports, or anything visual.
 
+---
+
+# AMENDMENTS — written before any leg was spent
+
+Four checks fired between writing the above and running anything. All four are
+recorded here because three of them changed the plan and one of them would have
+quietly invalidated the result.
+
+### 1. FAIL branch 3 was already true — caught by grep, not by a leg
+
+The branch "reasons are ~all `Other`" was checked statically against the push
+sites: **32 `to_release.push` sites, only 4 carrying a real reason.** The other
+28 push the documented step-1 placeholder. The census as first committed would
+have reported `eat/Other=83` — reconcilable, honest, and naming no code path.
+
+Fixed by putting the **site line in the key**. The discriminator already
+existed: every one of those 32 sites was already appending an env-gated diag
+carrying `line!()`. The value was in reach the whole time and never reached the
+tally.
+
+### 2. The treatment did not reach the population — caught before measuring
+
+Slot 8 was booted with `PLAY_EXTRA_ENV="BASTION_NEEDS_DECAY_MULT=3"` via
+`export` ahead of a `nohup`'d background shell. **The export did not survive.**
+The baseline logs `DECAY_MULT active mult=3.0` right after its mood config;
+slot 8 logged the mood config and no decay line. That leg would have run at 1×
+against a 3× baseline — not comparable, and starved of the very events the
+census counts. Slot 8 was stopped, not measured. Env now goes inline.
+
+### 3. A prediction I am NOT banking
+
+The decay constants (0.000889/s × 3, comfort 0.5 → interrupt 0.2) give a
+112 sim-sec hunger cycle; over the measured 1500 sim-sec × 8 colonists that
+predicts **~107 preempts against 103 measured.** A 4% match.
+
+**I am discarding it as probable coincidence.** The model assumes colonists
+cycle comfort → interrupt, which requires them to eat, and with 20 eats against
+103 preempts most of them never return to comfort at all. Two different
+mechanisms can produce the same number, and a satisfying agreement derived from
+an assumption the data contradicts is exactly the "fitting story" this row
+exists to avoid.
+
+Measured sim:wall for the baseline is **0.91** (45,012 ticks / 1,657 s at 30
+ticks/sim-sec), so the conversion itself is sound — it is the cycle model that
+is wrong, not the arithmetic.
+
+### 4. …and the honest quantity that replaced it, then died too
+
+103 serial trips across 8 colonists over 1500 sim-sec puts a failed eat trip at
+**~115 sim-seconds**. That looked like a timeout, so the timeout was checked:
+`derived_access_stall_default_secs = 120 + 90×8 + 90 = 930 s` (confirmed live —
+the log's `unclaimed_secs=930.49`). **Eight times too long.** Not the mechanism.
+
+Three guesses killed by static checks costing seconds each. None of them
+reached a leg, and none of them reached the write-up as a finding.
+
+### 5. THE PREDICTION ITSELF WAS WRONG — corrected before the run
+
+The original PASS said "`Completed` should land near 20". **It will not.**
+Reading the sites rather than assuming them:
+
+| site | what it is | expected |
+|---|---|---|
+| `@18874` | the SUCCESSFUL eat — emits `ate — hunger restored` | ≈ 20 |
+| `@19076` | the snipe — emits `food sniped — eat moot` | ≈ 24 |
+| `@15867` | moved-meal release — **unreachable for eat**, 15857 `continue`s to re-target first | ≈ 0 |
+
+The successful eat path pushes **`ReleaseReason::Other`**, not `Completed`.
+`Completed` is pushed at exactly one site (`@20470`) which is a work-region
+completion, not an eat.
+
+So the corrected PASS is: **`eat/Other@18874 ≈ 20`, `eat/Other@19076 ≈ 24`, and
+a THIRD eat site carrying ≈ 59** — and the identity of that third site is the
+entire question this row exists to answer.
+
+Note what the site key bought here. Keyed by `(class, reason)` alone, all three
+of these collapse into one indistinguishable `eat/Other ≈ 103` bucket — success,
+snipe and the unknown killer summed together, reconciling perfectly against the
+preempt count while hiding every distinction that matters. It would have looked
+like a clean PASS.
+
 ## The mistake this row is guarding against
 
 I reported `food_stock` climbing as evidence the colony was healthy in an
