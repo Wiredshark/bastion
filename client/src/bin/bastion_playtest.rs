@@ -1470,10 +1470,38 @@ fn main() {
                             // Classify by HEIGHT relative to the observer
                             // instead — anything standing two blocks or more
                             // above the player's own level is structure.
+                            // ★ A HOUSE IS NOT A HILL (2026-08-21). The glyph was
+                            // chosen purely by HEIGHT -- anything two blocks above
+                            // the observer drew as '#' -- so a wall, a roof, a cliff
+                            // and a tree were the same character. The improvement
+                            // list records the consequence: "the map cannot
+                            // distinguish a house from a hill", and it is why this
+                            // map could not answer Ben's "does it look like a town".
+                            //
+                            // Height still decides whether a column is STRUCTURE;
+                            // the surface block's KIND now decides what kind of
+                            // structure. Wood is built (Veloren houses are timber),
+                            // Leaves is canopy, Rock is cliff or masonry. Ground
+                            // stays '.' exactly as before, so every existing tally
+                            // and every previous log remains comparable.
                             Some(sz) => match terrain.get(Vec3::new(wx, wy, sz + 1)) {
                                 Err(_) => '?',
                                 Ok(b) if b.is_liquid() => '~',
-                                _ if sz >= cz + 2 => '#',
+                                _ if sz >= cz + 2 => {
+                                    match terrain
+                                        .get(Vec3::new(wx, wy, sz))
+                                        .map(|b| b.kind())
+                                    {
+                                        Ok(common::terrain::BlockKind::Wood) => 'H',
+                                        Ok(common::terrain::BlockKind::Leaves) | Ok(common::terrain::BlockKind::ArtLeaves) => 'T',
+                                        Ok(common::terrain::BlockKind::Rock) | Ok(common::terrain::BlockKind::WeakRock) => '^',
+                                        // Unclassified structure keeps the old
+                                        // glyph, so a kind this map has not learned
+                                        // yet is VISIBLY unclassified rather than
+                                        // silently drawn as ground.
+                                        _ => '#',
+                                    }
+                                },
                                 _ => '.',
                             },
                         };
