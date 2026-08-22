@@ -1466,9 +1466,29 @@ impl Server {
         let ecs = self.state.ecs();
         let colonists = ecs.read_storage::<comp::Colonist>();
         let entities = ecs.entities();
+        let uids = ecs.read_storage::<common::uid::Uid>();
+        let mut board = ecs.write_resource::<bastion_jobs::JobBoard>();
         let mut inventories = ecs.write_storage::<comp::Inventory>();
         let (mut topped, mut already) = (0u32, 0u32);
+        let mut skipped_already_issued = 0u32;
         for (_, entity) in (&colonists, &entities).join() {
+            // ★ ONE KIT PER COLONIST, EVER (2026-08-22). This used to re-mint
+            // on every cadence: 534 top-ups in one measured leg, each calling
+            // `Item::new_from_asset` — food conjured from nothing, against a
+            // colony stock of ~2,000. It stayed harmless only because the eat
+            // path cannot reach inventory food, so the minted rations were
+            // never consumed. Making hunger satisfiable from the pack ARMS it,
+            // and an infinite larder would make farming, cooking and hauling
+            // decorative while every colony metric improved.
+            //
+            // An emergency provision is a reserve that DEPLETES. Issue once.
+            let Some(uid) = uids.get(entity).copied() else {
+                continue;
+            };
+            if board.provisioned.contains(&uid) {
+                skipped_already_issued += 1;
+                continue;
+            }
             let Some(mut inv) = inventories.get_mut(entity) else {
                 continue;
             };
@@ -1495,14 +1515,17 @@ impl Server {
                     let _ = inv.push(item);
                 }
             }
+            board.provisioned.insert(uid);
             topped += 1;
         }
         if topped > 0 {
             tracing::info!(
                 topped,
                 already_provisioned = already,
+                skipped_already_issued,
                 ration_units = RATION_UNITS,
-                "bastion: PROVISIONS — colonists carry a day of food, so hunger can be met from their own pack"
+                total_ever_provisioned = board.provisioned.len(),
+                "bastion: PROVISIONS — one-time ration kit issued (a reserve that depletes, not a tap)"
             );
         }
     }

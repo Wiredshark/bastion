@@ -6222,6 +6222,24 @@ pub struct JobBoard {
     /// The census emit at the `tick % 300` cadence is its consumer; do not
     /// remove that emit without removing this field.
     pub release_reason_counts: HashMap<(&'static str, ReleaseReason, u32), u32>,
+    /// bastion (2026-08-22): colonists who have already been handed their
+    /// one-time ration kit.
+    ///
+    /// ★ PROVISIONS WERE MINTING FOOD FROM NOTHING. `bastion_colony_provisions`
+    /// called `Item::new_from_asset` on every cadence for every colonist below
+    /// the ration floor — 534 top-ups in a single measured leg, against a
+    /// colony food stock of ~2,000. The exploit was DORMANT only because the
+    /// eat path could not reach inventory food, so nobody ever consumed it.
+    ///
+    /// Making hunger satisfiable from the pack (Ben's ruling: "colonist should
+    /// have some provision that they carry with them for the day in case of
+    /// emergency") would have ARMED it: infinite food, and farming, cooking and
+    /// hauling all become decorative while every metric turns green.
+    ///
+    /// So the kit is issued ONCE. That is what an emergency provision is — a
+    /// reserve that depletes — and it keeps the food economy the one that
+    /// actually feeds the colony.
+    pub provisioned: std::collections::HashSet<common::uid::Uid>,
     /// bastion (DPA-2, the prune-gap flicker guard): anchor COLUMNS whose
     /// rung plans went material-starved — DURABLE across the F3 prune →
     /// re-emit gap (deriving the hold from live rung jobs alone left a ~2s
@@ -14921,6 +14939,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     "bastion IS-LOADED-FILTER-DIAG"
                 );
             }
+            // ★ EAT FROM THE PACK (2026-08-22, Ben's ruling: "colonist should
+            // have some provision that they carry with them for the day in case
+            // of emergency").
+            //
+            // Decided inside the loop, APPLIED AFTER IT: `needs` is held as an
+            // immutable borrow of `needs_storage` for the whole loop body, so
+            // the restore cannot happen in place. Each colonist appears in
+            // `need_order` exactly once, so this cannot double-serve anyone.
+            //
+            // WHY IT MATTERS. Measured over three replicates: 118 hunger
+            // preempts against 26 rest preempts, a 4.5:1 monopoly, and one
+            // colonist (uid 38) took 15 hunger preempts and NEVER ONCE got a
+            // rest job. The arbiter awards its single slot to the lower meter,
+            // and hunger decays at exactly TWICE rest's rate (0.002667/s vs
+            // 0.001332/s at 3x), so a colonist who cannot top hunger up sits
+            // permanently below both thresholds with hunger always the lower —
+            // and can therefore NEVER sleep. That is the livelock, and it is
+            // why sleepers stall at 3.7 of 8 while eaters sit at 7.3.
+            //
+            // Eating from the pack resolves hunger with NO TRAVEL, so it cannot
+            // be defeated by the reachability problem that everything else in
+            // this colony is downstream of.
+            let mut pack_meals: Vec<(specs::Entity, common::uid::Uid, &'static str)> = Vec::new();
             // DET-COL-NEED-001/002 / DET-AUT-005: canonical (severity, Uid)
             // order (unit-tested in the det_* tests below).
             let need_order = canonical_need_order(need_order);
@@ -15521,6 +15562,35 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             }
                             continue 'candidates;
                         } else {
+                            // ★ THE PACK BEFORE THE WORLD. A colonist carrying
+                            // rations should not walk across a village to eat.
+                            // Read-only here; consume + restore happens after
+                            // the loop (see `pack_meals`), because `needs` is
+                            // an immutable borrow for the whole loop body.
+                            //
+            // ★ THE `protected` RESERVATION SET IS DELIBERATELY NOT APPLIED
+            // HERE. That set stops a colonist eating a WORLD pile another job
+            // has reserved — a shared-resource rule. The pack is a one-time
+            // personal ration kit, and the ration def is a mushroom, which a
+            // cook job may well have reserved elsewhere. Honouring the set here
+            // would let a cooking reservation forbid a starving colonist from
+            // eating their own emergency food, which is the precise situation
+            // the provision exists for. A guard that starves its protectee.
+                            let pack_def = inventories.get(entity).and_then(|inv| {
+                                inv.slots().flatten().find_map(|i| {
+                                    i.item_definition_id().itemdef_id().and_then(|d| {
+                                        FOOD_DEFS.iter().find(|f| **f == d).copied()
+                                    })
+                                })
+                            });
+                            if let Some(def) = pack_def {
+                                pack_meals.push((entity, *uid, def));
+                                board
+                                    .preempt_cooldown
+                                    .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
+                                serviced = true;
+                                break 'candidates;
+                            }
                             let feet = pos.0.map(|e| e.floor() as i32);
                             let food = (&pickup_items, &positions, &uids)
                                 .join()
@@ -15868,6 +15938,48 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     preempt_pending.push((entity, *uid, PendingNeed::Recreate(until)));
                 }
             }
+        // ★ APPLY THE PACK MEALS. Deferred out of the need loop because
+        // `needs_storage` is borrowed immutably there. Consumes exactly as the
+        // EatFrom completion does — decrement a stack, or remove the slot when
+        // it is the last one — so a ration eaten from the pack is destroyed on
+        // the same terms as one eaten off the ground. There is no path here
+        // that restores hunger WITHOUT removing an item; that would be a food
+        // duplication bug wearing a fix's clothes.
+        for (entity, uid, def) in pack_meals {
+            let consumed = inventories.get_mut(entity).and_then(|mut inv| {
+                let slot = inv.slots_with_id().find_map(|(slot, it)| {
+                    // `item_definition_id()` returns a borrow of a temporary,
+                    // so the comparison has to happen INSIDE the closure that
+                    // owns it rather than being returned out of one.
+                    it.as_ref()
+                        .is_some_and(|i| {
+                            i.item_definition_id().itemdef_id() == Some(def)
+                        })
+                        .then_some(slot)
+                })?;
+                match inv.slot_mut(slot) {
+                    Some(Some(it)) if it.amount() > 1 => it.decrease_amount(1).ok().map(|_| ()),
+                    Some(Some(_)) => inv.remove(slot).map(|_| ()),
+                    _ => None,
+                }
+            });
+            // The item is gone before the meter moves, and the meter only moves
+            // if the item was actually gone.
+            if consumed.is_some()
+                && let Some(needs) = needs_storage.get_mut(entity)
+            {
+                let before = needs.hunger;
+                needs.hunger = (needs.hunger + food_restore_for(def)).min(1.0);
+                board.b5_eat_completions_distinct.insert(uid);
+                info!(
+                    colonist = %uid,
+                    def,
+                    hunger_before = before,
+                    hunger_after = needs.hunger,
+                    "bastion: ate from pack — no travel, hunger met from the colonist's own rations"
+                );
+            }
+        }
         }
 
         // `Colonist`'s storage is change-tracked (synced comp) — mutable
@@ -26526,6 +26638,47 @@ mod tests {
              `min_by_key` keeps the FIRST minimum, and the candidate list is \
              position-sorted, so this is a total order and two runs of one \
              seed cannot diverge"
+        );
+    }
+
+    /// ★ THE RATION KIT IS ISSUED ONCE (2026-08-22).
+    ///
+    /// `bastion_colony_provisions` re-minted rations on every cadence via
+    /// `Item::new_from_asset` — 534 top-ups in one measured leg against a colony
+    /// stock of ~2,000. It was harmless only because the eat path could not
+    /// reach inventory food. Making hunger satisfiable from the pack ARMS that:
+    /// infinite food, and farming, cooking and hauling become decorative while
+    /// every colony metric improves.
+    ///
+    /// `JobBoard::provisioned` is what makes the kit a reserve that depletes.
+    /// This pins the ledger's behaviour directly, because the failure it
+    /// prevents is invisible in every colony metric — the numbers get BETTER.
+    #[test]
+    fn a_colonist_is_issued_rations_once_and_never_again() {
+        let mut board = JobBoard::default();
+        let u = Uid::from(NonZeroU64::new(7).unwrap());
+
+        assert!(
+            !board.provisioned.contains(&u),
+            "a colonist who has never been provisioned must be eligible"
+        );
+        board.provisioned.insert(u);
+        assert!(
+            board.provisioned.contains(&u),
+            "after the kit is issued the colonist must be INELIGIBLE — this is \
+             the only thing standing between an emergency ration and an \
+             infinite larder, and an infinite larder makes every colony number \
+             look better while deleting the food economy"
+        );
+
+        // A second, distinct colonist is unaffected: the ledger is per-colonist,
+        // not a global latch that would leave everyone after the first one
+        // unprovisioned.
+        let v = Uid::from(NonZeroU64::new(8).unwrap());
+        assert!(
+            !board.provisioned.contains(&v),
+            "the ledger must be per-colonist; a global latch would starve every \
+             colonist issued after the first"
         );
     }
 
