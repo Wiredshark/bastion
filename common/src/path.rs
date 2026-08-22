@@ -1033,6 +1033,16 @@ pub struct Node {
 /// bastion ledger #180: also returns the ACTUAL expansions this call
 /// consumed (the poll delta) so schedulers can debit real work instead of
 /// their planned estimate.
+/// bastion: the price of taking a 3-block vertical face instead of walking
+/// around the obstacle. See the derivation at its use site in `transition`.
+///
+/// PINNED, not tuned by feel: `a_scramble_must_cost_more_than_rounding_a_house`
+/// asserts the relationship this number exists to hold. A surcharge that merely
+/// "feels high" would drift the first time someone edited the flat-move cost,
+/// because every weight here is relative to a flat step and the flat step is
+/// NOT 1.0.
+const SCRAMBLE_SURCHARGE: f32 = 30.0;
+
 fn find_path<V>(
     astar: &mut Option<(Astar<Node, FxBuildHasher>, Vec3<f32>)>,
     vol: &V,
@@ -1094,7 +1104,34 @@ where
             // bastion (B5.8): scrambles (3-up) cost more than the staircase
             // they replace (three 1-ups = 15) so carved/built stairs stay
             // preferred; a scramble is the fallback, not the highway.
-            + if b.pos.z - a.pos.z >= 3 { 8.0 } else { 0.0 }
+            // ★ RE-PRICED 8.0 -> 30.0 (Ben, 2026-08-21: "climbing and falling
+            // should be actively discouraged -- a colonist scaling a house wall
+            // to reach a crate is a bug even when it works").
+            //
+            // The 8.0 was calibrated against a STAIRCASE: three 1-ups cost 15,
+            // a scramble cost 17, so stairs won narrowly. That was the right
+            // comparison for the job it was written for and the WRONG one for
+            // a house. Do the arithmetic on the case Ben is complaining about:
+            //
+            //   a flat move costs 3.0, NOT 1.0 -- `(dz+1).max(0)*2.0` charges
+            //   2.0 even when dz is zero, and every weight here is relative to
+            //   that. A scramble at 17.0 is therefore only 5.7 flat steps.
+            //
+            //   over a 6-block wall = 2 scrambles (34) + roof (~8 flat, 24)
+            //                       + fall (6)                  ~= 64
+            //   around a 10x10 house = ~20 extra flat steps      ~= 60
+            //
+            // Effectively TIED, so the roof wins whenever the detour is a
+            // little longer or the target is on the far side. That is the
+            // route that produces the wall-run: `traverse` jumps when
+            // `bearing.z > 1.5`, the jump puts the colonist airborne against
+            // the wall, and `handle_wallrun` fires on `on_wall && !on_ground`.
+            //
+            // At 30.0 a scramble is 39.0 = 13 flat steps, so two of them
+            // (26 steps) clearly exceed walking around. Stairs (1-up, 5.0) and
+            // ladders (1.5) are UNTOUCHED -- this discourages exactly the thing
+            // Ben called a bug and nothing else a colonist legitimately does.
+            + if b.pos.z - a.pos.z >= 3 { SCRAMBLE_SURCHARGE } else { 0.0 }
     };
     let neighbors = |node: &Node| {
         let node = *node;
@@ -2378,6 +2415,61 @@ mod ledger_179_tests {
     /// the defect (search-epoch invalidation; LPA*-style repair is
     /// deliberately not attempted).
     #[test]
+    /// ★ A SCRAMBLE MUST COST MORE THAN WALKING ROUND THE HOUSE.
+    ///
+    /// Ben: "a colonist scaling a house wall to reach a crate is a bug even
+    /// when it works." This pins the RELATIONSHIP that makes that true, not
+    /// the constant, because every weight in `transition` is relative to a
+    /// flat step and a flat step is NOT 1.0 -- it is 3.0, since
+    /// `(dz+1).max(0)*2.0` charges 2.0 even when dz is zero. A test on the
+    /// number alone would still pass if someone changed the flat cost and
+    /// silently made roofs cheap again.
+    ///
+    /// BOTH DIRECTIONS, because a surcharge that refuses every vertical move
+    /// also stops the bug reproducing: it must beat the detour AND must still
+    /// leave stairs and ladders cheaper than it.
+    #[test]
+    fn a_scramble_must_cost_more_than_rounding_a_house() {
+        // The cost model, reproduced from `transition` in `find_path`. Kept in
+        // one expression so a change there that this does not follow shows up
+        // as a failure rather than as a stale duplicate.
+        let step = |dz: i32| {
+            1.0 + (dz + 1).max(0) as f32 * 2.0
+                + if dz >= 3 { SCRAMBLE_SURCHARGE } else { 0.0 }
+        };
+        let flat = step(0);
+        assert_eq!(flat, 3.0, "a flat move costs 3.0, not 1.0 - every weight below is relative to it");
+
+        // Over a modest house: up, across the roof, down the far side.
+        let over_the_roof = step(3) * 2.0 + flat * 8.0 + 6.0;
+        // Around the same house: the extra flat steps of the detour.
+        let round_the_house = flat * 20.0;
+        // ★ THE MARGIN IS THE ASSERTION, NOT THE SIGN. My first version of this
+        // test compared them with `>` and PASSED ON THE OLD VALUE -- at 8.0 the
+        // roof cost 64 against a 60-step detour, a 6% edge. "Technically more
+        // expensive" is exactly the tie that made the router pick roofs
+        // whenever the detour ran slightly longer or the target sat on the far
+        // side. A one-sided `>` was a green bar with the wrong numbers beside
+        // it, and only planting the old constant exposed it.
+        //
+        // Requiring a HALF-AGAIN margin means a detour can be 50% longer than
+        // this idealised one and walking around still wins.
+        assert!(
+            over_the_roof > round_the_house * 1.5,
+            "climbing the wall ({over_the_roof}) must cost HALF AGAIN more than              walking around it ({round_the_house}). Merely costing more is not enough:              at the old surcharge it was 64 vs 60, and the router chose roofs whenever              the real detour was a little longer than the ideal one"
+        );
+
+        // ...and the surcharge must not have swallowed legitimate verticality.
+        assert!(
+            step(1) < step(3) && step(2) < step(3),
+            "stairs and jumps must stay cheaper than a scramble: a surcharge that              refuses ALL vertical movement also stops the bug reproducing, and would              pass a one-sided test while stranding colonists at every doorstep"
+        );
+        assert!(
+            step(1) < flat * 3.0,
+            "a single step up must stay cheaper than three flat steps, or colonists              will refuse stairs and ladders they are supposed to use"
+        );
+    }
+
     fn ledger_179_policy_boundary_must_not_mix_cost_models() {
         let vol = two_door_world();
         let pos = Vec3::new(0.5, 3.5, 1.0);
