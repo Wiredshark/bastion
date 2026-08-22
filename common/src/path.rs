@@ -1136,22 +1136,43 @@ where
     let neighbors = |node: &Node| {
         let node = *node;
         let pos = node.pos;
-        const DIRS: [Vec3<i32>; 9] = [
+        // ★ DESCENT RESTORED (2026-08-21). The move set was ASYMMETRIC: all four
+        // diagonal ASCENTS were live while all four diagonal DESCENTS sat
+        // commented out, so the only way down was Vec3::new(0, 0, -1) -- a
+        // vertical shaft directly beneath. A colonist standing on a roof or a
+        // ledge has solid roof below and therefore NO LEGAL MOVE DOWNWARD.
+        //
+        // Easy to climb up, impossible to walk down. That is the root of the
+        // whole stranding family, and it is why the ultimate fail-safe teleport
+        // exists at all -- its own message says "a colonist was moved by magic
+        // because nothing else could reach it", and nothing else COULD.
+        //
+        // MEASURED, 104 samples of `job unreachable` on a live village:
+        //   mean horizontal distance to the job = 13.9 blocks
+        //   0% were within 3 blocks (so not an arrival-transition artefact)
+        //   mean dz = -3.1 -- THE JOB IS THREE BLOCKS BELOW THE COLONIST
+        //
+        // They are stranded ABOVE their work. The -2 variants stay commented:
+        // a 1-block diagonal descent is what stepped terrain and doorsteps need,
+        // and each added direction widens A* branching (9 -> 13 here) against a
+        // 500-iteration budget. Sheer multi-block drops are a separate question
+        // and need a fall-damage-aware cost, not a silent edge.
+        const DIRS: [Vec3<i32>; 13] = [
             Vec3::new(0, 1, 0), // Forward
             Vec3::new(0, 1, 1), // Forward upward
-            // Vec3::new(0, 1, -1),  // Forward downward
+            Vec3::new(0, 1, -1), // Forward downward
             // Vec3::new(0, 1, -2),  // Forward downwardx2
             Vec3::new(1, 0, 0), // Right
             Vec3::new(1, 0, 1), // Right upward
-            // Vec3::new(1, 0, -1),  // Right downward
+            Vec3::new(1, 0, -1), // Right downward
             // Vec3::new(1, 0, -2),  // Right downwardx2
             Vec3::new(0, -1, 0), // Backwards
             Vec3::new(0, -1, 1), // Backward Upward
-            // Vec3::new(0, -1, -1), // Backward downward
+            Vec3::new(0, -1, -1), // Backward downward
             // Vec3::new(0, -1, -2), // Backward downwardx2
             Vec3::new(-1, 0, 0), // Left
             Vec3::new(-1, 0, 1), // Left upward
-            // Vec3::new(-1, 0, -1), // Left downward
+            Vec3::new(-1, 0, -1), // Left downward
             // Vec3::new(-1, 0, -2), // Left downwardx2
             Vec3::new(0, 0, -1), // Downwards
         ];
