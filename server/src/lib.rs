@@ -1552,6 +1552,32 @@ impl Server {
                     let _ = inv.push(item);
                 }
             }
+            // ★ A SEED IN THE HAND, NOT A PILE ACROSS THE VILLAGE (2026-08-22).
+            //
+            // Founding seeds are delivered to the colony origin. Measured: they
+            // now ARRIVE (the deferred-drain fix), the material machinery
+            // ENGAGES (11-15 `wheat_seeds` claims per leg, farm jobs committing
+            // with `fetch=true`) — and `sown` is STILL 0 across three legs,
+            // because the pile sits ~110 blocks from the field plots and the
+            // fetch has to cross the same traversal that costs this colony
+            // 362-458 job releases a leg.
+            //
+            // The sow arm needs exactly ONE seed in inventory. Handing each
+            // founding colonist one removes the fetch from the critical path
+            // entirely, which is the same reasoning Ben already ruled on for
+            // tools ("yes colonist start with tools") — a founding party
+            // carries what it needs to begin.
+            //
+            // ONE per colonist, issued with the same one-time kit and the same
+            // ledger, so this cannot become a second infinite tap. It is a
+            // BOOTSTRAP: FOUNDING_SEED_STOCK's own doc records the
+            // chicken-and-egg (a seed's only other producer is a harvest), and
+            // the harvest yield of 2-per-crop is what has to carry the colony
+            // afterwards. If farming still cannot sustain itself with a seed
+            // already in hand, the defect is in grow/harvest, not supply.
+            if let Ok(seed) = comp::Item::new_from_asset(bastion_jobs::FARM_SEED_ITEM) {
+                let _ = inv.push(seed);
+            }
             board.provisioned.insert(uid);
             topped += 1;
         }
