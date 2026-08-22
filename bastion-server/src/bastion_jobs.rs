@@ -3872,6 +3872,78 @@ fn surface_teleport_dest(terrain: &TerrainGrid, feet: Vec3<i32>) -> Option<Vec3<
     )
 }
 
+/// bastion (2026-08-22, found by measuring 22 live fail-safe teleports: 86%
+/// UPWARD, mean +12.4 blocks, max +48.2, and **ZERO downward**): the DOWNWARD
+/// half of the stranding rescue, which did not exist.
+///
+/// `surface_teleport_dest` cannot produce it. It reads `column_surface_z(...,
+/// feet.z + 64)`, which scans a window centred 64 blocks ABOVE the colonist
+/// top-down and returns the HIGHEST surface — for any column with a building
+/// on it, that is the ROOF — and then requires `s + 1 > feet.z` on top. A
+/// colonist stranded on a roof is therefore rescued onto another roof, and the
+/// loop (unreachable → teleport up → more unreachable) is closed.
+///
+/// ★ THAT UPWARD CONSTRAINT IS NOT A BUG AND MUST NOT SIMPLY BE DELETED. Its
+/// own comment records why it exists: a colonist in a PIT, rescued via its own
+/// r=0 column, gets returned the pit floor and teleported to itself. "Up" is
+/// genuinely the only exit from a pit.
+///
+/// So the two cases are separated by what lies BENEATH, which distinguishes
+/// them without either one needing to know about the other:
+///
+/// | stranded on | beneath the feet | this probe |
+/// |---|---|---|
+/// | a roof / upper floor | open air, then a floor | finds it → rescue DOWN |
+/// | a pit floor | solid rock | finds nothing → falls back to the UP path |
+/// | flat ground | solid earth | finds nothing → falls back (and it isn't stuck above anything anyway) |
+///
+/// `min_drop` skips the block the colonist is standing ON plus a margin —
+/// without it every colonist "finds ground" one block under their own feet and
+/// the probe returns their current position, which is the exact self-teleport
+/// the upward constraint was written to prevent, reintroduced from the other
+/// side.
+///
+/// Pure and closure-injected like `surface_teleport_dest_impl` so both
+/// directions are unit-testable against a synthetic column with no terrain.
+fn ground_below_dest_impl(
+    solid_surface: impl Fn(Vec3<i32>) -> bool,
+    open: impl Fn(Vec3<i32>) -> bool,
+    feet: Vec3<i32>,
+    min_drop: i32,
+    max_drop: i32,
+) -> Option<Vec3<i32>> {
+    for drop in min_drop..=max_drop {
+        let cell = Vec3::new(feet.x, feet.y, feet.z - drop);
+        // Standable means: a surface block with TWO open cells above it (feet
+        // and head), the same true-standable test the upward path uses. A
+        // one-cell gap under a floor joist is not a place to put a person.
+        if solid_surface(cell)
+            && open(cell + Vec3::new(0, 0, 1))
+            && open(cell + Vec3::new(0, 0, 2))
+        {
+            return Some(cell + Vec3::new(0, 0, 1));
+        }
+    }
+    None
+}
+
+/// How far below the feet the downward rescue starts and stops looking.
+/// `MIN` = 3 so the colonist's own footing (and a floor immediately under it)
+/// can never be returned as a "rescue"; `MAX` = 64 matches the vertical reach
+/// the upward scan already assumes via `feet.z + 64`.
+const GROUND_BELOW_MIN_DROP: i32 = 3;
+const GROUND_BELOW_MAX_DROP: i32 = 64;
+
+fn ground_below_dest(terrain: &TerrainGrid, feet: Vec3<i32>) -> Option<Vec3<i32>> {
+    ground_below_dest_impl(
+        |p| terrain.get(p).is_ok_and(|b| is_surface_terrain(b.kind())),
+        |p| terrain.get(p).is_ok_and(|b| !b.is_filled()),
+        feet,
+        GROUND_BELOW_MIN_DROP,
+        GROUND_BELOW_MAX_DROP,
+    )
+}
+
 /// An organic egress steer must approach a rim instead of selecting the
 /// colonist's own roofed column. The teleport backstop deliberately prefers
 /// the nearest safe landing (including r=0); movement needs horizontal intent
@@ -23575,7 +23647,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         board.stuck_job_progress.remove(uid);
                     },
                 }
-                let dest = surface_teleport_dest(&terrain, feet);
+                // ★ DOWN FIRST (2026-08-22). Measured: 22 fail-safe teleports,
+                // 19 upward (mean +12.4 blocks, max +48.2), ZERO downward, on a
+                // colony whose colonists were repeatedly stranded on rooftops
+                // and could not come back down. A rescue that can only move a
+                // body upward is not a rescue; it is the thing that produced
+                // the stranding it is being asked to fix.
+                //
+                // `ground_below_dest` returns Some ONLY when there is genuine
+                // standable ground beneath the colonist (open air, then a
+                // floor). That is true on a roof or an upper storey, and false
+                // in a pit or on flat ground, so this ordering restores the
+                // downward exit WITHOUT weakening the upward one — the pit case
+                // that motivated the `s + 1 > feet.z` constraint still falls
+                // straight through to it.
+                let dest = ground_below_dest(&terrain, feet)
+                    .or_else(|| surface_teleport_dest(&terrain, feet));
                 // BELOW GRADE = a real surface exists ABOVE, meaningfully
                 // elsewhere (the colonist is in a pit/shaft, not on open
                 // ground where dest ≈ current). NOT movement-keyed: a
@@ -26231,6 +26318,78 @@ fn reservation_indices_are_consistent_v1(
 mod tests {
     use super::*;
     use std::num::NonZeroU64;
+
+    /// ★ THE STRANDING RESCUE MUST WORK IN BOTH DIRECTIONS (2026-08-22).
+    ///
+    /// Measured on a live colony: 22 fail-safe teleports, 19 UP (mean +12.4
+    /// blocks, max +48.2), **0 down**. Colonists were being "rescued" onto
+    /// roofs, from which they stranded again.
+    ///
+    /// The fix adds a downward probe ahead of the upward one. Both arms are
+    /// pinned here because fixing one direction by breaking the other is the
+    /// obvious failure and it would pass any test that only checked roofs:
+    /// deleting the `s + 1 > feet.z` constraint outright "fixes" the roof case
+    /// and silently reinstates the pit self-teleport it was written to stop.
+    #[test]
+    fn stranding_rescue_goes_down_from_a_roof_and_still_up_from_a_pit() {
+        // A HOUSE: ground at z=0, an interior floor at z=4, a roof at z=10.
+        // The colonist is stranded on the roof at z=11.
+        let roof_solid = |p: Vec3<i32>| matches!(p.z, 0 | 4 | 10);
+        let roof_open = |p: Vec3<i32>| !matches!(p.z, 0 | 4 | 10);
+        let on_roof = Vec3::new(0, 0, 11);
+
+        let down = ground_below_dest_impl(
+            roof_solid,
+            roof_open,
+            on_roof,
+            GROUND_BELOW_MIN_DROP,
+            GROUND_BELOW_MAX_DROP,
+        );
+        assert_eq!(
+            down,
+            Some(Vec3::new(0, 0, 5)),
+            "a colonist stranded on a roof must be brought DOWN to the floor \
+             beneath it (z=4 surface, so standing cell z=5) -- this is the \
+             direction that did not exist, and 0 of 22 live rescues took it"
+        );
+        // ...and it must not hand back the roof the colonist is already on.
+        assert!(
+            down.unwrap().z < on_roof.z,
+            "the rescue returned a cell at or above the colonist's own feet, \
+             which is the self-teleport failure wearing the other hat"
+        );
+
+        // A PIT: solid rock everywhere below; the colonist stands on the pit
+        // floor at z=1 with open air above. NOTHING is beneath them.
+        let pit_solid = |p: Vec3<i32>| p.z <= 0;
+        let pit_open = |p: Vec3<i32>| p.z > 0;
+        let in_pit = Vec3::new(0, 0, 1);
+
+        assert_eq!(
+            ground_below_dest_impl(
+                pit_solid,
+                pit_open,
+                in_pit,
+                GROUND_BELOW_MIN_DROP,
+                GROUND_BELOW_MAX_DROP,
+            ),
+            None,
+            "a colonist in a pit has solid rock beneath and MUST fall through \
+             to the upward path -- if this ever returns Some, the pit case has \
+             been broken by the roof fix and colonists teleport into bedrock"
+        );
+
+        // And the upward path itself, unchanged, still finds a rim above.
+        let surface_z = |x: i32, _y: i32| Some(if x == 0 { 0 } else { 6 });
+        let open = |p: Vec3<i32>| p.z > 6 || (p.x == 0 && p.z > 0);
+        let up = surface_teleport_dest_impl(surface_z, open, Vec3::new(0, 0, 1), 0);
+        assert!(
+            up.is_some_and(|d| d.z > 1),
+            "the upward rescue must still lift a pitted colonist to the \
+             surrounding rim; the downward probe is an ADDITION, not a \
+             replacement"
+        );
+    }
 
     /// ★ THE RELEASE CENSUS'S OWN BLIND SPOT (2026-08-22).
     ///
