@@ -1,0 +1,18 @@
+note STUCK-CELL PROBE. 37 distinct target positions account for 192 stuck samples across 123 different jobs. These are the top recurring ones. The question is what is AT them, and what is around them, since colonists stop 2.8-12 blocks away on ALL sides at dz=0.
+anchor
+inspect_cell 27429 18335 408
+inspect_cell 27396 18342 415
+inspect_cell 27477 18300 411
+inspect_cell 27440 18352 411
+inspect_cell 27430 18341 408
+inspect_cell 27416 18332 408
+note --- and the immediate neighbourhood of the worst one, to see whether the cell is enclosed
+inspect_cell 27428 18335 408
+inspect_cell 27430 18335 408
+inspect_cell 27429 18334 408
+inspect_cell 27429 18336 408
+inspect_cell 27429 18335 409
+inspect_cell 27429 18335 407
+note --- the map around the colony
+ascii 20
+inspect_colony

@@ -1,0 +1,4 @@
+note WIDE MAP. The 41x41 window covered only 19% of stuck positions and was centred on the player, who stands in the town -- so classifying stuck cells against it measured where I put the camera, not where the colony fails. Radius sized to the DATA: stuck positions span dx=76 dy=93.
+anchor
+ascii 95
+inspect_colony

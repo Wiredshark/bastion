@@ -1,0 +1,24 @@
+note RELEASE CENSUS leg. The census itself lands in the SERVER log at the tick%300 cadence; this turn's job is to hold the world open long enough for eat trips to accumulate, and to record the colony state the census must reconcile against.
+note Ground truth this leg is checked against, all from emits NOT derived from the census: 'need preempt' (attempts), 'bastion: ate' (successes), 'food sniped' (known-cause failures).
+anchor
+inspect_colony
+note --- Establish the starting state before hunger has had time to bite.
+inspect_colonists
+wait 600
+inspect_colony
+inspect_colonists
+wait 600
+inspect_colony
+inspect_colonists
+wait 600
+note --- Past the point where the baseline leg's preempts began (minute 5).
+inspect_colony
+inspect_colonists
+wait 600
+inspect_colony
+inspect_colonists
+wait 600
+note --- What does the place look like while this is going on?
+ascii 26
+inspect_colony
+inspect_colonists
