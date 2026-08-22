@@ -928,6 +928,44 @@ pub(crate) fn claim_release_should_clear(claimed_by_us: bool, _unreachable: bool
     claimed_by_us
 }
 
+/// bastion (2026-08-22): coarse job class for the release census, so the
+/// histogram can be read PER KIND. Deliberately local to this crate rather
+/// than a method on `JobKind` in `common` — a `common/` edit rebuilds BOTH
+/// binaries, and this is a reporting label, not a wire concept.
+///
+/// `Designated` collapses to one class on purpose: the census exists to
+/// separate NEED jobs (eat/rest/breakdown) from ordinary work, and splitting
+/// work by designation kind would restore exactly the swamping this key was
+/// widened to prevent.
+pub(crate) fn job_release_class(kind: &common::bastion::JobKind) -> &'static str {
+    use common::bastion::JobKind as K;
+    match kind {
+        K::EatFrom { .. } => "eat",
+        K::RestAt { .. } => "rest",
+        K::Despond { .. } => "breakdown",
+        K::Recreate { .. } => "recreate",
+        K::Haul { .. } => "haul",
+        K::DepositRun { .. } => "deposit",
+        K::Designated(_) => "work",
+        // Named individually rather than folded into "work": `Cook` produces
+        // the food this census exists to trace (155 meals in the measured
+        // leg), so a cook job being given up is part of the same story as an
+        // eat job being given up, and collapsing it would hide that. `Tend`,
+        // `Guard` and `TradeMission` are separate for the cheaper reason that
+        // they are separate kinds and the histogram costs one key each.
+        K::Cook { .. } => "cook",
+        K::Tend { .. } => "tend",
+        K::Guard { .. } => "guard",
+        K::TradeMission { .. } => "trade",
+        // NO WILDCARD ARM, deliberately -- the same guarantee
+        // `ReleaseReasonV1`'s mapping documents. This match failing to compile
+        // is how a future `JobKind` variant gets a considered label instead of
+        // silently landing in a bucket that misdescribes it. It already
+        // worked: the first draft of this function omitted these four and the
+        // build refused it.
+    }
+}
+
 /// ITEM8-V4 route 3 (sweep extension, ruled "the closer, never the fix"):
 /// whether the backstop sweep should reap an unclaimed job, pure for the
 /// same unit-pinnable reason as `claim_release_should_clear` above.
@@ -6019,7 +6057,23 @@ pub struct JobBoard {
     /// discovered on the seeds actually checked (71/66) -- expected on
     /// OTHER seeds until their own site-scan is run, not a bug. Report-
     /// only, never read for behavior.
-    pub release_reason_counts: HashMap<ReleaseReason, u32>,
+    ///
+    /// ★ KEYED BY JOB CLASS AS WELL AS REASON (2026-08-22, the 57% eat null):
+    /// a leg measured 103 hunger preempts against 20 `ate` and 24 `food
+    /// sniped` — 59 eat trips (57%) ended with NO emit on any path, because an
+    /// `EatFrom` is a self-job and the drain below `remove_job`s it silently.
+    /// This counter is the witness for that null and it was keyed by reason
+    /// ALONE, which cannot answer the question: farm and haul releases
+    /// outnumber eat releases and swamp the bucket. Aggregate late — keep the
+    /// class, or the histogram describes the colony's busiest job kind and
+    /// says nothing about the one that is starving people.
+    ///
+    /// ★★ AND IT HAD NO CONSUMER. Incremented at one site, read at none: a
+    /// witness nobody calls is indistinguishable from an absent one, and this
+    /// one had been accumulating in the dark across every leg of the session.
+    /// The census emit at the `tick % 300` cadence is its consumer; do not
+    /// remove that emit without removing this field.
+    pub release_reason_counts: HashMap<(&'static str, ReleaseReason), u32>,
     /// bastion (DPA-2, the prune-gap flicker guard): anchor COLUMNS whose
     /// rung plans went material-starved — DURABLE across the F3 prune →
     /// re-emit gap (deriving the hold from live rung jobs alone left a ~2s
@@ -20470,7 +20524,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         }
 
         for (entity, release_reason) in &to_release {
-            *board.release_reason_counts.entry(*release_reason).or_insert(0) += 1;
+            // ★ Class read BEFORE the increment, and before the drain below
+            // nulls `claimed_by`/`remove_job`s the entry -- reading it after
+            // would classify every self-job as "gone" and produce a histogram
+            // that blames teardown order rather than the release reason.
+            //
+            // "gone" is a REAL bucket, not a fallback for convenience: it means
+            // the job was already removed before this drain saw it, which is a
+            // materially different failure from any of the five reasons and the
+            // pre-registration names it as its own FAIL branch. Folding it into
+            // one of the others would hide a whole teardown path.
+            let release_class = active_jobs
+                .get(*entity)
+                .and_then(|active| board.jobs.get(&active.job))
+                .map(|job| job_release_class(&job.kind))
+                .unwrap_or("gone");
+            *board
+                .release_reason_counts
+                .entry((release_class, *release_reason))
+                .or_insert(0) += 1;
             if let Some(active) = active_jobs.get(*entity) {
                 let job_id = active.job;
                 // Entity-event-log stage 2, Measure 0's producer (Opus's
@@ -25639,6 +25711,52 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 access_dist = census.access_dist,
                 "bastion: claim refusal census"
             );
+            // ★ THE RELEASE CENSUS (2026-08-22): the consumer
+            // `release_reason_counts` never had. A leg measured 103 hunger
+            // preempts against 20 `ate` and 24 `food sniped` -- 59 eat trips
+            // (57%) ended with no emit at all, because an `EatFrom` is a
+            // self-job that the release drain destroys via `remove_job`
+            // silently. This line is the only witness for that null.
+            //
+            // Rendered as one sorted string rather than N fields: the key
+            // space is (class x reason) and grows with both, so a fixed field
+            // list would silently omit any pair added later -- the same blind
+            // spot the `residual` conservation check exists to catch on the
+            // line above.
+            //
+            // ★★ `total` is printed so the histogram can be RECONCILED against
+            // counts nobody derived from it (`ate`, `food sniped`, `need
+            // preempt`). A census that cannot be checked against ground truth
+            // outside itself is a story, not a measurement.
+            if !board.release_reason_counts.is_empty() {
+                let mut rows: Vec<_> = board
+                    .release_reason_counts
+                    .iter()
+                    .map(|((class, reason), n)| (*class, format!("{reason:?}"), *n))
+                    .collect();
+                rows.sort_by(|a, b| a.0.cmp(b.0).then(a.1.cmp(&b.1)));
+                let total: u32 = rows.iter().map(|(_, _, n)| *n).sum();
+                let eat_total: u32 = rows
+                    .iter()
+                    .filter(|(class, _, _)| *class == "eat")
+                    .map(|(_, _, n)| *n)
+                    .sum();
+                let breakdown = rows
+                    .iter()
+                    .map(|(class, reason, n)| format!("{class}/{reason}={n}"))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                info!(
+                    tick = tick.0,
+                    total,
+                    // Broken out because it is the number this census was built
+                    // to answer, and burying it in the string would mean
+                    // re-parsing the histogram to read the headline.
+                    eat_total,
+                    %breakdown,
+                    "bastion: RELEASE CENSUS — why claimed jobs are given up, per job class"
+                );
+            }
         }
 
         // ★ #93 THE HOSTILE PROXIMITY CENSUS (ITEM93-HOSTILE-PROXIMITY-
@@ -26075,6 +26193,54 @@ fn reservation_indices_are_consistent_v1(
 mod tests {
     use super::*;
     use std::num::NonZeroU64;
+
+    /// ★ THE RELEASE CENSUS'S OWN BLIND SPOT (2026-08-22).
+    ///
+    /// `eat_total` in the census emit filters rows with a BARE STRING literal,
+    /// `*class == "eat"`. If `job_release_class` ever returns a different label
+    /// for `EatFrom` — a rename, a refactor, a merge — that filter matches
+    /// nothing and `eat_total` reads **0 forever**, silently.
+    ///
+    /// That is the failure the pre-registration named as most likely to fool
+    /// me: **a census reporting zero eat releases and a census that cannot see
+    /// eat releases render identically.** One says the eat pipeline is healthy;
+    /// the other says the instrument is blind. Nothing in the log distinguishes
+    /// them, so the distinction has to be held here.
+    ///
+    /// Falsified before being trusted: changing the `EatFrom` arm to any other
+    /// label turns this red, which is the whole point of pinning the STRING and
+    /// not merely the behaviour.
+    #[test]
+    fn release_census_can_actually_see_eat_jobs() {
+        let eat = common::bastion::JobKind::EatFrom {
+            item: crate::bastion_jobs::Uid::from(NonZeroU64::new(1).unwrap()),
+        };
+        // The literal the census filter compares against. Pinned as a literal
+        // on BOTH sides on purpose: asserting `class(eat) == SOME_CONST` would
+        // pass happily if the const and the filter drifted apart together.
+        assert_eq!(
+            job_release_class(&eat),
+            "eat",
+            "the release census filters `eat_total` on this exact string — if \
+             the label changed, the census now reports 0 eat releases whether \
+             or not any happened, which is the one failure it exists to rule \
+             out"
+        );
+
+        // The other direction, and the reason the key was widened at all: work
+        // must NOT classify as eat. A class function that answered "eat" for
+        // everything would pass the assertion above and make the histogram
+        // useless in precisely the way keying by reason alone already was.
+        let work = common::bastion::JobKind::Designated(
+            common::bastion::DesignationKind::Farm,
+        );
+        assert_ne!(
+            job_release_class(&work),
+            "eat",
+            "work jobs leaking into the eat bucket would reproduce the \
+             swamping this per-class key was built to remove"
+        );
+    }
 
     /// ★ THE WARDROBE ON THE SECOND FLOOR (play session, 2026-08-21).
     ///
