@@ -9192,7 +9192,58 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             .unwrap_or(0.0);
                         match active_jobs.get(entity) {
                             Some(aj) => match aj.state {
-                                ActiveJobState::Traveling if speed < 0.2 => stuck += 1,
+                                ActiveJobState::Traveling if speed < 0.2 => {
+                                    stuck += 1;
+                                    // ★ A BARE COUNT CANNOT BE DIAGNOSED
+                                    // (2026-08-21). `stuck` has been ~2.7 of 8
+                                    // across three separate fixes -- idle-sit
+                                    // removal, scramble re-pricing, restored
+                                    // descent -- each of which moved everything
+                                    // AROUND it and not it. Every one of those
+                                    // was chased on a hypothesis rather than on
+                                    // this number, because this number carries
+                                    // nothing to chase.
+                                    //
+                                    // The contrast that made me build this: the
+                                    // unreachable emit carries job pos AND
+                                    // colonist pos, so a signed dz was
+                                    // computable, and dz -3.1 identified
+                                    // "stranded ABOVE the work" in one reading.
+                                    // `stuck` had no equivalent, so three fixes
+                                    // ago I could not tell a colonist walled in
+                                    // from one whose target is unreachable from
+                                    // one merely paused at a doorway.
+                                    //
+                                    // Throttled to the census cadence it lives
+                                    // in, so it costs one line per stuck
+                                    // colonist per sample and cannot flood.
+                                    let jp = board.jobs.get(&aj.job).map(|j| j.pos);
+                                    let feet = positions
+                                        .get(entity)
+                                        .map(|p| p.0.map(|e| e.floor() as i32));
+                                    info!(
+                                        tick = tick.0,
+                                        colonist = uids.get(entity).map(|u| u.0.get()),
+                                        job = aj.job,
+                                        job_pos = ?jp,
+                                        feet = ?feet,
+                                        // The two that discriminate: how far,
+                                        // and ABOVE or BELOW. dz did exactly
+                                        // this job for the unreachable family.
+                                        dist = jp.zip(feet).map(|(p, f)| {
+                                            let d = p.xy() - f.xy();
+                                            ((d.x * d.x + d.y * d.y) as f32).sqrt()
+                                        }),
+                                        dz = jp.zip(feet).map(|(p, f)| p.z - f.z),
+                                        // How long they have been failing to
+                                        // close: separates "paused" from
+                                        // "wedged". STUCK_TIMEOUT is 10s.
+                                        stuck_time = aj.stuck_time,
+                                        best_dist = aj.best_dist,
+                                        speed,
+                                        "bastion: STUCK CENSUS — a colonist counted stuck, and why it might be"
+                                    );
+                                },
                                 ActiveJobState::Traveling => moving += 1,
                                 _ => working += 1,
                             },
