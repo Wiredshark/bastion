@@ -3,6 +3,8 @@
 #
 #   bash PLAY.sh town    -> adopt a real worldgen village (the new framework:
 #                           the VILLAGERS become your colony)
+#   bash PLAY.sh flattown -> a REAL worldgen village (houses, doors, roads,
+#                            fields) standing on FLAT ground, raiders OFF
 #   bash PLAY.sh arena   -> found a colony on flat test ground (mines its own
 #                           stone, builds its own beds, colonists carry tools)
 #
@@ -21,10 +23,41 @@ case "$MODE" in
     # the nearest.
     ENVV="BASTION_ADOPT_TOWN=1 BASTION_AUTOFOUND_REAL_TERRAIN=1 BASTION_COLONY_PRESENCE_VD=3 BASTION_AUTOFOUND_COLONY=8 BASTION_SEED_FOOD=64 BASTION_SEED_MATERIALS=64"
     ;;
+  flattown)
+    # ★ THE FLAT-MAP TOWN (Ben: "i wanna test this flat map town").
+    #
+    # A REAL worldgen village -- houses, doors, roads, farm fields, workshops --
+    # standing on FLAT ground. `BASTION_FLAT_WORLD_RADIUS` flattens a disc of
+    # sim chunks at world centre BEFORE civ generation runs, so villages are
+    # placed onto the flat disc rather than having the ground pulled out from
+    # under buildings whose heights are already baked.
+    #
+    # ★ MEASURED, THREE TIMES, AND THE HONEST RESULT IS A TRADE:
+    #
+    #   flat r=10,  search 16384 -> village 46 houses / 23 fields, but
+    #                               chosen_dist=11229 -- ELEVEN KM away, on
+    #                               normal bumpy ground. Flattening irrelevant.
+    #   flat r=64,  search  1900 -> village INSIDE the disc (dist 1224), but
+    #                               considered=1, 3 houses, ZERO fields
+    #   flat r=160, search  4800 -> considered=1, ONE house, one field, 2 beds
+    #
+    # The two radii MUST agree or the town lands off the flat. But binding them
+    # is not free: this world simply has no large village near world centre, so
+    # a flat town here is a HAMLET. `bash PLAY.sh town` is where the real
+    # 46-house / 23-field settlement lives -- on ordinary terrain.
+    #
+    # Use flattown for LEGIBILITY (flat ground reads clearly, good for watching
+    # pathing); use town to see a real settlement.
+    #
+    # RAIDERS OFF, per Ben's call: "get the town working like real life then
+    # introduce raiders and see what breaks." Drop BASTION_NO_RAIDS=1 to let
+    # them back in.
+    ENVV="BASTION_FLAT_WORLD_RADIUS=64 BASTION_ADOPT_RADIUS=2000 BASTION_ADOPT_TOWN=1 BASTION_AUTOFOUND_REAL_TERRAIN=1 BASTION_COLONY_PRESENCE_VD=3 BASTION_AUTOFOUND_COLONY=8 BASTION_SEED_FOOD=64 BASTION_SEED_MATERIALS=64 BASTION_NO_RAIDS=1"
+    ;;
   arena)
     ENVV="BASTION_FLAT_ARENA=1 BASTION_FLAT_ARENA_RESOURCED=1 BASTION_AUTOFOUND_COLONY=8 BASTION_SEED_FOOD=32"
     ;;
-  *) echo "usage: bash PLAY.sh <town|arena> [client]"; exit 2 ;;
+  *) echo "usage: bash PLAY.sh <flattown|town|arena> [client]"; exit 2 ;;
 esac
 
 # ★ CHECK THE BINARY BEFORE DESTROYING THE SAVE (2026-08-21). A goal-driven

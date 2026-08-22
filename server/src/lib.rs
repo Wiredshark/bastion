@@ -7429,7 +7429,23 @@ impl Server {
                 // to whichever town is chosen, so distance is not a travel
                 // cost, it is just a search bound. Widening it is what gives
                 // the FIELDS-first score something to actually choose between.
-                16384,
+                //
+                // ★ OVERRIDABLE FOR THE FLAT-MAP TOWN (2026-08-22). Measured:
+                // with BASTION_FLAT_WORLD_RADIUS=10 the sim levelled 317 chunks
+                // at world centre and the scorer then chose a village at
+                // `chosen_dist=11229` -- eleven thousand blocks away, on
+                // ordinary bumpy terrain, because FIELDS-first happily leaves
+                // the flat disc for a better settlement. The flattening was
+                // real and did nothing for the town anyone actually plays in.
+                //
+                // The two radii have to AGREE: a search bound wider than the
+                // flattened disc guarantees the town lands off it. Ben's flat
+                // town sets both.
+                std::env::var("BASTION_ADOPT_RADIUS")
+                    .ok()
+                    .and_then(|v| v.parse::<i32>().ok())
+                    .filter(|r| *r > 0)
+                    .unwrap_or(16384),
             )?;
             // Re-anchor the WHOLE founding at the town — via worldgen's own
             // APPROXIMATE altitude, never loaded terrain. The first version
