@@ -242,6 +242,32 @@ pub(crate) fn unstuck_should_jump(discourage_climb: bool, in_climb: bool, coin: 
     !discourage_climb && (in_climb || coin)
 }
 
+/// bastion (2026-08-22): whether TRAVEL may jump.
+///
+/// ★ THIS, not the unstuck action, is the jump that was stranding colonists.
+/// Removing the unstuck jump changed NOTHING measurable — matched at tick
+/// 15,612 the arms read 12 strandings / 9 Wallrun (jump allowed) against 12
+/// strandings / 10 Wallrun (jump withheld). That was a pre-registered FAIL
+/// branch: "if wallruns persist they are caused by another jump writer."
+///
+/// There is another writer, and it is on the MAIN movement path rather than an
+/// occasional recovery action: `traverse` jumps whenever the bearing points
+/// more than 1.5 blocks up. A colonist whose target sits on an upper floor, or
+/// up a slope, jumps at it EVERY TICK IT TRAVELS. `handle_wallrun` then needs
+/// only `on_wall && !on_ground` — no intent — and the colonist is airborne
+/// beside a building.
+///
+/// `can_fly` is preserved outside the gate: a flying body's jump is its
+/// propulsion, not a climb, and nothing here should ground an airship.
+pub(crate) fn travel_should_jump(
+    discourage_climb: bool,
+    on_ground: bool,
+    bearing_z: f32,
+    can_fly: bool,
+) -> bool {
+    (!discourage_climb && on_ground && bearing_z > 1.5) || can_fly
+}
+
 /// bastion (2026-08-22): the wall-detach steer, pinned in BOTH directions.
 ///
 /// Measured cause: 23 of 26 ultimate-fail-safe strandings had `on_ground=false`
@@ -272,6 +298,50 @@ mod unstuck_jump_tests {
                 );
             }
         }
+    }
+
+    /// ★ THE JUMP THAT ACTUALLY STRANDED THEM. Removing the UNSTUCK jump
+    /// changed nothing measurable — matched at tick 15,612, 12 strandings /
+    /// 9 Wallrun with it against 12 / 10 without. `traverse` is the other
+    /// writer, and unlike the unstuck action it runs on the main movement path
+    /// every tick a colonist travels.
+    #[test]
+    fn a_colonist_does_not_jump_at_a_target_above_it() {
+        use super::travel_should_jump;
+        // Grounded, target 4 blocks up: the exact case that fires every tick
+        // while walking at something on an upper floor.
+        assert!(
+            !travel_should_jump(true, true, 4.0, false),
+            "a colonist jumped at a target above it — that is how it becomes \
+             airborne beside a building, and `handle_wallrun` needs nothing \
+             more than airborne + wall contact"
+        );
+        // Non-colonist, same geometry: unchanged.
+        assert!(
+            travel_should_jump(false, true, 4.0, false),
+            "a non-colonist must still jump at a target above it; this fix \
+             must not change how players or wild NPCs move"
+        );
+        // Below the threshold nobody jumps, colonist or not — the 1.5 bound
+        // itself is preserved, not merely bypassed for colonists.
+        assert!(
+            !travel_should_jump(false, true, 1.0, false),
+            "the bearing.z > 1.5 threshold must still hold for non-colonists"
+        );
+        // Airborne: the original guard required on_ground, and that must
+        // survive — otherwise this becomes a mid-air double jump.
+        assert!(
+            !travel_should_jump(false, false, 4.0, false),
+            "jumping requires being grounded; that conjunct must not be lost"
+        );
+        // ★ A FLYING BODY IS NOT CLIMBING. `can_fly` is propulsion, and it sits
+        // OUTSIDE the colonist gate deliberately — grounding an airship would
+        // be a far worse bug than the one being fixed, and it would look like
+        // an unrelated regression.
+        assert!(
+            travel_should_jump(true, false, 0.0, true),
+            "can_fly must remain outside the discourage_climb gate"
+        );
     }
 
     /// The other direction, and the reason a one-sided test would be worthless:
@@ -605,7 +675,7 @@ impl AgentData<'_> {
             // ACTION with a direction, so the body separates instead of hanging
             // in contact at zero horizontal speed.
             let bearing = self.colonist_wall_detach(is_colonist).unwrap_or(bearing);
-            self.traverse(controller, bearing, speed * speed_multiplier);
+            self.traverse(controller, bearing, speed * speed_multiplier, is_colonist);
             if writer_diag {
                 tracing::info!(
                     uid = self.uid.0.get(),
@@ -639,13 +709,28 @@ impl AgentData<'_> {
         }
     }
 
-    fn traverse(&self, controller: &mut Controller, bearing: Vec3<f32>, speed: f32) {
+    fn traverse(
+        &self,
+        controller: &mut Controller,
+        bearing: Vec3<f32>,
+        speed: f32,
+        // bastion (2026-08-22): a colonist does not jump at things above it.
+        // Threaded rather than read from `self` so every call site has to state
+        // its answer — a default would have silently left the flee and pursue
+        // paths jumping, which is how the previous attempt at this missed two
+        // of three writers.
+        discourage_climb: bool,
+    ) {
         controller.inputs.move_dir =
             bearing.xy().try_normalized().unwrap_or_else(Vec2::zero) * speed;
 
         // Only jump if we are grounded and can't blockhop or if we can fly
-        let jump_condition = (self.physics_state.on_ground.is_some() && bearing.z > 1.5)
-            || self.traversal_config.can_fly;
+        let jump_condition = travel_should_jump(
+            discourage_climb,
+            self.physics_state.on_ground.is_some(),
+            bearing.z,
+            self.traversal_config.can_fly,
+        );
         // BEARING-TRACE (2026-08-08, 20-vs-23 matched-pair read, Opus-
         // directed): gated to a single uid via BASTION_BEARING_TRACE_UID
         // so it never fires corpus-wide. bearing.z is the jump_if
@@ -1523,12 +1608,17 @@ impl AgentData<'_> {
             },
             &read_data.time,
         ) {
-            self.unstuck_if(stuck, read_data.dt.0, controller, read_data.colonists.contains(*self.entity));
+            let is_colonist = read_data.colonists.contains(*self.entity);
+            self.unstuck_if(stuck, read_data.dt.0, controller, is_colonist);
             let dist_sqrd = self.pos.0.distance_squared(tgt_pos.0);
+            // The PURSUE path. Previously unpatched, and that omission is
+            // exactly the shape of the mistake this parameter was threaded to
+            // prevent: a colonist chasing anything up a slope jumps at it.
             self.traverse(
                 controller,
                 bearing,
                 speed.min(0.2 + (dist_sqrd - AVG_FOLLOW_DIST.powi(2)) / 8.0),
+                is_colonist,
             );
         }
     }
@@ -1598,7 +1688,7 @@ impl AgentData<'_> {
             // wallruns exactly as one walking to a job does, and a body pinned
             // mid-flee is the worst case of all -- it is being chased.
             let bearing = self.colonist_wall_detach(is_colonist).unwrap_or(bearing);
-            self.traverse(controller, bearing, speed.min(MAX_FLEE_SPEED));
+            self.traverse(controller, bearing, speed.min(MAX_FLEE_SPEED), is_colonist);
         }
     }
 
