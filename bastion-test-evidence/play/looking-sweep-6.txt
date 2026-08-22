@@ -1,0 +1,9 @@
+note LOOKING SWEEP 6 -- clean baseline: no raiders (Ben's call), nearest-bed assignment, wall-detach. SAME TICK (~32,500) as sweep 5, where four of seven colonists were husks at hunger=0.0000 rest=0.0000 and one had died.
+anchor
+inspect_colony
+inspect_colonists
+wait 500
+inspect_colonists
+wait 500
+inspect_colonists
+inspect_colony
