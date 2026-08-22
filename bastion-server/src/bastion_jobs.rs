@@ -1029,8 +1029,32 @@ fn conn_passable(b: &common::terrain::Block) -> bool {
 pub const CONNECTIVITY_MIN_TRUSTED_CELLS: usize = 400;
 
 /// Whether the index is complete enough to be allowed to refuse a claim.
-pub fn connectivity_is_trusted(cells: usize) -> bool {
-    cells >= CONNECTIVITY_MIN_TRUSTED_CELLS
+///
+/// ★ SIZE ALONE WAS THE WRONG TEST, and the live gate proved it. Measured:
+/// refused jobs sat at z = 422-433 on the slope north of the village, 14-25
+/// blocks above the colony floor at z≈408, and the emit read
+/// `index_cells=4202` — where a settled index in the same world reads 40,860.
+/// The fill had run while terrain was still streaming, covered a tenth of the
+/// map, cleared a 400-cell floor, and refused 47% of the board as
+/// "unreachable" when it simply had not looked there yet.
+///
+/// A PARTIAL INDEX AND A COMPLETE ONE ARE INDISTINGUISHABLE BY SIZE — 4,202 is
+/// a perfectly plausible number for a small settlement. What separates them is
+/// that a complete index has STOPPED GROWING. So trust now requires the last
+/// two rebuilds to agree: `prev` within a few percent of `cells`, both above
+/// the floor.
+///
+/// This is the same shape as the terrain lesson this project already carries
+/// (spawns into unloaded chunks vanish): anything that reads the world during
+/// streaming must ask whether the world has finished arriving, and "is it big
+/// enough" is not that question.
+pub fn connectivity_is_trusted(cells: usize, prev: usize) -> bool {
+    if cells < CONNECTIVITY_MIN_TRUSTED_CELLS || prev < CONNECTIVITY_MIN_TRUSTED_CELLS {
+        return false;
+    }
+    // Grown by more than 10% since the last rebuild => still streaming.
+    let (lo, hi) = (cells.min(prev), cells.max(prev));
+    hi.saturating_sub(lo) * 10 <= hi
 }
 
 /// Should this job be refused as unreachable?
@@ -1039,9 +1063,10 @@ pub fn connectivity_is_trusted(cells: usize) -> bool {
 /// unbuilt or terrain-starved fill can never mass-refuse the job board.
 pub fn connectivity_refuses(
     connected: &std::collections::HashSet<Vec3<i32>>,
+    prev_cells: usize,
     job_pos: Vec3<i32>,
 ) -> bool {
-    if !connectivity_is_trusted(connected.len()) {
+    if !connectivity_is_trusted(connected.len(), prev_cells) {
         return false;
     }
     // A job is reachable if its own cell or the cell above it is connected —
@@ -6636,6 +6661,10 @@ pub struct JobBoard {
     /// and build, so a stale edge costs one failed claim — not a permanent
     /// wrong answer.
     pub connectivity_built_tick: u64,
+    /// Cell count of the PREVIOUS rebuild. Trust requires two rebuilds to
+    /// agree — a partial index and a complete one are indistinguishable by
+    /// size, but a complete one has stopped growing.
+    pub connectivity_prev_cells: usize,
     /// bastion (DPA-2, the prune-gap flicker guard): anchor COLUMNS whose
     /// rung plans went material-starved — DURABLE across the F3 prune →
     /// re-emit gap (deriving the hold from live rung jobs alone left a ~2s
@@ -26022,8 +26051,34 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // mass-refuse the board — see its own test, which pins that
                 // before this line was allowed to exist.
                 if connectivity_gate_enabled()
-                    && connectivity_refuses(&board.connected_cells, job.pos)
+                    && connectivity_refuses(
+                        &board.connected_cells,
+                        board.connectivity_prev_cells,
+                        job.pos,
+                    )
                 {
+                    // ★ WHERE, NOT WHY. The gate refused 1,761 of 3,738
+                    // candidates and cut sleepers to a quarter, and my first
+                    // explanation for it (doors sealing buildings) fit every
+                    // number and was refuted by its own falsifier within a
+                    // minute. This row has now killed two stories that fit the
+                    // evidence; the next thing is a COORDINATE, not a third
+                    // story.
+                    //
+                    // Sampled hard (every 64th) because 1,761 refusals a leg
+                    // would drown the log it lives in — the instrument must not
+                    // become the thing it measures.
+                    if census.unreachable_job % 64 == 0 {
+                        let above = board.connected_cells.contains(&(job.pos + Vec3::unit_z()));
+                        info!(
+                            pos = ?job.pos,
+                            kind = ?job.kind,
+                            connected_here = board.connected_cells.contains(&job.pos),
+                            connected_above = above,
+                            index_cells = board.connected_cells.len(),
+                            "bastion: CONNECTIVITY REFUSED a job — where the index says nobody can go"
+                        );
+                    }
                     census.not_candidate += 1;
                     census.unreachable_job += 1;
                     continue;
@@ -26641,15 +26696,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         CONNECTIVITY_RADIUS,
                         200_000,
                     );
-                    let trusted = connectivity_is_trusted(cells.len());
+                    let prev = board.connected_cells.len();
+                    let trusted = connectivity_is_trusted(cells.len(), prev);
                     info!(
                         tick = tick.0,
                         cells = cells.len(),
+                        prev,
                         trusted,
                         ?seed,
                         "bastion: CONNECTIVITY rebuilt — cells a walking colonist can \
                          reach from the colony core (untrusted = gates nothing)"
                     );
+                    board.connectivity_prev_cells = prev;
                     board.connected_cells = cells;
                     board.connectivity_built_tick = tick.0;
                 }
@@ -27217,6 +27275,57 @@ mod tests {
         );
     }
 
+    /// ★ A STILL-STREAMING INDEX IS NOT A SMALL ONE (2026-08-22, measured).
+    ///
+    /// The live gate refused 47% of the job board and cut sleepers to a
+    /// quarter. The refusal coordinates named the cause: jobs at z = 422-433 on
+    /// the slope north of the village (colony floor z≈408), with the emit
+    /// reading `index_cells=4202` — where a SETTLED index in the same world
+    /// reads 40,860. The fill had run while terrain was still streaming,
+    /// covered a tenth of the map, cleared the 400-cell floor, and declared
+    /// everywhere it had not looked "unreachable".
+    ///
+    /// 4,202 is a perfectly plausible size for a small settlement, so SIZE
+    /// CANNOT DISTINGUISH a partial index from a complete one. What can:
+    /// a complete index has STOPPED GROWING.
+    #[test]
+    fn a_growing_connectivity_index_is_never_trusted() {
+        // ★ THE MEASURED CASE. 4,202 then 40,860 is the index still arriving;
+        // trusting the first of those is what caused the regression.
+        assert!(
+            !connectivity_is_trusted(40_860, 4_202),
+            "an index that grew 10x since the last rebuild was trusted — that \
+             is terrain still streaming in, and refusing jobs on it declares \
+             everywhere unvisited to be unreachable"
+        );
+        assert!(
+            !connectivity_is_trusted(4_202, 40_860),
+            "shrinking by 10x is equally untrustworthy — direction is not the \
+             point, INSTABILITY is"
+        );
+
+        // Two agreeing rebuilds: settled, and allowed to refuse.
+        assert!(
+            connectivity_is_trusted(40_860, 40_860),
+            "two identical rebuilds must be trusted, or the gate can never turn \
+             on at all and the whole index is decorative"
+        );
+        assert!(
+            connectivity_is_trusted(40_860, 39_000),
+            "a few percent of drift is normal as colonists mine and build; the \
+             rule must tolerate it or a working colony perpetually distrusts \
+             its own map"
+        );
+
+        // Both below the floor: never trusted regardless of agreement. Two
+        // identical TINY indexes agree perfectly and are still both wrong.
+        assert!(
+            !connectivity_is_trusted(50, 50),
+            "two agreeing but tiny indexes must not be trusted — stability \
+             alone would bless a fill that never left the first chunk"
+        );
+    }
+
     /// ★ A DOOR IS NOT A WALL (2026-08-22, measured live).
     ///
     /// The first wired connectivity gate refused 1,761 of 3,738 candidate jobs
@@ -27277,7 +27386,7 @@ mod tests {
         // Empty index: the fill never ran, or terrain was not loaded.
         let empty: HashSet<Vec3<i32>> = HashSet::new();
         assert!(
-            !connectivity_refuses(&empty, job),
+            !connectivity_refuses(&empty, empty.len(), job),
             "an EMPTY connectivity index refused a job — that gate would refuse \
              the entire board and read as a colony with nothing to do"
         );
@@ -27286,7 +27395,7 @@ mod tests {
         let small: HashSet<Vec3<i32>> =
             (0..50).map(|i| Vec3::new(i, 0, 40)).collect();
         assert!(
-            !connectivity_refuses(&small, job),
+            !connectivity_refuses(&small, small.len(), job),
             "a partially-built index must not refuse; below the trust floor it \
              is NOT YET KNOWN, which is different from KNOWN-UNREACHABLE"
         );
@@ -27297,7 +27406,7 @@ mod tests {
             .map(|i| Vec3::new(i, 0, 40))
             .collect();
         assert!(
-            connectivity_refuses(&big, job),
+            connectivity_refuses(&big, big.len(), job),
             "a TRUSTED index that does not contain the job must refuse it — \
              otherwise nothing changes and the claim-walk-fail loop continues"
         );
@@ -27305,7 +27414,7 @@ mod tests {
         // And must admit a job it does contain...
         big.insert(job);
         assert!(
-            !connectivity_refuses(&big, job),
+            !connectivity_refuses(&big, big.len(), job),
             "a reachable job must never be refused"
         );
 
@@ -27317,7 +27426,7 @@ mod tests {
             .collect();
         b2.insert(on_top + Vec3::unit_z());
         assert!(
-            !connectivity_refuses(&b2, on_top),
+            !connectivity_refuses(&b2, b2.len(), on_top),
             "a job worked while STANDING ON IT must count as reachable when the \
              cell above is connected — refusing these would reject most farm \
              and mine jobs in the colony"
