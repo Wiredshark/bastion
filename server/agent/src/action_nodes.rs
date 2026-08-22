@@ -226,6 +226,79 @@ const IDLE_SIT_RATE: f64 = 0.099_841_283_805_460_65;
 /// calibration reference is dt = 1 TICK (1/30s @ SIM_TPS), not 1 second --
 /// `hazard_chance` at that dt must reproduce the original raw 0.05
 /// per-tick probability exactly.
+/// bastion (2026-08-22): the wall-detach steer, pinned in BOTH directions.
+///
+/// Measured cause: 23 of 26 ultimate-fail-safe strandings had `on_ground=false`
+/// with `character_state` Wallrun x15 / Climb x5 — colonists pinned to the
+/// vertical faces of buildings, held there by a steer that points through the
+/// wall at their target.
+#[cfg(test)]
+mod wall_detach_tests {
+    use vek::Vec3;
+
+    // The function under test is an associated fn on the agent data struct;
+    // reach it through the same path production code uses.
+    type A<'a> = super::AgentData<'a>;
+
+    /// ★ THE SIGN IS THE WHOLE TEST. `PhysicsState::on_wall` accumulates the
+    /// probe direction `dirs[dir]` where `pos + dir * 0.01` collided, so it
+    /// points **TOWARD** the wall. If this function ever returns the
+    /// unnegated vector it will steer colonists HARDER INTO the surface they
+    /// are stuck on — and the logs would show unchanged wallrun counts, which
+    /// reads as "the fix did nothing" rather than as a reversed sign. That is
+    /// the failure this assertion exists to make impossible.
+    #[test]
+    fn detach_steers_away_from_the_wall_not_into_it() {
+        // Wall to the +x side: `on_wall` points +x.
+        let toward_wall = Some(Vec3::new(1.0, 0.0, 0.0));
+        let away = A::wall_detach_dir(toward_wall, true).expect("pinned: must produce a steer");
+        assert!(
+            away.x < 0.0,
+            "detach steered x={} — TOWARD the wall. `on_wall` points at the \
+             wall, so the escape direction is its NEGATION.",
+            away.x
+        );
+        assert!(
+            (away.magnitude() - 1.0).abs() < 1e-5,
+            "detach bearing must be normalized; got magnitude {}",
+            away.magnitude()
+        );
+        assert_eq!(away.z, 0.0, "the push-off is horizontal; gravity does the rest");
+    }
+
+    /// The other direction, which a one-sided test would miss: a colonist
+    /// merely WALKING ALONGSIDE a building touches a wall and must keep its
+    /// own bearing. An override that fired here would stop colonists walking
+    /// past houses at all — a fix that refuses everything also stops the bug
+    /// reproducing.
+    #[test]
+    fn a_colonist_not_pinned_keeps_its_own_bearing() {
+        assert_eq!(
+            A::wall_detach_dir(Some(Vec3::new(1.0, 0.0, 0.0)), false),
+            None,
+            "not pinned (on the ground, not climbing) must NOT override the steer"
+        );
+        assert_eq!(
+            A::wall_detach_dir(None, true),
+            None,
+            "pinned but touching no wall has no escape direction to give"
+        );
+    }
+
+    /// A degenerate `on_wall` — opposed probe directions cancelling, or a
+    /// purely vertical contact — has no horizontal escape. Normalizing a zero
+    /// vector yields NaN, and a NaN steer is far worse than no steer.
+    #[test]
+    fn a_degenerate_contact_yields_no_steer_rather_than_nan() {
+        assert_eq!(
+            A::wall_detach_dir(Some(Vec3::new(0.0, 0.0, 1.0)), true),
+            None,
+            "a contact with no horizontal component must return None, never a \
+             normalized zero (NaN)"
+        );
+    }
+}
+
 #[cfg(test)]
 mod unstuck_if_hazard_conversion_tests {
     use super::{UNSTUCK_ATTEMPT_RATE, hazard_chance};
@@ -459,7 +532,15 @@ impl AgentData<'_> {
             );
         }
         if let Some((bearing, speed, stuck)) = chase_result {
-            self.unstuck_if(stuck, read_data.dt.0, controller, read_data.colonists.contains(*self.entity));
+            let is_colonist = read_data.colonists.contains(*self.entity);
+            self.unstuck_if(stuck, read_data.dt.0, controller, is_colonist);
+            // ★ COME OFF THE WALL BEFORE PURSUING THE TARGET. While pinned to a
+            // wall the target bearing points THROUGH it, and steering that way
+            // is what keeps `on_wall` true and the wallrun alive. Overriding
+            // the bearing (rather than merely zeroing it) makes the detach an
+            // ACTION with a direction, so the body separates instead of hanging
+            // in contact at zero horizontal speed.
+            let bearing = self.colonist_wall_detach(is_colonist).unwrap_or(bearing);
             self.traverse(controller, bearing, speed * speed_multiplier);
             if writer_diag {
                 tracing::info!(
@@ -531,6 +612,68 @@ impl AgentData<'_> {
     /// The INNER jump-vs-roll pick stays a flat one-shot draw (see the
     /// module doc comment): it fires once GIVEN the outer gate already
     /// fired, not on every tick, so it isn't a hazard to begin with.
+    /// bastion (2026-08-22): the horizontal direction a colonist must steer to
+    /// COME OFF a wall, or `None` if it is not pinned to one.
+    ///
+    /// Measured cause: of 26 ultimate-fail-safe strandings across a paired A/B,
+    /// **23 had `on_ground=false`** and `character_state` was **Wallrun x15,
+    /// Climb x5**. Stranded colonists are not on rooftops by accident — they
+    /// are on the VERTICAL FACE of buildings, and they stay there because the
+    /// travel steer keeps pointing at a target on the far side of the wall.
+    /// Every tick the agent pushes INTO the wall, which is exactly the
+    /// condition `handle_wallrun` fires on (`on_wall && !on_ground`), so the
+    /// wallrun renews itself for as long as the colonist wants to go that way.
+    ///
+    /// Withholding the unstuck JUMP (the previous fix) stops the colonist
+    /// climbing HIGHER; it does not bring it down, because nothing was ever
+    /// steering it off. This does.
+    ///
+    /// ★ SIGN, READ FROM THE PRODUCER, NOT ASSUMED. `PhysicsState::on_wall`
+    /// accumulates `dirs[dir]` for each direction whose probe collides, and the
+    /// probe is `pos + dir * 0.01` — so the vector points **TOWARD the wall**.
+    /// Detaching is its NEGATION. Steering along `on_wall` unnegated would
+    /// drive the colonist harder into the surface, which would read in the logs
+    /// as "the fix did nothing" rather than as a reversed sign.
+    ///
+    /// Z is dropped: this is a horizontal push-off, and gravity is what returns
+    /// them to the ground. Pure so both the sign and the not-pinned case are
+    /// unit-testable without an ECS.
+    pub(crate) fn wall_detach_dir(
+        on_wall: Option<Vec3<f32>>,
+        pinned: bool,
+    ) -> Option<Vec3<f32>> {
+        if !pinned {
+            return None;
+        }
+        let toward_wall = on_wall?;
+        let away = Vec3::new(-toward_wall.x, -toward_wall.y, 0.0);
+        // A purely vertical `on_wall` (or a degenerate accumulation of opposed
+        // directions cancelling out) carries no horizontal escape; returning a
+        // normalized zero here would be a NaN steer.
+        if away.magnitude_squared() <= f32::EPSILON {
+            return None;
+        }
+        Some(away.normalized())
+    }
+
+    /// The live-state wrapper: a colonist counts as PINNED when it is touching
+    /// a wall and either airborne or already in a climb/wallrun state.
+    ///
+    /// A colonist walking normally along a wall is `on_ground` and in neither
+    /// state, so it is NOT pinned and its steer is untouched — the override
+    /// must not fire on someone merely walking beside a building.
+    fn colonist_wall_detach(&self, is_colonist: bool) -> Option<Vec3<f32>> {
+        if !is_colonist {
+            return None;
+        }
+        let pinned = self.physics_state.on_ground.is_none()
+            || matches!(
+                self.char_state,
+                CharacterState::Climb(_) | CharacterState::Wallrun(_)
+            );
+        Self::wall_detach_dir(self.physics_state.on_wall, pinned)
+    }
+
     pub fn unstuck_if(
         &self,
         condition: bool,
@@ -1360,7 +1503,12 @@ impl AgentData<'_> {
             },
             &read_data.time,
         ) {
-            self.unstuck_if(stuck, read_data.dt.0, controller, read_data.colonists.contains(*self.entity));
+            let is_colonist = read_data.colonists.contains(*self.entity);
+            self.unstuck_if(stuck, read_data.dt.0, controller, is_colonist);
+            // Same override on the FLEE path: a colonist fleeing into a wall
+            // wallruns exactly as one walking to a job does, and a body pinned
+            // mid-flee is the worst case of all -- it is being chased.
+            let bearing = self.colonist_wall_detach(is_colonist).unwrap_or(bearing);
             self.traverse(controller, bearing, speed.min(MAX_FLEE_SPEED));
         }
     }
