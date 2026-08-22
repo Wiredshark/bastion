@@ -26280,6 +26280,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 access_dist = census.access_dist,
                 "bastion: claim refusal census"
             );
+            // ★ THE SCHEDULE MUST TESTIFY (2026-08-22). Without this, "slept=0"
+            // is unreadable: it could mean the world has not reached night, or
+            // the schedule is never consulted, or sleep is still failing for
+            // the old reasons. Three different bugs, one identical silence —
+            // the exact ambiguity this project has a standing law about, and I
+            // walked into it by shipping the schedule with no witness.
+            //
+            // Prints the clock AND the block, so a leg can be read back to see
+            // whether it ever contained a night at all. A game day is 54,000
+            // ticks; every leg before this one ran 24k-34k, so this line is
+            // also the check on whether the run is long enough to mean
+            // anything.
+            {
+                let tod = rtsim.rt_state().data().time_of_day.0;
+                let hour = hour_of_day(tod);
+                info!(
+                    tick = tick.0,
+                    hour,
+                    block = ?default_schedule_block(hour),
+                    game_day = (tod / common::resources::DAY).floor() as i64,
+                    "bastion: DAY SCHEDULE — the clock the arbiter is reading"
+                );
+            }
             // ★ THE RELEASE CENSUS (2026-08-22): the consumer
             // `release_reason_counts` never had. A leg measured 103 hunger
             // preempts against 20 `ate` and 24 `food sniped` -- 59 eat trips
