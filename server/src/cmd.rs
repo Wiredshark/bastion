@@ -157,6 +157,7 @@ fn do_command(
         ServerChatCommand::BastionPriority => handle_bastion_priority,
         ServerChatCommand::BastionThought => handle_bastion_thought,
         ServerChatCommand::BastionSmite => handle_bastion_smite,
+        ServerChatCommand::BastionGive => handle_bastion_give,
         ServerChatCommand::BattleMode => handle_battlemode,
         ServerChatCommand::BattleModeForce => handle_battlemode_force,
         ServerChatCommand::Body => handle_body,
@@ -6322,6 +6323,48 @@ fn handle_lightning(
 /// invariant holds by construction (nothing here touches jobs, the arbiter,
 /// or any destination — a smitten colonist decides afresh). An unaffordable
 /// cast refuses LOUDLY with the price beside the balance.
+/// bastion (Ben, 2026-08-22): "a menu where we can add items and gear out each
+/// colonist individually". This is that menu's SERVER HALF, shipped first as a
+/// command so kitting is usable in-game now and the UI later becomes a
+/// front-end over a path already proven in play rather than a new one.
+///
+/// Argument order is ITEM then NAME, deliberately: a colonist name "may contain
+/// spaces" (the same note `BastionSmite` carries), so the free-form field has to
+/// be last or `args.join(" ")` cannot recover it.
+fn handle_bastion_give(
+    server: &mut Server,
+    _client: EcsEntity,
+    _target: EcsEntity,
+    args: Vec<String>,
+    action: &ServerChatCommand,
+) -> CmdResult<()> {
+    let mut it = args.into_iter();
+    let Some(asset_id) = it.next() else {
+        return Err(action.help_content());
+    };
+    let name = it.collect::<Vec<_>>().join(" ");
+    if name.is_empty() || asset_id.is_empty() {
+        return Err(action.help_content());
+    }
+    // `bastion_give_colonist_item` already exists and has been exercised by the
+    // harness for a long time; this only makes it reachable from a game.
+    if server.bastion_give_colonist_item(&name, &asset_id) {
+        tracing::info!(
+            colonist = %name,
+            item = %asset_id,
+            "bastion: KIT — item given to a colonist by command"
+        );
+        Ok(())
+    } else {
+        // Distinguish the two failures the caller can actually act on: there is
+        // no such colonist, or the asset id is not an item. A single "failed"
+        // would send the player hunting the wrong one.
+        Err(Content::Plain(format!(
+            "bastion: could not give '{asset_id}' to '{name}' — check the              colonist name (see the colonist list) and that the item asset id              exists (e.g. common.items.food.mushroom)"
+        )))
+    }
+}
+
 fn handle_bastion_smite(
     server: &mut Server,
     _client: EcsEntity,

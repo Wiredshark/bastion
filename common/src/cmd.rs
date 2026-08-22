@@ -389,6 +389,11 @@ pub enum ServerChatCommand {
     /// favor gate + REAL damage + the VFX, per the dispatch spec's ★(f)
     /// (an Outcome alone is a light show with no kill).
     BastionSmite,
+    /// bastion (Ben, 2026-08-22): gear a named colonist. The server-side API
+    /// the colonist kitting UI will call — shipped as a command first so it is
+    /// usable in-game immediately and the menu becomes a front-end over a
+    /// proven path (DECISIONS-FOR-BEN #117).
+    BastionGive,
     BattleMode,
     BattleModeForce,
     Body,
@@ -1184,6 +1189,17 @@ impl ServerChatCommand {
                 ),
                 Some(Admin),
             ),
+            ServerChatCommand::BastionGive => cmd(
+                vec![
+                    Any("item asset id (e.g. common.items.food.mushroom)", Required),
+                    Any("colonist name (may contain spaces)", Required),
+                ],
+                Content::Plain(
+                    "bastion: give an item to a named colonist — the kitting API the                      colonist menu will use"
+                        .to_string(),
+                ),
+                Some(Admin),
+            ),
             ServerChatCommand::Scale => cmd(
                 vec![
                     Float("factor", 1.0, Required),
@@ -1330,6 +1346,7 @@ impl ServerChatCommand {
             ServerChatCommand::BastionPriority => "bastion_priority",
             ServerChatCommand::BastionThought => "bastion_thought",
             ServerChatCommand::BastionSmite => "bastion_smite",
+            ServerChatCommand::BastionGive => "bastion_give",
             ServerChatCommand::Scale => "scale",
             ServerChatCommand::RepairEquipment => "repair_equipment",
             ServerChatCommand::Tether => "tether",
