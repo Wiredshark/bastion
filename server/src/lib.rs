@@ -1403,10 +1403,47 @@ impl Server {
     /// through the client-message system at all. One founding call, one
     /// path, one producer -- grep both sites before assuming otherwise.
     fn bastion_found_colony_seed_stock(&mut self, wpos: Vec3<f32>) {
-        self.bastion_spawn_item(
-            wpos,
-            bastion_jobs::FARM_SEED_ITEM,
-            bastion_jobs::FOUNDING_SEED_STOCK,
+        // ★ DEFERRED, NOT SPAWNED NOW (2026-08-22). This called
+        // `bastion_spawn_item`, which emits `CreateItemDropEvent` IMMEDIATELY.
+        // Founding runs before the colony's chunks are loaded on real terrain,
+        // so the drop drained into unloaded space and THE FOUNDING SEEDS
+        // SIMPLY CEASED TO EXIST.
+        //
+        // Measured across four legs: `sown = 0` against 867 tills, and the
+        // string `wheat_seeds` appears NOWHERE in any log. The sow arm needs
+        // one seed in inventory and releases the job when it has none, so
+        // farming ran forever as till -> release -> re-create: 7,388 farm jobs,
+        // 867 tills, ZERO crops, in every leg of this session.
+        //
+        // THE COLONY HAS THEREFORE NEVER PRODUCED FOOD. It was invisible
+        // because `bastion_colony_provisions` was minting rations on every
+        // cadence and colonists were depositing them into the stockpiles —
+        // with that stopped, food_stock falls from ~1,850 to ~80 and the real
+        // economy is what is left. Two bugs, each concealing the other.
+        //
+        // `PendingSeedItems` is the drain the FIXTURE seeds already use
+        // ("deferred seed items DELIVERED (chunk loaded)"), which is exactly
+        // why mushrooms and stones arrived while wheat seeds never did — the
+        // same founding, two different paths, one of them correct.
+        //
+        // Fifth recorded instance of this defect class in this project. The
+        // guard that is missing is a general one, not another careful author.
+        let origin = wpos.map(|e| e.floor() as i32);
+        self.state
+            .ecs()
+            .write_resource::<bastion_jobs::PendingSeedItems>()
+            .0
+            .push((
+                origin,
+                bastion_jobs::FARM_SEED_ITEM.to_string(),
+                bastion_jobs::FOUNDING_SEED_STOCK,
+            ));
+        tracing::warn!(
+            ?origin,
+            stock = bastion_jobs::FOUNDING_SEED_STOCK,
+            item = bastion_jobs::FARM_SEED_ITEM,
+            "bastion: FOUNDING SEED STOCK queued for delivery once the chunk loads \
+             (an immediate spawn here vanished into unloaded terrain and farming never sowed)"
         );
     }
 
