@@ -929,6 +929,141 @@ pub(crate) fn claim_release_should_clear(claimed_by_us: bool, _unreachable: bool
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// COLONY CONNECTIVITY (Ben, 2026-08-22: "if you keep having issues in pathfind
+// do some research on how other games and simulations solve this issue")
+//
+// ★ RESEARCHED, AND BOTH REFERENCE GAMES GIVE THE SAME ANSWER — and it is not
+// a better A*:
+//
+//   RimWorld  marks every walkable square with a ZONE INDEX so it can "quickly
+//             determine if a destination is even reachable BEFORE attempting
+//             pathfinding" (Ludeon devblog, "Reachability at last").
+//   Dwarf     keeps "connected segments of the world ... which prevents dwarves
+//   Fortress  from trying to find paths to objects in unreachable segments" —
+//             described on the DF wiki as an important performance
+//             optimisation.
+//
+// Both sources note the same failure mode we are living in: A* WITH NO PATH
+// SEARCHES THE ENTIRE MAP before concluding there is none. That is exactly why
+// enabling pathfinding here cost ~48% of tick rate (600 vs ~1,160 ticks/min,
+// measured under identical load) and still did not help — it was exhaustively
+// searching for routes that do not exist.
+//
+// It is also why this colony bleeds 362-458 route-exhausted job releases a leg:
+// a colonist CLAIMS a job it cannot reach, walks at it, fails, times out, and
+// the job returns to the pool for someone else to fail at. The claim is the
+// mistake, not the walk.
+//
+// So: flood-fill the standable cells connected to the colony core, and answer
+// "can anyone get there?" BEFORE the claim rather than after ten seconds of
+// walking. Cheap, cached, and it makes the expensive question rare.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// How far from the colony core the connectivity flood fill reaches. The
+/// adopted village spans ~200 blocks; this bounds the work without clipping the
+/// settlement.
+pub const CONNECTIVITY_RADIUS: i32 = 128;
+
+/// Ticks between connectivity rebuilds. Terrain changes when colonists mine,
+/// build and harvest, so the map is not static — but it changes slowly relative
+/// to job claiming, and a stale edge costs one failed claim rather than a
+/// permanent wrong answer.
+pub const CONNECTIVITY_REBUILD_TICKS: u64 = 900;
+
+/// Can a body stand in this cell? Solid support directly beneath, and two cells
+/// of air for feet and head — the same true-standable test the rescue selector
+/// uses, so connectivity and rescue cannot disagree about what a floor is.
+fn conn_standable(terrain: &TerrainGrid, c: Vec3<i32>) -> bool {
+    let solid_below = terrain
+        .get(c - Vec3::unit_z())
+        .is_ok_and(|b| b.is_filled());
+    let feet_clear = terrain.get(c).is_ok_and(|b| !b.is_filled());
+    let head_clear = terrain
+        .get(c + Vec3::unit_z())
+        .is_ok_and(|b| !b.is_filled());
+    solid_below && feet_clear && head_clear
+}
+
+/// Is a move of `dz` a STEP a walking body can make, given whether there is
+/// headroom over the cell being left?
+///
+/// Extracted so the connectivity flood fill and its test share ONE definition:
+/// a rule that is only asserted against a copy of itself is not pinned.
+///
+/// dz in {-1, 0, +1} only. Two blocks up is a CLIMB and three down is a FALL,
+/// and marking either "connected" would reproduce the rooftop strandings that
+/// 27 of 34 fail-safes ended in.
+pub(crate) fn conn_step_allowed(dz: i32, headroom_over_source: bool) -> bool {
+    match dz {
+        0 | -1 => true,
+        1 => headroom_over_source,
+        _ => false,
+    }
+}
+
+/// Flood-fill the cells a walking colonist can reach from `origin`.
+///
+/// ★ THE STEP RULE IS THE WHOLE FIDELITY OF THIS INDEX. Neighbours are the four
+/// cardinals at dz in {-1, 0, +1}: a colonist can walk level, step up one, or
+/// step down one. Diagonals are excluded deliberately — a diagonal that clips a
+/// corner is exactly the move that looks connected on a map and fails in a
+/// body. CLIMBING IS NOT A STEP: a cell reachable only by scaling a wall is
+/// NOT connected, which is Ben's ruling ("climbing should be actively
+/// discouraged") expressed as a graph rather than as a cost penalty.
+///
+/// Returns the connected set. Bounded by `CONNECTIVITY_RADIUS` and by a hard
+/// cell cap so a pathological world cannot stall the tick.
+pub fn colony_connected_cells(
+    terrain: &TerrainGrid,
+    origin: Vec3<i32>,
+    radius: i32,
+    cap: usize,
+) -> std::collections::HashSet<Vec3<i32>> {
+    let mut seen: std::collections::HashSet<Vec3<i32>> = std::collections::HashSet::new();
+    // Seed from the standable cell at or near the origin — the origin itself
+    // may be a block of earth or a metre of air.
+    let mut start = None;
+    for dz in -4..=4 {
+        let c = origin + Vec3::new(0, 0, dz);
+        if conn_standable(terrain, c) {
+            start = Some(c);
+            break;
+        }
+    }
+    let Some(start) = start else {
+        return seen;
+    };
+    let mut queue = std::collections::VecDeque::new();
+    queue.push_back(start);
+    seen.insert(start);
+    while let Some(c) = queue.pop_front() {
+        if seen.len() >= cap {
+            break;
+        }
+        for (dx, dy) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
+            for dz in [0, 1, -1] {
+                let n = c + Vec3::new(dx, dy, dz);
+                if (n.x - origin.x).abs() > radius || (n.y - origin.y).abs() > radius {
+                    continue;
+                }
+                if seen.contains(&n) || !conn_standable(terrain, n) {
+                    continue;
+                }
+                let headroom = terrain
+                    .get(c + Vec3::new(0, 0, 2))
+                    .is_ok_and(|b| !b.is_filled());
+                if !conn_step_allowed(dz, headroom) {
+                    continue;
+                }
+                seen.insert(n);
+                queue.push_back(n);
+            }
+        }
+    }
+    seen
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // COLONIST DAY SCHEDULE (Ben, 2026-08-22)
 //
 // Ben: "basically we need a colonist scheduling system that automatic in the
@@ -26926,6 +27061,57 @@ mod tests {
              `min_by_key` keeps the FIRST minimum, and the candidate list is \
              position-sorted, so this is a total order and two runs of one \
              seed cannot diverge"
+        );
+    }
+
+    /// ★ CONNECTIVITY MUST NOT COUNT A CLIMB AS A STEP (2026-08-22).
+    ///
+    /// Researched at Ben's direction: RimWorld marks every walkable square with
+    /// a zone index to answer reachability BEFORE pathfinding; DF keeps
+    /// connected segments so dwarves never path at unreachable objects. Both
+    /// note A* searches the WHOLE MAP when no path exists — which is why
+    /// enabling pathfinding here cost ~48% of tick rate and still did not help.
+    ///
+    /// The index is only worth having if its step rule matches a real body.
+    /// A cell reachable ONLY by scaling a wall must read as DISCONNECTED — that
+    /// is Ben's "climbing should be actively discouraged" expressed as a graph
+    /// instead of as a cost penalty that a desperate colonist will pay anyway.
+    ///
+    /// This is a pure test over a synthetic column set; no terrain needed.
+    #[test]
+    fn connectivity_walks_and_steps_but_never_climbs() {
+        // A 1-block step is a step: reachable.
+        assert!(
+            conn_step_allowed(1, true),
+            "stepping UP one block with headroom is ordinary walking and must \
+             stay connected, or every doorsill disconnects the town"
+        );
+        assert!(
+            conn_step_allowed(-1, true),
+            "stepping DOWN one block must stay connected"
+        );
+        assert!(conn_step_allowed(0, true), "level ground must stay connected");
+
+        // ★ A step up with no headroom is a scramble, not a step.
+        assert!(
+            !conn_step_allowed(1, false),
+            "a step up without headroom over the cell being left is a body \
+             clipping a ceiling — that is the scramble this index exists to \
+             refuse"
+        );
+
+        // ★ TWO BLOCKS IS A CLIMB. This is the assertion that keeps the index
+        // honest: allowing dz=2 would mark wall-tops connected and reproduce
+        // exactly the rooftop strandings that 27 of 34 fail-safes ended in.
+        assert!(
+            !conn_step_allowed(2, true),
+            "a two-block rise is a CLIMB and must read as disconnected"
+        );
+        assert!(
+            !conn_step_allowed(-3, true),
+            "a three-block drop is a FALL and must not count as connectivity — \
+             a colonist that can only reach a place by falling into it cannot \
+             get back out"
         );
     }
 
