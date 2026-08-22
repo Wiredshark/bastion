@@ -18624,11 +18624,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             .values()
                             .filter(|j| j.claimed_by.is_some() || j.reservation.is_some())
                             .filter(|j| j.claimed_by != me)
+                            // ★ EatFrom REMOVED FROM THIS EXCLUSION (2026-08-21).
+                            // The engine names the symptom itself: "food sniped
+                            // -- eat moot", 18 times in one game-day against 46
+                            // eat jobs minted and only 9 completed. A colonist
+                            // reserves a meal, walks to it, and someone else eats
+                            // it on the way.
+                            //
+                            // This exclusion was added to stop a colonist
+                            // protecting their OWN meal from themselves -- a real
+                            // bug, recorded in the self-catch above. But the
+                            // filter directly above already solves that:
+                            // `j.claimed_by != me` drops this colonist's own
+                            // jobs. Excluding the whole EatFrom family on top
+                            // then strips protection from EVERY OTHER colonist's
+                            // reserved meal, which is the sniping.
+                            //
+                            // An over-correction that fixed one direction and
+                            // opened the other. RestAt/Despond/Recreate stay
+                            // excluded: they do not reserve food that another
+                            // colonist could take.
                             .filter(|j| {
                                 !matches!(
                                     j.kind,
-                                    common::bastion::JobKind::EatFrom { .. }
-                                        | common::bastion::JobKind::RestAt { .. }
+                                    common::bastion::JobKind::RestAt { .. }
                                         | common::bastion::JobKind::Despond { .. }
                                         | common::bastion::JobKind::Recreate { .. }
                                 )
