@@ -459,7 +459,7 @@ impl AgentData<'_> {
             );
         }
         if let Some((bearing, speed, stuck)) = chase_result {
-            self.unstuck_if(stuck, read_data.dt.0, controller);
+            self.unstuck_if(stuck, read_data.dt.0, controller, read_data.colonists.contains(*self.entity));
             self.traverse(controller, bearing, speed * speed_multiplier);
             if writer_diag {
                 tracing::info!(
@@ -531,9 +531,47 @@ impl AgentData<'_> {
     /// The INNER jump-vs-roll pick stays a flat one-shot draw (see the
     /// module doc comment): it fires once GIVEN the outer gate already
     /// fired, not on every tick, so it isn't a hazard to begin with.
-    pub fn unstuck_if(&self, condition: bool, dt: f32, controller: &mut Controller) {
+    pub fn unstuck_if(
+        &self,
+        condition: bool,
+        dt: f32,
+        controller: &mut Controller,
+        // COLONISTS DO NOT CLIMB OUT OF TROUBLE (Ben, 2026-08-21: "climbing
+        // and falling should be actively discouraged -- a colonist scaling a
+        // house wall to reach a crate is a bug even when it works").
+        discourage_climb: bool,
+    ) {
         if condition && self.helper_random_bool(hazard_chance(dt, UNSTUCK_ATTEMPT_RATE)) {
-            if matches!(self.char_state, CharacterState::Climb(_)) || self.helper_random_bool(0.5) {
+            // THE UNSTUCK ACTION WAS SUSTAINING THE STRANDING IT EXISTS TO
+            // FIX. Measured on a live town: a colonist walking to a Cook job
+            // ended up character_state=Wallrun on_wall=true on_ground=false,
+            // hung there sixty seconds, and was teleported by the ultimate
+            // fail-safe with terminal_cause=
+            // "below_grade_watch_without_egress_verdict" and every egress
+            // counter at ZERO -- the rescue ladder never produced a verdict,
+            // because it is built for pits, not for someone stuck up a wall.
+            //
+            // The branch below is why they stayed: being in Climb made the
+            // jump UNCONDITIONAL, and handle_wallrun fires on
+            // `on_wall && !on_ground`, so every jump against a wall renews
+            // exactly the condition that put them there.
+            //
+            // For a colonist on a wall the correct move is to STOP, and let
+            // gravity return them to the ground so the router can path them
+            // around like a person. Roll is a ground action and stays
+            // available; only the wall-renewing jump is withheld.
+            let on_a_wall = self.physics_state.on_wall.is_some()
+                || matches!(
+                    self.char_state,
+                    CharacterState::Climb(_) | CharacterState::Wallrun(_)
+                );
+            if discourage_climb && on_a_wall {
+                if controller.queued_inputs.contains_key(&InputKind::Jump) {
+                    controller.push_cancel_input(InputKind::Jump);
+                }
+            } else if matches!(self.char_state, CharacterState::Climb(_))
+                || self.helper_random_bool(0.5)
+            {
                 controller.push_basic_input(InputKind::Jump);
             } else {
                 controller.push_basic_input(InputKind::Roll);
@@ -1235,7 +1273,7 @@ impl AgentData<'_> {
             },
             &read_data.time,
         ) {
-            self.unstuck_if(stuck, read_data.dt.0, controller);
+            self.unstuck_if(stuck, read_data.dt.0, controller, read_data.colonists.contains(*self.entity));
             let dist_sqrd = self.pos.0.distance_squared(tgt_pos.0);
             self.traverse(
                 controller,
@@ -1304,7 +1342,7 @@ impl AgentData<'_> {
             },
             &read_data.time,
         ) {
-            self.unstuck_if(stuck, read_data.dt.0, controller);
+            self.unstuck_if(stuck, read_data.dt.0, controller, read_data.colonists.contains(*self.entity));
             self.traverse(controller, bearing, speed.min(MAX_FLEE_SPEED));
         }
     }
