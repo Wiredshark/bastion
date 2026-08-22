@@ -739,6 +739,19 @@ impl ServerEvent for InventoryManipEvent {
                     }
 
                     for item in drop_items {
+                        // WHICH PATH SHEDS FOOD WITHOUT THE PERSISTENT FLAG?
+                        // Measured: the meal that vanishes under a hungry
+                        // colonist is ALWAYS the cooked dish (2 of 2), and the
+                        // cook drops it persistent:true. Something re-drops it
+                        // without the flag; this Collect OVERFLOW path is one of
+                        // exactly two candidates. Plausibly my own doing -- the
+                        // provisions ruling tops every colonist to four food
+                        // units, so pack pressure is higher than it was. Reason
+                        // to measure, not to assume.
+                        tracing::info!(
+                            def = ?item.item_definition_id().itemdef_id(),
+                            "bastion: COLLECT OVERFLOW dropped an item (persistent:false)"
+                        );
                         emitters.emit(CreateItemDropEvent {
                             pos: comp::Pos(
                                 Vec3::new(
