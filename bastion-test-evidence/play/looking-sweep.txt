@@ -1,0 +1,18 @@
+note LOOKING SWEEP. First problem found before any observation: the chosen town is 11,229 blocks from the player spawn, so inspect_colonists returned ZERO payloads while the server reported colonists=8. The colony is real and simply out of view. Going there first.
+note THIS IS A FINDING IN ITS OWN RIGHT: a player spawns 11km from their own colony. Recorded, not worked around silently.
+cmd goto 15201 15952 412
+wait 120
+anchor
+inspect_colony
+note --- Ben's test: follow ONE colonist for two minutes and narrate. Sampling the whole colony every ~20s so an arc can be reconstructed from position + activity + drive afterwards, instead of argued about.
+inspect_colonists
+wait 600
+inspect_colonists
+wait 600
+inspect_colonists
+wait 600
+inspect_colonists
+wait 600
+inspect_colonists
+inspect_colony
+inspect_chronicle
