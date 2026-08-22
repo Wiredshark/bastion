@@ -18644,6 +18644,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // the last unit" case below, where `pick_up()` was
                     // always correct and untouched by this fix.
                     if let common::bastion::JobKind::EatFrom { item } = job.kind {
+                        // ★ CAPTURED AT THE TOP OF THE ARM, and the position is the
+                        // whole point. `job` is a mutable borrow of board.jobs;
+                        // the `protected` set below reads board.jobs IMMUTABLY,
+                        // and so does the `hauled_by` lookup at the snipe site.
+                        // Reading `job` after either extends the mutable borrow
+                        // across an immutable one. I tried after the lookup, then
+                        // between the two, and only here -- before BOTH -- is
+                        // legal. The conflict was always ordering.
+                        //
+                        // The def names the PRODUCER of a vanished meal: wheat is
+                        // farmed, mushroom is foraged or a ration, a dish comes
+                        // from a station, raw meat from a kill. The residual
+                        // despawn snipes come from a producer still dropping with
+                        // persistent:false, and this says which without guessing.
+                        let sniped_def = job.required_item;
                         // Eat one of ANY recognized food def — covers
                         // forage-carried food too. The decrement is the
                         // Build-material pattern (stack -1 in place, lone
@@ -18974,6 +18989,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             info!(
                                 job = active.job,
                                 item = %item,
+                                def = ?sniped_def,
                                 entity_still_exists = still_exists,
                                 hauled_by = ?hauled_by,
                                 cause = if still_exists {
