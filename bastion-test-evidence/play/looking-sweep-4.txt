@@ -1,0 +1,14 @@
+note LOOKING SWEEP 4. Goal a person would have: "is this a town you'd be proud of, or eight people camping in someone's ruins?" Counters have been green and mixed all session; this is about what it LOOKS like.
+anchor
+inspect_colony
+note --- What does the place look like from above?
+ascii 24
+note --- Follow everyone across four samples so ONE arc can be reconstructed rather than argued about.
+inspect_colonists
+wait 500
+inspect_colonists
+wait 500
+inspect_colonists
+wait 500
+inspect_colonists
+inspect_colony

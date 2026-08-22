@@ -1,0 +1,9 @@
+note LOOKING SWEEP 5 -- at the SAME TICK (~31,500) as the sweep where every followed colonist read hunger=0.0000 rest=0.0000 drive=Work activity=None. That one was the honest low point of this session; this is its matched-tick comparison.
+anchor
+inspect_colony
+inspect_colonists
+wait 500
+inspect_colonists
+wait 500
+inspect_colonists
+inspect_colony
