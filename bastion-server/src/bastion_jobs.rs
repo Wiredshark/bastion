@@ -14986,14 +14986,67 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     );
                 }
                 let mut candidates: Vec<(f32, u8)> = Vec::new();
+                // ★ SATISFIABILITY IS A FILTER, URGENCY IS THE SORT WITHIN IT
+                // (DECISIONS #115, ruled by Ben 2026-08-22: "check what need it
+                // can meet, if it can meet both it should fix the one more life
+                // threatening and can be solved fastest").
+                //
+                // MEASURED on the first full-game-day leg: rest reached ZERO for
+                // every colonist, nobody slept, and all 32 need-preempts went to
+                // hunger. Ranking purely by urgency awards the one preempt slot
+                // to whichever need is lower, and hunger -- which could not be
+                // satisfied -- therefore won every tick forever. Rest, with 39
+                // beds and 4 assigned, never got a turn.
+                //
+                // I offered Ben urgency-VS-satisfiability and warned that
+                // preferring the satisfiable need could let a colonist starve
+                // well-rested. His answer dissolves that: FILTER by satisfiable,
+                // then rank the survivors. A colonist cannot starve well-rested,
+                // because if food is reachable at all hunger still wins the sort.
+                //
+                // Hunger is satisfiable when the colonist carries food (rulings
+                // 1 and 2 compose -- provisions are what give this a `true` to
+                // find) or when the world offers some. Rest is satisfiable when a
+                // bed exists. If NEITHER is satisfiable we fall back to the old
+                // urgency-only behaviour rather than doing nothing: refusing to
+                // act on an unmeetable need is correct, refusing to act at all is
+                // just a different way to be stuck.
+                let hunger_satisfiable = inventories.get(entity).is_some_and(|inv| {
+                    inv.slots().flatten().any(|i| {
+                        i.item_definition_id()
+                            .itemdef_id()
+                            .is_some_and(|d| FOOD_DEFS.iter().any(|f| *f == d))
+                    })
+                }) || !board.stockpiles.is_empty();
+                let rest_satisfiable = !board.beds.is_empty();
+
                 if rest_in {
                     candidates.push((needs.rest, 0));
                 }
                 if hunger_in {
                     candidates.push((needs.hunger, 1));
                 }
-                candidates
-                    .sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+                // Drop the unmeetable ones -- but only if something survives.
+                let any_satisfiable = candidates.iter().any(|(_, kind)| match kind {
+                    0 => rest_satisfiable,
+                    _ => hunger_satisfiable,
+                });
+                if any_satisfiable {
+                    candidates.retain(|(_, kind)| match kind {
+                        0 => rest_satisfiable,
+                        _ => hunger_satisfiable,
+                    });
+                }
+                // LIFE-THREAT FIRST, then urgency. Ben: "the one more life
+                // threatening and can be solved fastest (probably food in most
+                // cases)" -- starvation kills, exhaustion does not, and eating is
+                // seconds where sleeping is a night. Hunger (kind 1) therefore
+                // sorts ahead of rest (kind 0) when both are satisfiable and
+                // both are in crisis; within a kind, the lower value still wins.
+                candidates.sort_by(|a, b| {
+                    b.1.cmp(&a.1)
+                        .then(a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
+                });
                 if candidates.is_empty() {
                     // AUTON-2 unification (site 4/6, 2026-08-09): a
                     // SUSPENDED RestAt/EatFrom job whose need resolved

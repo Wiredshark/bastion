@@ -1434,6 +1434,79 @@ impl Server {
     /// strongest trade. Wear and `tool_factor` both key on the *equipped*
     /// mainhand, so equipping the wrong one would grant nothing — the bag
     /// copies exist so a later swap system has something to swap to.
+    /// bastion (DECISIONS #115 ruling 2, Ben 2026-08-22: "in reality colonist
+    /// should have some provision that they carry with them for the day in case
+    /// of emergency").
+    ///
+    /// This is not a convenience. It is what makes ruling 1 -- prefer a need
+    /// the colonist can actually MEET -- have anything to prefer. Measured on a
+    /// full game-day leg: rest hit zero, nobody slept, and all 32 need-preempts
+    /// went to hunger, because hunger could never be satisfied and therefore
+    /// never stopped being the most urgent thing. An eat-from-carry path already
+    /// exists in the job system and is unreachable, since minting an `EatFrom`
+    /// requires a WORLD item to reserve. A colonist carrying rations can satisfy
+    /// hunger from their own pack, which breaks that livelock at its root.
+    ///
+    /// SIZE IS DERIVED, NOT PICKED. Hunger decays at 0.000889/sim-s and a
+    /// game-day is 1,800 sim-s, so a day costs 1.60 hunger. A raw food restores
+    /// 0.5, so a day is 3.2 units. Four is that plus a margin -- "for the day",
+    /// as ruled, not a larder.
+    ///
+    /// Cadenced and IDEMPOTENT, exactly like the tool kit beside it and for the
+    /// same measured reason: at founding tick the rtsim colony exists but its
+    /// ECS `Colonist` components do not, so a founding-time grant iterates an
+    /// empty join and reports zero. Topping up whoever is short fixes the
+    /// ordering by construction and also arms colonists that arrive by paths
+    /// founding never runs.
+    fn bastion_colony_provisions(&mut self) {
+        use specs::Join;
+        const RATION_ITEM: &str = "common.items.food.mushroom";
+        const RATION_UNITS: u32 = 4;
+
+        let ecs = self.state.ecs();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let entities = ecs.entities();
+        let mut inventories = ecs.write_storage::<comp::Inventory>();
+        let (mut topped, mut already) = (0u32, 0u32);
+        for (_, entity) in (&colonists, &entities).join() {
+            let Some(mut inv) = inventories.get_mut(entity) else {
+                continue;
+            };
+            // Count EVERY food def, not just the ration: a colonist carrying a
+            // day of wheat does not need mushrooms too, and topping them up
+            // regardless would quietly re-create the bag hoard this project
+            // just spent the night draining (273 units in bags -> 3).
+            let carried: u32 = inv
+                .slots()
+                .flatten()
+                .filter(|i| {
+                    i.item_definition_id()
+                        .itemdef_id()
+                        .is_some_and(|d| bastion_jobs::FOOD_DEFS.iter().any(|f| *f == d))
+                })
+                .map(|i| i.amount())
+                .sum();
+            if carried >= RATION_UNITS {
+                already += 1;
+                continue;
+            }
+            for _ in 0..(RATION_UNITS - carried) {
+                if let Ok(item) = comp::Item::new_from_asset(RATION_ITEM) {
+                    let _ = inv.push(item);
+                }
+            }
+            topped += 1;
+        }
+        if topped > 0 {
+            tracing::info!(
+                topped,
+                already_provisioned = already,
+                ration_units = RATION_UNITS,
+                "bastion: PROVISIONS — colonists carry a day of food, so hunger can be met from their own pack"
+            );
+        }
+    }
+
     fn bastion_found_colony_tool_kit(&mut self) {
         use specs::Join;
         // ★ CADENCED, NOT FOUNDING-TIME — and the leg caught why. The first
@@ -5626,6 +5699,7 @@ impl Server {
         // bastion (Ben RULED: colonists start with tools). Cadenced because
         // colonists do not exist as ECS entities at founding time.
         self.bastion_found_colony_tool_kit();
+        self.bastion_colony_provisions();
 
         // bastion (det-capture): env-gated AUTO-FOUND a colony for NON-INTERACTIVE
         // determinism runs. server-cli has no client to found a colony via the
