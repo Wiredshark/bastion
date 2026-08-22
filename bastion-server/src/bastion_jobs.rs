@@ -928,6 +928,132 @@ pub(crate) fn claim_release_should_clear(claimed_by_us: bool, _unreachable: bool
     claimed_by_us
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// COLONIST DAY SCHEDULE (Ben, 2026-08-22)
+//
+// Ben: "basically we need a colonist scheduling system that automatic in the
+// background and can be later explicitly customized by the player", with "a
+// emergency backout if the colonist is starving to death", and later "a
+// slavery/conscription mod ... where they have to work until their shift is
+// done".
+//
+// ★ PRIOR ART FIRST (Ben's standing order). RimWorld and DF do not SOLVE the
+// need-vs-work arbitration; they make it unable to arise:
+//   - needs are evaluated BETWEEN jobs, not continuously mid-job
+//   - the need timescale is ~100x the job timescale, so a need rarely lands
+//     mid-task at all
+//   - the day is BLOCKED (sleep / work / recreation), so "should I sleep now?"
+//     is answered by the CLOCK, not by a race between two decaying meters
+//
+// Measured here, the third is the one we lack and the cheapest to add: hunger
+// falls comfort→interrupt in ~112 sim-sec against jobs of comparable length, so
+// hunger took the single preempt slot 4.5:1 (118 vs 26, n=3) and rest never got
+// a turn — 4 of 8 colonists never slept ONCE in a run. A clock does not race.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// What a colonist's day calls for right now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ScheduleBlock {
+    /// Go to bed. Rest is WANTED here regardless of how full the meter is —
+    /// that is the whole point of a schedule: you sleep because it is night,
+    /// not because you finally out-decayed hunger.
+    Sleep,
+    /// Work. Needs do not interrupt except by the emergency backout below.
+    Work,
+    /// Own time. Meals, breaks and recreation all happen here — Ben's
+    /// "(meals, breaks, etc inbetween)" — so this block simply falls through
+    /// to the ordinary urgency arbitration and lets the colonist meet whatever
+    /// it actually needs.
+    Leisure,
+}
+
+/// Game-seconds since world start → hour of the game day, 0..=23.
+///
+/// `TimeOfDay` counts game-seconds and `common::resources::DAY` is 86,400 of
+/// them. Kept as its own function so the schedule and any future UI read the
+/// clock through ONE definition.
+pub fn hour_of_day(time_of_day: f64) -> u32 {
+    let day = common::resources::DAY;
+    let secs = time_of_day.rem_euclid(day);
+    ((secs / 3600.0).floor() as u32).min(23)
+}
+
+/// THE AUTONOMOUS DEFAULT SCHEDULE — the shipping behaviour, and later the
+/// default a player-facing editor starts from (DECISIONS-FOR-BEN #117/#118:
+/// autonomous first, exposable later; the UI edits this policy rather than
+/// replacing it with a second code path).
+///
+/// ★ BEN'S SPEC (2026-08-22), verbatim: "generally a 8 hour work, 8 hour
+/// leisure, 8 hour sleep, (meals, breaks, etc inbetween) with variations."
+///
+///   06:00–07:59  Leisure  (2h — wake, breakfast)
+///   08:00–15:59  WORK     (8h)
+///   16:00–21:59  Leisure  (6h — evening meal, recreation, wind down)
+///   22:00–05:59  SLEEP    (8h)
+///
+/// Leisure is split either side of the working day rather than given as one
+/// block, so the day reads like a person's: you get up and eat before work,
+/// and the long stretch of own-time is the evening. Totals are exactly 8/8/8.
+///
+/// ★ THE VARIATIONS ARE CHARTERED, NOT BUILT. Ben: "we can alter change based
+/// on the colonists, the colony type, job type and add more fluid dynamic
+/// system later." This function is deliberately a PURE `hour -> block` so all
+/// of those become a different SOURCE for the block, not a rewrite of the
+/// consumer: a per-colonist stored schedule, a colony-type template, a
+/// job-type override, or an eventual dynamic planner all just replace this
+/// call. The player-facing editor (DECISIONS-FOR-BEN #117) edits the same
+/// thing. Autonomous first, exposable later — the standing order.
+pub fn default_schedule_block(hour: u32) -> ScheduleBlock {
+    match hour % 24 {
+        22 | 23 | 0..=5 => ScheduleBlock::Sleep,
+        8..=15 => ScheduleBlock::Work,
+        _ => ScheduleBlock::Leisure,
+    }
+}
+
+/// ★ THE EMERGENCY BACKOUT (Ben: "a emergency backout if the colonist is
+/// starving to death").
+///
+/// Below this hunger the schedule is IGNORED — a colonist dying of hunger eats
+/// whatever block the clock says it is in. A schedule that can kill the people
+/// it organises is not a schedule, it is a trap, and this project has already
+/// shipped three guards that starved the thing they protected.
+///
+/// Set well BELOW the ordinary hunger interrupt (0.20) so it is a genuine
+/// emergency and not a second, sloppier interrupt: the schedule must actually
+/// bind during a work block or it changes nothing.
+pub const SCHEDULE_STARVATION_OVERRIDE: f32 = 0.08;
+
+/// Whether the schedule permits acting on a need right now.
+///
+/// `forced_labour` is the EXTENSION POINT for Ben's later conscription/slavery
+/// mod ("they have to work until their shift is done"): with it set, the
+/// starvation backout is suppressed and the shift binds absolutely. Wired as a
+/// parameter now, always `false` today, so the mod is a caller change rather
+/// than a rewrite of this rule.
+pub fn schedule_permits_need(
+    block: ScheduleBlock,
+    is_rest_need: bool,
+    hunger: f32,
+    forced_labour: bool,
+) -> bool {
+    // Starving overrides everything the clock says — unless conscripted.
+    if hunger < SCHEDULE_STARVATION_OVERRIDE && !forced_labour {
+        return true;
+    }
+    match block {
+        // Sleeping time: rest is welcome, eating is not urgent enough to get
+        // a colonist out of bed above the starvation line.
+        ScheduleBlock::Sleep => is_rest_need,
+        // Working time: neither need interrupts. This is the line that stops
+        // hunger monopolising the preempt slot 4.5:1.
+        ScheduleBlock::Work => false,
+        // Own time: ordinary urgency arbitration decides. This is where
+        // Ben's "meals, breaks, etc inbetween" actually happen.
+        ScheduleBlock::Leisure => true,
+    }
+}
+
 /// bastion (2026-08-22): how much a bed's HEIGHT counts against it when
 /// assigning one to a colonist.
 ///
@@ -15340,6 +15466,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 }) || !board.stockpiles.is_empty();
                 let rest_satisfiable = !board.beds.is_empty();
 
+                // ★ THE DAY SCHEDULE DECIDES, NOT THE RACE (Ben, 2026-08-22).
+                //
+                // Measured cause: hunger decays exactly twice as fast as rest,
+                // the arbiter awards its ONE preempt slot to the lower meter,
+                // and a colonist who cannot top hunger up therefore sits
+                // permanently below both thresholds with hunger always lower.
+                // Rest can never win. 118 hunger preempts against 26 rest
+                // (4.5:1, n=3) and FOUR OF EIGHT COLONISTS NEVER SLEPT ONCE.
+                //
+                // A clock does not race. During a Sleep block rest is WANTED
+                // regardless of the meter (you go to bed because it is night);
+                // during a Work block neither need interrupts, which is what
+                // breaks hunger's monopoly. The starvation backout inside
+                // `schedule_permits_need` keeps the schedule from killing
+                // anyone.
+                let sched_hour = hour_of_day(rtsim.rt_state().data().time_of_day.0);
+                let sched_block = default_schedule_block(sched_hour);
+                // Forced labour is Ben's later conscription mod; wired as a
+                // parameter so that becomes a caller change, never `false`
+                // today.
+                const FORCED_LABOUR: bool = false;
+                let rest_in = (rest_in
+                    || matches!(sched_block, ScheduleBlock::Sleep))
+                    && schedule_permits_need(sched_block, true, needs.hunger, FORCED_LABOUR);
+                let hunger_in =
+                    hunger_in && schedule_permits_need(sched_block, false, needs.hunger, FORCED_LABOUR);
+
                 if rest_in {
                     candidates.push((needs.rest, 0));
                 }
@@ -26688,6 +26841,102 @@ mod tests {
              position-sorted, so this is a total order and two runs of one \
              seed cannot diverge"
         );
+    }
+
+    /// ★ THE DAY SCHEDULE IS 8/8/8 AND ITS BACKOUT ACTUALLY BACKS OUT
+    /// (Ben, 2026-08-22).
+    ///
+    /// Ben's spec: "generally a 8 hour work, 8 hour leisure, 8 hour sleep,
+    /// (meals, breaks, etc inbetween)", with "a emergency backout if the
+    /// colonist is starving to death", and a later conscription mod where
+    /// "they have to work until their shift is done".
+    ///
+    /// The schedule exists because hunger decays exactly 2x rest and the
+    /// arbiter awards its ONE slot to the lower meter, so rest could never win
+    /// — 118 hunger preempts to 26 rest, and four of eight colonists never
+    /// slept once. A clock does not race.
+    #[test]
+    fn the_day_is_eight_eight_eight_and_starvation_still_overrides_it() {
+        // The spec is a COUNT, so count it rather than eyeball the ranges.
+        let mut sleep = 0;
+        let mut work = 0;
+        let mut leisure = 0;
+        for h in 0..24 {
+            match default_schedule_block(h) {
+                ScheduleBlock::Sleep => sleep += 1,
+                ScheduleBlock::Work => work += 1,
+                ScheduleBlock::Leisure => leisure += 1,
+            }
+        }
+        assert_eq!(
+            (sleep, work, leisure),
+            (8, 8, 8),
+            "Ben's spec is 8 hours work / 8 leisure / 8 sleep; got sleep={sleep} \
+             work={work} leisure={leisure}"
+        );
+
+        // ★ THE WORK BLOCK MUST ACTUALLY BIND, or the schedule changes nothing
+        // and the 4.5:1 hunger monopoly simply continues. A well-fed colonist
+        // in its shift does not stop to eat.
+        assert!(
+            !schedule_permits_need(ScheduleBlock::Work, false, 0.5, false),
+            "a fed colonist interrupted work during its shift — the schedule is \
+             not binding and the hunger monopoly is unchanged"
+        );
+        assert!(
+            !schedule_permits_need(ScheduleBlock::Work, true, 0.5, false),
+            "rest must not interrupt the work block either"
+        );
+
+        // ★ AND IT MUST NOT KILL ANYONE. Below the starvation line the clock is
+        // ignored — this project has already shipped three guards that starved
+        // what they protected, and a schedule is a guard.
+        assert!(
+            schedule_permits_need(ScheduleBlock::Work, false, 0.05, false),
+            "a colonist starving to death during its shift was refused food — \
+             that is the emergency backout Ben asked for, and without it the \
+             schedule is a trap"
+        );
+
+        // Sleep block: rest is welcome, ordinary hunger is not — otherwise
+        // colonists get out of bed all night and the block buys nothing.
+        assert!(schedule_permits_need(ScheduleBlock::Sleep, true, 0.5, false));
+        assert!(!schedule_permits_need(ScheduleBlock::Sleep, false, 0.5, false));
+
+        // Leisure: everything is allowed; this is where meals and breaks live.
+        assert!(schedule_permits_need(ScheduleBlock::Leisure, true, 0.5, false));
+        assert!(schedule_permits_need(ScheduleBlock::Leisure, false, 0.5, false));
+
+        // ★ THE CONSCRIPTION EXTENSION POINT (Ben's later slavery/forced-labour
+        // mod): with forced_labour set, even starvation does not release the
+        // shift. Pinned now so the hook cannot rot before the mod is written.
+        assert!(
+            !schedule_permits_need(ScheduleBlock::Work, false, 0.01, true),
+            "forced labour must suppress the starvation backout — that is the \
+             whole content of the conscription mod"
+        );
+    }
+
+    /// ★ THE HOUR-OF-DAY CONVERSION, pinned because everything above keys on it
+    /// and an off-by-one here silently shifts the entire day.
+    #[test]
+    fn hour_of_day_wraps_and_starts_at_midnight() {
+        assert_eq!(hour_of_day(0.0), 0, "t=0 is midnight");
+        assert_eq!(hour_of_day(3600.0), 1);
+        assert_eq!(hour_of_day(23.0 * 3600.0), 23);
+        assert_eq!(
+            hour_of_day(common::resources::DAY),
+            0,
+            "a whole day must wrap back to hour 0, not overflow to 24"
+        );
+        assert_eq!(
+            hour_of_day(common::resources::DAY * 3.0 + 9.0 * 3600.0),
+            9,
+            "several days in, the hour must still be the hour"
+        );
+        // Negative time should not panic or produce a wild hour — `rem_euclid`
+        // is used precisely so a clock read before t=0 stays in range.
+        assert!(hour_of_day(-3600.0) < 24);
     }
 
     /// ★ DO NOT INTERRUPT A COLONIST STANDING ON THE FOOD (2026-08-22).
