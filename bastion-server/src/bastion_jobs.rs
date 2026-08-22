@@ -5016,13 +5016,33 @@ fn surface_teleport_dest_impl(
                 }
                 let (x, y) = (feet.x + dx, feet.y + dy);
                 if let Some(s) = surface_z(x, y)
-                    // The dest MUST be ABOVE the colonist — a teleport to
-                    // the OWN column (r=0) of a pit returns the pit floor
-                    // (below grade), teleporting the colonist to itself
+                    // The dest must not be the colonist's own footing — a
+                    // teleport to the OWN column (r=0) of a pit returns the pit
+                    // floor (below grade), teleporting the colonist to itself
                     // (chokepoint sealed-pit fs: tp fired but fs_out stayed
-                    // false). Requiring `s ≥ feet.z` finds the surrounding
-                    // pad's rim instead — always an upward exit.
-                    && s + 1 > feet.z
+                    // false).
+                    //
+                    // ★ BUT THAT IS AN r=0 CONCERN AND WAS BEING APPLIED AT
+                    // EVERY RADIUS (2026-08-22). The comment above has always
+                    // said "the OWN column (r=0)"; the predicate did not, and a
+                    // strict `>` at r>=1 REFUSES LEVEL GROUND.
+                    //
+                    // That is the common case, not an edge one. A colonist
+                    // wallrunning at ground level has feet z=408 and the ground
+                    // one step away has its surface at z=407, so the standable
+                    // cell is exactly 408 — equal, not greater, and rejected.
+                    // The scan then walks outward and upward until something is
+                    // STRICTLY higher, which in a village is a ROOF. Measured
+                    // on the clean leg: 29 of 34 rescues upward, mean +8.36,
+                    // and 27 of 34 strandings ended in Wallrun — the rescue was
+                    // manufacturing the rooftops it then had to rescue people
+                    // from.
+                    //
+                    // At r=0 the strict test stays, which is the entire content
+                    // of the pit case: a pitted colonist still cannot be handed
+                    // its own floor, and the surrounding rim (r>=1, genuinely
+                    // higher) still satisfies `>=` exactly as it satisfied `>`.
+                    && if r == 0 { s + 1 > feet.z } else { s + 1 >= feet.z }
                     // CASE-003: TRUE-STANDABLE dest — feet + head cells must
                     // be air (a tree trunk / any non-surface solid standing
                     // on the scanned surface occupies them; skip the column).
@@ -26457,6 +26477,60 @@ mod tests {
              `min_by_key` keeps the FIRST minimum, and the candidate list is \
              position-sorted, so this is a total order and two runs of one \
              seed cannot diverge"
+        );
+    }
+
+    /// ★ THE RESCUE MUST ACCEPT LEVEL GROUND (2026-08-22).
+    ///
+    /// `surface_teleport_dest_impl` required `s + 1 > feet.z` at EVERY radius,
+    /// though its own comment says the concern is "the OWN column (r=0)". A
+    /// colonist wallrunning at ground level (feet z=408) beside ground whose
+    /// standable cell is also 408 was refused that ground for not being
+    /// STRICTLY higher, so the scan climbed until it found a roof: 29 of 34
+    /// rescues upward, mean +8.36, and 27 of 34 strandings ending in Wallrun.
+    /// The rescue was manufacturing the rooftops it then had to rescue from.
+    #[test]
+    fn rescue_takes_level_ground_beside_the_colonist_but_never_its_own_footing() {
+        // A colonist hovering at z=408 against a wall. Its own column (r=0) is
+        // the wall's own footing at the same height; one step away is open
+        // ground with its surface at 407, i.e. a standable cell at 408.
+        let surface_z = |x: i32, _y: i32| Some(if x == 0 { 407 } else { 407 });
+        let open = |p: Vec3<i32>| p.z >= 408;
+        let feet = Vec3::new(0, 0, 408);
+
+        let dest = surface_teleport_dest_impl(surface_z, open, feet, 0)
+            .expect("level ground one step away must be a valid rescue");
+        assert_eq!(
+            dest.z, 408,
+            "the rescue must place the colonist on LEVEL ground; a strict `>` \
+             refuses it and the scan climbs to a roof instead"
+        );
+        assert!(
+            dest.x != 0 || dest.y != 0,
+            "the destination must be HORIZONTALLY DISPLACED — returning the \
+             colonist's own column at the same height is the self-teleport the \
+             r=0 test exists to prevent"
+        );
+
+        // THE PIT CASE, unchanged and checked in the same test so a future
+        // edit cannot fix one by breaking the other. Colonist on a pit floor at
+        // z=1: its own column's surface is that floor (standable cell = 1,
+        // equal to feet), and the surrounding rim is at 6.
+        let pit_surface = |x: i32, _y: i32| Some(if x == 0 { 0 } else { 5 });
+        let pit_open = |p: Vec3<i32>| (p.x == 0 && p.z > 0) || p.z > 5;
+        let pit_feet = Vec3::new(0, 0, 1);
+        let pit_dest = surface_teleport_dest_impl(pit_surface, pit_open, pit_feet, 0)
+            .expect("a pitted colonist must still be lifted to the rim");
+        assert!(
+            pit_dest.z > pit_feet.z,
+            "the pit rescue must still go UP to the rim (got z={}); relaxing \
+             the r>=1 test must not cost the case the strict test was written \
+             for",
+            pit_dest.z
+        );
+        assert!(
+            pit_dest.x != 0 || pit_dest.y != 0,
+            "and must not hand back the pit floor's own column"
         );
     }
 
