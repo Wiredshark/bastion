@@ -1494,7 +1494,28 @@ fn main() {
                                     {
                                         Ok(common::terrain::BlockKind::Wood) => 'H',
                                         Ok(common::terrain::BlockKind::Leaves) | Ok(common::terrain::BlockKind::ArtLeaves) => 'T',
-                                        Ok(common::terrain::BlockKind::Rock) | Ok(common::terrain::BlockKind::WeakRock) => '^',
+                                        Ok(common::terrain::BlockKind::Rock)
+                                        | Ok(common::terrain::BlockKind::WeakRock) => '^',
+                                        // ★ NATURAL HIGH GROUND IS NOT A BUILDING
+                                        // (2026-08-22). The first version of this
+                                        // mapped Wood/Leaves/Rock and left
+                                        // everything else as '#'. Looking at the
+                                        // result: a hillside above the observer is
+                                        // Earth or Grass, so it drew as
+                                        // unclassified STRUCTURE -- a whole screen
+                                        // of '#' that was just a slope. That is the
+                                        // exact "cannot tell a house from a hill"
+                                        // defect I had just claimed to fix, still
+                                        // present in the majority of cells.
+                                        //
+                                        // I only caught it by LOOKING at the map I
+                                        // had built to look at things -- the tally
+                                        // said 2809 cells, 0 unknown, and every
+                                        // number was healthy.
+                                        Ok(common::terrain::BlockKind::Earth)
+                                        | Ok(common::terrain::BlockKind::Grass)
+                                        | Ok(common::terrain::BlockKind::Sand)
+                                        | Ok(common::terrain::BlockKind::Snow) => ':',
                                         // Unclassified structure keeps the old
                                         // glyph, so a kind this map has not learned
                                         // yet is VISIBLY unclassified rather than
