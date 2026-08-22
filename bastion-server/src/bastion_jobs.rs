@@ -18902,11 +18902,34 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // exists and someone emptied it; not resolving means
                             // it is gone entirely.
                             let still_exists = id_maps.uid_entity(item).is_some();
+                            // ★ SECOND DISCRIMINATION (2026-08-22). The first one
+                            // proved 7 of 7 vanished meals were GONE rather than
+                            // emptied, which retired the whole contention family.
+                            // But "despawned_or_hauled" is STILL two things -- a
+                            // loose item timing out is a lifetime bug, a haul
+                            // carrying it off is a reservation-visibility bug --
+                            // and picking one without evidence is exactly how the
+                            // last three hypotheses died.
+                            //
+                            // A Haul job names its cargo in `JobKind::Haul { item }`.
+                            // If our vanished uid is somebody else's cargo, it was
+                            // hauled; if no job claims it, it despawned.
+                            let hauled_by = board.jobs.iter().find_map(|(id, j)| {
+                                matches!(j.kind, common::bastion::JobKind::Haul { item: h, .. } if h == item)
+                                    .then_some(*id)
+                            });
                             info!(
                                 job = active.job,
                                 item = %item,
                                 entity_still_exists = still_exists,
-                                cause = if still_exists { "taken_by_another" } else { "despawned_or_hauled" },
+                                hauled_by = ?hauled_by,
+                                cause = if still_exists {
+                                    "taken_by_another"
+                                } else if hauled_by.is_some() {
+                                    "hauled_away"
+                                } else {
+                                    "despawned"
+                                },
                                 "bastion: food sniped — eat moot"
                             );
                             board.remove_job(active.job);
