@@ -20524,16 +20524,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         }
 
         for (entity, release_reason, release_site) in &to_release {
-            // ★ Class read BEFORE the increment, and before the drain below
-            // nulls `claimed_by`/`remove_job`s the entry -- reading it after
-            // would classify every self-job as "gone" and produce a histogram
-            // that blames teardown order rather than the release reason.
+            // ★ "gone" IS THE COMMON CASE, NOT AN EDGE ONE — corrected against
+            // the first live census (2026-08-22), which read 553 of 713
+            // releases as `gone`. An earlier version of this comment claimed
+            // the class is read before anything removes the job. That was
+            // WRONG: many push sites call `board.remove_job(active.job)` on the
+            // line ABOVE their push (18874, 19076, 19004, 19171 ... ), so by
+            // the time this drain runs the job is already gone and no lookup
+            // here can recover its kind.
             //
-            // "gone" is a REAL bucket, not a fallback for convenience: it means
-            // the job was already removed before this drain saw it, which is a
-            // materially different failure from any of the five reasons and the
-            // pre-registration names it as its own FAIL branch. Folding it into
-            // one of the others would hide a whole teardown path.
+            // Deliberately NOT fixed by threading the kind through `ActiveJob`:
+            // that struct lives in `common` and is serialized, so a reporting
+            // label would cost a wire change and a rebuild of both binaries.
+            //
+            // It does not need fixing, because THE SITE LINE ALREADY CARRIES
+            // THE KIND for exactly these cases: every remove-then-push site
+            // sits inside a kind-specific branch (@18874 and @19004 are the two
+            // eat-completion arms, @19076 is the eat snipe). Where the job
+            // SURVIVES to the drain, the class resolves correctly and adds
+            // information the site alone does not (`eat/TimedOut@18426` vs
+            // `haul/TimedOut@18426` — one shared site, five different kinds).
+            //
+            // So the two fields are complementary rather than redundant, and
+            // `gone` is an honest label for "this site destroyed the job before
+            // releasing it" rather than a silent fallback.
             let release_class = active_jobs
                 .get(*entity)
                 .and_then(|active| board.jobs.get(&active.job))
