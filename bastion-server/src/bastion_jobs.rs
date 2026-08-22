@@ -18883,7 +18883,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // genuinely sniped (someone else took the last
                             // unit before our split, or the whole stack
                             // despawned). Clean moot release.
-                            info!(job = active.job, "bastion: food sniped — eat moot");
+                            // ★ SAY WHICH OF THE TWO IT WAS (2026-08-22). The
+                            // comment above names two causes -- "someone else
+                            // took the last unit before our split, or the whole
+                            // stack despawned" -- and the emit could not tell
+                            // them apart. They need OPPOSITE fixes: contention
+                            // between colonists is a reservation problem, while
+                            // a despawning stack is a lifetime problem, and
+                            // nothing in the log distinguished them.
+                            //
+                            // That ambiguity cost three refuted hypotheses
+                            // tonight (arbiter re-preemption, unreachability,
+                            // the protected set). Each was a guess at WHY the
+                            // item was gone, made because the log only said
+                            // THAT it was gone.
+                            //
+                            // `uid_entity` resolving means the entity still
+                            // exists and someone emptied it; not resolving means
+                            // it is gone entirely.
+                            let still_exists = id_maps.uid_entity(item).is_some();
+                            info!(
+                                job = active.job,
+                                item = %item,
+                                entity_still_exists = still_exists,
+                                cause = if still_exists { "taken_by_another" } else { "despawned_or_hauled" },
+                                "bastion: food sniped — eat moot"
+                            );
                             board.remove_job(active.job);
                             to_release.push((entity, ReleaseReason::Other)); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
                         }
