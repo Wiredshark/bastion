@@ -993,6 +993,44 @@ fn conn_standable(terrain: &TerrainGrid, c: Vec3<i32>) -> bool {
 /// dz in {-1, 0, +1} only. Two blocks up is a CLIMB and three down is a FALL,
 /// and marking either "connected" would reproduce the rooftop strandings that
 /// 27 of 34 fail-safes ended in.
+/// Minimum size the connectivity index must reach before it is allowed to
+/// REFUSE anything.
+///
+/// ★ THE GUARD AGAINST THIS GUARD. A reachability gate that refuses every job
+/// looks exactly like a colony with nothing to do: quiet logs, no timeouts, no
+/// strandings — every failure metric IMPROVES. This project has shipped four
+/// guards that starved what they protected (the up-only rescue, the
+/// travel-jump ban, the reservation set on personal rations, the starvation
+/// backout), and a gate keyed on a flood fill that silently returned empty
+/// would be the worst of them, because its symptom is success.
+///
+/// So: below this many cells the index is treated as NOT YET KNOWN and gates
+/// nothing. An adopted village's walkable core is thousands of cells; a few
+/// hundred means the terrain was not loaded when the fill ran.
+pub const CONNECTIVITY_MIN_TRUSTED_CELLS: usize = 400;
+
+/// Whether the index is complete enough to be allowed to refuse a claim.
+pub fn connectivity_is_trusted(cells: usize) -> bool {
+    cells >= CONNECTIVITY_MIN_TRUSTED_CELLS
+}
+
+/// Should this job be refused as unreachable?
+///
+/// Returns false — i.e. do NOT refuse — whenever the index is untrusted, so an
+/// unbuilt or terrain-starved fill can never mass-refuse the job board.
+pub fn connectivity_refuses(
+    connected: &std::collections::HashSet<Vec3<i32>>,
+    job_pos: Vec3<i32>,
+) -> bool {
+    if !connectivity_is_trusted(connected.len()) {
+        return false;
+    }
+    // A job is reachable if its own cell or the cell above it is connected —
+    // work is often done standing ON a block (the OnTopAlways affordance), so
+    // the standable cell is the one above the target.
+    !connected.contains(&job_pos) && !connected.contains(&(job_pos + Vec3::unit_z()))
+}
+
 pub(crate) fn conn_step_allowed(dz: i32, headroom_over_source: bool) -> bool {
     match dz {
         0 | -1 => true,
@@ -6542,6 +6580,15 @@ pub struct JobBoard {
     /// reserve that depletes — and it keeps the food economy the one that
     /// actually feeds the colony.
     pub provisioned: std::collections::HashSet<common::uid::Uid>,
+    /// bastion (2026-08-22, researched at Ben's direction): the cells a walking
+    /// colonist can reach from the colony core — RimWorld's zone index / DF's
+    /// connected segments, so "can anyone get there?" is answered BEFORE the
+    /// claim instead of after ten seconds of walking and a timeout.
+    pub connected_cells: std::collections::HashSet<Vec3<i32>>,
+    /// Tick the set above was last rebuilt. Terrain changes as colonists mine
+    /// and build, so a stale edge costs one failed claim — not a permanent
+    /// wrong answer.
+    pub connectivity_built_tick: u64,
     /// bastion (DPA-2, the prune-gap flicker guard): anchor COLUMNS whose
     /// rung plans went material-starved — DURABLE across the F3 prune →
     /// re-emit gap (deriving the hold from live rung jobs alone left a ~2s
@@ -27061,6 +27108,71 @@ mod tests {
              `min_by_key` keeps the FIRST minimum, and the candidate list is \
              position-sorted, so this is a total order and two runs of one \
              seed cannot diverge"
+        );
+    }
+
+    /// ★ AN UNBUILT CONNECTIVITY INDEX MUST REFUSE NOTHING (2026-08-22).
+    ///
+    /// This is the guard against this guard. A reachability gate keyed on a
+    /// flood fill that silently came back empty would refuse EVERY job — and
+    /// its symptom is SUCCESS: no claims, so no travel, so no timeouts, no
+    /// strandings, no route-exhausted releases. Every failure metric this
+    /// session has tracked would improve at once while the colony did nothing.
+    ///
+    /// Four guards in this project have already starved what they protected.
+    /// This one is pinned before it ships.
+    #[test]
+    fn connectivity_refuses_nothing_until_it_is_trusted() {
+        use std::collections::HashSet;
+        let job = Vec3::new(10, 10, 40);
+
+        // Empty index: the fill never ran, or terrain was not loaded.
+        let empty: HashSet<Vec3<i32>> = HashSet::new();
+        assert!(
+            !connectivity_refuses(&empty, job),
+            "an EMPTY connectivity index refused a job — that gate would refuse \
+             the entire board and read as a colony with nothing to do"
+        );
+
+        // Small index: a partial fill over unloaded terrain.
+        let small: HashSet<Vec3<i32>> =
+            (0..50).map(|i| Vec3::new(i, 0, 40)).collect();
+        assert!(
+            !connectivity_refuses(&small, job),
+            "a partially-built index must not refuse; below the trust floor it \
+             is NOT YET KNOWN, which is different from KNOWN-UNREACHABLE"
+        );
+
+        // ★ A trusted index MUST actually refuse, or the gate is decorative and
+        // the 362-458 route-exhausted releases a leg continue unchanged.
+        let mut big: HashSet<Vec3<i32>> = (0..CONNECTIVITY_MIN_TRUSTED_CELLS as i32)
+            .map(|i| Vec3::new(i, 0, 40))
+            .collect();
+        assert!(
+            connectivity_refuses(&big, job),
+            "a TRUSTED index that does not contain the job must refuse it — \
+             otherwise nothing changes and the claim-walk-fail loop continues"
+        );
+
+        // And must admit a job it does contain...
+        big.insert(job);
+        assert!(
+            !connectivity_refuses(&big, job),
+            "a reachable job must never be refused"
+        );
+
+        // ...including one whose STANDABLE cell is the block above it, which is
+        // the OnTopAlways affordance most farm and mine jobs declare.
+        let on_top = Vec3::new(500, 500, 40);
+        let mut b2: HashSet<Vec3<i32>> = (0..CONNECTIVITY_MIN_TRUSTED_CELLS as i32)
+            .map(|i| Vec3::new(i, 7, 40))
+            .collect();
+        b2.insert(on_top + Vec3::unit_z());
+        assert!(
+            !connectivity_refuses(&b2, on_top),
+            "a job worked while STANDING ON IT must count as reachable when the \
+             cell above is connected — refusing these would reject most farm \
+             and mine jobs in the colony"
         );
     }
 
