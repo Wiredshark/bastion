@@ -122,6 +122,18 @@ const CATALOG: &[EnvVarSiteV1] = &[
          DeterministicSerial, does not create a separate execution mode",
     ),
     site(
+        "world/src/bastion_flat_world.rs",
+        "BASTION_FLAT_WORLD_RADIUS",
+        GameplayVariant,
+        "levels the sim at world centre BEFORE civ placement so the real          generator builds a village on flat ground; absent = disabled, and it          MOVES EVERY SEED'S TERRAIN when set",
+    ),
+    site(
+        "server/src/lib.rs",
+        "BASTION_ADOPT_WAIT_FOR_MARKER",
+        GameplayVariant,
+        "holds autofound until the player marks the town they want, instead of          founding at tick 30 on the nearest one; harness legs leave it unset so          their tick-30 timing stays byte-identical",
+    ),
+    site(
         "server/src/lib.rs",
         "BASTION_AUTOFOUND_COLONY",
         GameplayVariant,
