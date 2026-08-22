@@ -12898,8 +12898,75 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 .collect();
             free.sort_by_key(|p| (p.x, p.y, p.z));
 
+            // ★ NEAREST BED, NOT THE NEXT ONE IN SORT ORDER (2026-08-22).
+            //
+            // This used to be `homeless.zip(free)` — colonists sorted by uid
+            // paired against beds sorted by (x, y, z). Deterministic, and
+            // SYSTEMATICALLY PESSIMAL: sorting by x ascending starts at the far
+            // WEST EDGE of an adopted village, so the zip handed every colonist
+            // one of the most distant beds in the settlement.
+            //
+            // Measured on the adopted town, 91 beds, colony centre (27440,18352):
+            //     beds within  30 blocks :  4
+            //     beds within  60 blocks : 15
+            //     beds beyond 100 blocks : 53
+            //   what the zip actually assigned the first 7 colonists:
+            //     140, 152, 153, 153, 154, 186, 186 blocks away
+            //
+            // A colonist sent 186 blocks across a village to sleep crosses the
+            // whole town, meets its buildings, and dies of the travel: rest
+            // jobs timed out 18 times and FOUR OF SEVEN COLONISTS NEVER SLEPT
+            // ONCE, while the three who did were the only ones who ever
+            // recovered. Their eating was identical (10 meals vs 11) — sleep
+            // was the entire difference between a working colonist and a husk.
+            //
+            // Greedy nearest, colonists in uid order. O(colonists x beds) =
+            // 7 x 91 here, run on a cadence, not per tick.
+            //
+            // DETERMINISM IS PRESERVED, and it is not preserved by accident:
+            // `free` is still position-sorted BEFORE this loop, and the pick
+            // uses `min_by_key` over that sorted vector with the squared
+            // distance as the key, so two beds equidistant from a colonist
+            // resolve to the (x,y,z)-lowest — a total order, no HashMap
+            // iteration reaching the outcome. Integer squared distance, never
+            // a float compare.
             let mut assigned = 0u32;
-            for ((u, ent), pos) in homeless.into_iter().zip(free) {
+            let mut taken: std::collections::HashSet<Vec3<i32>> =
+                std::collections::HashSet::new();
+            let mut pairs: Vec<(common::uid::Uid, specs::Entity, Vec3<i32>)> = Vec::new();
+            for (u, ent) in homeless.into_iter() {
+                let feet = match positions.get(ent) {
+                    Some(p) => p.0.map(|e| e.floor() as i32),
+                    // A colonist with no Position cannot be measured from.
+                    // Fall back to the OLD behaviour for it alone — any free
+                    // bed beats no bed — rather than skipping it and silently
+                    // leaving someone homeless.
+                    None => {
+                        if let Some(p) = free.iter().find(|p| !taken.contains(*p)).copied() {
+                            taken.insert(p);
+                            pairs.push((u, ent, p));
+                        }
+                        continue;
+                    },
+                };
+                let best = free
+                    .iter()
+                    .filter(|p| !taken.contains(*p))
+                    .min_by_key(|p| {
+                        let d = **p - feet;
+                        // i64: a 200-block leg squares to 40,000 per axis, which
+                        // fits i32 comfortably — but the SUM over three axes of
+                        // a pathological coordinate would not, and a silent
+                        // overflow here would reorder the comparison.
+                        (d.x as i64).pow(2) + (d.y as i64).pow(2) + (d.z as i64).pow(2)
+                    })
+                    .copied();
+                if let Some(p) = best {
+                    taken.insert(p);
+                    pairs.push((u, ent, p));
+                }
+            }
+            for (u, ent, pos) in pairs {
                 if let Some(slot) = board.beds.get_mut(&pos) {
                     slot.owner = Some(u);
                     if let Some(mut c) = colonists.get_mut(ent) {
@@ -26318,6 +26385,80 @@ fn reservation_indices_are_consistent_v1(
 mod tests {
     use super::*;
     use std::num::NonZeroU64;
+
+    /// ★ A COLONIST MUST BE GIVEN THE NEAREST BED, NOT THE NEXT ONE IN SORT
+    /// ORDER (2026-08-22).
+    ///
+    /// The assigner paired uid-sorted colonists against (x,y,z)-sorted beds.
+    /// Sorting by x ascending starts at the far WEST edge of an adopted
+    /// village, so on the measured town (91 beds) it handed the first seven
+    /// colonists beds 140-186 blocks away while FOUR beds sat within 30. Four
+    /// of seven colonists then never slept once, and sleep was the entire
+    /// difference between a recovering colonist and a husk — their eating was
+    /// identical (10 meals vs 11).
+    ///
+    /// This pins the SELECTION RULE on the same shape the assigner uses
+    /// (position-sorted candidates, greedy nearest, squared integer distance),
+    /// because the bug was not that beds were unavailable — it was which one
+    /// got picked out of a list that was already correct.
+    #[test]
+    fn bed_assignment_picks_the_nearest_free_bed_not_the_first_in_sort_order() {
+        // The village shape that produced the bug: the (x,y,z)-lowest bed is
+        // the FARTHEST from where the colonist actually stands.
+        let mut free = vec![
+            Vec3::new(27273, 18434, 423), // sorts FIRST, 186 blocks away
+            Vec3::new(27299, 18410, 420),
+            Vec3::new(27437, 18345, 408), // nearest, ~8 blocks
+        ];
+        free.sort_by_key(|p| (p.x, p.y, p.z));
+        let feet = Vec3::new(27440, 18352, 408);
+
+        let pick = *free
+            .iter()
+            .min_by_key(|p| {
+                let d = **p - feet;
+                (d.x as i64).pow(2) + (d.y as i64).pow(2) + (d.z as i64).pow(2)
+            })
+            .expect("a free bed exists");
+
+        assert_eq!(
+            pick,
+            Vec3::new(27437, 18345, 408),
+            "the assigner took the sort-order-first bed instead of the nearest \
+             one — that is the defect: it sends colonists across the whole \
+             village to sleep and they never arrive"
+        );
+        assert_ne!(
+            pick, free[0],
+            "the nearest bed must NOT be the sort-order-first bed in this \
+             fixture, or the test would pass under the old zip too and prove \
+             nothing"
+        );
+
+        // DETERMINISM: equidistant beds must resolve by position, not by
+        // whichever the iterator happened to reach first. Two beds exactly
+        // opposite each other about the colonist.
+        let mut tie = vec![
+            Vec3::new(27450, 18352, 408),
+            Vec3::new(27430, 18352, 408),
+        ];
+        tie.sort_by_key(|p| (p.x, p.y, p.z));
+        let tie_pick = *tie
+            .iter()
+            .min_by_key(|p| {
+                let d = **p - feet;
+                (d.x as i64).pow(2) + (d.y as i64).pow(2) + (d.z as i64).pow(2)
+            })
+            .unwrap();
+        assert_eq!(
+            tie_pick,
+            Vec3::new(27430, 18352, 408),
+            "an exact distance tie must resolve to the (x,y,z)-lowest bed — \
+             `min_by_key` keeps the FIRST minimum, and the candidate list is \
+             position-sorted, so this is a total order and two runs of one \
+             seed cannot diverge"
+        );
+    }
 
     /// ★ THE STRANDING RESCUE MUST WORK IN BOTH DIRECTIONS (2026-08-22).
     ///
