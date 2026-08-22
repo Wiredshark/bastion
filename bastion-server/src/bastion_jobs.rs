@@ -928,6 +928,45 @@ pub(crate) fn claim_release_should_clear(claimed_by_us: bool, _unreachable: bool
     claimed_by_us
 }
 
+/// bastion (2026-08-22): how much a bed's HEIGHT counts against it when
+/// assigning one to a colonist.
+///
+/// A metre up is not a metre across. Measured on the adopted town, 39 beds:
+///
+///   z=408 (ground) x11   z=409 x4   z=410 x4   z=411 x2
+///   z=413 x8   z=415 x2   z=424 x4   z=428 x4
+///
+/// **51% sit more than two blocks above ground**, some sixteen to twenty up --
+/// worldgen puts bedrooms on upper storeys (`house.rs`, STOREY = 5). Plain 3D
+/// distance treats "16 blocks up a staircase" as cheaper than "20 blocks along
+/// a street", so colonists were handed upstairs beds they cannot climb to.
+///
+/// This is the sleep half of a trade the paired A/B exposed: the level-ground
+/// rescue cut fail-safe teleports from a mean of 15.7 to 8.7 and mean dz from
+/// ~+11 to ~+4.6 (non-overlapping across three replicates each) -- but distinct
+/// sleepers fell from 4.7 to 2.3. The UPWARD teleport had been ACCIDENTALLY
+/// DELIVERING COLONISTS TO UPSTAIRS BEDS. Fixing the teleport removed the
+/// accident, so the beds have to be chosen properly instead.
+///
+/// Weight 8 means one block of height costs like eight of ground: a bed 16 up
+/// prices at 128 horizontal, so the 15 ground-level beds (z 408-409, for 8
+/// colonists) win comfortably while an upstairs bed is still reachable rather
+/// than forbidden -- a colonist with no ground bed left still gets one.
+/// ★ A PREFERENCE, NOT A FILTER: a hard height cap would leave colonists
+/// homeless the moment ground beds ran out, which is the failure mode that
+/// makes a guard starve what it protects.
+pub(crate) const BED_HEIGHT_WEIGHT: i64 = 8;
+
+/// Squared cost of `bed` for a colonist standing at `feet`, height-penalised.
+///
+/// i64 throughout: a 200-block leg squares to 40,000 per axis and the
+/// height term multiplies by 8 before squaring, so an i32 sum could overflow
+/// on a pathological coordinate and SILENTLY REORDER the comparison.
+pub(crate) fn bed_assignment_cost(bed: Vec3<i32>, feet: Vec3<i32>) -> i64 {
+    let d = bed - feet;
+    (d.x as i64).pow(2) + (d.y as i64).pow(2) + (d.z as i64 * BED_HEIGHT_WEIGHT).pow(2)
+}
+
 /// bastion (2026-08-22): coarse job class for the release census, so the
 /// histogram can be read PER KIND. Deliberately local to this crate rather
 /// than a method on `JobKind` in `common` — a `common/` edit rebuilds BOTH
@@ -12989,14 +13028,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let best = free
                     .iter()
                     .filter(|p| !taken.contains(*p))
-                    .min_by_key(|p| {
-                        let d = **p - feet;
-                        // i64: a 200-block leg squares to 40,000 per axis, which
-                        // fits i32 comfortably — but the SUM over three axes of
-                        // a pathological coordinate would not, and a silent
-                        // overflow here would reorder the comparison.
-                        (d.x as i64).pow(2) + (d.y as i64).pow(2) + (d.z as i64).pow(2)
-                    })
+                    .min_by_key(|p| bed_assignment_cost(**p, feet))
                     .copied();
                 if let Some(p) = best {
                     taken.insert(p);
@@ -26494,6 +26526,49 @@ mod tests {
              `min_by_key` keeps the FIRST minimum, and the candidate list is \
              position-sorted, so this is a total order and two runs of one \
              seed cannot diverge"
+        );
+    }
+
+    /// ★ A BED UPSTAIRS IS NOT A NEARBY BED (2026-08-22).
+    ///
+    /// 51% of the adopted town's 39 beds sit more than two blocks above ground
+    /// (some 16-20 up: worldgen puts bedrooms on upper storeys). Plain 3D
+    /// distance prices "16 blocks up a staircase" below "20 blocks along a
+    /// street", so colonists were assigned beds they cannot climb to — and the
+    /// paired A/B showed distinct sleepers falling 4.7 -> 2.3 once the upward
+    /// fail-safe teleport stopped accidentally carrying them up there.
+    #[test]
+    fn bed_assignment_prefers_a_ground_bed_over_a_closer_upstairs_one() {
+        let feet = Vec3::new(27440, 18352, 408);
+        // Directly overhead, two storeys up: 10 blocks of pure height.
+        let upstairs = Vec3::new(27442, 18352, 418);
+        // Four times further away on the ground.
+        let ground = Vec3::new(27448, 18360, 408);
+
+        assert!(
+            bed_assignment_cost(ground, feet) < bed_assignment_cost(upstairs, feet),
+            "the upstairs bed won ({} vs {}) — it is nearer in 3D and \
+             unreachable in practice, which is exactly the assignment that \
+             stopped colonists sleeping",
+            bed_assignment_cost(upstairs, feet),
+            bed_assignment_cost(ground, feet)
+        );
+
+        // ★ AND IT MUST REMAIN A PREFERENCE, NOT A FILTER. With no ground bed
+        // available a colonist must still be given the upstairs one; a hard
+        // height cap would leave it homeless, which is worse than a hard walk.
+        assert!(
+            bed_assignment_cost(upstairs, feet) < i64::MAX,
+            "an upstairs bed must remain assignable when nothing else is free"
+        );
+
+        // Same height: the height term vanishes and plain distance decides, so
+        // this does not disturb the ordinary flat-village case.
+        let near_flat = Vec3::new(27443, 18352, 408);
+        let far_flat = Vec3::new(27470, 18352, 408);
+        assert!(
+            bed_assignment_cost(near_flat, feet) < bed_assignment_cost(far_flat, feet),
+            "on level ground the nearest bed must still win"
         );
     }
 
