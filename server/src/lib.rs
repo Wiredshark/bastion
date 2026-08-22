@@ -7217,11 +7217,19 @@ impl Server {
             let (town_origin, plots) = Self::bastion_adoptable_town_plots(
                 self.index.as_index_ref(),
                 near,
-                // 4096: the first live leg MEASURED the nearest adoptable
-                // site at 1,224 blocks against a 1,024 radius — 200 short.
-                // The re-anchor moves the whole founding to the town, so a
-                // wide radius costs nothing but the scan.
-                4096,
+                // 4096 -> 16384. The first live leg measured the nearest
+                // adoptable site at 1,224 blocks against a 1,024 radius, so
+                // this went to 4096. But the scorer then logged
+                // `considered=1`: at 4096 there is exactly ONE adoptable
+                // village in range, so "pick the best village" had no choice
+                // to make and the colony inherited a hamlet with no field and
+                // therefore no work.
+                //
+                // A wide radius costs only the scan -- the founding re-anchors
+                // to whichever town is chosen, so distance is not a travel
+                // cost, it is just a search bound. Widening it is what gives
+                // the FIELDS-first score something to actually choose between.
+                16384,
             )?;
             // Re-anchor the WHOLE founding at the town — via worldgen's own
             // APPROXIMATE altitude, never loaded terrain. The first version
