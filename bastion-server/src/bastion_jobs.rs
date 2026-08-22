@@ -15576,6 +15576,55 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // would let a cooking reservation forbid a starving colonist from
             // eating their own emergency food, which is the precise situation
             // the provision exists for. A guard that starves its protectee.
+                            // ★ DO NOT DRAG A COLONIST OFF THE FOOD IT IS ABOUT
+                            // TO PRODUCE (2026-08-22). Traced on one crop:
+                            //
+                            //   17:28:19  stage=15, "crop MATURE"
+                            //   17:28:20  farm job 3767 created (the harvest)
+                            //   17:31:44  "need preempt — hunger below
+                            //             interrupt" colonist=240,
+                            //             feet=(27463,18347,409)
+                            //
+                            // That is the colonist standing ON the ripe wheat,
+                            // pulled away to walk somewhere else for food. It
+                            // closes a loop: no food -> hunger takes the single
+                            // preempt slot 4.5:1 -> the harvest is interrupted
+                            // -> no food. The colony cannot bootstrap out of it,
+                            // which is why `harvested` has never once fired
+                            // while crops demonstrably reach maturity.
+                            //
+                            // ★ THIS IS BEN'S OWN RULING APPLIED, NOT AN
+                            // EXCEPTION TO IT. #115: prefer the need that is
+                            // "more life threatening and can be solved
+                            // FASTEST". Harvesting the crop under your feet IS
+                            // the fastest food available; walking across a
+                            // village to a pile is strictly slower and, in this
+                            // colony, usually fails outright.
+                            //
+                            // Scoped as narrowly as the evidence supports:
+                            // ARRIVED (not travelling — a colonist still
+                            // walking to a field should absolutely be
+                            // interrupted to eat) and the job must actually
+                            // YIELD FOOD. Anything wider would be a general
+                            // "don't interrupt work" rule, which is what starves
+                            // colonists in the first place.
+                            let on_imminent_food = active_jobs
+                                .get(entity)
+                                .filter(|a| matches!(a.state, ActiveJobState::Arrived))
+                                .and_then(|a| board.jobs.get(&a.job))
+                                .is_some_and(|j| {
+                                    matches!(j.kind, common::bastion::JobKind::Cook { .. })
+                                        || j.kind.is(DesignationKind::Farm)
+                                });
+                            if on_imminent_food {
+                                if need_skip_diag {
+                                    info!(
+                                        colonist = %uid,
+                                        "NEED-SKIP-DIAG reason=working_a_food_job"
+                                    );
+                                }
+                                continue 'candidates;
+                            }
                             let pack_def = inventories.get(entity).and_then(|inv| {
                                 inv.slots().flatten().find_map(|i| {
                                     i.item_definition_id().itemdef_id().and_then(|d| {
@@ -26638,6 +26687,57 @@ mod tests {
              `min_by_key` keeps the FIRST minimum, and the candidate list is \
              position-sorted, so this is a total order and two runs of one \
              seed cannot diverge"
+        );
+    }
+
+    /// ★ DO NOT INTERRUPT A COLONIST STANDING ON THE FOOD (2026-08-22).
+    ///
+    /// Traced on one crop: matured at 17:28:19, harvest job created at
+    /// 17:28:20, and at 17:31:44 the colonist standing on that exact cell took
+    /// a hunger preempt and left. `harvested` has never fired in this project
+    /// while crops demonstrably reach maturity — that is the reason.
+    ///
+    /// The rule has to be narrow in BOTH directions, and the second is the
+    /// dangerous one: widened to "don't interrupt work" it would starve
+    /// colonists at every non-food job, which is the failure mode this whole
+    /// arbitration exists to avoid.
+    #[test]
+    fn hunger_yields_only_to_a_food_job_already_arrived_at() {
+        use common::bastion::{DesignationKind, JobKind};
+        // The predicate the preempt arm applies, expressed exactly as the
+        // production code composes it.
+        let protect = |kind: &JobKind, state: ActiveJobState| {
+            matches!(state, ActiveJobState::Arrived)
+                && (matches!(kind, JobKind::Cook { .. }) || kind.is(DesignationKind::Farm))
+        };
+        let farm = JobKind::Designated(DesignationKind::Farm);
+        let mine = JobKind::Designated(DesignationKind::Mine);
+
+        assert!(
+            protect(&farm, ActiveJobState::Arrived),
+            "a colonist ARRIVED at a farm job must finish it — the crop under \
+             its feet is the fastest food available, which is exactly what \
+             Ben's ruling asks the arbiter to prefer"
+        );
+        // ★ STILL TRAVELLING: interrupt it. A colonist walking to a distant
+        // field must absolutely be pulled off to eat, or this becomes "ignore
+        // hunger whenever a farm job is claimed" — starvation with extra steps.
+        assert!(
+            !protect(&farm, ActiveJobState::Traveling),
+            "a colonist still WALKING to a field must remain interruptible; \
+             protecting travel would let a claimed farm job outrank eating \
+             indefinitely"
+        );
+        assert!(
+            !protect(&farm, ActiveJobState::Waiting),
+            "queued-and-waiting is not arrived either"
+        );
+        // ★ NOT A GENERAL WORK PROTECTION: a mining job yields no food, so
+        // hunger must still win there however close to done it is.
+        assert!(
+            !protect(&mine, ActiveJobState::Arrived),
+            "only FOOD-producing jobs may outrank hunger; a general \
+             don't-interrupt-work rule is how colonists starve at a workbench"
         );
     }
 
