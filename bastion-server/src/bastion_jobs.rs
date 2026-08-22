@@ -7143,11 +7143,39 @@ impl JobBoard {
                     // miscount the paint path was just cured of. `pots` counts
                     // kitchens, so an adopted house with a 3-block hearth now
                     // reports 1, not 3.
-                    if matches!(sprite, Some(S::Ember | S::CookingPot | S::Cauldron))
-                        && register_cook_station(&mut self.cook_stations, pos)
-                    {
-                        pots += 1;
-                        info!(pos = ?pos, "bastion: cook station registered (adopted)");
+                    // A KITCHEN IS A GROUND-FLOOR ROOM (Ben, 2026-08-21:
+                    // "cooking and crafting stations sit where they belong -- in
+                    // kitchens, in workshops... not a forge in a bedroom").
+                    //
+                    // The solid_below gate below guards CONTAINERS only. Beds are
+                    // deliberately ungated and must stay that way -- a Veloren
+                    // bedroom IS upstairs, so a bed on an upper floor is correct
+                    // and refusing it would be the bug. Cook stations had no gate
+                    // either, and for them that is wrong: an Ember on an upper
+                    // storey was adopted as a kitchen.
+                    //
+                    // SAME PROBE, OPPOSITE VERDICTS BY KIND. That asymmetry is the
+                    // whole ruling, and it is why this cannot be fixed by moving
+                    // the existing gate to cover the entire scan.
+                    let station_solid_below = (1..=ADOPTED_CONTAINER_SOLID_PROBE)
+                        .take_while(|d| {
+                            terrain
+                                .get(pos - Vec3::unit_z() * *d)
+                                .map(|b| b.is_filled())
+                                .unwrap_or(false)
+                        })
+                        .count() as i32;
+                    if matches!(sprite, Some(S::Ember | S::CookingPot | S::Cauldron)) {
+                        if !adopted_container_admitted(station_solid_below) {
+                            info!(pos = ?pos, solid_below = station_solid_below, "bastion: cook station SKIPPED (an upper-storey hearth is not a kitchen)");
+                        } else if register_cook_station(&mut self.cook_stations, pos) {
+                            pots += 1;
+                            info!(
+                                pos = ?pos,
+                                solid_below = station_solid_below,
+                                "bastion: cook station registered (adopted)"
+                            );
+                        }
                     }
                     // Household storage, as the generator actually places it.
                     if matches!(
@@ -25938,7 +25966,47 @@ mod tests {
         assert_eq!(stations.len(), 2, "the gap cell joins, it does not found");
     }
 
-    /// ★ A CANCEL MUST DESTROY THE FURNITURE IT ERASES.
+    /// A KITCHEN IS GATED ON HEIGHT AND A BEDROOM IS NOT.
+    ///
+    /// The same solid_below probe yields OPPOSITE verdicts by furniture kind,
+    /// and that asymmetry is the whole ruling: a Veloren bedroom IS upstairs,
+    /// so refusing an upper-storey bed would be the bug; a kitchen is a
+    /// ground-floor room, so admitting an upper-storey hearth is the bug.
+    ///
+    /// Pinned because the natural "tidy-up" is to hoist one gate over the whole
+    /// furniture scan, which would silently delete every upstairs bed in every
+    /// adopted village -- and the colony would still LOOK fine, just with
+    /// nowhere to sleep.
+    #[test]
+    fn a_kitchen_is_gated_on_height_and_a_bedroom_is_not() {
+        // A ground floor sits on ~20 blocks of filled foundation; an upper
+        // storey is a one-block slab over an open room. The probe reads 4 deep.
+        assert!(
+            adopted_container_admitted(4),
+            "a ground-floor hearth must be admitted as a kitchen"
+        );
+        assert!(
+            !adopted_container_admitted(1),
+            "a hearth on a one-block upper floor is not a kitchen"
+        );
+        assert!(
+            !adopted_container_admitted(0),
+            "a suspended hearth is not a kitchen"
+        );
+        // The threshold must stay strictly inside the probe depth. Above it,
+        // EVERY station is refused -- which also stops the bug reproducing and
+        // would pass a one-sided test while leaving the colony no kitchens.
+        assert!(
+            ADOPTED_CONTAINER_MIN_SOLID_BELOW <= ADOPTED_CONTAINER_SOLID_PROBE,
+            "a threshold deeper than the probe refuses every hearth: a fix that",
+        );
+        assert!(
+            ADOPTED_CONTAINER_MIN_SOLID_BELOW > 1,
+            "a threshold of 1 admits the upper-storey floor the gate exists to refuse"
+        );
+    }
+
+        /// ★ A CANCEL MUST DESTROY THE FURNITURE IT ERASES.
     ///
     /// `cancel_region` pruned zones, jobs, plans, reservations,
     /// blocked_regions and the claim mask -- and never `cook_stations` or
