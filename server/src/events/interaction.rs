@@ -276,6 +276,8 @@ impl ServerEvent for MineBlockEvent {
         ReadExpect<'a, Time>,
         WriteStorage<'a, comp::SkillSet>,
         ReadStorage<'a, Uid>,
+        // bastion: who mined it decides whether the drop persists.
+        ReadStorage<'a, comp::Colonist>,
     );
 
     fn handle(
@@ -292,6 +294,7 @@ impl ServerEvent for MineBlockEvent {
             time,
             mut skill_sets,
             uids,
+            colonists,
         ): Self::SystemData<'_>,
     ) {
         use rand::{RngExt, SeedableRng};
@@ -454,7 +457,28 @@ impl ServerEvent for MineBlockEvent {
                                 ori: comp::Ori::from(Dir::random_2d(&mut rng)),
                                 item: comp::PickupItem::new(item, *program_time, false),
                                 loot_owner,
-                                persistent: false,
+                                // ★ COLONY PRODUCE PERSISTS (2026-08-22). A
+                                // drop with persistent:false gets an
+                                // Object::DeleteAfter timer; persistent:true
+                                // gets a BastionPile and no timer.
+                                //
+                                // MEASURED: 3 of 3 "food sniped -- eat moot"
+                                // events resolved to cause="despawned", not
+                                // "hauled_away". A hungry colonist reserves a
+                                // freshly harvested crop, walks to it, and
+                                // LOSES A RACE AGAINST ITS OWN DESPAWN TIMER.
+                                // Deposited food is already persistent, so the
+                                // pantry was fine while fresh produce rotted
+                                // off the field -- which is why food_stock read
+                                // 678 while fed read 0.
+                                //
+                                // Gated on the MINER being a colonist. A player
+                                // mining, and every ambient drop, keeps vanilla
+                                // timing exactly: making ALL mine drops
+                                // permanent would litter the world forever, and
+                                // this is a colony-economy rule, not a change
+                                // to how items work.
+                                persistent: colonists.contains(ev.entity),
                             });
                         }
                     }
