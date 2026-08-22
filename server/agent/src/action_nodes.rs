@@ -226,12 +226,76 @@ const IDLE_SIT_RATE: f64 = 0.099_841_283_805_460_65;
 /// calibration reference is dt = 1 TICK (1/30s @ SIM_TPS), not 1 second --
 /// `hazard_chance` at that dt must reproduce the original raw 0.05
 /// per-tick probability exactly.
+/// bastion (2026-08-22): whether an unstuck attempt may use the JUMP.
+///
+/// Pure so the rule can be pinned without an ECS, and because the rule is the
+/// whole content of the fix: `handle_wallrun` requires only `on_wall &&
+/// !on_ground` — no intent — so the only way to stop a colonist wallrunning is
+/// to stop it being airborne beside a wall, and the jump is the only way a
+/// colonist puts itself in the air.
+///
+/// `in_climb` is deliberately still honoured for NON-colonists: the vanilla
+/// behaviour made the jump unconditional while climbing (that is how a player
+/// or wild NPC gets off a wall), and this fix must not change what anything
+/// other than a colonist does.
+pub(crate) fn unstuck_should_jump(discourage_climb: bool, in_climb: bool, coin: bool) -> bool {
+    !discourage_climb && (in_climb || coin)
+}
+
 /// bastion (2026-08-22): the wall-detach steer, pinned in BOTH directions.
 ///
 /// Measured cause: 23 of 26 ultimate-fail-safe strandings had `on_ground=false`
 /// with `character_state` Wallrun x15 / Climb x5 — colonists pinned to the
 /// vertical faces of buildings, held there by a steer that points through the
 /// wall at their target.
+/// bastion (2026-08-22): a colonist must never jump, and everything else must
+/// still be able to.
+#[cfg(test)]
+mod unstuck_jump_tests {
+    use super::unstuck_should_jump;
+
+    /// ★ THE CLOSURE MATTERS, NOT THE COMMON CASE. The previous guard withheld
+    /// the jump only when `on_wall` was already true, which is one tick too
+    /// late: the colonist jumps from clear ground, drifts into the wall while
+    /// airborne, and acquires the contact afterwards. So the rule has to hold
+    /// for EVERY combination of the other inputs, including the one the old
+    /// code special-cased into an UNCONDITIONAL jump (`in_climb`).
+    #[test]
+    fn a_colonist_never_jumps_under_any_combination() {
+        for in_climb in [false, true] {
+            for coin in [false, true] {
+                assert!(
+                    !unstuck_should_jump(true, in_climb, coin),
+                    "a colonist jumped (in_climb={in_climb}, coin={coin}) — \
+                     `handle_wallrun` needs only `on_wall && !on_ground` and no \
+                     intent, so ANY airborne moment beside a wall strands them"
+                );
+            }
+        }
+    }
+
+    /// The other direction, and the reason a one-sided test would be worthless:
+    /// players and wild NPCs must keep the vanilla behaviour exactly. A guard
+    /// that refuses everything also stops the bug reproducing.
+    #[test]
+    fn everything_that_is_not_a_colonist_still_jumps_exactly_as_before() {
+        assert!(
+            unstuck_should_jump(false, true, false),
+            "a climbing non-colonist must still jump unconditionally — that is \
+             how a player gets off a wall, and this fix must not touch it"
+        );
+        assert!(
+            unstuck_should_jump(false, false, true),
+            "a non-colonist must still jump on the coin-flip arm"
+        );
+        assert!(
+            !unstuck_should_jump(false, false, false),
+            "and must still ROLL when the coin says roll — the arm was not \
+             removed, only the colonist path diverted into it"
+        );
+    }
+}
+
 #[cfg(test)]
 mod wall_detach_tests {
     use vek::Vec3;
@@ -699,24 +763,49 @@ impl AgentData<'_> {
             // `on_wall && !on_ground`, so every jump against a wall renews
             // exactly the condition that put them there.
             //
-            // For a colonist on a wall the correct move is to STOP, and let
-            // gravity return them to the ground so the router can path them
-            // around like a person. Roll is a ground action and stays
-            // available; only the wall-renewing jump is withheld.
-            let on_a_wall = self.physics_state.on_wall.is_some()
-                || matches!(
-                    self.char_state,
-                    CharacterState::Climb(_) | CharacterState::Wallrun(_)
-                );
-            if discourage_climb && on_a_wall {
+            // ★ A COLONIST NEVER JUMPS (2026-08-22). The previous version of
+            // this guard withheld the jump only once `on_wall` was ALREADY
+            // true, and that is one tick too late to matter: a colonist
+            // standing on clear ground has `on_wall = None`, jumps, drifts into
+            // the wall WHILE AIRBORNE, and only then acquires the contact. The
+            // guard could never see the jump that caused the problem.
+            //
+            // Measured on the clean leg, 34 ultimate-fail-safe strandings:
+            //     character_state  Wallrun x27, Idle x7
+            //     on_ground=false  27 of 34
+            //     feet z=408       GROUND LEVEL -- they did not fall from
+            //                      anywhere, so they left the ground upward
+            //     vertical velocity  median +1.001, max +2.500, only 3 of 34
+            //                        falling
+            //     horizontal speed   median 0.004 -- going straight up,
+            //                        not along
+            //
+            // `handle_wallrun` needs `on_wall && !on_ground` and NO INTENT AT
+            // ALL -- unlike `handle_climb`, which requires `move_dir` pointing
+            // into the wall and which the wall-detach steer already defeats
+            // (Climb fell 4 -> 0 when that landed). So steering away cannot
+            // prevent a wallrun; only never being airborne beside a wall can.
+            //
+            // The jump is the ONLY way a colonist puts itself in the air.
+            // Removing it removes the entry condition rather than fighting the
+            // state afterwards, and it is what Ben asked for in plain words:
+            // climbing and falling are to be actively discouraged, and a
+            // person who cannot reach a crate walks around the building.
+            //
+            // Roll stays: it is a GROUND action, it is the actual unstick for
+            // the case this function exists to serve (a body wedged on
+            // geometry), and it cannot start a wallrun.
+            let in_climb = matches!(self.char_state, CharacterState::Climb(_));
+            if unstuck_should_jump(discourage_climb, in_climb, self.helper_random_bool(0.5)) {
+                controller.push_basic_input(InputKind::Jump);
+            } else {
+                // Cancel any jump another node queued this tick, not merely
+                // decline to add one -- `push_basic_input` is not the only
+                // writer, and a jump that arrives from elsewhere strands the
+                // colonist exactly the same way.
                 if controller.queued_inputs.contains_key(&InputKind::Jump) {
                     controller.push_cancel_input(InputKind::Jump);
                 }
-            } else if matches!(self.char_state, CharacterState::Climb(_))
-                || self.helper_random_bool(0.5)
-            {
-                controller.push_basic_input(InputKind::Jump);
-            } else {
                 controller.push_basic_input(InputKind::Roll);
             }
         } else {
