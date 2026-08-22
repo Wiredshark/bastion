@@ -1036,10 +1036,51 @@ pub fn schedule_permits_need(
     is_rest_need: bool,
     hunger: f32,
     forced_labour: bool,
+    // Whether hunger can be met RIGHT NOW without travelling — i.e. the
+    // colonist is carrying food. See the backout rule below for why this is
+    // not the same question as "is there food in the colony".
+    hunger_meetable_now: bool,
 ) -> bool {
-    // Starving overrides everything the clock says — unless conscripted.
+    // ★ THE BACKOUT WAS RE-CREATING THE MONOPOLY IT WAS MEANT TO ESCAPE
+    // (measured, first night with the schedule live).
+    //
+    //   uid  restP  slept  hungP
+    //   240      9      8      7
+    //   238      5      3      7
+    //    37      0      0     18   <- never got a rest preempt ALL NIGHT
+    //   264      0      0     11   <- ditto
+    //
+    // The two colonists who never slept are the two with the MOST hunger
+    // preempts, and they are exactly the ones sitting at hunger 0.000. Below
+    // the override the backout re-permitted hunger during the Sleep block;
+    // hunger (0.0) is then the lower meter, so it took the single slot every
+    // pass — and because they cannot actually REACH food, they neither ate nor
+    // slept. A guard starving its protectee, for the fourth time in this
+    // project.
+    //
+    // ★ BEN'S RULING RESOLVES IT (#115): prefer the need that is "more life
+    // threatening and can be solved FASTEST". At night with an empty pack,
+    // hunger CANNOT be solved fast — that is the whole measured problem. A bed
+    // the colonist already owns is right there. So the backout now requires
+    // that hunger be meetable NOW: eat from the pack and go to bed, or sleep
+    // and fetch food at dawn alive and rested.
+    //
+    // Rest is never gated on this: sleeping is always available to someone who
+    // owns a bed, so a rest need under the starvation line still passes.
     if hunger < SCHEDULE_STARVATION_OVERRIDE && !forced_labour {
-        return true;
+        // Rest is never gated: sleeping is always available to someone who
+        // owns a bed.
+        if is_rest_need {
+            return true;
+        }
+        // ★ THE PACK REQUIREMENT IS A NIGHT RULE ONLY, and the first draft of
+        // this got it wrong — it refused a starving colonist food at MIDDAY
+        // with an empty pack, which its own test caught. During a work or
+        // leisure block there is a whole colony of reachable food and the
+        // emergency must fire. It is only at NIGHT, with an empty pack, that
+        // chasing hunger is the worse of two options: that is the state that
+        // left uids 37 and 264 awake and starving until dawn.
+        return !matches!(block, ScheduleBlock::Sleep) || hunger_meetable_now;
     }
     match block {
         // Sleeping time: rest is welcome, eating is not urgent enough to get
@@ -15487,11 +15528,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // parameter so that becomes a caller change, never `false`
                 // today.
                 const FORCED_LABOUR: bool = false;
-                let rest_in = (rest_in
-                    || matches!(sched_block, ScheduleBlock::Sleep))
-                    && schedule_permits_need(sched_block, true, needs.hunger, FORCED_LABOUR);
-                let hunger_in =
-                    hunger_in && schedule_permits_need(sched_block, false, needs.hunger, FORCED_LABOUR);
+                // Can hunger be met without travelling? Carrying food makes
+                // eating instant; a full colony stockpile does NOT, and
+                // conflating the two is what left starving colonists awake all
+                // night chasing food they could not reach.
+                let carries_food = inventories.get(entity).is_some_and(|inv| {
+                    inv.slots().flatten().any(|i| {
+                        i.item_definition_id()
+                            .itemdef_id()
+                            .is_some_and(|d| FOOD_DEFS.iter().any(|f| *f == d))
+                    })
+                });
+                let rest_in = (rest_in || matches!(sched_block, ScheduleBlock::Sleep))
+                    && schedule_permits_need(
+                        sched_block,
+                        true,
+                        needs.hunger,
+                        FORCED_LABOUR,
+                        carries_food,
+                    );
+                let hunger_in = hunger_in
+                    && schedule_permits_need(
+                        sched_block,
+                        false,
+                        needs.hunger,
+                        FORCED_LABOUR,
+                        carries_food,
+                    );
 
                 if rest_in {
                     candidates.push((needs.rest, 0));
@@ -26902,12 +26965,12 @@ mod tests {
         // and the 4.5:1 hunger monopoly simply continues. A well-fed colonist
         // in its shift does not stop to eat.
         assert!(
-            !schedule_permits_need(ScheduleBlock::Work, false, 0.5, false),
+            !schedule_permits_need(ScheduleBlock::Work, false, 0.5, false, true),
             "a fed colonist interrupted work during its shift — the schedule is \
              not binding and the hunger monopoly is unchanged"
         );
         assert!(
-            !schedule_permits_need(ScheduleBlock::Work, true, 0.5, false),
+            !schedule_permits_need(ScheduleBlock::Work, true, 0.5, false, true),
             "rest must not interrupt the work block either"
         );
 
@@ -26915,7 +26978,7 @@ mod tests {
         // ignored — this project has already shipped three guards that starved
         // what they protected, and a schedule is a guard.
         assert!(
-            schedule_permits_need(ScheduleBlock::Work, false, 0.05, false),
+            schedule_permits_need(ScheduleBlock::Work, false, 0.05, false, true),
             "a colonist starving to death during its shift was refused food — \
              that is the emergency backout Ben asked for, and without it the \
              schedule is a trap"
@@ -26923,18 +26986,56 @@ mod tests {
 
         // Sleep block: rest is welcome, ordinary hunger is not — otherwise
         // colonists get out of bed all night and the block buys nothing.
-        assert!(schedule_permits_need(ScheduleBlock::Sleep, true, 0.5, false));
-        assert!(!schedule_permits_need(ScheduleBlock::Sleep, false, 0.5, false));
+        assert!(schedule_permits_need(ScheduleBlock::Sleep, true, 0.5, false, true));
+        assert!(!schedule_permits_need(ScheduleBlock::Sleep, false, 0.5, false, true));
 
         // Leisure: everything is allowed; this is where meals and breaks live.
-        assert!(schedule_permits_need(ScheduleBlock::Leisure, true, 0.5, false));
-        assert!(schedule_permits_need(ScheduleBlock::Leisure, false, 0.5, false));
+        assert!(schedule_permits_need(ScheduleBlock::Leisure, true, 0.5, false, true));
+        assert!(schedule_permits_need(ScheduleBlock::Leisure, false, 0.5, false, true));
+
+        // ★ THE BACKOUT MUST NOT RE-CREATE THE MONOPOLY IT ESCAPES.
+        //
+        // Measured on the first night the schedule ran: the only two colonists
+        // who NEVER got a rest preempt (uid 37: 0 rest / 18 hunger; uid 264:
+        // 0 rest / 11 hunger) were exactly the two at hunger 0.000. The backout
+        // re-permitted hunger during Sleep, hunger was the lower meter, it took
+        // the single slot every pass — and since they could not reach food they
+        // neither ate nor slept.
+        //
+        // Ben's ruling decides it: prefer the need that can be "solved
+        // fastest". With an empty pack at night, hunger cannot; a bed the
+        // colonist owns can.
+        assert!(
+            !schedule_permits_need(ScheduleBlock::Sleep, false, 0.02, false, false),
+            "a STARVING colonist with an EMPTY PACK was allowed to chase hunger \
+             during the night — that is the exact state that left uids 37 and \
+             264 awake and hungry until dawn"
+        );
+        assert!(
+            schedule_permits_need(ScheduleBlock::Sleep, false, 0.02, false, true),
+            "a starving colonist CARRYING food must still eat — that is instant \
+             and costs it nothing; gating this would be starving the protectee \
+             from the other side"
+        );
+        assert!(
+            schedule_permits_need(ScheduleBlock::Sleep, true, 0.02, false, false),
+            "REST must never be gated on carrying food: sleeping is always \
+             available to someone who owns a bed, and it is the whole point of \
+             the night block"
+        );
+        // The daytime emergency is unchanged: starving mid-shift with no pack
+        // still releases the colonist to go and find food, because during a
+        // work block there is a whole colony of food reachable.
+        assert!(
+            schedule_permits_need(ScheduleBlock::Work, false, 0.02, false, false),
+            "the daytime starvation backout must still fire with an empty pack"
+        );
 
         // ★ THE CONSCRIPTION EXTENSION POINT (Ben's later slavery/forced-labour
         // mod): with forced_labour set, even starvation does not release the
         // shift. Pinned now so the hook cannot rot before the mod is written.
         assert!(
-            !schedule_permits_need(ScheduleBlock::Work, false, 0.01, true),
+            !schedule_permits_need(ScheduleBlock::Work, false, 0.01, true, true),
             "forced labour must suppress the starvation backout — that is the \
              whole content of the conscription mod"
         );
