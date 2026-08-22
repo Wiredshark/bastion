@@ -8037,6 +8037,23 @@ impl JobBoard {
     /// reverse index, kept in lockstep with `reservations` at every mutator.
     pub fn is_reserved(&self, item: Uid) -> bool { self.reservations_by_item.contains_key(&item) }
 
+    /// ★ Is this item claimed by ANYONE OTHER than `mine`? (2026-08-22)
+    ///
+    /// `is_reserved` answers "does anybody hold this", which is the right
+    /// question at job GENERATION and the wrong one at PICKUP -- a haul about to
+    /// lift its own cargo always sees its own reservation and would refuse
+    /// forever.
+    ///
+    /// MEASURED: `food sniped -- eat moot` with cause="hauled_away", twice. Haul
+    /// admission is evaluated once, when the job is minted, and never re-checked
+    /// when the cargo is actually taken. So a haul minted while an item was free
+    /// carries it off after a hungry colonist has claimed it.
+    pub fn reserved_by_other(&self, item: Uid, mine: Option<common::bastion::ReservationId>) -> bool {
+        self.reservations_by_item
+            .get(&item)
+            .is_some_and(|held| held.iter().any(|r| Some(*r) != mine))
+    }
+
     /// T1.13 (conservation cluster, REFORMULATED DECISIONS #89): the
     /// reservation ledger's structural-consistency audit -- item `Uid`s
     /// whose reverse-index entry doesn't exactly match what the forward
@@ -19113,6 +19130,44 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     .any(|i| i.item_definition_id().itemdef_id() == Some(req))
                             })
                         });
+                        // RE-CHECK THE CLAIM AT PICKUP (2026-08-22). Haul
+                        // admission runs ONCE, when the job is minted
+                        // (haul_candidate_admitted reads is_reserved there).
+                        // Nothing re-checks when the cargo is lifted, so a haul
+                        // minted while an item was free carries it off after a
+                        // hungry colonist has claimed it.
+                        //
+                        // MEASURED: food sniped -- eat moot with
+                        // cause="hauled_away", twice. I predicted this race from
+                        // the code, retracted it when 3 of 3 snipes read
+                        // "despawned", and it appeared anyway once the label was
+                        // split properly. Real but rare.
+                        //
+                        // reserved_by_other, NOT is_reserved: a haul lifting its
+                        // OWN cargo always sees its own reservation and would
+                        // refuse forever. That distinction is why this needed a
+                        // new query rather than the existing one.
+                        // Field access, NOT the &self method: `board.jobs` is
+                        // mutably borrowed by `job` and a `&self` call would want
+                        // the whole struct. Rust permits DISJOINT FIELD borrows,
+                        // so reading `reservations_by_item` directly is legal
+                        // while `jobs` is held. Same lesson as the def capture
+                        // earlier -- the conflict is about WHAT is borrowed, not
+                        // whether the check is possible.
+                        let claimed_by_other = board
+                            .reservations_by_item
+                            .get(&item)
+                            .is_some_and(|held| held.iter().any(|r| Some(*r) != job.reservation));
+                        if claimed_by_other {
+                            info!(
+                                job = active.job,
+                                item = %item,
+                                "bastion: haul yields — cargo claimed by someone else after this job was minted"
+                            );
+                            board.remove_job(active.job);
+                            to_release.push((entity, ReleaseReason::Other));
+                            continue;
+                        }
                         if job.progress < 0.5 {
                             // LEG 1: standing at the item.
                             if let Some(item_entity) = id_maps.uid_entity(item) {
