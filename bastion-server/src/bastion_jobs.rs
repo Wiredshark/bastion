@@ -21294,15 +21294,37 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     .copied()
                     .or_else(|| surface_egress_dest(&terrain, feet))
                     .or(surface_dest);
-                let below_grade = surface_dest.is_some_and(|destination| {
+                // ★ OFF GRADE IN EITHER DIRECTION (2026-08-21). This read
+                // `(destination.z - pos.z) >= 3.0` -- surface ABOVE me -- so it
+                // detected a colonist in a HOLE and nothing else. A colonist
+                // stranded on a roof has the surface BELOW them, so the
+                // comparison is negative, the flag is false, and the branch
+                // under it RESETS THE WATCH and continues. They never
+                // accumulate stillness, never reach the egress scan, and never
+                // get a verdict -- then the 60-second fail-safe teleports them.
+                //
+                // MEASURED: 16 fail-safe teleports, ALL SIXTEEN with
+                // egress_verdicts=0 and terminal_cause=
+                // "below_grade_watch_without_egress_verdict". Ten were on a
+                // wall. The cause string names the defect in its own text: the
+                // below-grade watch fired without a verdict because there was
+                // no above-grade watch to fire.
+                //
+                // `.abs()` makes the confinement test symmetric. The name goes
+                // with it: this is OFF grade, not below it. The rescue target
+                // needs no change -- `surface_dest` is already the surface at
+                // the colonist's own column, which for someone on a roof IS the
+                // ground beneath them, and the restored diagonal descents give
+                // the router a way to walk there.
+                let off_grade = surface_dest.is_some_and(|destination| {
                     destination.map(|e| e as f32).xy().distance(pos.0.xy()) >= 3.0
-                        || (destination.z as f32 - pos.0.z) >= 3.0
+                        || (destination.z as f32 - pos.0.z).abs() >= 3.0
                 });
                 let watch = board
                     .egress_watch
                     .entry(*uid)
                     .or_insert((pos.0, 0.0, false));
-                if !below_grade {
+                if !off_grade {
                     // Reaching a real surface completes this organic-egress
                     // episode. A later entrapment must start from a clean
                     // timer and attempt bit.
@@ -21427,7 +21449,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 if has_egress {
                     // Walkable/climbable ground within the annulus — not
                     // walled in.
-                    if below_grade {
+                    if off_grade {
                         watch.2 = true;
                         *board.egress_verdicts.entry(*uid).or_insert(0) += 1;
                         *board.egress_verdicts_scan_ok.entry(*uid).or_insert(0) += 1;
@@ -21466,7 +21488,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 }
                 let Some(target) = rim else {
                     // Open/flat ground — just idling, not trapped.
-                    if below_grade {
+                    if off_grade {
                         watch.2 = true;
                         *board.egress_verdicts.entry(*uid).or_insert(0) += 1;
                         *board.egress_verdicts_scan_ok.entry(*uid).or_insert(0) += 1;
@@ -23263,11 +23285,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // elsewhere (the colonist is in a pit/shaft, not on open
                 // ground where dest ≈ current). NOT movement-keyed: a
                 // wanderer below grade still accumulates (the e-out hole).
-                let below_grade = dest.is_some_and(|d| {
+                // ★ SAME ASYMMETRY AS THE EGRESS WATCH, same fix. This is the
+                // STUCK-WATCH accrual rather than the egress one, and it read
+                // `(d.z - pos.z) >= 3.0` too -- surface above me only. Its own
+                // comment says "a wanderer below grade still accumulates (the
+                // e-out hole)", which is exactly right and exactly half the
+                // problem: a colonist stranded ON something never accumulated
+                // here either.
+                //
+                // Both watches now treat OFF grade symmetrically. Fixing one
+                // and not the other would have left a colonist who reaches the
+                // egress scan but whose stuck-watch never armed -- two clocks
+                // disagreeing about whether the same colonist is in trouble.
+                let off_grade = dest.is_some_and(|d| {
                     d.map(|e| e as f32).xy().distance(pos.0.xy()) >= 3.0
-                        || (d.z as f32 - pos.0.z) >= 3.0
+                        || (d.z as f32 - pos.0.z).abs() >= 3.0
                 });
-                if !below_grade {
+                if !off_grade {
                     // On/at a surface — not stuck (B7 feeds idle colonists).
                     // But ONLY when grounded: a colonist HOVERING inside the
                     // last 3 blocks of a shaft (cap-denied climber, half-dug
