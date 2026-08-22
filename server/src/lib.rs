@@ -7144,6 +7144,28 @@ impl Server {
                         // at all, which is what makes a driverless
                         // determinism capture possible.
                         self.bastion_found_colony_presence(sp);
+                        // ★ THE SPAWN POINT FOLLOWS THE COLONY (2026-08-21).
+                        // Widening the town search to 16384 found a village
+                        // worth having -- 46 houses, 23 fields -- and put it
+                        // 11,229 BLOCKS from the world spawn. A player would
+                        // arrive eleven kilometres from their own settlement,
+                        // with no indication it existed or which way to walk.
+                        //
+                        // It also made the colony unobservable: the driver's
+                        // inspect_colonists returned 0 payloads against a
+                        // server reporting colonists=8, because `Colonist` is
+                        // not a network-synced component and the client can
+                        // only ask about entities it has synced.
+                        //
+                        // Precedent for writing this at runtime is
+                        // bastion_arena.rs, which already moves the spawn to
+                        // its staging area. A colony IS where the player
+                        // starts; that is what founding one means.
+                        self.state.ecs_mut().write_resource::<SpawnPoint>().0 = sp;
+                        tracing::info!(
+                            pos = ?sp,
+                            "bastion: WORLD SPAWN moved to the colony — a player                              starts in their own settlement, not wherever worldgen                              put the default spawn"
+                        );
                         tracing::info!(
                             pos = ?sp,
                             "bastion: autofound colony presence created (no client needed)"
