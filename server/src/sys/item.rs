@@ -26,6 +26,7 @@ impl<'a> System<'a> for Sys {
         Read<'a, EventBus<DeleteEvent>>,
         ReadStorage<'a, common::uid::Uid>,
         Read<'a, crate::Tick>,
+        specs::ReadExpect<'a, bastion_server::bastion_jobs::JobBoard>,
     );
 
     const NAME: &'static str = "item";
@@ -45,6 +46,7 @@ impl<'a> System<'a> for Sys {
             delete_bus,
             uids,
             tick,
+            job_board,
         ): Self::SystemData,
     ) {
         // ENGOPT6 hunt round 5: the full merge trail — round 4 proved the
@@ -105,6 +107,27 @@ impl<'a> System<'a> for Sys {
             .collect();
         due_checkers.sort_unstable();
         for (_, entity) in due_checkers {
+            // ★ A RESERVED MEAL MUST NOT BE MERGED AWAY (2026-08-22).
+            //
+            // This system deletes the SOURCE entity when two stacks combine
+            // (DeleteEvent below). Its filter checks distance, persistence class
+            // and item compatibility -- and never asks whether anybody has
+            // CLAIMED the item.
+            //
+            // MEASURED: a hungry colonist reserves a cooked dish, walks to it,
+            // and the dish merges into the pile beside it. The uid stops
+            // resolving, the eat job dies "sniped", and the colonist starves
+            // three blocks from the food. def=apple_mushroom_curry on EVERY
+            // snipe -- dishes drop with should_merge:true and accumulate at the
+            // cook station, so they always have a mergeable neighbour. It also
+            // explains food_stock staying high while fed collapses: merging
+            // CONSERVES items perfectly. Nothing was ever lost.
+            //
+            // HAUL-GEN already refuses reserved items; the merge system is the
+            // one consumer of ground items that does not.
+            if uids.get(entity).is_some_and(|u| job_board.is_reserved(*u)) {
+                continue;
+            }
             let (Some(item), Some(pos)) = (items.get(entity), positions.get(entity)) else {
                 continue;
             };
