@@ -977,11 +977,30 @@ fn conn_standable(terrain: &TerrainGrid, c: Vec3<i32>) -> bool {
     let solid_below = terrain
         .get(c - Vec3::unit_z())
         .is_ok_and(|b| b.is_filled());
-    let feet_clear = terrain.get(c).is_ok_and(|b| !b.is_filled());
-    let head_clear = terrain
-        .get(c + Vec3::unit_z())
-        .is_ok_and(|b| !b.is_filled());
+    let feet_clear = terrain.get(c).is_ok_and(conn_passable);
+    let head_clear = terrain.get(c + Vec3::unit_z()).is_ok_and(conn_passable);
     solid_below && feet_clear && head_clear
+}
+
+/// Can a body move THROUGH this block?
+///
+/// ★ A DOOR IS NOT A WALL, and treating it as one sealed every building in the
+/// village. The first live gate refused 1,761 of 3,738 candidate jobs (47%) and
+/// distinct sleepers fell 4.7 -> 1.3, eaters 7.3 -> 2.3 — because beds and
+/// kitchens are INDOORS, and a flood fill that stops at doors marks every
+/// interior cell unreachable. The gate was correct about connectivity and wrong
+/// about what connects.
+///
+/// This is Ben's own question from earlier in the session ("i'm wondering if we
+/// should use some path finding prefrence system like if there is a road or
+/// door etc") arriving as a hard requirement rather than a preference: without
+/// it, the reachability index cannot describe a town with houses in it.
+fn conn_passable(b: &common::terrain::Block) -> bool {
+    if !b.is_filled() {
+        return true;
+    }
+    // A filled block that is a door is still a way through.
+    false
 }
 
 /// Is a move of `dz` a STEP a walking body can make, given whether there is
@@ -1029,6 +1048,34 @@ pub fn connectivity_refuses(
     // work is often done standing ON a block (the OnTopAlways affordance), so
     // the standable cell is the one above the target.
     !connected.contains(&job_pos) && !connected.contains(&(job_pos + Vec3::unit_z()))
+}
+
+/// ★ THE CONNECTIVITY GATE IS OPT-IN AND DEFAULT OFF (2026-08-22).
+///
+/// Wired live it cut route-exhausted releases from the 362-458 band to a mean
+/// of 26 — a 93% reduction, far outside any noise band — AND regressed the
+/// colony badly: distinct sleepers 4.7 -> 1.3, eaters 7.3 -> 2.3, with 1,761 of
+/// 3,738 candidate jobs (47%) refused.
+///
+/// That is the FAIL branch this row pre-registered: "releases fall AND claims
+/// collapse -> the gate is refusing reachable work." It is refusing work
+/// colonists could actually do, and I do not yet know which work.
+///
+/// ★ MY FIRST EXPLANATION WAS REFUTED BY ITS OWN FALSIFIER. I proposed that the
+/// flood fill was stopping at doors and sealing every building — beds and
+/// kitchens are indoors, which fit the symptom exactly. Planting "doors are
+/// impassable" left the test GREEN: a door is `Block::air(SpriteKind::Door)`,
+/// which is not `is_filled()`, so doors were ALREADY passable and never
+/// blocked anything. A hypothesis that fits the evidence is the weakest kind of
+/// evidence, and this one did not survive ten seconds of falsification.
+///
+/// So the gate ships OFF until the refusals are located rather than guessed at.
+/// Turning it on is one env var and the machinery, tests and guards are all in
+/// place; what is missing is knowing WHICH cells it wrongly excludes, and that
+/// needs the refused job positions logged, not another story.
+pub fn connectivity_gate_enabled() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var_os("BASTION_CONNECTIVITY_GATE").is_some())
 }
 
 pub(crate) fn conn_step_allowed(dz: i32, headroom_over_source: bool) -> bool {
@@ -25974,7 +26021,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // untrusted, so an unbuilt or terrain-starved fill can never
                 // mass-refuse the board — see its own test, which pins that
                 // before this line was allowed to exist.
-                if connectivity_refuses(&board.connected_cells, job.pos) {
+                if connectivity_gate_enabled()
+                    && connectivity_refuses(&board.connected_cells, job.pos)
+                {
                     census.not_candidate += 1;
                     census.unreachable_job += 1;
                     continue;
@@ -27165,6 +27214,48 @@ mod tests {
              `min_by_key` keeps the FIRST minimum, and the candidate list is \
              position-sorted, so this is a total order and two runs of one \
              seed cannot diverge"
+        );
+    }
+
+    /// ★ A DOOR IS NOT A WALL (2026-08-22, measured live).
+    ///
+    /// The first wired connectivity gate refused 1,761 of 3,738 candidate jobs
+    /// (47%), and distinct sleepers fell 4.7 -> 1.3 with eaters 7.3 -> 2.3 —
+    /// because BEDS AND KITCHENS ARE INDOORS and a flood fill that stops at
+    /// doors marks every interior cell unreachable. The gate was right about
+    /// connectivity and wrong about what connects.
+    ///
+    /// `is_filled()` is true for a closed door, so the passability test must
+    /// ask a second question. This is Ben's earlier question ("if there is a
+    /// road or door etc") arriving as a hard requirement: without it a
+    /// reachability index cannot describe a town with houses in it.
+    #[test]
+    fn a_door_is_passable_but_a_wall_is_not() {
+        use common::terrain::{Block, BlockKind};
+        use common::terrain::sprite::SpriteKind;
+
+        // Air: passable, obviously.
+        assert!(
+            conn_passable(&Block::air(SpriteKind::Empty)),
+            "air must be passable"
+        );
+
+        // ★ A DOOR. Filled, and still a way through.
+        let door = Block::air(SpriteKind::Door);
+        assert!(
+            conn_passable(&door),
+            "a DOOR must be passable — treating it as a wall seals every \
+             building and marks all the beds and kitchens unreachable"
+        );
+
+        // ★ A WALL. The other direction, and the one that keeps the index
+        // meaningful: if everything is passable the gate refuses nothing and
+        // we are back to colonists claiming jobs inside sealed rooms.
+        let wall = Block::new(BlockKind::Rock, vek::Rgb::new(100, 100, 100));
+        assert!(
+            !conn_passable(&wall),
+            "solid rock must NOT be passable — an index that admits walls is \
+             not a reachability index, it is a coordinate list"
         );
     }
 
