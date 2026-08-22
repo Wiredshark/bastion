@@ -25955,6 +25955,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     }
                     continue;
                 }
+                // ★ THE CLAIM IS THE MISTAKE, NOT THE WALK (researched at Ben's
+                // direction, 2026-08-22). RimWorld answers reachability from a
+                // zone index BEFORE pathfinding; DF keeps connected segments so
+                // dwarves never path at objects in unreachable segments. Both
+                // note A* with no path searches the WHOLE map — which is why
+                // enabling it here cost ~48% of tick rate and still did not
+                // help.
+                //
+                // This colony bleeds 362-458 route-exhausted releases a leg:
+                // a colonist claims a job it cannot reach, walks at it, fails,
+                // times out, and the job returns to the pool for the next
+                // colonist to fail at the same way. Refusing the claim is the
+                // only thing that stops the cycle, because no amount of better
+                // walking makes an impossible claim possible.
+                //
+                // `connectivity_refuses` returns FALSE whenever the index is
+                // untrusted, so an unbuilt or terrain-starved fill can never
+                // mass-refuse the board — see its own test, which pins that
+                // before this line was allowed to exist.
+                if connectivity_refuses(&board.connected_cells, job.pos) {
+                    census.not_candidate += 1;
+                    census.unreachable_job += 1;
+                    continue;
+                }
                 let emergency_owner = board.emergency_access_jobs.get(&id).copied();
                 if let Some(route_owner) = emergency_route_owner {
                     if emergency_owner != Some(route_owner) || emergency_next_job != Some(id) {
@@ -26547,6 +26571,39 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     game_day = (tod / common::resources::DAY).floor() as i64,
                     "bastion: DAY SCHEDULE — the clock the arbiter is reading"
                 );
+            }
+            // ★ REBUILD THE CONNECTIVITY INDEX (researched: RimWorld's zone
+            // index / DF's connected segments). Seeded from a live colonist's
+            // own feet — that cell is standable BY EXISTENCE PROOF, which is a
+            // stronger seed than any coordinate I could nominate, and it is
+            // inside the colony by construction.
+            if tick.0.saturating_sub(board.connectivity_built_tick)
+                >= CONNECTIVITY_REBUILD_TICKS
+                || board.connected_cells.is_empty()
+            {
+                let seed = (&colonists, &positions)
+                    .join()
+                    .next()
+                    .map(|(_, p)| p.0.map(|e| e.floor() as i32));
+                if let Some(seed) = seed {
+                    let cells = colony_connected_cells(
+                        &terrain,
+                        seed,
+                        CONNECTIVITY_RADIUS,
+                        200_000,
+                    );
+                    let trusted = connectivity_is_trusted(cells.len());
+                    info!(
+                        tick = tick.0,
+                        cells = cells.len(),
+                        trusted,
+                        ?seed,
+                        "bastion: CONNECTIVITY rebuilt — cells a walking colonist can \
+                         reach from the colony core (untrusted = gates nothing)"
+                    );
+                    board.connected_cells = cells;
+                    board.connectivity_built_tick = tick.0;
+                }
             }
             // ★ THE RELEASE CENSUS (2026-08-22): the consumer
             // `release_reason_counts` never had. A leg measured 103 hunger
