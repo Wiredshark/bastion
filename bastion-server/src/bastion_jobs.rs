@@ -1700,24 +1700,38 @@ pub fn schedule_permits_need(
     // Rest is never gated on this: sleeping is always available to someone who
     // owns a bed, so a rest need under the starvation line still passes.
     if hunger < SCHEDULE_STARVATION_OVERRIDE && !forced_labour {
-        // Rest is never gated: sleeping is always available to someone who
-        // owns a bed.
-        if is_rest_need {
-            return true;
-        }
-        // ★ THE PACK REQUIREMENT IS A NIGHT RULE ONLY, and the first draft of
-        // this got it wrong — it refused a starving colonist food at MIDDAY
-        // with an empty pack, which its own test caught. During a work or
-        // leisure block there is a whole colony of reachable food and the
-        // emergency must fire. It is only at NIGHT, with an empty pack, that
-        // chasing hunger is the worse of two options: that is the state that
-        // left uids 37 and 264 awake and starving until dawn.
-        return !matches!(block, ScheduleBlock::Sleep) || hunger_meetable_now;
+        // ★ THE NIGHT-PACK RULE IS RETIRED (2026-08-23, slot-93 sweep). It
+        // refused a starving EMPTY-PACK colonist food during the Sleep
+        // block — a workaround for the era when night fetches livelocked
+        // (the old pathfinder lost 24-block trips; uids 37/264 neither ate
+        // nor slept). Both halves of that era are fixed (cell-identity
+        // pathfinder; the bag-guard deadlock), and keeping the rule
+        // produced the inversion the sweep filmed: hunger 0.15 could eat
+        // at night while hunger 0.02 was refused. Below the override,
+        // ANY need may fire — starvation outranks every schedule.
+        let _ = hunger_meetable_now;
+        return true;
     }
     match block {
-        // Sleeping time: rest is welcome, eating is not urgent enough to get
-        // a colonist out of bed above the starvation line.
-        ScheduleBlock::Sleep => is_rest_need,
+        // ★ THE MIDNIGHT SNACK (slot-93 sweep, 2026-08-23): Adig crossed
+        // the hunger interrupt around bedtime, this arm refused food all
+        // night, and he lay at hunger 0.0000 until breakfast while
+        // food_stock=84 sat in the store. The old rule ("eating is not
+        // urgent enough to get out of bed above the starvation line") was
+        // built when night hunger genuinely could not be solved — the
+        // pathfinder lost 24-block trips and the pack was the only safe
+        // meal. That environment is gone, and this comment block's OWN
+        // researched citation already held the answer: RimWorld's schedule
+        // "gates SLEEP and governs free time; it never gates food."
+        // Hunger now interrupts sleep at its ordinary threshold, exactly as
+        // it interrupts work — a person gets up for a midnight snack; the
+        // upstream band logic keeps the comfortable in bed. `!forced_labour`
+        // for the same reason as the Work arm.
+        ScheduleBlock::Sleep => {
+            is_rest_need
+                || (!forced_labour
+                    && hunger < common::bastion::MoodConfig::current().hunger.interrupt)
+        },
         // ★ WORKING TIME STOPS NAPPING, NOT MEALS (corrected 2026-08-22 from
         // Ben's live play + RimWorld's actual rule).
         //
@@ -29936,10 +29950,19 @@ mod tests {
              schedule is a trap"
         );
 
-        // Sleep block: rest is welcome, ordinary hunger is not — otherwise
-        // colonists get out of bed all night and the block buys nothing.
+        // Sleep block (★ SUPERSEDED 2026-08-23, slot-93 sweep): rest is
+        // welcome, COMFORT-band hunger stays in bed — but below the ordinary
+        // interrupt the MIDNIGHT SNACK fires, pack or no pack. RimWorld's
+        // cited rule: the schedule never gates food.
         assert!(schedule_permits_need(ScheduleBlock::Sleep, true, 0.5, false, true));
-        assert!(!schedule_permits_need(ScheduleBlock::Sleep, false, 0.5, false, true));
+        assert!(
+            !schedule_permits_need(ScheduleBlock::Sleep, false, 0.5, false, true),
+            "comfortable hunger (0.5) stays in bed — the block still buys quiet nights"
+        );
+        assert!(
+            schedule_permits_need(ScheduleBlock::Sleep, false, 0.15, false, false),
+            "below the interrupt the midnight snack fires — Adig's exact              overnight starvation, pinned shut"
+        );
 
         // Leisure: everything is allowed; this is where meals and breaks live.
         assert!(schedule_permits_need(ScheduleBlock::Leisure, true, 0.5, false, true));
@@ -29957,11 +29980,16 @@ mod tests {
         // Ben's ruling decides it: prefer the need that can be "solved
         // fastest". With an empty pack at night, hunger cannot; a bed the
         // colonist owns can.
+        // ★ SUPERSEDED (2026-08-23, slot-93 sweep): this used to assert the
+        // REFUSAL of a starving empty-pack colonist at night — a workaround
+        // pinned against the era when night fetches livelocked (uids 37/264
+        // neither ate nor slept). Eating works now (pathfinder + the eat
+        // deadlock both fixed), so the refusal itself became the killer:
+        // Adig lay at hunger 0.0000 beside food_stock=84 until dawn. The
+        // starving colonist now eats, pack or no pack:
         assert!(
-            !schedule_permits_need(ScheduleBlock::Sleep, false, 0.02, false, false),
-            "a STARVING colonist with an EMPTY PACK was allowed to chase hunger \
-             during the night — that is the exact state that left uids 37 and \
-             264 awake and hungry until dawn"
+            schedule_permits_need(ScheduleBlock::Sleep, false, 0.02, false, false),
+            "a starving colonist gets up and eats at night — the refusal this              once pinned starved Adig beside a full pantry"
         );
         assert!(
             schedule_permits_need(ScheduleBlock::Sleep, false, 0.02, false, true),
