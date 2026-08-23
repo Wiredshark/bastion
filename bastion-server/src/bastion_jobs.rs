@@ -11192,7 +11192,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         (&colonists, &entities, (&needs_storage).maybe()).join()
                     {
                         total += 1;
-                        if healths.get(entity).is_some_and(|h| h.is_dead) {
+                        if comp::is_downed_or_dead(
+                            healths.get(entity),
+                            char_states.get(entity),
+                        ) {
                             downed += 1;
                         }
                         if let Some(n) = needs {
@@ -11357,9 +11360,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // reset (a revive un-arms it) and the fire-exactly-once edge
                 // are all the already-pinned sequence logic, not a second
                 // copy. Gated on the founded latch: a world that never had a
-                // colonist is not an extinct colony. `is_dead` here means
-                // dead OR downed-forever (colonists inherit the player
-                // downed mechanic and stay down — the DECISIONS entry); a
+                // colonist is not an extinct colony. Alive means NEITHER
+                // dead NOR downed (vanilla downed = !is_dead + Crawl +
+                // consumed death protection — the rescue fleet proved
+                // `is_dead` alone is blind to a body on the floor); a
                 // colony where every body is on the floor has ended in fact,
                 // and if a revive path ever lands, the reset arm absorbs it.
                 // Log-only, S1's own discipline: never terminates, never
@@ -11367,7 +11371,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // later; the truth exists first.
                 let alive: u32 = (&colonists, &entities)
                     .join()
-                    .filter(|(_, e)| !healths.get(*e).is_some_and(|h| h.is_dead))
+                    .filter(|(_, e)| {
+                        !comp::is_downed_or_dead(healths.get(*e), char_states.get(*e))
+                    })
                     .count() as u32;
                 // One deref, then disjoint field borrows (the DerefMut on
                 // the resource cannot split two `&mut board.x` itself).
@@ -11409,7 +11415,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .collect();
                     let mut new_rescues: Vec<(common::uid::Uid, Vec3<i32>)> = Vec::new();
                     for (e, _, p) in (&entities, &colonists, &positions).join() {
-                        if healths.get(e).is_some_and(|h| h.is_dead)
+                        // ★ DOWNED, not dead: `is_dead` is the corpse, which
+                        // no rescuer can help (the fleet's B arms planted 2
+                        // downed each and this predicate posted ZERO). The
+                        // vanilla downed state is !is_dead + Crawl — use
+                        // vanilla's own helper.
+                        if comp::is_downed(healths.get(e), char_states.get(e))
                             && let Some(u) = uids.get(e).copied()
                             && !targeted.contains(&u)
                         {
@@ -22068,8 +22079,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // moot, job retires quietly.
                     if let common::bastion::JobKind::Rescue { target } = job.kind {
                         let target_entity = id_maps.uid_entity(target);
-                        let still_down = target_entity
-                            .is_some_and(|te| healths.get(te).is_some_and(|h| h.is_dead));
+                        // Same predicate as the generator: DOWNED (helpable),
+                        // not dead (a corpse retires the job as moot).
+                        let still_down = target_entity.is_some_and(|te| {
+                            comp::is_downed(healths.get(te), char_states.get(te))
+                        });
                         if still_down {
                             help_downed_events.emit_now(common::event::HelpDownedEvent {
                                 helper: uids.get(entity).copied(),
