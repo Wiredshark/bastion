@@ -928,6 +928,44 @@ pub(crate) fn claim_release_should_clear(claimed_by_us: bool, _unreachable: bool
     claimed_by_us
 }
 
+/// ★ SLEEP HOLDS ONLY AT THE BED (805bf30a06): the sleep arm's per-tick
+/// re-verification of the arrival latch. Arrival admits at `ARRIVE_DIST`
+/// (2.5); this releases only past ARRIVE_DIST + 0.5 — the hysteresis band
+/// keeps physics jitter at the boundary from flapping Arrived⇄Traveling.
+/// Pure so both directions are unit-pinned: a body shoved off the bed must
+/// stop banking rest (the proven defect: rest accrued from 6 blocks away,
+/// byte-identical logs), and a body ON the bed must never be evicted by its
+/// own guard.
+pub(crate) fn sleep_displaced(body: Vec3<f32>, bed_pos: Vec3<i32>) -> bool {
+    let bed_c = bed_pos.map(|e| e as f32 + 0.5);
+    body.distance_squared(bed_c) > (ARRIVE_DIST + 0.5) * (ARRIVE_DIST + 0.5)
+}
+
+/// ★ THE BOARD IS SESSION-STATE; THE RECORD IS TRUTH (805bf30a06).
+/// `BedSlot`'s own doc declares `BastionColonist::owned_bed` the persistent
+/// ownership truth and the board a fast mirror — but nothing ever replayed
+/// the record INTO the board, so after a reload the assigner (which computes
+/// "who is homeless" from the board) declared the whole colony homeless and
+/// re-paired everyone from wherever they stood. This is the missing read
+/// side: uid-sorted so a stale double-claim resolves identically on every
+/// run (lower uid wins; the loser stays homeless this pass and is re-paired
+/// normally); a live `owner` is never overwritten; a record pointing at a
+/// bed the board no longer knows is a no-op (the stale-record sweep below
+/// the assigner clears it).
+pub(crate) fn replay_bed_ownership(
+    beds: &mut HashMap<Vec3<i32>, common::bastion::BedSlot>,
+    mut recorded: Vec<(Uid, Vec3<i32>)>,
+) {
+    recorded.sort_by_key(|(u, _)| u.0.get());
+    for (u, p) in recorded {
+        if let Some(slot) = beds.get_mut(&p)
+            && slot.owner.is_none()
+        {
+            slot.owner = Some(u);
+        }
+    }
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // COLONY CONNECTIVITY (Ben, 2026-08-22: "if you keep having issues in pathfind
 // do some research on how other games and simulations solve this issue")
@@ -9586,10 +9624,20 @@ impl JobBoard {
         // cancel/moot path), so a bed can never leak occupied by a colonist
         // who is no longer coming. Only clears if THIS job's claimant still
         // holds it (a re-assigned bed is another job's custody).
+        //
+        // ★ THE LEAK (805bf30a06, proven live): the suspend path sets
+        // `claimed_by = None` and parks the owner in `suspended_for` — so a
+        // suspended RestAt removed here compared `occupant == None`, never
+        // matched, and left `occupant` set on a DELETED job. The colonist's
+        // own bed then read as occupied to ITSELF (the owned-bed filter
+        // requires `occupant.is_none()`), steering it to the nearest free
+        // bed instead and silently discarding the ground-floor preference.
+        // Custody is claimed_by OR suspended_for — whichever holds the uid.
         if let Some(j) = &job
             && let common::bastion::JobKind::RestAt { bed_pos } = j.kind
             && let Some(slot) = self.beds.get_mut(&bed_pos)
-            && slot.occupant == j.claimed_by
+            && slot.occupant.is_some()
+            && slot.occupant == j.claimed_by.or(j.suspended_for)
         {
             slot.occupant = None;
         }
@@ -14268,6 +14316,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     slot.owner = None;
                     released += 1;
                 }
+            }
+            // ★ RECONCILE OWNERSHIP FROM THE RECORDS FIRST (805bf30a06):
+            // `Colonist.owned_bed` persists across a reload; `JobBoard.beds`
+            // does not — so the board woke up amnesiac, this assigner read
+            // "who is homeless" from the BOARD, declared the whole colony
+            // homeless, and re-paired everyone from wherever they happened to
+            // be standing. The colonist record is the durable side; replay it
+            // into the board before anyone is called homeless. Uid-sorted so
+            // a (stale) double-claim resolves identically on every run — the
+            // loser stays homeless this pass and is re-paired normally.
+            {
+                let recorded: Vec<(common::uid::Uid, Vec3<i32>)> = (&entities, &colonists)
+                    .join()
+                    .filter_map(|(e, c)| {
+                        uids.get(e).copied().zip(c.0.owned_bed)
+                    })
+                    .collect();
+                replay_bed_ownership(&mut board.beds, recorded);
             }
             let owned: std::collections::HashSet<common::uid::Uid> =
                 board.beds.values().filter_map(|s| s.owner).collect();
@@ -20575,6 +20641,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
                             continue;
                         };
+                        // ★ THE LATCH IS RE-VERIFIED EVERY TICK (805bf30a06).
+                        // Arrival set this state once at <=2.5 blocks and no
+                        // line below ever read `pos` again — so a body shoved
+                        // off the bed by physics, a raid, or a door queue
+                        // kept banking rest from wherever it drifted: "a
+                        // sleep from 6 blocks away and a sleep in the bed
+                        // log byte-identically" (proven arithmetically: pure
+                        // decay to four decimals against zero recovery).
+                        // Beyond arrival tolerance + hysteresis, sleep stops
+                        // and the claim walks back — Traveling preserves it.
+                        {
+                            if sleep_displaced(pos.0, bed_pos) {
+                                if let Some(slot) = board.beds.get_mut(&bed_pos)
+                                    && slot.occupant == Some(u)
+                                {
+                                    // Not lying in it — do not hold it.
+                                    slot.occupant = None;
+                                }
+                                active.state = ActiveJobState::Traveling;
+                                active.stuck_time = 0.0;
+                                continue;
+                            }
+                        }
                         let slot_state = board
                             .beds
                             .get(&bed_pos)
@@ -31916,6 +32005,135 @@ mod tests {
         // unreachable or not -- this branch was never the bug.
         assert!(!claim_release_should_clear(false, true));
         assert!(!claim_release_should_clear(false, false));
+    }
+
+    /// ★ THE BED LEAK (805bf30a06), RED PRE-FIX: the suspend path sets
+    /// `claimed_by = None` and parks the owner in `suspended_for`, so
+    /// `remove_job`'s release guard (`occupant == claimed_by`) compared
+    /// `Some(u) == None`, never matched, and left `occupant` set on a
+    /// DELETED job — the colonist's own bed then read as occupied to
+    /// ITSELF and it was steered to the nearest free bed instead.
+    #[test]
+    fn a_suspended_rest_job_removed_still_frees_its_bed() {
+        use common::bastion::{BedKind, BedSlot};
+        let u = Uid(NonZeroU64::new(11).unwrap());
+        let bed = Vec3::new(5, 5, 10);
+        let mut board = JobBoard::default();
+        board.beds.insert(bed, BedSlot {
+            kind: BedKind::Frame,
+            owner: Some(u),
+            occupant: Some(u),
+        });
+        let id = board.insert_rest_job(bed, u);
+        // The suspend transition, exactly as the preemption path writes it.
+        {
+            let j = board.jobs.get_mut(&id).unwrap();
+            j.claimed_by = None;
+            j.suspended_for = Some(u);
+        }
+        board.remove_job(id);
+        assert_eq!(
+            board.beds[&bed].occupant, None,
+            "a suspended RestAt removed from the board must free its bed:              pre-fix the guard compared occupant against claimed_by (None) and              the occupant leaked forever, locking the owner out of their own bed"
+        );
+
+        // The other direction: custody held by ANOTHER colonist's live
+        // claim must survive this job's removal — a re-assigned bed is the
+        // other job's to free, and an over-eager clear would evict a real
+        // sleeper.
+        let v = Uid(NonZeroU64::new(12).unwrap());
+        let id2 = board.insert_rest_job(bed, u);
+        {
+            let j = board.jobs.get_mut(&id2).unwrap();
+            j.claimed_by = None;
+            j.suspended_for = Some(u);
+        }
+        board.beds.get_mut(&bed).unwrap().occupant = Some(v);
+        board.remove_job(id2);
+        assert_eq!(
+            board.beds[&bed].occupant,
+            Some(v),
+            "another colonist's occupancy is not this job's custody to clear"
+        );
+    }
+
+    /// ★ THE BOARD IS SESSION-STATE; THE RECORD IS TRUTH (805bf30a06).
+    /// After a reload the board's `owner` fields are gone while every
+    /// colonist record still names its bed — pre-fix the assigner read
+    /// "homeless" from the board and re-paired the whole colony from
+    /// wherever it stood.
+    #[test]
+    fn bed_ownership_replays_from_the_records_after_a_reload() {
+        use common::bastion::{BedKind, BedSlot};
+        let empty_slot = |owner| BedSlot { kind: BedKind::Frame, owner, occupant: None };
+        let a = Uid(NonZeroU64::new(11).unwrap());
+        let b = Uid(NonZeroU64::new(12).unwrap());
+        let c = Uid(NonZeroU64::new(13).unwrap());
+        let bed_a = Vec3::new(1, 0, 0);
+        let bed_b = Vec3::new(2, 0, 0);
+        let mut beds = HashMap::default();
+        beds.insert(bed_a, empty_slot(None));
+        beds.insert(bed_b, empty_slot(Some(c))); // live assignment survives
+
+        replay_bed_ownership(&mut beds, vec![
+            // Deliberately unsorted: determinism must come from the sort
+            // inside, not from the caller's join order.
+            (b, bed_b),
+            (a, bed_a),
+            // A record naming a bed the board no longer knows: no-op, the
+            // stale-record sweep clears it later.
+            (c, Vec3::new(99, 99, 99)),
+        ]);
+
+        assert_eq!(
+            beds[&bed_a].owner,
+            Some(a),
+            "an amnesiac board must relearn ownership from the colonist record"
+        );
+        assert_eq!(
+            beds[&bed_b].owner,
+            Some(c),
+            "a live owner is never overwritten by a stale record"
+        );
+
+        // Double-claim: two records naming ONE bed resolve by uid order,
+        // identically on every run — the loser stays homeless this pass.
+        let mut beds2 = HashMap::default();
+        beds2.insert(bed_a, empty_slot(None));
+        replay_bed_ownership(&mut beds2, vec![(b, bed_a), (a, bed_a)]);
+        assert_eq!(
+            beds2[&bed_a].owner,
+            Some(a),
+            "a double-claim resolves to the lower uid, not the join order"
+        );
+    }
+
+    /// ★ SLEEP HOLDS ONLY AT THE BED (805bf30a06): rest accrued from a
+    /// proximity latch set ONCE at arrival — "a sleep from 6 blocks away
+    /// and a sleep in the bed log byte-identically" (proven: pure decay to
+    /// four decimals against zero recovery). Both directions: displacement
+    /// must stop the banking, and the guard must not evict a body that is
+    /// actually on the bed (hysteresis band: release only past
+    /// ARRIVE_DIST + 0.5, so boundary jitter cannot flap the state).
+    #[test]
+    fn sleep_stops_banking_when_the_body_leaves_the_bed() {
+        let bed = Vec3::new(10, 10, 5);
+        let centre = bed.map(|e| e as f32 + 0.5);
+        // On the bed: never displaced.
+        assert!(!sleep_displaced(centre, bed), "lying on the bed is not displaced");
+        // Inside the hysteresis band (between ARRIVE_DIST and +0.5): still
+        // held — this is what keeps physics jitter from flapping the state.
+        assert!(
+            !sleep_displaced(centre + Vec3::new(ARRIVE_DIST + 0.4, 0.0, 0.0), bed),
+            "jitter at the arrival boundary must not evict the sleeper"
+        );
+        // The proven defect, exactly: banking rest from 6 blocks away.
+        assert!(
+            sleep_displaced(centre + Vec3::new(6.0, 0.0, 0.0), bed),
+            "a body 6 blocks from the bed must stop banking rest — this exact              case logged byte-identically to real sleep pre-fix"
+        );
+        // Displacement is 3D — a body shoved a storey below the bed is off it.
+        assert!(sleep_displaced(centre - Vec3::new(0.0, 0.0, 4.0), bed));
     }
 
     #[test]
