@@ -1,7 +1,12 @@
 # PLAY.ps1 — launch a bastion world, for Ben. (PowerShell 5.1)
 #
-#   .\PLAY.ps1 town          adopt a real worldgen village: the VILLAGERS
-#                            become your colony (framework finished 2026-08-21)
+#   .\PLAY.ps1 town          adopt a real worldgen village: the SELECT STARTING
+#                            AREA screen at character creation is the chooser —
+#                            the town you click is the town you get, and its
+#                            VILLAGERS become your colonists (Ben's expected
+#                            flow, made the default 2026-08-23)
+#   .\PLAY.ps1 town -Boot    the old zero-ceremony path: the scorer picks a
+#                            settlement, founds instantly, you spawn in it
 #   .\PLAY.ps1 flattown      a real worldgen village on FLAT ground -- but this
 #                            world only has a HAMLET near centre (3 houses, no
 #                            fields). Good for watching pathing, not a town.
@@ -23,10 +28,15 @@ param(
     # raiders and see what breaks." Raiders ON by default so the game is the
     # game; -NoRaids gives the clean colony the sweeps were measured on.
     [switch]$NoRaids,
-    # ★ OPT IN to choosing your town on the SELECT STARTING AREA screen.
-    # Off by default: see the `town` block below for why the main path must not
-    # depend on the player performing a step correctly.
-    [switch]$Pick
+    # ★ THE SELECT STARTING AREA SCREEN IS THE CHOOSER, BY DEFAULT (Ben,
+    # 2026-08-23: "i'm expecting to use the select town screen in the
+    # character creation is the way i adopt a town and the npcs in the
+    # existing colony become my colonists"). -Pick is kept as a no-op alias
+    # so muscle memory keeps working; -Boot restores the zero-ceremony
+    # autofound ("just boot me into a town that i own") for tests that must
+    # not depend on a screen interaction.
+    [switch]$Pick,
+    [switch]$Boot
 )
 
 $ErrorActionPreference = 'Stop'
@@ -193,24 +203,38 @@ $EnvVars = if ($Mode -eq 'flattown') {
     # can find, founds on it immediately, and the player spawns IN it. No
     # marker, no chooser, nothing that can be got wrong.
     #
-    # Choosing was made the default earlier today and that was the wrong call.
-    # Picking a town is a nice-to-have; being dropped into a working colony is
-    # the entire point of the mode. A feature that gates the main path behind a
-    # step the player has to perform correctly is worse than no feature -- and
-    # every failure mode of the chooser (stall, wrong town, silent fallback)
-    # lands on the one path everybody uses. `-Pick` keeps it for when it is
-    # wanted.
-    @{
-        BASTION_ADOPT_TOWN             = '1'
-        # Put the player down in the colony rather than at the world default,
-        # which is what "a town that i own" means when you spawn 11km away
-        # from it.
-        BASTION_SPAWN_AT_COLONY        = '1'
-        BASTION_AUTOFOUND_REAL_TERRAIN = '1'
-        BASTION_COLONY_PRESENCE_VD     = '3'
-        BASTION_AUTOFOUND_COLONY       = '8'
-        BASTION_SEED_FOOD              = '64'
-        BASTION_SEED_MATERIALS         = '64'
+    # ★ DEFAULT FLIPPED BACK TO CHOOSING (Ben, 2026-08-23, explicit): "i'm
+    # expecting to use the select town screen in the character creation is
+    # the way i adopt a town and the npcs in the existing colony become my
+    # colonists." The 2026-08-22 zero-ceremony flip answered a different ask
+    # ("just boot me in") and survives as -Boot. In the chooser flow,
+    # BASTION_SPAWN_AT_COLONY must NOT be set: it suppresses the start-site
+    # waypoint (the thing that puts you AT the town you clicked) in favour of
+    # a colony spawn that does not exist yet at character-creation time —
+    # you would land at the world default, 11km from your own pick.
+    if ($Boot) {
+        @{
+            BASTION_ADOPT_TOWN             = '1'
+            BASTION_SPAWN_AT_COLONY        = '1'
+            BASTION_AUTOFOUND_REAL_TERRAIN = '1'
+            BASTION_COLONY_PRESENCE_VD     = '3'
+            BASTION_AUTOFOUND_COLONY       = '8'
+            BASTION_SEED_FOOD              = '64'
+            BASTION_SEED_MATERIALS         = '64'
+        }
+    } else {
+        @{
+            BASTION_ADOPT_TOWN             = '1'
+            # Hold founding until the SELECT STARTING AREA pick arrives; the
+            # picked town becomes the adopt target and its residents the
+            # colony (character_screen.rs writes start_site_adopt_target).
+            BASTION_ADOPT_WAIT_FOR_MARKER  = '1'
+            BASTION_AUTOFOUND_REAL_TERRAIN = '1'
+            BASTION_COLONY_PRESENCE_VD     = '3'
+            BASTION_AUTOFOUND_COLONY       = '8'
+            BASTION_SEED_FOOD              = '64'
+            BASTION_SEED_MATERIALS         = '64'
+        }
     }
 } else {
     @{
@@ -229,6 +253,8 @@ if ($NoRaids) { $EnvVars['BASTION_NO_RAIDS'] = '1' }
 # -Pick: hold founding until the player chooses a town on the SELECT STARTING
 # AREA screen (or middle-clicks the in-game map). Opt-in, because the default
 # path must not be able to stall waiting for a step.
+# -Pick is the DEFAULT now (see the town block); kept as an accepted switch so
+# an old command line still does exactly what it always did.
 if ($Pick) { $EnvVars['BASTION_ADOPT_WAIT_FOR_MARKER'] = '1' }
 
 # Fresh userdata, so a test is never confused by a previous colony.

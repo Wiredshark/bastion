@@ -38,9 +38,15 @@
 #      own answer is a Rust panic about ConnectionRefused, which reads like a
 #      harness bug. It usually is not — it usually means the world is gone.
 set -u
-WT=/e/veloren-master/.item29-wt
-B=$WT/target/no_overflow
-EV=$WT/bastion-test-evidence
+# ── ROOTS ARE OVERRIDABLE SO THIS SCRIPT CAN LEAVE THIS MACHINE ──────────────
+# (Testing framework rule 9, Ben 2026-08-23: THE VM FLEET RUNS THE LEGS.)
+# These were hardcoded Windows paths, which is why three 6-leg batches ran on
+# the local desktop: the harness could not physically execute on a VM. Same
+# pattern as run-pit.sh: defaults keep every existing local invocation
+# byte-identical; a VM sets the env vars and nothing else changes.
+WT="${PLAY_WT:-/e/veloren-master/.item29-wt}"
+B="${PLAY_B:-$WT/target/no_overflow}"
+EV="${PLAY_EV:-$WT/bastion-test-evidence}"
 PLAY=$EV/play
 mkdir -p "$PLAY"
 
