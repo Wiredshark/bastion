@@ -26609,11 +26609,39 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // become the thing it measures.
                     if census.unreachable_job % 64 == 0 {
                         let above = board.connected_cells.contains(&(job.pos + Vec3::unit_z()));
+                        // ★ THE COLONIST'S OWN SIDE, which this log never had
+                        // (2026-08-22). The index is ONE flood from ONE
+                        // arbitrary colonist — `(&colonists, &positions)
+                        // .join().next()` — so `connectivity_refuses` is a
+                        // membership test against that colonist's blob, NOT a
+                        // same-component test between the claimant and the job.
+                        //
+                        // Which means the 47% refusal rate has two completely
+                        // different explanations that the old log could not
+                        // separate:
+                        //   claimant_connected = TRUE  -> the claimant really
+                        //     is in the indexed component and the job really is
+                        //     outside it. The refusal is honest; the step rule
+                        //     or the radius is what to look at.
+                        //   claimant_connected = FALSE -> the index is anchored
+                        //     to a component the claimant is not even in, so
+                        //     EVERY refusal it makes about this colonist is
+                        //     meaningless. The seed is the bug, not the terrain.
+                        //
+                        // This is the coordinate the previous comment asked for
+                        // instead of a third story. It is one boolean and it
+                        // decides which of two rewrites to do.
+                        let feet = pos.0.map(|e| e.floor() as i32);
                         info!(
                             pos = ?job.pos,
                             kind = ?job.kind,
                             connected_here = board.connected_cells.contains(&job.pos),
                             connected_above = above,
+                            claimant = %uid,
+                            claimant_feet = ?feet,
+                            claimant_connected = board.connected_cells.contains(&feet),
+                            claimant_connected_below =
+                                board.connected_cells.contains(&(feet - Vec3::unit_z())),
                             index_cells = board.connected_cells.len(),
                             "bastion: CONNECTIVITY REFUSED a job — where the index says nobody can go"
                         );
