@@ -77,7 +77,7 @@ use specs::{
 };
 #[cfg(feature = "worldgen")] use std::sync::Arc;
 use std::{borrow::Cow, collections::HashMap, f32::consts::PI, iter, time::Duration};
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 use vek::{Rgb, Vec2, Vec3};
 #[cfg(feature = "worldgen")]
 use world::{IndexOwned, World};
@@ -656,6 +656,7 @@ pub struct DestroyEventData<'a> {
     alignments: ReadStorage<'a, Alignment>,
     stats: ReadStorage<'a, Stats>,
     agents: ReadStorage<'a, Agent>,
+    colonists: ReadStorage<'a, comp::Colonist>,
     #[cfg(feature = "worldgen")]
     rtsim_entities: ReadStorage<'a, RtSimEntity>,
     #[cfg(feature = "worldgen")]
@@ -1574,6 +1575,50 @@ impl ServerEvent for DestroyEvent {
                                         spawn_item(item, loot_owner)
                                     }
                                 },
+                            );
+                        }
+                    }
+                    // ★ ITEM 36 v1 (belongings): a colonist's CARRIED
+                    // INVENTORY outlives them. The arm above drops only the
+                    // loot-table `ItemDrops` comp; the real inventory — the
+                    // harvested wheat, the packed meals, the tools — was
+                    // deleted with the entity, so a death quietly destroyed
+                    // colony wealth. It drops at the death cell instead:
+                    // wealth is not deleted, it is now a hauling problem
+                    // (and, later, a raid target). No LootOwner: the colony
+                    // itself is the intended collector. Same T0.37-keyed
+                    // placement stream discipline (distinct salt) — item
+                    // scatter is authoritative economy state.
+                    if data.colonists.contains(ev.entity)
+                        && let Some(mut inv) = data.inventories.remove(ev.entity)
+                    {
+                        let mut offset_spiral =
+                            Spiral2d::new().map(|offset| offset.as_::<f32>() * 0.5);
+                        let mut rng = {
+                            use rand::SeedableRng;
+                            rand_chacha::ChaCha8Rng::seed_from_u64(
+                                data.time.0.to_bits() ^ 0x100D_D236,
+                            )
+                        };
+                        let mut dropped = 0u32;
+                        for item in inv.drain() {
+                            let offset = offset_spiral.next().unwrap_or_default();
+                            dropped += 1;
+                            emitters.emit(CreateItemDropEvent {
+                                pos: Pos(pos.0 + Vec3::unit_z() * 0.25 + offset),
+                                vel: vel.copied().unwrap_or(comp::Vel(Vec3::zero())),
+                                ori: comp::Ori::from(Dir::random_2d(&mut rng)),
+                                item: PickupItem::new(item, *data.program_time, false),
+                                loot_owner: None,
+                                persistent: false,
+                            });
+                        }
+                        if dropped > 0 {
+                            info!(
+                                uid = ?data.uids.get(ev.entity).map(|u| u.0.get()),
+                                dropped,
+                                pos = ?pos.0,
+                                "bastion: ITEM 36 — belongings dropped at the death cell"
                             );
                         }
                     }
