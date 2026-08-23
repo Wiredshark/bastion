@@ -20880,6 +20880,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             || arbiters
                                 .get(entity)
                                 .is_none_or(|a| a.current == comp::bastion::Drive::Work);
+                        // ★ STEER DIAG (Poodest's rest pin, 2026-08-23):
+                        // 35 rest preempts, 0 sleeps, 99 stuck censuses,
+                        // speed 0.0003 with all four autopsy cells EMPTY —
+                        // the dead-controller face. This says, per steer
+                        // pass for one watched uid, whether the Goto write
+                        // actually happened and with what: the four ways it
+        // can silently not-move (travel_ok false, agent
+                        // missing, steer at own feet, activity overwritten
+                        // downstream) each read differently here.
+                        if let Ok(watch) = std::env::var("BASTION_DIAG_UID")
+                            && uids.get(entity).is_some_and(|u| u.0.get().to_string() == watch)
+                            && tick.0 % 30 == 0
+                        {
+                            info!(
+                                uid = uids.get(entity).map(|u| u.0.get()),
+                                job = active.job,
+                                kind = ?job.kind,
+                                auton_travel_ok,
+                                agent_present = agent.is_some(),
+                                ?steer,
+                                feet = ?pos.0,
+                                "bastion: STEER-DIAG"
+                            );
+                        }
                         if let Some(agent) = agent.as_deref_mut()
                             && auton_travel_ok
                         {
