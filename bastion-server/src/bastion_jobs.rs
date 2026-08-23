@@ -2908,6 +2908,25 @@ pub const BED_REST_RECOVERY_PER_SEC: f32 = 0.02;
 /// `fetch_budget_refuses_the_stall_but_admits_a_real_fetch` pins BOTH ends.
 pub const FETCH_BUDGET_SECS: f64 = 90.0;
 
+/// The effective fetch budget, with a test-only env override.
+///
+/// ★ EXISTS SO THE CONTROL ARM IS THE SAME BINARY. Every measurement in this
+/// session has been n=1, and colony event counts vary 2-3x run to run
+/// ([[bastion-colony-metrics-need-three-replicates]]) — so a single leg cannot
+/// tell a fix from noise. A matched A/B needs the watchdog OFF and ON under
+/// identical code, and rebuilding between arms would make the two binaries the
+/// confound. `BASTION_FETCH_BUDGET_SECS=99999` reproduces the ORIGINAL
+/// unbounded behaviour exactly (the branch is `elapsed > budget`, so a budget
+/// no run can reach is the pre-fix code path), which is what a control has to
+/// be: the status quo, exercised.
+pub fn fetch_budget_secs() -> f64 {
+    std::env::var("BASTION_FETCH_BUDGET_SECS")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+        .filter(|v| *v > 0.0)
+        .unwrap_or(FETCH_BUDGET_SECS)
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 // NEED BANDS (Ben, 2026-08-22): "we should also classify the hunger and sleep
 // and any other meters into different category based on percentages like
@@ -17072,7 +17091,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // Measured: 87,791 steers, one pickup.
                                     let started =
                                         *board.fetch_started.entry(active.job).or_insert(time.0);
-                                    if time.0 - started > FETCH_BUDGET_SECS {
+                                    let fetch_budget = fetch_budget_secs();
+                                    if time.0 - started > fetch_budget {
                                         // Release through the SAME field-split
                                         // path the vanished-item branch uses —
                                         // a raw `.remove` leaves
@@ -17098,7 +17118,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             item = u.0.get(),
                                             dist = d,
                                             secs = time.0 - started,
-                                            budget = FETCH_BUDGET_SECS,
+                                            budget = fetch_budget,
                                             "bastion: FETCH BUDGET EXPIRED — releasing reservation \
                                              and claim (the item was never reached)"
                                         );
