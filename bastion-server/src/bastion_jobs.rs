@@ -3993,6 +3993,39 @@ pub fn season_stage_factor(season: common::time::Season) -> Option<f64> {
 /// values (the bravery-pin rule: a silent fallback runs an arm untreated and
 /// scores "no difference" from an arm that never carried the treatment).
 /// Unpinned, it is the real derivation over the loaded RON config.
+/// ★ SEASONAL TILLING (Ben RULED, 2026-08-23: "till once ie per growing
+/// season"): the absolute season ordinal — year × 4 + season — so THIS
+/// spring and NEXT spring are different tilling obligations. Respects the
+/// same `BASTION_PIN_SEASON` pin as [`farm_season`] (a pinned season still
+/// rolls yearly, so fixtures re-till once per pinned year — harmless).
+pub fn farm_season_index(time_of_day: f64) -> u64 {
+    let days_in_year = common::time::SeasonConfig::current().days_in_year;
+    let year_len = common::resources::DAY * days_in_year;
+    let year = (time_of_day / year_len).max(0.0).floor() as u64;
+    year * 4 + farm_season(time_of_day) as u64
+}
+
+/// The per-column seasonal-till decision, pure for the pin. `None` = the
+/// column has never been seen by the farm pass — the FIRST-SIGHT GRACE: it
+/// counts as tilled for the current season (an adopted village's fields
+/// were farmed for years; a fresh paint plants immediately, DF-style) and
+/// the caller stamps it. Recorded == current → sow. Recorded older → the
+/// once-per-season till is due.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum SeasonalTillVerdict {
+    SowGrace,
+    Sow,
+    Till,
+}
+
+pub(crate) fn seasonal_till_verdict(recorded: Option<u64>, current: u64) -> SeasonalTillVerdict {
+    match recorded {
+        None => SeasonalTillVerdict::SowGrace,
+        Some(s) if s == current => SeasonalTillVerdict::Sow,
+        Some(_) => SeasonalTillVerdict::Till,
+    }
+}
+
 pub fn farm_season(time_of_day: f64) -> common::time::Season {
     use common::time::Season as S;
     static PIN: std::sync::OnceLock<Option<S>> = std::sync::OnceLock::new();
@@ -7892,6 +7925,11 @@ pub struct JobBoard {
     /// ordering, never hash-iteration order (the PATH-0 discipline).
     /// Evicted at harvest and by the pass when the sprite vanishes.
     farm_growth: std::collections::BTreeMap<(i32, i32, i32), f64>,
+    /// ★ SEASONAL TILLING (Ben RULED 2026-08-23): column → the
+    /// [`farm_season_index`] it was last tilled in (or granted first-sight
+    /// grace for). BTreeMap, the PATH-0 discipline. Pruned with the farm in
+    /// `cancel_region`; stamped by till completion and by first-sight grace.
+    farm_tilled_season: std::collections::BTreeMap<(i32, i32), u64>,
     /// bastion (B7-2): preempt attempts fired (telemetry — the
     /// anti-thrash assert counts these against the cooldown-rate bound).
     pub preempt_attempts: u64,
@@ -9551,6 +9589,9 @@ impl JobBoard {
         };
         let cols_before = self.farm_column_z.len();
         self.farm_column_z.retain(|&(x, y), _| covered(x, y));
+        // The seasonal-till stamps die with their columns — a repainted
+        // plot must not inherit last tenant's tilling calendar.
+        self.farm_tilled_season.retain(|&(x, y), _| covered(x, y));
         let growth_before = self.farm_growth.len();
         self.farm_growth.retain(|&(x, y, z), _| {
             covered(x, y) && !region.contains_point(Vec3::new(x, y, z))
@@ -16558,15 +16599,59 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     ground.kind(),
                                     BlockKind::Earth | BlockKind::Grass
                                 ) {
-                                    // SOW: job.pos = cpos. Declares
-                                    // OnTopAlways, same reasoning as
-                                    // HARVEST above.
-                                    if !occupied.contains(&cpos) {
-                                        new_jobs.push((
-                                            cpos,
-                                            Some(FARM_SEED_ITEM),
-                                            AffordanceClass::OnTopAlways,
-                                        ));
+                                    // ★ SEASONAL TILL (Ben RULED: "till once
+                                    // ie per growing season"): soil sows all
+                                    // season, and the SEASON BOUNDARY brings
+                                    // one till per column — the spring rush,
+                                    // bounded by field size, reap-exempt so
+                                    // it cannot churn. First sight = grace
+                                    // (adopted fields were farmed for years;
+                                    // fresh paint plants immediately).
+                                    let col = (gpos.x, gpos.y);
+                                    let season_idx = farm_season_index(
+                                        rtsim.rt_state().data().time_of_day.0,
+                                    );
+                                    let verdict = seasonal_till_verdict(
+                                        board.farm_tilled_season.get(&col).copied(),
+                                        season_idx,
+                                    );
+                                    match verdict {
+                                        SeasonalTillVerdict::SowGrace => {
+                                            board
+                                                .farm_tilled_season
+                                                .insert(col, season_idx);
+                                            if !occupied.contains(&cpos) {
+                                                new_jobs.push((
+                                                    cpos,
+                                                    Some(FARM_SEED_ITEM),
+                                                    AffordanceClass::OnTopAlways,
+                                                ));
+                                            }
+                                        },
+                                        SeasonalTillVerdict::Sow => {
+                                            // SOW: job.pos = cpos. Declares
+                                            // OnTopAlways, same reasoning as
+                                            // HARVEST above.
+                                            if !occupied.contains(&cpos) {
+                                                new_jobs.push((
+                                                    cpos,
+                                                    Some(FARM_SEED_ITEM),
+                                                    AffordanceClass::OnTopAlways,
+                                                ));
+                                            }
+                                        },
+                                        SeasonalTillVerdict::Till => {
+                                            // The once-per-season till, at
+                                            // the ground cell like the
+                                            // break-ground till below.
+                                            if !occupied.contains(&gpos) {
+                                                new_jobs.push((
+                                                    gpos,
+                                                    None,
+                                                    AffordanceClass::OnTopAlways,
+                                                ));
+                                            }
+                                        },
                                     }
                                 } else if !occupied.contains(&gpos) {
                                     // TILL: job.pos = gpos, the raw ground
@@ -22114,11 +22199,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         let below = terrain.get(job.pos - Vec3::unit_z()).ok().copied();
                         let mut acted = false;
                         match here {
-                            // TILL: the job sits ON the raw ground block.
-                            Some(g) if g.is_filled() && g.kind() != BlockKind::Earth => {
+                            // TILL: the job sits ON the raw ground block. A
+                            // sow job's pos is the (empty) crop cell, so a
+                            // FILLED block here is always a till — including
+                            // already-Earth ground: the SEASONAL re-till
+                            // (Ben's ruling) refreshes the same soil, and
+                            // restricting this arm to non-Earth made a
+                            // seasonal till on last year's field a moot job.
+                            Some(g) if g.is_filled() => {
                                 block_change.set(
                                     job.pos,
                                     Block::new(BlockKind::Earth, vek::Rgb::new(105, 75, 50)),
+                                );
+                                // ★ The seasonal stamp: this column is tilled
+                                // for the CURRENT season — the generator's
+                                // verdict flips back to Sow next pass.
+                                board.farm_tilled_season.insert(
+                                    (job.pos.x, job.pos.y),
+                                    farm_season_index(
+                                        rtsim.rt_state().data().time_of_day.0,
+                                    ),
                                 );
                                 acted = true;
                                 info!(pos = ?job.pos, "bastion: tilled");
@@ -32569,6 +32669,43 @@ mod tests {
         assert!(
             board.jobs.contains_key(&painted_id),
             "a player-painted post must survive the drive's exit sweep"
+        );
+    }
+
+    /// ★ SEASONAL TILLING (Ben RULED: "till once ie per growing season"),
+    /// both directions: the boundary brings exactly one till obligation per
+    /// column; inside a season soil sows freely; and FIRST SIGHT is grace —
+    /// an adopted village's fields (or a fresh paint) plant immediately, so
+    /// the ruling can never resurrect the till-storm it replaced.
+    #[test]
+    fn a_column_tills_once_per_season_and_sows_the_rest_of_it() {
+        use SeasonalTillVerdict as V;
+        // First sight: grace, never a till-storm at adoption.
+        assert_eq!(seasonal_till_verdict(None, 40), V::SowGrace);
+        // Same season: sow all season long.
+        assert_eq!(seasonal_till_verdict(Some(40), 40), V::Sow);
+        // The boundary: exactly one till comes due.
+        assert_eq!(
+            seasonal_till_verdict(Some(40), 41),
+            V::Till,
+            "a new season brings the once-per-season till"
+        );
+        // A skipped year still resolves to one till, not a backlog.
+        assert_eq!(seasonal_till_verdict(Some(36), 41), V::Till);
+
+        // The index itself: same season+year collapses, next season and
+        // NEXT YEAR'S same season both differ (this spring != last spring).
+        let year = common::resources::DAY
+            * common::time::SeasonConfig::current().days_in_year;
+        let spring_y0 = farm_season_index(0.05 * year);
+        let spring_y0_later = farm_season_index(0.08 * year);
+        let summer_y0 = farm_season_index(0.30 * year);
+        let spring_y1 = farm_season_index(1.05 * year);
+        assert_eq!(spring_y0, spring_y0_later, "one season, one obligation");
+        assert_ne!(spring_y0, summer_y0, "seasons are distinct obligations");
+        assert_ne!(
+            spring_y0, spring_y1,
+            "THIS spring and NEXT spring are different tilling obligations"
         );
     }
 
