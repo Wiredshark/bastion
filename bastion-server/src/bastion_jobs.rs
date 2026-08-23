@@ -7394,6 +7394,10 @@ pub struct JobBoard {
     pub component_labels: Option<ComponentLabels>,
     /// Cell count of the PREVIOUS labels build — the two-build trust input.
     pub labels_prev_cells: usize,
+    /// Releases triggered by the chaser's own terminal verdict (Longest +
+    /// Exhausted) before the stuck clock could fire — the count that proves
+    /// the feedback edge is live.
+    pub chaser_terminal_releases: u32,
     /// (refusals, admits-by-reason x5, same-component) shadow counters since
     /// the last census emit, so the fail-open ladder is provable from a log.
     pub shadow_conn: [u32; 7],
@@ -19815,7 +19819,36 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // improving toward the current steer — the
                             // A*-bob accrues here (reported baseline).
                             board.no_progress_ticks += 1;
-                            if active.stuck_time > STUCK_TIMEOUT {
+                            // ★ TERMINAL-EXHAUST FEEDBACK (2026-08-23). The
+                            // chaser KNOWS when a target is hopeless —
+                            // `(Longest, Exhausted)` means a 75,000-iteration
+                            // search failed and a fresh one is about to burn
+                            // the shared budget on the SAME target — but the
+                            // job system never asked. Worse, the stuck clock
+                            // cannot fire on these: walking the partial path
+                            // to the wall and back IS net displacement, so
+                            // the 1-block hysteresis resets the clock with
+                            // the fallback's own motion. This OR routes the
+                            // chaser's own verdict through EVERY existing
+                            // release arm — strikes, suspend, carve, the
+                            // unreachable flag, the claim penalty — instead
+                            // of inventing a parallel path. Tier resets on
+                            // retarget (path.rs), so a stale verdict cannot
+                            // leak onto a fresh target.
+                            let chaser_terminal = agent.as_deref().is_some_and(|a| {
+                                matches!(
+                                    a.chaser.state(),
+                                    (
+                                        common::path::PathLength::Longest,
+                                        common::path::PathState::Exhausted
+                                    )
+                                )
+                            });
+                            if chaser_terminal && active.stuck_time <= STUCK_TIMEOUT {
+                                board.chaser_terminal_releases =
+                                    board.chaser_terminal_releases.saturating_add(1);
+                            }
+                            if active.stuck_time > STUCK_TIMEOUT || chaser_terminal {
                                 board.travel_timeouts += 1;
                                 *board.timeout_counts_by_pos.entry(job.pos).or_insert(0) += 1;
                                 board.last_timeout_pos.insert(job.pos, pos.0);
