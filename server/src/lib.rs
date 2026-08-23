@@ -5986,7 +5986,25 @@ impl Server {
                                 let ecs = self.state.ecs();
                                 let terrain =
                                     ecs.read_resource::<common::terrain::TerrainGrid>();
-                                preset::resolve_datum(&terrain, xy, 0)
+                                // ★ HINT FROM THE SIM, NOT 0 (flat-lab boot 1):
+                                // the resolver scans hint±[96,48], so hint 0
+                                // tops out at z=48 and finds BASEMENT ROCK on
+                                // any world whose surface sits higher — the
+                                // colony founded 130 blocks underground and
+                                // every job read dz=-33 from the ejected
+                                // colonists above. The sim's own altitude is
+                                // the world's stated surface; the terrain scan
+                                // then refines it per-column as designed. The
+                                // adoption path never hit this because towns
+                                // re-anchor the datum; only the townless
+                                // fallback ever passed 0.
+                                let hint = self
+                                    .world
+                                    .sim()
+                                    .get_alt_approx(xy)
+                                    .map(|a| a as i32)
+                                    .unwrap_or(0);
+                                preset::resolve_datum(&terrain, xy, hint)
                             };
                             match ground {
                                 Some(z) => Some(Vec3::new(

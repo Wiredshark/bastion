@@ -960,6 +960,7 @@ pub(crate) fn cargo_protected_defs<'a>(
                     | common::bastion::JobKind::EatFrom { .. }
                     | common::bastion::JobKind::Despond { .. }
                     | common::bastion::JobKind::Recreate { .. }
+                    | common::bastion::JobKind::Shelter { .. }
                     | common::bastion::JobKind::Guard { .. }
             )
         })
@@ -1834,6 +1835,7 @@ pub(crate) fn job_release_class(kind: &common::bastion::JobKind) -> &'static str
         K::Tend { .. } => "tend",
         K::Guard { .. } => "guard",
         K::TradeMission { .. } => "trade",
+        K::Shelter { .. } => "shelter",
         // NO WILDCARD ARM, deliberately -- the same guarantee
         // `ReleaseReasonV1`'s mapping documents. This match failing to compile
         // is how a future `JobKind` variant gets a considered label instead of
@@ -2177,6 +2179,7 @@ pub(crate) fn job_kind_label(kind: &common::bastion::JobKind) -> &'static str {
         common::bastion::JobKind::EatFrom { .. } => "EatFrom",
         common::bastion::JobKind::Despond { .. } => "Despond",
         common::bastion::JobKind::Recreate { .. } => "Recreate",
+        common::bastion::JobKind::Shelter { .. } => "Shelter",
         common::bastion::JobKind::Guard { .. } => "Guard",
     }
 }
@@ -2991,6 +2994,8 @@ fn job_still_wanted(kind: &common::bastion::JobKind, block: &Block) -> bool {
         // bastion (ITEM 11): Recreate is a self-job like the four above —
         // pre-claimed FOR one colonist, never drawn from the open board.
         | common::bastion::JobKind::Recreate { .. }
+        // ALARM v1: shelter is pre-claimed at the cry, same shape.
+        | common::bastion::JobKind::Shelter { .. }
         // ITEM 14: a guard assignment is a self-job -- pre-claimed, held at a
         // place the job itself carries.
         | common::bastion::JobKind::Guard { .. } => true,
@@ -4381,6 +4386,14 @@ const STUCK_EPSILON: f32 = 0.5;
 /// RUN_SPEED (1.0) stays reserved for genuine emergencies via the existing
 /// `running` flag and the flee path.
 const TRAVEL_SPEED: f32 = 0.45;
+
+/// ALARM v1 (Ben: "sound a alarm and base that on sound distance radius").
+/// How far the cry carries: civilians inside this radius of the perceiver's
+/// post take shelter; beyond it, life continues -- the whole point of a
+/// SOUND radius over colony omniscience.
+const ALARM_RADIUS: f32 = 64.0;
+/// How long one cry holds without renewal. Defend persisting extends it.
+const ALARM_HOLD_SECS: f64 = 90.0;
 /// bastion (RUN-0, row 47): the emergency-run gait — the full vanilla
 /// speed_factor (1.0 > the 0.8 walk; within the range every vanilla
 /// mover already uses, so zero physics/anim risk — the velocity-driven
@@ -7921,6 +7934,12 @@ pub struct JobBoard {
     /// persists on the colonist record; this is the runtime table
     /// (rebuilt as beds are built/assigned; the board is session-state).
     pub beds: HashMap<Vec3<i32>, common::bastion::BedSlot>,
+    /// ★ ALARM v1 (Ben: "a method for colonists to sound a alarm and base
+    /// that on sound distance radius"): the live cry, `(where, until)`.
+    /// Raised at the colony's Defend transition from the first perceiver's
+    /// post, extended while Defend holds, expired by its own sweep. Session
+    /// state like the rest of the board — never persisted.
+    pub alarm: Option<(Vec3<i32>, f64)>,
     /// bastion (B7-2): per-colonist preempt cooldown — the (c) livelock
     /// guard: at most one need-preempt ATTEMPT per window regardless of
     /// outcome (a failed attempt cannot re-fire inside it — the colonist
@@ -10142,6 +10161,34 @@ impl JobBoard {
         id
     }
 
+    /// ★ ALARM v1: the take-shelter self-job, born claimed (B7-2 shape --
+    /// the caller inserts the ActiveJob). `home` is the civilian's own bed
+    /// cell; `until` freezes the alarm's expiry at post time.
+    pub fn insert_shelter_job(&mut self, home: Vec3<i32>, until: f64, uid: Uid) -> JobId {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.jobs.insert(id, Job {
+            kind: common::bastion::JobKind::Shelter { home, until },
+            work: common::bastion::WorkType::Haul,
+            pos: home,
+            skill_floor: 0,
+            claimed_by: Some(uid),
+            suspended_for: None,
+            unreachable: false,
+            progress: 0.0,
+            required_item: None,
+            needs_materials: false,
+            carve_attempted: false,
+            is_access: false,
+            stuck_strikes: 0,
+            benched_until_tick: None,
+            depth: 0,
+            reservation: None,
+            affordance: AffordanceClass::OnTopAlways,
+        });
+        id
+    }
+
     /// ★ ROW 2 AUTO-GUARD v1: a guard post the COLONY places for itself on
     /// entering Defend. Guard jobs existed only behind player paint
     /// (GuardPost/PatrolPoint designations), so in an autonomous colony the
@@ -11261,6 +11308,41 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         stuck_time = aj.stuck_time,
                                         best_dist = aj.best_dist,
                                         speed,
+                                        // ★ THE AUTOPSY (slot-93: 488 stucks
+                                        // across 8 colonists, all dz=0 creep-
+                                        // speed wedges in or near buildings —
+                                        // the census said WHERE but never WHAT
+                                        // PRESSED BACK). The four cells that
+                                        // answer it: the two body cells one
+                                        // step ahead along the pressing
+                                        // direction, and the colonist's own
+                                        // two. Sprite kind + is_solid is the
+                                        // exact surface where the router
+                                        // (isotropic is_solid) and physics
+                                        // (directional valid_collision_dir)
+                                        // can disagree.
+                                        front = ?jp.zip(feet).map(|(p, f)| {
+                                            let d = (p.xy() - f.xy())
+                                                .map(|e| e.signum());
+                                            let ahead =
+                                                f + Vec3::new(d.x, d.y, 0);
+                                            let blk = |q: Vec3<i32>| {
+                                                terrain.get(q).ok().copied().map(
+                                                    |b| {
+                                                        (
+                                                            b.get_sprite(),
+                                                            b.is_solid(),
+                                                        )
+                                                    },
+                                                )
+                                            };
+                                            (
+                                                blk(ahead),
+                                                blk(ahead + Vec3::unit_z()),
+                                                blk(f),
+                                                blk(f + Vec3::unit_z()),
+                                            )
+                                        }),
                                         "bastion: STUCK CENSUS — a colonist counted stuck, and why it might be"
                                     );
                                 },
@@ -14865,6 +14947,77 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             "bastion: AUTO-GUARD posted and STAFFED (drive entered Defend)"
                         );
                     }
+                    // ★ ALARM v1 RAISE: the same transition IS the cry --
+                    // the first perceiver (lowest uid, already sorted) is
+                    // where the sound starts. Civilians inside ALARM_RADIUS
+                    // whose hands are free run home and hide; working ones
+                    // finish what they hold (the mid-job steal race is real
+                    // -- see the guard-post comment above); guards are
+                    // already being posted by the block above.
+                    if std::env::var_os("BASTION_NO_ALARM").is_none()
+                        && let Some((_, _, cry_pos)) = perceiver_posts.first()
+                    {
+                        let until = time.0 + ALARM_HOLD_SECS;
+                        board.alarm = Some((*cry_pos, until));
+                        let mut sheltered = 0u32;
+                        let mut skipped_working = 0u32;
+                        let mut skipped_bedless = 0u32;
+                        let mut out_of_earshot = 0u32;
+                        let mut civ: Vec<(u64, specs::Entity, Vec3<i32>)> = Vec::new();
+                        for (ent, c, p) in (&entities, &colonists, &positions).join() {
+                            if c.0.work_priorities.get(common::bastion::WorkType::Guard) >= 4 {
+                                continue; // the militia runs TOWARD it
+                            }
+                            let feet = p.0.map(|e| e.floor() as i32);
+                            if (feet.xy() - cry_pos.xy()).map(|e| e as f32).magnitude()
+                                > ALARM_RADIUS
+                            {
+                                out_of_earshot += 1;
+                                continue;
+                            }
+                            if active_jobs.contains(ent) {
+                                skipped_working += 1;
+                                continue;
+                            }
+                            let Some(home) = c.0.owned_bed else {
+                                skipped_bedless += 1;
+                                continue;
+                            };
+                            if let Some(u) = uids.get(ent) {
+                                civ.push((u.0.get(), ent, home));
+                            }
+                        }
+                        civ.sort_by_key(|(u, ..)| *u);
+                        for (u, ent, home) in civ {
+                            let uid = Uid(std::num::NonZeroU64::new(u).expect("uid nonzero"));
+                            let id = board.insert_shelter_job(home, until, uid);
+                            let _ = active_jobs.insert(ent, comp::bastion::ActiveJob {
+                                job: id,
+                                state: comp::bastion::ActiveJobState::Traveling,
+                                best_dist: f32::MAX,
+                                stuck_time: 0.0,
+                                reset_dist: f32::MAX,
+                                soft_granted: false,
+                                stance: Vec3::unit_z(),
+                            });
+                            sheltered += 1;
+                            info!(
+                                job = id,
+                                colonist = u,
+                                ?home,
+                                "bastion: ALARM — civilian takes shelter at home"
+                            );
+                        }
+                        info!(
+                            cry = ?cry_pos,
+                            until,
+                            sheltered,
+                            skipped_working,
+                            skipped_bedless,
+                            out_of_earshot,
+                            "bastion: ★ ALARM RAISED — a colonist cried out and the town heard it"
+                        );
+                    }
                 } else if cur == D::Defend {
                     let retracting: Vec<JobId> =
                         board.auto_guard_jobs.drain(..).collect();
@@ -14872,7 +15025,28 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         board.remove_job(id);
                     }
                     info!("bastion: AUTO-GUARD retracted (drive left Defend)");
+                    // ALARM v1: leaving Defend is the all-clear -- expire the
+                    // cry now rather than letting it run out its hold.
+                    if board.alarm.take().is_some() {
+                        info!("bastion: ALARM over (drive left Defend)");
+                    }
                 }
+            }
+            // ALARM v1 renewal + expiry, at the census cadence the raise
+            // lives in. Renewal keys on WANT (the colony still perceives
+            // threats), not CUR — a hysteresis-held Defend with no threats
+            // left stops renewing and the cry runs out on its own clock.
+            if want == common::bastion::ColonyDrive::Defend
+                && threats > 0
+                && let Some((_, until)) = board.alarm.as_mut()
+            {
+                *until = time.0 + ALARM_HOLD_SECS;
+            }
+            if let Some((_, until)) = board.alarm
+                && time.0 > until
+            {
+                board.alarm = None;
+                info!("bastion: ALARM over (the cry ran out)");
             }
         }
 
@@ -22099,6 +22273,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         to_release.push((entity, ReleaseReason::Other, line!()));
                         continue;
                     }
+                    // ── ★ ALARM v1: SHELTER — at home, sit tight until the
+                    // all-clear. Two release edges: the frozen `until` from
+                    // post time, and the alarm clearing early (Defend exit
+                    // takes the board field with it). Recreate's exact hold
+                    // shape — a hiding villager READS as one.
+                    if let common::bastion::JobKind::Shelter { until, .. } = job.kind {
+                        if time.0 >= until || board.alarm.is_none() {
+                            info!(
+                                job = active.job,
+                                colonist = uids.get(entity).map(|u| u.0.get()),
+                                "bastion: ALARM shelter released — all clear"
+                            );
+                            if let Some(controller) = controllers.get_mut(entity) {
+                                controller.push_action(comp::ControlAction::Stand);
+                            }
+                            board.remove_job(active.job);
+                            to_release.push((entity, ReleaseReason::Other, line!()));
+                        } else if let Some(controller) = controllers.get_mut(entity) {
+                            controller.inputs.move_dir = Vec2::zero();
+                            controller.inputs.move_z = 0.0;
+                            controller.push_action(comp::ControlAction::Sit);
+                        }
+                        continue;
+                    }
                     // ── ITEM 11: RECREATE — the break's MISSING END (found
                     // while shipping Ben's lounging ruling: the flag had
                     // never been on, so the completion arm had simply never
@@ -22872,7 +23070,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // break has no terrain precondition to re-check —
                         // `still_valid` is about a designation's target
                         // block, and a break has none.
-                        | common::bastion::JobKind::Recreate { .. } => false,
+                        | common::bastion::JobKind::Recreate { .. }
+                        // ALARM v1: hiding needs no block either.
+                        | common::bastion::JobKind::Shelter { .. } => false,
                     });
                     if !still_valid {
                         info!(
@@ -23762,6 +23962,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             | common::bastion::JobKind::RestAt { .. }
                             | common::bastion::JobKind::Despond { .. }
                             | common::bastion::JobKind::Recreate { .. }
+                            | common::bastion::JobKind::Shelter { .. }
                     );
                     job.claimed_by = None;
                     if self_job {
@@ -33017,6 +33218,32 @@ mod tests {
             "had_effect=true must wipe the watchdog accrual -- real work is the ground-truth \
              progress signal"
         );
+    }
+
+    #[test]
+    fn an_alarm_shelter_is_born_claimed_at_home() {
+        // ALARM v1's whole claim story: the shelter job never touches the
+        // open board (a cry must not wait for office hours), so it must be
+        // born claimed FOR the civilian, AT their bed cell, with the frozen
+        // expiry riding in the kind. The self-job predicates that keep the
+        // open claim loop and the orphan sweep away from it are asserted
+        // against the REAL job the helper makes, not a hand-built twin.
+        let mut board = JobBoard::default();
+        let uid = Uid(NonZeroU64::new(9).unwrap());
+        let home = Vec3::new(10, 20, 30);
+        let id = board.insert_shelter_job(home, 456.5, uid);
+        let job = board.jobs.get(&id).expect("job inserted");
+        assert_eq!(job.claimed_by, Some(uid), "born claimed — never on the open board");
+        assert_eq!(job.pos, home, "the hold happens at the civilian's own bed");
+        match job.kind {
+            common::bastion::JobKind::Shelter { home: h, until } => {
+                assert_eq!(h, home);
+                assert_eq!(until, 456.5, "expiry frozen at post time");
+            },
+            ref k => panic!("wrong kind: {k:?}"),
+        }
+        assert!(job.kind.designation().is_none(), "shelter is not paint");
+        assert_eq!(job_release_class(&job.kind), "shelter");
     }
 
     #[test]

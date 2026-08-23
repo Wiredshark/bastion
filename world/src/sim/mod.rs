@@ -1741,7 +1741,10 @@ impl WorldSim {
         let flat_world = std::env::var_os("BASTION_FLAT_WORLD").is_some();
         if flat_world {
             let flat_alt = CONFIG.sea_level + 40.0;
-            for chunk in this.chunks.iter_mut() {
+            let len = map_size_lg.chunks_len();
+            for i in 0..len {
+                let pos = uniform_idx_as_vec2(map_size_lg, i);
+                let chunk = &mut this.chunks[i];
                 chunk.alt = flat_alt;
                 chunk.basement = flat_alt - 8.0;
                 // Water table below ground everywhere: no lakes, no rivers,
@@ -1753,9 +1756,16 @@ impl WorldSim {
                 chunk.temp = 0.0;
                 chunk.humidity = 0.6;
                 chunk.rockiness = 0.0;
-                // Sparse standing timber: enough for a wood economy, not a
-                // forest the pathfinder has to thread.
-                chunk.tree_density = 0.04;
+                // Forest BANDS on a deterministic chunk grid (boot 1 placed
+                // ZERO towns: `town_attributes_of_site` needs tree chunks for
+                // building_materials/heating, and a uniform 0.04 plain starves
+                // every candidate). One band chunk in each 4×4 cell keeps real
+                // materials in reach while the plains between stay legible.
+                chunk.tree_density = if pos.x.rem_euclid(4) == 0 && pos.y.rem_euclid(4) == 0 {
+                    0.5
+                } else {
+                    0.04
+                };
                 chunk.river = RiverData::default();
                 chunk.cliff_height = 0.0;
                 chunk.surface_veg = 1.0;

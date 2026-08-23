@@ -1301,6 +1301,20 @@ pub enum JobKind {
         /// The downed colonist.
         target: crate::uid::Uid,
     },
+    /// ★ ALARM v1 (Ben's ruling: "a method for colonists to sound an alarm
+    /// and base that on sound distance radius"). When a colonist engages a
+    /// hostile they CRY OUT; civilians inside the sound radius take shelter —
+    /// this job walks one home and holds them there until the alarm ends.
+    /// Self-job shape (born claimed, Despond's completion contract).
+    /// APPEND-ONLY position honoured.
+    Shelter {
+        /// Where to hide: own bed's cell, or the stockpile anchor for the
+        /// bedless.
+        home: vek::Vec3<i32>,
+        /// Sim-time the hold releases (mirrors the alarm's own expiry at
+        /// post time; the arm ALSO releases early if the alarm clears).
+        until: f64,
+    },
 }
 
 impl JobKind {
@@ -1329,7 +1343,9 @@ impl JobKind {
             | JobKind::RestAt { .. }
             | JobKind::EatFrom { .. }
             | JobKind::Despond { .. }
-            | JobKind::Recreate { .. } => None,
+            | JobKind::Recreate { .. }
+            // ALARM v1: taking shelter is a self-job at home, not paint.
+            | JobKind::Shelter { .. } => None,
         }
     }
 

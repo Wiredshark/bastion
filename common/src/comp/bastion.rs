@@ -1673,6 +1673,9 @@ pub enum JobKindTagV1 {
     /// Appended 2026-08-23 (wire-stable append-only): the downed-colonist
     /// rescue.
     Rescue,
+    /// Appended 2026-08-23 (wire-stable append-only): the alarm's
+    /// take-shelter self-job.
+    Shelter,
 }
 
 impl From<&crate::bastion::JobKind> for JobKindTagV1 {
@@ -1691,6 +1694,7 @@ impl From<&crate::bastion::JobKind> for JobKindTagV1 {
             J::EatFrom { .. } => JobKindTagV1::EatFrom,
             J::Despond { .. } => JobKindTagV1::Despond,
             J::Recreate { .. } => JobKindTagV1::Recreate,
+            J::Shelter { .. } => JobKindTagV1::Shelter,
         }
     }
 }

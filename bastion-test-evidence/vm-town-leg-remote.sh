@@ -12,7 +12,7 @@
 # VM (they die with it); the judge line is the deliverable, streamed to
 # stdout — the same discipline as the pool's @@@SEED blocks.
 set -u
-SLOT="${1:?slot}"; FENCE="${2:?fence ticks}"; ARM_ENV="${3:-}"
+SLOT="${1:?slot}"; FENCE="${2:?fence ticks}"; ARM_ENV="${3:-}"; SCENARIO="${4:-town}"
 WT="$(cd "$(dirname "$0")/.." && pwd)"
 EV="$WT/bastion-test-evidence"
 strip() { sed 's/\x1b\[[0-9;]*m//g'; }
@@ -20,7 +20,7 @@ strip() { sed 's/\x1b\[[0-9;]*m//g'; }
 cd "$EV"
 export PLAY_WT="$WT" PLAY_B="$WT/target/no_overflow" PLAY_EV="$EV" PLAY_EXE=""
 PLAY_EXTRA_ENV="BASTION_UNCAPPED_TPS=1 BASTION_PATH_ENDPOINT_DIAG=1 $ARM_ENV" \
-  bash play-harness.sh boot "$SLOT" town || { echo "LEG_BOOT_FAIL slot=$SLOT"; exit 3; }
+  bash play-harness.sh boot "$SLOT" "$SCENARIO" || { echo "LEG_BOOT_FAIL slot=$SLOT"; exit 3; }
 
 L="$EV/play/server-$SLOT.log"
 # Wait for the fence; a leg that stops writing for 5 minutes is DEAD, not slow
@@ -62,7 +62,13 @@ extinct=$(grep -c "COLONY EXTINCT" "$V.w")
 downed_plant=$(grep -c "DOWNED PLANT" "$V.w")
 rescue_posted=$(grep -c "RESCUE posted" "$V.w")
 rescued=$(grep -c "RESCUED — helped" "$V.w")
-echo "@@@LEG slot=$SLOT arm='$ARM_ENV' fence=$FENCE longest_search=$lt top3_share=$top3 exhaust=$ex terminal_releases=${term:-NA} stuck=$stuck sleepers=$sleepers slept=$slept ate=$ate unreachable=$unreach arrived=$arrived died=$died outright=$outright belongings_drops=$bel_drops belongings_items=$bel_items final=${final_census:-NA} extinct=$extinct downed_plant=$downed_plant rescue_posted=$rescue_posted rescued=$rescued@@@"
+# ALARM v1 (the cry, the response, the all-clear) — a raid leg should show
+# raised>0; a BASTION_NO_ALARM or hostile-free leg must show clean zeroes.
+alarm_raised=$(grep -c "ALARM RAISED" "$V.w")
+shelters=$(grep -c "civilian takes shelter" "$V.w")
+shelter_released=$(grep -c "shelter released" "$V.w")
+alarm_over=$(grep -c "ALARM over" "$V.w")
+echo "@@@LEG slot=$SLOT arm='$ARM_ENV' fence=$FENCE longest_search=$lt top3_share=$top3 exhaust=$ex terminal_releases=${term:-NA} stuck=$stuck sleepers=$sleepers slept=$slept ate=$ate unreachable=$unreach arrived=$arrived died=$died outright=$outright belongings_drops=$bel_drops belongings_items=$bel_items final=${final_census:-NA} extinct=$extinct downed_plant=$downed_plant rescue_posted=$rescue_posted rescued=$rescued alarm_raised=$alarm_raised shelters=$shelters shelter_released=$shelter_released alarm_over=$alarm_over@@@"
 # The chronicle half (Death records + actors incl. witnesses) via the real
 # wire path — one driver turn against the still-live world. Failure to turn
 # is reported, never silent: the chronicle bar reads VOID for that leg.

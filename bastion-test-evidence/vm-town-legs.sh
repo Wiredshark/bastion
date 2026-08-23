@@ -37,6 +37,9 @@ if command -v git >/dev/null 2>&1; then
 fi
 FENCE="${1:?fence ticks}"; ENV_A="${2-}"; ENV_B="${3:?env for arm B (\"\" for none)}"
 MAX_USD="${4:-20}"; MAX_MIN="${5:-120}"
+# SCENARIO reaches play-harness boot on every VM: town (default) or flat
+# (the town-realism lab world).
+SCENARIO="${SCENARIO:-town}"
 N=6; MACHINE="${MACHINE:-e2-standard-16}"
 VCPU_PER=$(echo "$MACHINE" | sed 's/.*-//'); RATE=0.035
 POOL="${POOL:-bastion-townlegs}"
@@ -63,7 +66,7 @@ run_one() {
     [ \"\$H\" = \"\$R\" ] && echo COMMIT=\$H || { echo STALE=\$H/\$R; exit 3; }
     cargo build --profile no_overflow -p veloren-server-cli -p veloren-client -q \
       || { echo BUILD_FAIL@\$H; exit 4; }
-    bash bastion-test-evidence/vm-town-leg-remote.sh $((60 + k)) $FENCE \"$arm\""
+    bash bastion-test-evidence/vm-town-leg-remote.sh $((60 + k)) $FENCE \"$arm\" \"$SCENARIO\""
   "$GCLOUD" compute instances delete "$name" --zone="$ZONE" -q >/dev/null 2>&1
 }
 

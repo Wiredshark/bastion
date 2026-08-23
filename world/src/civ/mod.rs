@@ -1843,9 +1843,15 @@ impl SiteKind {
         sim.get(loc).is_some_and(|chunk| {
             let suitable_for_town = || -> bool {
                 let attributes = town_attributes_of_site(loc, sim);
+                // bastion: the flat lab (BASTION_FLAT_WORLD) has no rivers or
+                // lakes BY DESIGN — hydrology would put terrain back into a
+                // controlled-geometry experiment. Wells stand in for potable
+                // water there; materials/heating still gate on the real
+                // forest bands, so town placement stays honest about wood.
+                let flat_lab = std::env::var_os("BASTION_FLAT_WORLD").is_some();
                 attributes.is_some_and(|attributes| {
                     // aquifer and has_many_rocks was added to make mesa clifftowns suitable for towns
-                    (attributes.potable_water || (attributes.aquifer && matches!(self, SiteKind::CliffTown)))
+                    (attributes.potable_water || flat_lab || (attributes.aquifer && matches!(self, SiteKind::CliffTown)))
                         && attributes.building_materials
                         && attributes.heating
                         // Because of how the algorithm for site towns work, they have to start on land.

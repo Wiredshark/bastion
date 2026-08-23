@@ -101,6 +101,8 @@ pub fn completion_block(kind: JobKind) -> Option<Block> {
         // bastion (ITEM 11): a break edits no terrain — the colonist
         // simply idles in place, exactly as Despond does.
         | JobKind::Recreate { .. }
+        // ALARM v1: hiding at home edits no terrain either.
+        | JobKind::Shelter { .. }
         // ITEM 14: a guard places no block, same as every other self-job.
         | JobKind::Guard { .. } => None,
     }
