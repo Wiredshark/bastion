@@ -1103,10 +1103,28 @@ pub fn connectivity_gate_enabled() -> bool {
     *V.get_or_init(|| std::env::var_os("BASTION_CONNECTIVITY_GATE").is_some())
 }
 
-pub(crate) fn conn_step_allowed(dz: i32, headroom_over_source: bool) -> bool {
+pub(crate) fn conn_step_allowed(dz: i32, headroom_over_upper: bool) -> bool {
     match dz {
-        0 | -1 => true,
-        1 => headroom_over_source,
+        0 => true,
+        // ★ SYMMETRIC BY CONSTRUCTION (2026-08-22). A one-block DROP used to be
+        // permitted unconditionally while the matching CLIMB required headroom,
+        // so the graph was DIRECTED while the flood fill treated it as
+        // undirected — it would union two cells when only the downhill trip was
+        // possible. A colonist could step down into a low-ceilinged alcove and
+        // be unable to step back out, with the index insisting both cells were
+        // one component.
+        //
+        // That is the exact hazard the prior art warns about: undirected
+        // connected components are only valid over SYMMETRIC edges, and DF's
+        // own one-way constructs are documented as stranding dwarves. The
+        // honest options are strongly-connected components or a symmetric
+        // level-0 predicate; this takes the second, which is far cheaper and
+        // loses nothing a walking colonist can actually use.
+        //
+        // Both directions now ask the same question about the same cell: is
+        // there room above the UPPER of the two cells for a body to pass. The
+        // caller resolves which cell that is from the sign of dz.
+        1 | -1 => headroom_over_upper,
         _ => false,
     }
 }
@@ -1159,8 +1177,13 @@ pub fn colony_connected_cells(
                 if seen.contains(&n) || !conn_standable(terrain, n) {
                     continue;
                 }
+                // The headroom cell belongs to the UPPER of the two cells,
+                // not always the source: stepping DOWN to `n` needs the same
+                // clearance the climb back up from `n` would need, or the edge
+                // is one-way and must not be unioned.
+                let upper = if dz < 0 { n } else { c };
                 let headroom = terrain
-                    .get(c + Vec3::new(0, 0, 2))
+                    .get(upper + Vec3::new(0, 0, 2))
                     .is_ok_and(|b| !b.is_filled());
                 if !conn_step_allowed(dz, headroom) {
                     continue;
@@ -28072,6 +28095,22 @@ mod tests {
         assert!(
             !conn_step_allowed(2, true),
             "a two-block rise is a CLIMB and must read as disconnected"
+        );
+        // ★ THE ONE-WAY-FALL HOLE, pinned (2026-08-22). A drop used to be
+        // permitted unconditionally while the matching climb needed headroom,
+        // so the fill unioned cells joined by a ONE-WAY edge. Undirected
+        // connected components are only valid over symmetric edges; a colonist
+        // could step down into a low-ceilinged alcove and be stranded while the
+        // index swore both cells were one component.
+        assert!(
+            !conn_step_allowed(-1, false),
+            "a one-block DROP into a space with no headroom is a ONE-WAY edge -- the colonist              cannot climb back out, and unioning the two cells is what makes the index lie"
+        );
+        // ...and the reverse must still be admitted, or the gate refuses every
+        // ordinary step down and starves the colony of reachable work.
+        assert!(
+            conn_step_allowed(-1, true),
+            "an ordinary one-block step down with headroom must stay connected"
         );
         assert!(
             !conn_step_allowed(-3, true),
