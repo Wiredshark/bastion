@@ -699,6 +699,16 @@ impl RtSim {
                 };
                 if let Some(w) = work {
                     colonist.skills.grant_xp(w, ADOPTED_TRADE_XP);
+                    // ★ AND THE LANE (Ben RULED: "a farmer should farm, a
+                    // cook should cook... for the most part they should
+                    // stay in their lane"). XP made them GOOD at the trade;
+                    // nothing made them PREFER it — a chef farmed as
+                    // eagerly as cooking, which is how farming ate 99% of
+                    // everyone's day. Priority 4 on the trade, 2 elsewhere
+                    // (cross-domain possible, lane outbids), guard at the
+                    // default because defence is everyone's business.
+                    colonist.work_priorities =
+                        common::bastion::WorkPriorities::in_lane(w);
                 }
             }
             names.push(colonist.name.clone());

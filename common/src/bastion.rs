@@ -1934,6 +1934,29 @@ impl WorkPriorities {
             WorkType::Farm => self.farm = p,
         }
     }
+
+    /// ★ PROFESSIONS STAY IN THEIR LANE (Ben RULED, live play 2026-08-23:
+    /// "this game already has job title tags — a farmer should farm, a cook
+    /// should cook, a blacksmith should smith. they can do cross domains
+    /// but for the most part they should stay in their lane"). The in-lane
+    /// profile: the trade at priority 4, everything else at 2 — cross-
+    /// domain work stays POSSIBLE (2 is not 0: a farmer will haul the
+    /// harvest nobody else takes) but the lane always outbids it. Guard is
+    /// left at the default (3): a profession is a day job, and defending
+    /// the town is everyone's business when the drive calls.
+    pub fn in_lane(trade: WorkType) -> Self {
+        let mut p = Self {
+            mine: 2,
+            chop: 2,
+            build: 2,
+            haul: 2,
+            cook: 2,
+            farm: 2,
+            guard: 3,
+        };
+        p.set(trade, 4);
+        p
+    }
 }
 
 /// The per-colonist record. Lives in the rtsim `Npc` (persisted, works

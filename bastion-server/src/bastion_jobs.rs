@@ -32758,6 +32758,30 @@ mod tests {
         );
     }
 
+    /// ★ PROFESSIONS STAY IN THEIR LANE (Ben RULED): the trade outbids,
+    /// cross-domain stays possible, defence stays communal. Both
+    /// directions: the lane must actually lead, and nothing may be zeroed —
+    /// a profile that FORBIDS cross-domain work recreates the starved-
+    /// specialist failure this board has shipped guards against before.
+    #[test]
+    fn a_profession_prefers_its_lane_but_never_locks_the_door() {
+        use common::bastion::{WorkPriorities, WorkType};
+        let chef = WorkPriorities::in_lane(WorkType::Cook);
+        assert_eq!(chef.get(WorkType::Cook), 4, "the trade leads");
+        assert!(
+            chef.get(WorkType::Farm) >= 1 && chef.get(WorkType::Farm) < chef.get(WorkType::Cook),
+            "cross-domain work stays possible but never outbids the lane"
+        );
+        assert_eq!(
+            chef.get(WorkType::Guard),
+            3,
+            "defence is everyone's business — a profession is a day job"
+        );
+        let farmer = WorkPriorities::in_lane(WorkType::Farm);
+        assert_eq!(farmer.get(WorkType::Farm), 4);
+        assert!(farmer.get(WorkType::Cook) < farmer.get(WorkType::Farm));
+    }
+
     /// ★ THE OPEN BOARD KEEPS OFFICE HOURS (Ben: "working constantly —
     /// that's not how people work"): ordinary claims only during the Work
     /// block; evenings and nights the board is closed. Both directions —
