@@ -4395,7 +4395,11 @@ pub const RECREATION_BREAK_SECS: f64 = 120.0;
 /// its way on.
 pub fn recreation_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("BASTION_RECREATION").is_some())
+    // ★ DEFAULT ON (Ben RULED, 2026-08-23, pointing at vanilla loungers:
+    // "this needs to be in our colony"). The earn-its-way flag inverted:
+    // breaks are the shipped behaviour; BASTION_NO_RECREATION is the
+    // same-binary kill switch for A/Bs and throughput fixtures.
+    *ON.get_or_init(|| std::env::var_os("BASTION_NO_RECREATION").is_none())
 }
 
 pub const RUN_DRAIN_PER_SEC: f32 = 15.0;
@@ -21331,6 +21335,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         );
                                     }
                                 }
+                                // ★ VISIBLE BED USE v1 (Ben: "the colonist
+                                // never actually use the bed ie lie in
+                                // them"): the sleeper SITS on the bed while
+                                // rest banks -- a person at rest, not a
+                                // statue beside furniture. (A true lying
+                                // pose is a CharacterState addition, banked;
+                                // Sit ships today on vanilla machinery.)
+                                if let Some(controller) = controllers.get_mut(entity) {
+                                    controller.inputs.move_dir = Vec2::zero();
+                                    controller.push_action(comp::ControlAction::Sit);
+                                }
                                 if let Some(needs) = needs_storage.get_mut(entity) {
                                     let cfg = common::bastion::MoodConfig::current();
                                     needs.rest = (needs.rest
@@ -21342,6 +21357,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     slept = needs.rest >= cfg.rest.comfort + SLEEP_MARGIN;
                                 }
                                 if slept {
+                                    if let Some(controller) = controllers.get_mut(entity) {
+                                        controller.push_action(comp::ControlAction::Stand);
+                                    }
                                     if std::env::var_os("BASTION_SELFJOB_COMPLETION_DIAG").is_some() {
                                         info!(kind = "RestAt", "bastion SELFJOB-COMPLETED-DIAG");
                                     }
@@ -21817,6 +21835,36 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             );
                             board.remove_job(active.job);
                             to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                        }
+                        continue;
+                    }
+                    // ── ITEM 11: RECREATE — the break's MISSING END (found
+                    // while shipping Ben's lounging ruling: the flag had
+                    // never been on, so the completion arm had simply never
+                    // been written — a break, once taken, never ended and
+                    // only the 1860s claim-leak sweep would eventually reap
+                    // the colonist). Despond's exact shape: hold until the
+                    // clock passes `until`, then release back to life. The
+                    // restore-while-holding already runs in the decay pass.
+                    // ★ AND THE LOUNGER SITS (Ben: vanilla npcs "just
+                    // lounging around — this needs to be in our colony"):
+                    // the hold pushes Sit, so an evening break READS as one
+                    // — a person on a bench, not a statue.
+                    if let common::bastion::JobKind::Recreate { until } = job.kind {
+                        if time.0 >= until {
+                            if std::env::var_os("BASTION_SELFJOB_COMPLETION_DIAG").is_some() {
+                                info!(kind = "Recreate", "bastion SELFJOB-COMPLETED-DIAG");
+                            }
+                            info!(job = active.job, "bastion: break over — back to it");
+                            if let Some(controller) = controllers.get_mut(entity) {
+                                controller.push_action(comp::ControlAction::Stand);
+                            }
+                            board.remove_job(active.job);
+                            to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
+                        } else if let Some(controller) = controllers.get_mut(entity) {
+                            controller.inputs.move_dir = Vec2::zero();
+                            controller.inputs.move_z = 0.0;
+                            controller.push_action(comp::ControlAction::Sit);
                         }
                         continue;
                     }
