@@ -18112,7 +18112,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 }
                 if !serviced
                     && recreation_enabled()
-                    && needs.recreation < mood_cfg.recreation.comfort
+                    && (needs.recreation < mood_cfg.recreation.comfort
+                        // ★ LEISURE HOURS LOUNGE (Ben, pointing at vanilla
+                        // villagers idling in a plaza: "this needs to be in
+                        // our colony"). With the office-hours gate the board
+                        // is closed in the evening — but a colonist whose
+                        // meters are all healthy then just STOOD there,
+                        // which reads as a freeze, not a life. During the
+                        // Leisure block an unoccupied colonist takes a
+                        // recreation break whether or not the meter asks:
+                        // lounging IS the evening's job. Active jobs finish
+                        // first (no mid-task yank), needs still outrank via
+                        // the earlier candidates, and the cooldown below
+                        // keeps it from re-firing every pass.
+                        || (matches!(
+                            default_schedule_block(hour_of_day(
+                                rtsim.rt_state().data().time_of_day.0
+                            )),
+                            ScheduleBlock::Leisure
+                        ) && active_jobs.get(entity).is_none()))
                     // ★★ ITEM 11 ROOT CAUSE (2026-08-20, 34,720-row census):
                     // this line used `contains_key`, but NOTHING prunes
                     // `preempt_cooldown` — expiry is checked AT READ TIME by
