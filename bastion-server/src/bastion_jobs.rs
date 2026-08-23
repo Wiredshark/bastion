@@ -1331,9 +1331,33 @@ pub fn schedule_permits_need(
         // Sleeping time: rest is welcome, eating is not urgent enough to get
         // a colonist out of bed above the starvation line.
         ScheduleBlock::Sleep => is_rest_need,
-        // Working time: neither need interrupts. This is the line that stops
-        // hunger monopolising the preempt slot 4.5:1.
-        ScheduleBlock::Work => false,
+        // ★ WORKING TIME STOPS NAPPING, NOT MEALS (corrected 2026-08-22 from
+        // Ben's live play + RimWorld's actual rule).
+        //
+        // I originally blocked BOTH needs here, to break hunger's 4.5:1
+        // monopoly of the preempt slot. Ben watched it and said: "the colonist
+        // are stuck in a hunger loop they can never work because they try to
+        // eat but their hunger bar never fills up." His colony's numbers:
+        // 4 hunger preempts across 8 colonists, 4 meals, ALL FOUR FROM THE
+        // EMERGENCY PACK, with food_stock=240 sitting uneaten. They could not
+        // eat during their own shift, so they worked until the 0.08 starvation
+        // backout and lived off a one-time ration kit.
+        //
+        // RimWorld's rule, researched rather than assumed: "scheduling and work
+        // priority has nothing to do with eating -- colonists will eat when
+        // hungry when assigned to ANY scheduling task, even work scheduling",
+        // and a pawn works "unless their need to eat falls below 30%", at which
+        // point it eats. The schedule gates SLEEP and governs free time; it
+        // never gates food.
+        //
+        // So hunger interrupts work at its ordinary threshold, and REST does
+        // not -- which is the half that actually breaks the monopoly, because
+        // rest is the need that was being starved of the slot.
+        // `!forced_labour` keeps Ben's conscription mod meaningful: a free
+        // colonist eats during its shift (RimWorld's rule), a CONSCRIPT works
+        // through it. Without this conjunct the mod would be a no-op for
+        // hunger the moment eating stopped being schedule-gated.
+        ScheduleBlock::Work => !is_rest_need && !forced_labour,
         // Own time: ordinary urgency arbitration decides. This is where
         // Ben's "meals, breaks, etc inbetween" actually happen.
         ScheduleBlock::Leisure => true,
@@ -2854,6 +2878,168 @@ pub const DETOUR_SEARCHES_PER_TICK: usize = 1;
 /// (a bedroll's 0.6 scales it down) — 0→comfort in ~40s on a bedroll.
 /// Tunable; the BedKind quality split is the design's lever.
 pub const BED_REST_RECOVERY_PER_SEC: f32 = 0.02;
+
+// ─────────────────────────────────────────────────────────────────────────
+// NEED BANDS (Ben, 2026-08-22): "we should also classify the hunger and sleep
+// and any other meters into different category based on percentages like
+// peckish, hungry, very hungry, famished, starving, deathly starving etc. we
+// should do this for all meters and it determines how determined they are to
+// solve their issues."
+//
+// ★ THIS IS THE FIX FOR THE ARBITER'S ROOT DEFECT, not just labelling. The
+// arbiter awards its single preempt slot to the LOWEST RAW METER. Hunger
+// decays at exactly TWICE rest's rate, so hunger is almost always the lower
+// number and took the slot 4.5:1 (118 vs 26, measured) — four of eight
+// colonists never slept ONCE. Comparing raw values compares DECAY RATES, not
+// urgency.
+//
+// A band is rate-free. "Starving" outranks "Sleepy" because of what those words
+// MEAN, not because one meter happens to fall faster. Two needs in the same
+// band tie and fall through to a stable tiebreak instead of to whichever
+// constant was steeper.
+//
+// Prior art: RimWorld bands every need (Hungry / Urgently hungry / Starving)
+// and drives behaviour off the band; DF uses the same shape. The bands are also
+// what a player-facing UI shows, so this is the autonomous half of a thing that
+// later gets exposed (DECISIONS-FOR-BEN #117).
+// ─────────────────────────────────────────────────────────────────────────
+
+/// How badly a need wants attention. Ordered: `Fine` is least urgent, `Dire`
+/// most, and `Ord` follows the declaration order so bands compare directly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum NeedBand {
+    /// Above comfort. Nothing to do.
+    Fine,
+    /// Noticed, not acted on — "peckish", "a bit tired".
+    Slight,
+    /// The ordinary interrupt band — "hungry", "sleepy".
+    Pressing,
+    /// "very hungry" / "weary": worth dropping ordinary work for.
+    Urgent,
+    /// "famished" / "exhausted".
+    Severe,
+    /// "starving" / "collapsing": life-threatening, overrides schedules.
+    Dire,
+}
+
+impl NeedBand {
+    /// The player-facing word for a HUNGER band — Ben's vocabulary.
+    pub fn hunger_word(self) -> &'static str {
+        match self {
+            NeedBand::Fine => "fed",
+            NeedBand::Slight => "peckish",
+            NeedBand::Pressing => "hungry",
+            NeedBand::Urgent => "very hungry",
+            NeedBand::Severe => "famished",
+            NeedBand::Dire => "starving",
+        }
+    }
+
+    /// The player-facing word for a REST band.
+    pub fn rest_word(self) -> &'static str {
+        match self {
+            NeedBand::Fine => "rested",
+            NeedBand::Slight => "drowsy",
+            NeedBand::Pressing => "sleepy",
+            NeedBand::Urgent => "weary",
+            NeedBand::Severe => "exhausted",
+            NeedBand::Dire => "collapsing",
+        }
+    }
+}
+
+/// Band a meter in 0.0..=1.0, where 1.0 is fully satisfied.
+///
+/// ★ EVERY BOUNDARY IS AN EXISTING BEHAVIOURAL THRESHOLD, not a fresh number.
+/// Bands are meant to DESCRIBE what the sim already does and give it a
+/// vocabulary; inventing cut points would silently move behaviour under cover
+/// of naming it.
+///
+/// ```text
+///   value:  0 ─────── 0.08 ──── 0.12 ── 0.16 ── 0.20 ─────────── 0.50 ─── 1.0
+///           │  Dire    │ Severe │Urgent │Press. │     Slight      │  Fine
+///           └ collapse ┴ STARVATION     └───────┴ INTERRUPT       └ COMFORT
+///             (0.02,              OVERRIDE        (preempt fires)
+///              inside Dire)       (0.08)          (0.20)
+/// ```
+///
+/// The two anchors are real: `interrupt` is where a need already preempts work,
+/// and [`SCHEDULE_STARVATION_OVERRIDE`] is where it already overrides the
+/// schedule. So `Slight` is exactly "noticed but not yet acted on", `Pressing`
+/// begins exactly where the preempt fires, and `Dire` is exactly the emergency
+/// region. `EXHAUSTION_COLLAPSE_REST` (0.02) falls inside `Dire`, which is why
+/// its word is "collapsing" — the band contains the collapse.
+///
+/// The span BETWEEN the two anchors is split evenly into the three middle
+/// bands, because nothing else in the sim marks that interval; that is a
+/// presentation choice and the only one here.
+///
+/// Pure and total — every f32, including NaN, lands somewhere.
+pub fn need_band(value: f32, comfort: f32, interrupt: f32) -> NeedBand {
+    if !(value < comfort) {
+        // `!(<)` rather than `>=` so NaN reads as Fine rather than Dire: an
+        // unreadable meter must not be treated as a life-threatening one.
+        // Handing the preempt slot to a broken reader forever would rebuild the
+        // monopoly this banding exists to break, from a third direction.
+        return NeedBand::Fine;
+    }
+    if value >= interrupt {
+        return NeedBand::Slight;
+    }
+    let dire = SCHEDULE_STARVATION_OVERRIDE;
+    if value <= dire {
+        return NeedBand::Dire;
+    }
+    // Degenerate config (starvation line at or above the interrupt): there is
+    // no interval left to subdivide, so collapse the middle bands onto the
+    // urgent end rather than emit a band the config cannot support.
+    if !(dire < interrupt) {
+        return NeedBand::Severe;
+    }
+    let step = (interrupt - dire) / 3.0;
+    if value >= dire + step * 2.0 {
+        NeedBand::Pressing
+    } else if value >= dire + step {
+        NeedBand::Urgent
+    } else {
+        NeedBand::Severe
+    }
+}
+
+/// Rank a colonist's overall neediness for [`canonical_need_order`], which
+/// serves colonists in ASCENDING order of the returned severity.
+///
+/// ★ THE SECOND SITE OF THE RATE BIAS. This used to be `rest.min(hunger)` —
+/// the same raw comparison the need arbiter made, one level up. It decides
+/// which COLONIST is served first, and since serving is contended (one preempt
+/// slot each, finite beds, finite food), a rate bias here re-creates the
+/// monopoly across the colony even after the per-colonist arbiter is fixed:
+/// hunger falls at exactly twice rest's rate, so the hungry colonist shows the
+/// smaller number and always gets looked at first.
+///
+/// Band first, raw value second. The two are packed into one f32 to leave
+/// `canonical_need_order`'s determinism contract (DET-COL-NEED-001/002,
+/// DET-AUT-005) untouched — it still sorts one scalar ascending, ties broken by
+/// Uid. The packing is lexicographic and sound ONLY because need values are
+/// bounded to `[0, 1]`, which is why they are clamped here rather than trusted;
+/// `need_severity_is_lexicographic_band_then_value` pins the property.
+pub fn need_severity(rest: f32, hunger: f32, mood_cfg: &common::bastion::MoodConfig) -> f32 {
+    let rank = |band: NeedBand| match band {
+        // Ascending = more urgent first, so Dire must be the SMALLEST.
+        NeedBand::Dire => 0.0,
+        NeedBand::Severe => 1.0,
+        NeedBand::Urgent => 2.0,
+        NeedBand::Pressing => 3.0,
+        NeedBand::Slight => 4.0,
+        NeedBand::Fine => 5.0,
+    };
+    // NaN clamps to 1.0 (Fine) — an unreadable meter must not jump the queue.
+    let score = |v: f32, cfg: &common::bastion::NeedTuning| {
+        let v = if v.is_nan() { 1.0 } else { v.clamp(0.0, 1.0) };
+        rank(need_band(v, cfg.comfort, cfg.interrupt)) + v
+    };
+    score(rest, &mood_cfg.rest).min(score(hunger, &mood_cfg.hunger))
+}
 
 /// Rest level at which a colonist COLLAPSES and sleeps where it stands.
 ///
@@ -6681,6 +6867,24 @@ pub struct JobBoard {
     /// colonist can reach from the colony core — RimWorld's zone index / DF's
     /// connected segments, so "can anyone get there?" is answered BEFORE the
     /// claim instead of after ten seconds of walking and a timeout.
+    /// bastion (Ben, live play 2026-08-22: "this screen right here should be
+    /// the adopt a town menu"): the world position of the site the player chose
+    /// on the SELECT STARTING AREA screen, if any.
+    ///
+    /// ★ WHY THIS EXISTS. Adoption waited for a `comp::MapMarker`, which is
+    /// placed by MIDDLE-CLICKING the world map — undiscoverable. Ben reached
+    /// for the visible button (`ContextVerb::FoundColony`) instead, which
+    /// founds at the PLAYER'S POSITION, and his colony came up with
+    /// `ADOPT-IN-PLACE house registered = 0`: eight people camping in a field,
+    /// with the log patiently repeating "WAITING for you to place a map
+    /// marker". The colony systems were fine; the founding never adopted
+    /// anything.
+    ///
+    /// The character screen ALREADY shows the world's towns by name on a map
+    /// with Previous/Next, and the server already resolves the choice to a site
+    /// centre for the spawn waypoint. The chooser existed and was not connected
+    /// to the thing it obviously chooses.
+    pub start_site_adopt_target: Option<Vec2<i32>>,
     pub connected_cells: std::collections::HashSet<Vec3<i32>>,
     /// Tick the set above was last rebuilt. Terrain changes as colonists mine
     /// and build, so a stale edge costs one failed claim — not a permanent
@@ -15399,6 +15603,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         loaded = is_loaded(e),
                         hunger = n.hunger,
                         rest = n.rest,
+                        // The BAND beside the raw value, never instead of it:
+                        // the band is what decides behaviour now, so a log that
+                        // showed only the number could not explain a decision.
+                        hunger_band = need_band(
+                            n.hunger,
+                            mood_cfg.hunger.comfort,
+                            mood_cfg.hunger.interrupt
+                        )
+                        .hunger_word(),
+                        rest_band =
+                            need_band(n.rest, mood_cfg.rest.comfort, mood_cfg.rest.interrupt)
+                                .rest_word(),
                         pos = ?p.0,
                         "bastion COLONY-PRESENCE-ACCEPTANCE-DIAG"
                     );
@@ -15408,7 +15624,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 (&entities, &colonists, &uids, &needs_storage)
                     .join()
                     .filter(|(e, _, _, _)| is_loaded(*e))
-                    .map(|(e, _, u, n)| (e, *u, n.rest.min(n.hunger)))
+                    .map(|(e, _, u, n)| (e, *u, need_severity(n.rest, n.hunger, &mood_cfg)))
                     .collect();
             if need_join_diag {
                 let c_count = need_order.len();
@@ -15887,14 +16103,52 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         _ => hunger_satisfiable,
                     });
                 }
-                // LIFE-THREAT FIRST, then urgency. Ben: "the one more life
-                // threatening and can be solved fastest (probably food in most
-                // cases)" -- starvation kills, exhaustion does not, and eating is
-                // seconds where sleeping is a night. Hunger (kind 1) therefore
-                // sorts ahead of rest (kind 0) when both are satisfiable and
-                // both are in crisis; within a kind, the lower value still wins.
+                // ★ BAND FIRST, then life-threat, then value (Ben, 2026-08-22:
+                // classify every meter into named percentage categories, and
+                // let the category "determine how determined they are to solve
+                // their issues").
+                //
+                // THE DEFECT THIS REPLACES. The previous comparator sorted by
+                // KIND first and unconditionally -- `b.1.cmp(&a.1)` puts hunger
+                // (kind 1) ahead of rest (kind 0) whenever both are candidates,
+                // with value used only to break ties WITHIN a kind, which for
+                // two kinds is never. So hunger did not merely usually win; it
+                // ALWAYS won. That is the measured 4.5:1 monopoly (118 hunger
+                // preempts vs 26 rest, n=3) and why four of eight colonists
+                // never slept once: rest could only be served in the gaps where
+                // no hunger candidate existed at all.
+                //
+                // The life-threat rule Ben stated is still right -- starvation
+                // kills and exhaustion does not -- but it is a rule for
+                // COMPARABLE urgency, not a total order over the two needs. A
+                // starving colonist should out-rank a sleepy one. A merely
+                // peckish one should not out-rank a collapsing one.
+                //
+                // Banding is what makes that comparison possible, because a
+                // band is RATE-FREE. Hunger decays exactly twice as fast as
+                // rest, so at equal urgency hunger always shows the smaller
+                // number -- comparing raw values compares decay constants. Two
+                // needs in the same band now genuinely tie, and the tie falls
+                // through to Ben's life-threat rule, which is where it belongs.
+                //
+                // Banded on the SHARED cfg thresholds, deliberately NOT the
+                // per-colonist staggered `rest_th`/`hunger_th`: the band is a
+                // vocabulary, and "starving" has to mean the same value for
+                // every colonist or the word stops being comparable across the
+                // colony (and stops being displayable in a UI). Staggering
+                // still does its job where it belongs -- deciding WHETHER a
+                // need becomes a candidate at all.
                 candidates.sort_by(|a, b| {
-                    b.1.cmp(&a.1)
+                    let band = |&(v, kind): &(f32, u8)| {
+                        let cfg = if kind == 0 { &mood_cfg.rest } else { &mood_cfg.hunger };
+                        need_band(v, cfg.comfort, cfg.interrupt)
+                    };
+                    // Descending urgency: Dire first.
+                    band(b)
+                        .cmp(&band(a))
+                        // Same band: LIFE-THREAT FIRST -- hunger (1) ahead of rest (0).
+                        .then(b.1.cmp(&a.1))
+                        // Same band and same need: lower value first.
                         .then(a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
                 });
                 if candidates.is_empty() {
@@ -27013,14 +27267,38 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
 /// map selection for choosing the town we want"): WHICH position adoption
 /// searches around.
 ///
-/// The player's map marker if they set one, else the spawn. Extracted as a
-/// pure function because the live leg can only witness ONE branch: the pit
-/// driver has no way to place a marker, so `player_chose=false` is observable
-/// and `player_chose=true` is not. A branch that cannot be reached by any test
-/// is a branch nobody has checked — so the decision is pinned here even though
-/// its live witness is still owed.
-pub fn adopt_target(marker: Option<Vec2<i32>>, spawn: Vec2<i32>) -> Vec2<i32> {
-    marker.unwrap_or(spawn)
+/// Precedence: the in-game map marker, then the SELECT STARTING AREA pick,
+/// then the spawn. Extracted as a pure function because the live leg can only
+/// witness ONE branch: the pit driver has no way to place a marker, so
+/// `player_chose=false` is observable and `player_chose=true` is not. A branch
+/// that cannot be reached by any test is a branch nobody has checked — so the
+/// decision is pinned here even though its live witness is still owed.
+///
+/// ★ `start_site` ADDED 2026-08-22 — AND IT CLOSES A HALF-APPLIED FIX OF MINE.
+///
+/// Wiring the character screen to adoption took two edits, and only one landed.
+/// `JobBoard::start_site_adopt_target` was made to open the founding GATE (so
+/// picking a town stopped the "WAITING for you to place a map marker" stall),
+/// but the PLACEMENT still read `MapMarker` alone and fell back to the spawn.
+/// The spawn at that point is `world_center_wpos` — a constant — so a player
+/// who picked a town got founding unblocked and then adopted whatever village
+/// scored best near WORLD CENTRE instead.
+///
+/// That combination is the worst possible one: the stall symptom disappears,
+/// the log line reads "the town you picked is the town you get", and the answer
+/// is silently wrong — which is precisely the failure mode the marker branch
+/// was written to prevent ("adopting the wrong village looks exactly like
+/// adopting the right one"). The gate half hid the placement half.
+///
+/// Marker outranks the pick deliberately: the pick happens once at character
+/// creation, the marker is a later, explicit in-game act, so the marker is the
+/// override. Both outrank the spawn, which is a fallback and not a choice.
+pub fn adopt_target(
+    marker: Option<Vec2<i32>>,
+    start_site: Option<Vec2<i32>>,
+    spawn: Vec2<i32>,
+) -> Vec2<i32> {
+    marker.or(start_site).unwrap_or(spawn)
 }
 
 /// bastion (F13, 2026-08-21): does this job bill the colony's STONE economy
@@ -27572,13 +27850,24 @@ mod tests {
              work={work} leisure={leisure}"
         );
 
-        // ★ THE WORK BLOCK MUST ACTUALLY BIND, or the schedule changes nothing
-        // and the 4.5:1 hunger monopoly simply continues. A well-fed colonist
-        // in its shift does not stop to eat.
+        // ★ THE WORK BLOCK GATES SLEEP, NOT MEALS — corrected from Ben's live
+        // play. Blocking BOTH left colonists working until the 0.08 starvation
+        // backout, living off a one-time ration kit while food_stock sat at
+        // 240 UNEATEN: "stuck in a hunger loop ... their hunger bar never fills
+        // up", 4 hunger preempts across 8 colonists, all 4 meals from the pack.
+        //
+        // RimWorld, researched: "scheduling and work priority has nothing to do
+        // with eating — colonists will eat when hungry when assigned to ANY
+        // scheduling task, even work scheduling."
+        //
+        // Urgency is still the THRESHOLD's job, not the schedule's: `hunger_in`
+        // gates on hunger < 0.2 before this is ever consulted, so a fed
+        // colonist does not down tools for a snack.
         assert!(
-            !schedule_permits_need(ScheduleBlock::Work, false, 0.5, false, true),
-            "a fed colonist interrupted work during its shift — the schedule is \
-             not binding and the hunger monopoly is unchanged"
+            schedule_permits_need(ScheduleBlock::Work, false, 0.3, false, true),
+            "a HUNGRY colonist was refused food during its shift — that is what \
+             left Ben's colony living on emergency rations beside 240 units of \
+             untouched food"
         );
         assert!(
             !schedule_permits_need(ScheduleBlock::Work, true, 0.5, false, true),
@@ -27650,6 +27939,124 @@ mod tests {
             "forced labour must suppress the starvation backout — that is the \
              whole content of the conscription mod"
         );
+    }
+
+    /// ★ NEED BANDS RANK BY URGENCY, NOT BY DECAY RATE (Ben, 2026-08-22:
+    /// "classify the hunger and sleep and any other meters into different
+    /// category based on percentages ... it determines how determined they are
+    /// to solve their issues").
+    ///
+    /// This is the test for the arbiter's ROOT defect, so it asserts the
+    /// ordering the comparator implements, not just the labels.
+    #[test]
+    fn need_bands_rank_by_urgency_not_by_decay_rate() {
+        // Shipped config, both needs.
+        let (comfort, interrupt) = (0.5, 0.2);
+        let b = |v: f32| need_band(v, comfort, interrupt);
+
+        // ── The vocabulary is monotone. A meter that only falls must never
+        // produce a band that goes back UP.
+        let mut prev = NeedBand::Fine;
+        let mut v = 1.0f32;
+        while v >= 0.0 {
+            let cur = b(v);
+            assert!(
+                cur >= prev,
+                "band went BACKWARDS as the meter fell: {v} banded {cur:?} after {prev:?}"
+            );
+            prev = cur;
+            v -= 0.005;
+        }
+        assert_eq!(prev, NeedBand::Dire, "an empty meter must band Dire");
+
+        // ── The boundaries are keyed to the SHIPPED thresholds, so banding
+        // describes behaviour instead of quietly moving it.
+        assert_eq!(b(1.0), NeedBand::Fine);
+        assert_eq!(b(comfort), NeedBand::Fine, "at comfort a need is not a need");
+        assert_eq!(
+            b(comfort - 0.01),
+            NeedBand::Slight,
+            "below comfort but above the interrupt is 'peckish' — noticed, not acted on"
+        );
+        assert_eq!(
+            b(interrupt),
+            NeedBand::Slight,
+            "the interrupt is the FLOOR of Slight; Pressing must begin exactly where \
+             the preempt already fires, or the bands have moved behaviour"
+        );
+        assert_eq!(
+            b(interrupt - 0.001),
+            NeedBand::Pressing,
+            "crossing the interrupt must be the Slight->Pressing edge"
+        );
+        assert_eq!(b(SCHEDULE_STARVATION_OVERRIDE), NeedBand::Dire);
+        assert_eq!(b(0.0), NeedBand::Dire);
+
+        // ── ★ THE MONOPOLY, DIRECTLY. This is the falsifier: it reproduces
+        // the exact state the old comparator got wrong.
+        //
+        // Hunger decays at 0.000889/s and rest at 0.000444/s — EXACTLY 2x. So
+        // two needs that became urgent at the same moment show hunger at half
+        // rest's value forever after. Under the old rule (kind first,
+        // unconditionally) hunger won every such pass; measured 118 hunger
+        // preempts to 26 rest, with four of eight colonists never sleeping.
+        //
+        // Banding is what makes them comparable: the ORDER OF THE WORDS is not
+        // a function of the decay constants.
+        let starving_hunger = 0.03; // Dire
+        let sleepy_rest = 0.15; // Pressing
+        assert!(
+            b(starving_hunger) > b(sleepy_rest),
+            "a starving colonist must out-rank a sleepy one — Ben's life-threat rule"
+        );
+
+        // ...and the case the old code could not express AT ALL:
+        let peckish_hunger = 0.35; // Slight
+        let collapsing_rest = 0.02; // Dire
+        assert!(
+            b(collapsing_rest) > b(peckish_hunger),
+            "a COLLAPSING colonist lost its one preempt slot to a PECKISH stomach. \
+             This is the 4.5:1 monopoly: with kind sorted first and unconditionally, \
+             hunger did not usually win, it ALWAYS won, and rest was served only in \
+             the passes where no hunger candidate existed at all"
+        );
+        // Note the raw values: 0.35 > 0.02, so even a value-first comparator
+        // gets this one right. The old one did not, because it never reached
+        // the value at all. Assert that the raw ordering and the band ordering
+        // agree here, so this case cannot be dismissed as a banding artefact.
+        assert!(collapsing_rest < peckish_hunger);
+
+        // ── ★ PIN AGAINST BOTH DEGENERATE SETTINGS. A band function that
+        // returned one constant would satisfy "monotone" and "ordered" above.
+        let distinct: std::collections::BTreeSet<_> = (0..=200)
+            .map(|i| b(i as f32 / 200.0))
+            .collect();
+        assert_eq!(
+            distinct.len(),
+            6,
+            "every band must be REACHABLE on the shipped thresholds; a band no meter \
+             can ever occupy is a word with no behaviour behind it (got {distinct:?})"
+        );
+
+        // ── NaN must read as Fine, never Dire. An unreadable meter is a bug in
+        // the reader; treating it as life-threatening would hand it the preempt
+        // slot forever and reproduce the monopoly from a third direction.
+        assert_eq!(
+            b(f32::NAN),
+            NeedBand::Fine,
+            "a NaN meter must not be treated as a starving colonist"
+        );
+
+        // ── The words are the player-facing half (DECISIONS-FOR-BEN #117) and
+        // must stay distinct per meter, or the UI cannot say what is wrong.
+        let hunger_words: std::collections::BTreeSet<_> =
+            distinct.iter().map(|band| band.hunger_word()).collect();
+        let rest_words: std::collections::BTreeSet<_> =
+            distinct.iter().map(|band| band.rest_word()).collect();
+        assert_eq!(hunger_words.len(), 6, "two hunger bands share a word");
+        assert_eq!(rest_words.len(), 6, "two rest bands share a word");
+        assert_eq!(NeedBand::Dire.hunger_word(), "starving");
+        assert_eq!(NeedBand::Dire.rest_word(), "collapsing");
     }
 
     /// ★ THE HOUR-OF-DAY CONVERSION, pinned because everything above keys on it
@@ -28376,16 +28783,53 @@ mod tests {
     fn a_map_marker_beats_proximity_when_choosing_a_town() {
         let spawn = Vec2::new(16384, 16384);
         let chosen = Vec2::new(15216, 16016);
+        let picked = Vec2::new(12000, 9000);
         assert_eq!(
-            adopt_target(Some(chosen), spawn),
+            adopt_target(Some(chosen), None, spawn),
             chosen,
             "a marker the player placed must decide the town, not where they happen to stand"
         );
         assert_eq!(
-            adopt_target(None, spawn),
+            adopt_target(None, None, spawn),
             spawn,
             "with no marker the behaviour must be byte-identical to before, or every banked              corpus leg silently changes which town it adopted"
         );
+
+        // ★ THE HALF-APPLIED FIX, PINNED (2026-08-22). The character screen
+        // wrote `start_site_adopt_target`, the founding GATE read it, and the
+        // placement did not -- so picking a town on the Select Starting Area
+        // screen unblocked founding and then adopted a town near WORLD CENTRE,
+        // while the log said "the town you picked is the town you get".
+        //
+        // `spawn` here is deliberately the world-centre-ish value the live path
+        // actually passes, so this assert fails in exactly the shape the bug
+        // had rather than in an abstract one.
+        assert_eq!(
+            adopt_target(None, Some(picked), spawn),
+            picked,
+            "the town picked on the SELECT STARTING AREA screen was ignored and adoption \
+             fell back to the spawn -- that is founding-unblocked-but-placed-wrong, the \
+             silent wrong answer this function exists to prevent"
+        );
+
+        // Precedence, both directions. The marker is the LATER, explicit act
+        // and must override a pick made once at character creation.
+        assert_eq!(
+            adopt_target(Some(chosen), Some(picked), spawn),
+            chosen,
+            "an in-game map marker must override the character-creation pick"
+        );
+        // ...and neither may ever silently degrade to the spawn while a choice
+        // exists. This is the assertion the original pair could not make,
+        // because with one Option there was no way to express "a choice was
+        // made and ignored".
+        for (m, s) in [(Some(chosen), None), (None, Some(picked)), (Some(chosen), Some(picked))] {
+            assert_ne!(
+                adopt_target(m, s, spawn),
+                spawn,
+                "a player choice was made ({m:?}, {s:?}) and adoption still used the spawn"
+            );
+        }
     }
 
     /// F13 / ★ THE DEMAND SIGNAL MUST COVER THE POPULATION. The colony's
@@ -28758,13 +29202,6 @@ mod tests {
         );
     }
 
-    /// T3.52 (E3, Fable-ruled 2026-07-27): entering Flee transitions
-    /// Drive, full stop — the extracted function's signature cannot even
-    /// NAME a job/claim, so "flee never releases the job" is provable
-    /// from the type alone, not just this test's behavior. This test
-    /// pins the transition SHAPE the caller relies on: a fresh flee
-    /// signal preempts, a repeated one (already fleeing) is a no-op.
-    #[test]
     /// ITEM 17 bar 2 (FELT, curve): the work rate must STRICTLY increase
     /// with skill level. The planted control is the second assert -- if the
     /// bonus is ever zeroed (or inverted), rate(5) == rate(0) and this test
@@ -28785,6 +29222,20 @@ mod tests {
         );
     }
 
+    /// T3.52 (E3, Fable-ruled 2026-07-27): entering Flee transitions
+    /// Drive, full stop — the extracted function's signature cannot even
+    /// NAME a job/claim, so "flee never releases the job" is provable
+    /// from the type alone, not just this test's behavior. This test
+    /// pins the transition SHAPE the caller relies on: a fresh flee
+    /// signal preempts, a repeated one (already fleeing) is a no-op.
+    ///
+    /// ★ THIS TEST WAS DEAD (found 2026-08-22 by the `duplicate_macro_attributes`
+    /// warning). `item17_work_rate_strictly_increases_with_level` was inserted
+    /// between this doc comment and this function, so the `#[test]` above landed
+    /// on ITEM 17 -- which already had its own -- and this function was left a
+    /// plain uncalled fn. It compiled, so nothing failed; it simply stopped
+    /// being run. Restored here.
+    #[test]
     fn flee_preempt_transition_shape() {
         use comp::bastion::Drive;
         assert_eq!(flee_preempt_transition(true, Drive::Work), Some(Drive::Flee));

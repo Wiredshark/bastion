@@ -5893,9 +5893,33 @@ impl Server {
                     let blocked_on_marker = if wait_for_marker && dtick >= 30 {
                         let has_marker = {
                             let ecs = self.state.ecs();
+                            // ★ THE SELECT-STARTING-AREA SCREEN COUNTS AS THE
+                            // CHOICE (Ben, live play 2026-08-22: "this screen
+                            // right here should be the adopt a town menu").
+                            //
+                            // The marker path is a MIDDLE-CLICK on the in-game
+                            // world map -- undiscoverable. Ben used the visible
+                            // "Found colony" verb instead, which founds at the
+                            // player's position, and his colony came up with
+                            // ADOPT-IN-PLACE house registered = 0: eight people
+                            // camping in a field while the log repeated
+                            // "WAITING for you to place a map marker". The
+                            // colony systems were fine. The founding never
+                            // adopted anything.
+                            //
+                            // The character screen already lists the world's
+                            // towns by name on a map, and the server already
+                            // resolves the pick to a site centre for the spawn
+                            // waypoint. Honour it here and the discoverable
+                            // path becomes the correct one; the middle-click
+                            // marker stays as a deliberate override.
+                            let chose_start_site = ecs
+                                .read_resource::<bastion_jobs::JobBoard>()
+                                .start_site_adopt_target
+                                .is_some();
                             let markers = ecs.read_storage::<comp::MapMarker>();
                             use specs::Join as _;
-                            markers.join().next().is_some()
+                            chose_start_site || markers.join().next().is_some()
                         };
                         if has_marker {
                             tracing::info!(
@@ -7408,11 +7432,31 @@ impl Server {
                 }
                 found
             };
-            let near = bastion_jobs::adopt_target(chosen, sp.xy().map(|e| e as i32));
+            // ★ THE SELECT-STARTING-AREA PICK MUST REACH THE PLACEMENT, not
+            // just the gate. Without this read the pick opened the founding
+            // gate and was then discarded, and `sp` here is the ground under
+            // `world_center_wpos` -- a CONSTANT -- so the colony adopted a town
+            // near world centre while the log claimed it honoured the choice.
+            let picked = self
+                .state
+                .ecs()
+                .read_resource::<bastion_jobs::JobBoard>()
+                .start_site_adopt_target;
+            let near =
+                bastion_jobs::adopt_target(chosen, picked, sp.xy().map(|e| e as i32));
             tracing::info!(
                 ?near,
-                player_chose = chosen.is_some(),
-                "bastion: ADOPT-A-TOWN target — map marker if the player set one, else spawn"
+                ?picked,
+                player_chose = chosen.is_some() || picked.is_some(),
+                source = if chosen.is_some() {
+                    "map-marker"
+                } else if picked.is_some() {
+                    "select-starting-area"
+                } else {
+                    "spawn-fallback"
+                },
+                "bastion: ADOPT-A-TOWN target — marker, else the town picked at character \
+                 creation, else spawn"
             );
             let (town_origin, plots) = Self::bastion_adoptable_town_plots(
                 self.index.as_index_ref(),

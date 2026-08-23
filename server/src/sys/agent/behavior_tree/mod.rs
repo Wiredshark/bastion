@@ -439,7 +439,12 @@ fn do_pickup_loot(bdata: &mut BehaviorData) -> bool {
                 },
                 &bdata.read_data.time,
             ) {
-                bdata.agent_data.unstuck_if(stuck, bdata.read_data.dt.0, bdata.controller);
+                bdata.agent_data.unstuck_if(
+                    stuck,
+                    bdata.read_data.dt.0,
+                    bdata.controller,
+                    bdata.read_data.colonists.contains(*bdata.agent_data.entity),
+                );
                 bdata.controller.inputs.move_dir =
                     bearing.xy().try_normalized().unwrap_or_else(Vec2::zero)
                         * speed.min(0.2 + (dist_sqrd - (NPC_PICKUP_RANGE - 1.5).powi(2)) / 8.0);
@@ -504,7 +509,12 @@ fn do_save_allies(bdata: &mut BehaviorData) -> bool {
                 },
                 &bdata.read_data.time,
             ) {
-                bdata.agent_data.unstuck_if(stuck, bdata.read_data.dt.0, bdata.controller);
+                bdata.agent_data.unstuck_if(
+                    stuck,
+                    bdata.read_data.dt.0,
+                    bdata.controller,
+                    bdata.read_data.colonists.contains(*bdata.agent_data.entity),
+                );
                 bdata.controller.inputs.move_dir =
                     bearing.xy().try_normalized().unwrap_or_else(Vec2::zero)
                         * speed

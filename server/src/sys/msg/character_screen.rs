@@ -59,6 +59,10 @@ impl Sys {
         time: Time,
         #[cfg(feature = "worldgen")] index: &ReadExpect<'_, IndexOwned>,
         world: &ReadExpect<'_, Arc<World>>,
+        #[cfg(feature = "worldgen")] job_board: &mut WriteExpect<
+            '_,
+            bastion_server::bastion_jobs::JobBoard,
+        >,
     ) -> Result<(), crate::error::Error> {
         let mut send_join_messages = || -> Result<(), crate::error::Error> {
             // Give the player a welcome message
@@ -189,6 +193,10 @@ impl Sys {
                         alias
                     )))?;
                 } else if let Some(player) = players.get(entity) {
+                    // Captured inside the resolver below, applied after it, so
+                    // the borrow of `world` ends before the board is written.
+                    #[cfg(feature = "worldgen")]
+                    let mut bastion_target: Option<vek::Vec2<i32>> = None;
                     #[cfg(feature = "worldgen")]
                     let waypoint = start_site.and_then(|site_idx| {
                         // TODO: This corresponds to the ID generation logic in
@@ -212,6 +220,25 @@ impl Sys {
                             })
                             .map(|(_, site)| {
                                 let wpos2d = TerrainChunkSize::center_wpos(site.center);
+                                // ★ THE SELECT-STARTING-AREA SCREEN IS THE
+                                // ADOPT-A-TOWN CHOOSER (Ben, live play):
+                                // "this screen right here should be the adopt a
+                                // town menu". It already lists the world's
+                                // towns by name on a map, and the server
+                                // already resolves the pick to a site centre
+                                // for the spawn waypoint -- the chooser existed
+                                // and simply was not connected to the thing it
+                                // obviously chooses.
+                                //
+                                // Adoption previously waited on a MapMarker
+                                // (middle-click on the in-game map,
+                                // undiscoverable). Ben used the visible
+                                // "Found colony" verb instead, which founds at
+                                // the player's position, and got
+                                // ADOPT-IN-PLACE house registered = 0 -- a
+                                // squatter camp, while the log repeated
+                                // "WAITING for you to place a map marker".
+                                bastion_target = Some(wpos2d);
                                 Waypoint::new(
                                     world.find_accessible_pos(index.as_index_ref(), wpos2d, false),
                                     time,
@@ -220,6 +247,15 @@ impl Sys {
                     });
                     #[cfg(not(feature = "worldgen"))]
                     let waypoint = Some(Waypoint::new(world.get_center().with_z(10).as_(), time));
+                    // The town the player picked becomes the adoption target.
+                    #[cfg(feature = "worldgen")]
+                    if let Some(target) = bastion_target {
+                        tracing::info!(
+                            ?target,
+                            "bastion: ADOPT TARGET set from the SELECT STARTING AREA screen —                              the town you picked is the town you get"
+                        );
+                        job_board.start_site_adopt_target = Some(target);
+                    }
                     if let Err(error) = character_creator::create_character(
                         entity,
                         player.uuid().to_string(),
@@ -306,6 +342,9 @@ pub struct Data<'a> {
     #[cfg(feature = "worldgen")]
     index: ReadExpect<'a, IndexOwned>,
     world: ReadExpect<'a, Arc<World>>,
+    /// bastion: the SELECT STARTING AREA screen is the adopt-a-town chooser.
+    #[cfg(feature = "worldgen")]
+    job_board: WriteExpect<'a, bastion_server::bastion_jobs::JobBoard>,
     semantic_metrics: ReadExpect<'a, SemanticIngressMetricsV1>,
 }
 
@@ -342,6 +381,8 @@ impl<'a> System<'a> for Sys {
                     #[cfg(feature = "worldgen")]
                     &data.index,
                     &data.world,
+                    #[cfg(feature = "worldgen")]
+                    &mut data.job_board,
                 )
             });
         }
