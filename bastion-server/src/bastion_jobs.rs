@@ -9329,6 +9329,59 @@ impl JobBoard {
                 "bastion: CANCEL destroyed registered furniture — these used to                  survive the cancel and keep generating work forever"
             );
         }
+        // ★ THE THIRD REGISTRY A CANCEL NEVER TOUCHED: `farms`. Its own doc
+        // says the farm pass "generates till/sow/harvest jobs forever" — the
+        // exact immortality cook_stations and beds were cured of above, still
+        // alive through this door: an erased field kept farming. Same rule as
+        // stockpiles (a brush is a subtraction, not a bomb): shrink to what
+        // the brush did NOT cover, pieces keep their ZoneId, delete only a
+        // farm fully swallowed. The two companion registries prune WITH it —
+        // a resolved column or growth clock whose farm is gone has no evictor
+        // left (eviction lives in the farm pass, which iterates `farms`), and
+        // a REPAINTED plot on the same ground would inherit a stale surface z
+        // and a stale growth clock.
+        let farms_before: usize = self.farms.len();
+        let mut farms_shrunk = 0u32;
+        self.farms = std::mem::take(&mut self.farms)
+            .into_iter()
+            .flat_map(|(id, r)| {
+                if !r.intersects(&region) {
+                    return vec![(id, r)];
+                }
+                let pieces = r.subtract(&region);
+                if !pieces.is_empty() {
+                    farms_shrunk += 1;
+                }
+                pieces.into_iter().map(|p| (id, p)).collect::<Vec<_>>()
+            })
+            .collect();
+        // A column survives only under a surviving farm's XY footprint; a
+        // growth clock additionally dies with its cell if the brush took it.
+        let covered = |x: i32, y: i32| {
+            self.farms.iter().any(|(_, r)| {
+                (r.min.x..=r.max.x).contains(&x) && (r.min.y..=r.max.y).contains(&y)
+            })
+        };
+        let cols_before = self.farm_column_z.len();
+        self.farm_column_z.retain(|&(x, y), _| covered(x, y));
+        let growth_before = self.farm_growth.len();
+        self.farm_growth.retain(|&(x, y, z), _| {
+            covered(x, y) && !region.contains_point(Vec3::new(x, y, z))
+        });
+        if farms_before != self.farms.len()
+            || farms_shrunk > 0
+            || cols_before != self.farm_column_z.len()
+        {
+            info!(
+                farms_shrunk,
+                farm_pieces_before = farms_before,
+                farm_pieces_after = self.farms.len(),
+                columns_lost = cols_before - self.farm_column_z.len(),
+                growth_clocks_lost = growth_before - self.farm_growth.len(),
+                ?region,
+                "bastion: CANCEL touched farm plots — an erased field used to keep                  generating till/sow/harvest jobs forever"
+            );
+        }
         // ★ SAY WHAT THE BRUSH DID (2026-08-21): a cancel used to report only
         // the thing the player INTENDED ("Designations cancelled.") and never
         // the thing it destroyed. Zones lost/shrunk are the expensive half.
@@ -30441,6 +30494,66 @@ mod tests {
         assert!(
             board.beds.contains_key(&outside),
             "a bed outside the cancelled region must survive: a prune that removes              everything also stops the bug reproducing"
+        );
+    }
+
+    /// ★ THE THIRD REGISTRY (after cook_stations and beds): an erased farm
+    /// used to keep generating till/sow/harvest jobs forever — no removal
+    /// path existed anywhere in the file. Both directions: the swallowed
+    /// farm dies with its columns and growth clocks; the overlapped farm
+    /// SHRINKS (a brush is a subtraction, not a bomb — the stockpile rule),
+    /// keeping its id, its surviving columns, and its surviving clocks.
+    #[test]
+    fn a_cancel_erases_the_farm_its_columns_and_its_growth_clocks() {
+        let mut board = JobBoard::default();
+        // Farm A: fully inside the brush. Farm B: half inside.
+        let farm_a = Region { min: Vec3::new(0, 0, 9), max: Vec3::new(3, 3, 11) };
+        let farm_b = Region { min: Vec3::new(20, 0, 9), max: Vec3::new(27, 3, 11) };
+        board.farms.push((1, farm_a));
+        board.farms.push((2, farm_b));
+        for x in 0..=3 {
+            for y in 0..=3 {
+                board.farm_column_z.insert((x, y), 10);
+            }
+        }
+        for x in 20..=27 {
+            for y in 0..=3 {
+                board.farm_column_z.insert((x, y), 10);
+            }
+        }
+        board.farm_growth.insert((1, 1, 10), 5.0);   // inside A — must die
+        board.farm_growth.insert((21, 1, 10), 5.0);  // B, inside brush — must die
+        board.farm_growth.insert((26, 1, 10), 5.0);  // B, outside brush — survives
+
+        // The brush: swallows A whole, cuts B at x=23.
+        board.cancel_region(Region {
+            min: Vec3::new(-1, -1, 8),
+            max: Vec3::new(23, 4, 12),
+        });
+
+        assert!(
+            !board.farms.iter().any(|(id, _)| *id == 1),
+            "a farm fully swallowed by the brush must cease to exist — pre-fix it              kept generating till/sow/harvest jobs forever"
+        );
+        let b_pieces: Vec<&Region> =
+            board.farms.iter().filter(|(id, _)| *id == 2).map(|(_, r)| r).collect();
+        assert!(
+            !b_pieces.is_empty() && b_pieces.iter().all(|r| r.min.x >= 24),
+            "the overlapped farm shrinks to what the brush did not cover, keeping              its id: {b_pieces:?}"
+        );
+        assert!(
+            !board.farm_column_z.contains_key(&(1, 1)),
+            "a dead farm's resolved columns die with it — a repaint would inherit              a stale surface"
+        );
+        assert!(
+            board.farm_column_z.contains_key(&(26, 1)),
+            "the surviving piece keeps its resolved columns"
+        );
+        assert!(!board.farm_growth.contains_key(&(1, 1, 10)));
+        assert!(!board.farm_growth.contains_key(&(21, 1, 10)));
+        assert!(
+            board.farm_growth.contains_key(&(26, 1, 10)),
+            "a growth clock on surviving ground keeps ticking — over-pruning would              silently reset every crop the brush merely grazed past"
         );
     }
 
