@@ -27043,14 +27043,49 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // availability checks, one item population, opposite
                         // answers — the same shape that cost this project a
                         // week on cooking. They now ask the SAME question.
+                        // ★ DETERMINISM: NEAREST, TIE-BROKEN ON ITEM UID —
+                        // was `.find(..)`, i.e. whichever pile the ECS join
+                        // happened to reach first (2026-08-22).
+                        //
+                        // Join order is entity-ALLOCATION order and this file
+                        // already refuses to treat it as a promise. Which
+                        // physical pile a job reserves decides where the
+                        // colonist walks, how long the fetch leg runs, whether
+                        // the fetch watchdog trips, and which competing job is
+                        // starved of that unit — so a join-order pick is a live
+                        // divergence, not a cosmetic one.
+                        //
+                        // THE TWO SIBLING SITES OVER THIS EXACT JOIN WERE
+                        // ALREADY FIXED and this one was missed: the eat scan
+                        // and the eat re-target both sort on
+                        // `(dist_squared, iuid.0.get())` with the note "equal-
+                        // distance ties break on the stable item uid, not join
+                        // (entity-allocation) order." Same family, same key.
+                        //
+                        // The project's own selection scanner could not catch
+                        // it: it greps `.min_by`/`.min_by_key`/`.max_by`, and a
+                        // bare `.join().find(` is invisible to that.
+                        //
+                        // Nearest is also better behaviour than first — a
+                        // shorter fetch leg is less likely to hit the budget.
+                        let feet_i = pos.0.map(|e| e.floor() as i32);
                         let cand = (&pickup_items, &positions, &uids)
                             .join()
-                            .find(|(pi, ipos, iuid)| {
+                            .filter(|(pi, ipos, iuid)| {
                                 pi.item().item_definition_id().itemdef_id() == req
                                     && board
                                         .stockpile_at(ipos.0.map(|e| e.floor() as i32))
                                         .is_some()
                                     && board.has_capacity(**iuid, pi.amount())
+                            })
+                            .min_by_key(|(_, ipos, iuid)| {
+                                let d = ipos.0.map(|e| e.floor() as i32) - feet_i;
+                                (
+                                    (d.x as i64).pow(2)
+                                        + (d.y as i64).pow(2)
+                                        + (d.z as i64).pow(2),
+                                    iuid.0.get(),
+                                )
                             })
                             .map(|(pi, _, iuid)| (*iuid, pi.amount()));
                         match cand {
