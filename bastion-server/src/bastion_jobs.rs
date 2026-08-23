@@ -1914,6 +1914,9 @@ pub struct ClaimRefusalCensus {
     // colonist-level (no candidate is ever considered)
     pub colonists_seen: u32,
     pub colonist_not_work: u32,
+    /// The schedule's claim gate (Ben's 8/8/8): outside the Work block the
+    /// open board is closed — evenings lounge, nights go home.
+    pub colonist_off_hours: u32,
     pub colonist_route_held: u32,
     // job-level
     pub considered: u32,
@@ -4024,6 +4027,38 @@ pub(crate) fn seasonal_till_verdict(recorded: Option<u64>, current: u64) -> Seas
         Some(s) if s == current => SeasonalTillVerdict::Sow,
         Some(_) => SeasonalTillVerdict::Till,
     }
+}
+
+/// ★ THE COLONY DAY (Ben RULED, live play 2026-08-23, pointing at vanilla
+/// villagers lounging in a plaza and going indoors at dusk: "this needs to
+/// be in our colony — colonists shouldn't be running everywhere and working
+/// constantly, that's not how people work"; and "base game npcs manage to
+/// go in at night — i don't understand why we can't have a stricter flag
+/// like that"). The stricter flag IS vanilla's own: `DayPeriod::is_dark()`
+/// is exactly what sends villagers to a house until `is_light()` (npc_ai's
+/// night-shelter branch, guards exempt). The colony now runs the same
+/// three-phase day:
+///   WORK    (Morning/Noon)  — jobs claim as today.
+///   LEISURE (Evening)       — no NEW work claims; idle colonists lounge
+///                             (the existing Recreate self-job machinery).
+///   NIGHT   (is_dark)       — no new work claims; colonists head home
+///                             (the existing bed-targeting rest machinery,
+///                             triggered by phase, not just the meter).
+/// Self-jobs (eat/rest/despond/guard) are NEVER phase-gated: a starving
+/// colonist eats at midnight, a guard holds their post, flee outranks all.
+/// The claim-door half of the day (the discovery that reshaped this
+/// change): Ben's 8/8/8 schedule ALREADY exists (`default_schedule_block`,
+/// his 2026-08-22 spec verbatim) and its Sleep block already forces rest —
+/// but the CLAIM LOOP never consulted it, so a colonist with healthy meters
+/// kept claiming farm jobs at midnight and the schedule only ever bound
+/// people who happened to be tired. This is the missing consumer: ordinary
+/// (open-board) claims are only handed out during the Work block. Self-jobs
+/// (eat/rest/despond/recreate/guard) are born claimed and never pass
+/// through this door — a starving colonist eats at midnight, a guard holds
+/// their post, and the emergency-access ladder keeps its own exemption at
+/// the call site.
+pub(crate) fn work_claims_open(block: ScheduleBlock) -> bool {
+    matches!(block, ScheduleBlock::Work)
 }
 
 pub fn farm_season(time_of_day: f64) -> common::time::Season {
@@ -27912,6 +27947,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             {
                 { census.colonist_not_work += 1; continue; }
             }
+            // ★ THE SCHEDULE'S MISSING CONSUMER (Ben, live play 2026-08-23:
+            // "colonists shouldn't be running everywhere and working
+            // constantly" / "base game npcs manage to go in at night — why
+            // can't we have a stricter flag like that"). His 8/8/8 schedule
+            // shipped 08-22 and its Sleep block already FORCES rest — but
+            // no gate ever stopped a healthy-metered colonist from claiming
+            // fresh work at midnight, so the schedule only bound the tired.
+            // Outside the Work block the open board is CLOSED: evenings are
+            // for leisure (the need loop's own recreation/rest machinery),
+            // nights are for going home. Self-jobs are born claimed and
+            // never pass this door; the emergency-access ladder keeps its
+            // exemption above.
+            if !work_claims_open(default_schedule_block(hour_of_day(
+                rtsim.rt_state().data().time_of_day.0,
+            ))) && !owns_emergency_access
+            {
+                census.colonist_off_hours += 1;
+                continue;
+            }
             if emergency_route_owner.is_some() && emergency_next_job.is_none() {
                 // Keep route members available to climb or take the next
                 // step; they must not wander off into unrelated work.
@@ -28706,6 +28760,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 tick = tick.0,
                 colonists_seen = census.colonists_seen,
                 colonist_not_work = census.colonist_not_work,
+                colonist_off_hours = census.colonist_off_hours,
                 colonist_route_held = census.colonist_route_held,
                 considered = census.considered,
                 eligible = census.eligible,
@@ -32682,6 +32737,36 @@ mod tests {
         assert!(
             board.jobs.contains_key(&painted_id),
             "a player-painted post must survive the drive's exit sweep"
+        );
+    }
+
+    /// ★ THE OPEN BOARD KEEPS OFFICE HOURS (Ben: "working constantly —
+    /// that's not how people work"): ordinary claims only during the Work
+    /// block; evenings and nights the board is closed. Both directions —
+    /// the Work block must genuinely open it, or the colony starves at its
+    /// desks.
+    #[test]
+    fn the_open_board_keeps_office_hours() {
+        assert!(
+            work_claims_open(default_schedule_block(10)),
+            "mid-morning: the board is open"
+        );
+        assert!(
+            !work_claims_open(default_schedule_block(18)),
+            "evening leisure: no new work claims — lounging is the job"
+        );
+        assert!(
+            !work_claims_open(default_schedule_block(23)),
+            "night: the board is closed and colonists head home"
+        );
+        assert!(
+            !work_claims_open(default_schedule_block(2)),
+            "small hours: still closed"
+        );
+        assert!(
+            work_claims_open(default_schedule_block(8))
+                && work_claims_open(default_schedule_block(15)),
+            "the full 8-hour work block stays open at both ends"
         );
     }
 
