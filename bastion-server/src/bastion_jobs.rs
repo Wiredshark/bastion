@@ -2337,6 +2337,31 @@ pub(crate) fn flee_preempt_transition(
 /// at Fixture 1 (2026-08-08) — the settle invariant (`server::bastion_
 /// settle_invariant_violations`) needs this SAME predicate, not a
 /// re-derived copy that could drift from the guard's own definition.
+/// ★ THE GATHERING RING (looking-sweep row, 2026-08-23): where colonist
+/// `uid` lounges, relative to the colony's heart. Twelve fixed slots at
+/// radius 3-5 — benches around a plaza, not a stack; uid-keyed so the same
+/// person always favours the same spot (a regular's bench), deterministic
+/// on every run of one seed. The z rides the anchor's; the goal resolver's
+/// near-first column snap finds the standable cell.
+pub fn gathering_spot(anchor: Vec3<i32>, uid: Uid) -> Vec3<i32> {
+    const RING: [(i32, i32); 12] = [
+        (3, 0),
+        (2, 2),
+        (0, 3),
+        (-2, 2),
+        (-3, 0),
+        (-2, -2),
+        (0, -3),
+        (2, -2),
+        (5, 1),
+        (1, 5),
+        (-5, -1),
+        (-1, -5),
+    ];
+    let (dx, dy) = RING[(uid.0.get() % RING.len() as u64) as usize];
+    anchor + Vec3::new(dx, dy, 0)
+}
+
 pub fn is_labor_hold_self_job(kind: &common::bastion::JobKind) -> bool {
     matches!(
         kind,
@@ -24352,7 +24377,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     if std::env::var_os("BASTION_SELFJOB_COMPLETION_DIAG").is_some() {
                         info!(kind = "Recreate", "bastion SELFJOB-CREATED-DIAG");
                     }
-                    board.insert_recreate_job(feet, uid, until)
+                    // ★ THE EVENING GATHERS (looking sweep: "the evening
+                    // reads as eight private lives run in parallel, not a
+                    // village" — every lounge was AT OWN FEET, Despond's
+                    // shape, so dots scattered to five buildings and the
+                    // plaza stayed empty). DF's meeting area + vanilla's own
+                    // plaza idling, stolen: breaks now target a deterministic
+                    // ring slot around the colony's heart (the first
+                    // stockpile — both founding paths have one), one
+                    // distinct cell per colonist so they sit TOGETHER, never
+                    // stacked. The walk there is the visible evening
+                    // procession; feet remain the fallback for a colony with
+                    // no stockpile yet.
+                    let spot = board
+                        .stockpiles
+                        .first()
+                        .map(|(_, r)| {
+                            gathering_spot((r.min + r.max) / 2, uid)
+                        })
+                        .unwrap_or(feet);
+                    board.insert_recreate_job(spot, uid, until)
                 },
                 // AUTON-2 unification (site 4/6, corrected per Fable
                 // DECISIONS #72): the job already exists — reclaim
@@ -33403,6 +33447,30 @@ mod tests {
             "had_effect=true must wipe the watchdog accrual -- real work is the ground-truth \
              progress signal"
         );
+    }
+
+    #[test]
+    fn the_gathering_ring_seats_a_colony_without_stacking() {
+        // The whole point of the ring is TOGETHER-BUT-NOT-STACKED: for a
+        // full colony of distinct uids, every seat is distinct, every seat
+        // is within the plaza's reach (radius ≤ 6), and the same uid gets
+        // the same seat on every call — a regular's bench, deterministic
+        // across runs.
+        let anchor = Vec3::new(100, 200, 40);
+        let mut seats = std::collections::HashSet::new();
+        for u in 1..=12u64 {
+            let uid = Uid(NonZeroU64::new(u).unwrap());
+            let a = gathering_spot(anchor, uid);
+            let b = gathering_spot(anchor, uid);
+            assert_eq!(a, b, "a regular's bench: same uid, same seat");
+            let d = a - anchor;
+            assert!(
+                d.x.abs() + d.y.abs() <= 6 && d.z == 0,
+                "every seat within the plaza: {d:?}"
+            );
+            assert!(seats.insert(a), "no two colonists in one seat: {a:?}");
+        }
+        assert_eq!(seats.len(), 12);
     }
 
     #[test]
