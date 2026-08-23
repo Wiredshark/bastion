@@ -16826,6 +16826,37 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     "bastion ARB-SWITCH-DIAG"
                                 );
                             }
+                            // ★ ENTERING PERSONAL RELEASES A HELD WORK JOB
+                            // (the looking sweep's ugliest: Old Poodest,
+                            // hunger 0.0000, rest 0.02, drive=Personal,
+                            // speed 0.0 for DAYS while holding a claimed
+                            // work job — `auton_travel_ok` only issues Goto
+                            // for work jobs under Work and for the legacy
+                            // need self-jobs under Personal, so a Personal
+                            // colonist holding work can neither walk it nor
+                            // finish it; only the stuck timeout eventually
+                            // freed her. Freld's slot-93 signature, same
+                            // knot, terrain exonerated). The drive that
+                            // outranks work takes the job off her hands at
+                            // the boundary — through THE seam, so the
+                            // claim, bed occupancy and reservation all
+                            // release once, correctly. Self-jobs stay: they
+                            // are what Personal is FOR.
+                            if next == comp::bastion::Drive::Personal
+                                && arb.current != comp::bastion::Drive::Personal
+                                && let Some(aj) = active_jobs.get(entity)
+                                && board
+                                    .jobs
+                                    .get(&aj.job)
+                                    .is_some_and(|j| !is_labor_hold_self_job(&j.kind))
+                            {
+                                info!(
+                                    uid = uids.get(entity).map(|u| u.0.get()),
+                                    job = aj.job,
+                                    "bastion: Personal entry releases the held work job"
+                                );
+                                to_release.push((entity, ReleaseReason::Other, line!()));
+                            }
                             arb.current = next;
                             arb.committed_until = time.0 + ARB_COMMIT_SECS;
                             switches += 1;
