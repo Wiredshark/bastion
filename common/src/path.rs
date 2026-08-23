@@ -1489,6 +1489,46 @@ where
     );
     let consumed = (astar.iters_consumed() - consumed_before) as u64;
 
+    // ★ THE CONTRADICTION RESOLVER (2026-08-23, env-gated, Longest-exhaust
+    // only). Two systems answer "is this farm row reachable?" with opposite
+    // verdicts: the component-label index says same-component and sanely
+    // resolved; this A* terminally exhausts 75,000 iterations against it.
+    // Every lever built around that contradiction — claim penalty, item
+    // gate, tier reset, terminal feedback — was measured at 3 replicates and
+    // none collapsed the poll count, because none resolved it. This log line
+    // does: the partial path's CLOSEST-APPROACH node plus the walkable()
+    // verdict of each of the goal's neighbours. If the partial ends a block
+    // from the goal, the cut is in the goal's immediate neighbourhood and
+    // the bits name the exact block on which `is_filled` (the index's world)
+    // and `walkable()` (this searcher's world) disagree.
+    if path_length == PathLength::Longest
+        && matches!(path_result, PathResult::Exhausted(_))
+    {
+        static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if *ON.get_or_init(|| std::env::var_os("BASTION_PATH_ENDPOINT_DIAG").is_some()) {
+            let closest = match &path_result {
+                PathResult::Exhausted(p) => p.nodes.last().map(|n| n.pos),
+                _ => None,
+            };
+            let nb = |d: Vec3<i32>| is_walkable(&(end + d));
+            tracing::info!(
+                ?end,
+                ?closest,
+                closest_dist = closest
+                    .map(|c| (c - end).map(|e| e.abs()).sum())
+                    .unwrap_or(-1),
+                end_walkable = is_walkable(&end),
+                n_px = nb(Vec3::unit_x()),
+                n_nx = nb(-Vec3::unit_x()),
+                n_py = nb(Vec3::unit_y()),
+                n_ny = nb(-Vec3::unit_y()),
+                n_pz = nb(Vec3::unit_z()),
+                n_nz = nb(-Vec3::unit_z()),
+                "bastion: LONGEST-EXHAUST NEIGHBOURHOOD — where the cut actually is"
+            );
+        }
+    }
+
     (
         path_result.map(|path| path.nodes.into_iter().map(|n| n.pos).collect()),
         consumed,
