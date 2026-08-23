@@ -1274,6 +1274,61 @@ pub fn labelled_refusal(
     }
 }
 
+/// ★ THE ITEM-REACH GATE (2026-08-23) — the cure at its actual door.
+///
+/// The live shadow proved the CLAIM gate would refuse nothing: the doomed
+/// top-8 cells (74% of all Longest-tier pathfinder polls) never appear as
+/// claim candidates. They enter through the ITEM PICKS — the eat scan, the
+/// eat re-target, and the fetch reservation — which choose
+/// `min_by_key(distance)` over pickup items with no reachability term, then
+/// reserve, then hand the chaser a target nobody can walk to.
+///
+/// This filter sits in those three chains. Fail-open everywhere the index
+/// cannot positively judge (same `labelled_refusal` ladder, same tests), and
+/// DEFAULT OFF behind its own flag so the A/B is one env var on one binary.
+pub fn item_reach_gate_enabled() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var_os("BASTION_ITEM_REACH_GATE").is_some())
+}
+
+/// Should this item be excluded from a pick because no colonist component
+/// containing the claimant can reach it? `true` ONLY on a positive
+/// same-index judgement; every unknown admits.
+pub fn item_reach_refused(
+    idx: Option<&ComponentLabels>,
+    labels_prev_cells: usize,
+    get: impl Fn(Vec3<i32>) -> Option<common::terrain::Block>,
+    claimant_feet: Vec3<i32>,
+    item_cell: Vec3<i32>,
+) -> bool {
+    if !item_reach_gate_enabled() {
+        return false;
+    }
+    let Some(idx) = idx else { return false };
+    // Two-build agreement, same rule as the old flood's trust — a streaming,
+    // half-built index must refuse nothing.
+    let trusted = connectivity_is_trusted(idx.labels.len(), labels_prev_cells);
+    let hint = {
+        let passable = |c: Vec3<i32>| get(c).map(|b| !b.is_filled());
+        let standable = |c: Vec3<i32>| {
+            get(c - Vec3::unit_z()).is_some_and(|b| b.is_filled())
+                && passable(c) == Some(true)
+                && passable(c + Vec3::unit_z()) == Some(true)
+        };
+        if standable(item_cell) || standable(item_cell + Vec3::unit_z()) {
+            Some(true)
+        } else if get(item_cell).is_none() {
+            None
+        } else {
+            Some(false)
+        }
+    };
+    matches!(
+        labelled_refusal(idx, trusted, claimant_feet, item_cell, hint),
+        ConnDecision::Refuse
+    )
+}
+
 pub fn connectivity_gate_enabled() -> bool {
     static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *V.get_or_init(|| std::env::var_os("BASTION_CONNECTIVITY_GATE").is_some())
@@ -7337,6 +7392,8 @@ pub struct JobBoard {
     pub connected_cells: std::collections::HashSet<Vec3<i32>>,
     /// v1 component labels (shadow-only) — see [`ComponentLabels`].
     pub component_labels: Option<ComponentLabels>,
+    /// Cell count of the PREVIOUS labels build — the two-build trust input.
+    pub labels_prev_cells: usize,
     /// (refusals, admits-by-reason x5, same-component) shadow counters since
     /// the last census emit, so the fail-open ladder is provable from a log.
     pub shadow_conn: [u32; 7],
@@ -17073,8 +17130,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             let feet = pos.0.map(|e| e.floor() as i32);
                             let food = (&pickup_items, &positions, &uids)
                                 .join()
-                                .filter(|(pi, _, iuid)| {
-                                    pi.item()
+                                .filter(|(pi, ipos, iuid)| {
+                                    // ★ ITEM-REACH GATE (flag-gated): a meal
+                                    // in another walking component is a 90s
+                                    // wall-press, not food. Fail-open.
+                                    !item_reach_refused(
+                                        board.component_labels.as_ref(),
+                                        board.labels_prev_cells,
+                                        |c| terrain.get(c).ok().copied(),
+                                        feet,
+                                        ipos.0.map(|e| e.floor() as i32),
+                                    ) && pi.item()
                                         .item_definition_id()
                                         .itemdef_id()
                                         .is_some_and(|d| FOOD_DEFS.contains(&d))
@@ -27684,6 +27750,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         .stockpile_at(ipos.0.map(|e| e.floor() as i32))
                                         .is_some()
                                     && board.has_capacity(**iuid, pi.amount())
+                                    // ★ ITEM-REACH GATE (flag-gated,
+                                    // fail-open): do not RESERVE a pile the
+                                    // claimant's component cannot reach — a
+                                    // doomed reservation is a 90s wall-press
+                                    // plus a withheld item.
+                                    && !item_reach_refused(
+                                        board.component_labels.as_ref(),
+                                        board.labels_prev_cells,
+                                        |c| terrain.get(c).ok().copied(),
+                                        feet_i,
+                                        ipos.0.map(|e| e.floor() as i32),
+                                    )
                             })
                             .min_by_key(|(_, ipos, iuid)| {
                                 let d = ipos.0.map(|e| e.floor() as i32) - feet_i;
@@ -27974,6 +28052,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         cap_hit = idx.cap_hit,
                         "bastion: COMPONENT LABELS rebuilt (shadow) — one label per walking component, all colonists seeded"
                     );
+                    board.labels_prev_cells = board
+                        .component_labels
+                        .as_ref()
+                        .map(|i| i.labels.len())
+                        .unwrap_or(0);
                     board.component_labels = Some(idx);
                 }
             }
