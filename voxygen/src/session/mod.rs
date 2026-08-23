@@ -1293,6 +1293,12 @@ impl SessionState {
                                 S::Replanning => {
                                     "Status: Replanning route".to_string()
                                 },
+                                // Looking-sweep row: a relaxing villager and
+                                // a stuck one no longer wear the same face.
+                                S::Lounging => "Status: Lounging".to_string(),
+                                S::Sheltering => {
+                                    "Status: Sheltering (alarm)".to_string()
+                                },
                             });
                         }
                         lines
