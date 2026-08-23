@@ -14427,9 +14427,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // MOVED INTO read as 22 threats — the drive flipped to Defend ten
             // seconds after founding and never left, tilting every claim
             // toward guarding a village that was greeting them. Count the
-            // colony's OWN perception of hostility instead: the same two
-            // field reads the flee signal and the hostile census use, so all
-            // three can never disagree about who is dangerous.
+            // colony's OWN perception of hostility instead: the same
+            // `t.hostile` read the flee signal and the hostile census use,
+            // so all three agree about WHO is dangerous. (Row 2, 2026-08-23:
+            // the flee signal now additionally requires `aggro_on` — the
+            // colony PREPARES on perception, the individual abandons work
+            // only on engagement. Deliberate divergence on WHEN, not WHO.)
             let mut threats = 0u32;
             for (c_ent, _, _) in (&entities, &colonists, &positions).join() {
                 if agents
