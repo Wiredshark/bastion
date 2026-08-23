@@ -16667,7 +16667,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             } else {
                                 0.0
                             };
-                            rest_sev.max(hunger_sev)
+                            // ★ RECREATION JOINS SEVERITY (found live,
+                            // 2026-08-23: three multi-day soaks with
+                            // recreate=0 — BOTH recreation triggers sat in
+                            // the need scan behind `drive == Personal`, and
+                            // this max() was the only door into Personal.
+                            // It read rest and hunger alone, so a colonist
+                            // with a dead recreation meter and healthy
+                            // rest/hunger could never be preempted for a
+                            // break: the whole ITEM-11 machinery was
+                            // reachable only by coincidence). Half weight:
+                            // a starving or exhausted colonist still
+                            // outranks a bored one.
+                            let rec_sev = if needs.recreation < mood_cfg.recreation.comfort {
+                                (1.0 - needs.recreation
+                                    / mood_cfg.recreation.comfort.max(f32::EPSILON))
+                                    * 0.5
+                            } else {
+                                0.0
+                            };
+                            rest_sev.max(hunger_sev).max(rec_sev)
                         } else {
                             0.0
                         };
@@ -17957,6 +17976,42 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     if need_skip_diag {
                         info!(colonist = %uid, "NEED-SKIP-DIAG reason=already_on_need_job");
                     }
+                    continue;
+                }
+                // ★ LEISURE LOUNGE — A SCHEDULE BEHAVIOR, NOT A NEED, so it
+                // must NOT wait behind the Personal gate below (found live,
+                // 2026-08-23: recreate=0 across three multi-day soaks; the
+                // arbiter's severity read rest/hunger only, so a content
+                // colonist never entered Personal in the evening and Ben's
+                // lounging ruling — vanilla villagers idling in the plaza,
+                // "this needs to be in our colony" — was dead code). During
+                // the Leisure block a job-free colonist takes the break
+                // directly; needs still outrank (the rest/hunger candidates
+                // run in the same scan and this fires only when no active
+                // job is held), and the cooldown insertion keeps one break
+                // per window.
+                if recreation_enabled()
+                    && matches!(
+                        default_schedule_block(hour_of_day(
+                            rtsim.rt_state().data().time_of_day.0
+                        )),
+                        ScheduleBlock::Leisure
+                    )
+                    && active_jobs.get(entity).is_none()
+                    && !board
+                        .preempt_cooldown
+                        .get(uid)
+                        .is_some_and(|until| time.0 < *until)
+                {
+                    let until = time.0 + RECREATION_BREAK_SECS;
+                    info!(
+                        colonist = %uid,
+                        "bastion: leisure lounge — evening break (schedule, not need)"
+                    );
+                    preempt_pending.push((entity, *uid, PendingNeed::Recreate(until)));
+                    board
+                        .preempt_cooldown
+                        .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
                     continue;
                 }
                 // AUTON-2 unification (row 50, 2026-08-08): job-CREATION
