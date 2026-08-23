@@ -7501,9 +7501,11 @@ impl Server {
                 "bastion: ADOPT-A-TOWN target — marker, else the town picked at character \
                  creation, else spawn"
             );
+            let player_chose = chosen.is_some() || picked.is_some();
             let (town_origin, plots) = Self::bastion_adoptable_town_plots(
                 self.index.as_index_ref(),
                 near,
+                player_chose,
                 // 4096 -> 16384. The first live leg measured the nearest
                 // adoptable site at 1,224 blocks against a 1,024 radius, so
                 // this went to 4096. But the scorer then logged
@@ -7603,6 +7605,27 @@ impl Server {
         Self::bastion_seed_materials(ecs, Vec3::new(town_origin.x, town_origin.y, hint_z));
     }
 
+    /// ★ The adoption scorer's ORDER, pure so both policies are pinned.
+    /// `player_chose` inverts the whole question: autofound looks for the
+    /// best home in the world (fields, then houses, then distance); an
+    /// explicit pick IS the answer, so distance-to-pick sorts first and the
+    /// counts only break ties. Ben chose Phreoraros and the fields-first
+    /// order founded 12,442 blocks away — the pick must never be a
+    /// tie-breaker.
+    #[cfg(feature = "worldgen")]
+    fn bastion_adopt_sort_key(
+        player_chose: bool,
+        d2: i32,
+        houses: usize,
+        fields: usize,
+    ) -> (i64, i64, i64) {
+        if player_chose {
+            (d2 as i64, -(fields as i64), -(houses as i64))
+        } else {
+            (-(fields as i64), -(houses as i64), d2 as i64)
+        }
+    }
+
     /// bastion (ADOPT-A-TOWN mode A, 2026-08-20): find the nearest worldgen
     /// site holding at least one MAPPED plot (FarmField/House/Barn — the
     /// charter's own mapping) within `radius` of `near`, and return OWNED
@@ -7620,6 +7643,7 @@ impl Server {
     fn bastion_adoptable_town_plots(
         index: world::IndexRef,
         near: Vec2<i32>,
+        player_chose: bool,
         radius: i32,
     ) -> Option<(Vec2<i32>, Vec<(common::bastion::DesignationKind, Vec2<i32>, Vec2<i32>)>)>
     {
@@ -7690,12 +7714,23 @@ impl Server {
             );
             return None;
         }
-        // FIELDS first (work), then houses (shelter), then distance.
+        // ★ THE PLAYER'S PICK IS NOT A TIE-BREAKER (Ben, live play
+        // 2026-08-23: chose Phreoraros on the Select Starting Area screen,
+        // spawned there, and the colony founded chosen_dist=12442 blocks
+        // away — "this screen doesn't adopt a town at all"). The FIELDS-first
+        // score was tuned for AUTOFOUND, where nobody has expressed a
+        // preference and the scorer's job is to find the best home in the
+        // world. With `player_chose`, the job is the opposite: the pick IS
+        // the site, and the log line one call up already PROMISES "the town
+        // you picked is the town you get". Distance-to-pick sorts first;
+        // fields/houses only break the tie between two sites straddling the
+        // same town cluster. Autofound keeps its exact FIELDS-first order.
         candidates.sort_by_key(|(_, d2, houses, fields)| {
-            (std::cmp::Reverse(*fields), std::cmp::Reverse(*houses), *d2)
+            Self::bastion_adopt_sort_key(player_chose, *d2, *houses, *fields)
         });
         tracing::info!(
             considered = candidates.len(),
+            policy = if player_chose { "PLAYER-PICK (distance first)" } else { "AUTOFOUND (fields first)" },
             chosen_houses = candidates[0].2,
             chosen_fields = candidates[0].3,
             chosen_dist = (candidates[0].1 as f32).sqrt() as i32,
@@ -7704,7 +7739,7 @@ impl Server {
             // facts and only one of them is a defect.
             runner_up_houses = candidates.get(1).map(|c| c.2).unwrap_or(0),
             runner_up_fields = candidates.get(1).map(|c| c.3).unwrap_or(0),
-            "bastion: ADOPT-A-TOWN site chosen — FIELDS first (work), then houses              (shelter), then distance"
+            "bastion: ADOPT-A-TOWN site chosen"
         );
         let (site, d2) = (candidates[0].0, candidates[0].1);
         let _ = d2;
@@ -8030,6 +8065,39 @@ impl Server {
             seeded = n,
             ?origin,
             "bastion: BASTION_SEED_FOOD active — colony supplied so hunger is not the              binding constraint (FIXTURE lever; no balance number changed)"
+        );
+    }
+}
+
+#[cfg(all(test, feature = "worldgen"))]
+mod bastion_adopt_policy_tests {
+    /// ★ THE PICK IS NOT A TIE-BREAKER (Ben, live play 2026-08-23): he chose
+    /// Phreoraros on the Select Starting Area screen and the fields-first
+    /// autofound order founded the colony 12,442 blocks away. Both policies
+    /// pinned: a player's pick makes the NEAREST site win over a richer far
+    /// one; autofound (nobody chose) keeps preferring the richer site.
+    #[test]
+    fn a_players_pick_outranks_a_richer_town_far_away() {
+        use super::Server;
+        // (d2, houses, fields): the near hamlet vs the field-rich far town.
+        let near_hamlet = (100 * 100, 3usize, 2usize);
+        let far_rich = (12_442i32.pow(2), 0usize, 14usize);
+
+        let key = |chose: bool, c: (i32, usize, usize)| {
+            Server::bastion_adopt_sort_key(chose, c.0, c.1, c.2)
+        };
+        assert!(
+            key(true, near_hamlet) < key(true, far_rich),
+            "with an explicit pick, the town under the cursor beats a richer              town twelve thousand blocks away — the measured betrayal"
+        );
+        assert!(
+            key(false, far_rich) < key(false, near_hamlet),
+            "autofound (nobody chose) still prefers the field-rich site: the              other direction must not regress the sixty harness foundings"
+        );
+        // Tie on distance under a pick: fields still break it.
+        assert!(
+            key(true, (100, 0, 5)) < key(true, (100, 0, 2)),
+            "equidistant sites under a pick resolve by fields"
         );
     }
 }
