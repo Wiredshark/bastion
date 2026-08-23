@@ -1839,13 +1839,24 @@ pub(crate) fn job_release_class(kind: &common::bastion::JobKind) -> &'static str
 /// POSITION's history has nothing to do with how long THIS job has
 /// existed. Seconds, not cycles: the caller now compares directly
 /// against `access_stall_secs()`, no cycle-conversion arithmetic needed.
+/// ★ FARM JOBS ARE EXEMPT (Ben, 2026-08-23: "so our simulation doesn't get
+/// messed up by junk jobs"). Measured: 8,364 'farm job created' against
+/// ~600 tills completed and 3,477 sweep reaps in one leg — the sweep reaped
+/// unclaimed farm jobs and the farm pass recreated them next cycle, forever:
+/// a job-id churn engine that bloats the board, spams the chronicle, and
+/// spends remove_job (the hottest path) on nothing. Farm demand is
+/// RENEWABLE by construction (the pass re-derives it from cell state every
+/// cycle), so reaping an unclaimed farm job can never free anything — the
+/// same job reappears with a new id. `is_renewable` names that class;
+/// today it is exactly the farm designations.
 pub(crate) fn designated_sweep_should_reap(
     claimed: bool,
     is_designated: bool,
+    is_renewable: bool,
     unclaimed_secs: f64,
     threshold_secs: f64,
 ) -> bool {
-    !claimed && is_designated && unclaimed_secs >= threshold_secs
+    !claimed && is_designated && !is_renewable && unclaimed_secs >= threshold_secs
 }
 
 /// ITEM8-V4 F6 (generic leak-witness backstop): whether a claim's held
@@ -16511,7 +16522,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // later nicety).
                             },
                             None | Some(SpriteKind::Empty) => {
-                                if ground.kind() == BlockKind::Earth {
+                                // ★ SOIL SOWS FOREVER (Ben, 2026-08-23: "let
+                                // the crop be sowed forever for now so our
+                                // simulation doesn't get messed up by junk
+                                // jobs"). Earth-only sowing made every GRASS
+                                // column of an adopted village field a
+                                // perpetual TILL job — hundreds of tills
+                                // across ground a real village had farmed
+                                // for years, most never claimed, feeding the
+                                // sweep↔regenerate churn (8,364 farm jobs
+                                // created / ~600 tills completed in one
+                                // leg). DF/RimWorld shape and Ben's ruling:
+                                // worked soil stays sowable; till exists
+                                // only to break genuinely unsoiled ground.
+                                // (The once-per-SEASON till of the full
+                                // ruling arrives with the season-keyed
+                                // generator, banked by name.)
+                                if matches!(
+                                    ground.kind(),
+                                    BlockKind::Earth | BlockKind::Grass
+                                ) {
                                     // SOW: job.pos = cpos. Declares
                                     // OnTopAlways, same reasoning as
                                     // HARVEST above.
@@ -27205,6 +27235,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     designated_sweep_should_reap(
                         j.claimed_by.is_some(),
                         matches!(j.kind, common::bastion::JobKind::Designated(_)),
+                        // Renewable = the farm pass re-derives it from cell
+                        // state next cycle; reaping only churns job ids.
+                        matches!(
+                            j.kind,
+                            common::bastion::JobKind::Designated(DesignationKind::Farm)
+                        ),
                         unclaimed_secs,
                         reap_threshold_secs,
                     )
@@ -32778,17 +32814,26 @@ mod tests {
         const T: f64 = 10.0;
         // The one case that should sweep: unclaimed, Designated, at or
         // past the threshold.
-        assert!(designated_sweep_should_reap(false, true, T, T));
-        assert!(designated_sweep_should_reap(false, true, T + 1.0, T));
+        assert!(designated_sweep_should_reap(false, true, false, T, T));
+        assert!(designated_sweep_should_reap(false, true, false, T + 1.0, T));
         // Claimed: never swept, regardless of how long it's been
         // "unclaimed" by a stale counter (that would be a double-remove
         // race against the job's own claimant).
-        assert!(!designated_sweep_should_reap(true, true, T + 100.0, T));
+        assert!(!designated_sweep_should_reap(true, true, false, T + 100.0, T));
         // Not a Designated kind (Haul/RestAt/EatFrom/Despond/DepositRun):
         // out of this sweep's declared scope, never touched.
-        assert!(!designated_sweep_should_reap(false, false, T + 100.0, T));
+        assert!(!designated_sweep_should_reap(false, false, false, T + 100.0, T));
         // Under threshold: too soon, not yet a backstop case.
-        assert!(!designated_sweep_should_reap(false, true, T - 1.0, T));
+        assert!(!designated_sweep_should_reap(false, true, false, T - 1.0, T));
+        // ★ RENEWABLE EXEMPTION (Ben, 2026-08-23: "so our simulation doesn't
+        // get messed up by junk jobs"): a farm job the pass re-derives from
+        // cell state next cycle is NEVER reaped, at ANY staleness — reaping
+        // it only churns job ids (8,364 created vs ~600 completed in one
+        // measured leg, 3,477 reaps). Non-renewables keep the backstop.
+        assert!(
+            !designated_sweep_should_reap(false, true, true, T + 10_000.0, T),
+            "a renewable (farm) designation is exempt from the reap forever"
+        );
     }
 
     #[test]
@@ -32804,14 +32849,14 @@ mod tests {
         // no longer consulted by this predicate or its caller.
         const T: f64 = 10.0;
         assert!(
-            !designated_sweep_should_reap(false, true, 0.0, T),
+            !designated_sweep_should_reap(false, true, false, 0.0, T),
             "a job observed unclaimed for the first time this pass (0.0s) must not be reapable, \
              even if a prior job at its position was stale for a long time -- that history \
              belongs to the position, not to this job"
         );
         // A job one arbitration pass old (well under any real threshold)
         // is still safely inside its grace period.
-        assert!(!designated_sweep_should_reap(false, true, 0.5, T));
+        assert!(!designated_sweep_should_reap(false, true, false, 0.5, T));
     }
 
     #[test]
@@ -32820,8 +32865,8 @@ mod tests {
         // fix -- a job that has been unclaimed, by ITS OWN clock, for
         // longer than the threshold is still a legitimate backstop case.
         const T: f64 = 10.0;
-        assert!(designated_sweep_should_reap(false, true, T, T));
-        assert!(designated_sweep_should_reap(false, true, 3600.0, T));
+        assert!(designated_sweep_should_reap(false, true, false, T, T));
+        assert!(designated_sweep_should_reap(false, true, false, 3600.0, T));
     }
 
     #[test]
