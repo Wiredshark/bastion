@@ -7141,6 +7141,27 @@ pub struct JobBoard {
     /// sleep does not need it — the meter sits above interrupt). The
     /// last_bark shape.
     preempt_cooldown: HashMap<Uid, f64>,
+    /// The class of the job this colonist most recently CLAIMED, so the
+    /// release census can still name a kind after the job is destroyed.
+    ///
+    /// ★ THE CENSUS WAS BLIND TO ITS OWN MAJORITY (found 2026-08-22, from a
+    /// live 4,755-release census). `release_class` resolves the kind by looking
+    /// the job up at DRAIN time — but many release sites call
+    /// `board.remove_job()` before pushing, so the lookup misses and the class
+    /// falls back to `"gone"`. That was **67.7% of all releases**: the single
+    /// largest class in the census was "we could not tell what this was".
+    ///
+    /// The existing comment is right that `gone` is honest rather than a silent
+    /// fallback — it does mean "this site destroyed the job before releasing
+    /// it". But honest and USEFUL are different things. The census exists to
+    /// answer "why are claimed jobs given up, per job class", and it could not
+    /// answer it for two thirds of them. Worse, `gone` mixes ordinary
+    /// COMPLETIONS in with abandonments, which is how "1.1% of jobs complete"
+    /// can be read off a census that cannot actually see completions.
+    ///
+    /// One write at the single claim site covers all 32 push sites, none of
+    /// which need to change.
+    last_claimed_class: HashMap<Uid, &'static str>,
     /// bastion (B7-3): when each colonist's mood first dropped below the
     /// break threshold (cleared on recovery) — the sustained-window arm
     /// of the breakdown staircase.
@@ -21759,11 +21780,48 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // So the two fields are complementary rather than redundant, and
             // `gone` is an honest label for "this site destroyed the job before
             // releasing it" rather than a silent fallback.
-            let release_class = active_jobs
+            // ★ LIVE LOOKUP FIRST, THEN THE REMEMBERED CLASS, THEN `gone`.
+            //
+            // The live lookup stays authoritative: where the job survives to
+            // the drain it is the truth, and the remembered class could in
+            // principle be stale (a colonist that claimed a haul, released it,
+            // and is now releasing something else). The fallback only fires
+            // where the alternative was NO information at all.
+            //
+            // `gone` is kept as the last resort rather than deleted — it now
+            // means "destroyed before release AND we never saw this colonist
+            // claim anything", which is a genuinely different and much rarer
+            // situation than the 67.7% it used to absorb. If it stays large
+            // after this, that is a real finding rather than a blind spot.
+            let live_class = active_jobs
                 .get(*entity)
                 .and_then(|active| board.jobs.get(&active.job))
-                .map(|job| job_release_class(&job.kind))
+                .map(|job| job_release_class(&job.kind));
+            let remembered = uids.get(*entity).and_then(|u| board.last_claimed_class.get(u).copied());
+            let release_class = live_class
+                .or(remembered)
                 .unwrap_or("gone");
+            // Distinguish the two paths in the key so the fix cannot silently
+            // launder a guess as a measurement: a `~`-prefixed class is
+            // REMEMBERED, not observed at release time.
+            let release_class = if live_class.is_none() && remembered.is_some() {
+                match release_class {
+                    "eat" => "~eat",
+                    "rest" => "~rest",
+                    "haul" => "~haul",
+                    "deposit" => "~deposit",
+                    "work" => "~work",
+                    "cook" => "~cook",
+                    "tend" => "~tend",
+                    "guard" => "~guard",
+                    "trade" => "~trade",
+                    "recreate" => "~recreate",
+                    "breakdown" => "~breakdown",
+                    other => other,
+                }
+            } else {
+                release_class
+            };
             // ★ THE SITE LINE IS IN THE KEY (2026-08-22, found by a STATIC
             // check before the first leg ran, which is the only reason it did
             // not cost one). The pre-registration named "reasons are ~all
@@ -26951,6 +27009,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             from_client: false,
                         });
                     }
+                }
+                // Remember WHAT was claimed, so a release whose site already
+                // destroyed the job can still be attributed to a kind instead
+                // of landing in the census's `gone` bucket.
+                if let Some(cls) = board.jobs.get(&job_id).map(|j| job_release_class(&j.kind)) {
+                    board.last_claimed_class.insert(*uid, cls);
                 }
                 info!(job = job_id, colonist = %uid, "bastion: job claimed");
                 // The committed stance (B15/FR12, generalized by task #64):
