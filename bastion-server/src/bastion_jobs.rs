@@ -17007,6 +17007,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         if !ground.is_filled() {
                             continue; // no field under a hole
                         }
+                        // ★ A FILLED CROP CELL IS A STALE COLUMN-Z, NOT A
+                        // FIELD (flat-town soak: one raised-bed cell tilled
+                        // 103× in two days — `get_sprite()` is None for a
+                        // SOLID block, so the sow arm matched, the sow job
+                        // landed ON the bed block, and the completion's
+                        // filled-means-till arm broke it to Earth forever;
+                        // the seasonal stamp never mattered because the
+                        // culprit was never a till VERDICT). Self-heal: the
+                        // registered surface for this column is one short —
+                        // bump it and let the next pass work on the real
+                        // top. Bounded by the bed's actual height.
+                        if crop.is_filled() {
+                            board.farm_column_z.insert((x, y), gz + 1);
+                            continue;
+                        }
                         // Plain air reads Some(SpriteKind::Empty) — the
                         // vanilla encoding (run-1 find: a None-only arm
                         // silently skipped every empty field cell).
@@ -22850,7 +22865,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // (Ben's ruling) refreshes the same soil, and
                             // restricting this arm to non-Earth made a
                             // seasonal till on last year's field a moot job.
-                            Some(g) if g.is_filled() => {
+                            // ★ AND ONLY A JOB WITHOUT A SEED MAY TILL: a
+                            // sow job (required_item = the seed) arriving at
+                            // filled ground means the world moved under it —
+                            // moot, never a till. Without this, one stale
+                            // column-z turned every sow into a bed-breaking
+                            // till (103× on one cell), and the seasonal
+                            // stamp had no say.
+                            Some(g) if g.is_filled() && job.required_item.is_none() => {
                                 block_change.set(
                                     job.pos,
                                     Block::new(BlockKind::Earth, vek::Rgb::new(105, 75, 50)),
