@@ -991,8 +991,13 @@ impl Default for MoodConfig {
                 interrupt: 0.2,
             },
             rest: NeedTuning {
-                // Was 0.0003 -- see the hunger field's comment above.
-                decay_per_sec: 0.000444,
+                // Was 0.0003, then 0.000444 -- see the hunger field's comment
+                // above, and bastion_mood.ron for why this is now keyed to a
+                // WAKING day (1237.5 sim-sec) rather than a calendar day (1800).
+                // At 0.000444 the interrupt landed at DAWN, so the Sleep block
+                // passed over colonists who were not tired: 7 of 8 slept
+                // outdoors with 39 beds free.
+                decay_per_sec: 0.000646,
                 comfort: 0.5,
                 weight: -0.4,
                 interrupt: 0.2,
@@ -2262,6 +2267,85 @@ mod tests {
     /// fails -- `MoodConfig::current()`'s `unwrap_or_default()` would make
     /// this test vacuous, comparing Default() to itself on any load
     /// failure) and asserts full structural equality against Default().
+    #[test]
+    /// ★ REST MUST MAKE THEM TIRED BY NIGHTFALL AND NOT BEFORE (2026-08-22).
+    ///
+    /// Measured cause of "7 of 8 colonists sleep outdoors with 39 beds free":
+    /// rest reached its interrupt after 1,800 sim-sec — a whole CALENDAR day —
+    /// so the crossing landed at dawn and the 7-hour Sleep block passed over
+    /// people who were not tired. Across an entire measured night not one
+    /// colonist reached even the `sleepy` band.
+    ///
+    /// PINNED IN BOTH DIRECTIONS ON PURPOSE. A decay of 1.0/sec would also
+    /// "fix" colonists not sleeping, and would pass any test that only asserts
+    /// they get tired — they would sleep through the working day instead. The
+    /// asserts below therefore bracket the constant from both sides, which is
+    /// the only way a threshold test says anything.
+    #[test]
+    fn rest_makes_colonists_tired_by_night_but_not_during_work() {
+        let cfg = MoodConfig::default();
+        let d = cfg.rest.decay_per_sec;
+
+        // One game day is 1,800 sim-sec (day_cycle_coefficient 30.0, verified
+        // against DAY_LENGTH_DEFAULT — see bastion_mood.ron).
+        const DAY_SIM_SECS: f32 = 1800.0;
+        let at = |hours_awake: f32| 1.0 - d * (hours_awake / 24.0 * DAY_SIM_SECS);
+
+        // Schedule (default_schedule_block): wake 05:00, Work 08:00–15:00,
+        // Sleep opens 22:00. So 3h / 10h / 17h of wakefulness at those points.
+        let (work_open, work_close, night) = (at(3.0), at(10.0), at(17.0));
+
+        // ── DIRECTION 1: TIRED BY NIGHTFALL. Without this the Sleep block is
+        // decorative — which is exactly what was measured.
+        assert!(
+            night <= cfg.rest.interrupt,
+            "a colonist is NOT tired when the Sleep block opens (rest {night:.3} > interrupt \
+             {}). That is the 7-of-8-sleep-outdoors bug: the night passes over people with no \
+             reason to lie down",
+            cfg.rest.interrupt
+        );
+
+        // ── DIRECTION 2: STILL AWAKE THROUGH THE WORKING DAY. This is the
+        // assert that a "refuse everything" constant fails.
+        assert!(
+            work_open > cfg.rest.comfort,
+            "a colonist is already below comfort when work OPENS (rest {work_open:.3}) — it \
+             will down tools for a nap three hours after waking"
+        );
+        assert!(
+            work_close > cfg.rest.interrupt,
+            "a colonist hits the rest interrupt DURING the work block (rest {work_close:.3}) — \
+             rest would preempt work every afternoon, which is the opposite failure and looks \
+             just as broken"
+        );
+
+        // ── AND IT MUST NOT BE TRIVIALLY SATISFIED BY A DEAD METER. A decay of
+        // 0 passes "still awake during work" forever.
+        assert!(d > 0.0, "rest never decays — colonists would never sleep at all");
+        assert!(
+            at(24.0) < cfg.rest.interrupt,
+            "rest has not crossed the interrupt even after a FULL 24h awake"
+        );
+
+        // ── THE HARD INVARIANT bastion_mood.ron names by hand: a bed must
+        // out-recover decay, or sleeping cannot finish and the colonist is
+        // trapped in bed. 0.02 is BED_REST_RECOVERY_PER_SEC.
+        assert!(
+            d < 0.02,
+            "rest decays at least as fast as the best bed restores ({d}) — sleep could never \
+             complete"
+        );
+
+        // ── ORDERING vs HUNGER. Hunger must still be the faster meter (it is
+        // the life-threatening one), or the need arbiter's life-threat
+        // tiebreak starts firing on the wrong need.
+        assert!(
+            cfg.hunger.decay_per_sec > d,
+            "hunger ({}) must decay faster than rest ({d})",
+            cfg.hunger.decay_per_sec
+        );
+    }
+
     #[test]
     fn bastion_mood_config_matches_shipped_asset() {
         use crate::assets::AssetExt;

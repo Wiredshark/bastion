@@ -11,7 +11,33 @@
 // 48 -> 1 game day = 1800 sim-sec, verified against
 // common::consts::DAY_LENGTH_DEFAULT before applying, per the spec's
 // own instruction), 1.0 (full) to 0.2 (interrupt) is a 0.8 drop:
-// rest crosses interrupt ~1x/day  -> 0.8 / 1800 = 0.000444.../sec
+// rest crosses interrupt ~1x/WAKING day -> 0.8 / 1237.5 = 0.000646/sec
+//
+// ★ WAKING day, not CALENDAR day (2026-08-22, first visual sweep). The
+// "~1x/day" intent above is right; keying it to 1800 sim-sec (a whole
+// calendar day) put the crossing at DAWN instead of nightfall, so the
+// Sleep block passed over people who were not tired. Measured: 7 of 8
+// colonists slept OUTDOORS with 39 beds free, one of them 2.2 blocks
+// from a bed, and across the entire night not one reached even the
+// `sleepy` band -- the colony read `rested` (3) / `drowsy` (5) at
+// midnight. Prediction from the old constant matched to 3 decimals
+// (predicted rest 0.497 at tick 34,003, measured mean 0.529), which is
+// what identified the constant rather than the pathing as the cause.
+//
+// A colonist wakes at 05:00 and the Sleep block opens at 22:00 = 17
+// waking hours. Targeted at 16.5h (1237.5 sim-sec) NOT 17h, so the
+// crossing has margin and lands BEFORE the block opens rather than on
+// its edge -- at exactly 17h the first constant tried gave rest 0.201
+// against an interrupt of 0.2 and the test caught it. At 0.000646:
+//   08:00 (work opens, 3h up)  rest 0.855  -- fresh
+//   15:00 (work closes, 10h)   rest 0.516  -- just above comfort 0.5
+//   21:00 (evening, 16h)       rest 0.225  -- getting sleepy
+//   22:00 (sleep opens, 17h)   rest 0.176  -- BELOW the interrupt
+// so comfort is crossed as work ends and the interrupt lands at
+// nightfall. Pinned BOTH ways by
+// `rest_makes_colonists_tired_by_night_but_not_during_work`: too fast
+// is its own failure (sleeping through the work block), and a constant
+// that refuses everything would satisfy a one-sided test.
 // hunger crosses interrupt ~2x/day -> 0.8 / 900  = 0.000888.../sec
 // (previously 0.0003/0.0004 -- ~1.48/1.11 days respectively, ~50%/
 // ~2.2x too slow per the spec's own measurement). This is the ONLY
@@ -28,7 +54,7 @@
     // drops work and self-assigns its need-job; recreation never
     // preempts (interrupt 0 — mood-only meter per the B7 ruling).
     hunger: (decay_per_sec: 0.000889, comfort: 0.5, weight: -0.5, interrupt: 0.2),
-    rest: (decay_per_sec: 0.000444, comfort: 0.5, weight: -0.4, interrupt: 0.2),
+    rest: (decay_per_sec: 0.000646, comfort: 0.5, weight: -0.4, interrupt: 0.2),
     // AUTON-2 STEP-3 RE-TUNE: recreation is OUT OF SCOPE -- the spec's
     // day-aligned targets are rest/hunger only (recreation's
     // `interrupt: 0.0` already makes it mood-only, never preempting,
