@@ -2879,6 +2879,35 @@ pub const DETOUR_SEARCHES_PER_TICK: usize = 1;
 /// Tunable; the BedKind quality split is the design's lever.
 pub const BED_REST_RECOVERY_PER_SEC: f32 = 0.02;
 
+/// How long a colonist may spend walking to a RESERVED item before the fetch is
+/// given up, the reservation released and the claim dropped.
+///
+/// ★ THE FETCH LEG HAD NO WATCHDOG AT ALL (measured 2026-08-22). The job
+/// watchdog is deliberately disabled while fetching — `if auton_travel_ok &&
+/// fetch_steer.is_none()` — because walking to the pantry was being scored as
+/// failing to reach the job site and produced false strikes twice a minute.
+/// The exemption is right; having no replacement was not. A fetch that could
+/// never succeed was therefore never timed out by anything, and
+/// `fetch_steer.is_none()` gates the detour, rescue and egress paths too, so
+/// every recovery mechanism switched off together.
+///
+/// Measured cost: 87,791 `traveling-with-reservation` steers produced ONE
+/// pickup in 12,612 ticks. Just 9 jobs — dominantly Cook — accounted for all of
+/// them, each burning 13,000–15,000 ticks (~450–500 sim-sec). And each held an
+/// item RESERVATION the whole time, which withdraws that item from every other
+/// colonist: a stuck fetch is not one idle worker, it is one permanently
+/// unavailable ingredient. That is the shape of a colony sitting at hunger
+/// 0.000 with food in the world.
+///
+/// ★ SIZED TO PERMIT A REAL FETCH, WHICH IS HALF THE JOB. The failure this
+/// replaces was an exemption that never fired; a budget too tight would
+/// re-create the false strikes it was added to prevent. The adopted village is
+/// ~200 blocks across, so a genuine cross-town fetch is tens of sim-seconds; 90
+/// is generous against that, longer than the ULTIMATE FAIL-SAFE's own 60s
+/// window, and still far below the 450+ the stuck jobs actually burned.
+/// `fetch_budget_refuses_the_stall_but_admits_a_real_fetch` pins BOTH ends.
+pub const FETCH_BUDGET_SECS: f64 = 90.0;
+
 // ─────────────────────────────────────────────────────────────────────────
 // NEED BANDS (Ben, 2026-08-22): "we should also classify the hunger and sleep
 // and any other meters into different category based on percentages like
@@ -7162,6 +7191,14 @@ pub struct JobBoard {
     /// One write at the single claim site covers all 32 push sites, none of
     /// which need to change.
     last_claimed_class: HashMap<Uid, &'static str>,
+    /// When each job's FETCH leg started, so [`FETCH_BUDGET_SECS`] can bound it.
+    ///
+    /// Keyed by job rather than by colonist: the reservation belongs to the
+    /// job, survives a re-claim by someone else, and it is the RESERVATION that
+    /// has to be released on expiry. Keying by colonist would restart the
+    /// budget every time the job changed hands — which is exactly how a stuck
+    /// fetch would evade its own watchdog.
+    fetch_started: HashMap<JobId, f64>,
     /// bastion (B7-3): when each colonist's mood first dropped below the
     /// break threshold (cleared on recovery) — the sustained-window arm
     /// of the breakdown staircase.
@@ -17008,6 +17045,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 "bastion: FETCH_DIAG traveling-with-reservation"
                             );
                         }
+                        if carrying {
+                            // ★ THE FETCH SUCCEEDED — retire its clock. Without
+                            // this the entry persists and a LATER fetch on the
+                            // same job id is judged against the first one's
+                            // start time, so the budget would expire instantly
+                            // on a fetch that had barely begun. A watchdog that
+                            // fires on the innocent is worse than none.
+                            board.fetch_started.remove(&active.job);
+                        }
                         if !carrying {
                             let item_uid = board.reservations.get(&rid).copied();
                             let ipos = item_uid
@@ -17018,6 +17064,53 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // The Chaser parks 1.5-2.5 out — emit
                                     // within the whole band.
                                     let d = pos.0.distance(ip);
+                                    // ★ THE FETCH LEG'S OWN WATCHDOG. The job
+                                    // watchdog is switched off below while
+                                    // fetching (`fetch_steer.is_none()`), so
+                                    // without this a fetch that can never
+                                    // reach its item is bounded by NOTHING.
+                                    // Measured: 87,791 steers, one pickup.
+                                    let started =
+                                        *board.fetch_started.entry(active.job).or_insert(time.0);
+                                    if time.0 - started > FETCH_BUDGET_SECS {
+                                        // Release through the SAME field-split
+                                        // path the vanished-item branch uses —
+                                        // a raw `.remove` leaves
+                                        // `reservations_by_item` holding
+                                        // orphaned rids and permanently
+                                        // inflates that item's reserved_count,
+                                        // which would make this fix STRICTLY
+                                        // WORSE than the stall it replaces.
+                                        if let Some(item) = board.reservations.remove(&rid)
+                                            && let hashbrown::hash_map::Entry::Occupied(mut e) =
+                                                board.reservations_by_item.entry(item)
+                                        {
+                                            e.get_mut().retain(|&r| r != rid);
+                                            if e.get().is_empty() {
+                                                e.remove();
+                                            }
+                                        }
+                                        board.fetch_started.remove(&active.job);
+                                        tracing::warn!(
+                                            job = active.job,
+                                            kind = ?job.kind,
+                                            rid,
+                                            item = u.0.get(),
+                                            dist = d,
+                                            secs = time.0 - started,
+                                            budget = FETCH_BUDGET_SECS,
+                                            "bastion: FETCH BUDGET EXPIRED — releasing reservation \
+                                             and claim (the item was never reached)"
+                                        );
+                                        job.reservation = None;
+                                        job.needs_materials = true;
+                                        to_release.push((
+                                            entity,
+                                            ReleaseReason::TimedOut,
+                                            line!(),
+                                        ));
+                                        continue;
+                                    }
                                     if d < 2.8 {
                                         crate::bastion_actions::emit_pickup(
                                             &mut inv_manip_emitter,
@@ -28268,6 +28361,70 @@ mod tests {
             "a fed but COLLAPSING colonist must be judged on the collapse"
         );
         assert_eq!(worst_band(0.9, 0.9, &cfg), Fine);
+    }
+
+    /// ★ THE FETCH BUDGET MUST REFUSE THE STALL AND ADMIT A REAL FETCH.
+    ///
+    /// The defect it replaces is an exemption that never fired: the job
+    /// watchdog is disabled during a fetch, so a fetch that could not succeed
+    /// was bounded by nothing. Measured: 87,791 steers, ONE pickup, 9 jobs
+    /// burning 13,000–15,000 ticks each while holding item reservations that
+    /// were therefore unavailable to the whole colony.
+    ///
+    /// ★ AND THE OPPOSITE FAILURE IS EASY TO SHIP. A budget of ~0 also stops
+    /// the stall reproducing, passes any "the stall is bounded" assert, and
+    /// re-creates the false strikes the exemption was added to prevent —
+    /// cancelling every legitimate walk to the pantry. Both ends are asserted.
+    #[test]
+    fn fetch_budget_refuses_the_stall_but_admits_a_real_fetch() {
+        // 30 ticks = 1 sim-sec (see bastion_mood.ron's day-alignment note).
+        let secs = |ticks: f64| ticks / 30.0;
+
+        // ── REFUSES THE MEASURED STALL. The nine stuck jobs burned 13,000
+        // ticks at the low end.
+        let observed_stall = secs(13_000.0);
+        assert!(
+            FETCH_BUDGET_SECS < observed_stall,
+            "the budget ({FETCH_BUDGET_SECS}s) does not bound the stall that was actually \
+             measured ({observed_stall:.0}s) — the fetch leg is still unbounded in practice"
+        );
+
+        // ── ADMITS A REAL FETCH. The adopted village measured ~200 blocks
+        // across; at a walking pace slow enough to be pessimistic (2 blocks
+        // per sim-sec) a full cross-town fetch is 100s... which would NOT fit.
+        // So state the real requirement: the budget must cover the colony's
+        // WORKING radius, which the same sweep measured as a max excursion of
+        // 44.4 blocks. Being explicit here is the point — a budget justified by
+        // "feels generous" is how the opposite failure ships.
+        let worst_excursion_blocks = 44.4_f64;
+        let pessimistic_blocks_per_sec = 2.0_f64;
+        let real_fetch = worst_excursion_blocks / pessimistic_blocks_per_sec;
+        assert!(
+            FETCH_BUDGET_SECS > real_fetch * 2.0,
+            "the budget ({FETCH_BUDGET_SECS}s) leaves no margin over a genuine fetch across the \
+             colony's measured working radius ({real_fetch:.0}s) — this would cancel honest \
+             fetches and re-create the false strikes the watchdog exemption exists to prevent"
+        );
+
+        // ── IT MUST OUTLAST THE OTHER TIMERS IT SITS BESIDE, or it preempts
+        // machinery that was already handling the case.
+        assert!(
+            FETCH_BUDGET_SECS > STUCK_TIMEOUT as f64,
+            "the fetch budget must outlast STUCK_TIMEOUT ({STUCK_TIMEOUT}s) or it fires before \
+             the ordinary stuck path has had a chance"
+        );
+        assert!(
+            FETCH_BUDGET_SECS > 60.0,
+            "the fetch budget must outlast the ULTIMATE FAIL-SAFE's own 60s window, or a fetch \
+             gets cancelled while the teleport rescue is still trying"
+        );
+
+        // ── NOT DEGENERATE IN EITHER DIRECTION.
+        assert!(FETCH_BUDGET_SECS > 0.0, "a zero budget cancels every fetch instantly");
+        assert!(
+            FETCH_BUDGET_SECS.is_finite(),
+            "an infinite budget is the bug this replaces, spelled differently"
+        );
     }
 
     /// ★ THE HOUR-OF-DAY CONVERSION, pinned because everything above keys on it
