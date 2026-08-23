@@ -687,6 +687,9 @@ impl Chaser {
     {
         span!(_guard, "chase", "Chaser::chase");
         self.last_update_time = Some(*time);
+        // ledger #178: a profile flip kills the retained search AND route
+        // before either is consulted — see `invalidate_on_profile_flip`.
+        self.invalidate_on_profile_flip(&traversal_cfg);
         // If we're already close to the target then there's nothing to do
         if ((pos - tgt) * Vec3::new(1.0, 1.0, 2.0)).magnitude_squared()
             < traversal_cfg.min_tgt_dist.powi(2)
@@ -833,14 +836,11 @@ impl Chaser {
             // target that keeps failing, and only for that target.
             self.path_length = PathLength::default();
         }
-        // bastion ledger #178: reset the retained search on a PROFILE
-        // change — admission staleness does not self-heal (see
-        // search_profile_key's doc; falsifier: the loaded-flip band test).
-        let profile = traversal_cfg.search_profile_key();
-        if self.astar_profile.is_some_and(|p| p != profile) {
-            self.astar = None;
-        }
-        self.astar_profile = Some(profile);
+        // bastion ledger #178: profile invalidation moved to
+        // [`Self::invalidate_on_profile_flip`], which both entries call
+        // BEFORE the route short-circuit — see its doc for why a completed
+        // route dies with the visited set.
+        self.invalidate_on_profile_flip(traversal_cfg);
         let (result, consumed) = find_path(
             &mut self.astar,
             vol,
@@ -902,6 +902,31 @@ impl Chaser {
     /// search/resume for `tgt`, storing the route the next agent tick
     /// follows. A no-op if a route already exists (grant raced an inline
     /// delivery — never double-spends budget on a routed chaser).
+    /// bastion ledger #178 (moved seam, 2026-08-23): reset the retained
+    /// search AND the retained route on a PROFILE change — admission
+    /// staleness does not self-heal (see `search_profile_key`'s doc;
+    /// falsifier: the loaded-flip band test).
+    ///
+    /// ★ THE ROUTE DIES TOO, AND THE CHECK RUNS BEFORE THE ROUTE
+    /// SHORT-CIRCUIT. The original fix invalidated only `astar`, inside
+    /// `search_step_inner` — which `search_step` never reaches while a
+    /// route exists. The cell-identity change made searches ~35x more
+    /// cell-efficient and the band falsifier promptly caught both gaps at
+    /// once: the optimistic seed now COMPLETES its band route inside one
+    /// budgeted slice, and that completed route was profile-immortal — a
+    /// colonist would keep steering through cells its current profile
+    /// forbids, and no later step could ever invalidate it. Admission is
+    /// baked into the route exactly as it is baked into the visited set;
+    /// both die on a flip, at a seam every entry crosses.
+    fn invalidate_on_profile_flip(&mut self, traversal_cfg: &TraversalConfig) {
+        let profile = traversal_cfg.search_profile_key();
+        if self.astar_profile.is_some_and(|p| p != profile) {
+            self.astar = None;
+            self.route = None;
+        }
+        self.astar_profile = Some(profile);
+    }
+
     pub fn search_step<V>(
         &mut self,
         vol: &V,
@@ -911,6 +936,7 @@ impl Chaser {
     ) where
         V: BaseVol<Vox = Block> + ReadVol,
     {
+        self.invalidate_on_profile_flip(traversal_cfg);
         if self.route.is_none() {
             self.search_step_inner(vol, pos, tgt, traversal_cfg);
         } else {
@@ -1032,11 +1058,55 @@ where
     (on_ground || in_liquid) && !a.is_solid() && !b.is_solid()
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Node {
     pos: Vec3<i32>,
     last_dir: Vec2<i32>,
     last_dir_count: u32,
+}
+
+/// ★ A NODE IS A CELL (PREREG-75K-FOR-24-BLOCKS, branch B measured live):
+/// identity used to be the derived (pos, last_dir, last_dir_count) triple,
+/// so one cell reachable from several directions and straightness histories
+/// was VISITED once per history — measured at exhaust: 29–41 states per
+/// distinct cell, medians ~35, on every hot goal. A 75,000-iteration budget
+/// was really a ~2,100-cell budget, and searches died 24 blocks from
+/// standable goals having seen ~6% of the walkable component.
+///
+/// Identity is now the CELL; `last_dir`/`last_dir_count` remain PAYLOAD —
+/// they still shape `transition`'s straightness cost, but a cheaper arrival
+/// at the same cell now DOMINATES a costlier one instead of colonising a
+/// parallel state. The heuristic is plain distance (history-independent), so
+/// dominance pruning stays admissible. Kill switch
+/// `BASTION_NO_FIX_CELL_IDENTITY=1` restores the triple identity for the
+/// same-binary A/B; `satisfied` always compared `pos` alone, and `Node`
+/// never leaves this file (paths are mapped to `Vec3` on return), so no
+/// other consumer sees the change.
+fn cell_identity() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var_os("BASTION_NO_FIX_CELL_IDENTITY").is_none())
+}
+
+impl PartialEq for Node {
+    fn eq(&self, other: &Self) -> bool {
+        if cell_identity() {
+            self.pos == other.pos
+        } else {
+            self.pos == other.pos
+                && self.last_dir == other.last_dir
+                && self.last_dir_count == other.last_dir_count
+        }
+    }
+}
+impl Eq for Node {}
+impl core::hash::Hash for Node {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.pos.hash(state);
+        if !cell_identity() {
+            self.last_dir.hash(state);
+            self.last_dir_count.hash(state);
+        }
+    }
 }
 
 /// Attempt to search for a path to a target, returning the path (if one was
@@ -2703,6 +2773,15 @@ mod ledger_179_tests {
         assert!(
             expanded_states >= distinct_cells && expanded_states < 75_000,
             "a sealed box empties its frontier long before the budget:              expanded={expanded_states} distinct={distinct_cells}"
+        );
+        // ★ A NODE IS A CELL: under the default (fixed) identity the visited
+        // map cannot hold two states of one cell, so the multiplication
+        // measured live (29-41 states/cell) is structurally impossible.
+        // This is the pin that goes red if someone re-adds history fields
+        // to the derived identity.
+        assert_eq!(
+            expanded_states, distinct_cells,
+            "the budget must buy CELLS, not straightness histories"
         );
         for (lo, hi, axis) in [(bmin.x, bmax.x, "x"), (bmin.y, bmax.y, "y")] {
             assert!(
