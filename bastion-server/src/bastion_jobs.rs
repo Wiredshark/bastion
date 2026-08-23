@@ -4261,6 +4261,34 @@ pub fn column_surface_z(terrain: &TerrainGrid, x: i32, y: i32, hint_z: i32) -> O
         })
 }
 
+/// ★ WHERE A DELIVERY ACTUALLY LANDS. Three sites used to aim deposits at
+/// `(center_xy, r.max.z)` — "the painted top". The goal snapper
+/// (`get_walkable_z`, ±16 in the column) then snapped that cell to the
+/// NEAREST walkable surface, and above a house the nearest walkable surface
+/// to the painted top is the ROOF — so colonists pathed to roofs and cargo
+/// landed on a floor nothing could fetch from (the exact preserved tile:
+/// 37/45 deliveries to adopted cells, the painted stockpile receiving NONE,
+/// each ending in the fail-safe teleport). `column_surface_z` is already the
+/// per-column surface authority and deliberately excludes Wood/Leaves, so it
+/// resolves THROUGH a wooden roof to the real ground; +1 is the standable
+/// cell on it. Unresolved (open water / unloaded chunk) falls back to the
+/// painted FLOOR — never the roof.
+pub fn stockpile_drop_cell(terrain: &TerrainGrid, r: &Region) -> Vec3<i32> {
+    stockpile_drop_cell_impl(|x, y, hint| column_surface_z(terrain, x, y, hint), r)
+}
+
+/// The decision half, closure-injected for the unit pin (the
+/// `surface_teleport_dest_impl` seam pattern).
+pub(crate) fn stockpile_drop_cell_impl(
+    surface_z: impl Fn(i32, i32, i32) -> Option<i32>,
+    r: &Region,
+) -> Vec3<i32> {
+    let cx = (r.min.x + r.max.x) / 2;
+    let cy = (r.min.y + r.max.y) / 2;
+    let z = surface_z(cx, cy, r.min.z).map(|s| s + 1).unwrap_or(r.min.z);
+    Vec3::new(cx, cy, z)
+}
+
 /// How many solid blocks must sit directly beneath an adopted village
 /// container before it may become a haul-destination stockpile zone.
 ///
@@ -10556,10 +10584,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let pos = board
                         .stockpiles
                         .first()
-                        .map(|(_, r)| {
-                            let c = (r.min + r.max) / 2;
-                            Vec3::new(c.x, c.y, r.max.z)
-                        })
+                        // Ground, not painted top (`stockpile_drop_cell`) —
+                        // seeds rained from the box top could land on a roof.
+                        .map(|(_, r)| stockpile_drop_cell(&terrain, r))
                         .unwrap_or(pos);
                     if terrain.get(pos).is_ok() {
                         for i in 0..count {
@@ -15340,16 +15367,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             let d = c - cell;
                             (d.x as i64).pow(2) + (d.y as i64).pow(2) + (d.z as i64).pow(2)
                         })
-                        .map(|(z, r)| {
-                            (
-                                *z,
-                                Vec3::new(
-                                    (r.min.x + r.max.x) / 2,
-                                    (r.min.y + r.max.y) / 2,
-                                    r.max.z,
-                                ),
-                            )
-                        })
+                        // Ground, not painted top — see `stockpile_drop_cell`:
+                        // max.z above a house snapped the goal onto the ROOF.
+                        .map(|(z, r)| (*z, stockpile_drop_cell(&terrain, r)))
                     else {
                         continue;
                     };
@@ -21451,15 +21471,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             }
                             if carrying {
                                 // Cargo aboard — LEG 2: retarget the zone's
-                                // drop cell (center column, painted top).
+                                // drop cell (center column, REAL GROUND — the
+                                // painted top snapped onto roofs, see
+                                // `stockpile_drop_cell`).
                                 if let Some((_, r)) =
                                     board.stockpiles.iter().find(|(z, _)| *z == destination)
                                 {
-                                    job.pos = Vec3::new(
-                                        (r.min.x + r.max.x) / 2,
-                                        (r.min.y + r.max.y) / 2,
-                                        r.max.z,
-                                    );
+                                    job.pos = stockpile_drop_cell(&terrain, r);
                                     job.progress = 0.5;
                                     active.state = ActiveJobState::Traveling;
                                     active.best_dist = f32::MAX;
@@ -32768,6 +32786,43 @@ mod tests {
             .expect("clear columns exist in the spiral");
         assert_ne!(dest.xy(), Vec2::new(0, 0), "teleported into the trunk");
         assert_eq!(dest.z, 11);
+    }
+
+    /// ★ A DELIVERY LANDS ON THE GROUND, NOT THE PAINTED TOP (the roof
+    /// deposit-point): three sites aimed deposits at `(center, r.max.z)`
+    /// and the goal snapper put that on the ROOF above a house — 37/45
+    /// deliveries to cells nothing could fetch from. Both directions: the
+    /// resolved surface wins over the painted top, and an unresolvable
+    /// column (open water / unloaded chunk) falls back to the painted
+    /// FLOOR — the one z that can never be a roof.
+    #[test]
+    fn a_deposit_targets_the_ground_never_the_painted_top() {
+        // A zone painted as a tall box over a house: floor 10, top 30.
+        let zone = Region { min: Vec3::new(0, 0, 10), max: Vec3::new(8, 8, 30) };
+        // The surface authority sees through the wooden roof: ground at 10.
+        let dest = stockpile_drop_cell_impl(|_, _, _| Some(10), &zone);
+        assert_eq!(
+            dest,
+            Vec3::new(4, 4, 11),
+            "the drop cell is the standable cell on the REAL surface — pre-fix              this was (4, 4, 30), which the ±16 goal snap put on the roof"
+        );
+        // Unresolvable column: painted floor, never the top.
+        let dest = stockpile_drop_cell_impl(|_, _, _| None, &zone);
+        assert_eq!(
+            dest,
+            Vec3::new(4, 4, 10),
+            "no surface in the window falls back to the painted floor"
+        );
+        // And the resolver is genuinely consulted with the floor as hint —
+        // a sloped site resolves per-column, not from the box geometry.
+        let dest = stockpile_drop_cell_impl(
+            |x, y, hint| {
+                assert_eq!((x, y, hint), (4, 4, 10), "centre column, floor hint");
+                Some(14)
+            },
+            &zone,
+        );
+        assert_eq!(dest.z, 15);
     }
 
     /// The pit-rim guard stays: a below-grade colonist never gets its OWN
