@@ -7252,6 +7252,39 @@ impl Server {
                         tracing::info!(?sp, arena = bastion_flat_arena::enabled(),
                             adopted = adoption.is_some(),
                             "bastion: autofound spawn resolved");
+                        // ★ PUT THE PLAYER IN THE COLONY (Ben, 2026-08-22:
+                        // "just boot me into a town that i own and have
+                        // colonists that function").
+                        //
+                        // `sp` re-anchors the COLONY to the adopted town. The
+                        // PLAYER's spawn is a separate resource and was never
+                        // moved, so "adopt a town" could put your colony 11km
+                        // from where you stand -- you owned a town you had to
+                        // go and find. Nothing said so; the world just looked
+                        // empty.
+                        //
+                        // Opt-in so the ~60 banked harness foundings keep their
+                        // exact spawn. They have no player, so this is inert
+                        // for them either way, but the status quo is the
+                        // EXERCISED population and rebasing it is not something
+                        // to do as a side effect.
+                        //
+                        // Written only when a town was actually ADOPTED: with
+                        // no adoption `sp` is the world-centre datum, which is
+                        // already the default spawn, so writing it would be a
+                        // no-op that reads like a feature in the log.
+                        if adoption.is_some()
+                            && std::env::var_os("BASTION_SPAWN_AT_COLONY").is_some()
+                        {
+                            let prev = self.state.ecs().read_resource::<SpawnPoint>().0;
+                            self.state.ecs_mut().write_resource::<SpawnPoint>().0 = sp;
+                            tracing::info!(
+                                ?prev,
+                                now = ?sp,
+                                moved_blocks = (prev - sp).xy().magnitude() as i64,
+                                "bastion: SPAWN MOVED TO THE COLONY — you boot into the town you own"
+                            );
+                        }
                         // ★ ADOPTION ADOPTS PEOPLE. When a town was adopted we
                         // spawn NOBODY — the villagers already there become the
                         // colony. Spawning 8 strangers beside 22 residents who

@@ -2,18 +2,31 @@
 #
 #   .\PLAY.ps1 town          adopt a real worldgen village: the VILLAGERS
 #                            become your colony (framework finished 2026-08-21)
+#   .\PLAY.ps1 flattown      a real worldgen village on FLAT ground -- but this
+#                            world only has a HAMLET near centre (3 houses, no
+#                            fields). Good for watching pathing, not a town.
 #   .\PLAY.ps1 arena         found on flat test ground: the colony mines its own
 #                            stone, builds its own beds, colonists carry tools
 #
 #   .\PLAY.ps1 town -Client  also launch the game once the server is up
+#   .\PLAY.ps1 town -Client -NoRaids   the clean colony the sweeps measured
+#                            (raiders off; add them back by dropping the flag)
 #   .\PLAY.ps1 -Stop         stop the server (verifies the PORT, not just the pid)
 #
 # JOIN AT:  localhost:14004      USERNAME: player      (no password, --no-auth)
 
 param(
-    [Parameter(Position = 0)][ValidateSet('town', 'arena')][string]$Mode = 'town',
+    [Parameter(Position = 0)][ValidateSet('town', 'flattown', 'arena')][string]$Mode = 'town',
     [switch]$Client,
-    [switch]$Stop
+    [switch]$Stop,
+    # Ben, 2026-08-22: "get the town working like real life then introduce
+    # raiders and see what breaks." Raiders ON by default so the game is the
+    # game; -NoRaids gives the clean colony the sweeps were measured on.
+    [switch]$NoRaids,
+    # ★ OPT IN to choosing your town on the SELECT STARTING AREA screen.
+    # Off by default: see the `town` block below for why the main path must not
+    # depend on the player performing a step correctly.
+    [switch]$Pick
 )
 
 $ErrorActionPreference = 'Stop'
@@ -52,6 +65,46 @@ if ($Stop) {
 # script -- the world is up, you want to go and look at it -- and it was the
 # one path that did nothing.
 $held = Test-PortHeld
+
+# ★ A STALE SERVER IS NOT "YOUR WORLD", IT IS THE OLD BUILD (2026-08-22).
+#
+# This burned Ben TWICE in one session, identically. The branch below saw the
+# port held, said "that's fine - it's your world", and handed him a client
+# attached to a server that had been running for over an hour -- from a binary
+# built BEFORE the fix he had just been asked to test. He tested the old code,
+# reported "it didn't work", and was right: the fix was not in the process he
+# was talking to.
+#
+# Nothing on screen could have told him. The world loads, the colony is there,
+# the client connects cleanly. A stale server and a fresh one look IDENTICAL
+# from the game -- which is exactly the shape of bug that has to be caught by
+# the launcher, because the player has no instrument for it.
+#
+# So: compare the running server's START TIME against the binary's build time.
+# Older process than binary = the code under test is not running. Restart it.
+if ($held) {
+    $ownerPid = ($held -split '\s+')[-1]
+    $proc = Get-Process -Id $ownerPid -ErrorAction SilentlyContinue
+    $binTime = (Get-Item "$Bin\veloren-server-cli.exe" -ErrorAction SilentlyContinue).LastWriteTime
+    if ($proc -and $binTime -and $proc.StartTime -lt $binTime) {
+        Write-Host ''
+        Write-Host 'STALE SERVER - restarting it so you test the build you actually have.'
+        Write-Host ("  running server started : {0}  (pid {1})" -f $proc.StartTime, $ownerPid)
+        Write-Host ("  server binary built    : {0}" -f $binTime)
+        Write-Host '  The running process predates the binary, so it does NOT contain the'
+        Write-Host '  latest changes. Attaching a client to it would silently test old code.'
+        Write-Host ''
+        taskkill /PID $ownerPid /F | Out-Null
+        Start-Sleep -Seconds 3
+        if (Test-PortHeld) {
+            Write-Host "COULD NOT FREE PORT $Port - stop it manually with  .\PLAY.ps1 -Stop"
+            return
+        }
+        Write-Host "port $Port freed; booting a fresh world below."
+        $held = $null
+    }
+}
+
 if ($held) {
     Write-Host "A server is already on port $Port (that's fine - it's your world)."
     if ($Client) {
@@ -106,16 +159,53 @@ if ($skewMin -gt 3) {
     return
 }
 
-# The two worlds.
-$EnvVars = if ($Mode -eq 'town') {
+# The three worlds.
+$EnvVars = if ($Mode -eq 'flattown') {
+    # ★ THE FLAT-MAP TOWN. A REAL worldgen village on FLAT ground: the flatten
+    # runs BEFORE civ generation, so houses/doors/roads/fields are placed onto
+    # the levelled disc rather than having the ground pulled out from under
+    # buildings whose heights are already baked.
+    #
+    # ★ MEASURED CAVEAT, three runs: the flat disc and the village SEARCH have
+    # to agree or the town lands off the flat (with search left at its default
+    # 16384 the scorer picked a village 11,229 blocks away). But binding them
+    # is not free -- this world has no LARGE village near world centre, so a
+    # flat town here is a HAMLET (3 houses, 0 fields). Use `town` to see a real
+    # 46-house / 23-field settlement; use this to watch PATHING on legible
+    # ground.
+    #
+    # No marker wait: with one candidate nearby there is nothing to choose.
+    @{
+        BASTION_FLAT_WORLD_RADIUS      = '64'
+        BASTION_ADOPT_RADIUS           = '2000'
+        BASTION_ADOPT_TOWN             = '1'
+        BASTION_AUTOFOUND_REAL_TERRAIN = '1'
+        BASTION_COLONY_PRESENCE_VD     = '3'
+        BASTION_AUTOFOUND_COLONY       = '8'
+        BASTION_SEED_FOOD              = '64'
+        BASTION_SEED_MATERIALS         = '64'
+    }
+} elseif ($Mode -eq 'town') {
+    # ★ JUST BOOT ME INTO A TOWN I OWN (Ben, 2026-08-22, verbatim: "just boot
+    # me into a town that i own and have colonists that function").
+    #
+    # The default is now ZERO CEREMONY: the scorer picks the best settlement it
+    # can find, founds on it immediately, and the player spawns IN it. No
+    # marker, no chooser, nothing that can be got wrong.
+    #
+    # Choosing was made the default earlier today and that was the wrong call.
+    # Picking a town is a nice-to-have; being dropped into a working colony is
+    # the entire point of the mode. A feature that gates the main path behind a
+    # step the player has to perform correctly is worse than no feature -- and
+    # every failure mode of the chooser (stall, wrong town, silent fallback)
+    # lands on the one path everybody uses. `-Pick` keeps it for when it is
+    # wanted.
     @{
         BASTION_ADOPT_TOWN             = '1'
-        # Hold founding until the player marks the town they want. Without
-        # this, autofound fires at tick 30 -- one second after boot -- and
-        # takes the town nearest spawn, so the map-marker choice can never
-        # happen and the player's real choice is later REFUSED with "your
-        # colony already lives in this world".
-        BASTION_ADOPT_WAIT_FOR_MARKER  = '1'
+        # Put the player down in the colony rather than at the world default,
+        # which is what "a town that i own" means when you spawn 11km away
+        # from it.
+        BASTION_SPAWN_AT_COLONY        = '1'
         BASTION_AUTOFOUND_REAL_TERRAIN = '1'
         BASTION_COLONY_PRESENCE_VD     = '3'
         BASTION_AUTOFOUND_COLONY       = '8'
@@ -130,6 +220,16 @@ $EnvVars = if ($Mode -eq 'town') {
         BASTION_SEED_FOOD            = '32'
     }
 }
+
+# -NoRaids: suppress the raid tick entirely. BASTION_NO_RAIDS is read by
+# Server::bastion_raid_tick's first line, so this is a hard off, not a
+# probability tweak.
+if ($NoRaids) { $EnvVars['BASTION_NO_RAIDS'] = '1' }
+
+# -Pick: hold founding until the player chooses a town on the SELECT STARTING
+# AREA screen (or middle-clicks the in-game map). Opt-in, because the default
+# path must not be able to stall waiting for a step.
+if ($Pick) { $EnvVars['BASTION_ADOPT_WAIT_FOR_MARKER'] = '1' }
 
 # Fresh userdata, so a test is never confused by a previous colony.
 if (Test-Path $UD) { Remove-Item $UD -Recurse -Force }

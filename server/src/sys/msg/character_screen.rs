@@ -245,6 +245,33 @@ impl Sys {
                                 )
                             })
                     });
+                    // ★ THE WAYPOINT OUTRANKS SpawnPoint, so it has to yield
+                    // for "boot me into a town i own" to mean anything.
+                    //
+                    // `StateExt` writes `Pos(waypoint.get_pos())` when a
+                    // waypoint exists and `Pos(spawn_point)` only when one does
+                    // not (state_ext.rs, `initialize_character_data` vs the
+                    // waypoint branch). The SELECT STARTING AREA screen ALWAYS
+                    // has a town selected, so a waypoint was always produced —
+                    // which means moving `SpawnPoint` to the colony would have
+                    // been silently inert on the exact path everybody uses.
+                    //
+                    // Caught before shipping this time. The identical shape —
+                    // wiring one half of a two-half change and reading the
+                    // disappearing symptom as success — is what put the adopt
+                    // target into the founding gate but not the placement
+                    // earlier today.
+                    #[cfg(feature = "worldgen")]
+                    let waypoint = if std::env::var_os("BASTION_SPAWN_AT_COLONY").is_some() {
+                        tracing::info!(
+                            "bastion: start-site waypoint SUPPRESSED — spawning at the colony \
+                             instead (BASTION_SPAWN_AT_COLONY). A waypoint would override the \
+                             colony spawn and drop you back at the town you clicked."
+                        );
+                        None
+                    } else {
+                        waypoint
+                    };
                     #[cfg(not(feature = "worldgen"))]
                     let waypoint = Some(Waypoint::new(world.get_center().with_z(10).as_(), time));
                     // The town the player picked becomes the adoption target.
