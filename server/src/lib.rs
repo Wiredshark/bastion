@@ -1369,11 +1369,28 @@ impl Server {
             wanted,
             "bastion: ADOPT-A-TOWN — houses this village can put a resident in"
         );
+        // ★ POPULATION IS DETERMINED BY HOUSING (Ben RULED, live play
+        // 2026-08-23: "the population should be determined by the amount of
+        // houses, the current population is way too high"). His adopted
+        // site logged chosen_houses=0 and still received the env default of
+        // eight — eight people, zero homes, reading as an overcrowded camp.
+        // One colonist per house, the env count surviving only as an upper
+        // cap; the .max(1) floor exists because a colony of zero is not a
+        // colony (that floor case is the DECISIONS log's to retune).
+        let wanted_eff = (wanted as usize).min(houses.len().max(1));
+        if wanted_eff < wanted as usize {
+            tracing::info!(
+                wanted = wanted,
+                houses = houses.len(),
+                adopted = wanted_eff,
+                "bastion: ADOPT-A-TOWN population CAPPED BY HOUSING — one                  colonist per house (Ben's ruling)"
+            );
+        }
         let names = self
             .state
             .ecs()
             .write_resource::<rtsim::RtSim>()
-            .bastion_adopt_town_npcs(near, 0, &houses, wanted as usize);
+            .bastion_adopt_town_npcs(near, 0, &houses, wanted_eff);
         self.bastion_found_colony_seed_stock(wpos);
         self.bastion_found_colony_presence(wpos);
         names
@@ -7304,10 +7321,26 @@ impl Server {
                                 // A named refusal, never silence: a village with
                                 // no adoptable residents must not look like a
                                 // successful adoption of nobody.
+                                // ★ AND THE FALLBACK OBEYS THE HOUSING RULING
+                                // TOO (Ben, 2026-08-23): spawning the env
+                                // count into a village with two houses is the
+                                // exact overcrowding he called out — the
+                                // fallback caps at one colonist per house,
+                                // floor 1, same rule as adoption proper.
+                                let houses = plots
+                                    .iter()
+                                    .filter(|(k, _, _)| {
+                                        matches!(k, common::bastion::DesignationKind::Bed)
+                                    })
+                                    .count();
+                                let n_eff =
+                                    (n as usize).min(houses.max(1)) as u8;
                                 tracing::warn!(
-                                    "bastion: ADOPT-A-TOWN adopted ZERO residents — falling back                                      to spawning a colony so the run is not empty"
+                                    houses,
+                                    n_eff,
+                                    "bastion: ADOPT-A-TOWN adopted ZERO residents — falling back                                      to spawning a colony (housing-capped) so the run is not empty"
                                 );
-                                self.bastion_spawn_colony_seeded(sp, n, 0)
+                                self.bastion_spawn_colony_seeded(sp, n_eff, 0)
                             } else {
                                 names
                             }
