@@ -7491,6 +7491,45 @@ pub fn canonical_thought_drain_order(
 /// `required_item` equal to this item's def. An item under a CLAIMED job — a
 /// colonist actively working there — is still skipped, so the original
 /// protection (do not strip materials out of an active work site) is intact.
+/// ★ `cell_occupied` IS DEF-SCOPED (2026-08-22). It means "a job standing here
+/// wants THIS def", not "a job stands here". The name is kept for the six
+/// existing assertions that call positionally; read it as `cell_wanted_for_def`.
+///
+/// THE BUG THIS CLOSES — the colony's famine, proven end to end. Harvest clears
+/// the crop cell and drops BOTH wheat and seeds on it. The next farm pass sees
+/// the cell empty over Earth and mints a SOW there, `required_item =
+/// FARM_SEED_ITEM`. The cell is now "occupied". Then:
+///   seeds: the sow wants seeds -> `starved_cell` exempts -> hauled. Loop CLOSES.
+///   wheat: the sow wants seeds, not wheat -> no exemption, cell occupied
+///          -> REFUSED, forever, because the harvest is what created that job.
+/// The food half of every yield strands at the plot while the seed half
+/// escapes. Downstream, wheat outside a zone can never be cooked, and
+/// `colony_food_stock` counts only in-zone food, so the death sentinel reports
+/// an empty pantry with the wheat lying in the field.
+///
+/// ★ THE CLAUSE DID NOT BREAK — ITS DOMAIN GREW OUT FROM UNDER IT. At B6-HAUL
+/// the allow-list was `{stone, log}` and the only jobs carrying a
+/// `required_item` were Build/Bed (stone) and Ladder (log), so "a job is here"
+/// and "a job here wants this def" were near-equivalent. Seeds, wheat, dishes,
+/// meat and produce were added to the allow-list later without revisiting this.
+///
+/// ★ WHY THIS IS SAFE, AS AN ARGUMENT AND NOT A HOPE. Let
+///   B = a job stands here                     (the old term)
+///   C = a job here wants this def             (the new term)
+///   A = an UNCLAIMED job here wants this def  (`starved_cell`, unchanged)
+/// Then `A => C => B`, and the refusal term is `X && !A`. Wherever `C` holds,
+/// `C && !A` is identically `B && !A` — so the decision is BIT-IDENTICAL for
+/// every def some job at that cell requires, which is the entire seed and
+/// building-material domain. The two differ only on `B && !C`: a job occupies
+/// the cell and wants nothing of this def. That set is exactly {wheat under a
+/// sow, cooked dish under a cook, meat and produce under anything}. It is
+/// provable rather than empirical, which is what makes the change surgical.
+/// `def_scoped_occupancy_is_a_noop_whenever_a_job_at_the_cell_wants_this_def`
+/// executes the lemma over the full cross-product rather than by example.
+///
+/// The claimed-job shield is untouched: `starved_cell` still requires
+/// `claimed_by.is_none()`, so material under a colonist actively working there
+/// is still skipped.
 pub fn haul_candidate_admitted(
     cell_is_stockpile: bool,
     item_reserved: bool,
@@ -7498,6 +7537,32 @@ pub fn haul_candidate_admitted(
     starved_cell: bool,
 ) -> bool {
     !(cell_is_stockpile || item_reserved || (cell_occupied && !starved_cell))
+}
+
+/// THE SINGLE PRODUCER of both occupancy terms for one cell and one def.
+///
+/// Returns `(wanted_for_def, starved_for_def)` — `C` and `A` in the lemma
+/// above. One function so the two can never drift apart: this project has been
+/// bitten by exactly that shape before, where `colony_food_stock`'s doc claimed
+/// it counted "the same population `EatFrom` draws from" and did not.
+///
+/// Costs what the old inline scan cost — `starved_cell` already walked every
+/// job per candidate; this returns two booleans from the same walk.
+pub fn haul_cell_occupancy<'a>(
+    jobs_at_cell: impl IntoIterator<Item = (bool, Option<&'a str>)>,
+    def: &str,
+) -> (bool, bool) {
+    let mut wanted = false;
+    let mut starved = false;
+    for (claimed, required) in jobs_at_cell {
+        if required == Some(def) {
+            wanted = true;
+            if !claimed {
+                starved = true;
+            }
+        }
+    }
+    (wanted, starved)
 }
 
 /// DET-COL-HAUL-001 / DET-AUT-004: admit eligible loose-drop pickups as haul
@@ -14286,6 +14351,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 .count();
             if pending < cap {
                 let occupied: HashSet<Vec3<i32>> = board.jobs.values().map(|j| j.pos).collect();
+                // Hoisted out of the per-candidate loop — these were two env
+                // lookups PER ITEM per pass.
+                let no_fix_starved_cell =
+                    std::env::var_os("BASTION_NO_FIX_HAUL_STARVED_CELL").is_some();
+                let no_fix_occupied_def =
+                    std::env::var_os("BASTION_NO_FIX_HAUL_OCCUPIED_DEF").is_some();
                 // Gather all eligible loose drops first, then admit up to the
                 // cap in a canonical total order (source cell z/y/x, item def,
                 // stable item Uid) — ECS join order must not decide WHICH
@@ -14384,13 +14455,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // original protection is intact and only the deadlock case
                     // changes. Default-off keeps every banked run reproducible
                     // and makes the A/B one env var wide.
-                    let starved_cell = std::env::var_os("BASTION_NO_FIX_HAUL_STARVED_CELL")
-                        .is_none()
-                        && board.jobs.values().any(|j| {
-                            j.pos == cell
-                                && j.claimed_by.is_none()
-                                && j.required_item == Some(static_def)
-                        });
+                    // ★ DEF-SCOPED OCCUPANCY (2026-08-22). Both terms come
+                    // from ONE producer over ONE walk of the jobs at this cell,
+                    // so `wanted` and `starved` cannot drift apart.
+                    //
+                    // Three arms, because the old kill switch's contract is
+                    // "restore pre-2026-08-19 BY NAME" and folding a second fix
+                    // under it silently would break that:
+                    //   STARVED_CELL=1  -> both terms pre-fix (banked runs)
+                    //   OCCUPIED_DEF=1  -> the A/B control: old cell_occupied,
+                    //                      def-aware starved (today's shipped)
+                    //   neither         -> the fix
+                    let (wanted_for_def, starved_for_def) = haul_cell_occupancy(
+                        board
+                            .jobs
+                            .values()
+                            .filter(|j| j.pos == cell)
+                            .map(|j| (j.claimed_by.is_some(), j.required_item)),
+                        static_def,
+                    );
+                    let starved_cell = !no_fix_starved_cell && starved_for_def;
                     // ★ WHY A LOAD IS NOT HAULED (2026-08-21). Measured on
                     // three attested arms: four times the population delivered
                     // FORTY PERCENT FEWER loads (62 at 8 colonists, 37 at 32),
@@ -14408,7 +14492,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // this sweep keeps finding in other rows.
                     let in_stockpile = board.stockpile_at(cell).is_some();
                     let reserved = board.is_reserved(*iuid);
-                    let cell_occupied = occupied.contains(&cell);
+                    // `occupied.contains` is kept for the two pre-fix arms and
+                    // for the diag; the shipped path asks the def-scoped
+                    // question instead.
+                    let cell_occupied = if no_fix_starved_cell || no_fix_occupied_def {
+                        occupied.contains(&cell)
+                    } else {
+                        wanted_for_def
+                    };
                     if !haul_candidate_admitted(
                         in_stockpile,
                         reserved,
@@ -28546,6 +28637,108 @@ mod tests {
         assert!(
             FETCH_BUDGET_SECS.is_finite(),
             "an infinite budget is the bug this replaces, spelled differently"
+        );
+    }
+
+    /// ★ WHEAT ESCAPES A SOW JOB THAT WANTS SEEDS — the colony's famine.
+    ///
+    /// Harvest drops wheat AND seeds on the crop cell, then the farm pass mints
+    /// a SOW there wanting seeds. Under whole-cell occupancy the seeds were
+    /// exempt (the sow wants them) and the wheat was not, so the food half of
+    /// every yield stranded at the plot forever while the seed half escaped.
+    #[test]
+    fn haul_occupancy_is_def_scoped_so_wheat_escapes_a_sow_job_that_wants_seeds() {
+        // Exactly the state a harvest produces: one UNCLAIMED sow at the cell.
+        let jobs = [(false, Some(FARM_SEED_ITEM))];
+
+        let (wanted_seed, starved_seed) = haul_cell_occupancy(jobs, FARM_SEED_ITEM);
+        assert!(wanted_seed && starved_seed);
+        assert!(
+            haul_candidate_admitted(false, false, wanted_seed, starved_seed),
+            "seeds must still be hauled — this is the loop that WORKS and must not move"
+        );
+
+        let (wanted_wheat, starved_wheat) = haul_cell_occupancy(jobs, FARM_WHEAT_ITEM);
+        assert!(!wanted_wheat, "a sow job wants seeds, not wheat");
+        assert!(
+            haul_candidate_admitted(false, false, wanted_wheat, starved_wheat),
+            "HARVESTED WHEAT IS STILL STRANDED. The sow job the harvest itself created is              blocking the food half of its own yield — that is the famine"
+        );
+        // Under the OLD whole-cell term the same wheat was refused. Pin the
+        // delta so the fix cannot be silently reverted.
+        assert!(
+            !haul_candidate_admitted(false, false, true, starved_wheat),
+            "whole-cell occupancy must still refuse — this is the behaviour being replaced"
+        );
+    }
+
+    /// ★ THE CONTAINMENT LEMMA, EXECUTED. `A => C => B`, and the refusal term is
+    /// `X && !A`, so wherever a job at the cell wants this def the def-scoped
+    /// decision is BIT-IDENTICAL to the whole-cell one. Asserted over the full
+    /// cross-product rather than by example, because this is what proves the
+    /// seed loop and the building-material shield cannot move.
+    #[test]
+    fn def_scoped_occupancy_is_a_noop_whenever_a_job_at_the_cell_wants_this_def() {
+        const D: &str = FARM_SEED_ITEM;
+        let others: [Option<&str>; 3] = [None, Some(FARM_WHEAT_ITEM), Some(D)];
+        let mut saw_wanted = 0;
+        let mut saw_differ = 0;
+        for claimed_a in [false, true] {
+            for req_a in others {
+                for claimed_b in [false, true] {
+                    for req_b in others {
+                        let jobs = [(claimed_a, req_a), (claimed_b, req_b)];
+                        let (wanted, starved) = haul_cell_occupancy(jobs, D);
+                        // B: a job stands here. Always true here (2 jobs).
+                        let whole_cell = true;
+                        let new = haul_candidate_admitted(false, false, wanted, starved);
+                        let old = haul_candidate_admitted(false, false, whole_cell, starved);
+                        if wanted {
+                            saw_wanted += 1;
+                            assert_eq!(
+                                new, old,
+                                "LEMMA VIOLATED: a job at this cell wants {D}, so the decision                                  must be identical to whole-cell occupancy. jobs={jobs:?}"
+                            );
+                        } else if new != old {
+                            saw_differ += 1;
+                        }
+                    }
+                }
+            }
+        }
+        // Non-vacuity in BOTH directions: the lemma must have been exercised,
+        // and the fix must actually change something.
+        assert!(saw_wanted > 0, "the lemma branch never ran — the test proves nothing");
+        assert!(
+            saw_differ > 0,
+            "the def-scoped term never differed from whole-cell — the fix is inert"
+        );
+    }
+
+    /// The claimed-job shield is the thing whole-cell occupancy was protecting.
+    /// It must survive, or this fix trades a famine for stripped work sites.
+    #[test]
+    fn a_claimed_job_still_shields_the_material_it_requires_from_hauling() {
+        let claimed_sow = [(true, Some(FARM_SEED_ITEM))];
+        let (wanted, starved) = haul_cell_occupancy(claimed_sow, FARM_SEED_ITEM);
+        assert!(wanted, "the job does want this def");
+        assert!(!starved, "it is CLAIMED, so the starved exemption must not fire");
+        assert!(
+            !haul_candidate_admitted(false, false, wanted, starved),
+            "a colonist is working here and needs this material — hauling it away is the              defect the occupancy clause exists to prevent"
+        );
+    }
+
+    /// Not farm-specific: the same shape strands a cooked dish under the cook
+    /// job standing on its own station.
+    #[test]
+    fn a_cooked_dish_escapes_the_cook_job_standing_on_its_own_station() {
+        let cook = [(false, Some(FARM_WHEAT_ITEM))];
+        let (wanted, starved) = haul_cell_occupancy(cook, COOKED_DISH_ITEM);
+        assert!(!wanted, "the cook wants raw wheat, not the dish it produced");
+        assert!(
+            haul_candidate_admitted(false, false, wanted, starved),
+            "the finished dish must leave the station it was cooked on"
         );
     }
 
