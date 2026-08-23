@@ -51,7 +51,7 @@ run_one() {
   tries=0
   until cerr=$("$GCLOUD" compute instances create "$name" --zone="$ZONE" --source-machine-image="$IMAGE" \
         --machine-type="$MACHINE" --metadata-from-file=ssh-keys="$SSHKEYS_FILE" 2>&1 >/dev/null); do
-    tries=$((tries + 1)); [ "$tries" -ge 4 ] && { echo "CREATE_FAIL vm=$k :: ${cerr##*ERROR: }"; return; }
+    tries=$((tries + 1)); [ "$tries" -ge 4 ] && { echo "CREATE_FAIL vm=$k :: $(echo "$cerr" | tr '\n' ' ' | cut -c1-300)"; return; }
     sleep $((tries * 15))
   done
   ip=$("$GCLOUD" compute instances describe "$name" --zone="$ZONE" --format="value(networkInterfaces[0].accessConfigs[0].natIP)")
