@@ -68,7 +68,20 @@ alarm_raised=$(grep -c "ALARM RAISED" "$V.w")
 shelters=$(grep -c "civilian takes shelter" "$V.w")
 shelter_released=$(grep -c "shelter released" "$V.w")
 alarm_over=$(grep -c "ALARM over" "$V.w")
-echo "@@@LEG slot=$SLOT arm='$ARM_ENV' fence=$FENCE longest_search=$lt top3_share=$top3 exhaust=$ex terminal_releases=${term:-NA} stuck=$stuck sleepers=$sleepers slept=$slept ate=$ate unreachable=$unreach arrived=$arrived died=$died outright=$outright belongings_drops=$bel_drops belongings_items=$bel_items final=${final_census:-NA} extinct=$extinct downed_plant=$downed_plant rescue_posted=$rescue_posted rescued=$rescued alarm_raised=$alarm_raised shelters=$shelters shelter_released=$shelter_released alarm_over=$alarm_over@@@"
+# EVENING LIFE (looking-sweep rows): the lounge trigger, arrivals AT the
+# gathering ring (distinct seats = the anti-stack pin, judged as distinct
+# arrival cells), completed breaks. gather_seats counts DISTINCT Recreate
+# arrival positions — 1 means stacking, ≈colony size means a real circle.
+lounges=$(grep -c "leisure lounge" "$V.w")
+lounge_arrivals=$(grep "arrived at job site" "$V.w" | grep -c "Recreate")
+gather_seats=$(grep "arrived at job site" "$V.w" | grep "Recreate" | grep -oE "pos=Vec3 \{ x: [0-9-]+, y: [0-9-]+" | sort -u | wc -l)
+break_over=$(grep -c "break over" "$V.w")
+# REVIVAL INSTRUMENT: every HelpDownedEvent names its helper — nonzero
+# helped with zero bastion RESCUED lines = vanilla agents revive organically
+# (the mystery named); helper=None would be a helperless refresh.
+helped=$(grep -c "HelpDownedEvent fired" "$V.w")
+helped_by_none=$(grep "HelpDownedEvent fired" "$V.w" | grep -c "helper=None")
+echo "@@@LEG slot=$SLOT arm='$ARM_ENV' fence=$FENCE longest_search=$lt top3_share=$top3 exhaust=$ex terminal_releases=${term:-NA} stuck=$stuck sleepers=$sleepers slept=$slept ate=$ate unreachable=$unreach arrived=$arrived died=$died outright=$outright belongings_drops=$bel_drops belongings_items=$bel_items final=${final_census:-NA} extinct=$extinct downed_plant=$downed_plant rescue_posted=$rescue_posted rescued=$rescued alarm_raised=$alarm_raised shelters=$shelters shelter_released=$shelter_released alarm_over=$alarm_over lounges=$lounges lounge_arrivals=$lounge_arrivals gather_seats=$gather_seats break_over=$break_over helped=$helped helped_by_none=$helped_by_none@@@"
 # The chronicle half (Death records + actors incl. witnesses) via the real
 # wire path — one driver turn against the still-live world. Failure to turn
 # is reported, never silent: the chronicle bar reads VOID for that leg.
