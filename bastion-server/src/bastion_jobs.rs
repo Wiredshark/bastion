@@ -936,6 +936,37 @@ pub(crate) fn claim_release_should_clear(claimed_by_us: bool, _unreachable: bool
 /// The wounded case does not route through this — `flee_hurt` keeps its own
 /// unconditional health check. Kill switch `BASTION_NO_FIX_FLEE_AGGRO=1`
 /// restores the old hostility-only predicate for the same-binary A/B.
+/// ★★ WHAT A JOB MAY PROTECT IN A COLONIST'S BAG — the guard that failed
+/// three ways before landing here (v1: protected your own meal from you,
+/// colony-wide eat death; v2: excluded the EatFrom family, meal-sniping;
+/// v3: def-protected OTHER colonists' reservations from your bag — the
+/// narrator sweep filmed four colonists pinned at hunger 0.0000 for five
+/// minutes beside 135 stored meals, mutually def-locked). The granularity
+/// truth: ground reservations are ITEM-keyed and other colonists' cargo
+/// rides in THEIR bags, so nothing anyone else claims can bind MY
+/// inventory. The one legitimate bag-protectee is MY OWN in-flight
+/// material cargo — the mushroom I am carrying to the cook. Self-jobs
+/// never protect (my own EatFrom's def IS my meal; Rest/Despond/Recreate/
+/// Guard carry no cargo).
+pub(crate) fn cargo_protected_defs<'a>(
+    jobs: impl Iterator<Item = &'a Job>,
+    me: Option<Uid>,
+) -> std::collections::HashSet<&'a str> {
+    jobs.filter(|j| me.is_some() && j.claimed_by == me)
+        .filter(|j| {
+            !matches!(
+                j.kind,
+                common::bastion::JobKind::RestAt { .. }
+                    | common::bastion::JobKind::EatFrom { .. }
+                    | common::bastion::JobKind::Despond { .. }
+                    | common::bastion::JobKind::Recreate { .. }
+                    | common::bastion::JobKind::Guard { .. }
+            )
+        })
+        .filter_map(|j| j.required_item)
+        .collect()
+}
+
 /// ★ GOAL-VERDICT TTL: 2 sim-minutes at 30 TPS. Terrain changes (a dug
 /// passage, an opened door) can make a proven-unreachable goal reachable, so
 /// a verdict expires on its own clock — short enough that the world moving
@@ -21279,41 +21310,35 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // the self-job family outright (their required_item
                         // IS food someone is on their way to eat).
                         let me = uids.get(entity).copied();
-                        let protected: std::collections::HashSet<&str> = board
-                            .jobs
-                            .values()
-                            .filter(|j| j.claimed_by.is_some() || j.reservation.is_some())
-                            .filter(|j| j.claimed_by != me)
-                            // ★ EatFrom REMOVED FROM THIS EXCLUSION (2026-08-21).
-                            // The engine names the symptom itself: "food sniped
-                            // -- eat moot", 18 times in one game-day against 46
-                            // eat jobs minted and only 9 completed. A colonist
-                            // reserves a meal, walks to it, and someone else eats
-                            // it on the way.
-                            //
-                            // This exclusion was added to stop a colonist
-                            // protecting their OWN meal from themselves -- a real
-                            // bug, recorded in the self-catch above. But the
-                            // filter directly above already solves that:
-                            // `j.claimed_by != me` drops this colonist's own
-                            // jobs. Excluding the whole EatFrom family on top
-                            // then strips protection from EVERY OTHER colonist's
-                            // reserved meal, which is the sniping.
-                            //
-                            // An over-correction that fixed one direction and
-                            // opened the other. RestAt/Despond/Recreate stay
-                            // excluded: they do not reserve food that another
-                            // colonist could take.
-                            .filter(|j| {
-                                !matches!(
-                                    j.kind,
-                                    common::bastion::JobKind::RestAt { .. }
-                                        | common::bastion::JobKind::Despond { .. }
-                                        | common::bastion::JobKind::Recreate { .. }
-                                )
-                            })
-                            .filter_map(|j| j.required_item)
-                            .collect();
+                        // ★★ THE THIRD FAILURE MODE OF THIS GUARD, AND THE
+                        // GRANULARITY LESSON (narrator sweep, 2026-08-23):
+                        // v1 protected every claimed def incl. your own meal
+                        // (colony-wide eat death, self-caught). v2 excluded
+                        // the EatFrom family (meal-sniping, 18/day). v3
+                        // protected OTHER colonists' defs from your bag — and
+                        // the sweep filmed the result: FOUR colonists pinned
+                        // at hunger 0.0000 for five-plus minutes beside 135
+                        // stored meals, arriving at food again and again (8
+                        // 'ate' events against dozens of arrivals), because
+                        // every hungry colonist's EatFrom reservation
+                        // def-locked every OTHER hungry colonist's inventory.
+                        // Mutual starvation as a deadlock, not a shortage.
+                        //
+                        // The root error was GRANULARITY, all three times:
+                        // ground reservations are ITEM-keyed (the census
+                        // prints item=18547 held_by EatFrom{Uid(18547)}), so
+                        // a def-keyed guard over MY BAG cannot express them —
+                        // another colonist's claim on a ground item is no
+                        // claim on my inventory, and their fetch cargo rides
+                        // in THEIR bag, not mine. The only thing in my bag a
+                        // job can legitimately protect is MY OWN in-flight
+                        // material cargo (don't eat the mushroom you are
+                        // carrying to the cook). Protect exactly that.
+                        // (Ground-meal sniping is a SEPARATE mechanism — the
+                        // whole-stack pickup, split_off_one firing zero — and
+                        // gets its own row; this guard never could fix it.)
+                        let protected: std::collections::HashSet<&str> =
+                            cargo_protected_defs(board.jobs.values(), me);
                         let ate: Option<&'static str> =
                             inventories.get_mut(entity).and_then(|mut inv| {
                                 // The def rides out as the FOOD_DEFS
@@ -32493,6 +32518,54 @@ mod tests {
             board.jobs.contains_key(&painted_id),
             "a player-painted post must survive the drive's exit sweep"
         );
+    }
+
+    /// ★★ THE BAG GUARD'S THREE GRAVES, all pinned (narrator sweep,
+    /// 2026-08-23): v1 protected your own meal from you; v2 let ground
+    /// meals be sniped (separate mechanism, separate row); v3 def-locked
+    /// hungry colonists against EACH OTHER — four pinned at hunger 0.0000
+    /// beside 135 stored meals. The law that survives: nothing anyone ELSE
+    /// claims can bind MY inventory; my own material cargo is the sole
+    /// bag-protectee.
+    #[test]
+    fn my_bag_answers_to_my_cargo_and_nobody_elses_claims() {
+        let me = Uid(NonZeroU64::new(11).unwrap());
+        let other = Uid(NonZeroU64::new(12).unwrap());
+        let mut board = JobBoard::default();
+
+        // My in-flight material cargo: a claimed job carrying mushrooms.
+        let cargo_id = board.insert_rest_job(Vec3::new(1, 1, 1), me); // shape donor
+        {
+            let j = board.jobs.get_mut(&cargo_id).unwrap();
+            j.kind = common::bastion::JobKind::Haul {
+                item: other, // arbitrary uid; kind just must be material
+                destination: 0,
+            };
+            j.required_item = Some("common.items.food.mushroom");
+        }
+        // My own EatFrom (v1's grave): its def must NOT protect.
+        let my_eat = board.insert_eat_job(other, Vec3::new(2, 2, 2), me, 1, "common.items.food.apple");
+        let _ = my_eat;
+        // ANOTHER colonist's EatFrom on cheese (v3's grave): no claim on me.
+        let their_eat =
+            board.insert_eat_job(other, Vec3::new(3, 3, 3), other, 2, "common.items.food.cheese");
+        let _ = their_eat;
+
+        let protected = cargo_protected_defs(board.jobs.values(), Some(me));
+        assert!(
+            protected.contains("common.items.food.mushroom"),
+            "my own in-flight cargo is protected from my appetite"
+        );
+        assert!(
+            !protected.contains("common.items.food.apple"),
+            "v1's grave: my own meal must never be protected from me"
+        );
+        assert!(
+            !protected.contains("common.items.food.cheese"),
+            "v3's grave: another colonist's reservation is no claim on MY bag —              this exact case starved four colonists beside a full pantry"
+        );
+        // And nobody = nothing: an unresolvable uid protects nothing.
+        assert!(cargo_protected_defs(board.jobs.values(), None).is_empty());
     }
 
     /// ★ GOAL-VERDICT pins (PREREG-GOAL-VERDICT-FEEDBACK), all four
