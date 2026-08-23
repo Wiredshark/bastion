@@ -2931,6 +2931,51 @@ pub const BED_REST_RECOVERY_PER_SEC: f32 = 0.02;
 /// `fetch_budget_refuses_the_stall_but_admits_a_real_fetch` pins BOTH ends.
 pub const FETCH_BUDGET_SECS: f64 = 90.0;
 
+/// A fetch whose body has STOPPED MOVING gives up after this long, instead of
+/// serving the full [`FETCH_BUDGET_SECS`].
+///
+/// ★ WHY (2026-08-23, from the flight tape, not a story). A frozen colonist
+/// held ONE job — 3786 — through a 1,485-tick freeze, pressed against a wall
+/// (`on_wall=[-1,0,0]`), `chaser_path_state='Exhausted'`, velocity ~0, with a
+/// live steer commanded INTO the wall and `move_z=1.24` feeding the climb
+/// machinery. The stuck watchdog never fired because it is disabled during a
+/// fetch BY DESIGN (walking to the pantry must not read as failing to reach
+/// the site), so the only clock on that state was the 90s fetch budget — a
+/// starving colonist's whole retry cycle was 90s of wall-pressing plus the
+/// cooldown.
+///
+/// The tape also showed the shape is colony-wide: 82% of frozen Traveling
+/// samples are `Exhausted`, and 89% of MOVING ones are too — the colony walks
+/// on the chaser's partial-path fallback almost always, and freezes exactly
+/// where that fallback meets a wall.
+///
+/// A fetch that is WALKING covers metres per second; one that has not moved a
+/// block in fifteen seconds is not slow, it is wedged, and every further
+/// second it serves is spent pressing a wall and feeding Wallrun. The stall
+/// clock resets on any >=1 block of displacement, so a genuinely slow, queued
+/// or detouring fetch is untouched — this is a freeze detector, not a speed
+/// floor. Pinned both ways by `a_wedged_fetch_expires_early_but_a_slow_walk_does_not`.
+pub const FETCH_STALL_SECS: f64 = 15.0;
+
+/// Has this fetch stopped moving? Pure so it can be pinned.
+///
+/// `last` is (position at the last progress mark, time of that mark). Progress
+/// = >=1 block of displacement since the mark — the same 1-block hysteresis the
+/// travel watchdog uses, and for the same reason: sub-block physics wobble must
+/// not reset a stall clock.
+pub fn fetch_stalled(last: Option<(Vec3<f32>, f64)>, pos: Vec3<f32>, now: f64) -> (bool, (Vec3<f32>, f64)) {
+    match last {
+        Some((mark_pos, mark_t)) => {
+            if pos.distance_squared(mark_pos) >= 1.0 {
+                (false, (pos, now))
+            } else {
+                (now - mark_t > FETCH_STALL_SECS, (mark_pos, mark_t))
+            }
+        },
+        None => (false, (pos, now)),
+    }
+}
+
 /// The effective fetch budget, with a test-only env override.
 ///
 /// ★ EXISTS SO THE CONTROL ARM IS THE SAME BINARY. Every measurement in this
@@ -7280,6 +7325,11 @@ pub struct JobBoard {
     /// budget every time the job changed hands — which is exactly how a stuck
     /// fetch would evade its own watchdog.
     fetch_started: HashMap<JobId, f64>,
+    /// (position, time) of each fetching job's last >=1-block displacement —
+    /// the stall clock for [`FETCH_STALL_SECS`]. Job-keyed like
+    /// `fetch_started`, and for the same reason: the reservation belongs to
+    /// the job and must not restart its clock on a re-claim.
+    fetch_progress: HashMap<JobId, (Vec3<f32>, f64)>,
     /// bastion (B7-3): when each colonist's mood first dropped below the
     /// break threshold (cleared on recovery) — the sustained-window arm
     /// of the breakdown staircase.
@@ -17278,6 +17328,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // on a fetch that had barely begun. A watchdog that
                             // fires on the innocent is worse than none.
                             board.fetch_started.remove(&active.job);
+                            board.fetch_progress.remove(&active.job);
                         }
                         if !carrying {
                             let item_uid = board.reservations.get(&rid).copied();
@@ -17298,7 +17349,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     let started =
                                         *board.fetch_started.entry(active.job).or_insert(time.0);
                                     let fetch_budget = fetch_budget_secs();
-                                    if time.0 - started > fetch_budget {
+                                    // ★ THE STALL CLOCK. The stuck watchdog is
+                                    // off during a fetch by design, so without
+                                    // this a WEDGED fetch — body pressed on a
+                                    // wall, chaser Exhausted, velocity zero —
+                                    // served the whole 90s budget doing pure
+                                    // harm. Progress (>=1 block) resets it, so
+                                    // a slow or queued fetch is untouched.
+                                    let (stalled, mark) = fetch_stalled(
+                                        board.fetch_progress.get(&active.job).copied(),
+                                        pos.0,
+                                        time.0,
+                                    );
+                                    board.fetch_progress.insert(active.job, mark);
+                                    if stalled {
+                                        tracing::warn!(
+                                            job = active.job,
+                                            kind = ?job.kind,
+                                            feet = ?pos.0.map(|e| e.floor() as i32),
+                                            secs = time.0 - mark.1,
+                                            "bastion: FETCH STALLED — no displacement, expiring                                              early instead of serving the full budget"
+                                        );
+                                    }
+                                    if stalled || time.0 - started > fetch_budget {
                                         // Release through the SAME field-split
                                         // path the vanished-item branch uses —
                                         // a raw `.remove` leaves
@@ -17317,6 +17390,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             }
                                         }
                                         board.fetch_started.remove(&active.job);
+                            board.fetch_progress.remove(&active.job);
                                         tracing::warn!(
                                             job = active.job,
                                             kind = ?job.kind,
@@ -28936,6 +29010,53 @@ mod tests {
             active(t, fine.0, fine.1) && !active(t, dire.0, dire.1),
             "at t+10s the fed colonist must still be gated and the starving one must not —              if these agree the band-scaling is inert, which is the bug being fixed"
         );
+    }
+
+    /// ★ A WEDGED FETCH EXPIRES EARLY; A SLOW ONE DOES NOT.
+    ///
+    /// The stuck watchdog is off during a fetch by design, so the stall clock
+    /// is the ONLY thing separating "walking to the pantry" from "pressed on a
+    /// wall with the chaser Exhausted". Both directions matter: without the
+    /// early expiry a wedged colonist serves 90 seconds of wall-pressing per
+    /// attempt (measured: one job held through a 1,485-tick freeze); with an
+    /// over-eager one, every queued or detouring fetch is cancelled and the
+    /// colony starves from the other side.
+    #[test]
+    fn a_wedged_fetch_expires_early_but_a_slow_walk_does_not() {
+        let p0 = Vec3::new(100.0_f32, 100.0, 40.0);
+
+        // First sighting: never stalled, mark is set.
+        let (st, mark) = fetch_stalled(None, p0, 10.0);
+        assert!(!st, "a fetch's first tick cannot be a stall");
+        assert_eq!(mark, (p0, 10.0));
+
+        // ── THE WEDGE. Same block, sub-block wobble only, clock runs out.
+        let wobble = p0 + Vec3::new(0.3, -0.2, 0.0);
+        let (st, _) = fetch_stalled(Some(mark), wobble, 10.0 + FETCH_STALL_SECS + 1.0);
+        assert!(
+            st,
+            "no displacement for {FETCH_STALL_SECS}s must expire — this is the colonist              pressed on a wall, chaser Exhausted, serving out a 90s budget doing pure harm"
+        );
+
+        // ── SUB-BLOCK WOBBLE MUST NOT RESET THE CLOCK, or physics jitter makes
+        // the stall undetectable — the exact leak that killed the E2 re-claim
+        // bar. The mark must be UNCHANGED after a wobble.
+        let (_, mark2) = fetch_stalled(Some(mark), wobble, 12.0);
+        assert_eq!(mark2, mark, "sub-block wobble reset the stall mark");
+
+        // ── THE SLOW WALK. One block of real progress resets the clock, so a
+        // queued, detouring, or merely slow fetch is untouched.
+        let step = p0 + Vec3::new(1.2, 0.0, 0.0);
+        let (st, mark3) = fetch_stalled(Some(mark), step, 10.0 + FETCH_STALL_SECS + 5.0);
+        assert!(!st, "a fetch that moved a block is WALKING, however slowly");
+        assert_eq!(mark3, (step, 10.0 + FETCH_STALL_SECS + 5.0), "progress must re-mark");
+
+        // ── ORDERING. The stall clock must be meaningfully shorter than the
+        // budget (or it changes nothing) and longer than the watchdog it
+        // replaces during fetches (or it re-creates the false strikes the
+        // fetch exemption exists to prevent).
+        assert!(FETCH_STALL_SECS < FETCH_BUDGET_SECS / 2.0);
+        assert!(FETCH_STALL_SECS > STUCK_TIMEOUT as f64);
     }
 
     /// ★ THE HOUR-OF-DAY CONVERSION, pinned because everything above keys on it
