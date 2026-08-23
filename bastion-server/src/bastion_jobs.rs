@@ -17019,7 +17019,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // bump it and let the next pass work on the real
                         // top. Bounded by the bed's actual height.
                         if crop.is_filled() {
-                            board.farm_column_z.insert((x, y), gz + 1);
+                            // ★ BUMP ONLY THROUGH SOIL-LIKE BLOCKS (slot-97:
+                            // plot paint crossing a WALL made this climb one
+                            // block per pass to z=191 — ten above the plain —
+                            // and post till jobs on the roof, 497 Longest
+                            // searches chasing one of them). A raised BED is
+                            // Earth/Grass and earns the bump; a wall's Wood or
+                            // stone is no field and the column is skipped
+                            // permanently, the same "no field under a hole"
+                            // treatment as an unresolved column.
+                            if is_surface_terrain(crop.kind()) {
+                                board.farm_column_z.insert((x, y), gz + 1);
+                            }
                             continue;
                         }
                         // Plain air reads Some(SpriteKind::Empty) — the
@@ -17902,6 +17913,46 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // Same band and same need: lower value first.
                         .then(a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal))
                 });
+                // ★ LEISURE LOUNGE — A SCHEDULE BEHAVIOR, NOT A NEED, so it
+                // must NOT wait behind the Personal gate below (found live,
+                // 2026-08-23: recreate=0 across three multi-day soaks; the
+                // arbiter's severity read rest/hunger only, so a content
+                // colonist never entered Personal in the evening and Ben's
+                // lounging ruling — vanilla villagers idling in the plaza,
+                // "this needs to be in our colony" — was dead code). During
+                // the Leisure block a job-free colonist takes the break
+                // directly; needs still outrank (the rest/hunger candidates
+                // run in the same scan and this fires only when no active
+                // job is held), and the cooldown insertion keeps one break
+                // per window.
+                // ★ MOVED ABOVE THE EMPTY-CANDIDATES CONTINUE (probe on the
+                // first live evening: the continue below skips every colonist
+                // with no urgent needs — the lounge's entire audience — so
+                // the block never ran from its old position further down.
+                if recreation_enabled()
+                    && matches!(
+                        default_schedule_block(hour_of_day(
+                            rtsim.rt_state().data().time_of_day.0
+                        )),
+                        ScheduleBlock::Leisure
+                    )
+                    && active_jobs.get(entity).is_none()
+                    && !board
+                        .preempt_cooldown
+                        .get(uid)
+                        .is_some_and(|until| time.0 < *until)
+                {
+                    let until = time.0 + RECREATION_BREAK_SECS;
+                    info!(
+                        colonist = %uid,
+                        "bastion: leisure lounge — evening break (schedule, not need)"
+                    );
+                    preempt_pending.push((entity, *uid, PendingNeed::Recreate(until)));
+                    board
+                        .preempt_cooldown
+                        .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
+                    continue;
+                }
                 if candidates.is_empty() {
                     // AUTON-2 unification (site 4/6, 2026-08-09): a
                     // SUSPENDED RestAt/EatFrom job whose need resolved
@@ -17991,42 +18042,6 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     if need_skip_diag {
                         info!(colonist = %uid, "NEED-SKIP-DIAG reason=already_on_need_job");
                     }
-                    continue;
-                }
-                // ★ LEISURE LOUNGE — A SCHEDULE BEHAVIOR, NOT A NEED, so it
-                // must NOT wait behind the Personal gate below (found live,
-                // 2026-08-23: recreate=0 across three multi-day soaks; the
-                // arbiter's severity read rest/hunger only, so a content
-                // colonist never entered Personal in the evening and Ben's
-                // lounging ruling — vanilla villagers idling in the plaza,
-                // "this needs to be in our colony" — was dead code). During
-                // the Leisure block a job-free colonist takes the break
-                // directly; needs still outrank (the rest/hunger candidates
-                // run in the same scan and this fires only when no active
-                // job is held), and the cooldown insertion keeps one break
-                // per window.
-                if recreation_enabled()
-                    && matches!(
-                        default_schedule_block(hour_of_day(
-                            rtsim.rt_state().data().time_of_day.0
-                        )),
-                        ScheduleBlock::Leisure
-                    )
-                    && active_jobs.get(entity).is_none()
-                    && !board
-                        .preempt_cooldown
-                        .get(uid)
-                        .is_some_and(|until| time.0 < *until)
-                {
-                    let until = time.0 + RECREATION_BREAK_SECS;
-                    info!(
-                        colonist = %uid,
-                        "bastion: leisure lounge — evening break (schedule, not need)"
-                    );
-                    preempt_pending.push((entity, *uid, PendingNeed::Recreate(until)));
-                    board
-                        .preempt_cooldown
-                        .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
                     continue;
                 }
                 // AUTON-2 unification (row 50, 2026-08-08): job-CREATION
