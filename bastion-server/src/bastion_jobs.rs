@@ -1098,6 +1098,182 @@ pub fn connectivity_refuses(
 /// Turning it on is one env var and the machinery, tests and guards are all in
 /// place; what is missing is knowing WHICH cells it wrongly excludes, and that
 /// needs the refused job positions logged, not another story.
+/// ★ COMPONENT LABELS, v1 (2026-08-23) — claim-time reachability, the
+/// prior-art cure for the measured root: EIGHT doomed cells produced 74% of
+/// all Longest-tier pathfinder polls because nothing ever asked "can anyone
+/// reach this?" before handing it to A*. DF answers with per-tile walking
+/// components; Banished with flood-fill accessibility ids. This is that,
+/// scoped to v1: SHADOW-ONLY (nothing refuses yet), seeded from EVERY
+/// colonist in Uid order, fail-open at every point it cannot judge.
+///
+/// Differences from the old single-set flood, each fixing a recorded defect:
+///   - MULTI-SEED with LABELS: the old index was one arbitrary colonist's
+///     blob (`join().next()`), so `connectivity_refuses` was a membership
+///     test against whoever happened to be first — a stranded seed refused
+///     everything. Labels make it a SAME-COMPONENT test, claimant included.
+///   - FAIL-OPEN THREE-STATE: unlabelled-but-standable in a loaded chunk is
+///     UNREACHABLE (refuse); anything the index cannot resolve — unloaded,
+///     unstandable stance, outside the box, untrusted build — is UNKNOWN
+///     (admit). The 47% over-refusal shipped by the old gate came from
+///     exactly this distinction not existing.
+///   - Deterministic by construction: seeds sorted by Uid, `const` neighbour
+///     order, BFS on a Vec queue; labels assigned in seed-encounter order.
+///     The map is point-queried only, never iterated for a decision.
+pub struct ComponentLabels {
+    pub origin: Vec3<i32>,
+    pub radius: i32,
+    /// label per visited standing cell; absent = UNKNOWN or unreachable —
+    /// disambiguated at query time by standability + loadedness.
+    pub labels: std::collections::HashMap<Vec3<i32>, u16>,
+    /// sizes[label-1] = cells carrying that label.
+    pub sizes: Vec<u32>,
+    pub cap_hit: bool,
+}
+
+/// One decision, with the fail-open reason kept so the shadow counters can
+/// prove the gate is not silently refusing everything.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConnDecision {
+    Refuse,
+    AdmitSameComponent,
+    AdmitUntrusted,
+    AdmitActorUnlabelled,
+    AdmitActorTiny,
+    AdmitStanceUnresolved,
+    AdmitOutsideBox,
+}
+
+const CONN_NEIGHBOURS: [(i32, i32); 4] = [(1, 0), (-1, 0), (0, 1), (0, -1)];
+
+/// Flood every seed's walking component, labelling as it goes. `get` returns
+/// `None` for unloaded terrain — which simply ends expansion there (UNKNOWN,
+/// never a wall). Generic over the getter so the whole thing is testable on a
+/// closure world, per the coverage audit's finding that nothing here had ever
+/// touched terrain in a test.
+pub fn colony_component_labels(
+    get: impl Fn(Vec3<i32>) -> Option<common::terrain::Block>,
+    origin: Vec3<i32>,
+    radius: i32,
+    seeds: &[Vec3<i32>],
+    cap: usize,
+) -> ComponentLabels {
+    let passable = |c: Vec3<i32>| get(c).map(|b| !b.is_filled());
+    let standable = |c: Vec3<i32>| {
+        get(c - Vec3::unit_z()).is_some_and(|b| b.is_filled())
+            && passable(c) == Some(true)
+            && passable(c + Vec3::unit_z()) == Some(true)
+    };
+    let mut labels: std::collections::HashMap<Vec3<i32>, u16> =
+        std::collections::HashMap::new();
+    let mut sizes: Vec<u32> = Vec::new();
+    let mut cap_hit = false;
+    for seed in seeds {
+        // Snap the seed to a standable cell the way the old flood did.
+        let mut start = None;
+        for dz in [0, 1, -1, 2, -2, 3, -3, 4, -4] {
+            let c = *seed + Vec3::new(0, 0, dz);
+            if standable(c) {
+                start = Some(c);
+                break;
+            }
+        }
+        let Some(start) = start else { continue };
+        if labels.contains_key(&start) {
+            continue; // already inside an earlier seed's component
+        }
+        let label = (sizes.len() + 1) as u16;
+        sizes.push(0);
+        let mut queue = std::collections::VecDeque::new();
+        labels.insert(start, label);
+        sizes[label as usize - 1] += 1;
+        queue.push_back(start);
+        while let Some(c) = queue.pop_front() {
+            if labels.len() >= cap {
+                cap_hit = true;
+                break;
+            }
+            for (dx, dy) in CONN_NEIGHBOURS {
+                for dz in [0, 1, -1] {
+                    let n = c + Vec3::new(dx, dy, dz);
+                    if (n.x - origin.x).abs() > radius || (n.y - origin.y).abs() > radius {
+                        continue;
+                    }
+                    if labels.contains_key(&n) || !standable(n) {
+                        continue;
+                    }
+                    // Same symmetric headroom rule as the repaired
+                    // `conn_step_allowed`: the UPPER cell of a vertical step
+                    // needs clearance, or the edge is one-way and must not
+                    // be unioned.
+                    let upper = if dz < 0 { n } else { c };
+                    let headroom = passable(upper + Vec3::new(0, 0, 2)) == Some(true);
+                    if !conn_step_allowed(dz, headroom) {
+                        continue;
+                    }
+                    labels.insert(n, label);
+                    sizes[label as usize - 1] += 1;
+                    queue.push_back(n);
+                }
+            }
+        }
+        if cap_hit {
+            break;
+        }
+    }
+    ComponentLabels { origin, radius, labels, sizes, cap_hit }
+}
+
+/// Minimum cells in the CLAIMANT's component before its refusals count — the
+/// direct inversion of the stranded-seed bug: a colonist on a 4-cell roof
+/// refuses NOTHING instead of everything.
+pub const CONN_MIN_ACTOR_COMPONENT: u32 = 400;
+
+/// The claim-time decision. Every arm that cannot positively establish
+/// "both sides resolved, components differ" ADMITS, with the reason kept.
+pub fn labelled_refusal(
+    idx: &ComponentLabels,
+    trusted: bool,
+    claimant_feet: Vec3<i32>,
+    stance: Vec3<i32>,
+    stance_standable_hint: Option<bool>,
+) -> ConnDecision {
+    if !trusted || idx.cap_hit {
+        return ConnDecision::AdmitUntrusted;
+    }
+    let inside = |c: Vec3<i32>| {
+        (c.x - idx.origin.x).abs() < idx.radius && (c.y - idx.origin.y).abs() < idx.radius
+    };
+    if !inside(claimant_feet) || !inside(stance) {
+        return ConnDecision::AdmitOutsideBox;
+    }
+    let label_of = |c: Vec3<i32>| {
+        [0, -1, 1]
+            .into_iter()
+            .find_map(|dz| idx.labels.get(&(c + Vec3::new(0, 0, dz))).copied())
+    };
+    let Some(actor) = label_of(claimant_feet) else {
+        return ConnDecision::AdmitActorUnlabelled;
+    };
+    if idx.sizes.get(actor as usize - 1).copied().unwrap_or(0) < CONN_MIN_ACTOR_COMPONENT {
+        return ConnDecision::AdmitActorTiny;
+    }
+    match label_of(stance) {
+        Some(l) if l == actor => ConnDecision::AdmitSameComponent,
+        Some(_) => ConnDecision::Refuse,
+        None => {
+            // Unlabelled: unreachable ONLY if the stance provably resolves to
+            // a standing cell the flood could have reached — the caller tells
+            // us whether it is standable on loaded terrain. Anything else is
+            // UNKNOWN, and unknown admits.
+            if stance_standable_hint == Some(true) {
+                ConnDecision::Refuse
+            } else {
+                ConnDecision::AdmitStanceUnresolved
+            }
+        },
+    }
+}
+
 pub fn connectivity_gate_enabled() -> bool {
     static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *V.get_or_init(|| std::env::var_os("BASTION_CONNECTIVITY_GATE").is_some())
@@ -7159,6 +7335,11 @@ pub struct JobBoard {
     /// to the thing it obviously chooses.
     pub start_site_adopt_target: Option<Vec2<i32>>,
     pub connected_cells: std::collections::HashSet<Vec3<i32>>,
+    /// v1 component labels (shadow-only) — see [`ComponentLabels`].
+    pub component_labels: Option<ComponentLabels>,
+    /// (refusals, admits-by-reason x5, same-component) shadow counters since
+    /// the last census emit, so the fail-open ladder is provable from a log.
+    pub shadow_conn: [u32; 7],
     /// Tick the set above was last rebuilt. Terrain changes as colonists mine
     /// and build, so a stale edge costs one failed claim — not a permanent
     /// wrong answer.
@@ -26034,6 +26215,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             } else {
                 false // the whole set dormant — flags hold.
             };
+            if board.shadow_conn.iter().any(|c| *c > 0) {
+                info!(
+                    refuse = board.shadow_conn[0],
+                    same_component = board.shadow_conn[1],
+                    admit_untrusted = board.shadow_conn[2],
+                    admit_actor_unlabelled = board.shadow_conn[3],
+                    admit_actor_tiny = board.shadow_conn[4],
+                    admit_stance_unresolved = board.shadow_conn[5],
+                    admit_outside_box = board.shadow_conn[6],
+                    "bastion: CONN-SHADOW census — what the labelled gate WOULD have done"
+                );
+                board.shadow_conn = [0; 7];
+            }
             // Prune decayed claim-penalty records on the same 60-tick cadence
             // — a bounded sweep, order-independent (pure retain on decayed
             // value), so the map cannot grow with dead (colonist, job) pairs.
@@ -26980,6 +27174,41 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // untrusted, so an unbuilt or terrain-starved fill can never
                 // mass-refuse the board — see its own test, which pins that
                 // before this line was allowed to exist.
+                // ── v1 SHADOW: score the labelled decision for every
+                // candidate, count it, refuse NOTHING. The counters prove the
+                // fail-open ladder before any arm is allowed to bite.
+                if let Some(idx) = board.component_labels.as_ref() {
+                    let trusted = connectivity_is_trusted(
+                        idx.labels.len(),
+                        board.connectivity_prev_cells,
+                    );
+                    let feet_i = pos.0.map(|e| e.floor() as i32);
+                    let stance = job.pos + Vec3::unit_z();
+                    let hint = terrain
+                        .get(job.pos)
+                        .ok()
+                        .map(|b| b.is_filled())
+                        .and_then(|solid_below| {
+                            let feet_clear =
+                                terrain.get(stance).ok().map(|b| !b.is_filled())?;
+                            let head_clear = terrain
+                                .get(stance + Vec3::unit_z())
+                                .ok()
+                                .map(|b| !b.is_filled())?;
+                            Some(solid_below && feet_clear && head_clear)
+                        });
+                    let d = labelled_refusal(idx, trusted, feet_i, stance, hint);
+                    let slot = match d {
+                        ConnDecision::Refuse => 0,
+                        ConnDecision::AdmitSameComponent => 1,
+                        ConnDecision::AdmitUntrusted => 2,
+                        ConnDecision::AdmitActorUnlabelled => 3,
+                        ConnDecision::AdmitActorTiny => 4,
+                        ConnDecision::AdmitStanceUnresolved => 5,
+                        ConnDecision::AdmitOutsideBox => 6,
+                    };
+                    board.shadow_conn[slot] = board.shadow_conn[slot].saturating_add(1);
+                }
                 if connectivity_gate_enabled()
                     && connectivity_refuses(
                         &board.connected_cells,
@@ -27719,6 +27948,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     board.connectivity_prev_cells = prev;
                     board.connected_cells = cells;
                     board.connectivity_built_tick = tick.0;
+                    // ── v1 LABELS, same cadence, EVERY colonist as a seed in
+                    // Uid order (deterministic, and the claimant side of the
+                    // refusal is real instead of \"whoever the join met
+                    // first\"). Costs one more flood over the same box.
+                    let mut label_seeds: Vec<(u64, Vec3<i32>)> = (&colonists, &positions, &uids)
+                        .join()
+                        .map(|(_, p, u)| (u.0.get(), p.0.map(|e| e.floor() as i32)))
+                        .collect();
+                    label_seeds.sort_by_key(|(u, _)| *u);
+                    let seeds: Vec<Vec3<i32>> =
+                        label_seeds.into_iter().map(|(_, p)| p).collect();
+                    let idx = colony_component_labels(
+                        |c| terrain.get(c).ok().copied(),
+                        seed,
+                        CONNECTIVITY_RADIUS,
+                        &seeds,
+                        200_000,
+                    );
+                    info!(
+                        tick = tick.0,
+                        labels = idx.sizes.len(),
+                        labelled_cells = idx.labels.len(),
+                        largest = idx.sizes.iter().copied().max().unwrap_or(0),
+                        cap_hit = idx.cap_hit,
+                        "bastion: COMPONENT LABELS rebuilt (shadow) — one label per walking component, all colonists seeded"
+                    );
+                    board.component_labels = Some(idx);
                 }
             }
             // ★ THE RELEASE CENSUS (2026-08-22): the consumer
@@ -29226,6 +29482,165 @@ mod tests {
 
         // Calibration: cap stays in the score's currency (clump 12, depth 8).
         assert!(CLAIM_PENALTY_CAP <= 40.0, "cap has left the score's currency band");
+    }
+
+    /// Closure world for the label tests: a flat slab with optional walls.
+    fn label_world(
+        walls: &'static [(i32, i32)],
+        door: Option<(i32, i32)>,
+    ) -> impl Fn(Vec3<i32>) -> Option<common::terrain::Block> {
+        move |c: Vec3<i32>| {
+            use common::terrain::{Block, BlockKind};
+            if !(0..32).contains(&c.x) || !(0..32).contains(&c.y) || !(0..8).contains(&c.z) {
+                return None; // outside = unloaded = UNKNOWN
+            }
+            let solid = Block::new(BlockKind::Rock, Default::default());
+            let air = Block::air(common::terrain::sprite::SpriteKind::Empty);
+            if c.z == 0 {
+                return Some(solid); // floor
+            }
+            let is_wall = walls.contains(&(c.x, c.y)) && door != Some((c.x, c.y));
+            if is_wall && c.z <= 4 {
+                return Some(solid);
+            }
+            Some(air)
+        }
+    }
+
+    /// ★ TWO ROOMS SPLIT BY A WALL GET DIFFERENT LABELS; A DOOR MERGES THEM.
+    /// Both directions of the acceptance shape: the refusal half AND the
+    /// admit half, plus the door plant that proves the wall (not distance)
+    /// does the separating.
+    #[test]
+    fn two_components_refuse_across_the_wall_and_a_door_merges_them() {
+        // A full-height wall at x=16 splitting the slab.
+        const WALL: &[(i32, i32)] = &[
+            (16, 0), (16, 1), (16, 2), (16, 3), (16, 4), (16, 5), (16, 6), (16, 7),
+            (16, 8), (16, 9), (16, 10), (16, 11), (16, 12), (16, 13), (16, 14), (16, 15),
+            (16, 16), (16, 17), (16, 18), (16, 19), (16, 20), (16, 21), (16, 22), (16, 23),
+            (16, 24), (16, 25), (16, 26), (16, 27), (16, 28), (16, 29), (16, 30), (16, 31),
+        ];
+        let origin = Vec3::new(16, 16, 1);
+        let west = Vec3::new(4, 16, 1);
+        let east = Vec3::new(28, 16, 1);
+
+        let idx = colony_component_labels(label_world(WALL, None), origin, 30, &[west, east], 50_000);
+        assert_eq!(idx.sizes.len(), 2, "a full wall must yield exactly two components");
+        // Refusal half: east job from west claimant, stance standable.
+        let d = labelled_refusal(&idx, true, west, east + Vec3::unit_z() * 0, Some(true));
+        // stance passed as the standing cell itself here
+        let d = match d { ConnDecision::AdmitStanceUnresolved => labelled_refusal(&idx, true, west, east, Some(true)), other => other };
+        assert_eq!(d, ConnDecision::Refuse, "across a full wall must refuse");
+        // Admit half: same side.
+        assert_eq!(
+            labelled_refusal(&idx, true, west, Vec3::new(8, 20, 1), Some(true)),
+            ConnDecision::AdmitSameComponent,
+            "same room must admit"
+        );
+
+        // ★ THE DOOR PLANT: open one cell and the two labels must MERGE —
+        // proving the wall, not proximity, did the separating.
+        let idx2 =
+            colony_component_labels(label_world(WALL, Some((16, 16))), origin, 30, &[west, east], 50_000);
+        assert_eq!(idx2.sizes.len(), 1, "a door must merge the rooms into one component");
+        assert_eq!(
+            labelled_refusal(&idx2, true, west, east, Some(true)),
+            ConnDecision::AdmitSameComponent,
+            "with the door open the same pair must now admit — the 47% regression pin"
+        );
+    }
+
+    /// ★ A STRANDED CLAIMANT REFUSES NOTHING — the direct inversion of the
+    /// old arbitrary-seed bug, where one stranded colonist's blob refused the
+    /// whole board for everyone.
+    #[test]
+    fn a_tiny_actor_component_admits_everything() {
+        const WALL: &[(i32, i32)] = &[
+            (16, 0), (16, 1), (16, 2), (16, 3), (16, 4), (16, 5), (16, 6), (16, 7),
+            (16, 8), (16, 9), (16, 10), (16, 11), (16, 12), (16, 13), (16, 14), (16, 15),
+            (16, 16), (16, 17), (16, 18), (16, 19), (16, 20), (16, 21), (16, 22), (16, 23),
+            (16, 24), (16, 25), (16, 26), (16, 27), (16, 28), (16, 29), (16, 30), (16, 31),
+        ];
+        // Shrink the east side to a sliver by walling x=18 too: east component
+        // is 1 column wide = ~32 cells, far under CONN_MIN_ACTOR_COMPONENT.
+        const WALL2: &[(i32, i32)] = &[
+            (16, 0), (16, 1), (16, 2), (16, 3), (16, 4), (16, 5), (16, 6), (16, 7),
+            (16, 8), (16, 9), (16, 10), (16, 11), (16, 12), (16, 13), (16, 14), (16, 15),
+            (16, 16), (16, 17), (16, 18), (16, 19), (16, 20), (16, 21), (16, 22), (16, 23),
+            (16, 24), (16, 25), (16, 26), (16, 27), (16, 28), (16, 29), (16, 30), (16, 31),
+            (18, 0), (18, 1), (18, 2), (18, 3), (18, 4), (18, 5), (18, 6), (18, 7),
+            (18, 8), (18, 9), (18, 10), (18, 11), (18, 12), (18, 13), (18, 14), (18, 15),
+            (18, 16), (18, 17), (18, 18), (18, 19), (18, 20), (18, 21), (18, 22), (18, 23),
+            (18, 24), (18, 25), (18, 26), (18, 27), (18, 28), (18, 29), (18, 30), (18, 31),
+        ];
+        let _ = WALL;
+        let origin = Vec3::new(16, 16, 1);
+        let sliver = Vec3::new(17, 16, 1); // trapped between the two walls
+        let west = Vec3::new(4, 16, 1);
+        let idx =
+            colony_component_labels(label_world(WALL2, None), origin, 30, &[sliver, west], 50_000);
+        assert!(idx.sizes.len() >= 2);
+        assert_eq!(
+            labelled_refusal(&idx, true, sliver, west, Some(true)),
+            ConnDecision::AdmitActorTiny,
+            "a claimant in a tiny component must refuse NOTHING — it is the one that needs \
+             rescue, and the old gate inverted exactly this"
+        );
+    }
+
+    /// ★ UNKNOWN IS NOT A WALL. An unloaded stance (getter returns None) and
+    /// an unstandable stance both ADMIT; only a provably-standable,
+    /// provably-unreached stance refuses.
+    #[test]
+    fn unknown_admits_and_only_a_provable_island_refuses() {
+        let origin = Vec3::new(16, 16, 1);
+        let west = Vec3::new(4, 16, 1);
+        let idx = colony_component_labels(label_world(&[], None), origin, 30, &[west], 50_000);
+        // Outside the 32x32 world = unloaded: hint is None.
+        assert_eq!(
+            labelled_refusal(&idx, true, west, Vec3::new(100, 100, 1), None),
+            ConnDecision::AdmitOutsideBox,
+            "outside the box is UNKNOWN, and unknown admits"
+        );
+        // In-box, unlabelled, but hint says NOT standable -> admit.
+        assert_eq!(
+            labelled_refusal(&idx, true, west, Vec3::new(20, 20, 6), Some(false)),
+            ConnDecision::AdmitStanceUnresolved
+        );
+        // In-box, unlabelled, hint says standable -> the only honest refuse.
+        // (Simulate by asking about a cell the flood could not reach: none on
+        // an open slab, so fake it with an untrusted=false + a labelled world
+        // where we ask about a walled-off standable cell.)
+        const RING: &[(i32, i32)] = &[
+            (20, 19), (20, 21), (19, 20), (21, 20),
+            (19, 19), (19, 21), (21, 19), (21, 21),
+        ];
+        let idx2 = colony_component_labels(label_world(RING, None), origin, 30, &[west], 50_000);
+        assert_eq!(
+            labelled_refusal(&idx2, true, west, Vec3::new(20, 20, 1), Some(true)),
+            ConnDecision::Refuse,
+            "a standable cell walled off from every colonist is the one case that must refuse"
+        );
+        // And untrusted admits even that.
+        assert_eq!(
+            labelled_refusal(&idx2, false, west, Vec3::new(20, 20, 1), Some(true)),
+            ConnDecision::AdmitUntrusted
+        );
+    }
+
+    /// ★ DETERMINISM: seed order must not change the partition.
+    #[test]
+    fn label_partition_is_seed_order_independent() {
+        let origin = Vec3::new(16, 16, 1);
+        let a = Vec3::new(4, 16, 1);
+        let b = Vec3::new(28, 16, 1);
+        let w = label_world(&[], None);
+        let i1 = colony_component_labels(&w, origin, 30, &[a, b], 50_000);
+        let i2 = colony_component_labels(&w, origin, 30, &[b, a], 50_000);
+        // Open slab: both orders must find ONE component of identical size.
+        assert_eq!(i1.sizes.len(), 1);
+        assert_eq!(i2.sizes.len(), 1);
+        assert_eq!(i1.labels.len(), i2.labels.len(), "partition size must not depend on seed order");
     }
 
     /// ★ THE HOUR-OF-DAY CONVERSION, pinned because everything above keys on it
