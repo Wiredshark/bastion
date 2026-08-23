@@ -221,10 +221,11 @@ impl<S: Clone + Eq + Hash, H: BuildHasher + Clone> Astar<S, H> {
     /// token-bucket accounting).
     pub fn iters_consumed(&self) -> usize { self.iter }
 
-    /// bastion ledger #179 (test-only): the visited set — lets a falsifier
-    /// assert its stale-region precondition (that the phase-1 search
-    /// actually touched the decision surface the comparison rides on).
-    #[cfg(test)]
+    /// bastion ledger #179: the visited set — lets a falsifier assert its
+    /// stale-region precondition (that the phase-1 search actually touched
+    /// the decision surface the comparison rides on). No longer test-only:
+    /// the LONGEST-EXHAUST witness (PREREG-75K-FOR-24-BLOCKS) walks it at
+    /// exhaust, diag-gated, to report the explored-set shape.
     pub(crate) fn visited(&self) -> impl Iterator<Item = &S> { self.visited_nodes.keys() }
 
     /// To guarantee an optimal path the heuristic function needs to be

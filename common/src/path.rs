@@ -1600,6 +1600,19 @@ where
                     out
                 })
                 .unwrap_or_default();
+            // ★ THE EXPLORED-SET SHAPE (PREREG-75K-FOR-24-BLOCKS): the three
+            // numbers that separate the registered branches arithmetically.
+            // A: distinct_cells ≈ the whole reachable region + town-scale
+            //    bbox → the goal is unreachable in A*'s own truth and every
+            //    search must saturate (fix = feed the verdict to the item
+            //    pick). B: distinct_cells ≪ expanded_states → node identity
+            //    (pos × last_dir × count) multiplies the state space and the
+            //    budget was never 75k CELLS. C: both small → the search
+            //    re-walks a near-region across restarts. Diag-gated,
+            //    exhaust-only: the walk over visited_nodes costs nothing in
+            //    a normal run.
+            let (expanded_states, distinct_cells, bmin, bmax) =
+                explored_shape(astar.visited());
             tracing::info!(
                 ?end,
                 ?closest,
@@ -1608,6 +1621,10 @@ where
                     .map(|c| (c - end).map(|e| e.abs()).sum())
                     .unwrap_or(-1),
                 end_walkable = is_walkable(&end),
+                expanded_states,
+                distinct_cells,
+                bbox_min = ?bmin,
+                bbox_max = ?bmax,
                 n_px = nb(Vec3::unit_x()),
                 n_nx = nb(-Vec3::unit_x()),
                 n_py = nb(Vec3::unit_y()),
@@ -1623,6 +1640,28 @@ where
         path_result.map(|path| path.nodes.into_iter().map(|n| n.pos).collect()),
         consumed,
     )
+}
+
+/// The explored-set shape at exhaust (PREREG-75K-FOR-24-BLOCKS):
+/// `(expanded_states, distinct_cells, bbox_min, bbox_max)` over a visited
+/// set. Pure so the instrument's own falsifier can run it against a sealed
+/// box — an instrument that reported the full budget or a town-scale bbox
+/// on a 10×10 box would be lying, and nothing downstream could tell.
+pub(crate) fn explored_shape<'a>(
+    visited: impl Iterator<Item = &'a Node>,
+) -> (usize, usize, Vec3<i32>, Vec3<i32>) {
+    let mut distinct: std::collections::HashSet<Vec3<i32>> = std::collections::HashSet::new();
+    let mut expanded_states = 0usize;
+    let mut bmin = Vec3::broadcast(i32::MAX);
+    let mut bmax = Vec3::broadcast(i32::MIN);
+    for n in visited {
+        expanded_states += 1;
+        if distinct.insert(n.pos) {
+            bmin = bmin.map2(n.pos, |a, b: i32| a.min(b));
+            bmax = bmax.map2(n.pos, |a, b: i32| a.max(b));
+        }
+    }
+    (expanded_states, distinct.len(), bmin, bmax)
 }
 
 /// bastion (FR15 fix-1): compute a COMPLETE path ONCE — no per-call budget,
@@ -2595,6 +2634,81 @@ mod ledger_179_tests {
             scramble_reach: 0,
             search_allowed: false,
             ..worker_cfg()
+        }
+    }
+
+    /// ★ THE INSTRUMENT'S OWN FALSIFIER (PREREG-75K-FOR-24-BLOCKS): the
+    /// explored-shape numbers must be bounded by the geometry that bounds
+    /// the search. A sealed 10×10 box with the goal outside must report
+    /// `distinct_cells` ≈ the interior and a box-scale bbox — an instrument
+    /// reporting the full budget or a town-scale bbox on a sealed box would
+    /// classify branch A (region saturation) on every exhaust, and nothing
+    /// downstream could tell it was lying.
+    #[test]
+    fn explored_shape_is_bounded_by_a_sealed_box() {
+        let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+        let mut blocks = StdHashMap::new();
+        // Floor everywhere the world exists, including under the goal.
+        for x in -2..=25 {
+            for y in -2..=12 {
+                blocks.insert(Vec3::new(x, y, 0), rock);
+            }
+        }
+        // The sealed box: interior x,y in 0..=9; walls 5 high (trap_cfg has
+        // no climb and no scrambles, and 3-up edges are scramble-gated, so
+        // 5 is unreachable by construction).
+        for x in -1..=10 {
+            for y in -1..=10 {
+                let wall = x == -1 || x == 10 || y == -1 || y == 10;
+                if wall {
+                    for z in 1..=5 {
+                        blocks.insert(Vec3::new(x, y, z), rock);
+                    }
+                }
+            }
+        }
+        let vol = MockVol::from_parts(blocks, Block::empty());
+        let pos = Vec3::new(4.5, 4.5, 1.0);
+        let tgt = Vec3::new(20.5, 5.5, 1.0); // outside, walkable, unreachable
+
+        let mut astar = None;
+        let mut terminal = false;
+        for _ in 0..256 {
+            match find_path(&mut astar, &vol, pos, tgt, &trap_cfg(), PathLength::Longest, None).0
+            {
+                PathResult::Pending => continue,
+                // A sealed box empties its frontier BEFORE the budget, which
+                // is `None(best_partial)` — `Exhausted` is the budget case.
+                // (That distinction is itself a finding for the pre-reg: the
+                // live 75k exhausts are budget exhausts, so their frontier
+                // was still alive at 75,000.) Either terminal is a completed
+                // search whose visited set the instrument must bound.
+                PathResult::None(_) | PathResult::Exhausted(_) => {
+                    terminal = true;
+                    break;
+                },
+                PathResult::Path(..) => panic!("a sealed box must exhaust, got a Path"),
+            }
+        }
+        assert!(terminal, "the sealed box never terminated — the fixture is wrong, not the instrument");
+
+        let (astar, _) = astar.as_ref().expect("astar survives exhaust — the witness depends on it");
+        let (expanded_states, distinct_cells, bmin, bmax) = explored_shape(astar.visited());
+        // The interior is 100 cells; states may exceed cells (direction
+        // multiplicity) but CELLS cannot exceed the geometry.
+        assert!(
+            (10..=150).contains(&distinct_cells),
+            "distinct_cells must be ≈ the box interior, got {distinct_cells}"
+        );
+        assert!(
+            expanded_states >= distinct_cells && expanded_states < 75_000,
+            "a sealed box empties its frontier long before the budget:              expanded={expanded_states} distinct={distinct_cells}"
+        );
+        for (lo, hi, axis) in [(bmin.x, bmax.x, "x"), (bmin.y, bmax.y, "y")] {
+            assert!(
+                lo >= -2 && hi <= 12,
+                "bbox {axis} [{lo}, {hi}] escaped the sealed box — the instrument lies"
+            );
         }
     }
 
