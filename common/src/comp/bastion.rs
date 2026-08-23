@@ -1670,6 +1670,9 @@ pub enum JobKindTagV1 {
     TradeMission,
     /// bastion (ITEM 35): appended last (wire rule).
     Tend,
+    /// Appended 2026-08-23 (wire-stable append-only): the downed-colonist
+    /// rescue.
+    Rescue,
 }
 
 impl From<&crate::bastion::JobKind> for JobKindTagV1 {
@@ -1681,6 +1684,7 @@ impl From<&crate::bastion::JobKind> for JobKindTagV1 {
             J::Cook { .. } => JobKindTagV1::Cook,
             J::TradeMission { .. } => JobKindTagV1::TradeMission,
             J::Tend { .. } => JobKindTagV1::Tend,
+            J::Rescue { .. } => JobKindTagV1::Rescue,
             J::Haul { .. } => JobKindTagV1::Haul,
             J::DepositRun { .. } => JobKindTagV1::DepositRun,
             J::RestAt { .. } => JobKindTagV1::RestAt,

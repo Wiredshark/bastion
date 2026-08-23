@@ -1290,6 +1290,17 @@ pub enum JobKind {
         /// (the ratio is the SITE's, not a constant) audits it.
         ratio: f32,
     },
+    /// ★ RESCUE (slot-93 sweep, 2026-08-23: the cook fought the midnight
+    /// raider, went down at 23:53, "and nobody rescued him all night — the
+    /// town slept on schedule"). A downed colonist is an EMERGENCY: this
+    /// job walks a neighbour to the body and emits vanilla's own
+    /// `HelpDownedEvent` — the same get-up a player gives a downed player.
+    /// Exempt from office hours and the night curfew at the claim gate (a
+    /// town gets out of bed for this). APPEND-ONLY position honoured.
+    Rescue {
+        /// The downed colonist.
+        target: crate::uid::Uid,
+    },
 }
 
 impl JobKind {
@@ -1304,6 +1315,8 @@ impl JobKind {
             // ITEM 29: a mission's target is a WORLD SITE, not a painted
             // designation.
             JobKind::TradeMission { .. } => None,
+            // RESCUE targets a BODY, not a painted designation.
+            JobKind::Rescue { .. } => None,
             // ITEM 35: a patient is not a painted designation either.
             JobKind::Tend { .. } => None,
             // ITEM 14: a Guard JOB carries its own place (post/patrol_to), so

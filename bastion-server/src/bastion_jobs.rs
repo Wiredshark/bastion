@@ -1818,6 +1818,7 @@ pub(crate) fn job_release_class(kind: &common::bastion::JobKind) -> &'static str
     match kind {
         K::EatFrom { .. } => "eat",
         K::RestAt { .. } => "rest",
+        K::Rescue { .. } => "rescue",
         K::Despond { .. } => "breakdown",
         K::Recreate { .. } => "recreate",
         K::Haul { .. } => "haul",
@@ -2155,6 +2156,7 @@ pub(crate) fn job_kind_label(kind: &common::bastion::JobKind) -> &'static str {
         common::bastion::JobKind::Cook { .. } => "Cook",
         common::bastion::JobKind::TradeMission { .. } => "TradeMission",
         common::bastion::JobKind::Tend { .. } => "Tend",
+        common::bastion::JobKind::Rescue { .. } => "Rescue",
         common::bastion::JobKind::Designated(d) => match d {
             DesignationKind::GuardPost => "Designated:GuardPost",
             DesignationKind::PatrolPoint => "Designated:PatrolPoint",
@@ -2974,6 +2976,9 @@ fn job_still_wanted(kind: &common::bastion::JobKind, block: &Block) -> bool {
         // block precondition -- without this arm the moot-check reads the
         // site's arbitrary block and kills the mission instantly).
         common::bastion::JobKind::TradeMission { .. } => true,
+        // RESCUE: validity is the TARGET's state (owned by its arm) — a
+        // body's ground block proves nothing.
+        common::bastion::JobKind::Rescue { .. } => true,
         // ITEM 35: a patient's validity is the patient's, not a block's.
         common::bastion::JobKind::Tend { .. } => true,
         common::bastion::JobKind::Designated(DesignationKind::Farm) => true,
@@ -10544,6 +10549,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // Cave-in damage is EMITTED (not written) so vanilla's death
             // check in entity_manipulation actually sees it.
             ReadExpect<'a, common::event::EventBus<common::event::HealthChangeEvent>>,
+            // RESCUE: vanilla's own get-up verb, emitted at the body.
+            ReadExpect<'a, common::event::EventBus<common::event::HelpDownedEvent>>,
             // ARCH-003: pins job-decision-order ties (equal-score claims,
             // same-depth access plans) deterministically in harness mode —
             // HashMap iteration order is otherwise unspecified.
@@ -10647,6 +10654,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 loot_owners_view,
                 inventory_manip_events,
                 health_change_events,
+                help_downed_events,
                 _execution_mode,
                 mut activity_zones,
                 mut needs_storage,
@@ -11383,6 +11391,62 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         food_in_pantry = food_stock,
                         "bastion: ★ COLONY EXTINCT (sentinel S2, log-only) — every                          colonist is dead or down; the board's remaining jobs and                          food are listed because they are what nobody is left to use"
                     );
+                }
+                // ★ RESCUE GENERATOR (slot-93 sweep: the cook went down at
+                // 23:53 and nobody came all night). One open Rescue per
+                // downed colonist, at the body; retired by its own arm when
+                // the target stands or is gone. A downed neighbour is an
+                // emergency — the claim gates exempt it from office hours
+                // and the night curfew.
+                {
+                    let targeted: std::collections::HashSet<common::uid::Uid> = brd
+                        .jobs
+                        .values()
+                        .filter_map(|j| match j.kind {
+                            common::bastion::JobKind::Rescue { target } => Some(target),
+                            _ => None,
+                        })
+                        .collect();
+                    let mut new_rescues: Vec<(common::uid::Uid, Vec3<i32>)> = Vec::new();
+                    for (e, _, p) in (&entities, &colonists, &positions).join() {
+                        if healths.get(e).is_some_and(|h| h.is_dead)
+                            && let Some(u) = uids.get(e).copied()
+                            && !targeted.contains(&u)
+                        {
+                            new_rescues.push((u, p.0.map(|v| v.floor() as i32)));
+                        }
+                    }
+                    // Uid-sorted: job ids assign identically on every run.
+                    new_rescues.sort_by_key(|(u, _)| u.0.get());
+                    for (target, body) in new_rescues {
+                        let id = brd.next_id;
+                        brd.next_id += 1;
+                        brd.jobs.insert(id, Job {
+                            kind: common::bastion::JobKind::Rescue { target },
+                            work: common::bastion::WorkType::Guard,
+                            pos: body,
+                            skill_floor: 0,
+                            claimed_by: None,
+                            suspended_for: None,
+                            unreachable: false,
+                            progress: 0.0,
+                            required_item: None,
+                            needs_materials: false,
+                            carve_attempted: false,
+                            is_access: false,
+                            stuck_strikes: 0,
+                            benched_until_tick: None,
+                            depth: 0,
+                            reservation: None,
+                            affordance: AffordanceClass::OnTopAlways,
+                        });
+                        info!(
+                            job = id,
+                            target = target.0.get(),
+                            ?body,
+                            "bastion: ★ RESCUE posted — a neighbour is down and the                              town gets out of bed for this"
+                        );
+                    }
                 }
             }
             // ── RUN-0 (row 47): the energy governor — the run gait
@@ -16065,6 +16129,37 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             },
                         });
                         info!(uid, "bastion: ITEM 36 LETHAL PLANT — killing a colonist by event");
+                    }
+                }
+                // ★ THE DOWNED PLANT (rescue fixture): same shape as the
+                // lethal plant, but the blow lands JUST past zero — overkill
+                // ≈ 0.01, so the DEATH v2 roll (chance = 0.6 × overkill)
+                // downs ~99.4% deterministically-per-seed instead of killing
+                // outright. The RESCUE machinery's planted customer: expect
+                // 'RESCUE posted' then 'RESCUED' and the census recovering.
+                if tick.0 == 3000
+                    && let Ok(n) = std::env::var("BASTION_PLANT_DOWNED")
+                    && let Ok(count) = n.parse::<usize>()
+                {
+                    let mut victims: Vec<(u64, specs::Entity)> = (&entities, &colonists)
+                        .join()
+                        .filter_map(|(e, _)| uids.get(e).map(|u| (u.0.get(), e)))
+                        .collect();
+                    victims.sort_by_key(|(u, _)| *u);
+                    for (uid, ent) in victims.into_iter().take(count) {
+                        let Some(h) = healths.get(ent) else { continue };
+                        health_change_events.emit_now(common::event::HealthChangeEvent {
+                            entity: ent,
+                            change: comp::HealthChange {
+                                amount: -(h.current() + h.maximum() * 0.01),
+                                by: None,
+                                cause: None,
+                                precise: false,
+                                time: *time,
+                                instance: 0,
+                            },
+                        });
+                        info!(uid, "bastion: DOWNED PLANT — downing a colonist by event (rescue fixture)");
                     }
                 }
                 // ★★ BAR 3 + BAR 4 IN ONE LEVER (item 14).
@@ -21968,6 +22063,28 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         }
                         continue;
                     }
+                    // ── ★ RESCUE: at the body, emit vanilla's own get-up.
+                    // Validity is the TARGET's state: stood up or gone →
+                    // moot, job retires quietly.
+                    if let common::bastion::JobKind::Rescue { target } = job.kind {
+                        let target_entity = id_maps.uid_entity(target);
+                        let still_down = target_entity
+                            .is_some_and(|te| healths.get(te).is_some_and(|h| h.is_dead));
+                        if still_down {
+                            help_downed_events.emit_now(common::event::HelpDownedEvent {
+                                helper: uids.get(entity).copied(),
+                                target,
+                            });
+                            info!(
+                                rescuer = uids.get(entity).map(|u| u.0.get()),
+                                target = target.0.get(),
+                                "bastion: ★ RESCUED — helped a downed neighbour up"
+                            );
+                        }
+                        board.remove_job(active.job);
+                        to_release.push((entity, ReleaseReason::Other, line!()));
+                        continue;
+                    }
                     // ── ITEM 11: RECREATE — the break's MISSING END (found
                     // while shipping Ben's lounging ruling: the flag had
                     // never been on, so the completion arm had simply never
@@ -22671,6 +22788,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let still_valid = completed_kind.is_some_and(|k| match job.kind {
                         // ITEM 27: completion validity owned by the cook arm.
                         common::bastion::JobKind::Cook { .. } => true,
+                        common::bastion::JobKind::Rescue { .. } => true,
                         // ITEM 29: same — the exchange arm owns validity.
                         common::bastion::JobKind::TradeMission { .. } => true,
                         common::bastion::JobKind::Tend { .. } => true,
@@ -28133,6 +28251,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // when its ordinary drive is not Work. Exactly one bottom-up
             // step is claimable at a time for the whole route.
             let owns_emergency_access = emergency_next_job.is_some();
+            // ★ RESCUE OVERRIDES THE GATES: an open Rescue is the one job
+            // a sleeping town gets up for (slot-93: the downed cook lay all
+            // night while the drive and office-hours gates held everyone in
+            // bed). It exempts BOTH gates below.
+            let rescue_open = board.jobs.values().any(|j| {
+                j.claimed_by.is_none()
+                    && matches!(j.kind, common::bastion::JobKind::Rescue { .. })
+            });
             // AUTON-0 GUARD 1: the claim loop is the Work drive's SOLE
             // entry — a non-Work colonist claims nothing (permissive
             // for colonists the arbiter has not seen yet).
@@ -28140,6 +28266,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 .get(entity)
                 .is_some_and(|a| a.current != comp::bastion::Drive::Work)
                 && !owns_emergency_access
+                && !rescue_open
             {
                 { census.colonist_not_work += 1; continue; }
             }
@@ -28158,6 +28285,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             if !work_claims_open(default_schedule_block(hour_of_day(
                 rtsim.rt_state().data().time_of_day.0,
             ))) && !owns_emergency_access
+                && !rescue_open
             {
                 census.colonist_off_hours += 1;
                 continue;
