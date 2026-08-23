@@ -818,6 +818,20 @@ impl Chaser {
             .is_some_and(|last_tgt| tgt.distance_squared(last_tgt) > 2.0)
         {
             self.astar = None;
+            // ★ A NEW TARGET IS A NEW PROBLEM (2026-08-23). The tier ladder
+            // (Small -> Longest) exists to retry the SAME unreachable target
+            // with a bigger budget — but `path_length` was only ever reset on
+            // a SUCCESSFUL path, so a chaser that once ratcheted to Longest
+            // paid 75,000 iterations for every future trip, forever, however
+            // trivial. Measured: 40,000-64,000 Longest-tier polls in nine
+            // minutes against a shared 3,000-iters/tick scheduler budget —
+            // one doomed errand poisoned every later search this agent (and,
+            // through the shared budget, every OTHER agent) ran, which is the
+            // self-sustaining congestion behind 89% of colonist travel
+            // running on Exhausted partial-path fallback. Retargeting resets
+            // the tier along with the search: the ladder still climbs for a
+            // target that keeps failing, and only for that target.
+            self.path_length = PathLength::default();
         }
         // bastion ledger #178: reset the retained search on a PROFILE
         // change — admission staleness does not self-heal (see
