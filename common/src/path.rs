@@ -1125,7 +1125,26 @@ impl core::hash::Hash for Node {
 /// "feels high" would drift the first time someone edited the flat-move cost,
 /// because every weight here is relative to a flat step and the flat step is
 /// NOT 1.0.
-const SCRAMBLE_SURCHARGE: f32 = 30.0;
+/// ★ RE-PRICED 30 → 120 (Ben RULED, live play 2026-08-23: "colonists still
+/// get stuck climbing places... climbing is okay but we should heavily
+/// dissuade it — if they can pathfind without it at a reasonable distance,
+/// ie not running for days, they should walk"). At 30 (≈10 flat steps) any
+/// detour past ~13 steps made the wall win, and his session still showed
+/// climbers. 120 ≈ 40 flat steps per scramble: a house, a terrace, a whole
+/// block of the village always walks around; only a genuinely mountainous
+/// crossing — the running-for-days case — still climbs. The relationship
+/// (scramble > 1.5× the detour; stairs stay cheaper) is pinned by
+/// `a_scramble_must_cost_more_than_rounding_a_house`, which only tightens
+/// under this value.
+const SCRAMBLE_SURCHARGE: f32 = 120.0;
+
+/// ★ SWIMMING PRICED LIKE THE HAZARD IT IS (same ruling: "we should do
+/// this for swimming too"). `walkable()` admits liquid cells, and until
+/// now a swum cell cost exactly a walked one — rivers were free, so routes
+/// dove straight through water. Three flat steps per swum cell: a ford or
+/// bridge within ~3× the crossing's length always wins; a genuinely vast
+/// detour still swims. Pinned by `a_swim_must_cost_three_walks_per_cell`.
+const SWIM_SURCHARGE: f32 = 9.0;
 
 /// The cost of falling, PER BLOCK of drop, on top of the base transition.
 ///
@@ -1415,9 +1434,24 @@ where
                     },
                 };
 
+                // ★ SWIMMING IS A LAST RESORT (Ben's ruling): a swum cell
+                // costs SWIM_SURCHARGE on top of the step — walkable()
+                // admits water, so without this a river was priced like a
+                // road and routes dove straight through it.
+                let swim = if vol
+                    .get(next_node.pos)
+                    .map(|b| b.is_liquid())
+                    .unwrap_or(false)
+                {
+                    SWIM_SURCHARGE
+                } else {
+                    0.0
+                };
                 (
                     next_node,
-                    transition(node, next_node) + if dir.z == 0 { edge_cost } else { 0.0 },
+                    transition(node, next_node)
+                        + if dir.z == 0 { edge_cost } else { 0.0 }
+                        + swim,
                 )
             })
             // Falls
@@ -2848,6 +2882,33 @@ mod ledger_179_tests {
         assert!(
             step(1) < flat * 3.0,
             "a single step up must stay cheaper than three flat steps, or colonists              will refuse stairs and ladders they are supposed to use"
+        );
+    }
+
+    /// ★ A SWIM MUST COST THREE WALKS PER CELL (Ben RULED: heavily
+    /// dissuade swimming; walk when a walking path exists at reasonable
+    /// distance). Both directions: a ford within ~3× the crossing's length
+    /// must win, and a genuinely vast detour must still swim (water is a
+    /// last resort, not a wall).
+    #[test]
+    fn a_swim_must_cost_three_walks_per_cell() {
+        let flat = 3.0;
+        let swim_cell = 1.0 + SWIM_SURCHARGE; // transition base + surcharge
+        assert!(
+            swim_cell >= flat * 3.0,
+            "one swum cell ({swim_cell}) must cost at least three walked ones              ({}) — a river priced like a road routes straight through water",
+            flat * 3.0
+        );
+        // A 5-cell river crossing vs a 12-step bridge detour: the bridge wins.
+        assert!(
+            5.0 * swim_cell > 12.0 * flat,
+            "a short crossing must lose to a nearby ford"
+        );
+        // ...but water is dissuaded, not forbidden: the same crossing beats
+        // a 60-step trek — swimming survives as the last resort.
+        assert!(
+            5.0 * swim_cell < 60.0 * flat,
+            "a vast detour must still lose to swimming — dissuade, never wall"
         );
     }
 

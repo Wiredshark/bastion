@@ -7682,9 +7682,25 @@ impl Server {
     {
         use common::bastion::DesignationKind as D;
         use world::site::plot::PlotKind;
+        // ★ EVERY CULTURE'S HOMES COUNT (Ben, live play 2026-08-23, with a
+        // screenshot of a cliff/desert-style town: "beds/houses only apply
+        // to the human settlements"). Only `House` mapped to Bed, so a
+        // desert city's tiered homes, a cliff town's towers, savannah huts,
+        // terracotta and myrmidon houses all read as scenery — zero beds,
+        // zero homes, and (under the new housing-cap ruling) a population
+        // stranded at ONE. Every residential plot kind maps; workshops,
+        // taverns, temples and arenas stay out (stations and communal
+        // space, not homes).
         let map_kind = |k: &PlotKind| match k {
             PlotKind::FarmField(_) => Some(D::Farm),
-            PlotKind::House(_) => Some(D::Bed),
+            PlotKind::House(_)
+            | PlotKind::CoastalHouse(_)
+            | PlotKind::DesertCityMultiPlot(_)
+            | PlotKind::CliffTower(_)
+            | PlotKind::SavannahHut(_)
+            | PlotKind::TerracottaHouse(_)
+            | PlotKind::MyrmidonHouse(_)
+            | PlotKind::Building(_) => Some(D::Bed),
             PlotKind::Barn(_) => Some(D::Stockpile),
             _ => None,
         };
