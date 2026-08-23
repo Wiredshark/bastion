@@ -1729,7 +1729,40 @@ impl WorldSim {
             calendar,
         };
 
-        this.generate_cliffs();
+        // ★ BASTION_FLAT_WORLD (town-realism program, step 2: THE FLAT MAP):
+        // flatten every chunk to one dry temperate plain BEFORE cliffs and
+        // element seeding, so the whole downstream pipeline — column
+        // sampling, civs, sites, paths — builds a real town on controlled
+        // geometry. The mountainous default is Veloren's identity, but it is
+        // also why slot-93's colonists wedged on worldgen terrain 488 times:
+        // the town lab needs ground that cannot be the explanation. Env-gated
+        // kill switch, all constants, no rng: unset produces a byte-identical
+        // world (DETERMINISM BY CONSTRUCTION).
+        let flat_world = std::env::var_os("BASTION_FLAT_WORLD").is_some();
+        if flat_world {
+            let flat_alt = CONFIG.sea_level + 40.0;
+            for chunk in this.chunks.iter_mut() {
+                chunk.alt = flat_alt;
+                chunk.basement = flat_alt - 8.0;
+                // Water table below ground everywhere: no lakes, no rivers,
+                // no coast — swimming stays a priced hazard, never a wall.
+                chunk.water_alt = CONFIG.sea_level;
+                chunk.downhill = None;
+                chunk.flux = 0.0;
+                chunk.chaos = 0.0;
+                chunk.temp = 0.0;
+                chunk.humidity = 0.6;
+                chunk.rockiness = 0.0;
+                // Sparse standing timber: enough for a wood economy, not a
+                // forest the pathfinder has to thread.
+                chunk.tree_density = 0.04;
+                chunk.river = RiverData::default();
+                chunk.cliff_height = 0.0;
+                chunk.surface_veg = 1.0;
+            }
+        } else {
+            this.generate_cliffs();
+        }
 
         if opts.seed_elements {
             this.seed_elements();

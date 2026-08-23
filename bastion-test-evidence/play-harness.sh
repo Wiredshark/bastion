@@ -238,9 +238,17 @@ boot)
   fi
   sed -i "s/:14004\"/:$GAME\"/g; s/:14006\"/:$METRICS\"/g" "$S"
   sed "s/:14005\"/:$WEB\"/" "$UD/server-cli/settings.template.ron" > "$UD/server-cli/settings.ron"
-  # The two worlds a player can be dropped into. The arena is legible and fast;
-  # the town is the real test of "use what is already there".
+  # The three worlds a player can be dropped into. The arena is legible and
+  # fast; the town is the real test of "use what is already there"; flat is
+  # the town-realism lab — REAL worldgen (civs, sites, a real town) on a
+  # flattened plain, so terrain can never be the explanation for a failure.
   case "$ARM" in
+    flat)
+      # Small map: the plain is the point, not the continent. Erosion cost is
+      # paid before the flatten, so cheap quality is pure savings.
+      sed -i "s/map_file: None,/map_file: Some(Generate((x_lg: 8, y_lg: 8, scale: 2.0, map_kind: Square, erosion_quality: 0.25))),/" "$S"
+      grep -q "map_file: Some" "$S" || { echo "BOOT FAILED: flat-arm map_file splice did not take in $S" >&2; exit 4; }
+      ENVV="BASTION_FLAT_WORLD=1 BASTION_ADOPT_TOWN=1 BASTION_AUTOFOUND_REAL_TERRAIN=1 BASTION_COLONY_PRESENCE_VD=3 BASTION_AUTOFOUND_COLONY=8 BASTION_SEED_FOOD=32 BASTION_SEED_MATERIALS=64" ;;
     town) ENVV="BASTION_ADOPT_TOWN=1 BASTION_AUTOFOUND_REAL_TERRAIN=1 BASTION_COLONY_PRESENCE_VD=3 BASTION_AUTOFOUND_COLONY=8 BASTION_SEED_FOOD=32 BASTION_SEED_MATERIALS=64" ;;
     *)    ENVV="BASTION_FLAT_ARENA=1 BASTION_FLAT_ARENA_RESOURCED=1 BASTION_AUTOFOUND_COLONY=8 BASTION_SEED_FOOD=32" ;;
   esac
