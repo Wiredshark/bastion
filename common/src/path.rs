@@ -1531,11 +1531,36 @@ where
                         let p = c + d;
                         if !is_walkable(&p) {
                             let b = vol.get(p).ok().copied();
+                            // ★ THE EDGE-LEVEL VERDICT for lateral air cells:
+                            // a fall edge passes THROUGH a non-walkable air
+                            // neighbour by design, so node-unwalkable alone is
+                            // ambiguous. Mirror the real fall probe (body
+                            // clear at p and p+1, landing = first walkable in
+                            // 1..12 below) and print its answer: F=Some(i)
+                            // means the edge EXISTS and the search fell into
+                            // another confined basin; F=None means the drop
+                            // itself was refused (deeper than 11, or no
+                            // walkable landing).
+                            let fall = if d.z == 0
+                                && b.is_some_and(|b| !b.is_solid())
+                                && vol
+                                    .get(p + Vec3::unit_z())
+                                    .map(|b| !b.is_solid())
+                                    .unwrap_or(false)
+                            {
+                                (1..12)
+                                    .find(|i| is_walkable(&(p - Vec3::unit_z() * *i)))
+                                    .map(|i| format!("F{i}"))
+                                    .unwrap_or_else(|| "Fnone".to_string())
+                            } else {
+                                String::new()
+                            };
                             out.push_str(&format!(
-                                "{:?}:{:?}/{:?} ",
+                                "{:?}:{:?}/{:?}{} ",
                                 d,
                                 b.map(|b| b.kind()),
-                                b.and_then(|b| b.get_sprite())
+                                b.and_then(|b| b.get_sprite()),
+                                fall
                             ));
                         }
                     }
