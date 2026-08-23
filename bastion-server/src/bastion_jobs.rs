@@ -4313,7 +4313,20 @@ pub const BUILD_GEN_JOBS_PER_COLONIST: usize = 2;
 /// Progress threshold per watchdog sample (blocks).
 const STUCK_EPSILON: f32 = 0.5;
 /// Walk speed factor for job travel.
-const TRAVEL_SPEED: f32 = 0.8;
+///
+/// ★ RE-PRICED 0.8 → 0.45 (Ben RULED, live play 2026-08-23, emphatically:
+/// "colonists should prefer to WALK everywhere instead of running — they
+/// should only run in emergencies"; and separately: "colonists shouldn't be
+/// running everywhere and working constantly, that's not how people work").
+/// 0.8 of the vanilla speed factor renders as a jog-to-run and nothing ever
+/// set the emergency flag, so the whole colony sprinted between chores —
+/// half the "mad scramble" read, and (Ben's own diagnosis) a real source of
+/// pathing damage: run physics overshoots corners and carries bodies off
+/// ledges the walk gait would have held. 0.45 is the vanilla villager
+/// stroll band — the gait the base game's own townsfolk read as human.
+/// RUN_SPEED (1.0) stays reserved for genuine emergencies via the existing
+/// `running` flag and the flee path.
+const TRAVEL_SPEED: f32 = 0.45;
 /// bastion (RUN-0, row 47): the emergency-run gait — the full vanilla
 /// speed_factor (1.0 > the 0.8 walk; within the range every vanilla
 /// mover already uses, so zero physics/anim risk — the velocity-driven
@@ -32669,6 +32682,27 @@ mod tests {
         assert!(
             board.jobs.contains_key(&painted_id),
             "a player-painted post must survive the drive's exit sweep"
+        );
+    }
+
+    /// ★ WALKING IS THE DEFAULT GAIT (Ben RULED, in caps): the travel
+    /// factor must sit in the villager stroll band, the emergency factor
+    /// must remain a true sprint, and the gap must be big enough that an
+    /// emergency READS as one. A future retune that nudges travel back
+    /// into the jog band re-reds this without any live run.
+    #[test]
+    fn a_colonist_walks_by_default_and_sprints_only_in_emergencies() {
+        assert!(
+            TRAVEL_SPEED <= 0.5,
+            "default travel ({TRAVEL_SPEED}) must be a WALK — 0.8 rendered as              the colony-wide sprint Ben called out"
+        );
+        assert!(
+            RUN_SPEED >= 1.0,
+            "the emergency gait stays a full sprint"
+        );
+        assert!(
+            RUN_SPEED >= TRAVEL_SPEED * 2.0,
+            "an emergency must READ as one — at least double the stroll"
         );
     }
 
