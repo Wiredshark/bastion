@@ -7398,6 +7398,12 @@ pub struct JobBoard {
     /// Exhausted) before the stuck clock could fire — the count that proves
     /// the feedback edge is live.
     pub chaser_terminal_releases: u32,
+    /// Consecutive terminal-exhaust releases per colonist, POSITION-FREE —
+    /// the roof-roamer detector. The churn leash (6 blocks) cannot see a
+    /// colonist wandering a 20-block rooftop basin; a streak of the chaser's
+    /// own hopeless-verdicts can, wherever the body drifts. Reset on any
+    /// arrival.
+    pub terminal_streak: HashMap<Uid, u8>,
     /// (refusals, admits-by-reason x5, same-component) shadow counters since
     /// the last census emit, so the fail-open ladder is provable from a log.
     pub shadow_conn: [u32; 7],
@@ -13540,6 +13546,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // (entity, pos, feet, reach) — processed post-loop (same borrow
         // constraint as carve_requests).
         let mut churn_events: Vec<(specs::Entity, Vec3<f32>, Vec3<i32>, i32)> = Vec::new();
+        // (uid, feet, reach) of colonists whose terminal-exhaust streak just
+        // crossed the trapped threshold — drained beside the churn detector,
+        // through the SAME guards and the SAME egress request.
+        let mut terminal_trapped: Vec<(Uid, Vec3<i32>, i32)> = Vec::new();
         // ITEM 29 (wall-detour, flag-gated): stalled colonists asking for a
         // bounded one-shot full path — (uid, from, to, the colonist's own
         // traversal config, searches bought so far, parent job). Same
@@ -19099,9 +19109,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         }
                         active.state = ActiveJobState::Arrived;
                         // Arrival is forgiveness: the pair's failure memory is
-                        // structural, not merely time-decayed.
+                        // structural, not merely time-decayed. The terminal
+                        // streak resets too — an arrival anywhere proves the
+                        // searcher is not trapped.
                         if let Some(u) = uids.get(entity).copied() {
                             board.claim_penalty.remove(&(u, active.job));
+                            board.terminal_streak.remove(&u);
                         }
                         if let Some(agent) = agent.as_deref_mut() {
                             agent.rtsim_controller.activity = None;
@@ -19844,9 +19857,34 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     )
                                 )
                             });
-                            if chaser_terminal && active.stuck_time <= STUCK_TIMEOUT {
-                                board.chaser_terminal_releases =
-                                    board.chaser_terminal_releases.saturating_add(1);
+                            if chaser_terminal {
+                                if active.stuck_time <= STUCK_TIMEOUT {
+                                    board.chaser_terminal_releases =
+                                        board.chaser_terminal_releases.saturating_add(1);
+                                }
+                                // ★ THE ROOF-ROAMER DETECTOR. Position-free
+                                // streak of the chaser's own hopeless
+                                // verdicts. The measured strander produced
+                                // 1,700 Longest-exhaust polls — 80% of the
+                                // colony's entire pathfinder burn — while
+                                // roaming a rooftop basin far wider than the
+                                // churn leash, so the leash never counted it
+                                // and the rescue never came. Six verdicts in
+                                // a row is minutes of provable hopelessness;
+                                // one arrival anywhere resets it.
+                                if let Some(u) = uids.get(entity).copied() {
+                                    let st =
+                                        board.terminal_streak.entry(u).or_insert(0);
+                                    *st = st.saturating_add(1);
+                                    if *st >= 6 {
+                                        *st = 0; // one-shot; re-arms if it continues
+                                        terminal_trapped.push((
+                                            u,
+                                            pos.0.map(|e| e.floor() as i32),
+                                            2,
+                                        ));
+                                    }
+                                }
                             }
                             if active.stuck_time > STUCK_TIMEOUT || chaser_terminal {
                                 board.travel_timeouts += 1;
@@ -23159,6 +23197,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 info!(
                     ?feet,
                     "bastion: claim-churn trapped — egress requested (B5.8-E3)"
+                );
+                board.egress_pending.push((uid, feet, target));
+            }
+        }
+
+        // ★ TERMINAL-STREAK DRAIN — same guards, same rescue, different
+        // detector. The churn leash sees cycling-in-place; this sees
+        // hopeless-wherever-it-roams. Both end in the one egress economy.
+        for (uid, feet, reach) in terminal_trapped.drain(..) {
+            let access_busy = board.jobs.values().any(|j| j.is_access);
+            if access_busy {
+                continue;
+            }
+            let (has_egress, rim) = egress_scan(&terrain, feet, reach);
+            if !has_egress && let Some(target) = rim {
+                info!(
+                    ?feet,
+                    "bastion: terminal-exhaust trapped — egress requested (roof-roamer)"
                 );
                 board.egress_pending.push((uid, feet, target));
             }
