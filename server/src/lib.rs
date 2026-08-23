@@ -5931,9 +5931,19 @@ impl Server {
                             // to pick a town" and "founding is broken" look
                             // identical from outside, and this path can now
                             // legitimately do nothing for minutes.
+                            // ★ THE MESSAGE MUST NAME THE DISCOVERABLE PATH.
+                            // It told the player to place a map marker — the
+                            // middle-click nobody finds — which is exactly how
+                            // Ben ended up using "Found colony" instead and
+                            // getting a squatter camp. The Select Starting Area
+                            // screen now counts as the choice, so it is named
+                            // FIRST and the marker is named as the override.
                             tracing::info!(
                                 dtick,
-                                "bastion: ADOPT-A-TOWN is WAITING for you to place a map                                  marker on the town you want — nothing is wrong; founding                                  is deliberately held until you choose"
+                                "bastion: ADOPT-A-TOWN is WAITING for you to CHOOSE A TOWN — pick \
+                                 one on the SELECT STARTING AREA screen when you create your \
+                                 character (or middle-click the in-game map to override). Nothing \
+                                 is wrong; founding is deliberately held until you choose"
                             );
                         }
                         !has_marker

@@ -3006,6 +3006,50 @@ pub fn need_band(value: f32, comfort: f32, interrupt: f32) -> NeedBand {
     }
 }
 
+/// How long a colonist in this band waits out the need-preempt cooldown.
+///
+/// ★ THIS IS THE "DETERMINATION" HALF of Ben's banding ask — the bands
+/// "determine how determined they are to solve their issues". Ordering decides
+/// WHICH need wins; this decides HOW HARD the colonist keeps trying after an
+/// attempt fails.
+///
+/// The defect it addresses is the one Ben reported live: a colonist whose eat
+/// attempt times out is locked out of trying again for a full 60 seconds
+/// REGARDLESS of how close to death it is. `STUCK_TIMEOUT` is 10s and
+/// `PREEMPT_COOLDOWN_SECS` is 60s, so a colonist that cannot reach food fails
+/// at 10s and then waits 60 — starving on a 1-in-7 duty cycle.
+///
+/// Prior art (Ben's method: replicate, then automate): neither RimWorld nor DF
+/// puts a fixed lockout in front of a starving pawn. Need urgency raises
+/// priority and re-evaluation frequency — a starving pawn keeps looking. The
+/// deepening need makes the pawn MORE persistent, not less.
+///
+/// ★ SCALED, NEVER ZEROED. The cooldown is a real anti-thrash guard: a self-job
+/// releases, finds no bed/food, and re-enters immediately with no margin. This
+/// project has already shipped three guards that starved what they protected,
+/// so the fix is to shorten the guard under pressure, not remove it. Every band
+/// keeps a non-zero floor, which is what
+/// `determination_shortens_the_cooldown_without_ever_removing_it` pins.
+pub fn band_preempt_cooldown_secs(band: NeedBand) -> f64 {
+    match band {
+        // Unchanged from the shipped constant: at these bands nothing is
+        // urgent, and the anti-thrash guard is the only consideration.
+        NeedBand::Fine | NeedBand::Slight | NeedBand::Pressing => PREEMPT_COOLDOWN_SECS,
+        NeedBand::Urgent => PREEMPT_COOLDOWN_SECS / 2.0,
+        NeedBand::Severe => PREEMPT_COOLDOWN_SECS / 4.0,
+        // Dying. Retry on roughly the timeout cadence — still a margin, but the
+        // colonist spends its time trying instead of waiting.
+        NeedBand::Dire => PREEMPT_COOLDOWN_SECS / 12.0,
+    }
+}
+
+/// The band a colonist is judged on for [`band_preempt_cooldown_secs`]: its
+/// WORST, because determination is set by the thing most likely to kill it.
+pub fn worst_band(rest: f32, hunger: f32, mood_cfg: &common::bastion::MoodConfig) -> NeedBand {
+    need_band(rest, mood_cfg.rest.comfort, mood_cfg.rest.interrupt)
+        .max(need_band(hunger, mood_cfg.hunger.comfort, mood_cfg.hunger.interrupt))
+}
+
 /// Rank a colonist's overall neediness for [`canonical_need_order`], which
 /// serves colonists in ASCENDING order of the returned severity.
 ///
@@ -16191,15 +16235,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     }
                     continue;
                 }
+                // ★ DETERMINATION: the deeper the band, the less of the
+                // cooldown the colonist sits out. Derived from the STORED
+                // `until` rather than a new field: all five write sites insert
+                // `time.0 + PREEMPT_COOLDOWN_SECS`, so `set_at` is exact, and
+                // deriving it keeps this change to ONE gate instead of ten
+                // sites — the other four readers (mood-break, recreation)
+                // belong to different systems and must NOT inherit a
+                // hunger-driven bypass.
+                let cd_band = worst_band(needs.rest, needs.hunger, &mood_cfg);
+                let cd_secs = band_preempt_cooldown_secs(cd_band);
                 if let Some(until) = board.preempt_cooldown.get(uid)
-                    && time.0 < *until
+                    && let set_at = *until - PREEMPT_COOLDOWN_SECS
+                    && time.0 < set_at + cd_secs
                 {
                     if need_skip_diag {
                         info!(
                             colonist = %uid,
                             until,
                             now = time.0,
-                            remaining = until - time.0,
+                            remaining = (set_at + cd_secs) - time.0,
+                            band = ?cd_band,
+                            cd_secs,
+                            full_cd = PREEMPT_COOLDOWN_SECS,
                             "NEED-SKIP-DIAG reason=preempt_cooldown_active"
                         );
                     }
@@ -28057,6 +28115,95 @@ mod tests {
         assert_eq!(rest_words.len(), 6, "two rest bands share a word");
         assert_eq!(NeedBand::Dire.hunger_word(), "starving");
         assert_eq!(NeedBand::Dire.rest_word(), "collapsing");
+    }
+
+    /// ★ DETERMINATION SHORTENS THE COOLDOWN AND NEVER REMOVES IT (Ben:
+    /// the bands "determine how determined they are to solve their issues").
+    ///
+    /// Both directions matter and the test asserts both, because the two
+    /// degenerate settings fail in opposite ways and each one erases the
+    /// other's symptom: a cooldown that never shortens starves the colonist
+    /// (Ben's live "hunger loop"), and a cooldown that reaches zero rebuilds
+    /// the thrash the guard exists to stop.
+    #[test]
+    fn determination_shortens_the_cooldown_without_ever_removing_it() {
+        use NeedBand::*;
+        let all = [Fine, Slight, Pressing, Urgent, Severe, Dire];
+
+        // ── MONOTONE: more urgent must never wait LONGER.
+        for pair in all.windows(2) {
+            let (a, b) = (pair[0], pair[1]);
+            assert!(
+                band_preempt_cooldown_secs(b) <= band_preempt_cooldown_secs(a),
+                "{b:?} is more urgent than {a:?} but waits longer: \
+                 {} vs {}",
+                band_preempt_cooldown_secs(b),
+                band_preempt_cooldown_secs(a)
+            );
+        }
+
+        // ── DEGENERATE SETTING 1 — the guard never yields. This is the state
+        // Ben played: STUCK_TIMEOUT is 10s and the cooldown is 60s, so a
+        // colonist that cannot reach food fails at 10s then waits 60, starving
+        // on a 1-in-7 duty cycle while food sat in the pantry.
+        assert!(
+            band_preempt_cooldown_secs(Dire) < PREEMPT_COOLDOWN_SECS,
+            "a dying colonist waits the full cooldown — that is the hunger loop"
+        );
+        assert!(
+            band_preempt_cooldown_secs(Dire) <= STUCK_TIMEOUT as f64,
+            "a Dire colonist must be able to retry on the timeout cadence; a cooldown \
+             longer than the timeout means every failed attempt is followed by dead time \
+             ({} vs timeout {STUCK_TIMEOUT})",
+            band_preempt_cooldown_secs(Dire)
+        );
+
+        // ── DEGENERATE SETTING 2 — the guard is gone. A zero cooldown lets a
+        // self-job release, find nothing, and re-enter on the very next pass.
+        for band in all {
+            assert!(
+                band_preempt_cooldown_secs(band) > 0.0,
+                "{band:?} has a ZERO cooldown — the anti-thrash guard is removed, not \
+                 shortened, and a colonist that can reach neither bed nor food will spin \
+                 every pass"
+            );
+        }
+
+        // ── The relaxed bands must be BYTE-IDENTICAL to the shipped constant,
+        // or every banked corpus leg silently changes its arbitration timing.
+        for band in [Fine, Slight, Pressing] {
+            assert_eq!(
+                band_preempt_cooldown_secs(band),
+                PREEMPT_COOLDOWN_SECS,
+                "{band:?} must keep the shipped 60s exactly — the status quo is the \
+                 EXERCISED population and rebasing it is a separate decision"
+            );
+        }
+        // ...and something must actually change, or this is all inert.
+        assert!(
+            all.iter().any(|b| band_preempt_cooldown_secs(*b) != PREEMPT_COOLDOWN_SECS),
+            "no band shortens the cooldown — the feature does nothing"
+        );
+
+        // ── `worst_band` picks the thing most likely to kill them, not the
+        // first one it looks at. Asserted in BOTH argument positions so a
+        // min/max slip or a swapped-argument bug cannot pass.
+        // Default is kept byte-equal to assets/common/bastion_mood.ron by
+        // `bastion_mood_config_matches_shipped_asset`, so these band
+        // expectations are pinned to the SHIPPED thresholds, not to a
+        // convenient fixture that could drift away from them.
+        let cfg = common::bastion::MoodConfig::default();
+        assert_eq!(
+            worst_band(0.9, 0.01, &cfg),
+            Dire,
+            "a rested but STARVING colonist must be judged on the starvation"
+        );
+        assert_eq!(
+            worst_band(0.01, 0.9, &cfg),
+            Dire,
+            "a fed but COLLAPSING colonist must be judged on the collapse"
+        );
+        assert_eq!(worst_band(0.9, 0.9, &cfg), Fine);
     }
 
     /// ★ THE HOUR-OF-DAY CONVERSION, pinned because everything above keys on it
