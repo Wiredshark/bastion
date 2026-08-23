@@ -46,6 +46,29 @@ sleepers=$(grep "bastion: slept" "$V.w" | grep -o "uid=[0-9]*" | sort -u | wc -l
 slept=$(grep -c "bastion: slept" "$V.w"); ate=$(grep -c "bastion: ate" "$V.w")
 unreach=$(grep -c "job unreachable" "$V.w"); arrived=$(grep -c "colonist arrived at job site" "$V.w")
 top3=$(grep "LONGEST-TIER SEARCH" "$V.w" | grep -oE "resolved_end=Vec3 \{ x: [0-9-]+, y: [0-9-]+, z: [0-9-]+" | sort | uniq -c | sort -rn | head -3 | awk '{s+=$1} END {print s+0}')
-echo "@@@LEG slot=$SLOT arm='$ARM_ENV' fence=$FENCE longest_search=$lt top3_share=$top3 exhaust=$ex terminal_releases=${term:-NA} stuck=$stuck sleepers=$sleepers slept=$slept ate=$ate unreachable=$unreach arrived=$arrived@@@"
+# ITEM 36 field block (df2c19b5a0's bars, greppable halves): the death roll,
+# the outright split, the belongings drop + item count, the final
+# population/downed census, and the extinction sentinel. A null-control leg
+# must show ZEROES here with a couldn't-happen witness (the census being
+# present at all = colonists existed and were sampled).
+died=$(grep -c "COLONIST DIED" "$V.w")
+outright=$(grep "DEATH v2 roll" "$V.w" | grep -c "outright=true")
+bel_drops=$(grep -c "belongings dropped at the death cell" "$V.w")
+bel_items=$(grep "belongings dropped at the death cell" "$V.w" | grep -o "dropped=[0-9]*" | cut -d= -f2 | awk '{s+=$1} END {print s+0}')
+final_census=$(grep "EXPERIENCE census" "$V.w" | tail -1 | grep -oE "total=[0-9]+ downed=[0-9]+" | tr ' ' '_')
+extinct=$(grep -c "COLONY EXTINCT" "$V.w")
+echo "@@@LEG slot=$SLOT arm='$ARM_ENV' fence=$FENCE longest_search=$lt top3_share=$top3 exhaust=$ex terminal_releases=${term:-NA} stuck=$stuck sleepers=$sleepers slept=$slept ate=$ate unreachable=$unreach arrived=$arrived died=$died outright=$outright belongings_drops=$bel_drops belongings_items=$bel_items final=${final_census:-NA} extinct=$extinct@@@"
+# The chronicle half (Death records + actors incl. witnesses) via the real
+# wire path — one driver turn against the still-live world. Failure to turn
+# is reported, never silent: the chronicle bar reads VOID for that leg.
+printf 'inspect_chronicle\ninspect_colonists\n' > /tmp/i36-$SLOT.play
+if bash play-harness.sh turn "$SLOT" /tmp/i36-$SLOT.play > /tmp/i36-$SLOT.out 2>&1; then
+  echo "@@@CHRONICLE slot=$SLOT"
+  grep -iE "death|chronicle|actors" /tmp/i36-$SLOT.out | head -40
+  echo "@@@END"
+else
+  echo "@@@CHRONICLE slot=$SLOT TURN_FAILED (chronicle bar VOID for this leg)@@@"
+  tail -5 /tmp/i36-$SLOT.out
+fi
 bash play-harness.sh stop "$SLOT" >/dev/null 2>&1
 rm -f "$V" "$V.w"
