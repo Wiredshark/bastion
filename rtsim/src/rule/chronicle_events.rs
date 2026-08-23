@@ -34,6 +34,24 @@ fn on_death(ctx: EventCtx<ChronicleEvents, OnDeath>) {
     if let Some(killer) = ctx.event.killer {
         actors.push(killer);
     }
+    // ★ ITEM 36 v1 (witnesses): who SAW it dies a little too. The Death
+    // thought is filtered by `actors.contains`, so before this only the
+    // victim and the killer carried it — a colonist could watch a friend
+    // fall two blocks away and feel nothing. Witnesses ride the same
+    // actors list (the locked schema's one per-figure channel; "I saw
+    // them fall" becoming part of a witness's own history is the DF
+    // engraving shape, not an accident). The 32-block radius is the
+    // sibling report rule's own witness scan, reused verbatim. Sorted
+    // (Actor is Ord for exactly this) and capped so a crowd cannot
+    // bloat the record: the six nearest-by-id is a deterministic set,
+    // where "whichever six the grid yielded first" is not.
+    if let Some(wpos) = ctx.event.wpos {
+        actors.extend(witness_actors(
+            data.npcs.nearby(None, wpos, 32.0),
+            ctx.event.actor,
+            ctx.event.killer,
+        ));
+    }
     data.chronicle.record(
         now,
         ChronicleKind::Death,
@@ -59,4 +77,59 @@ fn on_theft(ctx: EventCtx<ChronicleEvents, OnTheft>) {
         Scope::World,
         None,
     );
+}
+
+/// ITEM 36 v1: the witness set for a death record — everyone nearby except
+/// the victim and the killer (both already lead the actors list), SORTED
+/// (`Actor` is `Ord` for exactly this) and capped, so the set is a
+/// deterministic function of who was there, never of grid iteration order.
+/// Capped at six: a crowd must not bloat a locked-schema record.
+fn witness_actors(
+    nearby: impl Iterator<Item = common::rtsim::Actor>,
+    victim: common::rtsim::Actor,
+    killer: Option<common::rtsim::Actor>,
+) -> Vec<common::rtsim::Actor> {
+    let mut witnesses: Vec<_> = nearby
+        .filter(|a| *a != victim && Some(*a) != killer)
+        .collect();
+    witnesses.sort();
+    witnesses.truncate(6);
+    witnesses
+}
+
+#[cfg(test)]
+mod tests {
+    use super::witness_actors;
+    use common::rtsim::Actor;
+
+    /// ★ ITEM 36 v1: witnesses are DERIVED, deterministic, and never
+    /// double-count the principals. The victim and killer already lead the
+    /// actors list — re-adding them would double their Death thought; the
+    /// sort makes the record independent of spatial-grid yield order; the
+    /// cap keeps a crowd from bloating the locked schema.
+    #[test]
+    fn witnesses_exclude_principals_sort_and_cap() {
+        // NpcIds are slotmap keys; fabricate distinct ones via a real map.
+        let mut sm: slotmap::SlotMap<crate::data::NpcId, ()> = slotmap::SlotMap::with_key();
+        let ids: Vec<_> = (0..10).map(|_| sm.insert(())).collect();
+        let victim = Actor::Npc(ids[0]);
+        let killer = Actor::Npc(ids[1]);
+
+        // Fed in reverse order: the output must not care.
+        let out = witness_actors(
+            ids.iter().rev().map(|i| Actor::Npc(*i)),
+            victim,
+            Some(killer),
+        );
+        assert!(!out.contains(&victim), "the victim is not their own witness");
+        assert!(!out.contains(&killer), "the killer already leads the actors list");
+        assert_eq!(out.len(), 6, "a crowd of 8 eligible caps at 6");
+        let mut sorted = out.clone();
+        sorted.sort();
+        assert_eq!(out, sorted, "the set is ordered, not grid-yield-ordered");
+
+        // A death with no killer excludes only the victim.
+        let out = witness_actors(ids[..3].iter().map(|i| Actor::Npc(*i)), victim, None);
+        assert_eq!(out.len(), 2);
+    }
 }
