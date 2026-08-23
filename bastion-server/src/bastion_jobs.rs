@@ -3728,6 +3728,76 @@ pub const HAUL_JOBS_PER_COLONIST: usize = 2;
 /// converge, so 3 is where BOTH downstream reactions to persistence
 /// become appropriate, not an arbitrary shared number.
 pub const PERSIST_ESCALATE_STRIKES: u8 = 3;
+
+/// ★ PER-(COLONIST, JOB) CLAIM-FAILURE MEMORY — a decaying SOFT score penalty,
+/// never a veto (2026-08-23).
+///
+/// THE MEASUREMENT THAT FORCED IT: the endpoint witness showed EIGHT cells
+/// producing 74% of all Longest-tier (75k-iteration) pathfinder polls. There is
+/// no per-colonist memory of failure anywhere — the claim loop re-solves the
+/// same straight-line argmin every 15 ticks and re-derives the same doomed
+/// answer, and each re-pick re-saturates the colony's shared 3,000-iters/tick
+/// search budget, starving every OTHER colonist's search into partial-path
+/// fallback (the tape's 89%-Exhausted travel).
+///
+/// ★ WHY THIS SHAPE AND NOT A BAR — E2's corpse is the design. An earlier
+/// per-colonist re-claim bar (`Job.last_bounce`) was built and REVERTED the
+/// same night, for two recorded reasons, and each dictates one rule here:
+///
+///   "leaked on physics wobble"  -> the predicate was a POSITION test, and
+///     sub-block jitter cleared it. RULE: the decay clock is TICKS; no
+///     position appears anywhere in these signatures, so wobble has no door.
+///   "starved the strike-grown remote-work convergence" -> the bar was a
+///     candidacy VETO, so a barred job accrued no attempts, and marginal
+///     sites need >=3 attempts to grow their 2.5->6.1 arrival tolerance.
+///     RULE: this is an ADDITIVE term in an argmin, capped, so a penalised
+///     job that is the only work on the board still wins, still gets
+///     attempted, still converges. `census.eligible` is untouched by
+///     construction.
+///
+/// Units: blocks, the same unit as `dist` in the score it joins — calibrated
+/// against its neighbours there (`clump_penalty` = 12.0, depth = 8.0/level).
+/// One failure ~ one z-level of dig priority. Named as a guess, not a
+/// measurement, per this file's constant-honesty rule.
+pub const CLAIM_PENALTY_PER_FAILURE: f32 = 8.0;
+/// Ticks for the penalty to halve. Derived, not re-typed: by the time one
+/// honest re-attempt would have run to its own STUCK_TIMEOUT, half the
+/// discouragement should be gone. 10s x 30 ticks/s = 300.
+pub const CLAIM_PENALTY_HALF_LIFE_TICKS: u64 = (STUCK_TIMEOUT as u64) * 30;
+/// ★ THE R2 GUARANTEE. An uncapped accumulating penalty converges on a veto,
+/// and a veto is E2. The cap keeps it soft forever, and it is enforced at the
+/// READ so no write path can smuggle a bar past it.
+pub const CLAIM_PENALTY_CAP: f32 = 4.0 * CLAIM_PENALTY_PER_FAILURE;
+
+/// The decayed penalty for one (colonist, job) pair at `now_tick`.
+/// Signature deliberately position-free — see the E2 rules above.
+pub fn claim_failure_penalty(recorded: Option<(f32, u64)>, now_tick: u64) -> f32 {
+    match recorded {
+        Some((mag, at)) => {
+            let elapsed = now_tick.saturating_sub(at) as f32;
+            let half_lives = elapsed / CLAIM_PENALTY_HALF_LIFE_TICKS as f32;
+            (mag * 0.5_f32.powf(half_lives)).min(CLAIM_PENALTY_CAP)
+        },
+        None => 0.0,
+    }
+}
+
+/// Fold one more failure into the record. Decays the old magnitude first, so
+/// a burst of failures saturates at the cap instead of stacking past it.
+pub fn record_claim_failure(prev: Option<(f32, u64)>, now_tick: u64) -> (f32, u64) {
+    let carried = claim_failure_penalty(prev, now_tick);
+    (
+        (carried + CLAIM_PENALTY_PER_FAILURE).min(CLAIM_PENALTY_CAP),
+        now_tick,
+    )
+}
+
+/// Env-gated, DEFAULT OFF, so the A/B control is the same binary — the
+/// discipline every measured change tonight has shipped under.
+pub fn claim_penalty_enabled() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var_os("BASTION_CLAIM_PENALTY").is_some())
+}
 /// bastion (ROW B′, 2026-08-04, replaces the withdrawn Row B): ticks
 /// added to `tick.0` at the churn else-arm to compute
 /// `Job::benched_until_tick` -- see that field's own doc for the full
@@ -6572,6 +6642,10 @@ pub struct JobBoard {
     /// COUNT is the loop's own signature. Threshold → an on-the-spot
     /// annulus test → an egress request, employed or not.
     churn_watch: HashMap<Uid, (Vec3<f32>, u8)>,
+    /// Decaying per-(colonist, job) claim-failure memory — see
+    /// [`CLAIM_PENALTY_PER_FAILURE`]. Point-queried by key only; never
+    /// iterated for a decision (determinism).
+    claim_penalty: HashMap<(Uid, JobId), (f32, u64)>,
     /// bastion (B5.8-E3): egress requests raised OUTSIDE the sampling pass
     /// (the churn detector fires from the every-tick upkeep loop); drained
     /// into the next egress pass, which owns one-plan-at-a-time gating.
@@ -18773,6 +18847,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             );
                         }
                         active.state = ActiveJobState::Arrived;
+                        // Arrival is forgiveness: the pair's failure memory is
+                        // structural, not merely time-decayed.
+                        if let Some(u) = uids.get(entity).copied() {
+                            board.claim_penalty.remove(&(u, active.job));
+                        }
                         if let Some(agent) = agent.as_deref_mut() {
                             agent.rtsim_controller.activity = None;
                         }
@@ -19597,6 +19676,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     if is_labor_hold_self_job(&job.kind) {
                                         to_suspend.push((entity, active.job));
                                     } else {
+                                        // ★ FAILURE MEMORY here too. This arm
+                                        // used to leave ZERO anti-repeat state
+                                        // — no flag, no strike — so the same
+                                        // colonist could re-win the identical
+                                        // job 15 ticks later, forever. The
+                                        // audit named it the worse sibling.
+                                        if let Some(u) = uids.get(entity).copied() {
+                                            let k = (u, active.job);
+                                            let prev =
+                                                board.claim_penalty.get(&k).copied();
+                                            board.claim_penalty.insert(
+                                                k,
+                                                record_claim_failure(prev, tick.0),
+                                            );
+                                        }
                                         job.claimed_by = None;
                                         to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
                                     }
@@ -19897,6 +19991,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // the humanitarian bubble (~10s of
                                     // bounces) — employed or not.
                                     job.unreachable = true;
+                                    // ★ FAILURE MEMORY (E2-safe): fold this
+                                    // failure into the (colonist, job) decay
+                                    // record so the claim score discourages —
+                                    // never bars — an immediate re-pick.
+                                    if let Some(u) = uids.get(entity).copied() {
+                                        let k = (u, active.job);
+                                        let prev = board.claim_penalty.get(&k).copied();
+                                        board
+                                            .claim_penalty
+                                            .insert(k, record_claim_failure(prev, tick.0));
+                                    }
                                     churn_events.push((entity, pos.0, feet, reach));
                                     info!(
                                         job = active.job,
@@ -25929,6 +26034,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             } else {
                 false // the whole set dormant — flags hold.
             };
+            // Prune decayed claim-penalty records on the same 60-tick cadence
+            // — a bounded sweep, order-independent (pure retain on decayed
+            // value), so the map cannot grow with dead (colonist, job) pairs.
+            board
+                .claim_penalty
+                .retain(|_, rec| claim_failure_penalty(Some(*rec), tick.0) > 0.1);
             if grant_amnesty {
                 // ROW B′ (2026-08-04, replaces the withdrawn Row B):
                 // this loop ALREADY runs, every grant, over every job,
@@ -27244,7 +27355,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     },
                     None => 1.0,
                 };
-                let score = (dist + depth_score + clump_penalty + sat_penalty)
+                // ★ FAILURE MEMORY (soft, capped, decaying — E2-safe by
+                // construction; flag-gated for the A/B).
+                let failure_penalty = if claim_penalty_enabled() {
+                    claim_failure_penalty(
+                        board.claim_penalty.get(&(*uid, id)).copied(),
+                        tick.0,
+                    )
+                } else {
+                    0.0
+                };
+                let score = (dist + depth_score + clump_penalty + sat_penalty + failure_penalty)
                     / (claim_weight
                         // #107: the colony drive's tilt — aligned work
                         // scores as if closer; a relief, never a veto.
@@ -29057,6 +29178,54 @@ mod tests {
         // fetch exemption exists to prevent).
         assert!(FETCH_STALL_SECS < FETCH_BUDGET_SECS / 2.0);
         assert!(FETCH_STALL_SECS > STUCK_TIMEOUT as f64);
+    }
+
+    /// ★ THE CLAIM PENALTY IS A DISCOURAGEMENT, NEVER A BAR — E2's two named
+    /// failures, each pinned. The cap is asserted at the READ, because the
+    /// first falsification round proved the write-side cap alone is not the
+    /// guarantee (removing it left the old test green — the read clamp held).
+    #[test]
+    fn a_claim_penalty_discourages_but_never_bars_and_wobble_cannot_clear_it() {
+        let fresh = record_claim_failure(None, 1_000);
+        assert!(
+            claim_failure_penalty(Some(fresh), 1_000) > 0.0,
+            "a recorded failure must produce a nonzero penalty"
+        );
+
+        // E2 falsifier: a penalised job must remain WINNABLE — finite, capped.
+        let mut rec = None;
+        for _ in 0..100 {
+            rec = Some(record_claim_failure(rec, 1_000));
+        }
+        let p = claim_failure_penalty(rec, 1_000);
+        assert!(p.is_finite(), "an infinite penalty is a veto, and a veto is E2");
+        assert!(
+            p <= CLAIM_PENALTY_CAP + f32::EPSILON,
+            "100 failures must read at the cap — an uncapped accumulating penalty \
+             converges on a veto"
+        );
+        // The READ clamp must hold even against a hostile record far past the
+        // cap — the layer the plant proved is load-bearing.
+        assert!(
+            claim_failure_penalty(Some((1.0e6, 1_000)), 1_000) <= CLAIM_PENALTY_CAP,
+            "the read-side clamp is the actual guarantee and it just failed"
+        );
+
+        // Decay: half at one half-life, forgiveness by eight.
+        let one = record_claim_failure(None, 0);
+        let at_half = claim_failure_penalty(Some(one), CLAIM_PENALTY_HALF_LIFE_TICKS);
+        assert!((at_half - CLAIM_PENALTY_PER_FAILURE / 2.0).abs() < 0.01);
+        assert!(claim_failure_penalty(Some(one), 8 * CLAIM_PENALTY_HALF_LIFE_TICKS) < 0.1);
+        assert_eq!(claim_failure_penalty(None, 0), 0.0);
+
+        // Wobble-proof by SIGNATURE: no position input exists to leak through.
+        assert_eq!(
+            claim_failure_penalty(Some(one), 42),
+            claim_failure_penalty(Some(one), 42)
+        );
+
+        // Calibration: cap stays in the score's currency (clump 12, depth 8).
+        assert!(CLAIM_PENALTY_CAP <= 40.0, "cap has left the score's currency band");
     }
 
     /// ★ THE HOUR-OF-DAY CONVERSION, pinned because everything above keys on it
