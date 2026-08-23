@@ -3114,6 +3114,45 @@ pub fn band_preempt_cooldown_secs(band: NeedBand) -> f64 {
     }
 }
 
+/// ★ THE ONE PREDICATE for "is this colonist's need-preempt still on cooldown".
+///
+/// TWO READERS ASKED DIFFERENT QUESTIONS, AND THE BAND-SCALING WAS INERT
+/// BECAUSE OF IT (found 2026-08-23, from a live starving colonist).
+///
+/// `preempt_cooldown` is consulted in two places by design — the arbiter, to
+/// decide whether `Drive::Personal` may win, and the need loop, to decide
+/// whether to service a need. The arbiter's own comment states the contract:
+/// "the need-check pass already respects it (its own gate)". When
+/// [`band_preempt_cooldown_secs`] was added it was wired into the need loop
+/// ONLY, so the arbiter kept counting the full 60s.
+///
+/// The result is worse than no fix. The need loop clears at 5s for a Dire
+/// colonist and then immediately fails its own `arb.current != Personal` gate,
+/// because the arbiter — still on 60s — forced severity to 0.0 and let Work
+/// win. **Shortening one of two AND-ed gates changes nothing**, so a starving
+/// colonist waited the full minute exactly as before while the band machinery
+/// reported that it had not.
+///
+/// Measured: colonist 98 at `hunger=0.0` (`"starving"`), rest 0.038 and
+/// falling, holding a Haul job, `speed=0.0`, four blocks from its target.
+///
+/// Both sites now call this. A cooldown is one fact.
+pub fn preempt_cooldown_active(
+    until: Option<f64>,
+    now: f64,
+    rest: f32,
+    hunger: f32,
+    mood_cfg: &common::bastion::MoodConfig,
+) -> bool {
+    let Some(until) = until else {
+        return false;
+    };
+    // Every write site inserts `now + PREEMPT_COOLDOWN_SECS`, so the start is
+    // exact and the band can shorten the remaining wait without a new field.
+    let set_at = until - PREEMPT_COOLDOWN_SECS;
+    now < set_at + band_preempt_cooldown_secs(worst_band(rest, hunger, mood_cfg))
+}
+
 /// The band a colonist is judged on for [`band_preempt_cooldown_secs`]: its
 /// WORST, because determination is set by the thing most likely to kill it.
 pub fn worst_band(rest: f32, hunger: f32, mood_cfg: &common::bastion::MoodConfig) -> NeedBand {
@@ -15261,10 +15300,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .get(&aj.job)
                                 .is_some_and(|j| is_labor_hold_self_job(&j.kind))
                         });
-                        let on_cooldown = board
-                            .preempt_cooldown
-                            .get(uid)
-                            .is_some_and(|until| time.0 < *until);
+                        // Same question the need loop asks — see
+                        // `preempt_cooldown_active`. Reading the raw `until`
+                        // here while the need loop read a band-scaled window
+                        // made the band-scaling inert: this gate kept Personal
+                        // from winning for the full 60s regardless.
+                        let on_cooldown = needs_storage.get(entity).is_some_and(|n| {
+                            preempt_cooldown_active(
+                                board.preempt_cooldown.get(uid).copied(),
+                                time.0,
+                                n.rest,
+                                n.hunger,
+                                mood_cfg,
+                            )
+                        });
                         // AUTON-2 unification (site 4/6, ENDURE regression
                         // #3, 2026-08-09): a SUSPENDED self-job
                         // (`pending_self_job`) is unfinished business, but
@@ -16436,10 +16485,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // hunger-driven bypass.
                 let cd_band = worst_band(needs.rest, needs.hunger, &mood_cfg);
                 let cd_secs = band_preempt_cooldown_secs(cd_band);
-                if let Some(until) = board.preempt_cooldown.get(uid)
-                    && let set_at = *until - PREEMPT_COOLDOWN_SECS
-                    && time.0 < set_at + cd_secs
-                {
+                // Through the SAME producer the arbiter uses. These two gates
+                // are AND-ed in practice, so a disagreement between them makes
+                // the shorter one inert.
+                if preempt_cooldown_active(
+                    board.preempt_cooldown.get(uid).copied(),
+                    time.0,
+                    needs.rest,
+                    needs.hunger,
+                    &mood_cfg,
+                ) {
+                    let until = board.preempt_cooldown.get(uid).copied().unwrap_or(0.0);
+                    let set_at = until - PREEMPT_COOLDOWN_SECS;
                     if need_skip_diag {
                         info!(
                             colonist = %uid,
@@ -28823,6 +28880,61 @@ mod tests {
             all.iter().filter(|(a, b)| blocked(*a, *b)).count(),
             1,
             "exactly one of the four states may be refused; more means the guard over-refuses              and starves the protectee, fewer means it is inert"
+        );
+    }
+
+    /// ★ ONE COOLDOWN, ONE ANSWER — the two readers must not drift.
+    ///
+    /// `preempt_cooldown` gates two AND-ed things: whether the arbiter lets
+    /// `Drive::Personal` win, and whether the need loop services a need. When
+    /// band-scaling was wired into the need loop only, the arbiter kept the
+    /// full 60s and the shortening did NOTHING — a Dire colonist cleared the
+    /// need gate at 5s and then failed the `arb.current != Personal` gate the
+    /// arbiter had never opened.
+    ///
+    /// **Shortening one of two AND-ed gates changes nothing.** That is the
+    /// property this test exists to pin, and it is why the predicate is one
+    /// function rather than two expressions that happen to agree.
+    #[test]
+    fn one_cooldown_producer_serves_both_gates_and_the_band_actually_shortens_it() {
+        let cfg = common::bastion::MoodConfig::default();
+        let set_at = 1_000.0_f64;
+        let until = set_at + PREEMPT_COOLDOWN_SECS;
+        let active = |now: f64, rest: f32, hunger: f32| {
+            preempt_cooldown_active(Some(until), now, rest, hunger, &cfg)
+        };
+
+        // ── A DIRE colonist waits the SHORT window. This is the case the band
+        // was built for and the case that was inert.
+        let dire = (0.9_f32, 0.0_f32); // starving; worst band = Dire
+        assert!(
+            active(set_at + 1.0, dire.0, dire.1),
+            "a cooldown must still bite immediately after it is set, or it is not a cooldown"
+        );
+        assert!(
+            !active(set_at + 6.0, dire.0, dire.1),
+            "a STARVING colonist was still on cooldown after 6s. Dire is 60/12 = 5s, and this              is the gate that kept colonist 98 at hunger 0.000 holding a Haul job with speed 0.0"
+        );
+
+        // ── A COMFORTABLE colonist still waits the full window, or the fix is
+        // just 'remove the cooldown' wearing a band's clothes.
+        let fine = (0.9_f32, 0.9_f32);
+        assert!(
+            active(set_at + 30.0, fine.0, fine.1),
+            "a fed, rested colonist must still serve the full 60s — shortening it for everyone              is the anti-thrash guard removed, not scaled"
+        );
+        assert!(!active(set_at + 61.0, fine.0, fine.1));
+
+        // ── NO COOLDOWN RECORDED = not on cooldown. An absent entry must never
+        // read as active, or a colonist that never attempted anything is barred.
+        assert!(!preempt_cooldown_active(None, set_at, 0.0, 0.0, &cfg));
+
+        // ── AND THE TWO BANDS MUST ACTUALLY DIFFER at some instant, or the
+        // producer is uniform and the whole mechanism is decoration.
+        let t = set_at + 10.0;
+        assert!(
+            active(t, fine.0, fine.1) && !active(t, dire.0, dire.1),
+            "at t+10s the fed colonist must still be gated and the starving one must not —              if these agree the band-scaling is inert, which is the bug being fixed"
         );
     }
 
