@@ -7920,6 +7920,15 @@ pub struct JobBoard {
     /// stockpile does, matching v3's own famine signature (0 from tick
     /// 99300 onward, never a transient blip).
     colony_terminal_zero_streak: u32,
+    /// ★ THE MINT TRIPWIRE (Ben, 2026-08-23: "shouldn't we do a test to see
+    /// if there are anymore of these junk jobs elsewhere"): `next_id` at the
+    /// last tick-cost census, so every census prints how many job ids were
+    /// minted in the window. The farm engine minted 67,185 of 68,048 ids in
+    /// one specimen (98.7%) and hid for weeks because nothing watched the
+    /// MINT RATE — jobs-on-board stayed flat while ids churned. An engine
+    /// cannot hide from this: exploding minted_delta with flat board counts
+    /// IS the signature, and the census's jobs= snapshot names the kind.
+    census_last_next_id: u64,
     /// Sentinel S2 (extinction): consecutive census samples with ZERO
     /// colonists alive. Same machine as S1 (`colony_terminal_step`) — the
     /// streak resets on any sample with a living colonist, so a future
@@ -14488,6 +14497,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let mut v: Vec<u64> = board.tick_cost_us.iter().copied().collect();
                     v.sort_unstable();
                     let p = |q: f32| v[((v.len() - 1) as f32 * q) as usize];
+                    // The mint tripwire: ids minted since the last census.
+                    // Junk engines churn ids while board counts stay flat —
+                    // this is the number that catches the NEXT farm-loop.
+                    let minted_delta =
+                        board.next_id.saturating_sub(board.census_last_next_id);
+                    board.census_last_next_id = board.next_id;
                     info!(
                         tick = tick.0,
                         samples = v.len(),
@@ -14495,6 +14510,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         p95_us = p(0.95),
                         max_us = v[v.len() - 1],
                         jobs = board.jobs.len(),
+                        minted_delta,
                         colonists = (&colonists).join().count(),
                         designations = board.designated.len(),
                         "bastion: ITEM 39 tick cost"
