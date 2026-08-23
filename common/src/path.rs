@@ -1057,6 +1057,34 @@ pub struct Node {
 /// NOT 1.0.
 const SCRAMBLE_SURCHARGE: f32 = 30.0;
 
+/// The cost of falling, PER BLOCK of drop, on top of the base transition.
+///
+/// ★ RE-PRICED 1.5 -> 3.5/block, ALL falls charged (2026-08-23).
+/// Measured chain that forced it: falls were the CHEAPEST move in the model
+/// (a 3-block drop cost 1.5 TOTAL — half a flat step; 1-2 block drops cost
+/// the base transition ~1.0), so A* greedily dove down every ledge. Descents
+/// are one-way for most bodies, so each cheap drop was an un-un-makeable
+/// mistake, and terraced village ground became a ONE-WAY DESCENT LATTICE
+/// that drowned 75,000-iteration searches before they found the (existing)
+/// symmetric route. Edge-level witness, one leg: EVERY lateral-air frontier
+/// cell carried a live fall edge (F1..F4 x378, Fnone x0) — the lattice is
+/// built from working edges, priced wrong.
+///
+/// 3.5 > one flat step (3.0) per block, so a drop is a shortcut only when it
+/// genuinely shortens the route — the acceptance criterion "climbing and
+/// FALLING should be actively discouraged" priced into the router instead of
+/// commented at it. PINNED both directions by
+/// `a_fall_must_cost_at_least_walking_the_same_distance`.
+const FALL_COST: f32 = 3.5;
+
+/// Same-binary A/B control ONLY: restores the pre-2026-08-23 fall pricing
+/// byte-for-byte so the repricing can be judged with one env var on one
+/// binary. Never set outside a measurement leg.
+fn legacy_fall_pricing() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var_os("BASTION_LEGACY_FALL_PRICING").is_some())
+}
+
 fn find_path<V>(
     astar: &mut Option<(Astar<Node, FxBuildHasher>, Vec3<f32>)>,
     vol: &V,
@@ -1233,9 +1261,6 @@ where
             Vec3::new(-1, 0, 3), // Left Upwardx3
         ];
 
-        /// The cost of falling a block.
-        const FALL_COST: f32 = 1.5;
-
         let walkable = [
             (is_walkable(&(pos + Vec3::new(1, 0, 0))), Vec3::new(1, 0, 0)),
             (
@@ -1342,12 +1367,20 @@ where
                     last_dir_count: 0,
                 };
 
-                // Falling costs a lot.
-                Some((next_node, match down {
-                    1..=2 => {
-                        transition(node, next_node)
+                // Every block of fall pays FALL_COST. The old shape charged
+                // 1-2 block drops the flat transition (~1.0) and 3+ drops
+                // only (down-2)*1.5 — making DEEP falls cheaper per block
+                // than walking, which is what turned terraced ground into
+                // the one-way descent lattice. Uniform per-block pricing.
+                // The legacy arm is the byte-exact old computation, kept ONLY
+                // as the same-binary A/B control (BASTION_LEGACY_FALL_PRICING).
+                Some((next_node, if legacy_fall_pricing() {
+                    match down {
+                        1..=2 => transition(node, next_node),
+                        _ => 1.5 * (down - 2) as f32,
                     }
-                    _ => FALL_COST * (down - 2) as f32,
+                } else {
+                    transition(node, next_node) + FALL_COST * down as f32
                 }))
             }))
             // bastion (B5.8): LADDER edges — vertical moves in a cell
@@ -2622,6 +2655,50 @@ mod ledger_179_tests {
         assert!(
             step(1) < flat * 3.0,
             "a single step up must stay cheaper than three flat steps, or colonists              will refuse stairs and ladders they are supposed to use"
+        );
+    }
+
+    /// ★ A FALL MUST COST AT LEAST WALKING THE SAME DISTANCE.
+    ///
+    /// The one-way descent lattice: falls were the CHEAPEST move in the cost
+    /// model (0.45-1.22 per block against 3.0 for a flat step), so A* dove
+    /// down every ledge into basins it could not climb out of, and 75k-iter
+    /// searches drowned in the descent cone. This pins the RELATIONSHIP that
+    /// forbids that — per block of drop, falling must cost at least a flat
+    /// step — not the constant, so it survives retuning and fails on the
+    /// exact old shape (planted: 1.5*(down-2) went red here at down=3).
+    ///
+    /// BOTH DIRECTIONS, because a price that refuses every descent also
+    /// stops the bug reproducing: a genuine shortcut drop must still beat a
+    /// long walk-around, or colonists freeze at every terrace lip and the
+    /// stuck census inherits what the pathfinder lost.
+    #[test]
+    fn a_fall_must_cost_at_least_walking_the_same_distance() {
+        // The fall arm's cost model, reproduced from `find_path`: descent's
+        // dz-term is clamped to zero by `(dz+1).max(0)`, so the base
+        // transition of a fall edge is the 1.0 constant, plus FALL_COST per
+        // block of drop. Kept in one expression so a change there that this
+        // does not follow shows up as a failure, not a stale duplicate.
+        let fall = |down: i32| 1.0 + FALL_COST * down as f32;
+        let flat = 3.0; // pinned against `transition` by the scramble test
+
+        for down in 1..=12 {
+            assert!(
+                fall(down) >= flat * down as f32,
+                "a {down}-block drop ({}) must cost at least walking {down} flat              blocks ({}): cheaper falls make every ledge a bargain and terraced              ground a one-way descent lattice — the old 1.5*(down-2) pricing              charged HALF a flat step for a 3-block drop",
+                fall(down),
+                flat * down as f32,
+            );
+        }
+
+        // ...and the price must not have swallowed legitimate descent: a
+        // short drop that genuinely shortens the route must still win over a
+        // 20-step detour, or the fix strands colonists on every terrace.
+        assert!(
+            fall(2) < flat * 20.0,
+            "a 2-block drop ({}) must stay cheaper than a 20-step walk-around              ({}): a price that refuses ALL descent passes the one-sided test              while freezing colonists at every terrace lip",
+            fall(2),
+            flat * 20.0,
         );
     }
 
