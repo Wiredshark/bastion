@@ -26316,6 +26316,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             };
             if board.shadow_conn.iter().any(|c| *c > 0) {
                 info!(
+                    chaser_terminal_releases = board.chaser_terminal_releases,
                     refuse = board.shadow_conn[0],
                     same_component = board.shadow_conn[1],
                     admit_untrusted = board.shadow_conn[2],
