@@ -1083,6 +1083,29 @@ where
         _ => return (PathResult::None(Path::default()), 0),
     };
 
+    // ★ LAST-TIER ENDPOINT WITNESS (2026-08-23, env-gated, Longest only so it
+    // is near-free). The flight tape showed 89% of colonist travel running on
+    // Exhausted partial paths, and a chaser only reaches Longest (75k iters)
+    // after failing every lower tier — i.e. the target is very likely
+    // unreachable by the move set. WHY is the open question, and the two live
+    // candidates disagree about `end`: a goal column whose interior cell fails
+    // `walkable()` snaps to the roof (the +9..+13 stranding signature), or the
+    // goal resolves sanely and the route itself is cut. One log line with the
+    // RESOLVED cells separates them; without it every explanation is a story.
+    if path_length == PathLength::Longest {
+        static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if *ON.get_or_init(|| std::env::var_os("BASTION_PATH_ENDPOINT_DIAG").is_some()) {
+            tracing::info!(
+                ?startf,
+                ?endf,
+                resolved_start = ?start,
+                resolved_end = ?end,
+                end_snap_dz = end.z - endf.z.floor() as i32,
+                "bastion: LONGEST-TIER SEARCH — resolved endpoints (a nonzero                  end_snap_dz means the goal moved off the requested cell)"
+            );
+        }
+    }
+
     let heuristic = |node: &Node| {
         let diff = end.as_::<f32>() - node.pos.as_::<f32>();
         let d = diff.magnitude();
