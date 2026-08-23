@@ -7,9 +7,12 @@
 #                            flow, made the default 2026-08-23)
 #   .\PLAY.ps1 town -Boot    the old zero-ceremony path: the scorer picks a
 #                            settlement, founds instantly, you spawn in it
-#   .\PLAY.ps1 flattown      a real worldgen village on FLAT ground -- but this
-#                            world only has a HAMLET near centre (3 houses, no
-#                            fields). Good for watching pathing, not a town.
+#   .\PLAY.ps1 flattown      THE FLAT MAP TOWN (2026-08-23): the WHOLE world is
+#                            one flat plain (BASTION_FLAT_WORLD) with real
+#                            worldgen towns on it — the lab world where terrain
+#                            can never be the explanation. Small fast map
+#                            (256x256 chunks, ~30s gen). Pick your town on the
+#                            SELECT STARTING AREA screen, same as town.
 #   .\PLAY.ps1 arena         found on flat test ground: the colony mines its own
 #                            stone, builds its own beds, colonists carry tools
 #
@@ -171,24 +174,20 @@ if ($skewMin -gt 3) {
 
 # The three worlds.
 $EnvVars = if ($Mode -eq 'flattown') {
-    # ★ THE FLAT-MAP TOWN. A REAL worldgen village on FLAT ground: the flatten
-    # runs BEFORE civ generation, so houses/doors/roads/fields are placed onto
-    # the levelled disc rather than having the ground pulled out from under
-    # buildings whose heights are already baked.
-    #
-    # ★ MEASURED CAVEAT, three runs: the flat disc and the village SEARCH have
-    # to agree or the town lands off the flat (with search left at its default
-    # 16384 the scorer picked a village 11,229 blocks away). But binding them
-    # is not free -- this world has no LARGE village near world centre, so a
-    # flat town here is a HAMLET (3 houses, 0 fields). Use `town` to see a real
-    # 46-house / 23-field settlement; use this to watch PATHING on legible
-    # ground.
-    #
-    # No marker wait: with one candidate nearby there is nothing to choose.
+    # ★ THE FLAT MAP TOWN, v2 (2026-08-23). The old flat DISC
+    # (BASTION_FLAT_WORLD_RADIUS) flattened a patch of a mountainous world and
+    # could only ever catch whatever hamlet stood near centre. This is the
+    # WHOLE-WORLD flatten: every chunk levelled to one plain BEFORE civs run,
+    # forest bands laid for building material, the civ roll pinned to the one
+    # town kind that can exist here — so REAL multi-house towns generate ON
+    # the plain (first gen: 3 towns, the adopted one 18 houses, alt_range=0).
+    # The map is small (256×256 chunks via map_file below) so worldgen takes
+    # ~30 seconds, not minutes. Chooser flow, same as town: pick your
+    # settlement on the SELECT STARTING AREA screen.
     @{
-        BASTION_FLAT_WORLD_RADIUS      = '64'
-        BASTION_ADOPT_RADIUS           = '2000'
+        BASTION_FLAT_WORLD             = '1'
         BASTION_ADOPT_TOWN             = '1'
+        BASTION_ADOPT_WAIT_FOR_MARKER  = '1'
         BASTION_AUTOFOUND_REAL_TERRAIN = '1'
         BASTION_COLONY_PRESENCE_VD     = '3'
         BASTION_AUTOFOUND_COLONY       = '8'
@@ -266,6 +265,21 @@ foreach ($k in $EnvVars.Keys) { Set-Item -Path "Env:$k" -Value $EnvVars[$k] }
 
 # Grant admin to the account you log in as. This one CAN be quiet: it exits.
 & "$Bin\veloren-server-cli.exe" --no-auth admin add player admin 2>&1 | Out-Null
+
+# flattown: a small fast map — the plain is the point, not the continent. The
+# admin-add above is what created settings.ron; splice the generator in, and
+# REFUSE to continue silently if the splice missed (an unsplice world would
+# quietly generate 20 minutes of full-size erosion instead of 30 seconds).
+if ($Mode -eq 'flattown') {
+    $S = Join-Path $UD 'server\server_config\settings.ron'
+    (Get-Content $S) -replace 'map_file: None,',
+        'map_file: Some(Generate((x_lg: 8, y_lg: 8, scale: 2.0, map_kind: Square, erosion_quality: 0.25))),' |
+        Set-Content $S -Encoding utf8
+    if (-not (Select-String -Path $S -Pattern 'map_file: Some' -Quiet)) {
+        Write-Host "flattown map_file splice FAILED in $S - not booting a wrong-size world"
+        return
+    }
+}
 
 Write-Host "booting a '$Mode' world... (worldgen takes a few minutes the first time)"
 
