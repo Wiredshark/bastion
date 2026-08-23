@@ -458,6 +458,17 @@ impl ServerEvent for HelpDownedEvent {
     fn handle(events: impl ExactSizeIterator<Item = Self>, mut data: Self::SystemData<'_>) {
         for ev in events {
             if let Some(entity) = data.id_maps.uid_entity(ev.target) {
+                // bastion REVIVAL INSTRUMENT (2026-08-23): this is the ONLY
+                // code that refreshes death protection, yet planted-downed
+                // colonists kept standing back up with zero bastion-rescue
+                // completions — if vanilla NPC agents fire this event
+                // organically, THIS line names the helper and closes the
+                // "unexplained self-revival" row.
+                tracing::info!(
+                    helper = ?ev.helper.map(|u| u.0.get()),
+                    target = ev.target.0.get(),
+                    "bastion: HelpDownedEvent fired (any source)"
+                );
                 if let Some(mut health) = data.healths.get_mut(entity) {
                     health.refresh_death_protection();
                 }
