@@ -251,7 +251,7 @@ boot)
   # to kill it by hand). `exec` makes the backgrounded process BE the server,
   # so the recorded pid is the real one.
   ( cd "$WT" && exec env VELOREN_USERDATA=$UD VELOREN_ASSETS=$WT/assets \
-      BASTION_DETERMINISTIC=1 $ENVV $PLAY_EXTRA_ENV \
+      BASTION_DETERMINISTIC=1 $ENVV ${PLAY_EXTRA_ENV:-} \
       "$SRV" --no-auth > "$SRVLOG" 2>&1 ) &
   echo $! > "$PIDF"
   # The boot record. Its whole job is to let a later turn say what changed
