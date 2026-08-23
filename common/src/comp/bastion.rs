@@ -728,6 +728,14 @@ pub enum BastionColonistStatus {
     RescueImminent,
     /// Zero-progress cycle detected; the route is being re-planned.
     Replanning,
+    /// bastion (looking-sweep row, 2026-08-23): on an evening recreation
+    /// break — sitting somewhere pleasant. Appended (wire rule). The sweep's
+    /// finding: the flagship lounge and a stuck colonist wore the same face
+    /// (a motionless dot, activity None); this is the label that separates
+    /// them.
+    Lounging,
+    /// Hiding at home while the alarm holds. Appended (wire rule).
+    Sheltering,
 }
 
 /// bastion (UI-5, row 62.2): the Universal Debug Inspector's TARGET — the

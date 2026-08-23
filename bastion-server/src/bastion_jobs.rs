@@ -22426,6 +22426,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             controller.inputs.move_dir = Vec2::zero();
                             controller.inputs.move_z = 0.0;
                             controller.push_action(comp::ControlAction::Sit);
+                            // Same face rule as the lounge stamp below.
+                            if let Some(u) = uids.get(entity) {
+                                board.status_display.insert(
+                                    *u,
+                                    (
+                                        common::comp::bastion::BastionColonistStatus::Sheltering,
+                                        tick.0,
+                                    ),
+                                );
+                            }
                         }
                         continue;
                     }
@@ -22456,6 +22466,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             controller.inputs.move_dir = Vec2::zero();
                             controller.inputs.move_z = 0.0;
                             controller.push_action(comp::ControlAction::Sit);
+                            // Looking-sweep row: the lounge gets a FACE —
+                            // without this stamp a break and a stuck colonist
+                            // are the same motionless dot.
+                            if let Some(u) = uids.get(entity) {
+                                board.status_display.insert(
+                                    *u,
+                                    (
+                                        common::comp::bastion::BastionColonistStatus::Lounging,
+                                        tick.0,
+                                    ),
+                                );
+                            }
                         }
                         continue;
                     }
