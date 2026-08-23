@@ -1511,9 +1511,41 @@ where
                 _ => None,
             };
             let nb = |d: Vec3<i32>| is_walkable(&(end + d));
+            // ★ THE FRONTIER BLOCKERS: the partial path's last node is where
+            // expansion STOPPED, so its blocked neighbours are the actual
+            // cut. Print each blocked one's block kind + sprite — this names
+            // the cutting block type directly and ends the sprite arithmetic
+            // (is_solid() is sprite-driven: Tomato=1.65, Fence=1.09; the
+            // index's is_filled world sees none of them).
+            let frontier = closest
+                .map(|c| {
+                    let mut out = String::new();
+                    for d in [
+                        Vec3::unit_x(),
+                        -Vec3::unit_x(),
+                        Vec3::unit_y(),
+                        -Vec3::unit_y(),
+                        Vec3::unit_z(),
+                        -Vec3::unit_z(),
+                    ] {
+                        let p = c + d;
+                        if !is_walkable(&p) {
+                            let b = vol.get(p).ok().copied();
+                            out.push_str(&format!(
+                                "{:?}:{:?}/{:?} ",
+                                d,
+                                b.map(|b| b.kind()),
+                                b.and_then(|b| b.get_sprite())
+                            ));
+                        }
+                    }
+                    out
+                })
+                .unwrap_or_default();
             tracing::info!(
                 ?end,
                 ?closest,
+                frontier = %frontier,
                 closest_dist = closest
                     .map(|c| (c - end).map(|e| e.abs()).sum())
                     .unwrap_or(-1),
