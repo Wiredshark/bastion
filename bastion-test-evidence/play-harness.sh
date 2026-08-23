@@ -69,10 +69,13 @@ PIDF=$PLAY/.pid-$SLOT
 # the substring "veloren-server-cli", so the protocol's own
 # `tasklist | grep -c veloren-server-cli` check keeps seeing that a world is up.
 BINDIR=$PLAY/bin-$SLOT
-SRV=$BINDIR/veloren-server-cli-play$SLOT.exe
-DRV=$BINDIR/bastion_playtest-play$SLOT.exe
-SRC_SRV=$B/veloren-server-cli.exe
-SRC_DRV=$B/bastion_playtest.exe
+# Windows builds emit .exe; Linux does not. One definition (the run-pit
+# PIT_EXE pattern): PLAY_EXE="" on a VM, default keeps local byte-identical.
+EXE="${PLAY_EXE-.exe}"
+SRV=$BINDIR/veloren-server-cli-play$SLOT$EXE
+DRV=$BINDIR/bastion_playtest-play$SLOT$EXE
+SRC_SRV=$B/veloren-server-cli$EXE
+SRC_DRV=$B/bastion_playtest$EXE
 # What the shared tree looked like at boot, so a turn three hours later can say
 # "a rebuild landed under you" instead of leaving the reader to guess.
 BOOTMETA=$PLAY/.boot-$SLOT
