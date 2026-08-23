@@ -855,6 +855,16 @@ impl Civs {
             24..=33 => SiteKind::CoastalTown,
             _ => SiteKind::Refactor,
         };
+        // bastion flat lab: cliffs, deserts, savannah heat and coasts do not
+        // exist on the flattened plain, so 34/64 of rolls can NEVER place —
+        // and with the small map's 3 civs, one unlucky (deterministic!) seed
+        // places zero towns. The roll above still happens so the rng stream
+        // is untouched; only the outcome is pinned to the one placeable kind.
+        let kind = if std::env::var_os("BASTION_FLAT_WORLD").is_some() {
+            SiteKind::Refactor
+        } else {
+            kind
+        };
         let world_dims = ctx.sim.get_aabr();
         let avoid_town_enemies = ProximityRequirementsBuilder::new()
             .avoid_all_of(self.town_enemies(), 60)
