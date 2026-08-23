@@ -7537,6 +7537,7 @@ impl Server {
             let player_chose = chosen.is_some() || picked.is_some();
             let (town_origin, plots) = Self::bastion_adoptable_town_plots(
                 self.index.as_index_ref(),
+                self.world.sim(),
                 near,
                 player_chose,
                 // 4096 -> 16384. The first live leg measured the nearest
@@ -7646,16 +7647,27 @@ impl Server {
     /// order founded 12,442 blocks away — the pick must never be a
     /// tie-breaker.
     #[cfg(feature = "worldgen")]
+    /// ★ FLAT GROUND LEADS THE AUTOFOUND (Ben, the program order: "we
+    /// probably want to look at world gen eventually and have a preference
+    /// for flat areas" / "the flat map town is so important for testing").
+    /// `flat` buckets the site's plot-altitude range: a village whose
+    /// buildings sit within ~8 blocks of one another is FLAT (bucket 0)
+    /// and outranks any mountainous site regardless of its field count —
+    /// the mountain confound is exactly what the test vehicle must not
+    /// have. Within a bucket the fields-first order stands. A PLAYER'S
+    /// PICK ignores flatness entirely: the town they clicked is the town
+    /// they get, cliffs and all.
     fn bastion_adopt_sort_key(
         player_chose: bool,
+        flat_bucket: i64,
         d2: i32,
         houses: usize,
         fields: usize,
-    ) -> (i64, i64, i64) {
+    ) -> (i64, i64, i64, i64) {
         if player_chose {
-            (d2 as i64, -(fields as i64), -(houses as i64))
+            (d2 as i64, -(fields as i64), -(houses as i64), 0)
         } else {
-            (-(fields as i64), -(houses as i64), d2 as i64)
+            (flat_bucket, -(fields as i64), -(houses as i64), d2 as i64)
         }
     }
 
@@ -7675,6 +7687,7 @@ impl Server {
     #[cfg(feature = "worldgen")]
     fn bastion_adoptable_town_plots(
         index: world::IndexRef,
+        sim: &world::sim::WorldSim,
         near: Vec2<i32>,
         player_chose: bool,
         radius: i32,
@@ -7715,7 +7728,7 @@ impl Server {
         // selection hands it a hamlet, no matter what the rest of the pipeline
         // does. Distance is still the tiebreak; it just stops outranking
         // whether the place can house anybody.
-        let mut candidates: Vec<(&world::site::Site, i32, usize, usize)> = index
+        let mut candidates: Vec<(&world::site::Site, i32, usize, usize, i64, f32)> = index
             .sites
             .iter()
             .filter_map(|(_, site)| {
@@ -7752,7 +7765,28 @@ impl Server {
                     .plots()
                     .filter(|p| matches!(map_kind(p.kind()), Some(D::Farm)))
                     .count();
-                Some((site, d2, houses, fields))
+                // ★ FLATNESS (Ben: preference for flat areas): the altitude
+                // RANGE across this site's mapped plots, from worldgen's own
+                // approximate surface. <= 8 blocks of relief across the
+                // village = FLAT (bucket 0); everything else buckets 1 and
+                // only wins when no flat site exists. Sampled at plot roots
+                // (cheap, ~a dozen probes), capped at 24 samples.
+                let mut lo = f32::MAX;
+                let mut hi = f32::MIN;
+                for p in site
+                    .plots()
+                    .filter(|p| map_kind(p.kind()).is_some())
+                    .take(24)
+                {
+                    let w = site.tile_center_wpos(p.root_tile());
+                    if let Some(alt) = sim.get_alt_approx(w) {
+                        lo = lo.min(alt);
+                        hi = hi.max(alt);
+                    }
+                }
+                let alt_range = if hi >= lo { hi - lo } else { f32::MAX };
+                let flat_bucket: i64 = if alt_range <= 8.0 { 0 } else { 1 };
+                Some((site, d2, houses, fields, flat_bucket, alt_range))
             })
             .collect();
         if candidates.is_empty() {
@@ -7774,8 +7808,8 @@ impl Server {
         // you picked is the town you get". Distance-to-pick sorts first;
         // fields/houses only break the tie between two sites straddling the
         // same town cluster. Autofound keeps its exact FIELDS-first order.
-        candidates.sort_by_key(|(_, d2, houses, fields)| {
-            Self::bastion_adopt_sort_key(player_chose, *d2, *houses, *fields)
+        candidates.sort_by_key(|(_, d2, houses, fields, flat, _)| {
+            Self::bastion_adopt_sort_key(player_chose, *flat, *d2, *houses, *fields)
         });
         tracing::info!(
             considered = candidates.len(),
@@ -7783,6 +7817,8 @@ impl Server {
             chosen_houses = candidates[0].2,
             chosen_fields = candidates[0].3,
             chosen_dist = (candidates[0].1 as f32).sqrt() as i32,
+            chosen_flat = candidates[0].4 == 0,
+            chosen_alt_range = candidates[0].5,
             // The runner-up, so the choice is auditable: "we took a 2-house
             // village" and "2 houses was the best on offer" are different
             // facts and only one of them is a defect.
@@ -8132,21 +8168,29 @@ mod bastion_adopt_policy_tests {
         let near_hamlet = (100 * 100, 3usize, 2usize);
         let far_rich = (12_442i32.pow(2), 0usize, 14usize);
 
-        let key = |chose: bool, c: (i32, usize, usize)| {
-            Server::bastion_adopt_sort_key(chose, c.0, c.1, c.2)
+        // (flat_bucket, d2, houses, fields) — flat=0 means <=8 blocks relief.
+        let key = |chose: bool, flat: i64, c: (i32, usize, usize)| {
+            Server::bastion_adopt_sort_key(chose, flat, c.0, c.1, c.2)
         };
         assert!(
-            key(true, near_hamlet) < key(true, far_rich),
-            "with an explicit pick, the town under the cursor beats a richer              town twelve thousand blocks away — the measured betrayal"
+            key(true, 1, near_hamlet) < key(true, 0, far_rich),
+            "with an explicit pick, the town under the cursor beats a richer              town twelve thousand blocks away — the measured betrayal — and              flatness is IGNORED for a pick (cliffs and all)"
         );
         assert!(
-            key(false, far_rich) < key(false, near_hamlet),
-            "autofound (nobody chose) still prefers the field-rich site: the              other direction must not regress the sixty harness foundings"
+            key(false, 0, far_rich) < key(false, 0, near_hamlet),
+            "autofound within a flatness bucket still prefers the field-rich              site: the sixty harness foundings keep their order"
         );
         // Tie on distance under a pick: fields still break it.
         assert!(
-            key(true, (100, 0, 5)) < key(true, (100, 0, 2)),
+            key(true, 0, (100, 0, 5)) < key(true, 0, (100, 0, 2)),
             "equidistant sites under a pick resolve by fields"
+        );
+        // ★ FLAT GROUND LEADS THE AUTOFOUND (Ben's test-vehicle ruling): a
+        // FLAT six-field village beats a mountainous fourteen-field one —
+        // the mountain confound must never win a test world again.
+        assert!(
+            key(false, 0, (10_000i32.pow(2), 4, 6)) < key(false, 1, (100, 8, 14)),
+            "a flat modest village outranks a rich mountainside for autofound"
         );
     }
 }
