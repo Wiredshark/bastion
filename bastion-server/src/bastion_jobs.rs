@@ -1977,6 +1977,26 @@ pub(crate) fn colony_terminal_step(streak: &mut u32, food_stock: u32, threshold:
     }
 }
 
+/// Sentinel S2 (extinction, row 1): ONE STEP of the roster-alive machine —
+/// the founded latch plus [`colony_terminal_step`] over the living-colonist
+/// count. The latch is the piece S1 does not have: extinction is only
+/// meaningful for a colony that EXISTED, so zeros before the first living
+/// sample never arm the streak, while zeros after it do. The reset arm
+/// (any living sample) is inherited from the shared machine, so a revive
+/// un-arms it without new logic. Fires exactly once per qualifying window,
+/// same edge discipline as S1.
+pub(crate) fn extinction_step(
+    founded: &mut bool,
+    streak: &mut u32,
+    alive: u32,
+    threshold: u32,
+) -> bool {
+    if alive > 0 {
+        *founded = true;
+    }
+    *founded && colony_terminal_step(streak, alive, threshold)
+}
+
 /// Drive a whole sample sequence through [`colony_terminal_step`], yielding
 /// the INDEX of every sample the sentinel fires on.
 ///
@@ -7780,6 +7800,16 @@ pub struct JobBoard {
     /// stockpile does, matching v3's own famine signature (0 from tick
     /// 99300 onward, never a transient blip).
     colony_terminal_zero_streak: u32,
+    /// Sentinel S2 (extinction): consecutive census samples with ZERO
+    /// colonists alive. Same machine as S1 (`colony_terminal_step`) — the
+    /// streak resets on any sample with a living colonist, so a future
+    /// revive path automatically un-arms it.
+    colony_extinct_streak: u32,
+    /// The founded latch: set the first time a living colonist is ever
+    /// sampled, never cleared. Extinction is only meaningful for a colony
+    /// that EXISTED — without this, every pre-founding tick of every world
+    /// would read as an extinct colony.
+    colony_founded: bool,
     /// ITEM8-V4 F6 (Opus-ruled, the F5-tension resolution): when each
     /// currently-claimed job's PRESENT claim episode began (game
     /// seconds), observed periodically rather than hooked at every claim
@@ -11023,6 +11053,54 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         food_total,
                         food_in_pantry = food_stock,
                         "bastion: COLONY TERMINAL (sentinel S1, log-only)"
+                    );
+                }
+                // ── Sentinel S2 (row 1): EXTINCTION. The measured failure:
+                // population 8 → 0 by tick 76,204 with 611 food in the
+                // pantry — S1 watches FOOD, food was fine, and the world
+                // kept reporting jobs_total=105 at tick 84,191 with nobody
+                // alive. "You notice the map has no C on it." A colony can
+                // end for reasons the food sentinel cannot see; the roster
+                // is the fact that is terminal BY DEFINITION.
+                //
+                // SAME MACHINE as S1 — `colony_terminal_step` with the
+                // living-colonist count as the stock, so the increment, the
+                // reset (a revive un-arms it) and the fire-exactly-once edge
+                // are all the already-pinned sequence logic, not a second
+                // copy. Gated on the founded latch: a world that never had a
+                // colonist is not an extinct colony. `is_dead` here means
+                // dead OR downed-forever (colonists inherit the player
+                // downed mechanic and stay down — the DECISIONS entry); a
+                // colony where every body is on the floor has ended in fact,
+                // and if a revive path ever lands, the reset arm absorbs it.
+                // Log-only, S1's own discipline: never terminates, never
+                // gates. The player-facing death screen is the EXPOSED tier,
+                // later; the truth exists first.
+                let alive: u32 = (&colonists, &entities)
+                    .join()
+                    .filter(|(_, e)| !healths.get(*e).is_some_and(|h| h.is_dead))
+                    .count() as u32;
+                // One deref, then disjoint field borrows (the DerefMut on
+                // the resource cannot split two `&mut board.x` itself).
+                let brd = &mut *board;
+                if extinction_step(
+                    &mut brd.colony_founded,
+                    &mut brd.colony_extinct_streak,
+                    alive,
+                    COLONY_TERMINAL_ZERO_STREAK_SAMPLES,
+                ) {
+                    let bodies: u32 = (&colonists, &entities)
+                        .join()
+                        .filter(|(_, e)| healths.get(*e).is_some_and(|h| h.is_dead))
+                        .count() as u32;
+                    info!(
+                        tick = tick.0,
+                        consecutive_zero_alive_samples = brd.colony_extinct_streak,
+                        bodies_on_the_ground = bodies,
+                        jobs_still_on_board = brd.jobs.len(),
+                        food_total,
+                        food_in_pantry = food_stock,
+                        "bastion: ★ COLONY EXTINCT (sentinel S2, log-only) — every                          colonist is dead or down; the board's remaining jobs and                          food are listed because they are what nobody is left to use"
                     );
                 }
             }
@@ -32437,6 +32515,69 @@ mod tests {
             colony_terminal_scan(exact, threshold),
             vec![(threshold - 1) as usize],
             "a run of exactly the threshold must fire once, on its last sample"
+        );
+    }
+
+    /// S2 · **EXTINCTION FIRES ONLY FOR A COLONY THAT EXISTED, exactly
+    /// once, and a revive un-arms it.** The measured failure this pins shut:
+    /// population 8 → 0 by tick 76,204 and NOTHING said so — S1 watches
+    /// food and 611 food sat fine in the pantry. The latch is the part S1
+    /// does not have: without it, every pre-founding sample of every world
+    /// is an "extinct colony". Both directions, per the sentinel law (an
+    /// over-firing extinction screen is as wrong as a silent one).
+    #[test]
+    fn s2_extinction_needs_the_founded_latch_and_fires_once() {
+        let threshold = COLONY_TERMINAL_ZERO_STREAK_SAMPLES;
+        let drive = |samples: &[u32]| {
+            let (mut founded, mut streak) = (false, 0u32);
+            samples
+                .iter()
+                .enumerate()
+                .filter(|&(_, &alive)| {
+                    extinction_step(&mut founded, &mut streak, alive, threshold)
+                })
+                .map(|(i, _)| i)
+                .collect::<Vec<_>>()
+        };
+
+        // Pre-founding: a world with no colonists is not an extinct colony,
+        // however long it stays empty.
+        assert!(
+            drive(&vec![0u32; 100]).is_empty(),
+            "zeros before the first living sample must never fire — the world              existed before the colony did"
+        );
+
+        // Founded, then wiped: fires exactly once, on the threshold-th
+        // consecutive zero-alive sample, and continued zeros stay silent
+        // (the edge, not a level).
+        let mut wiped = vec![8u32];
+        wiped.extend(vec![0u32; (threshold + 20) as usize]);
+        assert_eq!(
+            drive(&wiped),
+            vec![threshold as usize],
+            "one fire, at the edge — a >= trigger would fire on every sample              thereafter and spam the log for the rest of the run"
+        );
+
+        // The revive arm: a single living sample inside the window resets
+        // the streak (inherited from the shared machine — if a revive path
+        // ever lands, the sentinel un-arms with no new code).
+        let mut sawtooth = vec![8u32];
+        sawtooth.extend(vec![0u32; (threshold - 1) as usize]);
+        sawtooth.push(1);
+        sawtooth.extend(vec![0u32; (threshold - 1) as usize]);
+        assert!(
+            drive(&sawtooth).is_empty(),
+            "a revive inside the window must reset the streak"
+        );
+
+        // And the latch is a LATCH: once founded, later zeros count even
+        // though the founding sample is long gone.
+        let mut late = vec![3u32, 0, 0, 1];
+        late.extend(vec![0u32; threshold as usize]);
+        assert_eq!(
+            drive(&late).len(),
+            1,
+            "founded-then-quiet-then-wiped still fires: the latch never clears"
         );
     }
 
