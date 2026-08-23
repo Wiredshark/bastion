@@ -16641,6 +16641,48 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // YIELD FOOD. Anything wider would be a general
                             // "don't interrupt work" rule, which is what starves
                             // colonists in the first place.
+                            // ★ THE PACK COMES FIRST (2026-08-23). This check
+                            // used to sit BELOW `on_imminent_food`, whose
+                            // `continue 'candidates` skipped it entirely — so a
+                            // colonist Arrived on ANY farm verb, holding food in
+                            // its own bag, at hunger 0.000, could not eat.
+                            //
+                            // Measured: the colony does not starve for want of
+                            // food. `food_stock` RISES all run and the
+                            // FOOD-WIPE discriminator read `in_stockpile=158
+                            // on_ground_total=173 in_bags=19` while colonists
+                            // sat at zero. They starve because they cannot WALK:
+                            // one colonist logged two consecutive 90-second eat
+                            // attempts against the same item at dist=11.198126
+                            // then dist=11.198189 — six hundred-thousandths of a
+                            // block of progress in ninety seconds — and 70-98%
+                            // of a never-eating colonist's position samples show
+                            // zero displacement.
+                            //
+                            // Eating from your own pack is the ONE food path
+                            // that needs no travel, so it is the one path the
+                            // locomotion failure cannot defeat. It was sitting
+                            // behind a gate that fires precisely when a colonist
+                            // is standing still on a job.
+                            //
+                            // THE GUARD IS KEPT, AND STILL DOES ITS JOB. Its
+                            // purpose is "do not drag someone off a ripe crop to
+                            // go and find food" — a statement about TRAVEL.
+                            // Swallowing a ration you are already carrying is
+                            // instantaneous and moves nobody, so the guard was
+                            // never about this branch. It still gates the world
+                            // scan below, which is the branch that actually
+                            // walks. Note also that the guard covers ALL four
+                            // farm verbs, and till and sow produce no food at
+                            // all — so it was starving colonists in the name of
+                            // a harvest that was not happening.
+                            let pack_def = inventories.get(entity).and_then(|inv| {
+                                inv.slots().flatten().find_map(|i| {
+                                    i.item_definition_id().itemdef_id().and_then(|d| {
+                                        FOOD_DEFS.iter().find(|f| **f == d).copied()
+                                    })
+                                })
+                            });
                             let on_imminent_food = active_jobs
                                 .get(entity)
                                 .filter(|a| matches!(a.state, ActiveJobState::Arrived))
@@ -16649,7 +16691,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     matches!(j.kind, common::bastion::JobKind::Cook { .. })
                                         || j.kind.is(DesignationKind::Farm)
                                 });
-                            if on_imminent_food {
+                            if on_imminent_food && pack_def.is_none() {
                                 if need_skip_diag {
                                     info!(
                                         colonist = %uid,
@@ -16658,13 +16700,6 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 }
                                 continue 'candidates;
                             }
-                            let pack_def = inventories.get(entity).and_then(|inv| {
-                                inv.slots().flatten().find_map(|i| {
-                                    i.item_definition_id().itemdef_id().and_then(|d| {
-                                        FOOD_DEFS.iter().find(|f| **f == d).copied()
-                                    })
-                                })
-                            });
                             if let Some(def) = pack_def {
                                 pack_meals.push((entity, *uid, def));
                                 board
@@ -28739,6 +28774,55 @@ mod tests {
         assert!(
             haul_candidate_admitted(false, false, wanted, starved),
             "the finished dish must leave the station it was cooked on"
+        );
+    }
+
+    /// ★ A STARVING COLONIST HOLDING FOOD MUST EAT IT, even mid-farm-job.
+    ///
+    /// The gate is `on_imminent_food && pack_def.is_none()`. This test pins the
+    /// composition, because the bug was purely an ORDERING one: the same two
+    /// facts were both computed, and the `continue` simply ran first.
+    ///
+    /// WHY IT MATTERED. The colony does not starve for want of food —
+    /// `food_stock` RISES all run, and the discriminator read `in_stockpile=158
+    /// on_ground_total=173 in_bags=19` with colonists at hunger 0.000. They
+    /// starve because they cannot WALK: one logged two consecutive 90-second
+    /// eat attempts on the same item at dist=11.198126 then dist=11.198189.
+    /// Pack-eating is the only food path with no travel in it, so it is the
+    /// only one that failure cannot reach — and it was gated off exactly when a
+    /// colonist was standing still on a job.
+    #[test]
+    fn a_starving_colonist_holding_food_eats_it_even_while_arrived_on_a_farm_job() {
+        // The gate as composed in the need loop.
+        let blocked = |on_imminent_food: bool, has_pack_food: bool| {
+            on_imminent_food && !has_pack_food
+        };
+
+        // ── THE BUG. Arrived on a farm verb, food in the bag.
+        assert!(
+            !blocked(true, true),
+            "a colonist standing on a farm plot with a ration in its own bag was refused the              one meal that needs no travel — that is the famine, and the walk it was waiting              for never completes"
+        );
+
+        // ── THE GUARD STILL GUARDS. Its purpose is 'do not drag someone off a
+        // ripe crop to go LOOKING for food'. With an empty pack the only
+        // remaining option IS the walk, so the guard must still refuse.
+        assert!(
+            blocked(true, false),
+            "with an empty pack the only option left is the world scan, which is exactly the              travel this guard exists to prevent mid-harvest"
+        );
+
+        // ── AND IT MUST NOT REFUSE WHEN THERE IS NOTHING TO PROTECT.
+        assert!(!blocked(false, false), "not on a food job: the world scan must be allowed");
+        assert!(!blocked(false, true), "not on a food job, carrying food: eat");
+
+        // ── NON-VACUITY: the gate must actually refuse something, or it is
+        // inert and this test is decoration.
+        let all = [(true, true), (true, false), (false, true), (false, false)];
+        assert_eq!(
+            all.iter().filter(|(a, b)| blocked(*a, *b)).count(),
+            1,
+            "exactly one of the four states may be refused; more means the guard over-refuses              and starves the protectee, fewer means it is inert"
         );
     }
 
