@@ -7933,8 +7933,20 @@ impl Server {
             return;
         }
         let tick = self.state.ecs().read_resource::<Tick>().0;
+        // ★ BASTION_PLANT_RAID=<tick> (ALARM fixture, 2026-08-23): force one
+        // raid at exactly that tick, bypassing cadence and the wealth band.
+        // The alarm's whole chain — spawn → aggro → perceiver → Defend →
+        // cry → shelters — needs a hostile ENGAGEMENT inside a leg's fence,
+        // and the organic path (wealth ≥ 64 at a 1800-tick cadence, raiders
+        // walking in, aggro) reliably lands only past ~25k ticks. Same
+        // deterministic-plant discipline as the LETHAL/DOWNED plants; the
+        // spawn path below is the unmodified live one.
+        let forced = std::env::var("BASTION_PLANT_RAID")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .is_some_and(|t| t == tick);
         // Slow cadence: a raid is an EVENT, not weather.
-        if tick % 1800 != 137 {
+        if !forced && tick % 1800 != 137 {
             return;
         }
         let (wealth, origin) = {
@@ -7956,6 +7968,9 @@ impl Server {
             256..=1023 => 2,
             _ => 3,
         };
+        // The forced raid ignores the wealth band (a fixture must not depend
+        // on the economy's timing) but changes nothing else downstream.
+        let raiders = if forced { raiders.max(2) } else { raiders };
         // ★ THE RAID TICK MUST TESTIFY (2026-08-21). This returned SILENTLY
         // whenever the band computed 0 raiders, so a leg where wealth reached
         // 104 (band 1) and no raid appeared could not distinguish:

@@ -16290,6 +16290,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 if tick.0 == 3000
                     && let Ok(n) = std::env::var("BASTION_PLANT_LETHAL")
                     && let Ok(count) = n.parse::<usize>()
+                    // ★ LATCHED (flat fleet 2026-08-23): this block sits
+                    // inside the per-colonist loop, so the tick gate alone
+                    // fired once PER COLONIST — count=1 hit the lowest-uid
+                    // colonist 8 times on an 8-strong colony ("downed_plant=8"
+                    // with a 1-victim env). One plant, one firing, ever.
+                    && !{
+                        use std::sync::atomic::{AtomicBool, Ordering};
+                        static FIRED: AtomicBool = AtomicBool::new(false);
+                        FIRED.swap(true, Ordering::Relaxed)
+                    }
                 {
                     let mut victims: Vec<(u64, specs::Entity)> = (&entities, &colonists)
                         .join()
@@ -16325,6 +16335,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 if tick.0 == 3000
                     && let Ok(n) = std::env::var("BASTION_PLANT_DOWNED")
                     && let Ok(count) = n.parse::<usize>()
+                    // Same latch as the lethal plant above, same reason.
+                    && !{
+                        use std::sync::atomic::{AtomicBool, Ordering};
+                        static FIRED: AtomicBool = AtomicBool::new(false);
+                        FIRED.swap(true, Ordering::Relaxed)
+                    }
                 {
                     let mut victims: Vec<(u64, specs::Entity)> = (&entities, &colonists)
                         .join()

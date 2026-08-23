@@ -1187,16 +1187,49 @@ where
     V: BaseVol<Vox = Block> + ReadVol,
 {
     let is_walkable = |pos: &Vec3<i32>| walkable(vol, *pos, traversal_cfg.is_target_loaded);
-    let get_walkable_z = |pos| {
+    // ★ NEAR-FIRST, NEIGHBOURS-BEFORE-ROOF (flat-lab conviction 2026-08-23).
+    // The old single-column ±16 alternation, faced with an INDOOR goal whose
+    // column is roofed solid — a hearth under its chimney — marched straight
+    // up through the roof and resolved the goal ON TOP OF THE BUILDING: an
+    // end no walker can reach, which burned the full A* budget (the
+    // LONGEST-EXHAUST signature) and left the walker beelining into the wall
+    // below the goal (the stuck-autopsy signature: pressing a solid cell
+    // under a Window sprite, speed ≈ 0). Resolution order now: own column
+    // ±2, then the four XY neighbours' columns ±2 (the stand-beside cell
+    // every indoor station actually has), then the original ±16 column so
+    // cliff/overhang behaviour away from buildings is unchanged.
+    // BASTION_LEGACY_GOAL_SNAP=1 restores the old resolver exactly.
+    let column_near = |base: Vec3<i32>, probes: i32| {
         let mut z_incr = 0;
-        for _ in 0..32 {
-            let test_pos = pos + Vec3::unit_z() * z_incr;
+        for _ in 0..probes {
+            let test_pos = base + Vec3::unit_z() * z_incr;
             if is_walkable(&test_pos) {
                 return Some(test_pos);
             }
             z_incr = -z_incr + i32::from(z_incr <= 0);
         }
         None
+    };
+    let legacy_snap = {
+        static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        *ON.get_or_init(|| std::env::var_os("BASTION_LEGACY_GOAL_SNAP").is_some())
+    };
+    let get_walkable_z = |pos: Vec3<i32>| {
+        if legacy_snap {
+            return column_near(pos, 32);
+        }
+        column_near(pos, 4)
+            .or_else(|| {
+                [
+                    Vec2::new(1, 0),
+                    Vec2::new(-1, 0),
+                    Vec2::new(0, 1),
+                    Vec2::new(0, -1),
+                ]
+                .into_iter()
+                .find_map(|d| column_near(pos + Vec3::new(d.x, d.y, 0), 4))
+            })
+            .or_else(|| column_near(pos, 32))
     };
 
     // Find walkable ground for start and end.
@@ -2738,6 +2771,98 @@ mod ledger_179_tests {
             scramble_reach: 0,
             search_allowed: false,
             ..worker_cfg()
+        }
+    }
+
+    /// ★ THE ROOFED-STATION PIN (flat-lab conviction 2026-08-23). A goal on
+    /// a solid indoor cell whose column is roofed solid — the hearth under
+    /// its chimney — must resolve to the STAND-BESIDE cell inside the room
+    /// and route through the door, NOT snap up the column onto the roof.
+    /// The roof snap is what burned full A* budgets (LONGEST-EXHAUST) and
+    /// left walkers pressing the wall below the goal (the stuck-autopsy
+    /// signature: solid cell + Window sprite ahead, speed ≈ 0, dz=0).
+    #[test]
+    fn a_roofed_station_resolves_beside_not_above() {
+        let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+        let mut blocks = StdHashMap::new();
+        // Ground slab, outside approach + room interior.
+        for x in -2..=16 {
+            for y in -6..=6 {
+                blocks.insert(Vec3::new(x, y, 0), rock);
+            }
+        }
+        // Room shell x 8..=12, y -2..=2: perimeter walls z 1..=3 with a
+        // door gap at (8, 0, 1..=2); roof slab at z 4.
+        for x in 8..=12 {
+            for y in -2..=2 {
+                let perimeter = x == 8 || x == 12 || y == -2 || y == 2;
+                if perimeter {
+                    for z in 1..=3 {
+                        if !(x == 8 && y == 0) {
+                            blocks.insert(Vec3::new(x, y, z), rock);
+                        }
+                    }
+                }
+                blocks.insert(Vec3::new(x, y, 4), rock);
+            }
+        }
+        // The station: a solid hearth cell at (10,0,1) with a solid chimney
+        // to the roof — the goal column is solid from floor to sky.
+        for z in 1..=3 {
+            blocks.insert(Vec3::new(10, 0, z), rock);
+        }
+        let vol = MockVol::from_parts(blocks, Block::empty());
+        let cfg = worker_cfg();
+        // Aim AT the hearth cell itself, exactly as a Cook job does.
+        let route = {
+            let mut astar = None;
+            let mut out = PathResult::Pending;
+            for _ in 0..64 {
+                match find_path(
+                    &mut astar,
+                    &vol,
+                    Vec3::new(4.5, 0.5, 1.0),
+                    Vec3::new(10.5, 0.5, 1.5),
+                    &cfg,
+                    PathLength::Medium,
+                    None,
+                )
+                .0
+                {
+                    PathResult::Pending => continue,
+                    r => {
+                        out = r;
+                        break;
+                    },
+                }
+            }
+            out
+        };
+        match route {
+            PathResult::Path(path, _) => {
+                let end = path.nodes.last().copied().expect("nonempty path");
+                assert_eq!(
+                    end.z, 1,
+                    "goal must resolve at FLOOR level inside the room, not the roof: {end:?}"
+                );
+                let d = (end.xy() - Vec2::new(10, 0)).map(|e| e.abs());
+                assert!(
+                    d.x + d.y == 1,
+                    "resolved goal must be the stand-beside cell of the hearth, got {end:?}"
+                );
+            },
+            other => {
+                let name = match other {
+                    PathResult::None(_) => "None",
+                    PathResult::Exhausted(_) => "Exhausted",
+                    PathResult::Pending => "Pending",
+                    PathResult::Path(..) => unreachable!(),
+                };
+                panic!(
+                    "a hearth with a stand-beside cell and an open door must route (old \
+                     resolver snapped the goal to the roof and exhausted): {name}"
+                );
+            },
         }
     }
 
