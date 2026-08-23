@@ -57,7 +57,12 @@ bel_drops=$(grep -c "belongings dropped at the death cell" "$V.w")
 bel_items=$(grep "belongings dropped at the death cell" "$V.w" | grep -o "dropped=[0-9]*" | cut -d= -f2 | awk '{s+=$1} END {print s+0}')
 final_census=$(grep "EXPERIENCE census" "$V.w" | tail -1 | grep -oE "total=[0-9]+ downed=[0-9]+" | tr ' ' '_')
 extinct=$(grep -c "COLONY EXTINCT" "$V.w")
-echo "@@@LEG slot=$SLOT arm='$ARM_ENV' fence=$FENCE longest_search=$lt top3_share=$top3 exhaust=$ex terminal_releases=${term:-NA} stuck=$stuck sleepers=$sleepers slept=$slept ate=$ate unreachable=$unreach arrived=$arrived died=$died outright=$outright belongings_drops=$bel_drops belongings_items=$bel_items final=${final_census:-NA} extinct=$extinct@@@"
+# RESCUE chain (slot-93 follow-up): plant -> posted -> rescued, plus the
+# census tail so recovery is visible.
+downed_plant=$(grep -c "DOWNED PLANT" "$V.w")
+rescue_posted=$(grep -c "RESCUE posted" "$V.w")
+rescued=$(grep -c "RESCUED — helped" "$V.w")
+echo "@@@LEG slot=$SLOT arm='$ARM_ENV' fence=$FENCE longest_search=$lt top3_share=$top3 exhaust=$ex terminal_releases=${term:-NA} stuck=$stuck sleepers=$sleepers slept=$slept ate=$ate unreachable=$unreach arrived=$arrived died=$died outright=$outright belongings_drops=$bel_drops belongings_items=$bel_items final=${final_census:-NA} extinct=$extinct downed_plant=$downed_plant rescue_posted=$rescue_posted rescued=$rescued@@@"
 # The chronicle half (Death records + actors incl. witnesses) via the real
 # wire path — one driver turn against the still-live world. Failure to turn
 # is reported, never silent: the chronicle bar reads VOID for that leg.
