@@ -9932,7 +9932,11 @@ impl JobBoard {
     /// knob, not a policy). Unclaimed shape — the claim loop staffs it —
     /// and registered in `auto_guard_jobs` so only the drive's own exit
     /// sweep ever retracts it.
-    pub fn insert_auto_guard_job(&mut self, post: Vec3<i32>) -> JobId {
+    /// PRE-CLAIMED (v1.1): the first live legs showed posts CREATED and never
+    /// STAFFED — `is_labor_hold_self_job` marks Guard a self-job, so the open
+    /// claim loop never offers it, exactly like RestAt/EatFrom. A self-job is
+    /// born claimed; the caller inserts the ActiveJob comp (the B7-2 shape).
+    pub fn insert_auto_guard_job(&mut self, post: Vec3<i32>, uid: Uid) -> JobId {
         let id = self.next_id;
         self.next_id += 1;
         self.jobs.insert(id, Job {
@@ -9945,7 +9949,7 @@ impl JobBoard {
             work: common::bastion::WorkType::Guard,
             pos: post,
             skill_floor: 0,
-            claimed_by: None,
+            claimed_by: Some(uid),
             suspended_for: None,
             unreachable: false,
             carve_attempted: false,
@@ -14484,7 +14488,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // entry into Defend can post guards AT the trouble. Uid-keyed
             // and sorted below — join order is not a promise, and the posts
             // must land identically on two runs of one seed.
-            let mut perceiver_posts: Vec<(u64, Vec3<i32>)> = Vec::new();
+            let mut perceiver_posts: Vec<(u64, specs::Entity, Vec3<i32>)> = Vec::new();
             for (c_ent, _, c_pos) in (&entities, &colonists, &positions).join() {
                 if agents
                     .get(c_ent)
@@ -14494,7 +14498,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     threats += 1;
                     if let Some(u) = uids.get(c_ent) {
                         perceiver_posts
-                            .push((u.0.get(), c_pos.0.map(|e| e.floor() as i32)));
+                            .push((u.0.get(), c_ent, c_pos.0.map(|e| e.floor() as i32)));
                     }
                 }
             }
@@ -14529,13 +14533,39 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // claim loop staffs them; a retracted-while-claimed post is
                 // released by the existing gone-sweep like any removed job.
                 if want == D::Defend {
-                    perceiver_posts.sort_by_key(|(u, _)| *u);
-                    for (_, post) in perceiver_posts.iter().take(2) {
-                        let id = board.insert_auto_guard_job(*post);
+                    perceiver_posts.sort_by_key(|(u, ..)| *u);
+                    // v1.1: IDLE perceivers only — a self-job must be born
+                    // claimed with its ActiveJob inserted (the B7-2 shape;
+                    // the open claim loop never offers a Guard, which is why
+                    // v1's unclaimed posts sat unstaffed: 2-13 posts/leg,
+                    // ZERO claimed). Idle-only sidesteps the mid-job steal:
+                    // releasing a worker's claim and inserting a fresh
+                    // ActiveJob in one tick would race the release drain.
+                    let mut posted = 0;
+                    for (u, ent, post) in perceiver_posts.iter() {
+                        if posted >= 2 {
+                            break;
+                        }
+                        if active_jobs.contains(*ent) {
+                            continue;
+                        }
+                        let uid = Uid(std::num::NonZeroU64::new(*u).expect("uid nonzero"));
+                        let id = board.insert_auto_guard_job(*post, uid);
+                        let _ = active_jobs.insert(*ent, comp::bastion::ActiveJob {
+                            job: id,
+                            state: comp::bastion::ActiveJobState::Traveling,
+                            best_dist: f32::MAX,
+                            stuck_time: 0.0,
+                            reset_dist: f32::MAX,
+                            soft_granted: false,
+                            stance: Vec3::unit_z(),
+                        });
+                        posted += 1;
                         info!(
                             job = id,
+                            colonist = *u,
                             ?post,
-                            "bastion: AUTO-GUARD posted (drive entered Defend)"
+                            "bastion: AUTO-GUARD posted and STAFFED (drive entered Defend)"
                         );
                     }
                 } else if cur == D::Defend {
@@ -32336,7 +32366,8 @@ mod tests {
     #[test]
     fn auto_guard_retraction_spares_painted_posts() {
         let mut board = JobBoard::default();
-        let auto_id = board.insert_auto_guard_job(Vec3::new(5, 5, 10));
+        let u = Uid(NonZeroU64::new(21).unwrap());
+        let auto_id = board.insert_auto_guard_job(Vec3::new(5, 5, 10), u);
         // A "painted" post: same kind, inserted outside the auto path.
         let painted_id = board.next_id;
         board.next_id += 1;
