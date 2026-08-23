@@ -16524,6 +16524,111 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         if tick.0 % ARBITRATION_INTERVAL as u64 == 3 && !board.farms.is_empty() {
             let occupied: std::collections::HashSet<Vec3<i32>> =
                 board.jobs.values().map(|j| j.pos).collect();
+            // ★ THE BOARD IS A WORK QUEUE, NOT A MIRROR OF ALL POSSIBLE WORK
+            // (slot-93 sweep: a delayed ADOPT-IN-PLACE scan registered ~40
+            // field plots mid-day and this pass minted 12,868 sow jobs in
+            // one burst — jobs_total 3.7k→16.6k, standing forever under the
+            // reap exemption, iterated by every claim scan. Minting stayed
+            // quiet after — no engine — but 8 people cannot work 40 plots
+            // and a 16k board is not a town, it is a spreadsheet). DF's
+            // answer, adopted: the colony WORKS the nearest few fields and
+            // the rest lie FALLOW — visually real farming. Two bounds:
+            //   ACTIVE PLOTS: the `colonists+2` nearest plots to the first
+            //     stockpile (the pantry anchors the working farm — a
+            //     deterministic, structural anchor); everything further is
+            //     fallow this pass and generates nothing.
+            //   PER-PLOT QUEUE: at most FARM_OPEN_JOBS_PER_PLOT open farm
+            //     jobs inside a plot at once — claims drain the queue and
+            //     the next pass refills it.
+            // Standing backlog from before this bound is reconciled below,
+            // amortized (remove_job is the hottest path; 16k at once would
+            // be its own lag spike).
+            let anchor = board
+                .stockpiles
+                .first()
+                .map(|(_, r)| (r.min + r.max) / 2)
+                .unwrap_or_else(|| {
+                    board
+                        .farms
+                        .first()
+                        .map(|(_, r)| (r.min + r.max) / 2)
+                        .unwrap_or_default()
+                });
+            let active_n = ((&colonists).join().count() + 2).max(3);
+            let mut plot_dist: Vec<(i64, Region)> = board
+                .farms
+                .iter()
+                .map(|(_, r)| {
+                    let c = (r.min + r.max) / 2;
+                    let d = c - anchor;
+                    (
+                        (d.x as i64).pow(2) + (d.y as i64).pow(2),
+                        *r,
+                    )
+                })
+                .collect();
+            plot_dist.sort_by_key(|(d, r)| (*d, r.min.x, r.min.y, r.min.z));
+            let active: Vec<Region> =
+                plot_dist.iter().take(active_n).map(|(_, r)| *r).collect();
+            // Per-active-plot open counts, taken UP FRONT (a closure over
+            // `board` would hold an immutable borrow across the mutable
+            // retire below).
+            const FARM_OPEN_JOBS_PER_PLOT: usize = 6;
+            let open_by_plot: Vec<usize> = active
+                .iter()
+                .map(|region| {
+                    board
+                        .jobs
+                        .values()
+                        .filter(|j| {
+                            j.claimed_by.is_none()
+                                && matches!(
+                                    j.kind,
+                                    common::bastion::JobKind::Designated(DesignationKind::Farm)
+                                )
+                                && j.pos.x >= region.min.x
+                                && j.pos.x <= region.max.x
+                                && j.pos.y >= region.min.y
+                                && j.pos.y <= region.max.y
+                        })
+                        .count()
+                })
+                .collect();
+            // Amortized reconcile: open farm jobs on FALLOW plots retire, a
+            // bounded slice per pass (the 16k inherited backlog drains in
+            // ~90 passes without a lag spike).
+            let mut fallow_retire: Vec<JobId> = Vec::new();
+            for (id, j) in board.jobs.iter() {
+                if fallow_retire.len() >= 200 {
+                    break;
+                }
+                if j.claimed_by.is_none()
+                    && matches!(
+                        j.kind,
+                        common::bastion::JobKind::Designated(DesignationKind::Farm)
+                    )
+                    && !active.iter().any(|r| {
+                        j.pos.x >= r.min.x
+                            && j.pos.x <= r.max.x
+                            && j.pos.y >= r.min.y
+                            && j.pos.y <= r.max.y
+                    })
+                {
+                    fallow_retire.push(*id);
+                }
+            }
+            let retired = fallow_retire.len();
+            for id in fallow_retire {
+                board.remove_job(id);
+            }
+            if retired > 0 {
+                info!(
+                    retired,
+                    active_plots = active.len(),
+                    total_plots = board.farms.len(),
+                    "bastion: FALLOW reconcile — farm jobs beyond the active                      plots retired (bounded slice)"
+                );
+            }
             // TASK #64: carries the affordance alongside (pos, req).
             // PURE-REFACTOR SCOPE (DECISIONS #45): every phase declares
             // `OnTopAlways`, matching pre-#64 behaviour exactly. The SAME
@@ -16541,7 +16646,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             let mut new_jobs: Vec<(Vec3<i32>, Option<&'static str>, AffordanceClass)> = Vec::new();
             let mut stage_ups: Vec<(Vec3<i32>, Block, u8)> = Vec::new();
             let mut evict: Vec<Vec3<i32>> = Vec::new();
-            for (_, plot) in board.farms.iter() {
+            for (pi, plot) in active.iter().enumerate() {
+                // The per-plot work QUEUE: this pass may add only what keeps
+                // the plot's open-job count at the cap. `new_jobs` pushes for
+                // THIS plot debit the same budget (a fresh 300-cell plot
+                // must not blow past the cap inside one pass).
+                let mut open_budget =
+                    FARM_OPEN_JOBS_PER_PLOT.saturating_sub(open_by_plot[pi]);
                 for y in plot.min.y..=plot.max.y {
                     for x in plot.min.x..=plot.max.x {
                         // FARM-PAINT: the resolved-at-registration surface
@@ -16588,7 +16699,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             Some(SpriteKind::WheatYellow) => {
                                 let g = crop.get_attr::<Growth>().map(|g| g.0).unwrap_or(0);
                                 if g >= FARM_GROWTH_MAX {
-                                    if !occupied.contains(&cpos) {
+                                    if !occupied.contains(&cpos) && open_budget > 0 {
+                                        open_budget -= 1;
                                         // HARVEST: job.pos = cpos. Declares
                                         // OnTopAlways (pure-refactor scope,
                                         // DECISIONS #45) -- the crop cell
@@ -16672,7 +16784,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             board
                                                 .farm_tilled_season
                                                 .insert(col, season_idx);
-                                            if !occupied.contains(&cpos) {
+                                            if !occupied.contains(&cpos) && open_budget > 0 {
+                                                open_budget -= 1;
                                                 new_jobs.push((
                                                     cpos,
                                                     Some(FARM_SEED_ITEM),
@@ -16684,7 +16797,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             // SOW: job.pos = cpos. Declares
                                             // OnTopAlways, same reasoning as
                                             // HARVEST above.
-                                            if !occupied.contains(&cpos) {
+                                            if !occupied.contains(&cpos) && open_budget > 0 {
+                                                open_budget -= 1;
                                                 new_jobs.push((
                                                     cpos,
                                                     Some(FARM_SEED_ITEM),
@@ -16696,7 +16810,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             // The once-per-season till, at
                                             // the ground cell like the
                                             // break-ground till below.
-                                            if !occupied.contains(&gpos) {
+                                            if !occupied.contains(&gpos) && open_budget > 0 {
+                                                open_budget -= 1;
                                                 new_jobs.push((
                                                     gpos,
                                                     None,
@@ -16705,7 +16820,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             }
                                         },
                                     }
-                                } else if !occupied.contains(&gpos) {
+                                } else if !occupied.contains(&gpos) && open_budget > 0 {
+                                    open_budget -= 1;
                                     // TILL: job.pos = gpos, the raw ground
                                     // cell -- SOLID pre-till, same shape as
                                     // Mine. Declares OnTopAlways (pure-
