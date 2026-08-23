@@ -936,6 +936,54 @@ pub(crate) fn claim_release_should_clear(claimed_by_us: bool, _unreachable: bool
 /// The wounded case does not route through this — `flee_hurt` keeps its own
 /// unconditional health check. Kill switch `BASTION_NO_FIX_FLEE_AGGRO=1`
 /// restores the old hostility-only predicate for the same-binary A/B.
+/// ★ GOAL-VERDICT TTL: 2 sim-minutes at 30 TPS. Terrain changes (a dug
+/// passage, an opened door) can make a proven-unreachable goal reachable, so
+/// a verdict expires on its own clock — short enough that the world moving
+/// on is honoured, long enough that the pick cycle (seconds) cannot outrace
+/// it. The A/B may retune it; the SHAPE (TTL, never amnesty) is the law from
+/// the E2 revert history.
+pub const GOAL_VERDICT_TTL_TICKS: u64 = 3_600;
+
+/// PREREG-GOAL-VERDICT-FEEDBACK: consumer gate, DEFAULT OFF until the fleet
+/// A/B passes (the claim-penalty discipline — unproven behavior never ships
+/// enabled). The WRITER runs unconditionally; this flips the readers.
+pub fn goal_verdict_enabled() -> bool {
+    static V: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *V.get_or_init(|| std::env::var_os("BASTION_GOAL_VERDICT").is_some())
+}
+
+/// Is this candidate cell under a LIVE unreachability verdict? Pure — the
+/// fail-open two-pass (blocked candidates admitted again when nothing else
+/// exists) lives at the pick sites, because only they know the candidate
+/// population; this answers exactly one cell at one tick.
+pub(crate) fn goal_verdict_blocks(
+    verdicts: &HashMap<Vec3<i32>, u64>,
+    cell: Vec3<i32>,
+    now_tick: u64,
+) -> bool {
+    goal_verdict_blocks_impl(verdicts, cell, now_tick, goal_verdict_enabled())
+}
+
+/// The decision half, env-free so the pins can exercise BOTH gate states
+/// without racing the process-wide OnceLock other tests share.
+pub(crate) fn goal_verdict_blocks_impl(
+    verdicts: &HashMap<Vec3<i32>, u64>,
+    cell: Vec3<i32>,
+    now_tick: u64,
+    enabled: bool,
+) -> bool {
+    enabled && verdicts.get(&cell).is_some_and(|expiry| *expiry > now_tick)
+}
+
+/// ★ THE FAIL-OPEN TWO-PASS, shared by every verdict-respecting pick door:
+/// prefer the verdict-respecting pick; if it comes up empty, run the same
+/// pick unrestricted. Refusal must never starve the protectee — a colonist
+/// whose only food is verdict-blocked still tries the least-bad one. One
+/// definition, so a door cannot drift into refuse-only.
+pub(crate) fn pick_fail_open<T>(pick: impl Fn(bool) -> Option<T>) -> Option<T> {
+    pick(true).or_else(|| pick(false))
+}
+
 pub(crate) fn flee_worthy_target(hostile: bool, aggro_on: bool) -> bool {
     static OLD: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     if *OLD.get_or_init(|| std::env::var_os("BASTION_NO_FIX_FLEE_AGGRO").is_some()) {
@@ -7690,6 +7738,15 @@ pub struct JobBoard {
     /// never touch a player-painted post — the sweep drains exactly this
     /// list and nothing else.
     pub auto_guard_jobs: Vec<JobId>,
+    /// ★ GOAL VERDICTS (PREREG-GOAL-VERDICT-FEEDBACK): goal cell → expiry
+    /// tick, written on a chaser terminal exhaust — which, under cell
+    /// identity, means the search saw the whole region and the goal is
+    /// PROVABLY unreachable right now. Goal-keyed (position-free), TTL-
+    /// stamped (expires on its own clock, never an amnesty), one entry per
+    /// cell (overwrite). Read by the item-pick doors behind
+    /// `goal_verdict_enabled()`; always written so the A/B flips a reader,
+    /// not the writer.
+    pub goal_verdicts: HashMap<Vec3<i32>, u64>,
     /// bastion (ARC 8 item 34): the colony's WEALTH — stockpiled item units,
     /// sampled on the colony-mind cadence. ONE producer: raid pressure reads
     /// THIS number and nothing computes a second copy of it (the same
@@ -17502,18 +17559,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 break 'candidates;
                             }
                             let feet = pos.0.map(|e| e.floor() as i32);
-                            let food = (&pickup_items, &positions, &uids)
+                            // ★ GOAL-VERDICT two-pass (fail-open identity):
+                            // pass 1 skips items whose cell holds a live
+                            // unreachability verdict; if that empties the
+                            // table, pass 2 admits them again — refusal must
+                            // never starve the protectee, so a colonist whose
+                            // only food is verdict-blocked still tries the
+                            // least-bad one.
+                            let pick_food = |respect_verdicts: bool| (&pickup_items, &positions, &uids)
                                 .join()
                                 .filter(|(pi, ipos, iuid)| {
+                                    let icell = ipos.0.map(|e| e.floor() as i32);
+                                    (!respect_verdicts
+                                        || !goal_verdict_blocks(
+                                            &board.goal_verdicts,
+                                            icell,
+                                            tick.0,
+                                        ))
                                     // ★ ITEM-REACH GATE (flag-gated): a meal
                                     // in another walking component is a 90s
                                     // wall-press, not food. Fail-open.
-                                    !item_reach_refused(
+                                    && !item_reach_refused(
                                         board.component_labels.as_ref(),
                                         board.labels_prev_cells,
                                         |c| terrain.get(c).ok().copied(),
                                         feet,
-                                        ipos.0.map(|e| e.floor() as i32),
+                                        icell,
                                     ) && pi.item()
                                         .item_definition_id()
                                         .itemdef_id()
@@ -17542,7 +17613,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             + (c.z as i64).pow(2),
                                         iuid.0.get(),
                                     )
-                                })
+                                });
+                            let food = pick_fail_open(pick_food)
                                 .map(|(pi, ipos, iuid)| {
                                     // The matched def as the job's
                                     // required_item — the B6 fetch
@@ -20222,6 +20294,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     board.chaser_terminal_releases =
                                         board.chaser_terminal_releases.saturating_add(1);
                                 }
+                                // ★ GOAL-VERDICT RECORDING (PREREG-GOAL-
+                                // VERDICT-FEEDBACK): under cell identity a
+                                // terminal exhaust means the search SAW THE
+                                // WHOLE REGION, so "this goal is unreachable"
+                                // is finally a trustworthy fact — record it
+                                // against the GOAL (position-free for the
+                                // colonist), TTL-stamped (never waits for an
+                                // amnesty), one entry per cell (overwrite =
+                                // additive-capped). Recorded even while the
+                                // consumer flag is OFF: the A/B flips one
+                                // reader, not the writer.
+                                // (`job` is the enclosing scope's mutable
+                                // borrow of this exact job — reuse it; a
+                                // second `board.jobs` read here is E0502.)
+                                let goal = job.pos;
+                                board
+                                    .goal_verdicts
+                                    .insert(goal, tick.0 + GOAL_VERDICT_TTL_TICKS);
                                 // ★ THE ROOF-ROAMER DETECTOR. Position-free
                                 // streak of the chaser's own hopeless
                                 // verdicts. The measured strander produced
@@ -28213,13 +28303,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // Nearest is also better behaviour than first — a
                         // shorter fetch leg is less likely to hit the budget.
                         let feet_i = pos.0.map(|e| e.floor() as i32);
-                        let cand = (&pickup_items, &positions, &uids)
+                        // ★ GOAL-VERDICT two-pass, same fail-open shape as
+                        // the eat scan: never reserve a pile a whole-region
+                        // exhaust just proved unreachable — unless it is the
+                        // only pile there is.
+                        let pick_cand = |respect_verdicts: bool| (&pickup_items, &positions, &uids)
                             .join()
                             .filter(|(pi, ipos, iuid)| {
+                                let icell = ipos.0.map(|e| e.floor() as i32);
                                 pi.item().item_definition_id().itemdef_id() == req
-                                    && board
-                                        .stockpile_at(ipos.0.map(|e| e.floor() as i32))
-                                        .is_some()
+                                    && (!respect_verdicts
+                                        || !goal_verdict_blocks(
+                                            &board.goal_verdicts,
+                                            icell,
+                                            tick.0,
+                                        ))
+                                    && board.stockpile_at(icell).is_some()
                                     && board.has_capacity(**iuid, pi.amount())
                                     // ★ ITEM-REACH GATE (flag-gated,
                                     // fail-open): do not RESERVE a pile the
@@ -28231,7 +28330,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         board.labels_prev_cells,
                                         |c| terrain.get(c).ok().copied(),
                                         feet_i,
-                                        ipos.0.map(|e| e.floor() as i32),
+                                        icell,
                                     )
                             })
                             .min_by_key(|(_, ipos, iuid)| {
@@ -28244,6 +28343,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 )
                             })
                             .map(|(pi, _, iuid)| (*iuid, pi.amount()));
+                        let cand = pick_fail_open(pick_cand);
                         match cand {
                             // Reserve ONE UNIT against the pile's OWN
                             // capacity: `reserve(item, amount)` asserts
@@ -32393,6 +32493,61 @@ mod tests {
             board.jobs.contains_key(&painted_id),
             "a player-painted post must survive the drive's exit sweep"
         );
+    }
+
+    /// ★ GOAL-VERDICT pins (PREREG-GOAL-VERDICT-FEEDBACK), all four
+    /// registered cases: block while live, expire on the TTL clock,
+    /// overwrite (never accumulate), and the disabled gate admits
+    /// everything. Env-free impl so both gate states are exercised without
+    /// racing the process-wide OnceLock.
+    #[test]
+    fn a_goal_verdict_blocks_while_live_and_expires_on_its_own_clock() {
+        let cell = Vec3::new(5, 5, 10);
+        let mut v: HashMap<Vec3<i32>, u64> = HashMap::default();
+        v.insert(cell, 1_000);
+
+        assert!(
+            goal_verdict_blocks_impl(&v, cell, 999, true),
+            "a live verdict blocks its cell"
+        );
+        assert!(
+            !goal_verdict_blocks_impl(&v, cell, 1_000, true),
+            "at the expiry tick the verdict is DEAD — it expires on its own              clock, never waits for an amnesty (the E2 law)"
+        );
+        assert!(
+            !goal_verdict_blocks_impl(&v, Vec3::new(6, 5, 10), 999, true),
+            "a verdict is goal-keyed: the neighbouring cell is untouched"
+        );
+        assert!(
+            !goal_verdict_blocks_impl(&v, cell, 999, false),
+            "gate OFF admits everything — the default until the fleet A/B passes"
+        );
+
+        // Overwrite, never accumulate: re-recording the same cell replaces
+        // the expiry (additive-capped by construction).
+        v.insert(cell, 500);
+        assert!(!goal_verdict_blocks_impl(&v, cell, 700, true));
+        assert_eq!(v.len(), 1, "one entry per cell, always");
+    }
+
+    /// ★ THE FAIL-OPEN TWO-PASS: refusal must never starve the protectee.
+    /// Both directions — the respecting pick wins when it can, and an
+    /// all-blocked table falls open rather than returning nothing.
+    #[test]
+    fn a_verdict_pick_prefers_clean_but_never_starves() {
+        // A clean candidate exists: the respecting pass wins.
+        let got = pick_fail_open(|respect| if respect { Some("clean") } else { Some("any") });
+        assert_eq!(got, Some("clean"), "a clean candidate is preferred");
+        // Everything blocked: the pick falls open instead of starving.
+        let got = pick_fail_open(|respect| if respect { None } else { Some("blocked-but-only") });
+        assert_eq!(
+            got,
+            Some("blocked-but-only"),
+            "when every candidate is verdict-blocked the pick proceeds ungated              — a starving colonist still tries the least-bad meal"
+        );
+        // Nothing at all: still nothing (fail-open is not fabrication).
+        let got: Option<&str> = pick_fail_open(|_| None);
+        assert_eq!(got, None);
     }
 
     /// ★ ROW 2: flee an ATTACK, not an existence. The middle case is the
