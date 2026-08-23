@@ -928,6 +928,22 @@ pub(crate) fn claim_release_should_clear(claimed_by_us: bool, _unreachable: bool
     claimed_by_us
 }
 
+/// ★ ROW 2: is a perceived target worth FLEEING? Hostility alone is not —
+/// that fired 339 full-health flee preempts in one leg (colonists sprinting
+/// from small animals that had merely entered perception range) and fed the
+/// extinction the sentinel now reports. Vanilla's `Target.aggro_on` is the
+/// engagement bit: flee what is COMING, work through what is merely THERE.
+/// The wounded case does not route through this — `flee_hurt` keeps its own
+/// unconditional health check. Kill switch `BASTION_NO_FIX_FLEE_AGGRO=1`
+/// restores the old hostility-only predicate for the same-binary A/B.
+pub(crate) fn flee_worthy_target(hostile: bool, aggro_on: bool) -> bool {
+    static OLD: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *OLD.get_or_init(|| std::env::var_os("BASTION_NO_FIX_FLEE_AGGRO").is_some()) {
+        return hostile;
+    }
+    hostile && aggro_on
+}
+
 /// ★ SLEEP HOLDS ONLY AT THE BED (805bf30a06): the sleep arm's per-tick
 /// re-verification of the arrival latch. Arrival admits at `ARRIVE_DIST`
 /// (2.5); this releases only past ARRIVE_DIST + 0.5 — the hysteresis band
@@ -15622,9 +15638,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // arms emitted zero. The line itself named neither the colonist
                 // nor the cause, so a run with BOTH a hostile and a wounded
                 // colonist would have been unattributable per event.
+                // ★ ROW 2 (2026-08-23): flee from an ATTACK, not an
+                // existence. `t.hostile` alone fired 339 flee preempts in one
+                // leg, most at health=1.0 — eight armed adults sprinting from
+                // small animals that had merely entered perception range,
+                // until all were dead. Vanilla's own `Target.aggro_on`
+                // ("has come close enough to trigger aggro") is the field
+                // that separates a predator NEARBY from a predator COMING —
+                // the RimWorld shape: pawns work through passing wildlife
+                // and respond when it actually engages. `flee_hurt` below is
+                // deliberately untouched: a wounded colonist still flees a
+                // hostile it merely sees (`flee_when_hurt_needs_no_aggro`).
                 let flee_target = agents
                     .get(entity)
-                    .is_some_and(|ag| ag.target.is_some_and(|t| t.hostile));
+                    .is_some_and(|ag| ag.target.is_some_and(|t| flee_worthy_target(t.hostile, t.aggro_on)));
                 let flee_hurt = agents.get(entity).is_some_and(|ag| {
                     healths
                         .get(entity)
@@ -32214,6 +32241,24 @@ mod tests {
         // unreachable or not -- this branch was never the bug.
         assert!(!claim_release_should_clear(false, true));
         assert!(!claim_release_should_clear(false, false));
+    }
+
+    /// ★ ROW 2: flee an ATTACK, not an existence. The middle case is the
+    /// 339-preempt defect verbatim: hostile perceived, no aggro, and the
+    /// old predicate fled. Both directions — the flee that saves lives
+    /// (aggroed hostile) must survive the narrowing.
+    #[test]
+    fn a_colonist_flees_an_attack_not_an_existence() {
+        assert!(
+            flee_worthy_target(true, true),
+            "an aggroed hostile still triggers flee — narrowing must not kill              the flee that saves lives"
+        );
+        assert!(
+            !flee_worthy_target(true, false),
+            "a hostile that merely entered perception range is not worth              abandoning work for: this exact case fired 339 times at              health=1.0 in one leg"
+        );
+        assert!(!flee_worthy_target(false, false));
+        assert!(!flee_worthy_target(false, true), "aggro from a non-hostile is not flight-worthy");
     }
 
     /// ★ THE BED LEAK (805bf30a06), RED PRE-FIX: the suspend path sets
