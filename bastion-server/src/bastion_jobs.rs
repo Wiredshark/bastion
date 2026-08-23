@@ -7685,6 +7685,11 @@ pub struct JobBoard {
     /// it last TRANSITIONED (hysteresis reads the age; the claim selector
     /// reads the drive). Session state — recomputed from live producers.
     pub colony_drive: (common::bastion::ColonyDrive, u64),
+    /// ★ ROW 2 AUTO-GUARD v1: guard jobs the DRIVE created on entering
+    /// Defend, retracted on leaving it. Tracked by id so the retraction can
+    /// never touch a player-painted post — the sweep drains exactly this
+    /// list and nothing else.
+    pub auto_guard_jobs: Vec<JobId>,
     /// bastion (ARC 8 item 34): the colony's WEALTH — stockpiled item units,
     /// sampled on the colony-mind cadence. ONE producer: raid pressure reads
     /// THIS number and nothing computes a second copy of it (the same
@@ -9914,6 +9919,47 @@ impl JobBoard {
             affordance: AffordanceClass::Untargeted,
         });
         self.total_claims += 1;
+        id
+    }
+
+    /// ★ ROW 2 AUTO-GUARD v1: a guard post the COLONY places for itself on
+    /// entering Defend. Guard jobs existed only behind player paint
+    /// (GuardPost/PatrolPoint designations), so in an autonomous colony the
+    /// entire guard economy — ITEM 14's mode/bravery machinery, guard XP —
+    /// sat unreachable: the colony entered Defend 9 times in one session
+    /// and granted 0 guard XP. Mode is FIGHT explicitly (a colony under
+    /// attack defends; the Alarm default of `guard_mode_pin` is a fixture
+    /// knob, not a policy). Unclaimed shape — the claim loop staffs it —
+    /// and registered in `auto_guard_jobs` so only the drive's own exit
+    /// sweep ever retracts it.
+    pub fn insert_auto_guard_job(&mut self, post: Vec3<i32>) -> JobId {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.jobs.insert(id, Job {
+            kind: common::bastion::JobKind::Guard {
+                mode: common::bastion::GuardMode::Fight,
+                post,
+                patrol_to: None,
+                at_far_end: false,
+            },
+            work: common::bastion::WorkType::Guard,
+            pos: post,
+            skill_floor: 0,
+            claimed_by: None,
+            suspended_for: None,
+            unreachable: false,
+            carve_attempted: false,
+            is_access: false,
+            required_item: None,
+            benched_until_tick: None,
+            depth: 0,
+            reservation: None,
+            affordance: AffordanceClass::Untargeted,
+            needs_materials: false,
+            progress: 0.0,
+            stuck_strikes: 0,
+        });
+        self.auto_guard_jobs.push(id);
         id
     }
 
@@ -14434,13 +14480,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // colony PREPARES on perception, the individual abandons work
             // only on engagement. Deliberate divergence on WHEN, not WHO.)
             let mut threats = 0u32;
-            for (c_ent, _, _) in (&entities, &colonists, &positions).join() {
+            // ★ ROW 2 AUTO-GUARD v1: WHERE the threat is perceived, so an
+            // entry into Defend can post guards AT the trouble. Uid-keyed
+            // and sorted below — join order is not a promise, and the posts
+            // must land identically on two runs of one seed.
+            let mut perceiver_posts: Vec<(u64, Vec3<i32>)> = Vec::new();
+            for (c_ent, _, c_pos) in (&entities, &colonists, &positions).join() {
                 if agents
                     .get(c_ent)
                     .and_then(|ag| ag.target)
                     .is_some_and(|t| t.hostile)
                 {
                     threats += 1;
+                    if let Some(u) = uids.get(c_ent) {
+                        perceiver_posts
+                            .push((u.0.get(), c_pos.0.map(|e| e.floor() as i32)));
+                    }
                 }
             }
             // F16: the ladder is a pure function so its ORDER can be pinned —
@@ -14463,6 +14518,34 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     pop,
                     "bastion: #107 colony drive TRANSITION"
                 );
+                use common::bastion::ColonyDrive as D;
+                // ★ ROW 2 AUTO-GUARD v1: entering Defend POSTS GUARDS where
+                // the threat is perceived; leaving Defend retracts exactly
+                // the posts the drive itself placed (player-painted posts
+                // are not in `auto_guard_jobs` and cannot be touched). Two
+                // posts, lowest-perceiver-uid first: a colony of eight that
+                // sends everyone to fight has stopped being a colony — DF's
+                // squad-response shape, not a general mobilisation. The
+                // claim loop staffs them; a retracted-while-claimed post is
+                // released by the existing gone-sweep like any removed job.
+                if want == D::Defend {
+                    perceiver_posts.sort_by_key(|(u, _)| *u);
+                    for (_, post) in perceiver_posts.iter().take(2) {
+                        let id = board.insert_auto_guard_job(*post);
+                        info!(
+                            job = id,
+                            ?post,
+                            "bastion: AUTO-GUARD posted (drive entered Defend)"
+                        );
+                    }
+                } else if cur == D::Defend {
+                    let retracting: Vec<JobId> =
+                        board.auto_guard_jobs.drain(..).collect();
+                    for id in retracting {
+                        board.remove_job(id);
+                    }
+                    info!("bastion: AUTO-GUARD retracted (drive left Defend)");
+                }
             }
         }
 
@@ -32244,6 +32327,41 @@ mod tests {
         // unreachable or not -- this branch was never the bug.
         assert!(!claim_release_should_clear(false, true));
         assert!(!claim_release_should_clear(false, false));
+    }
+
+    /// ★ ROW 2 AUTO-GUARD v1: the drive's own posts retract without
+    /// touching a painted one. The registry IS the safety property — the
+    /// exit sweep drains `auto_guard_jobs` and nothing else, so a player's
+    /// standing post survives every Defend cycle.
+    #[test]
+    fn auto_guard_retraction_spares_painted_posts() {
+        let mut board = JobBoard::default();
+        let auto_id = board.insert_auto_guard_job(Vec3::new(5, 5, 10));
+        // A "painted" post: same kind, inserted outside the auto path.
+        let painted_id = board.next_id;
+        board.next_id += 1;
+        let mut painted = board.jobs[&auto_id].clone();
+        painted.pos = Vec3::new(9, 9, 10);
+        board.jobs.insert(painted_id, painted);
+
+        assert_eq!(
+            board.auto_guard_jobs,
+            vec![auto_id],
+            "only the drive's own post is registered for retraction"
+        );
+        // The exit sweep, exactly as the transition arm runs it.
+        let retracting: Vec<JobId> = board.auto_guard_jobs.drain(..).collect();
+        for id in retracting {
+            board.remove_job(id);
+        }
+        assert!(
+            !board.jobs.contains_key(&auto_id),
+            "the drive's post retracts when Defend ends"
+        );
+        assert!(
+            board.jobs.contains_key(&painted_id),
+            "a player-painted post must survive the drive's exit sweep"
+        );
     }
 
     /// ★ ROW 2: flee an ATTACK, not an existence. The middle case is the
