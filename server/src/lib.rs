@@ -7334,7 +7334,7 @@ impl Server {
                         // whichever house holds the stockpile plot. Soft
                         // preference by construction — it only moves where
                         // breaks AIM; needs, curfew and work still outrank.
-                        if let Some((_, _, _, Some(plaza), _)) = adoption.as_ref() {
+                        if let Some((_, _, _, Some(plaza), _, _)) = adoption.as_ref() {
                             let z = self
                                 .world
                                 .sim()
@@ -7351,13 +7351,15 @@ impl Server {
                         // colony's shared road set — every colonist's path
                         // search prices walk edges onto these columns at
                         // half, so routes follow the streets.
-                        if let Some((_, _, _, _, roads)) = adoption.as_ref() {
-                            self.state
+                        if let Some((_, _, _, _, roads, buildings)) = adoption.as_ref() {
+                            let mut board = self
+                                .state
                                 .ecs_mut()
-                                .write_resource::<bastion_jobs::JobBoard>()
-                                .road_cells = std::sync::Arc::new(roads.clone());
+                                .write_resource::<bastion_jobs::JobBoard>();
+                            board.road_cells = std::sync::Arc::new(roads.clone());
+                            board.town_buildings = buildings.clone();
                         }
-                        let adopted_names = if let Some((asp, _, plots, _, _)) = adoption.as_ref() {
+                        let adopted_names = if let Some((asp, _, plots, _, _, _)) = adoption.as_ref() {
                             let names = self.bastion_adopt_town_people(
                                 *asp,
                                 asp.xy().map(|e| e as i32),
@@ -7416,7 +7418,7 @@ impl Server {
                         // (`place_preset`), so the captured colony is the one
                         // an overseer would found rather than a lookalike.
                         // MODE A placement in a helper (t0_27 discipline).
-                        if let Some((_, town_origin, plots, _, _)) = adoption {
+                        if let Some((_, town_origin, plots, _, _, _)) = adoption {
                             Self::bastion_adopt_place(
                                 self.state.ecs(),
                                 town_origin,
@@ -7513,6 +7515,12 @@ impl Server {
         Vec<(common::bastion::DesignationKind, Vec2<i32>, Vec2<i32>)>,
         Option<Vec2<i32>>,
         std::collections::HashSet<Vec2<i32>>,
+        Vec<(
+            bastion_server::bastion_jobs::TownBuildingKind,
+            Vec2<i32>,
+            Vec2<i32>,
+            Vec3<i32>,
+        )>,
     )> {
         if std::env::var_os("BASTION_ADOPT_TOWN").is_none() {
             return None;
@@ -7584,7 +7592,7 @@ impl Server {
                  creation, else spawn"
             );
             let player_chose = chosen.is_some() || picked.is_some();
-            let (town_origin, plots, plaza, roads) = Self::bastion_adoptable_town_plots(
+            let (town_origin, plots, plaza, roads, buildings) = Self::bastion_adoptable_town_plots(
                 self.index.as_index_ref(),
                 self.world.sim(),
                 near,
@@ -7640,7 +7648,7 @@ impl Server {
                     )
                 })
                 .unwrap_or(sp);
-            Some((asp, town_origin, plots, plaza, roads))
+            Some((asp, town_origin, plots, plaza, roads, buildings))
         }
     }
 
@@ -7745,6 +7753,12 @@ impl Server {
         Vec<(common::bastion::DesignationKind, Vec2<i32>, Vec2<i32>)>,
         Option<Vec2<i32>>,
         std::collections::HashSet<Vec2<i32>>,
+        Vec<(
+            bastion_server::bastion_jobs::TownBuildingKind,
+            Vec2<i32>,
+            Vec2<i32>,
+            Vec3<i32>,
+        )>,
     )> {
         use common::bastion::DesignationKind as D;
         use world::site::plot::PlotKind;
@@ -7978,7 +7992,43 @@ impl Server {
             road_columns = roads.len(),
             "bastion: ADOPT-A-TOWN street map ingested (roads, plazas, paths, bridges)"
         );
-        Some((site.origin, plots, plaza, roads))
+        // ★ BUILDING PURPOSES (Ben: "every building needs to be labeled
+        // for its purpose and uses for the colonists"): worldgen already
+        // labels every plot — the colony now READS the non-residential
+        // ones into a registry. Anchor = plot centre at terrain height.
+        use bastion_server::bastion_jobs::TownBuildingKind as TB;
+        let buildings: Vec<(TB, Vec2<i32>, Vec2<i32>, Vec3<i32>)> = site
+            .plots()
+            .filter_map(|p| {
+                let kind = match p.kind() {
+                    PlotKind::Tavern(_) => TB::Tavern,
+                    PlotKind::Workshop(_)
+                    | PlotKind::CoastalWorkshop(_)
+                    | PlotKind::SavannahWorkshop(_) => TB::Workshop,
+                    PlotKind::AirshipDock(_)
+                    | PlotKind::CoastalAirshipDock(_)
+                    | PlotKind::CliffTownAirshipDock(_)
+                    | PlotKind::SavannahAirshipDock(_)
+                    | PlotKind::DesertCityAirshipDock(_) => TB::Dock,
+                    _ => return None,
+                };
+                let b = p.find_bounds();
+                let min = site.tile_wpos(b.min);
+                let max = site.tile_wpos(b.max + 1) - 1;
+                let c = (min + max) / 2;
+                let z = sim.get_alt_approx(c).map(|a| a as i32).unwrap_or(0);
+                Some((kind, min, max, Vec3::new(c.x, c.y, z)))
+            })
+            .collect();
+        let taverns = buildings.iter().filter(|(k, ..)| *k == TB::Tavern).count();
+        tracing::info!(
+            registered = buildings.len(),
+            taverns,
+            workshops = buildings.iter().filter(|(k, ..)| *k == TB::Workshop).count(),
+            docks = buildings.iter().filter(|(k, ..)| *k == TB::Dock).count(),
+            "bastion: TOWN BUILDINGS labeled — worldgen's own purposes, finally read"
+        );
+        Some((site.origin, plots, plaza, roads, buildings))
     }
 
     /// bastion (ITEM 11 fixture lever, 2026-08-20): `BASTION_SEED_FOOD=<n>`

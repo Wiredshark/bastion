@@ -7369,6 +7369,29 @@ pub enum ReleaseReason {
     TargetChanged,
 }
 
+/// ★ BUILDING PURPOSES: the non-residential building roles the colony
+/// reads from worldgen's plot kinds at adoption. Server-side only on
+/// purpose (a `common/` enum rebuilds both binaries for a label).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TownBuildingKind {
+    /// Evening venue — joins the plaza in the gathering rotation.
+    Tavern,
+    /// Craft station (consumer lands with the crafting-chain arc).
+    Workshop,
+    /// Trade gateway (consumer lands with the trade arc).
+    Dock,
+}
+
+/// ★ VENUE SPLIT (Ben's blob screenshot, second half of the fix): with V
+/// venues (plaza + taverns), global gathering rank r seats venue `r % V`
+/// at within-venue rank `r / V` — every venue's ring gets a compact,
+/// collision-free 0..n/V rank sequence, neighbours mix across venues,
+/// and V=1 degrades to exactly the old single-plaza behavior.
+pub(crate) fn venue_and_rank(global_rank: usize, venues: usize) -> (usize, usize) {
+    let v = venues.max(1);
+    (global_rank % v, global_rank / v)
+}
+
 /// The job board resource.
 #[derive(Default)]
 pub struct JobBoard {
@@ -8287,6 +8310,13 @@ pub struct JobBoard {
     /// leniency, not silence: an exploding rate here is the tracked-red
     /// that says the MOVER needs real work, and the fleet judge reads it.
     pub move_assists: HashMap<&'static str, u32>,
+    /// ★ BUILDING PURPOSES (Ben: "every building needs to be labeled for
+    /// its purpose and uses for the colonists"). The adopted town's
+    /// non-residential buildings, registered at founding from worldgen's
+    /// own plot kinds — the labels always existed; this is the colony
+    /// finally READING them. (kind, min, max, anchor). First consumer:
+    /// taverns join the plaza as evening venues. Empty pre-founding.
+    pub town_buildings: Vec<(TownBuildingKind, Vec2<i32>, Vec2<i32>, Vec3<i32>)>,
     /// ★ PAINT NOTICES (Ben, live: "no one seems to take my mining jobs...
     /// ITS BEEN 44 DAYS" — the jobs were fine, the game just never said a
     /// word about when work happens or what standing his orders had). Each
@@ -25415,7 +25445,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .iter()
                                 .position(|&u| u == uid.0.get())
                                 .unwrap_or(0);
-                            gathering_spot(anchor, rank)
+                            // ★ BUILDING PURPOSES, consumer 1 (Ben: "every
+                            // building needs to be labeled for its purpose
+                            // and uses"): TAVERNS join the plaza as evening
+                            // venues. The crowd splits deterministically
+                            // across venues (see venue_and_rank) — some
+                            // regulars at the tavern, the rest on the
+                            // square; no taverns = exactly the old plaza.
+                            let taverns: Vec<Vec3<i32>> = board
+                                .town_buildings
+                                .iter()
+                                .filter(|(k, ..)| *k == TownBuildingKind::Tavern)
+                                .map(|(_, _, _, a)| *a)
+                                .collect();
+                            let (venue, within) =
+                                venue_and_rank(rank, 1 + taverns.len());
+                            let anchor = if venue == 0 {
+                                anchor
+                            } else {
+                                taverns[venue - 1]
+                            };
+                            gathering_spot(anchor, within)
                         })
                         .unwrap_or(feet);
                     let rid = board.insert_recreate_job(spot, uid, until);
@@ -35126,6 +35176,34 @@ mod tests {
             assert!(d.x.max(d.y) >= 2, "rank {r} seated inside the anchor cell");
             assert!(d.x.max(d.y) <= 16, "rank {r} seated {d:?} — outside any plausible plaza");
         }
+    }
+
+    /// ★ BUILDING PURPOSES consumer 1 — the venue split. Both directions:
+    /// venues share the crowd collision-free, and no-taverns degrades to
+    /// exactly the single-plaza behavior every banked run pinned.
+    #[test]
+    fn taverns_split_the_evening_and_no_tavern_changes_nothing() {
+        // V=1 (no taverns): identity — venue 0, rank unchanged, for all.
+        for r in 0..40 {
+            assert_eq!(venue_and_rank(r, 1), (0, r));
+        }
+        // V=3 (plaza + two taverns): every venue used, within-ranks
+        // compact and collision-free per venue.
+        let mut per_venue: HashMap<usize, Vec<usize>> = HashMap::new();
+        for r in 0..30 {
+            let (v, w) = venue_and_rank(r, 3);
+            per_venue.entry(v).or_default().push(w);
+        }
+        assert_eq!(per_venue.len(), 3, "all three venues get regulars");
+        for (v, ws) in per_venue {
+            assert_eq!(
+                ws,
+                (0..10).collect::<Vec<_>>(),
+                "venue {v}'s within-ranks must be compact 0..n — a gap or                 repeat re-creates the seat collision the ring was built to kill"
+            );
+        }
+        // Degenerate guard: zero venues clamps to one, never divides by zero.
+        assert_eq!(venue_and_rank(7, 0), (0, 7));
     }
 
     /// ★ A CREW, NOT A STAMPEDE + WORK NEAR HOME (Ben, live in the city).
