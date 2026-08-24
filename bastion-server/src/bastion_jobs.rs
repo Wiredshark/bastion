@@ -8036,6 +8036,11 @@ pub struct JobBoard {
     /// persists on the colonist record; this is the runtime table
     /// (rebuilt as beds are built/assigned; the board is session-state).
     pub beds: HashMap<Vec3<i32>, common::bastion::BedSlot>,
+    /// ★ MOVED-IN BEDS (Ben, twice: "there's not enough beds per house"):
+    /// cells where a bedless adopted house gets a bedroll placed — queued at
+    /// founding (terrain is read-only there), drained by the tick's block
+    /// writer, visible next tick. The bed SLOT registers immediately.
+    pub pending_bed_places: Vec<Vec3<i32>>,
     /// ★ THE GATHERING ANCHOR (Ben's flyover ruling, 2026-08-23): where the
     /// evening ring forms — the adopted town's plaza centre, written at
     /// founding. None = fall back to the first stockpile (autofound camps,
@@ -9434,6 +9439,33 @@ impl JobBoard {
                         adopted_chests,
                         "bastion: ADOPT-IN-PLACE — existing village furniture registered usable"
                     );
+                }
+                // ★ EVERY HOUSE GETS A BED (Ben, twice across two sessions:
+                // "there's not enough beds per house"). A Bed plot whose
+                // furniture scan found NOTHING gets one moved in: the slot
+                // registers now (mechanics live immediately), the bedroll
+                // sprite lands via the block writer next tick (visible —
+                // a slot without furniture is the 'standing next to
+                // nothing' the ruling forbids). One per house, at the
+                // plot-centre column's standable cell.
+                if kind == common::bastion::DesignationKind::Bed && adopted_beds == 0 {
+                    let cx = (region.min.x + region.max.x) / 2;
+                    let cy = (region.min.y + region.max.y) / 2;
+                    if let Some(surface) = column_surface_z(terrain, cx, cy, hint_z) {
+                        let cell = Vec3::new(cx, cy, surface + 1);
+                        if !self.beds.contains_key(&cell) {
+                            self.beds.insert(cell, common::bastion::BedSlot {
+                                kind: common::bastion::BedKind::Bedroll,
+                                owner: None,
+                                occupant: None,
+                            });
+                            self.pending_bed_places.push(cell);
+                            info!(
+                                ?cell,
+                                "bastion: MOVED A BED IN — a bedless adopted house gets furnished"
+                            );
+                        }
+                    }
                 }
             }
         } else {
@@ -17019,6 +17051,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         //   MATURE (Growth == FARM_GROWTH_MAX)      -> a HARVEST job
         // Dedupe: one live job per target cell (the paint path's own
         // free-item-exploit rule).
+        // ★ MOVED-IN BEDS drain (see pending_bed_places' doc): the founding
+        // queued them where terrain was read-only; the sprite lands here a
+        // tick later and the house reads furnished. Deliberately ABOVE the
+        // farm pass's gate — a farmless colony still gets its beds.
+        for cell in std::mem::take(&mut board.pending_bed_places) {
+            block_change.set(cell, Block::air(SpriteKind::Bedroll));
+            info!(?cell, "bastion: bed placed (moved in at adoption)");
+        }
         if tick.0 % ARBITRATION_INTERVAL as u64 == 3 && !board.farms.is_empty() {
             let occupied: std::collections::HashSet<Vec3<i32>> =
                 board.jobs.values().map(|j| j.pos).collect();
@@ -17378,6 +17418,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             for cpos in evict {
                 board.farm_growth.remove(&(cpos.x, cpos.y, cpos.z));
             }
+
             for (cpos, nb, g) in stage_ups {
                 block_change.set(cpos, nb);
                 board.farm_growth.insert((cpos.x, cpos.y, cpos.z), time.0);
