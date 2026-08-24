@@ -1047,6 +1047,28 @@ pub(crate) fn flee_hurt_signal(sees_hostile: bool, health_frac: f32, flee_health
     sees_hostile && health_frac < flee_health
 }
 
+/// ★ WEDGED vs PAUSED (mega-city census, 2026-08-24): the census counted
+/// `Traveling && speed < 0.2` at the sampled INSTANT as "stuck" — no
+/// duration term at all — so a corner-pause, a crowd jostle, or a step-up
+/// wait all read as stuck. At 8 colonists that noise floor was ~2.7; at 44
+/// with cross-city walks it read 9–17 while the sampled records showed
+/// `stuck_time` ≈ 2s and `best_dist` IMPROVING — colonists in mid-walk,
+/// not wedged. The autopsy block beside the census names `stuck_time` as
+/// the discriminator ("separates paused from wedged"; STUCK_TIMEOUT is
+/// 10s) — this predicate finally uses it. Threshold at half the release
+/// timeout: long enough that corner physics can't reach it, short enough
+/// that every genuinely wedged colonist still shows before release fires.
+/// The census now carries BOTH counts (`stuck` wedged, `slowed`
+/// transient) so no information is destroyed — a rising `slowed` is the
+/// congestion signal, a rising `stuck` is the pathing-defect signal.
+pub(crate) const CENSUS_WEDGED_SECS: f32 = 5.0;
+pub(crate) fn census_is_wedged(speed: f32, stuck_time: f32) -> bool {
+    speed < 0.2 && stuck_time > CENSUS_WEDGED_SECS
+}
+pub(crate) fn census_is_slowed(speed: f32, stuck_time: f32) -> bool {
+    speed < 0.2 && stuck_time <= CENSUS_WEDGED_SECS
+}
+
 /// ★ SLEEP HOLDS ONLY AT THE BED (805bf30a06): the sleep arm's per-tick
 /// re-verification of the arrival latch. Arrival admits at `ARRIVE_DIST`
 /// (2.5); this releases only past ARRIVE_DIST + 0.5 — the hysteresis band
@@ -11564,6 +11586,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 {
                     let (mut working, mut moving, mut stuck, mut idle) =
                         (0u32, 0u32, 0u32, 0u32);
+                    // WEDGED vs PAUSED: transient sub-5s velocity dips are
+                    // congestion (`slowed`, also counted in `moving`), not
+                    // pathing defects (`stuck`). See census_is_wedged.
+                    let mut slowed = 0u32;
                     let (mut fed, mut rested, mut total) = (0u32, 0u32, 0u32);
                     // ★ ITEM 36 (2026-08-21): DOWNED colonists, surfaced.
                     //
@@ -11612,7 +11638,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             .unwrap_or(0.0);
                         match active_jobs.get(entity) {
                             Some(aj) => match aj.state {
-                                ActiveJobState::Traveling if speed < 0.2 => {
+                                ActiveJobState::Traveling
+                                    if census_is_slowed(speed, aj.stuck_time as f32) =>
+                                {
+                                    slowed += 1;
+                                    moving += 1;
+                                },
+                                ActiveJobState::Traveling
+                                    if census_is_wedged(speed, aj.stuck_time as f32) =>
+                                {
                                     stuck += 1;
                                     // ★ A BARE COUNT CANNOT BE DIAGNOSED
                                     // (2026-08-21). `stuck` has been ~2.7 of 8
@@ -11759,10 +11793,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         working,
                         moving,
                         stuck,
+                        slowed,
                         idle,
                         fed,
                         rested,
-                        "bastion EXPERIENCE census (engaged = has a job and is not stuck;                          `working` EXCLUDES travel, so hauling reads as `moving`)"
+                        "bastion EXPERIENCE census (engaged = has a job and is not stuck;                          `working` EXCLUDES travel, so hauling reads as `moving`;                          `stuck` = wedged >5s at speed~0, `slowed` = transient dip,                          also inside `moving`)"
                     );
                 }
                 // ITEM8-V4 sentinel S1 (Fable-ruled, LOG-ONLY -- never
@@ -34580,6 +34615,28 @@ mod tests {
         assert!(!flee_hurt_signal(true, 0.9, 0.25));
         // Boundary: at exactly flee_health the colonist holds (strict <).
         assert!(!flee_hurt_signal(true, 0.25, 0.25));
+    }
+
+    /// ★ WEDGED vs PAUSED (mega-city census): the old census counted ANY
+    /// sampled instant of `Traveling && speed < 0.2` as stuck — a corner
+    /// pause read the same as a 30-minute wedge. Both directions pinned so
+    /// neither count can silently absorb the other again.
+    #[test]
+    fn a_corner_pause_is_slowed_and_a_wedge_is_stuck() {
+        // 2s at a corner (the mega-city samples: stuck_time ≈ 1.8-2.7s,
+        // best_dist improving) is congestion, not a defect.
+        assert!(census_is_slowed(0.1, 2.0));
+        assert!(!census_is_wedged(0.1, 2.0));
+        // 8s pressed against a wall (recorder territory: STUCK_TIMEOUT=10s
+        // releases at 10) is wedged and must show as stuck BEFORE release.
+        assert!(census_is_wedged(0.1, 8.0));
+        assert!(!census_is_slowed(0.1, 8.0));
+        // Moving at speed is neither, whatever the clock says.
+        assert!(!census_is_wedged(1.5, 8.0));
+        assert!(!census_is_slowed(1.5, 2.0));
+        // The two are exhaustive and disjoint over the slow band.
+        assert!(census_is_slowed(0.1, CENSUS_WEDGED_SECS));
+        assert!(census_is_wedged(0.1, CENSUS_WEDGED_SECS + 0.01));
     }
 
     /// ★ THE BED LEAK (805bf30a06), RED PRE-FIX: the suspend path sets
