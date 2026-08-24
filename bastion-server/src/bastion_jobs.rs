@@ -1854,6 +1854,88 @@ pub(crate) fn bed_assignment_cost(bed: Vec3<i32>, feet: Vec3<i32>) -> i64 {
     (d.x as i64).pow(2) + (d.y as i64).pow(2) + (d.z as i64 * BED_HEIGHT_WEIGHT).pow(2)
 }
 
+/// ★ HOUSEHOLDS v1 (Ben, 2026-08-24: "houses have dedicated owner, family
+/// owners, ability to be taken over on death" + "1-6 depending on family
+/// size" + "capacity = real beds"). A household is DERIVED, never stored:
+/// the adopted Bed-designation regions are the houses (their AABBs are
+/// already on the board), the bed slots inside are the capacity source,
+/// and the beds' owners are the members. Derivation each sweep means no
+/// new persistence, no migration, and no second source of truth —
+/// `Colonist.owned_bed` (durable) plus the board's regions reproduce the
+/// entire household picture after any reload. Take-over on death is
+/// emergent: the owner-liveness sweep frees the dead colonist's bed, the
+/// house derives as vacant, and the vacancy surcharge below steers the
+/// next homeless colonist into it.
+pub(crate) struct HouseholdView {
+    pub min: Vec3<i32>,
+    pub max: Vec3<i32>,
+    pub beds: u32,
+    /// Uid-sorted; `members[0]` is the head of household.
+    pub members: Vec<common::uid::Uid>,
+}
+
+/// Ben's ruling, pinned in code: a family is 1-6 people and the house's
+/// REAL bed count is the capacity source (a five-bed farmhouse holds five,
+/// a one-bedroll hut holds one). Clamped, never zero — a house that
+/// derived at all has at least one bed.
+pub(crate) fn household_capacity(beds: u32) -> u32 { beds.clamp(1, 6) }
+
+/// Derive the household list plus a bed→household index for the assigner.
+/// Deterministic: regions in board push order (stable per world), members
+/// uid-sorted. Beds outside every Bed region (open-ground bedrolls) map to
+/// no household and carry the occupied-house surcharge — a roof beats a
+/// field.
+pub(crate) fn derive_households(
+    regions: &[(common::bastion::Region, common::bastion::DesignationKind)],
+    beds: &HashMap<Vec3<i32>, common::bastion::BedSlot>,
+) -> (Vec<HouseholdView>, HashMap<Vec3<i32>, usize>) {
+    use common::bastion::DesignationKind as D;
+    let mut houses: Vec<HouseholdView> = regions
+        .iter()
+        .filter(|(_, k)| *k == D::Bed)
+        .map(|(r, _)| HouseholdView { min: r.min, max: r.max, beds: 0, members: Vec::new() })
+        .collect();
+    let mut bed_house = HashMap::new();
+    for (pos, slot) in beds {
+        let Some(idx) = houses.iter().position(|h| {
+            pos.x >= h.min.x
+                && pos.x <= h.max.x
+                && pos.y >= h.min.y
+                && pos.y <= h.max.y
+                && pos.z >= h.min.z
+                && pos.z <= h.max.z
+        }) else {
+            continue;
+        };
+        houses[idx].beds += 1;
+        if let Some(u) = slot.owner {
+            houses[idx].members.push(u);
+        }
+        bed_house.insert(*pos, idx);
+    }
+    for h in &mut houses {
+        h.members.sort_by_key(|u| u.0.get());
+    }
+    (houses, bed_house)
+}
+
+/// ★ A SURCHARGE, NOT A FILTER (the 186-block lesson, 2026-08-22, held
+/// sacred): preferring vacant houses absolutely would re-create the exact
+/// disaster the nearest-bed fix measured — a colonist marched across the
+/// whole town to a "better" bed, 18 rest timeouts, four of seven never
+/// slept. So an occupied house's free bed costs 4x (squared-distance
+/// space: the vacant house wins up to 2x the walking distance, and past
+/// that the near shared bed wins). Sharing stays possible the moment
+/// vacants run out or sit too far — capacity 1-6 makes that sharing a
+/// FAMILY, not a failure.
+pub(crate) const OCCUPIED_HOUSE_SURCHARGE: i64 = 4;
+pub(crate) fn bed_claim_cost(base: i64, house_members: Option<u32>) -> i64 {
+    match house_members {
+        Some(0) => base,
+        _ => base.saturating_mul(OCCUPIED_HOUSE_SURCHARGE),
+    }
+}
+
 /// bastion (2026-08-22): coarse job class for the release census, so the
 /// histogram can be read PER KIND. Deliberately local to this crate rather
 /// than a method on `JobKind` in `common` — a `common/` edit rebuilds BOTH
@@ -15556,6 +15638,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 .map(|(p, _)| *p)
                 .collect();
             free.sort_by_key(|p| (p.x, p.y, p.z));
+            // ★ HOUSEHOLDS v1: derive the house picture (regions + beds +
+            // owners) so the pick below can price a shared house against a
+            // vacant one, and the census can say how the town actually
+            // lives. Occupancy updates as this pass assigns, so two
+            // homeless colonists spread into two vacant houses instead of
+            // both piling into the first.
+            let (households, bed_house) = derive_households(&board.designated, &board.beds);
+            let mut occupancy: Vec<u32> =
+                households.iter().map(|h| h.members.len() as u32).collect();
 
             // ★ NEAREST BED, NOT THE NEXT ONE IN SORT ORDER (2026-08-22).
             //
@@ -15611,10 +15702,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let best = free
                     .iter()
                     .filter(|p| !taken.contains(*p))
-                    .min_by_key(|p| bed_assignment_cost(**p, feet))
+                    .min_by_key(|p| {
+                        bed_claim_cost(
+                            bed_assignment_cost(**p, feet),
+                            bed_house.get(*p).map(|&i| occupancy[i]),
+                        )
+                    })
                     .copied();
                 if let Some(p) = best {
                     taken.insert(p);
+                    if let Some(&i) = bed_house.get(&p) {
+                        occupancy[i] += 1;
+                    }
                     pairs.push((u, ent, p));
                 }
             }
@@ -15650,6 +15749,28 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     beds = board.beds.len(),
                     "bastion: B7-2 beds assigned to their sleepers"
                 );
+            }
+            // ★ HOUSEHOLDS v1 census: how the town actually lives. `vacant`
+            // is claimable housing supply (the growth headroom number);
+            // `shared` houses are families-in-waiting, not failures —
+            // capacity is 1-6 by real beds (household_capacity). Emitted on
+            // the sweep cadence, only when the picture changed shape.
+            {
+                let occupied = households.iter().filter(|h| !h.members.is_empty()).count();
+                let vacant =
+                    households.iter().filter(|h| h.members.is_empty() && h.beds > 0).count();
+                let shared = households.iter().filter(|h| h.members.len() > 1).count();
+                let heads: u32 = households.iter().filter(|h| !h.members.is_empty()).count() as u32;
+                if assigned > 0 || released > 0 {
+                    info!(
+                        houses = households.len(),
+                        occupied,
+                        vacant,
+                        shared,
+                        heads,
+                        "bastion: HOUSEHOLDS — the town's living arrangement (head = lowest uid; capacity = real beds, 1-6)"
+                    );
+                }
             }
         }
 
@@ -34637,6 +34758,70 @@ mod tests {
         // The two are exhaustive and disjoint over the slow band.
         assert!(census_is_slowed(0.1, CENSUS_WEDGED_SECS));
         assert!(census_is_wedged(0.1, CENSUS_WEDGED_SECS + 0.01));
+    }
+
+    /// ★ HOUSEHOLDS v1 (Ben: dedicated owners, families 1-6 by real beds,
+    /// take-over on death): derivation is pure and pinned here; take-over
+    /// is emergent from the owner-liveness sweep + the vacancy surcharge.
+    #[test]
+    fn households_derive_from_regions_beds_and_owners() {
+        use common::bastion::{BedKind, BedSlot, DesignationKind as D, Region};
+        let u = |n: u64| Uid(NonZeroU64::new(n).unwrap());
+        let regions = vec![
+            (Region { min: Vec3::new(0, 0, 0), max: Vec3::new(9, 9, 9) }, D::Bed),
+            (Region { min: Vec3::new(20, 0, 0), max: Vec3::new(29, 9, 9) }, D::Bed),
+            // A farm region must never derive as a house.
+            (Region { min: Vec3::new(40, 0, 0), max: Vec3::new(49, 9, 9) }, D::Farm),
+        ];
+        let mut beds = HashMap::new();
+        let slot = |o: Option<Uid>| BedSlot { kind: BedKind::Frame, owner: o, occupant: None };
+        beds.insert(Vec3::new(1, 1, 1), slot(Some(u(7))));
+        beds.insert(Vec3::new(2, 1, 1), slot(Some(u(3))));
+        beds.insert(Vec3::new(3, 1, 1), slot(None));
+        beds.insert(Vec3::new(21, 1, 1), slot(None)); // vacant house
+        beds.insert(Vec3::new(99, 1, 1), slot(Some(u(9)))); // field bedroll: no house
+        let (houses, bed_house) = derive_households(&regions, &beds);
+        assert_eq!(houses.len(), 2, "two Bed regions, two households — Farm is not a house");
+        assert_eq!(houses[0].beds, 3);
+        // Members uid-sorted; head = lowest uid.
+        assert_eq!(
+            houses[0].members.iter().map(|m| m.0.get()).collect::<Vec<_>>(),
+            vec![3, 7],
+            "members are uid-sorted so the head of household is deterministic"
+        );
+        assert!(houses[1].members.is_empty(), "the second house derives VACANT");
+        assert!(!bed_house.contains_key(&Vec3::new(99, 1, 1)), "a field bedroll joins no house");
+        // Ben's capacity ruling, pinned: 1-6 by real beds.
+        assert_eq!(household_capacity(0), 1);
+        assert_eq!(household_capacity(3), 3);
+        assert_eq!(household_capacity(9), 6);
+    }
+
+    /// ★ THE SURCHARGE, BOTH DIRECTIONS: a vacant house wins up to 2x the
+    /// walking distance; past that the near shared bed wins — the 186-block
+    /// nearest-bed lesson must survive the vacancy preference.
+    #[test]
+    fn a_vacant_house_wins_nearby_and_loses_across_town() {
+        let feet = Vec3::new(0, 0, 0);
+        // Occupied-house bed 10 blocks out vs vacant-house bed 15 blocks out:
+        // 15 < 2x10, vacant wins.
+        let near_occupied = bed_claim_cost(bed_assignment_cost(Vec3::new(10, 0, 0), feet), Some(1));
+        let mid_vacant = bed_claim_cost(bed_assignment_cost(Vec3::new(15, 0, 0), feet), Some(0));
+        assert!(
+            mid_vacant < near_occupied,
+            "a modest detour to a house of one's own beats moving in with a stranger"
+        );
+        // Occupied bed 10 blocks vs vacant 186 blocks: the disaster distance
+        // loses — nobody crosses the whole town for an empty house.
+        let far_vacant = bed_claim_cost(bed_assignment_cost(Vec3::new(186, 0, 0), feet), Some(0));
+        assert!(
+            near_occupied < far_vacant,
+            "the 186-block lesson holds: distance still dominates at town scale"
+        );
+        // A field bedroll (no house) carries the surcharge too: a roof beats
+        // a field at equal distance.
+        let field = bed_claim_cost(bed_assignment_cost(Vec3::new(15, 0, 0), feet), None);
+        assert!(mid_vacant < field, "same distance: the house bed wins over the field bedroll");
     }
 
     /// ★ THE BED LEAK (805bf30a06), RED PRE-FIX: the suspend path sets
