@@ -22051,10 +22051,39 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         .move_assists
                                         .entry(class)
                                         .or_insert(0) += 1;
+                                    // ★ THE STEP-CLASS DISCRIMINATOR (next
+                                    // hunt): 198 step-assists per window are
+                                    // the old Empty-front stall mass. The
+                                    // STEER-DIAG comment names four silent
+                                    // faces (travel_ok false / agent gone /
+                                    // steer at own feet / activity
+                                    // overwritten); assist eligibility
+                                    // already excludes the first two, so
+                                    // feet-vs-head distance and the LIVE
+                                    // steer target separate the rest.
+                                    let feet_now = pos.0.map(|e| e.floor() as i32);
+                                    let live_steer = agent.as_deref().and_then(|a| {
+                                        match a.rtsim_controller.activity {
+                                            Some(common::rtsim::NpcActivity::Goto(t, _)) => {
+                                                Some(t)
+                                            },
+                                            _ => None,
+                                        }
+                                    });
                                     info!(
                                         colonist = uids.get(entity).map(|u| u.0.get()),
                                         class,
                                         ?head,
+                                        feet = ?feet_now,
+                                        dist = (head - feet_now)
+                                            .xy()
+                                            .map(|e| e.abs())
+                                            .reduce_max(),
+                                        dz = head.z - feet_now.z,
+                                        steer = ?live_steer,
+                                        steer_at_feet = live_steer.is_some_and(|s| {
+                                            s.xy().distance(pos.0.xy()) < 1.0
+                                        }),
                                         front = ?front,
                                         "bastion: MOVE ASSIST — the router promised this cell; the vault/step completes"
                                     );
