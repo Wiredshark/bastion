@@ -22107,6 +22107,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         }),
                                         searched_for = ?searched_for,
                                         steer_route_diverged,
+                                        // ★ LIP HUNT: a router-invisible
+                                        // physics obstruction (fractional
+                                        // surface heights at block seams —
+                                        // road blocks vs grass) would show
+                                        // as on_ground + near-zero vel +
+                                        // differing under-block kinds.
+                                        on_ground = physics_states
+                                            .get(entity)
+                                            .is_some_and(|p| p.on_ground.is_some()),
+                                        vel = ?velocities.get(entity).map(|v| v.0),
+                                        under_feet = ?terrain
+                                            .get(feet_now - Vec3::unit_z())
+                                            .ok()
+                                            .map(|b| b.kind()),
+                                        under_head = ?terrain
+                                            .get(head - Vec3::unit_z())
+                                            .ok()
+                                            .map(|b| b.kind()),
                                         front = ?front,
                                         "bastion: MOVE ASSIST — the router promised this cell; the vault/step completes"
                                     );
