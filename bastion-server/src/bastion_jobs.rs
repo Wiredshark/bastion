@@ -22533,6 +22533,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         tick.0,
                                     ),
                                 );
+                                // ★ THE BENCHES MURMUR (Ben's acceptance
+                                // line: "chatting like vanilla villagers").
+                                // A seated lounger occasionally says one of
+                                // vanilla's own villager idle lines — the
+                                // real speech bubble, the real i18n keys.
+                                // Deterministic stagger by (tick, uid): one
+                                // line per ~20 sim-s per seat, offset so the
+                                // circle murmurs instead of chorusing.
+                                const MURMUR: [&str; 4] = [
+                                    "npc-speech-villager",
+                                    "npc-speech-villager_open",
+                                    "npc-speech-villager_adventurous",
+                                    "npc-speech-villager_conscientious",
+                                ];
+                                let un = u.0.get();
+                                if (tick.0 + un * 7) % 600 == 0 {
+                                    let key = MURMUR
+                                        [((un ^ (tick.0 / 600)) % MURMUR.len() as u64) as usize];
+                                    chat_emitter.emit(common::event::ChatEvent {
+                                        msg: comp::UnresolvedChatMsg::npc_say(
+                                            *u,
+                                            common::comp::Content::localized(key),
+                                        ),
+                                        from_client: false,
+                                    });
+                                }
                             }
                         }
                         continue;
