@@ -8083,6 +8083,12 @@ pub struct JobBoard {
     /// persists on the colonist record; this is the runtime table
     /// (rebuilt as beds are built/assigned; the board is session-state).
     pub beds: HashMap<Vec3<i32>, common::bastion::BedSlot>,
+    /// ★ PAINT NOTICES (Ben, live: "no one seems to take my mining jobs...
+    /// ITS BEEN 44 DAYS" — the jobs were fine, the game just never said a
+    /// word about when work happens or what standing his orders had). Each
+    /// entry is (jobs_created, was_off_hours) from one player paint; the
+    /// tick drain speaks them as meta chat.
+    pub pending_paint_notices: Vec<(usize, bool)>,
     /// ★ MOVED-IN BEDS (Ben, twice: "there's not enough beds per house"):
     /// cells where a bedless adopted house gets a bedroll placed — queued at
     /// founding (terrain is read-only there), drained by the tick's block
@@ -9227,9 +9233,18 @@ impl JobBoard {
                         // `adopted_container_admitted`.
                         //
                         // Count the solid blocks directly beneath the
-                        // container. An unreadable block ends the run: a
-                        // container over terrain we cannot see is not one we
-                        // can promise a colonist a route to.
+                        // container. `is_ok_and` is DEFENSIVE ONLY, not a live
+                        // guard: while `TerrainGrid` is `VolGrid2d<TerrainChunk>`
+                        // its chunk key is XY, `NoSuchChunk` is its only error,
+                        // and the `terrain.get(pos)` above — same column — has
+                        // already proved this chunk loaded, so an Err below
+                        // cannot fire. Stated WITH ITS DEPENDENCY rather than as
+                        // a law: `VolGrid3d` exists (unused) and keys on Vec3,
+                        // and under such an alias Err becomes reachable and this
+                        // refusal load-bearing. Said out loud because it
+                        // otherwise reads as an unloaded-terrain refusal worth
+                        // deferring through `pending_restore` — machinery for a
+                        // case that cannot fire today.
                         let solid_below = (1..=ADOPTED_CONTAINER_SOLID_PROBE)
                             .take_while(|d| {
                                 terrain
@@ -17258,6 +17273,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         for cell in std::mem::take(&mut board.pending_bed_places) {
             block_change.set(cell, Block::air(SpriteKind::Bedroll));
             info!(?cell, "bastion: bed placed (moved in at adoption)");
+        }
+        // ★ PAINT NOTICES drain (see the field's doc): one meta line per
+        // player paint, so an order given at night explains itself instead
+        // of looking ignored.
+        for (jobs, _) in std::mem::take(&mut board.pending_paint_notices) {
+            let off_hours = !work_claims_open(default_schedule_block(hour_of_day(
+                rtsim.rt_state().data().time_of_day.0,
+            )));
+            let msg = if off_hours {
+                format!(
+                    "Marked {jobs} job(s) — your orders take top priority; the crew starts at 08:00 (it's night)."
+                )
+            } else {
+                format!("Marked {jobs} job(s) — your orders take top priority.")
+            };
+            chat_emitter.emit(common::event::ChatEvent {
+                msg: comp::UnresolvedChatMsg::meta(common::comp::Content::Plain(msg)),
+                from_client: false,
+            });
         }
         if tick.0 % ARBITRATION_INTERVAL as u64 == 3 && !board.farms.is_empty() {
             let occupied: std::collections::HashSet<Vec3<i32>> =

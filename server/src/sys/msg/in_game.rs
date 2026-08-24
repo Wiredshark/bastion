@@ -2005,10 +2005,17 @@ impl<'a> System<'a> for Sys {
                                 extent,
                                 kind,
                             );
+                            let n = created.len();
                             for id in created {
                                 if let Some(j) = job_board.jobs.get_mut(&id) {
                                     j.player_ordered = true;
                                 }
+                            }
+                            if n > 0 {
+                                // off_hours resolved by the drain (next tick,
+                                // same hour) — this system has no schedule
+                                // vocabulary and should not grow one.
+                                job_board.pending_paint_notices.push((n, false));
                             }
                         },
                         // CHOP-FELLING (row 51.6): a resolved (base, fell-set)
