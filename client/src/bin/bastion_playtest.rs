@@ -144,6 +144,14 @@ enum ScriptCmd {
         zbot: i32,
         gap: i32,
     },
+    /// Trap-repro instrument (2026-08-23): dump a bounded box of the
+    /// client's own terrain, one grep-friendly line per cell -- the exact
+    /// block data a MockVol repro needs. Client-side read, no wire change
+    /// (the same TerrainGrid access `survey` uses).
+    ReadBlock {
+        min: Vec3<i32>,
+        max: Vec3<i32>,
+    },
     Note(String),
     // AUTON-2 MILESTONE LIVE SESSION (2026-08-09): a generic chat-command
     // send -- e.g. `cmd give_item common.items.food.mushroom 50` then
@@ -257,6 +265,7 @@ pub const SCRIPT_VERBS: &[&str] = &[
     "count_items",
     "list_designations",
     "survey",
+    "read_block",
     "note",
     "cmd",
     "ascii",
@@ -350,6 +359,26 @@ fn parse_script_text(text: &str) -> Vec<ScriptCmd> {
                     panic!("ascii radius must be >= 0 at line {lineno}, got {radius}");
                 }
                 ScriptCmd::Ascii(radius)
+            },
+            "read_block" => {
+                let v: Vec<i32> = rest
+                    .iter()
+                    .map(|t| t.parse().unwrap_or_else(|_| panic!("bad read_block arg at line {lineno}")))
+                    .collect();
+                if v.len() != 6 {
+                    panic!("read_block takes x0 y0 z0 x1 y1 z1 at line {lineno}");
+                }
+                let min = Vec3::new(v[0].min(v[3]), v[1].min(v[4]), v[2].min(v[5]));
+                let max = Vec3::new(v[0].max(v[3]), v[1].max(v[4]), v[2].max(v[5]));
+                let cells = ((max.x - min.x + 1) as i64)
+                    * ((max.y - min.y + 1) as i64)
+                    * ((max.z - min.z + 1) as i64);
+                // ARGUMENTS ARE REFUSED, NOT IGNORED (D2b): an unbounded box
+                // would spray megabytes into the turn log.
+                if cells > 4096 {
+                    panic!("read_block box is {cells} cells (cap 4096) at line {lineno}");
+                }
+                ScriptCmd::ReadBlock { min, max }
             },
             "note" => ScriptCmd::Note(rest.join(" ")),
             "cmd" => {
@@ -1225,6 +1254,26 @@ fn main() {
                     client.bastion_designations_rev(),
                     client.bastion_designations()
                 ));
+            },
+            ScriptCmd::ReadBlock { min, max } => {
+                let terrain = client.state().ecs().read_resource::<TerrainGrid>();
+                println!(
+                    "[{}] read_block [{},{},{}]..[{},{},{}]",
+                    ts(), min.x, min.y, min.z, max.x, max.y, max.z
+                );
+                for z in min.z..=max.z {
+                    for y in min.y..=max.y {
+                        for x in min.x..=max.x {
+                            match terrain.get(Vec3::new(x, y, z)) {
+                                Ok(b) => println!(
+                                    "BLOCK {} {} {} kind={:?} sprite={:?} filled={} solid={}",
+                                    x, y, z, b.kind(), b.get_sprite(), b.is_filled(), b.is_solid()
+                                ),
+                                Err(_) => println!("BLOCK {x} {y} {z} UNLOADED"),
+                            }
+                        }
+                    }
+                }
             },
             ScriptCmd::Survey {
                 x0,
