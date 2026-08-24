@@ -19135,10 +19135,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // the task #57 board-wide sweep (`job_still_wanted`) so
                     // the two never drift apart on the per-kind special
                     // cases (Farm, Haul, etc.).
+                    // ★ AN UNLOADED CELL IS NOT A CHANGED BLOCK (autopsy
+                    // fleet, 2026-08-23: every plaza lounge seat died at
+                    // this line within one tick of posting — the seat's
+                    // chunk sat outside the presence bubble, `get` returned
+                    // Err, and `.ok().is_some_and(..)` read CANNOT-SEE as
+                    // NOT-WANTED. The survey instrument's own law, violated
+                    // here). Unloaded ⇒ still wanted: the walk continues
+                    // and presence loads the chunk before arrival.
                     let still_wanted = terrain
                         .get(job.pos)
-                        .ok()
-                        .is_some_and(|b| job_still_wanted(&job.kind, b));
+                        .map_or(true, |b| job_still_wanted(&job.kind, b));
                     if !still_wanted {
                         info!(
                             job = active.job,

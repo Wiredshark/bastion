@@ -7930,7 +7930,11 @@ impl Server {
                     None
                 }
             })
-            .min_by_key(|c| (c.x, c.y));
+            // Nearest the town's own origin — the autopsy fleet's seats
+            // landed 40+ blocks past the plot edge because min-by-wpos
+            // picked an outlying plaza; the square people mean is the one
+            // at the centre of town.
+            .min_by_key(|c| c.distance_squared(site.origin));
         tracing::info!(?plaza, "bastion: ADOPT-A-TOWN gathering anchor (plaza centre)");
         Some((site.origin, plots, plaza))
     }
