@@ -6186,6 +6186,7 @@ fn m3_promoted_corridor_waypoint(
             is_target_loaded: true,
             search_allowed: true,
             climb_ban: Vec::new(),
+            road_cells: Default::default(),
         };
         let path = common::path::bastion_full_path(terrain, position, mount_center, &cfg)?;
         if path.is_empty() || path.len() > 64 || path.last().copied() != Some(mount) {
@@ -6519,6 +6520,7 @@ where
         is_target_loaded: true,
         search_allowed: true,
         climb_ban: Vec::new(),
+        road_cells: Default::default(),
     };
     let Some(path) = common::path::bastion_full_path(terrain, actual_start, target, &cfg) else {
         return (None, None);
@@ -8271,6 +8273,15 @@ pub struct JobBoard {
     /// persists on the colonist record; this is the runtime table
     /// (rebuilt as beds are built/assigned; the board is session-state).
     pub beds: HashMap<Vec3<i32>, common::bastion::BedSlot>,
+    /// ★ ROADS (Ben: "force the colonists to use the roads"): the XY
+    /// columns of the adopted town's streets, plazas and bridges, filled
+    /// ONCE at founding from the site's own tile data (road voxels are
+    /// plain Rock/Earth — the site's knowledge is the only honest
+    /// identifier). Shared into every colonist's `TraversalConfig` as an
+    /// `Arc` — walk edges onto these columns cost `ROAD_FACTOR` (0.5) of
+    /// normal, so routes snap to streets whenever the street isn't twice
+    /// as long as the shortcut. Empty on unfounded worlds: zero effect.
+    pub road_cells: std::sync::Arc<std::collections::HashSet<Vec2<i32>>>,
     /// ★ PAINT NOTICES (Ben, live: "no one seems to take my mining jobs...
     /// ITS BEEN 44 DAYS" — the jobs were fine, the game just never said a
     /// word about when work happens or what standing his orders had). Each
@@ -21324,6 +21335,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // the scheduler's budget by status.
                                     search_allowed: true,
                                     climb_ban: Vec::new(),
+                                    // ROADS: the steer full-path walks the
+                                    // town like everyone else.
+                                    road_cells: board.road_cells.clone(),
                                 };
                                 match common::path::bastion_full_path(
                                     &*terrain, pos.0, target, &cfg,
@@ -21536,6 +21550,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     Some(&*colonist),
                                     false,
                                     time.0,
+                                    &board.road_cells,
                                 );
                                 detour_requests.push((u, pos.0, steer, cfg, tier, active.job));
                             }

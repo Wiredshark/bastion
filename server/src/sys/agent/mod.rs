@@ -60,6 +60,8 @@ impl<'a> System<'a> for Sys {
         ReadExpect<'a, common_state::ExecutionMode>,
         Read<'a, Tick>,
         ReadExpect<'a, Settings>,
+        // ★ ROADS: the colony street set for traversal_config_for.
+        Read<'a, bastion_server::bastion_jobs::JobBoard>,
     );
 
     const NAME: &'static str = "agent";
@@ -77,6 +79,7 @@ impl<'a> System<'a> for Sys {
             execution_mode,
             tick,
             settings,
+            bastion_board,
         ): Self::SystemData,
     ) {
         job.cpu_stats.measure(ParMode::Rayon);
@@ -342,6 +345,7 @@ impl<'a> System<'a> for Sys {
                         read_data.colonists.get(entity),
                         goto_scheduled,
                         read_data.time.0,
+                        &bastion_board.road_cells,
                     );
                     let health_fraction = health.map_or(1.0, Health::fraction);
 

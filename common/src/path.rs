@@ -131,6 +131,31 @@ pub struct TraversalConfig {
     /// holds the Pending stance — byte-identical to a mid-search tick
     /// today — until the scheduler's `search_step` delivers.
     pub search_allowed: bool,
+    /// bastion (ROADS — Ben: "force the colonists to use the roads, only
+    /// leaving them when absolutely necessary"): the XY columns of the
+    /// town's streets, plazas and bridges, built ONCE at founding from the
+    /// adopted site's own tile data (road blocks are plain Rock/Earth —
+    /// unidentifiable at the voxel level, so the site's knowledge is the
+    /// only honest source). Walk edges INTO these columns cost
+    /// [`ROAD_FACTOR`] of normal — the RimWorld shape: roads are cheaper
+    /// terrain, not special AI, so routes snap to streets exactly when a
+    /// street exists and isn't an absurd detour. `Arc`: colony-wide and
+    /// immutable after founding; cloning a config bumps a refcount, not
+    /// tens of thousands of cells. Empty (`Arc::default()`) for vanilla
+    /// NPCs and every pre-roads caller — zero lookups hit, zero change.
+    pub road_cells: std::sync::Arc<std::collections::HashSet<Vec2<i32>>>,
+}
+
+/// Walk-edge multiplier for a move INTO a road column. 0.5: a street path
+/// may be up to twice as long as the cross-lot shortcut and still win —
+/// people take the road; they cut the corner only when the detour is
+/// worse than double. The A* heuristic stays admissible: flat transition
+/// is 3.0/block, road flat is 1.5/block, both above the heuristic's
+/// 1.0/block lower bound.
+pub const ROAD_FACTOR: f32 = 0.5;
+fn road_pricing_off() -> bool {
+    static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *OFF.get_or_init(|| std::env::var_os("BASTION_NO_ROAD_PRICING").is_some())
 }
 
 const DIAGONALS: [Vec2<i32>; 8] = [
@@ -1500,11 +1525,22 @@ where
                 } else {
                     0.0
                 };
+                // bastion (ROADS): a move onto a street column is cheap —
+                // the whole move including the swim term (a bridge tile IS
+                // road; crossing it should read as road, not as water).
+                let road = if !road_pricing_off()
+                    && traversal_cfg.road_cells.contains(&next_node.pos.xy())
+                {
+                    ROAD_FACTOR
+                } else {
+                    1.0
+                };
                 (
                     next_node,
-                    transition(node, next_node)
+                    (transition(node, next_node)
                         + if dir.z == 0 { edge_cost } else { 0.0 }
-                        + swim,
+                        + swim)
+                        * road,
                 )
             })
             // Falls
@@ -2886,6 +2922,7 @@ pub(super) fn trap_house_world() -> MockVol {
             is_target_loaded: true,
             search_allowed: true,
             climb_ban: Vec::new(),
+            road_cells: Default::default(),
         }
     }
 
@@ -3743,6 +3780,41 @@ mod ledger_179_tests {
         assert!(
             step(1) < flat * 3.0,
             "a single step up must stay cheaper than three flat steps, or colonists              will refuse stairs and ladders they are supposed to use"
+        );
+    }
+
+    /// ★ ROADS (Ben: "force the colonists to use the roads and only leave
+    /// them when absolutely necessary"). Cost-model pin, both directions:
+    /// the street must win real detours, and the discount must not break
+    /// the A* heuristic's admissibility floor.
+    #[test]
+    fn a_street_wins_up_to_twice_the_shortcut() {
+        let flat = 3.0;
+        let road = flat * ROAD_FACTOR;
+        // A street path nearly twice as long as the cross-lot cut still
+        // wins — people take the road.
+        assert!(
+            19.0 * road < 10.0 * flat,
+            "a 19-block street ({}) must beat a 10-block shortcut ({})",
+            19.0 * road,
+            10.0 * flat
+        );
+        // ...but past double, the shortcut wins: "only leaving them when
+        // absolutely necessary" is a strong preference, not a wall — a
+        // road factor small enough to flunk this would march colonists
+        // around the whole town to avoid one lawn.
+        assert!(
+            21.0 * road > 10.0 * flat,
+            "past twice the shortcut the direct route must win ({} vs {})",
+            21.0 * road,
+            10.0 * flat
+        );
+        // Admissibility: the cheapest discounted move must stay at or
+        // above the heuristic's 1.0/block lower bound, or A* returns
+        // suboptimal paths that IGNORE roads precisely when they matter.
+        assert!(
+            road >= 1.0,
+            "road-discounted flat move ({road}) fell below the heuristic floor"
         );
     }
 

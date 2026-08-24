@@ -7334,7 +7334,7 @@ impl Server {
                         // whichever house holds the stockpile plot. Soft
                         // preference by construction — it only moves where
                         // breaks AIM; needs, curfew and work still outrank.
-                        if let Some((_, _, _, Some(plaza))) = adoption.as_ref() {
+                        if let Some((_, _, _, Some(plaza), _)) = adoption.as_ref() {
                             let z = self
                                 .world
                                 .sim()
@@ -7347,7 +7347,17 @@ impl Server {
                                 .gathering_anchor =
                                 Some(Vec3::new(plaza.x, plaza.y, z));
                         }
-                        let adopted_names = if let Some((asp, _, plots, _)) = adoption.as_ref() {
+                        // ★ ROADS: the adopted town's street map becomes the
+                        // colony's shared road set — every colonist's path
+                        // search prices walk edges onto these columns at
+                        // half, so routes follow the streets.
+                        if let Some((_, _, _, _, roads)) = adoption.as_ref() {
+                            self.state
+                                .ecs_mut()
+                                .write_resource::<bastion_jobs::JobBoard>()
+                                .road_cells = std::sync::Arc::new(roads.clone());
+                        }
+                        let adopted_names = if let Some((asp, _, plots, _, _)) = adoption.as_ref() {
                             let names = self.bastion_adopt_town_people(
                                 *asp,
                                 asp.xy().map(|e| e as i32),
@@ -7406,7 +7416,7 @@ impl Server {
                         // (`place_preset`), so the captured colony is the one
                         // an overseer would found rather than a lookalike.
                         // MODE A placement in a helper (t0_27 discipline).
-                        if let Some((_, town_origin, plots, _)) = adoption {
+                        if let Some((_, town_origin, plots, _, _)) = adoption {
                             Self::bastion_adopt_place(
                                 self.state.ecs(),
                                 town_origin,
@@ -7502,6 +7512,7 @@ impl Server {
         Vec2<i32>,
         Vec<(common::bastion::DesignationKind, Vec2<i32>, Vec2<i32>)>,
         Option<Vec2<i32>>,
+        std::collections::HashSet<Vec2<i32>>,
     )> {
         if std::env::var_os("BASTION_ADOPT_TOWN").is_none() {
             return None;
@@ -7573,7 +7584,7 @@ impl Server {
                  creation, else spawn"
             );
             let player_chose = chosen.is_some() || picked.is_some();
-            let (town_origin, plots, plaza) = Self::bastion_adoptable_town_plots(
+            let (town_origin, plots, plaza, roads) = Self::bastion_adoptable_town_plots(
                 self.index.as_index_ref(),
                 self.world.sim(),
                 near,
@@ -7629,7 +7640,7 @@ impl Server {
                     )
                 })
                 .unwrap_or(sp);
-            Some((asp, town_origin, plots, plaza))
+            Some((asp, town_origin, plots, plaza, roads))
         }
     }
 
@@ -7733,6 +7744,7 @@ impl Server {
         Vec2<i32>,
         Vec<(common::bastion::DesignationKind, Vec2<i32>, Vec2<i32>)>,
         Option<Vec2<i32>>,
+        std::collections::HashSet<Vec2<i32>>,
     )> {
         use common::bastion::DesignationKind as D;
         use world::site::plot::PlotKind;
@@ -7936,7 +7948,37 @@ impl Server {
             // at the centre of town.
             .min_by_key(|c| c.distance_squared(site.origin));
         tracing::info!(?plaza, "bastion: ADOPT-A-TOWN gathering anchor (plaza centre)");
-        Some((site.origin, plots, plaza))
+        // ★ ROADS (Ben: "force the colonists to use the roads"): the site's
+        // own tile grammar is the only honest identifier of a street (road
+        // voxels are plain Rock/Earth). Every Road/Plaza/Path/Bridge tile
+        // contributes its 6x6 block columns; the set feeds every colonist's
+        // TraversalConfig, where walk edges onto these columns cost half —
+        // routes snap to streets unless the street is twice the shortcut.
+        let mut roads = std::collections::HashSet::new();
+        let b = site.tiles.bounds();
+        for ty in b.min.y..=b.max.y {
+            for tx in b.min.x..=b.max.x {
+                let tpos = Vec2::new(tx, ty);
+                use world::site::TileKind as TK;
+                let t = site.tiles.get(tpos);
+                // `is_road()` is the site's own street predicate
+                // (Plaza|Road|Path); Bridge added — a walker's street
+                // map includes the bridge over the stream.
+                if t.is_road() || matches!(t.kind, TK::Bridge) {
+                    let w = site.tile_wpos(tpos);
+                    for dy in 0..world::site::TILE_SIZE as i32 {
+                        for dx in 0..world::site::TILE_SIZE as i32 {
+                            roads.insert(w + Vec2::new(dx, dy));
+                        }
+                    }
+                }
+            }
+        }
+        tracing::info!(
+            road_columns = roads.len(),
+            "bastion: ADOPT-A-TOWN street map ingested (roads, plazas, paths, bridges)"
+        );
+        Some((site.origin, plots, plaza, roads))
     }
 
     /// bastion (ITEM 11 fixture lever, 2026-08-20): `BASTION_SEED_FOOD=<n>`

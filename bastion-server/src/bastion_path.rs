@@ -60,6 +60,11 @@ pub fn traversal_config_for(
     colonist: Option<&comp::Colonist>,
     goto_scheduled: bool,
     now: f64,
+    // ★ ROADS: the colony's street columns (JobBoard::road_cells).
+    // Colonists' searches price walk edges onto these at ROAD_FACTOR;
+    // vanilla NPCs get them too — a villager also takes the road. An
+    // `Arc` clone per config: a refcount, not a copy.
+    roads: &std::sync::Arc<std::collections::HashSet<vek::Vec2<i32>>>,
 ) -> TraversalConfig {
     // This controls how picky NPCs are about their pathfinding.
     // Giants are larger and so can afford to be less precise
@@ -102,6 +107,7 @@ pub fn traversal_config_for(
                     .collect()
             })
             .unwrap_or_default(),
+        road_cells: std::sync::Arc::clone(roads),
     }
 }
 
@@ -166,6 +172,7 @@ impl<'a> System<'a> for Sys {
         WriteStorage<'a, comp::Agent>,
         Write<'a, PathScheduler>,
         specs::Read<'a, common::resources::Time>,
+        specs::Read<'a, crate::bastion_jobs::JobBoard>,
     );
 
     const NAME: &'static str = "bastion_path";
@@ -186,6 +193,7 @@ impl<'a> System<'a> for Sys {
             mut agents,
             mut sched,
             time,
+            board,
         ): Self::SystemData,
     ) {
         // Candidates: colonists whose agent is mid-Goto with a routeless
@@ -278,6 +286,7 @@ impl<'a> System<'a> for Sys {
                 // gates inline chase searches.
                 false,
                 time.0,
+                &board.road_cells,
             );
             if let Some(endpoint_tolerance) = endpoint_tolerance {
                 cfg.node_tolerance = cfg.node_tolerance.min(endpoint_tolerance);

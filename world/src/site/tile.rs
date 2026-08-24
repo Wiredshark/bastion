@@ -25,6 +25,11 @@ impl Default for TileGrid {
 }
 
 impl TileGrid {
+    /// The inclusive tile-space bounds this grid has grown to cover.
+    /// bastion (ROADS): the street-map ingest sweeps these bounds at
+    /// founding to build the colony's road set.
+    pub fn bounds(&self) -> Aabr<i32> { self.bounds }
+
     pub fn get_known(&self, tpos: Vec2<i32>) -> Option<&Tile> {
         let tpos = tpos + TILE_RADIUS as i32;
         self.zones

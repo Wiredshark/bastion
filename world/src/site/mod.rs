@@ -6,7 +6,8 @@ pub mod plot;
 mod tile;
 pub mod util;
 
-use self::tile::{HazardKind, KeepKind, RoofKind, TILE_SIZE, Tile, TileGrid};
+pub use self::tile::TILE_SIZE;
+use self::tile::{HazardKind, KeepKind, RoofKind, Tile, TileGrid};
 pub use self::{
     economy::Economy,
     generation::{Fill, Painter, Primitive, PrimitiveRef, Structure, aabr_with_z},
