@@ -1936,6 +1936,39 @@ pub(crate) fn bed_claim_cost(base: i64, house_members: Option<u32>) -> i64 {
     }
 }
 
+/// ★ A CREW, NOT A STAMPEDE (Ben, live in the mega city, watching every
+/// colonist drop their lane for his mine paint: "basically cancels
+/// everyone's jobs — not realistic, it should only take some"). The
+/// player-order tier lift applies only while fewer than this many
+/// colonists are already ON painted work; beyond it the paint keeps its
+/// BASE priority — idle hands still pick it up, but nobody committed to a
+/// lane is pulled off it. A sixth of the colony (min 2) matches the
+/// "work crew" a town would actually send: 8 of 48, 2 of 8.
+/// `BASTION_PLAYER_CREW` overrides for experiments.
+pub(crate) fn player_paint_crew_cap(roster: usize) -> usize {
+    static ENV: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
+    ENV.get_or_init(|| {
+        std::env::var("BASTION_PLAYER_CREW").ok().and_then(|v| v.parse().ok())
+    })
+    .unwrap_or_else(|| (roster / 6).max(2))
+}
+
+/// ★ WORK NEAR HOME (Ben, live: "delegate colonists to different jobs
+/// based on proximity... a farm near a house should be dealt with by
+/// colonists who live nearby"). A score penalty on the distance from the
+/// colonist's OWN BED to the job — the villager across town loses the
+/// claim to the one who lives beside the field. Half-weighted so the
+/// colonist's CURRENT distance still dominates (a neighbour at the far
+/// end of the map should not beat the worker standing on the plot), and
+/// zero for the homeless — a penalty for having no house would starve
+/// exactly the colonists the assigner is trying to house.
+pub(crate) const HOME_PULL_WEIGHT: f32 = 0.5;
+pub(crate) fn home_pull_penalty(home: Option<Vec3<i32>>, job_pos: Vec3<i32>) -> f32 {
+    home.map_or(0.0, |h| {
+        h.map(|e| e as f32).distance(job_pos.map(|e| e as f32)) * HOME_PULL_WEIGHT
+    })
+}
+
 /// bastion (2026-08-22): coarse job class for the release census, so the
 /// histogram can be read PER KIND. Deliberately local to this crate rather
 /// than a method on `JobKind` in `common` — a `common/` edit rebuilds BOTH
@@ -2496,7 +2529,38 @@ pub fn gathering_spot(anchor: Vec3<i32>, rank: usize) -> Vec3<i32> {
     // sets would). No per-uid hash can promise distinctness — the RANK in
     // the colony's sorted uid list can, for any colony up to ring size.
     // A new neighbour shifts the benches by one; the circle stays full.
-    let (dx, dy) = RING[rank % RING.len()];
+    if rank < RING.len() {
+        let (dx, dy) = RING[rank];
+        return anchor + Vec3::new(dx, dy, 0);
+    }
+    // ★ CITY RINGS (Ben's mega-city screenshot, 2026-08-24: ~30 colonists
+    // stacked into one plaza blob — 12 seats, 44 lounging residents; the
+    // mod-12 wrap re-created the exact stacking the ring was built to
+    // kill). Ranks past the benches seat CONCENTRIC SQUARE RINGS around
+    // the plaza: ring k holds the perimeter of the square at radius
+    // 6+2k, one seat every 2 cells — integer-only walk (no trig, no
+    // float divergence), unbounded capacity, and every seat distinct by
+    // construction: distinct rings are disjoint squares, and within a
+    // ring each seat is a distinct perimeter step. First 12 ranks are
+    // byte-identical to the village benches above.
+    let mut r = rank - RING.len();
+    let mut radius: i32 = 6;
+    loop {
+        let seats = 4 * radius; // perimeter 8*radius, one seat per 2 cells
+        if (r as i32) < seats {
+            break;
+        }
+        r -= seats as usize;
+        radius += 2;
+    }
+    let t = (r as i32) * 2; // cell offset along the square's perimeter
+    let side = 2 * radius;
+    let (dx, dy) = match t / side {
+        0 => (t % side - radius, -radius),          // south edge, west→east
+        1 => (radius, t % side - radius),           // east edge, south→north
+        2 => (radius - t % side, radius),           // north edge, east→west
+        _ => (-radius, radius - t % side),          // west edge, north→south
+    };
     anchor + Vec3::new(dx, dy, 0)
 }
 
@@ -29414,6 +29478,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             .filter(|j| j.claimed_by.is_some())
             .map(|j| j.pos)
             .collect();
+        // ★ A CREW, NOT A STAMPEDE: how many are on painted work right now.
+        // `mut` because claims made THIS pass count against the cap too —
+        // without the in-pass increment one arbitration could staff the
+        // whole colony onto paint before the next count ever ran.
+        let mut player_crew: usize = board
+            .jobs
+            .values()
+            .filter(|j| j.player_ordered && j.claimed_by.is_some())
+            .count();
+        let player_crew_cap = player_paint_crew_cap((&colonists).join().count());
         // DET-COL-JOB-001: claim jobs for idle colonists in a canonical order
         // (stable Uid) instead of ECS join order. Each colonist greedily
         // claims its best-scoring job and pushes to claimed_pos, which feeds
@@ -29939,7 +30013,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // nothing — DF's designations-are-the-work shape. Needs
                 // still preempt; off-hours still closes the board; this
                 // only decides WHICH work wins when work is open.
-                let priority = if job.player_ordered {
+                // ★ A CREW, NOT A STAMPEDE: the lift holds only while the
+                // painted-work crew is under cap. At cap, paint keeps its
+                // base priority — still claimable by the idle, no longer a
+                // magnet that strips every lane in town.
+                let priority = if job.player_ordered && player_crew < player_crew_cap {
                     priority.max(5)
                 } else {
                     priority
@@ -30047,7 +30125,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     job.work,
                     time.0,
                 );
-                let score = (dist + depth_score + clump_penalty + sat_penalty + failure_penalty)
+                // ★ WORK NEAR HOME: the villager who lives beside the plot
+                // outbids the one across town, at half the weight of real
+                // walking distance. Zero for the homeless.
+                let home_penalty = home_pull_penalty(colonist.0.owned_bed, job.pos);
+                let score = (dist
+                    + depth_score
+                    + clump_penalty
+                    + sat_penalty
+                    + failure_penalty
+                    + home_penalty)
                     / (commitment
                         * claim_weight
                         // #107: the colony drive's tilt — aligned work
@@ -30230,6 +30317,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     claimed_pos.push(job.pos);
                     claimed_cell = Some(coord_cell(job.pos));
                     claimed_job_pos = Some(job.pos);
+                    // ★ A CREW, NOT A STAMPEDE: claims made this pass count
+                    // against the crew cap immediately.
+                    if job.player_ordered {
+                        player_crew += 1;
+                    }
                     // B-LIVE4: count every claim event (initial + re-claim)
                     // for the mine-oscillation claims-per-job telemetry.
                     board.total_claims += 1;
@@ -34374,10 +34466,13 @@ mod tests {
             assert!(seats.insert(a), "no two colonists in one seat: {a:?}");
         }
         assert_eq!(seats.len(), 8, "eight colonists, eight distinct seats");
-        assert_eq!(
+        // CITY RINGS superseded the old wrap contract ("the 13th shares the
+        // first bench"): the 13th villager now gets his OWN seat on the
+        // first outer ring — the mega-city blob was that wrap at 44 ranks.
+        assert_ne!(
             gathering_spot(anchor, 12),
             gathering_spot(anchor, 0),
-            "the 13th villager shares the first bench — wrap, not panic"
+            "the 13th villager seats the outer ring, not somebody's bench"
         );
     }
 
@@ -34822,6 +34917,49 @@ mod tests {
         // a field at equal distance.
         let field = bed_claim_cost(bed_assignment_cost(Vec3::new(15, 0, 0), feet), None);
         assert!(mid_vacant < field, "same distance: the house bed wins over the field bedroll");
+    }
+
+    /// ★ CITY RINGS (Ben's screenshot: ~30 colonists stacked in one plaza
+    /// blob). The village pin proved 12 seats for 12; this is the same
+    /// falsifier at city scale — mod-12 wrap FAILED it by construction.
+    #[test]
+    fn the_city_plaza_seats_a_whole_city_without_stacking() {
+        let anchor = Vec3::new(100, 100, 50);
+        let seats: Vec<Vec3<i32>> = (0..96).map(|r| gathering_spot(anchor, r)).collect();
+        let distinct: HashSet<Vec3<i32>> = seats.iter().copied().collect();
+        assert_eq!(
+            distinct.len(),
+            96,
+            "ninety-six lounging colonists get ninety-six distinct seats — the             mega-city blob was 44 ranks wrapped onto 12 benches"
+        );
+        // The village's first twelve benches are byte-identical (banked runs).
+        assert_eq!(gathering_spot(anchor, 0), anchor + Vec3::new(3, 0, 0));
+        assert_eq!(gathering_spot(anchor, 11), anchor + Vec3::new(-1, -5, 0));
+        // Nobody seats ON the anchor and nobody drifts absurdly far.
+        for (r, s) in seats.iter().enumerate() {
+            let d = (*s - anchor).xy().map(|e| e.abs());
+            assert!(d.x.max(d.y) >= 2, "rank {r} seated inside the anchor cell");
+            assert!(d.x.max(d.y) <= 16, "rank {r} seated {d:?} — outside any plausible plaza");
+        }
+    }
+
+    /// ★ A CREW, NOT A STAMPEDE + WORK NEAR HOME (Ben, live in the city).
+    #[test]
+    fn a_paint_crew_is_a_sixth_and_home_pull_favours_the_neighbour() {
+        // 48 colonists send a crew of 8; a hamlet of 8 sends 2; never fewer.
+        assert_eq!(player_paint_crew_cap(48), 8);
+        assert_eq!(player_paint_crew_cap(8), 2);
+        assert_eq!(player_paint_crew_cap(3), 2);
+        // The neighbour outbids the cross-town colonist at equal standing
+        // distance: 10 blocks from home vs 100 adds 5 vs 50 to the score.
+        let job = Vec3::new(50, 50, 0);
+        let near = home_pull_penalty(Some(Vec3::new(50, 40, 0)), job);
+        let far = home_pull_penalty(Some(Vec3::new(50, 150, 0)), job);
+        assert!(near < far);
+        assert!((near - 5.0).abs() < 0.01, "half-weighted: 10 blocks from home adds 5");
+        // The homeless carry no penalty — housing them is the assigner's
+        // job, not the scorer's to punish.
+        assert_eq!(home_pull_penalty(None, job), 0.0);
     }
 
     /// ★ THE BED LEAK (805bf30a06), RED PRE-FIX: the suspend path sets
