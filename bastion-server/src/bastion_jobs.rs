@@ -2769,6 +2769,7 @@ fn plan_access(
                 .or_insert((owner, original));
         }
         board.jobs.insert(id, Job {
+            player_ordered: false,
             kind: common::bastion::JobKind::Designated(kind),
             work: kind.work_type(),
             pos,
@@ -8729,6 +8730,7 @@ impl JobBoard {
         let id = self.next_id;
         self.next_id += 1;
         self.jobs.insert(id, Job {
+            player_ordered: false,
             kind: common::bastion::JobKind::Designated(kind),
             work: kind.work_type(),
             pos,
@@ -8912,6 +8914,7 @@ impl JobBoard {
             let id = self.next_id;
             self.next_id += 1;
             self.jobs.insert(id, Job {
+                player_ordered: false,
                 kind: common::bastion::JobKind::Guard {
                     mode,
                     post,
@@ -8965,6 +8968,7 @@ impl JobBoard {
                         let id = self.next_id;
                         self.next_id += 1;
                         self.jobs.insert(id, Job {
+                            player_ordered: false,
                             kind: common::bastion::JobKind::Designated(kind),
                             work,
                             pos,
@@ -9361,6 +9365,7 @@ impl JobBoard {
                         self.next_id += 1;
                         let depth = (surface - z).clamp(0, 255) as u8;
                         self.jobs.insert(id, Job {
+                            player_ordered: false,
                             kind: common::bastion::JobKind::Designated(kind),
                             work,
                             pos,
@@ -9635,6 +9640,7 @@ impl JobBoard {
         let id = self.next_id;
         self.next_id += 1;
         self.jobs.insert(id, Job {
+            player_ordered: false,
             kind: common::bastion::JobKind::Designated(DesignationKind::Chop),
             work: DesignationKind::Chop.work_type(),
             pos: base,
@@ -10275,6 +10281,7 @@ impl JobBoard {
         let id = self.next_id;
         self.next_id += 1;
         self.jobs.insert(id, Job {
+            player_ordered: false,
             kind: common::bastion::JobKind::EatFrom { item },
             work: common::bastion::WorkType::Haul,
             pos,
@@ -10312,6 +10319,7 @@ impl JobBoard {
         let id = self.next_id;
         self.next_id += 1;
         self.jobs.insert(id, Job {
+            player_ordered: false,
             kind: common::bastion::JobKind::Recreate { until },
             work: common::bastion::WorkType::Haul,
             pos: feet,
@@ -10338,6 +10346,7 @@ impl JobBoard {
         let id = self.next_id;
         self.next_id += 1;
         self.jobs.insert(id, Job {
+            player_ordered: false,
             kind: common::bastion::JobKind::Despond { until },
             work: common::bastion::WorkType::Haul,
             pos: feet,
@@ -10367,6 +10376,7 @@ impl JobBoard {
         let id = self.next_id;
         self.next_id += 1;
         self.jobs.insert(id, Job {
+            player_ordered: false,
             kind: common::bastion::JobKind::Shelter { home, until },
             work: common::bastion::WorkType::Haul,
             pos: home,
@@ -10406,6 +10416,7 @@ impl JobBoard {
         let id = self.next_id;
         self.next_id += 1;
         self.jobs.insert(id, Job {
+            player_ordered: false,
             kind: common::bastion::JobKind::Guard {
                 mode: common::bastion::GuardMode::Fight,
                 post,
@@ -10440,6 +10451,7 @@ impl JobBoard {
         let id = self.next_id;
         self.next_id += 1;
         self.jobs.insert(id, Job {
+            player_ordered: false,
             kind: common::bastion::JobKind::RestAt { bed_pos },
             work: common::bastion::WorkType::Haul,
             pos: bed_pos,
@@ -11731,6 +11743,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         let id = brd.next_id;
                         brd.next_id += 1;
                         brd.jobs.insert(id, Job {
+                            player_ordered: false,
                             kind: common::bastion::JobKind::Rescue { target },
                             work: common::bastion::WorkType::Guard,
                             pos: body,
@@ -14662,6 +14675,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let id = board.next_id;
                 board.next_id += 1;
                 board.jobs.insert(id, Job {
+                    player_ordered: false,
                     kind: common::bastion::JobKind::Designated(DesignationKind::Build),
                     work: DesignationKind::Build.work_type(),
                     pos,
@@ -14875,6 +14889,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             let id = board.next_id;
                             board.next_id += 1;
                             board.jobs.insert(id, Job {
+                                player_ordered: false,
                                 kind: common::bastion::JobKind::Designated(DesignationKind::Mine),
                                 work: DesignationKind::Mine.work_type(),
                                 pos,
@@ -15540,6 +15555,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let id = board.next_id;
                 board.next_id += 1;
                 board.jobs.insert(id, Job {
+                    player_ordered: false,
                     kind: common::bastion::JobKind::Tend { patient, bed: bed_pos },
                     work: common::bastion::WorkType::Haul,
                     pos: bed_pos,
@@ -15635,6 +15651,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let id = board.next_id;
                     board.next_id += 1;
                     board.jobs.insert(id, Job {
+                        player_ordered: false,
                         kind: common::bastion::JobKind::TradeMission { site, ratio },
                         work: common::bastion::WorkType::Haul,
                         pos: site,
@@ -15796,6 +15813,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let id = board.next_id;
                 board.next_id += 1;
                 board.jobs.insert(id, Job {
+                    player_ordered: false,
                     kind: common::bastion::JobKind::Cook { station: st },
                     work: common::bastion::WorkType::Cook,
                     pos: st,
@@ -16089,6 +16107,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let id = board.next_id;
                     board.next_id += 1;
                     board.jobs.insert(id, Job {
+                        player_ordered: false,
                         kind: common::bastion::JobKind::Haul {
                             item: iuid,
                             destination: dest,
@@ -16294,6 +16313,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let id = board.next_id;
                     board.next_id += 1;
                     board.jobs.insert(id, Job {
+                        player_ordered: false,
                         kind: common::bastion::JobKind::DepositRun { destination: dest },
                         work: common::bastion::WorkType::Haul,
                         pos: drop_cell,
@@ -17513,6 +17533,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     "bastion: farm job created"
                 );
                 board.jobs.insert(id, Job {
+                    player_ordered: false,
                     kind: common::bastion::JobKind::Designated(DesignationKind::Farm),
                     work: common::bastion::WorkType::Farm,
                     pos,
@@ -29548,6 +29569,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 } else {
                     priority
                 };
+                // ★ PLAYER PAINT IS A MANDATE (Ben: 513 painted mine jobs,
+                // 44 game-days, zero claims while 4,090 colony-generated
+                // jobs were taken — adopted trades put own-lane work at
+                // tier 4 and everything else at 2, and priority is a TIER
+                // compared before distance, so painted work structurally
+                // never won). A player order lifts to tier 5: above every
+                // in-lane routine, level with the access-job bump, below
+                // nothing — DF's designations-are-the-work shape. Needs
+                // still preempt; off-hours still closes the board; this
+                // only decides WHICH work wins when work is open.
+                let priority = if job.player_ordered {
+                    priority.max(5)
+                } else {
+                    priority
+                };
                 // 2. TOP-DOWN — one level of height outweighs any plausible in-dig travel
                 //    distance AND the dispersion penalty, so the shallowest frontier clears
                 //    first (DF-style layer- by-layer). RELATIVE to the colonist and CLAMPED: an
@@ -32414,6 +32450,7 @@ mod tests {
         board.stockpiles.push((2, split));
 
         let haul = Job {
+            player_ordered: false,
             kind: common::bastion::JobKind::Haul {
                 item: common::uid::Uid(NonZeroU64::new(11).expect("nonzero")),
                 destination: 1, // the zone about to die
@@ -32482,6 +32519,7 @@ mod tests {
     #[test]
     fn a_claimed_but_unsupplied_wood_job_is_still_demand() {
         let mut ladder = Job {
+            player_ordered: false,
             kind: common::bastion::JobKind::Designated(DesignationKind::Ladder),
             work: DesignationKind::Ladder.work_type(),
             pos: Vec3::new(0, 0, 0),
@@ -32595,6 +32633,7 @@ mod tests {
     #[test]
     fn a_designated_bed_bills_the_stone_economy() {
         let bed = Job {
+            player_ordered: false,
             kind: common::bastion::JobKind::Designated(DesignationKind::Bed),
             work: DesignationKind::Bed.work_type(),
             pos: Vec3::new(0, 0, 0),
@@ -33548,6 +33587,7 @@ mod tests {
     fn t1_13_reverse_index_stays_consistent_across_all_four_mutators() {
         let uid = |n: u64| Uid(NonZeroU64::new(n).unwrap());
         let minimal_job = |pos: Vec3<i32>, reservation: Option<common::bastion::ReservationId>| Job {
+            player_ordered: false,
             kind: common::bastion::JobKind::Designated(common::bastion::DesignationKind::Mine),
             work: common::bastion::WorkType::Mine,
             pos,
@@ -33902,6 +33942,30 @@ mod tests {
         assert!(preempt_cooldown_active(
             Some(until), 943.0, tired.0, tired.1, &cfg, true
         ));
+    }
+
+    #[test]
+    fn a_player_order_outranks_the_lane() {
+        // The 44-day refusal in one assertion: an adopted farmer (farm=4,
+        // mine=2) must pick the PAINTED mine job over routine farm work.
+        // Tier logic only — the scorer compares priority before score, so
+        // painted tier 5 vs farm tier 4 decides regardless of distance.
+        let mut painted = common::bastion::WorkPriorities::in_lane(
+            common::bastion::WorkType::Farm,
+        )
+        .get(common::bastion::WorkType::Mine);
+        assert_eq!(painted, 2, "the caste that never won");
+        // The scorer's lift (mirrored here as the same max expression the
+        // claim loop applies): painted mine reads tier 5.
+        painted = painted.max(5);
+        let farm = common::bastion::WorkPriorities::in_lane(
+            common::bastion::WorkType::Farm,
+        )
+        .get(common::bastion::WorkType::Farm);
+        assert!(
+            painted > farm,
+            "a player order must outrank in-lane routine ({painted} vs {farm})"
+        );
     }
 
     #[test]

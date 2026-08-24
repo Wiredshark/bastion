@@ -1360,6 +1360,16 @@ impl JobKind {
 pub struct Job {
     pub kind: JobKind,
     pub work: WorkType,
+    /// ★ PLAYER PAINT IS A MANDATE (Ben, live: 513 painted mine jobs sat
+    /// untouched for 44 game-days while 4,090 colony-generated jobs were
+    /// claimed — adopted trades give own-lane priority 4 and everything
+    /// else 2, and priority is a TIER compared before distance, so painted
+    /// work structurally never won). True only for designations the PLAYER
+    /// painted (the B4 drain); adoption and founding pass false. The claim
+    /// scorer lifts painted jobs to the top tier. serde(default): board
+    /// state, no wire crossing, old blobs read as unpainted.
+    #[serde(default)]
+    pub player_ordered: bool,
     /// Target block.
     pub pos: Vec3<i32>,
     /// Minimum skill level required (0 = anyone). Unused by v1 generation.

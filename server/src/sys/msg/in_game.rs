@@ -1990,7 +1990,14 @@ impl<'a> System<'a> for Sys {
                 for (region, op, extent, chop_cells) in bastion_designation_updates.drain(..) {
                     match (op, extent, chop_cells) {
                         (Some(kind), Some(extent), _) => {
-                            job_board.place_designation_surface(
+                            // ★ PLAYER PAINT IS A MANDATE (Ben: 513 painted
+                            // mine jobs, 44 game-days, zero claims — painted
+                            // work sat in a priority caste that never wins
+                            // against the colony's own in-lane jobs). This
+                            // drain is the PLAYER's path; adoption and
+                            // founding call the same placement fns and stay
+                            // unstamped.
+                            let created = job_board.place_designation_surface(
                                 &terrain,
                                 region.min.xy(),
                                 region.max.xy(),
@@ -1998,6 +2005,11 @@ impl<'a> System<'a> for Sys {
                                 extent,
                                 kind,
                             );
+                            for id in created {
+                                if let Some(j) = job_board.jobs.get_mut(&id) {
+                                    j.player_ordered = true;
+                                }
+                            }
                         },
                         // CHOP-FELLING (row 51.6): a resolved (base, fell-set)
                         // — one base-cut job per tree; the whole set fells on
@@ -2007,10 +2019,20 @@ impl<'a> System<'a> for Sys {
                             None,
                             Some((base, cells)),
                         ) => {
-                            job_board.place_chop_fell(&terrain, base, &cells);
+                            let created = job_board.place_chop_fell(&terrain, base, &cells);
+                            for id in created {
+                                if let Some(j) = job_board.jobs.get_mut(&id) {
+                                    j.player_ordered = true;
+                                }
+                            }
                         },
                         (Some(kind), None, _) => {
-                            job_board.place_designation(&terrain, region, kind);
+                            let created = job_board.place_designation(&terrain, region, kind);
+                            for id in created {
+                                if let Some(j) = job_board.jobs.get_mut(&id) {
+                                    j.player_ordered = true;
+                                }
+                            }
                         },
                         (None, _, _) => {
                             job_board.cancel_region(region);
