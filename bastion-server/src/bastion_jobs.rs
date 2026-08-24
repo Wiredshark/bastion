@@ -4230,7 +4230,13 @@ pub fn generic_claim_leak_secs() -> f64 {
 pub const EMBED_PERSIST_TICKS: u32 = crate::SIM_TPS as u32;
 /// bastion (B6 HAUL): pending-haul cap per loaded colonist (throttle — the
 /// generator never floods the board; more spawn as deliveries complete).
-pub const HAUL_JOBS_PER_COLONIST: usize = 2;
+/// 2 → 4 (litter row, 2026-08-23): the live census read seen=75
+/// admitted=43 pending=11 cap=12 — the generator SAW the litter and the
+/// throttle was the equilibrium: ~60 true ground items steady-state
+/// (35 field carrots, station curries, wild-kill meat). Doubling the
+/// queue depth doubles pickup throughput; the board tripwires (mint,
+/// jobs census) stand watch against a return of the 16.6k-board era.
+pub const HAUL_JOBS_PER_COLONIST: usize = 4;
 /// bastion (49.2/B37, renamed 2026-08-04 for ROW A, packet
 /// FIX-ROW-PACKET-ARB-PERSIST §4): the `stuck_strikes` threshold shared by
 /// TWO independent consumers, named here rather than left implicit at one
