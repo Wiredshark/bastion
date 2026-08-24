@@ -507,6 +507,22 @@ impl Civs {
                 match &sim_site.kind {
                     SiteKind::Refactor => {
                         let size = Lerp::lerp(0.03, 1.0, rng.random_range(0.0..1f32).powi(5));
+                        // bastion MEGA TOWN (Ben: "a big colony nearly city
+                        // sized"): the roll above is rigged tiny — powi(5)
+                        // pushes the median under 0.07, which is why the lab
+                        // town landed 26 houses. The env pins the size a
+                        // town generates at (0..=1; 1.0 = the generator's
+                        // full city: ~200 plot attempts, 64/134 weighted
+                        // houses). The roll STILL HAPPENS so the rng stream
+                        // — and therefore every other site on the map — is
+                        // byte-identical with the env unset; only the
+                        // outcome is overridden, same discipline as the
+                        // flat-lab kind pin below.
+                        let size = std::env::var("BASTION_TOWN_SIZE")
+                            .ok()
+                            .and_then(|v| v.parse::<f32>().ok())
+                            .map(|v| v.clamp(0.03, 1.0))
+                            .unwrap_or(size);
                         WorldSite::generate_city(
                             &Land::from_sim(ctx.sim),
                             index_ref,

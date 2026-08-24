@@ -24,7 +24,7 @@
 # JOIN AT:  localhost:14004      USERNAME: player      (no password, --no-auth)
 
 param(
-    [Parameter(Position = 0)][ValidateSet('town', 'flattown', 'arena')][string]$Mode = 'town',
+    [Parameter(Position = 0)][ValidateSet('town', 'flattown', 'megatown', 'arena')][string]$Mode = 'town',
     [switch]$Client,
     [switch]$Stop,
     # Ben, 2026-08-22: "get the town working like real life then introduce
@@ -47,6 +47,39 @@ $WT   = 'E:\veloren-master\.item29-wt'
 $Bin  = Join-Path $WT 'target\no_overflow'
 $UD   = Join-Path $WT 'userdata-play-ben'
 $Port = 14004
+
+# ★ THE LOCKED-TARGET FALLBACK (2026-08-24). Twice now a running game held
+# file locks on target\no_overflow's exes, so a rebuild compiled everything
+# and failed only at the final hardlink — the fresh binaries exist in
+# deps\, get harvested to lab-bin\, and target stays STALE. Pre-fix, the
+# only way to hand Ben the new build was a manual relink after he exited,
+# which stranded a validated build behind one human step. So: if lab-bin
+# holds a CERTIFIED pair (PAIR-OK marker, written only by the harvest
+# process after content-verifying both halves against the same source
+# lineage) and its server is NEWER than target's, launch from lab-bin.
+# The marker replaces the mtime skew gate for this path on purpose: a
+# harvested pair can be hours apart in mtime yet byte-compatible (a
+# server-only fix leaves voxygen + common untouched); mtime skew is the
+# wrong comparability instrument for a certified pair, and the right one
+# (same common/ lineage) is exactly what the marker attests.
+$LabBin = Join-Path $WT 'lab-bin'
+$labMarker = Join-Path $LabBin 'PAIR-OK'
+if ((Test-Path "$LabBin\veloren-server-cli.exe") -and
+    (Test-Path "$LabBin\veloren-voxygen.exe") -and
+    (Test-Path $labMarker)) {
+    $tgtSrv = Get-Item "$Bin\veloren-server-cli.exe" -ErrorAction SilentlyContinue
+    $labSrv = Get-Item "$LabBin\veloren-server-cli.exe"
+    if (($null -eq $tgtSrv) -or ($labSrv.LastWriteTime -gt $tgtSrv.LastWriteTime)) {
+        Write-Host ''
+        Write-Host 'USING lab-bin PAIR - target\no_overflow is stale (a running game held'
+        Write-Host 'its exes during the last rebuild). This pair was harvested from the'
+        Write-Host 'same build and content-verified:'
+        Get-Content $labMarker | ForEach-Object { Write-Host ("  " + $_) }
+        Write-Host ''
+        $Bin = $LabBin
+        $script:SkipSkewGate = $true
+    }
+}
 
 function Test-PortHeld {
     $held = netstat -ano | Select-String 'LISTENING' | Select-String ":$Port\s"
@@ -158,7 +191,7 @@ if ($null -eq $cli) {
     Write-Host "client binary missing: $Bin\veloren-voxygen.exe"; return
 }
 $skewMin = [Math]::Abs(($srv - $cli).TotalMinutes)
-if ($skewMin -gt 3) {
+if ($skewMin -gt 3 -and -not $script:SkipSkewGate) {
     Write-Host ''
     Write-Host 'REFUSING TO LAUNCH - server and client were built from different source.'
     Write-Host ("  veloren-server-cli.exe  {0}" -f $srv)
@@ -172,8 +205,28 @@ if ($skewMin -gt 3) {
     return
 }
 
-# The three worlds.
-$EnvVars = if ($Mode -eq 'flattown') {
+# The four worlds.
+$EnvVars = if ($Mode -eq 'megatown') {
+    # ★ THE MEGA TOWN (Ben, 2026-08-24: "a big colony nearly city sized").
+    # Same flat-lab worldgen as flattown, with the town-size roll pinned to
+    # the generator's maximum: ~200 plot attempts weighted 64/134 toward
+    # houses gives a real city — 60-100 houses, taverns, workshops, guard
+    # towers, fields, an airship dock. Population follows housing (the
+    # standing rule), so the colony starts at 48 and the city's houses
+    # absorb them. Fresh userdata recommended for the first boot: the size
+    # pin only affects WORLD GENERATION, an existing world keeps its size.
+    @{
+        BASTION_FLAT_WORLD             = '1'
+        BASTION_TOWN_SIZE              = '1.0'
+        BASTION_ADOPT_TOWN             = '1'
+        BASTION_ADOPT_WAIT_FOR_MARKER  = '1'
+        BASTION_AUTOFOUND_REAL_TERRAIN = '1'
+        BASTION_COLONY_PRESENCE_VD     = '3'
+        BASTION_AUTOFOUND_COLONY       = '48'
+        BASTION_SEED_FOOD              = '256'
+        BASTION_SEED_MATERIALS         = '256'
+    }
+} elseif ($Mode -eq 'flattown') {
     # ★ THE FLAT MAP TOWN, v2 (2026-08-23). The old flat DISC
     # (BASTION_FLAT_WORLD_RADIUS) flattened a patch of a mountainous world and
     # could only ever catch whatever hamlet stood near centre. This is the
