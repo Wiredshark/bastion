@@ -7328,7 +7328,26 @@ impl Server {
                         // defects (no tools, no homes, no skills, village as
                         // scenery): we were re-deriving everything the village
                         // already had, for people who should not have existed.
-                        let adopted_names = if let Some((asp, _, plots)) = adoption.as_ref() {
+                        // ★ THE GATHERING ANCHOR (Ben's flyover ruling): the
+                        // plaza centre, written at founding so the evening
+                        // ring forms in the town square instead of inside
+                        // whichever house holds the stockpile plot. Soft
+                        // preference by construction — it only moves where
+                        // breaks AIM; needs, curfew and work still outrank.
+                        if let Some((_, _, _, Some(plaza))) = adoption.as_ref() {
+                            let z = self
+                                .world
+                                .sim()
+                                .get_alt_approx(*plaza)
+                                .map(|a| a as i32)
+                                .unwrap_or(0);
+                            self.state
+                                .ecs_mut()
+                                .write_resource::<bastion_jobs::JobBoard>()
+                                .gathering_anchor =
+                                Some(Vec3::new(plaza.x, plaza.y, z));
+                        }
+                        let adopted_names = if let Some((asp, _, plots, _)) = adoption.as_ref() {
                             let names = self.bastion_adopt_town_people(
                                 *asp,
                                 asp.xy().map(|e| e as i32),
@@ -7387,7 +7406,7 @@ impl Server {
                         // (`place_preset`), so the captured colony is the one
                         // an overseer would found rather than a lookalike.
                         // MODE A placement in a helper (t0_27 discipline).
-                        if let Some((_, town_origin, plots)) = adoption {
+                        if let Some((_, town_origin, plots, _)) = adoption {
                             Self::bastion_adopt_place(
                                 self.state.ecs(),
                                 town_origin,
@@ -7482,6 +7501,7 @@ impl Server {
         Vec3<f32>,
         Vec2<i32>,
         Vec<(common::bastion::DesignationKind, Vec2<i32>, Vec2<i32>)>,
+        Option<Vec2<i32>>,
     )> {
         if std::env::var_os("BASTION_ADOPT_TOWN").is_none() {
             return None;
@@ -7553,7 +7573,7 @@ impl Server {
                  creation, else spawn"
             );
             let player_chose = chosen.is_some() || picked.is_some();
-            let (town_origin, plots) = Self::bastion_adoptable_town_plots(
+            let (town_origin, plots, plaza) = Self::bastion_adoptable_town_plots(
                 self.index.as_index_ref(),
                 self.world.sim(),
                 near,
@@ -7609,7 +7629,7 @@ impl Server {
                     )
                 })
                 .unwrap_or(sp);
-            Some((asp, town_origin, plots))
+            Some((asp, town_origin, plots, plaza))
         }
     }
 
@@ -7709,8 +7729,11 @@ impl Server {
         near: Vec2<i32>,
         player_chose: bool,
         radius: i32,
-    ) -> Option<(Vec2<i32>, Vec<(common::bastion::DesignationKind, Vec2<i32>, Vec2<i32>)>)>
-    {
+    ) -> Option<(
+        Vec2<i32>,
+        Vec<(common::bastion::DesignationKind, Vec2<i32>, Vec2<i32>)>,
+        Option<Vec2<i32>>,
+    )> {
         use common::bastion::DesignationKind as D;
         use world::site::plot::PlotKind;
         // ★ EVERY CULTURE'S HOMES COUNT (Ben, live play 2026-08-23, with a
@@ -7887,7 +7910,29 @@ impl Server {
             unmapped_plots = unmapped,
             "bastion: ADOPT-A-TOWN plot census — what this settlement actually offers"
         );
-        Some((site.origin, plots))
+        // ★ THE TOWN CENTRE (Ben, live flyover 2026-08-23: "everyone seems
+        // to want to go in one house... town centers are empty — there
+        // should be some preference for those areas for congregation").
+        // The stockpile anchor put the gathering ring inside whichever
+        // HOUSE held the adopted stockpile plot; the town's own Plaza plot
+        // is where a village actually congregates. Deterministic pick:
+        // min-by-wpos among plaza plots (plot iteration order is not a
+        // promise).
+        let plaza = site
+            .plots()
+            .filter_map(|p| {
+                if matches!(p.kind(), PlotKind::Plaza(_)) {
+                    let b = p.find_bounds();
+                    let min = site.tile_wpos(b.min);
+                    let max = site.tile_wpos(b.max + 1) - 1;
+                    Some((min + max) / 2)
+                } else {
+                    None
+                }
+            })
+            .min_by_key(|c| (c.x, c.y));
+        tracing::info!(?plaza, "bastion: ADOPT-A-TOWN gathering anchor (plaza centre)");
+        Some((site.origin, plots, plaza))
     }
 
     /// bastion (ITEM 11 fixture lever, 2026-08-20): `BASTION_SEED_FOOD=<n>`

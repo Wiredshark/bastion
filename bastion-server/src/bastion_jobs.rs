@@ -7972,6 +7972,11 @@ pub struct JobBoard {
     /// persists on the colonist record; this is the runtime table
     /// (rebuilt as beds are built/assigned; the board is session-state).
     pub beds: HashMap<Vec3<i32>, common::bastion::BedSlot>,
+    /// ★ THE GATHERING ANCHOR (Ben's flyover ruling, 2026-08-23): where the
+    /// evening ring forms — the adopted town's plaza centre, written at
+    /// founding. None = fall back to the first stockpile (autofound camps,
+    /// pre-anchor saves). Session state.
+    pub gathering_anchor: Option<Vec3<i32>>,
     /// ★ ALARM v1 (Ben: "a method for colonists to sound a alarm and base
     /// that on sound distance radius"): the live cry, `(where, until)`.
     /// Raised at the colony's Defend transition from the first perceiver's
@@ -24429,9 +24434,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // procession; feet remain the fallback for a colony with
                     // no stockpile yet.
                     let spot = board
-                        .stockpiles
-                        .first()
-                        .map(|(_, r)| {
+                        .gathering_anchor
+                        .or_else(|| {
+                            board.stockpiles.first().map(|(_, r)| (r.min + r.max) / 2)
+                        })
+                        .map(|anchor| {
                             // Rank among living colonists, uid-sorted — the
                             // collision-free seat (see gathering_spot's doc).
                             let mut all: Vec<u64> = (&colonists, &uids)
@@ -24443,7 +24450,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .iter()
                                 .position(|&u| u == uid.0.get())
                                 .unwrap_or(0);
-                            gathering_spot((r.min + r.max) / 2, rank)
+                            gathering_spot(anchor, rank)
                         })
                         .unwrap_or(feet);
                     board.insert_recreate_job(spot, uid, until)
