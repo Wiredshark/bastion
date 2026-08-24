@@ -221,7 +221,11 @@ $EnvVars = if ($Mode -eq 'megatown') {
         BASTION_ADOPT_TOWN             = '1'
         BASTION_ADOPT_WAIT_FOR_MARKER  = '1'
         BASTION_AUTOFOUND_REAL_TERRAIN = '1'
-        BASTION_COLONY_PRESENCE_VD     = '3'
+        # VD 7, not the village's 3 (measured, city-pass soak: at VD=3 only
+        # the 30 core houses ever streamed in, the outer 55 NEVER registered
+        # — nobody lived out there so it never loaded so nobody could live
+        # there. A city needs its whole footprint resident.
+        BASTION_COLONY_PRESENCE_VD     = '7'
         BASTION_AUTOFOUND_COLONY       = '48'
         BASTION_SEED_FOOD              = '256'
         BASTION_SEED_MATERIALS         = '256'
