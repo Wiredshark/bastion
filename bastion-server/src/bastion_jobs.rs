@@ -3679,7 +3679,15 @@ pub fn preempt_cooldown_active(
     // the Dire floor — still non-zero, never removed, same law as the band
     // ladder itself.
     let band_cd = band_preempt_cooldown_secs(worst_band(rest, hunger, mood_cfg));
-    let cd = if sleep_block {
+    // ★ FAST RETRIES FOR THE TIRED ONLY (full-night fleet: slept=132 with
+    // late_sleeps=102 on one leg — the Sleep block forces the want
+    // REGARDLESS of the meter by design, and the 60s cooldown was exactly
+    // what kept a fully-rested colonist from re-preempting five seconds
+    // after completing; the first fix removed the guard for the population
+    // it was correctly guarding). Below comfort = genuinely tired = the
+    // Dire-floor cadence; at or above comfort the schedule's want pays the
+    // full anti-thrash price and a completed night stays completed.
+    let cd = if sleep_block && rest < mood_cfg.rest.comfort {
         band_cd.min(PREEMPT_COOLDOWN_SECS / 12.0)
     } else {
         band_cd
@@ -33686,17 +33694,24 @@ mod tests {
         let cfg = common::bastion::MoodConfig::default();
         let until = 1000.0; // cooldown written at 940.0
         let healthy = (0.8f32, 0.8f32);
+        let tired = (0.25f32, 0.8f32); // below rest comfort, hunger fine
         // Day, healthy bands: still cooling at +30s.
         assert!(preempt_cooldown_active(
             Some(until), 970.0, healthy.0, healthy.1, &cfg, false
         ));
-        // Bedtime, same meters: the Dire floor (60/12 = 5s) has lapsed.
-        assert!(!preempt_cooldown_active(
+        // ★ Bedtime + FULLY RESTED: still the full price — this is the arm
+        // the first fix broke (slept=132/late=102: rested colonists cycling
+        // bed all night on the 5s cadence the schedule's forced want opened).
+        assert!(preempt_cooldown_active(
             Some(until), 970.0, healthy.0, healthy.1, &cfg, true
         ));
-        // The floor is real: 3s in, even bedtime still cools.
+        // Bedtime + TIRED (below comfort): the Dire floor (5s) has lapsed.
+        assert!(!preempt_cooldown_active(
+            Some(until), 970.0, tired.0, tired.1, &cfg, true
+        ));
+        // The floor is real: 3s in, even a tired bedtime still cools.
         assert!(preempt_cooldown_active(
-            Some(until), 943.0, healthy.0, healthy.1, &cfg, true
+            Some(until), 943.0, tired.0, tired.1, &cfg, true
         ));
     }
 
