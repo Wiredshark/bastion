@@ -20976,6 +20976,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 "bastion: STEER-DIAG"
                             );
                         }
+                        // ★ A SLEEPER WHO WAS PREEMPTED STANDS UP FIRST
+                        // (visible-bed-use v2): Crawl — unlike Sit — does
+                        // NOT exit on movement input (its behavior crawls),
+                        // so a mid-sleep hunger preempt would send a
+                        // protected colonist crawling to the pantry. Any
+                        // travel steer for a still-protected crawler pushes
+                        // Stand; genuinely downed colonists (consumed
+                        // protection) are not touched — they crawl because
+                        // they must.
+                        if matches!(
+                            char_states.get(entity),
+                            Some(comp::CharacterState::Crawl)
+                        ) && healths
+                            .get(entity)
+                            .is_some_and(|h| !h.has_consumed_death_protection())
+                            && let Some(controller) = controllers.get_mut(entity)
+                        {
+                            controller.push_action(comp::ControlAction::Stand);
+                        }
                         if let Some(agent) = agent.as_deref_mut()
                             && auton_travel_ok
                         {
@@ -21973,16 +21992,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         );
                                     }
                                 }
-                                // ★ VISIBLE BED USE v1 (Ben: "the colonist
-                                // never actually use the bed ie lie in
-                                // them"): the sleeper SITS on the bed while
-                                // rest banks -- a person at rest, not a
-                                // statue beside furniture. (A true lying
-                                // pose is a CharacterState addition, banked;
-                                // Sit ships today on vanilla machinery.)
+                                // ★ VISIBLE BED USE v2 (Ben's standing ruling
+                                // "lying down, not standing next to
+                                // furniture"): the sleeper LIES — vanilla's
+                                // own ControlAction::Crawl enters the prone
+                                // pose for any on-ground character
+                                // (attempt_crawl has no protection gate),
+                                // and a sleeper's death protection is
+                                // INTACT, so `is_downed` (Crawl + consumed
+                                // protection) stays false: no rescue
+                                // false-positives, no census drift — the
+                                // exact distinction the rescue predicates
+                                // pinned. Wake pushes Stand; crawl's own
+                                // stand() exits to Idle for the protected.
                                 if let Some(controller) = controllers.get_mut(entity) {
                                     controller.inputs.move_dir = Vec2::zero();
-                                    controller.push_action(comp::ControlAction::Sit);
+                                    controller.push_action(comp::ControlAction::Crawl);
                                 }
                                 if let Some(needs) = needs_storage.get_mut(entity) {
                                     let cfg = common::bastion::MoodConfig::current();
