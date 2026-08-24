@@ -2369,6 +2369,26 @@ pub fn gathering_spot(anchor: Vec3<i32>, rank: usize) -> Vec3<i32> {
     anchor + Vec3::new(dx, dy, 0)
 }
 
+/// ★ THE PERSONAL-HOLD FAMILY (rulings-fleet regression, 2026-08-23):
+/// every job a colonist legitimately holds WHILE in the Personal drive —
+/// the legacy need trio plus the newer personal self-jobs. Two consumers
+/// were using the narrow trio and each ate the evening from one side:
+/// the Personal-entry release stripped a walking lounger's Recreate, and
+/// `auton_travel_ok` refused them travel — zero lounge arrivals across a
+/// whole fleet (pre-plaza this never showed: at-own-feet breaks arrived
+/// INSTANTLY, so nothing ever walked). Guard is deliberately NOT here: a
+/// guard entering Personal (starving at post) SHOULD drop the post.
+pub fn is_personal_hold_job(kind: &common::bastion::JobKind) -> bool {
+    matches!(
+        kind,
+        common::bastion::JobKind::RestAt { .. }
+            | common::bastion::JobKind::EatFrom { .. }
+            | common::bastion::JobKind::Despond { .. }
+            | common::bastion::JobKind::Recreate { .. }
+            | common::bastion::JobKind::Shelter { .. }
+    )
+}
+
 pub fn is_labor_hold_self_job(kind: &common::bastion::JobKind) -> bool {
     matches!(
         kind,
@@ -16920,7 +16940,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 && board
                                     .jobs
                                     .get(&aj.job)
-                                    .is_some_and(|j| !is_labor_hold_self_job(&j.kind))
+                                    .is_some_and(|j| !is_personal_hold_job(&j.kind))
                             {
                                 info!(
                                     uid = uids.get(entity).map(|u| u.0.get()),
@@ -20945,7 +20965,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // and can still hit STUCK_TIMEOUT's ENDURE release
                         // — the loop-breaker for an unreachable self-job
                         // stays live, not silently disabled by this gate.
-                        let auton_travel_ok = (is_labor_hold_self_job(&job.kind)
+                        let auton_travel_ok = (is_personal_hold_job(&job.kind)
                             && arbiters
                                 .get(entity)
                                 .is_some_and(|a| a.current == comp::bastion::Drive::Personal))
