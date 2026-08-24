@@ -22070,6 +22070,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             _ => None,
                                         }
                                     });
+                                    // ★ THE PENDING-STARVATION HYPOTHESIS:
+                                    // scheduled colonists cannot search
+                                    // inline (PATH-0), so a steer CHANGE
+                                    // strands them Pending on a route built
+                                    // for the OLD target until the budgeted
+                                    // scheduler re-delivers. If real, the
+                                    // route's search target diverges from
+                                    // the live steer in every stall — this
+                                    // field is the verdict.
+                                    let searched_for = agent
+                                        .as_deref()
+                                        .and_then(|a| {
+                                            a.chaser
+                                                .diagnostic_snapshot()
+                                                .last_search_target
+                                        });
+                                    let steer_route_diverged = match (live_steer, searched_for)
+                                    {
+                                        (Some(s), Some(f)) => s.xy().distance(f.xy()) > 2.0,
+                                        _ => false,
+                                    };
                                     info!(
                                         colonist = uids.get(entity).map(|u| u.0.get()),
                                         class,
@@ -22084,6 +22105,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         steer_at_feet = live_steer.is_some_and(|s| {
                                             s.xy().distance(pos.0.xy()) < 1.0
                                         }),
+                                        searched_for = ?searched_for,
+                                        steer_route_diverged,
                                         front = ?front,
                                         "bastion: MOVE ASSIST — the router promised this cell; the vault/step completes"
                                     );
