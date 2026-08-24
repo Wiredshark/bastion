@@ -1931,8 +1931,35 @@ impl<'a> System<'a> for Sys {
                                 // carries (item 12 prereg, bar 2).
                                 BastionInspectTarget::Chronicle(uid) => {
                                     use bastion_server::bastion_entity_event_log as ev;
+                                    // ★ THE STORY SURFACE IS NOT THE CENSUS
+                                    // (improvement-list row 20: "the chronicle
+                                    // is 93% job-release spam"). Released
+                                    // rows stay IN the ring (Measure 0's
+                                    // producer, the release census, every
+                                    // debugging consumer) — the PLAYER VIEW
+                                    // filters them so a life reads as a life:
+                                    // sleeps, meals, wounds, rescues, fear.
+                                    // BASTION_CHRONICLE_RAW=1 restores the
+                                    // unfiltered feed for instrument work.
+                                    // Deliberate scope: a VIEW filter, not a
+                                    // recorder change — EXCLUSION here is a
+                                    // presentation choice, and the census
+                                    // this class belongs to lives in the
+                                    // release histogram, not this list.
+                                    let raw = std::env::var_os(
+                                        "BASTION_CHRONICLE_RAW",
+                                    )
+                                    .is_some();
                                     let events = ev::events_for(uid)
                                         .into_iter()
+                                        .filter(|e| {
+                                            raw || !matches!(
+                                                e.kind,
+                                                ev::EventKind::Colonist(
+                                                    ev::ColonistEventKind::Released { .. }
+                                                )
+                                            )
+                                        })
                                         .map(|e| {
                                             common::comp::bastion::BastionChronicleRow {
                                                 tick: e.tick,
