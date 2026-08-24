@@ -11473,8 +11473,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // that is only correct after a step no reader takes is a
                     // number that will be misread.
                     let engaged = working + moving;
+                    // ★ THE ROSTER BESIDE THE ROOM (improvement-list row 18a:
+                    // "the colony silently SHRINKS in every instrument when
+                    // someone walks far" — every count here joins LOADED ECS
+                    // entities, so distance reads as death). `roster` is the
+                    // rtsim record — colonists exist there loaded or not —
+                    // and total < roster now says "someone is far", never
+                    // "someone is gone". ADDED, NOT SUBSTITUTED: `total`
+                    // keeps its exact meaning (loaded), same discipline as
+                    // `engaged`.
+                    let roster = rtsim
+                        .rt_state()
+                        .data()
+                        .npcs
+                        .values()
+                        .filter(|n| n.bastion_colonist.is_some())
+                        .count() as u32;
                     info!(
                         tick = tick.0,
+                        roster,
                         total,
                         downed,
                         engaged,
