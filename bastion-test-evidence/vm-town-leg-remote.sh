@@ -81,7 +81,12 @@ break_over=$(grep -c "break over" "$V.w")
 # (the mystery named); helper=None would be a helperless refresh.
 helped=$(grep -c "HelpDownedEvent fired" "$V.w")
 helped_by_none=$(grep "HelpDownedEvent fired" "$V.w" | grep -c "helper=None")
-echo "@@@LEG slot=$SLOT arm='$ARM_ENV' fence=$FENCE longest_search=$lt top3_share=$top3 exhaust=$ex terminal_releases=${term:-NA} stuck=$stuck sleepers=$sleepers slept=$slept ate=$ate unreachable=$unreach arrived=$arrived died=$died outright=$outright belongings_drops=$bel_drops belongings_items=$bel_items final=${final_census:-NA} extinct=$extinct downed_plant=$downed_plant rescue_posted=$rescue_posted rescued=$rescued alarm_raised=$alarm_raised shelters=$shelters shelter_released=$shelter_released alarm_over=$alarm_over lounges=$lounges lounge_arrivals=$lounge_arrivals gather_seats=$gather_seats break_over=$break_over helped=$helped helped_by_none=$helped_by_none@@@"
+# SLEEP TIMES (the Alen sweep's sleep tail, fixed by bedtime pricing):
+# bracket each slept line by the last-seen tick and count the ones landing
+# in the 02:00-06:00 window of ANY day (tick mod 54000 in [38250,49500]).
+# Pre-registered bar: late_sleeps=0 -- the broken tail put ALL of them there.
+late_sleeps=$(awk '/ITEM 39 tick cost/ {if (match($0, /tick=[0-9]+/)) t=substr($0, RSTART+5, RLENGTH-5)+0} /bastion: slept/ {d=t%54000; if (d>=38250 && d<=49500) n++} END {print n+0}' "$V.w")
+echo "@@@LEG slot=$SLOT arm='$ARM_ENV' fence=$FENCE longest_search=$lt top3_share=$top3 exhaust=$ex terminal_releases=${term:-NA} stuck=$stuck sleepers=$sleepers slept=$slept ate=$ate unreachable=$unreach arrived=$arrived died=$died outright=$outright belongings_drops=$bel_drops belongings_items=$bel_items final=${final_census:-NA} extinct=$extinct downed_plant=$downed_plant rescue_posted=$rescue_posted rescued=$rescued alarm_raised=$alarm_raised shelters=$shelters shelter_released=$shelter_released alarm_over=$alarm_over lounges=$lounges lounge_arrivals=$lounge_arrivals gather_seats=$gather_seats break_over=$break_over helped=$helped helped_by_none=$helped_by_none late_sleeps=$late_sleeps@@@"
 # RECREATE AUTOPSY (evening regression): the first three posted lounge
 # seats' full lifecycles — the posted line, then every subsequent line
 # naming that job id (claims, steers, releases with site numbers, arrival
