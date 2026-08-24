@@ -952,17 +952,34 @@ fn main() {
                 log.log(&format!("sent BastionCancelDesignation region={region:?}"));
             },
             ScriptCmd::InspectCell(pos) => {
-                // Stale-slot guard (2026-08-21): the reply slot holds only the
-                // LATEST answer, so asking again without clearing can match the
-                // PREVIOUS one — that is how the colony dashboard froze for a
-                // whole play session.
+                // Stale-slot guard (2026-08-21) + REPLY-MATCH (improvement-
+                // list row 17, reconfirmed live 2026-08-23: a probe's cell
+                // answers arrived one request late — this arm still trusted
+                // a one-tick wait while the Entity arm had already learned
+                // to match the reply's OWN target; the fix is that same
+                // proven loop, verbatim shape).
                 client.bastion_inspect_clear();
                 client.bastion_inspect_request(BastionInspectTarget::Cell(pos));
-                // One tick round-trip to receive the echoed reply.
-                let _ = client.tick(comp::ControllerInputs::default(), driver_dt(&clock));
-                client.cleanup();
-                driver_pace(&mut clock, &mut client);
-                log.log(&format!("inspect_cell {pos:?} -> {:?}", client.bastion_inspect()));
+                let mut matched = false;
+                for _ in 0..60 {
+                    let _ = client.tick(comp::ControllerInputs::default(), driver_dt(&clock));
+                    client.cleanup();
+                    driver_pace(&mut clock, &mut client);
+                    if let Some((BastionInspectTarget::Cell(got), _)) = client.bastion_inspect()
+                        && *got == pos
+                    {
+                        matched = true;
+                        break;
+                    }
+                }
+                if matched {
+                    log.log(&format!(
+                        "inspect_cell {pos:?} -> {:?}",
+                        client.bastion_inspect()
+                    ));
+                } else {
+                    log.log(&format!("inspect_cell {pos:?} NO-REPLY-MATCHED"));
+                }
             },
             ScriptCmd::InspectColonists => {
                 // ARC 2 item 9. The inspector's ENTITY arm is what the HUD
