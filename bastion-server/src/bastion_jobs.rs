@@ -1027,6 +1027,26 @@ pub(crate) fn flee_worthy_target(hostile: bool, aggro_on: bool) -> bool {
     hostile && aggro_on
 }
 
+/// ★ THE WOUNDED FREEZE SPIRAL (slot-107 soak, day 4): `flee_hurt` checked
+/// ONLY `health < psyche.flee_health` — no hostile required at all, though
+/// the comment beside it promised "flees a hostile it merely SEES". A
+/// colonist wounded below threshold kept `flee_sig` forever: Flee wins
+/// every arbiter tie at its 0.8 floor, Flee with no aggro target steers
+/// nowhere (autopsy face: speed=0, all four front cells Empty, stuck_time
+/// frozen by `!auton_travel_ok`), travel-refusal blocks their own EatFrom,
+/// and a colonist who cannot eat cannot heal back above the threshold —
+/// wound → flee → frozen → starve. Three of seven froze within minutes of
+/// one outskirts death and stayed frozen 30+ min until the leg was
+/// recycled. The fix keeps the comment's own contract: hurt waives AGGRO
+/// (a seen hostile is enough), never the hostile itself.
+pub(crate) fn flee_hurt_signal(sees_hostile: bool, health_frac: f32, flee_health: f32) -> bool {
+    static OLD: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *OLD.get_or_init(|| std::env::var_os("BASTION_NO_FIX_FLEE_HURT").is_some()) {
+        return health_frac < flee_health;
+    }
+    sees_hostile && health_frac < flee_health
+}
+
 /// ★ SLEEP HOLDS ONLY AT THE BED (805bf30a06): the sleep arm's per-tick
 /// re-verification of the arrival latch. Arrival admits at `ARRIVE_DIST`
 /// (2.5); this releases only past ARRIVE_DIST + 0.5 — the hysteresis band
@@ -16619,9 +16639,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     .get(entity)
                     .is_some_and(|ag| ag.target.is_some_and(|t| flee_worthy_target(t.hostile, t.aggro_on)));
                 let flee_hurt = agents.get(entity).is_some_and(|ag| {
-                    healths
-                        .get(entity)
-                        .is_some_and(|h| h.fraction() < ag.psyche.flee_health)
+                    healths.get(entity).is_some_and(|h| {
+                        flee_hurt_signal(
+                            ag.target.is_some_and(|t| t.hostile),
+                            h.fraction(),
+                            ag.psyche.flee_health,
+                        )
+                    })
                 });
                 let flee_sig = flee_target || flee_hurt;
                 // ★★ ITEM 14 AXIS 2 — THE CONSUMER. Until this existed,
@@ -34531,6 +34555,31 @@ mod tests {
         );
         assert!(!flee_worthy_target(false, false));
         assert!(!flee_worthy_target(false, true), "aggro from a non-hostile is not flight-worthy");
+    }
+
+    /// ★ THE WOUNDED FREEZE SPIRAL (slot-107 soak): pinned BOTH directions.
+    /// Pre-fix, `flee_hurt` ignored hostiles entirely, so a wound below
+    /// `flee_health` froze the colonist permanently (Flee floor 0.8 wins
+    /// arbiter ties; no aggro target = no flee vector = speed 0; travel
+    /// refusal starves their own EatFrom, so the wound can never heal shut).
+    #[test]
+    fn a_wounded_colonist_flees_a_seen_hostile_not_an_empty_field() {
+        // The defect face: hurt, NOTHING hostile anywhere → must not flee.
+        assert!(
+            !flee_hurt_signal(false, 0.2, 0.25),
+            "a wound with no hostile in sight is a reason to eat and rest,              not a permanent flee that freezes the colonist where it stands              (slot-107: three of seven frozen 30+ min, fed decayed 8/8 → 5/7)"
+        );
+        // The comment's own contract survives: hurt waives AGGRO, not the
+        // hostile — a merely-SEEN hostile still routs a wounded colonist.
+        assert!(
+            flee_hurt_signal(true, 0.2, 0.25),
+            "hurt + seen hostile must still flee: the aggro waiver is the              whole point of the flee_hurt arm"
+        );
+        // Healthy colonists ignore a seen-but-unaggroed hostile (that is
+        // flee_worthy_target's lane, pinned above at 339 false preempts).
+        assert!(!flee_hurt_signal(true, 0.9, 0.25));
+        // Boundary: at exactly flee_health the colonist holds (strict <).
+        assert!(!flee_hurt_signal(true, 0.25, 0.25));
     }
 
     /// ★ THE BED LEAK (805bf30a06), RED PRE-FIX: the suspend path sets
