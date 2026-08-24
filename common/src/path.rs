@@ -87,6 +87,7 @@ impl From<Path<Vec3<i32>>> for Route {
     fn from(path: Path<Vec3<i32>>) -> Self { Self { path, next_idx: 0 } }
 }
 
+#[derive(Clone)]
 pub struct TraversalConfig {
     /// The distance to a node at which node is considered visited.
     pub node_tolerance: f32,
@@ -117,6 +118,10 @@ pub struct TraversalConfig {
     pub vectored_propulsion: bool,
     /// Whether chunk containing target position is currently loaded
     pub is_target_loaded: bool,
+    /// bastion (climb bans): wall columns priced OUT of this search — the
+    /// vertical edge generators skip any move into these XY columns. Empty
+    /// for vanilla NPCs; populated per-colonist from recent climb failures.
+    pub climb_ban: Vec<Vec2<i32>>,
     /// bastion (PATH-0): whether THIS chase call may run/resume the A*
     /// search inline. Colonists on job travel are SCHEDULED (the
     /// sequential budgeted path scheduler owns their searches; the agent
@@ -513,6 +518,13 @@ impl TraversalConfig {
         self.can_fly.hash(&mut h);
         self.vectored_propulsion.hash(&mut h);
         self.is_target_loaded.hash(&mut h);
+        // Climb bans are part of the search PROFILE: a ban recorded after a
+        // route was planned must invalidate the retained search, or the
+        // colonist keeps following the old route through the wall the ban
+        // just priced out — the exact loop the ban exists to break.
+        for col in &self.climb_ban {
+            col.hash(&mut h);
+        }
         h.finish()
     }
 }
@@ -1431,7 +1443,15 @@ where
             )
             .map(move |dir| (pos, dir))
             .filter(move |(pos, dir)| {
-                (traversal_cfg.can_fly || is_walkable(pos) && is_walkable(&(*pos + **dir)))
+                // bastion (climb bans — Ben: "infinite climb loops... try a
+                // secondary route"): a column this colonist recently FAILED
+                // to climb is priced out of every 2-up-or-more move, so the
+                // re-plan finds another way (or honestly fails) instead of
+                // re-picking the same wall until the teleport backstop.
+                // Single steps (dir.z == 1, doorsteps) stay legal.
+                (dir.z < 2
+                    || !traversal_cfg.climb_ban.contains(&(*pos + **dir).xy()))
+                    && (traversal_cfg.can_fly || is_walkable(pos) && is_walkable(&(*pos + **dir)))
                     && ((dir.z < 1
                         || vol
                             .get(pos + Vec3::unit_z() * 2)
@@ -2865,6 +2885,7 @@ pub(super) fn trap_house_world() -> MockVol {
             vectored_propulsion: false,
             is_target_loaded: true,
             search_allowed: true,
+            climb_ban: Vec::new(),
         }
     }
 
@@ -3012,6 +3033,59 @@ pub(super) fn trap_house_world() -> MockVol {
         assert!(
             !matches!(blocked, PathResult::Path(..)),
             "reach 2 must NOT route a 3-up face"
+        );
+    }
+
+    /// ★ CLIMB BANS, both directions (Ben: "infinite climb loops... try a
+    /// secondary route"). A partially banned face SIDESTEPS — the ban's
+    /// whole purpose is the other way around the wall; a fully banned face
+    /// REFUSES instead of retrying the same wall forever.
+    #[test]
+    fn a_banned_climb_column_forces_the_secondary_route() {
+        let rock = Block::new(BlockKind::Rock, Rgb::new(120, 120, 120));
+        let mut blocks = StdHashMap::new();
+        for x in -2..=20 {
+            for y in -6..=6 {
+                blocks.insert(Vec3::new(x, y, 0), rock);
+            }
+        }
+        for x in 10..=20 {
+            for y in -6..=6 {
+                for z in 1..=3 {
+                    blocks.insert(Vec3::new(x, y, z), rock);
+                }
+            }
+        }
+        let vol = MockVol {
+            blocks,
+            air: Block::empty(),
+        };
+        // Partial ban: the direct column is out; the face is wide. The
+        // route must still exist — that IS the secondary route.
+        let partial = TraversalConfig {
+            climb_ban: vec![Vec2::new(10, 0), Vec2::new(10, 1)],
+            ..worker_cfg()
+        };
+        assert!(
+            matches!(
+                route_to(&vol, &partial, Vec3::new(12.5, 0.5, 4.0)),
+                PathResult::Path(..)
+            ),
+            "a partial ban must sidestep along the face, not fail"
+        );
+        // Full ban of the face: no climb edge survives — the search must
+        // refuse rather than loop (the honest unreachable the ban's
+        // recorder converts climb-loops into).
+        let full = TraversalConfig {
+            climb_ban: (-6..=6).map(|y| Vec2::new(10, y)).collect(),
+            ..worker_cfg()
+        };
+        assert!(
+            !matches!(
+                route_to(&vol, &full, Vec3::new(12.5, 0.5, 4.0)),
+                PathResult::Path(..)
+            ),
+            "a fully banned face must refuse, never re-pick the same wall"
         );
     }
 }
@@ -3200,7 +3274,7 @@ mod ledger_178_tests {
         };
         let optimistic = TraversalConfig {
             is_target_loaded: false,
-            ..loaded
+            ..loaded.clone()
         };
 
         // Seed a retained search under OPTIMISM (one budgeted step —

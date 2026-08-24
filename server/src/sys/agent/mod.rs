@@ -341,6 +341,7 @@ impl<'a> System<'a> for Sys {
                         physics_state,
                         read_data.colonists.get(entity),
                         goto_scheduled,
+                        read_data.time.0,
                     );
                     let health_fraction = health.map_or(1.0, Health::fraction);
 

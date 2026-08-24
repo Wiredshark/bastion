@@ -558,7 +558,7 @@ impl AgentData<'_> {
                 node_tolerance: configured_node_tolerance,
                 min_tgt_dist: 0.25,
                 is_target_loaded,
-                ..self.traversal_config
+                ..self.traversal_config.clone()
             },
             &read_data.time,
         );
@@ -1519,7 +1519,7 @@ impl AgentData<'_> {
             tgt_pos.0,
             TraversalConfig {
                 min_tgt_dist: AVG_FOLLOW_DIST,
-                ..self.traversal_config
+                ..self.traversal_config.clone()
             },
             &read_data.time,
         ) {
@@ -1588,7 +1588,7 @@ impl AgentData<'_> {
                     * 50.0,
             TraversalConfig {
                 min_tgt_dist: 1.25,
-                ..self.traversal_config
+                ..self.traversal_config.clone()
             },
             &read_data.time,
         ) {

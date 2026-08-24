@@ -59,6 +59,7 @@ pub fn traversal_config_for(
     physics_state: &comp::PhysicsState,
     colonist: Option<&comp::Colonist>,
     goto_scheduled: bool,
+    now: f64,
 ) -> TraversalConfig {
     // This controls how picky NPCs are about their pathfinding.
     // Giants are larger and so can afford to be less precise
@@ -89,6 +90,18 @@ pub fn traversal_config_for(
         vectored_propulsion: moving_body.is_some_and(|b| b.vectored_propulsion()),
         is_target_loaded: true,
         search_allowed: !goto_scheduled,
+        // ★ CLIMB BANS (Ben: "infinite climb loops... try a secondary
+        // route"): live (unexpired) failed-climb columns priced out of
+        // this colonist's searches. Vanilla NPCs pass none.
+        climb_ban: colonist
+            .map(|c| {
+                c.0.climb_bans
+                    .iter()
+                    .filter(|(_, until)| now < *until)
+                    .map(|(col, _)| *col)
+                    .collect()
+            })
+            .unwrap_or_default(),
     }
 }
 
@@ -152,6 +165,7 @@ impl<'a> System<'a> for Sys {
         ReadStorage<'a, comp::Scale>,
         WriteStorage<'a, comp::Agent>,
         Write<'a, PathScheduler>,
+        specs::Read<'a, common::resources::Time>,
     );
 
     const NAME: &'static str = "bastion_path";
@@ -171,6 +185,7 @@ impl<'a> System<'a> for Sys {
             scales,
             mut agents,
             mut sched,
+            time,
         ): Self::SystemData,
     ) {
         // Candidates: colonists whose agent is mid-Goto with a routeless
@@ -262,6 +277,7 @@ impl<'a> System<'a> for Sys {
                 // The scheduler IS the search context; the flag only
                 // gates inline chase searches.
                 false,
+                time.0,
             );
             if let Some(endpoint_tolerance) = endpoint_tolerance {
                 cfg.node_tolerance = cfg.node_tolerance.min(endpoint_tolerance);

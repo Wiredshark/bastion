@@ -2006,6 +2006,15 @@ pub struct BastionColonist {
     pub name: String,
     pub backstory: String,
     pub skills: ColonistSkills,
+    /// ★ CLIMB BANS (Ben, live: "they largely get stuck because they get
+    /// into infinite climb loops... try a secondary route"). Wall columns
+    /// this colonist recently failed to climb, each with an expiry: the
+    /// pathfinder prices these columns out, so the re-plan takes another
+    /// way instead of deterministically re-picking the same wall until the
+    /// teleport backstop fires. Written by the stuck watchdog, pruned on
+    /// write, capped small. serde(default): old records read as unbanned.
+    #[serde(default)]
+    pub climb_bans: Vec<(vek::Vec2<i32>, f64)>,
     pub work_priorities: WorkPriorities,
     /// bastion (ITEM 14, AXIS 2 — HOLD-vs-FLEE). Ben's ruling: guarding
     /// outranks flee **up to a breaking point that varies by the
@@ -2867,6 +2876,7 @@ impl BastionColonist {
         Self {
             name,
             backstory,
+            climb_bans: Vec::new(),
             // ITEM 14 axis 2: the NEUTRAL default, not an invented spread.
             // The ruling says bravery varies by the individual
             // (personality/veterancy) — but the DISTRIBUTION is a balance

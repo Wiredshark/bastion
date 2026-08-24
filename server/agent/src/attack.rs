@@ -504,7 +504,7 @@ impl AgentData<'_> {
                 tgt_data.pos.0,
                 TraversalConfig {
                     min_tgt_dist: 1.25,
-                    ..self.traversal_config
+                    ..self.traversal_config.clone()
                 },
                 &read_data.time,
             ) {
@@ -538,7 +538,7 @@ impl AgentData<'_> {
                 tgt_data.pos.0,
                 TraversalConfig {
                     min_tgt_dist: 1.25,
-                    ..self.traversal_config
+                    ..self.traversal_config.clone()
                 },
                 &read_data.time,
             ) {
@@ -2762,7 +2762,7 @@ impl AgentData<'_> {
                 tgt_data.pos.0,
                 TraversalConfig {
                     min_tgt_dist: 1.25,
-                    ..self.traversal_config
+                    ..self.traversal_config.clone()
                 },
                 &read_data.time,
             ) {
@@ -2779,7 +2779,7 @@ impl AgentData<'_> {
                 tgt_data.pos.0,
                 TraversalConfig {
                     min_tgt_dist: 1.25,
-                    ..self.traversal_config
+                    ..self.traversal_config.clone()
                 },
                 &read_data.time,
             ) {
@@ -2916,7 +2916,7 @@ impl AgentData<'_> {
                 tgt_data.pos.0,
                 TraversalConfig {
                     min_tgt_dist: 1.25,
-                    ..self.traversal_config
+                    ..self.traversal_config.clone()
                 },
                 &read_data.time,
             ) {
@@ -2933,7 +2933,7 @@ impl AgentData<'_> {
                 tgt_data.pos.0,
                 TraversalConfig {
                     min_tgt_dist: 1.25,
-                    ..self.traversal_config
+                    ..self.traversal_config.clone()
                 },
                 &read_data.time,
             ) {
@@ -3243,7 +3243,7 @@ impl AgentData<'_> {
                 tgt_data.pos.0,
                 TraversalConfig {
                     min_tgt_dist: 1.25,
-                    ..self.traversal_config
+                    ..self.traversal_config.clone()
                 },
                 &read_data.time,
             ) {
@@ -4312,7 +4312,7 @@ impl AgentData<'_> {
                 tgt_data.pos.0,
                 TraversalConfig {
                     min_tgt_dist: 1.25,
-                    ..self.traversal_config
+                    ..self.traversal_config.clone()
                 },
                 &read_data.time,
             ) {
@@ -4433,7 +4433,7 @@ impl AgentData<'_> {
                 tgt_data.pos.0,
                 TraversalConfig {
                     min_tgt_dist: 1.25,
-                    ..self.traversal_config
+                    ..self.traversal_config.clone()
                 },
                 &read_data.time,
             ) {
@@ -4633,7 +4633,7 @@ impl AgentData<'_> {
                 tgt_data.pos.0,
                 TraversalConfig {
                     min_tgt_dist: 1.25,
-                    ..self.traversal_config
+                    ..self.traversal_config.clone()
                 },
                 &read_data.time,
             ) {
@@ -6173,7 +6173,7 @@ impl AgentData<'_> {
                     tgt_data.pos.0,
                     TraversalConfig {
                         min_tgt_dist: 1.25,
-                        ..self.traversal_config
+                        ..self.traversal_config.clone()
                     },
                     &read_data.time,
                 ) {
@@ -6673,7 +6673,7 @@ impl AgentData<'_> {
                 tgt_data.pos.0,
                 TraversalConfig {
                     min_tgt_dist: 1.25,
-                    ..self.traversal_config
+                    ..self.traversal_config.clone()
                 },
                 &read_data.time,
             ) {
@@ -6690,7 +6690,7 @@ impl AgentData<'_> {
                 tgt_data.pos.0,
                 TraversalConfig {
                     min_tgt_dist: 1.25,
-                    ..self.traversal_config
+                    ..self.traversal_config.clone()
                 },
                 &read_data.time,
             ) {
@@ -6848,7 +6848,7 @@ impl AgentData<'_> {
                 tgt_data.pos.0,
                 TraversalConfig {
                     min_tgt_dist: 1.25,
-                    ..self.traversal_config
+                    ..self.traversal_config.clone()
                 },
                 &read_data.time,
             ) {
@@ -6865,7 +6865,7 @@ impl AgentData<'_> {
                 tgt_data.pos.0,
                 TraversalConfig {
                     min_tgt_dist: 1.25,
-                    ..self.traversal_config
+                    ..self.traversal_config.clone()
                 },
                 &read_data.time,
             ) {
@@ -6962,7 +6962,7 @@ impl AgentData<'_> {
                 tgt_data.pos.0,
                 TraversalConfig {
                     min_tgt_dist: 1.25,
-                    ..self.traversal_config
+                    ..self.traversal_config.clone()
                 },
                 &read_data.time,
             ) {
@@ -6979,7 +6979,7 @@ impl AgentData<'_> {
                 tgt_data.pos.0,
                 TraversalConfig {
                     min_tgt_dist: 1.25,
-                    ..self.traversal_config
+                    ..self.traversal_config.clone()
                 },
                 &read_data.time,
             ) {
@@ -8896,7 +8896,7 @@ impl AgentData<'_> {
             tgt_data.pos.0,
             TraversalConfig {
                 min_tgt_dist: 1.25,
-                ..self.traversal_config
+                ..self.traversal_config.clone()
             },
             &read_data.time,
         ) {

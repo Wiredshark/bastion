@@ -4500,6 +4500,11 @@ pub fn commitment_factor(
     }
 }
 
+/// ★ CLIMB BANS (Ben): how long a failed climb column stays priced out of
+/// a colonist's searches. 300 sim-s ≈ 4 game-hours — long enough that the
+/// day's plans route around it, short enough that tomorrow retries.
+pub const CLIMB_BAN_SECS: f64 = 300.0;
+
 /// ALARM v1 (Ben: "sound a alarm and base that on sound distance radius").
 /// How far the cry carries: civilians inside this radius of the perceiver's
 /// post take shelter; beyond it, life continues -- the whole point of a
@@ -5992,6 +5997,7 @@ fn m3_promoted_corridor_waypoint(
             vectored_propulsion: false,
             is_target_loaded: true,
             search_allowed: true,
+            climb_ban: Vec::new(),
         };
         let path = common::path::bastion_full_path(terrain, position, mount_center, &cfg)?;
         if path.is_empty() || path.len() > 64 || path.last().copied() != Some(mount) {
@@ -6324,6 +6330,7 @@ where
         vectored_propulsion: false,
         is_target_loaded: true,
         search_allowed: true,
+        climb_ban: Vec::new(),
     };
     let Some(path) = common::path::bastion_full_path(terrain, actual_start, target, &cfg) else {
         return (None, None);
@@ -9513,14 +9520,19 @@ impl JobBoard {
                         // suspended floors before placing.
                         let mut floor = surface;
                         for _ in 0..5 {
-                            let deep = (1..=4)
+                            // ONE vocabulary with the container gate
+                            // (blackwell's review): the probe depth and the
+                            // admitted threshold are the gate's own consts,
+                            // so tuning them cannot silently split the two
+                            // rulings.
+                            let deep = (1..=ADOPTED_CONTAINER_SOLID_PROBE)
                                 .take_while(|d| {
                                     terrain
                                         .get(Vec3::new(cx, cy, floor - d))
                                         .is_ok_and(|b| b.is_filled())
                                 })
-                                .count();
-                            if deep >= 3 {
+                                .count() as i32;
+                            if adopted_container_admitted(deep) {
                                 break;
                             }
                             let mut next = None;
@@ -9540,6 +9552,28 @@ impl JobBoard {
                                 None => break,
                             }
                         }
+                        // ★ POST-CONDITION (blackwell's review: "the commit
+                        // message promises 'descends past suspended floors';
+                        // the code does not assert it"): after the descent,
+                        // re-verify the floor actually rests on foundation
+                        // depth. A still-suspended result routes to the
+                        // NAMED refusal — "gave up at the lowest floor
+                        // found" must not render as "descended to ground".
+                        let final_deep = (1..=ADOPTED_CONTAINER_SOLID_PROBE)
+                            .take_while(|d| {
+                                terrain
+                                    .get(Vec3::new(cx, cy, floor - d))
+                                    .is_ok_and(|b| b.is_filled())
+                            })
+                            .count() as i32;
+                        if !adopted_container_admitted(final_deep) {
+                            info!(
+                                ?kind,
+                                floor,
+                                final_deep,
+                                "bastion: bedless house descent ended on a SUSPENDED floor — bed not placed (named refusal)"
+                            );
+                        } else {
                         // ★ AND THE CELL MUST FIT A BODY (the commit said
                         // "standable" and never checked — a comment cannot
                         // enforce): centre first, then the four neighbours;
@@ -9579,7 +9613,15 @@ impl JobBoard {
                                     "bastion: MOVED A BED IN — a bedless adopted house gets furnished"
                                 );
                             },
-                            Some(_) => {},
+                            // ★ Named third outcome (blackwell's review):
+                            // a fitting cell already holding a bed slot is
+                            // an ABSENCE of work, not a refusal — but silent
+                            // it rendered like one.
+                            Some(cell) => info!(
+                                ?cell,
+                                "bastion: bedless-house cell already holds a bed slot — nothing to add"
+                            ),
+                        }
                         }
                     }
                 }
@@ -20924,6 +20966,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // (TIGHTDIG, flag-OFF) is outside
                                     // the scheduler's budget by status.
                                     search_allowed: true,
+                                    climb_ban: Vec::new(),
                                 };
                                 match common::path::bastion_full_path(
                                     &*terrain, pos.0, target, &cfg,
@@ -21135,6 +21178,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     phys,
                                     Some(&*colonist),
                                     false,
+                                    time.0,
                                 );
                                 detour_requests.push((u, pos.0, steer, cfg, tier, active.job));
                             }
@@ -21503,6 +21547,43 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 }
                             }
                             if active.stuck_time > STUCK_TIMEOUT || chaser_terminal {
+                                // ★ CLIMB BAN RECORDER (Ben: "they largely
+                                // get stuck because they get into infinite
+                                // climb loops"). A timeout while CLIMBING or
+                                // pressed on a wall bans the wall's column
+                                // (feet + the facing cell) for this colonist
+                                // for CLIMB_BAN_SECS: the next plan prices
+                                // those 2-up edges out and takes another way
+                                // — the secondary route — instead of
+                                // deterministically re-picking the same wall
+                                // until the teleport backstop. Pruned on
+                                // write, capped at 8 (oldest out).
+                                let climbing = matches!(
+                                    char_states.get(entity),
+                                    Some(comp::CharacterState::Climb(_))
+                                ) || physics_states.get(entity).is_some_and(|p| p.on_wall.is_some());
+                                if climbing {
+                                    let feet = pos.0.map(|e| e.floor() as i32);
+                                    let ahead = feet
+                                        + (job.pos - feet)
+                                            .map(|e| e.signum())
+                                            .with_z(0);
+                                    let bans = &mut colonist.0.climb_bans;
+                                    bans.retain(|(_, until)| time.0 < *until);
+                                    for col in [feet.xy(), ahead.xy()] {
+                                        if !bans.iter().any(|(c, _)| *c == col) {
+                                            bans.push((col, time.0 + CLIMB_BAN_SECS));
+                                        }
+                                    }
+                                    while bans.len() > 8 {
+                                        bans.remove(0);
+                                    }
+                                    info!(
+                                        colonist = uids.get(entity).map(|u| u.0.get()),
+                                        ?feet,
+                                        "bastion: CLIMB BANNED — failed climb column priced out; replanning another way"
+                                    );
+                                }
                                 board.travel_timeouts += 1;
                                 *board.timeout_counts_by_pos.entry(job.pos).or_insert(0) += 1;
                                 board.last_timeout_pos.insert(job.pos, pos.0);
