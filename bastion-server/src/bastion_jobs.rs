@@ -4425,6 +4425,27 @@ const STUCK_EPSILON: f32 = 0.5;
 /// `running` flag and the flee path.
 const TRAVEL_SPEED: f32 = 0.45;
 
+/// ★ JOB COMMITMENT (Ben): how long one claim keeps its lane preferred,
+/// and how strongly. 240 sim-s ≈ a work-morning slice at day_length 30;
+/// factor 2.0 = same-lane jobs read as half the distance — strong, never
+/// a veto.
+pub const COMMITMENT_SECS: f64 = 240.0;
+pub const COMMITMENT_FACTOR: f32 = 2.0;
+
+/// The commitment window, pure: same lane inside the window reads as
+/// [`COMMITMENT_FACTOR`]; everything else — different lane, lapsed window,
+/// no history — is exactly 1.0 (the pre-ruling formula, byte-identical).
+pub fn commitment_factor(
+    last: Option<(common::bastion::WorkType, f64)>,
+    work: common::bastion::WorkType,
+    now: f64,
+) -> f32 {
+    match last {
+        Some((w, t)) if w == work && now - t < COMMITMENT_SECS => COMMITMENT_FACTOR,
+        _ => 1.0,
+    }
+}
+
 /// ALARM v1 (Ben: "sound a alarm and base that on sound distance radius").
 /// How far the cry carries: civilians inside this radius of the perceiver's
 /// post take shelter; beyond it, life continues -- the whole point of a
@@ -8011,6 +8032,14 @@ pub struct JobBoard {
     /// One write at the single claim site covers all 32 push sites, none of
     /// which need to change.
     last_claimed_class: HashMap<Uid, &'static str>,
+    /// ★ JOB COMMITMENT (Ben, live flyover 2026-08-23: "colonists when they
+    /// choose a job need to dedicate themselves to it for a certain period
+    /// of time — a miner shouldn't just remove one block then run away").
+    /// The colonist's last claimed WORK TYPE and when — the claim scorer
+    /// treats same-lane jobs as closer while the window holds. Written at
+    /// the one claim site beside `last_claimed_class` (which is too coarse
+    /// for this: every Designated collapses to "work" there).
+    last_claimed_work: HashMap<Uid, (common::bastion::WorkType, f64)>,
     /// When each job's FETCH leg started, so [`FETCH_BUDGET_SECS`] can bound it.
     ///
     /// Keyed by job rather than by colonist: the reservation belongs to the
@@ -29290,8 +29319,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 } else {
                     0.0
                 };
+                // ★ JOB COMMITMENT (Ben's ruling — see the board field's
+                // doc): while the window holds, a job in the SAME lane as
+                // the colonist's last claim reads as half the distance. A
+                // divisor, not a veto: a much closer other-lane job still
+                // wins, needs and the drive tilt still outrank, and when
+                // the window lapses the preference vanishes entirely.
+                let commitment = commitment_factor(
+                    board.last_claimed_work.get(uid).copied(),
+                    job.work,
+                    time.0,
+                );
                 let score = (dist + depth_score + clump_penalty + sat_penalty + failure_penalty)
-                    / (claim_weight
+                    / (commitment
+                        * claim_weight
                         // #107: the colony drive's tilt — aligned work
                         // scores as if closer; a relief, never a veto.
                         * common::bastion::drive_work_factor(
@@ -29537,8 +29578,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // Remember WHAT was claimed, so a release whose site already
                 // destroyed the job can still be attributed to a kind instead
                 // of landing in the census's `gone` bucket.
-                if let Some(cls) = board.jobs.get(&job_id).map(|j| job_release_class(&j.kind)) {
+                if let Some((cls, work)) = board
+                    .jobs
+                    .get(&job_id)
+                    .map(|j| (job_release_class(&j.kind), j.work))
+                {
                     board.last_claimed_class.insert(*uid, cls);
+                    board.last_claimed_work.insert(*uid, (work, time.0));
                 }
                 info!(job = job_id, colonist = %uid, "bastion: job claimed");
                 // The committed stance (B15/FR12, generalized by task #64):
@@ -33504,6 +33550,24 @@ mod tests {
             "had_effect=true must wipe the watchdog accrual -- real work is the ground-truth \
              progress signal"
         );
+    }
+
+    #[test]
+    fn commitment_prefers_the_lane_and_lapses_honestly() {
+        use common::bastion::WorkType as W;
+        // A miner mid-window: mining reads closer, farming does not.
+        let last = Some((W::Mine, 100.0));
+        assert_eq!(commitment_factor(last, W::Mine, 200.0), COMMITMENT_FACTOR);
+        assert_eq!(commitment_factor(last, W::Farm, 200.0), 1.0);
+        // The window lapses: the preference vanishes ENTIRELY (a lapsed
+        // bonus lingering at some in-between value would be a second,
+        // unintended commitment tier).
+        assert_eq!(
+            commitment_factor(last, W::Mine, 100.0 + COMMITMENT_SECS),
+            1.0
+        );
+        // No history — a fresh colonist scores the old formula exactly.
+        assert_eq!(commitment_factor(None, W::Mine, 0.0), 1.0);
     }
 
     #[test]
