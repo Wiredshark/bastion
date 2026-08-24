@@ -9503,18 +9503,83 @@ impl JobBoard {
                     let cx = (region.min.x + region.max.x) / 2;
                     let cy = (region.min.y + region.max.y) / 2;
                     if let Some(surface) = column_surface_z(terrain, cx, cy, hint_z) {
-                        let cell = Vec3::new(cx, cy, surface + 1);
-                        if !self.beds.contains_key(&cell) {
-                            self.beds.insert(cell, common::bastion::BedSlot {
-                                kind: common::bastion::BedKind::Bedroll,
-                                owner: None,
-                                occupant: None,
-                            });
-                            self.pending_bed_places.push(cell);
-                            info!(
-                                ?cell,
-                                "bastion: MOVED A BED IN — a bedless adopted house gets furnished"
-                            );
+                        // ★ GROUND FLOOR, NOT THE TOP STOREY (blackwell's
+                        // premise, CONFIRMED by the container gate's own
+                        // founding lines: interior columns of multi-storey
+                        // houses resolve surface to the UPPER floor —
+                        // surface=185 over ground 181, solid_below=1). A
+                        // ground floor sits on the foundation; an upper
+                        // storey on a one-block slab. Descend past
+                        // suspended floors before placing.
+                        let mut floor = surface;
+                        for _ in 0..5 {
+                            let deep = (1..=4)
+                                .take_while(|d| {
+                                    terrain
+                                        .get(Vec3::new(cx, cy, floor - d))
+                                        .is_ok_and(|b| b.is_filled())
+                                })
+                                .count();
+                            if deep >= 3 {
+                                break;
+                            }
+                            let mut next = None;
+                            let mut z = floor - (deep as i32) - 1;
+                            while z > floor - 40 {
+                                if terrain
+                                    .get(Vec3::new(cx, cy, z))
+                                    .is_ok_and(|b| is_surface_terrain(b.kind()))
+                                {
+                                    next = Some(z);
+                                    break;
+                                }
+                                z -= 1;
+                            }
+                            match next {
+                                Some(n) => floor = n,
+                                None => break,
+                            }
+                        }
+                        // ★ AND THE CELL MUST FIT A BODY (the commit said
+                        // "standable" and never checked — a comment cannot
+                        // enforce): centre first, then the four neighbours;
+                        // two clear body cells over the same floor level.
+                        let fits = |c: Vec3<i32>| {
+                            terrain.get(c).is_ok_and(|b| !b.is_solid())
+                                && terrain
+                                    .get(c + Vec3::unit_z())
+                                    .is_ok_and(|b| !b.is_solid())
+                                && terrain
+                                    .get(c - Vec3::unit_z())
+                                    .is_ok_and(|b| b.is_filled())
+                        };
+                        let cell = [
+                            Vec3::new(cx, cy, floor + 1),
+                            Vec3::new(cx + 1, cy, floor + 1),
+                            Vec3::new(cx - 1, cy, floor + 1),
+                            Vec3::new(cx, cy + 1, floor + 1),
+                            Vec3::new(cx, cy - 1, floor + 1),
+                        ]
+                        .into_iter()
+                        .find(|c| fits(*c));
+                        match cell {
+                            None => info!(
+                                ?kind,
+                                "bastion: bedless house had NO fitting floor cell — bed not placed (named refusal)"
+                            ),
+                            Some(cell) if !self.beds.contains_key(&cell) => {
+                                self.beds.insert(cell, common::bastion::BedSlot {
+                                    kind: common::bastion::BedKind::Bedroll,
+                                    owner: None,
+                                    occupant: None,
+                                });
+                                self.pending_bed_places.push(cell);
+                                info!(
+                                    ?cell,
+                                    "bastion: MOVED A BED IN — a bedless adopted house gets furnished"
+                                );
+                            },
+                            Some(_) => {},
                         }
                     }
                 }
