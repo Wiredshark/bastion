@@ -206,6 +206,9 @@ fn ladder_pillar(
     if top <= from.z {
         return None;
     }
+    // Unloaded-read policy (deliberate): Err rejects the candidate column —
+    // escape planning runs inside the digger's own loaded bubble and must
+    // never plan rungs through terrain it cannot see.
     let filled = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
     // M2 DISMOUNT NORMALIZATION (probe-measured off-by-one): egress_scan's
     // rim target carries the z of the top SOLID block, so every corridor
@@ -1108,6 +1111,10 @@ pub const CONNECTIVITY_REBUILD_TICKS: u64 = 900;
 /// of air for feet and head — the same true-standable test the rescue selector
 /// uses, so connectivity and rescue cannot disagree about what a floor is.
 fn conn_standable(terrain: &TerrainGrid, c: Vec3<i32>) -> bool {
+    // Unloaded-read policy (deliberate): Err = not standable. A flood fill
+    // cannot honestly extend through terrain it cannot see; the CONSUMERS
+    // carry the fail-open duty (`connectivity_refuses` is trusted-guarded and
+    // default-off; the v2 labelled ladder admits on every unresolvable read).
     let solid_below = terrain
         .get(c - Vec3::unit_z())
         .is_ok_and(|b| b.is_filled());
@@ -2498,6 +2505,9 @@ fn plan_access(
         Option<EmergencyRouteDescriptor>,
         Option<Vec<Vec3<i32>>>,
     )> = {
+        // Unloaded-read policy (deliberate): Err reads as not-solid, which
+        // rejects/steers candidates rather than destroying anything — all
+        // tiers plan within the trapped colonist's own loaded bubble.
         let is_solid = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
         let allowed = |p: Vec3<i32>| {
             in_access_mask(mask, p)
@@ -4751,6 +4761,9 @@ fn station_cell(terrain: &TerrainGrid, region: Region) -> Option<Vec3<i32>> {
         for y in region.min.y..=region.max.y {
             for x in region.min.x..=region.max.x {
                 let pos = Vec3::new(x, y, z);
+                // Unloaded-read policy (deliberate): an Err cell is skipped as
+                // a station candidate — pot placement picks only from cells it
+                // can see; the region is loaded at paint time.
                 if !terrain.get(pos).is_ok_and(|b| !b.is_filled()) {
                     continue;
                 }
@@ -4857,6 +4870,11 @@ pub fn resolve_column_surface(
 /// (a wedged `+1`-slot or an isolated perch) — that adjacent stance is exactly
 /// what a `+1`-gap hillside block has to its open (downhill) side.
 fn has_standable_stance(terrain: &TerrainGrid, pos: Vec3<i32>) -> Option<Vec3<i32>> {
+    // Unloaded-read policy (deliberate, here and in the two sibling stance
+    // fns below): Err answers `None` — a stance fn reports only what it can
+    // SEE. The claim path's fail-open for unloaded targets lives at
+    // `job_stance`, the one dispatcher, so helpers stay honest instruments
+    // (the offline probe and the mine generator want the honest answer).
     let solid = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
     let open = |p: Vec3<i32>| terrain.get(p).map(|b| !b.is_filled()).unwrap_or(false);
     let cardinals = [
@@ -5000,6 +5018,19 @@ pub fn job_stance_missing(terrain: &TerrainGrid, job: &Job) -> bool {
 }
 
 fn job_stance(terrain: &TerrainGrid, job: &Job) -> Option<Vec3<i32>> {
+    // ★ AN UNLOADED TARGET CANNOT REFUSE A STANCE (unloaded-terrain audit,
+    // 2026-08-24). The stance helpers below honestly answer `None` when they
+    // cannot see the terrain — but at THIS consumer, `None` means "left
+    // unclaimed and benched every cycle", and a job outside the presence
+    // bubble stays unloaded precisely BECAUSE nobody ever claims it and
+    // walks there: a permanent starvation loop for every out-of-bubble
+    // Mine/Chop designation. Same ruling as `ConnDecision::
+    // AdmitStanceUnresolved`: cannot-see admits with the blind pre-#64
+    // on-top default; the walk loads the chunk and the next eligibility
+    // sweep re-answers from real terrain.
+    if terrain.get(job.pos).is_err() {
+        return Some(Vec3::unit_z());
+    }
     match job.affordance {
         AffordanceClass::SolidTarget => has_standable_stance(terrain, job.pos),
         AffordanceClass::AdjacentToBase => adjacent_ground_stance(terrain, job.pos),
@@ -5014,6 +5045,8 @@ fn job_stance(terrain: &TerrainGrid, job: &Job) -> Option<Vec3<i32>> {
 /// the offline reachability probe below calls this per column visited in a
 /// flood-fill, so an unbounded per-call scan would multiply badly.
 fn column_height_near(terrain: &TerrainGrid, x: i32, y: i32, z_hint: i32) -> Option<i32> {
+    // Unloaded-read policy (deliberate): Err cells don't count as surface —
+    // `None` means "couldn't measure", and the probe callers say so.
     (z_hint - 60..=z_hint + 60)
         .rev()
         .find(|&z| terrain.get(Vec3::new(x, y, z)).map(|b| b.is_filled()).unwrap_or(false))
@@ -6140,6 +6173,12 @@ fn emergency_partial_route_entry(
     )
 }
 
+// Unloaded-read policy for the WHOLE emergency-route/traversal family (this
+// fn and every `is_ok_and` readiness/validity probe around it): Err rejects
+// the candidate or reports not-ready. These reads all sit inside the trapped
+// colonist's own loaded bubble, and a refused candidate re-tests next tick —
+// nothing on the board is destroyed. (`surface_teleport_dest`'s doc states
+// the same rule for the teleport pickers.)
 fn emergency_corridor_standable<V>(terrain: &V, feet: Vec3<i32>) -> bool
 where
     V: BaseVol<Vox = Block> + ReadVol,
@@ -8915,6 +8954,10 @@ impl JobBoard {
                     if occupied.contains(&pos) {
                         continue;
                     }
+                    // Unloaded-read policy (deliberate): a cell the paint
+                    // cannot see gets no job at CREATION time — the painter's
+                    // presence loads the region; out-of-bubble restores go
+                    // through `pending_restore`'s defer-until-loaded drain.
                     let Ok(block) = terrain.get(pos) else {
                         continue;
                     };
@@ -9063,6 +9106,9 @@ impl JobBoard {
                 z_hi = Some(z_hi.map_or(surface, |v: i32| v.max(surface + 8)));
                 for z in (surface - 2)..=(surface + 8) {
                     let pos = Vec3::new(x, y, z);
+                    // Unloaded-read policy (deliberate): adoption registers
+                    // only furniture it can see; an unloaded column is
+                    // skipped, not deferred (known one-shot-scan limitation).
                     let Ok(block) = terrain.get(pos) else { continue };
                     let sprite = block.get_sprite();
                     let is_bed = matches!(
@@ -9517,6 +9563,9 @@ impl JobBoard {
         let mut wood_count: u32 = 0;
         let (mut min, mut max) = (Vec3::broadcast(i32::MAX), Vec3::broadcast(i32::MIN));
         for &pos in cells {
+            // Unloaded-read policy (deliberate): an unseen cell drops out of
+            // the fell-set at CREATION — the feller paints in-bubble; the
+            // band drain holds (does not skip) if a chunk unloads mid-stagger.
             let Ok(block) = terrain.get(pos) else {
                 continue;
             };
@@ -9634,6 +9683,9 @@ impl JobBoard {
             for y in region.min.y..=region.max.y {
                 for x in region.min.x..=region.max.x {
                     let pos = Vec3::new(x, y, z);
+                    // Unloaded-read policy (deliberate): plan cells are
+                    // enumerated from visible terrain at queue time (the
+                    // creation-time skip family; see `place_designation`).
                     let Ok(block) = terrain.get(pos) else {
                         continue;
                     };
@@ -14020,6 +14072,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // open pit the climber already stands in that
                         // neighbor → no-op; in an interior shaft it pulls
                         // them off the rung into the shaft.
+                        // Unloaded-read policy (deliberate, note the `true`):
+                        // an unseen cell counts as SOLID so the magnet never
+                        // nudges a climber toward space it cannot verify.
                         let solid =
                             |p: Vec3<i32>| terrain.get(p).map(|b| b.is_solid()).unwrap_or(true);
                         let climb_col = [
@@ -14418,10 +14473,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 .jobs
                 .iter()
                 .filter_map(|(id, j)| {
+                    // ★ AN UNLOADED CELL IS NOT A CHANGED BLOCK (unloaded-
+                    // terrain audit, 2026-08-24 — the board-wide sibling of
+                    // the mid-travel moot check the 2026-08-23 autopsy
+                    // fixed). `.ok().is_some_and(..)` here retired EVERY
+                    // designation whose chunk sat outside the presence
+                    // bubble, one arbitration interval after it unloaded —
+                    // a player painting a far hillside and walking home
+                    // lost the whole paint to "phantom job retired".
+                    // Unloaded ⇒ still wanted; only a LOADED cell that
+                    // stopped matching is a phantom.
                     let wanted = terrain
                         .get(j.pos)
-                        .ok()
-                        .is_some_and(|b| job_still_wanted(&j.kind, b));
+                        .map_or(true, |b| job_still_wanted(&j.kind, b));
                     (!wanted).then_some(*id)
                 })
                 .collect();
@@ -14553,6 +14617,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             for (zid, cells) in board.plans.iter() {
                 let mut unfilled = 0usize;
                 for pos in cells {
+                    // Unloaded-read policy (deliberate, FAIL-OPEN on the
+                    // retirement axis): an unseen plan cell counts as
+                    // UNFILLED, so a plan is never declared complete (and
+                    // retired into `built_xy`) on cells nobody could read.
+                    // The Build job minted for it survives the (fixed)
+                    // sweeps and loads the chunk by walking there.
                     let filled = terrain.get(*pos).ok().is_some_and(|b| b.is_filled());
                     if filled {
                         continue;
@@ -14740,6 +14810,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             if skip_xy.contains(&pos.xy()) || occupied.contains(&pos) {
                                 continue;
                             }
+                            // Unloaded-read policy (deliberate): the generator
+                            // proposes only rock it can see; the slab cursor
+                            // re-visits this cell on a later wrap.
                             let Ok(block) = terrain.get(pos) else {
                                 continue;
                             };
@@ -17207,6 +17280,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         };
                         let gpos = Vec3::new(x, y, gz);
                         let cpos = gpos + Vec3::unit_z();
+                        // Unloaded-read policy (deliberate): an unseen column
+                        // is skipped THIS pass and re-visited next pass — a
+                        // defer, not a retirement (no state is touched).
                         let Ok(ground) = terrain.get(gpos).copied() else {
                             continue;
                         };
@@ -23219,6 +23295,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     if job.kind.is(DesignationKind::Farm) {
                         let here = terrain.get(job.pos).ok().copied();
                         let below = terrain.get(job.pos - Vec3::unit_z()).ok().copied();
+                        // ★ AN UNLOADED CELL IS NOT A FOREIGN STATE (unloaded-
+                        // terrain audit, 2026-08-24): `None` here used to fall
+                        // through to the `_ => {}` moot-release below — a
+                        // completion racing a chunk unload (or a post-restore
+                        // replay) destroyed the job instead of waiting one
+                        // tick. Progress stays >= threshold; retried next tick.
+                        if here.is_none() || below.is_none() {
+                            continue;
+                        }
                         let mut acted = false;
                         match here {
                             // TILL: the job sits ON the raw ground block. A
@@ -23390,6 +23475,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     }
                     if job.kind.is(DesignationKind::Gather) {
                         let block = terrain.get(job.pos).ok().copied();
+                        // ★ UNLOADED IS NOT VACATED (unloaded-terrain audit,
+                        // 2026-08-24): `None` used to read as not-collectible
+                        // and complete the job — "gathered", XP granted,
+                        // nothing in the bag. Defer instead; the vacated-block
+                        // confirmation must come from a LOADED read.
+                        if block.is_none() {
+                            continue;
+                        }
                         let collectible = block.is_some_and(|b| b.is_directly_collectible());
                         if collectible {
                             // Deposit ruling: record what this collect will
@@ -23452,7 +23545,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // CHOP redesign (FR10): the drop branch below needs the
                     // block's PRE-REMOVAL kind — Wood drops, Leaves clears
                     // free — so capture it with the validity read.
-                    let completed_kind = terrain.get(job.pos).ok().map(|b| b.kind());
+                    // ★ AN UNLOADED CELL IS NOT A CHANGED BLOCK (unloaded-
+                    // terrain audit, 2026-08-24 — the at-completion sibling
+                    // of the mid-travel moot check the autopsy fixed): Err
+                    // used to collapse into `still_valid = false` and drop
+                    // the job as moot. Cannot-see defers — progress stays >=
+                    // threshold and next tick re-reads loaded terrain.
+                    let completed_kind = match terrain.get(job.pos) {
+                        Ok(b) => Some(b.kind()),
+                        Err(_) => continue,
+                    };
                     let still_valid = completed_kind.is_some_and(|k| match job.kind {
                         // ITEM 27: completion validity owned by the cook arm.
                         common::bastion::JobKind::Cook { .. } => true,
@@ -24075,8 +24177,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // Mine job is handled by that job's moot re-check (the block
                     // is already air → dropped, no double-yield).
                     if !is_emergency_access && job.kind.is(DesignationKind::Mine) {
+                        // ★ UNLOADED READS AS SUPPORT, NOT AIR (unloaded-
+                        // terrain audit, 2026-08-24): with `unwrap_or(false)`
+                        // a rock mass whose only support path crossed a chunk
+                        // boundary out of the presence bubble read as bounded
+                        // — a FALSE CAVE-IN destroying connected terrain. As
+                        // filled, the flood walks into the unloaded region
+                        // and hits CAVEIN_SUPPORT_CAP ⇒ treated as supported.
                         let is_filled =
-                            |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
+                            |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(true);
                         if let Some(cells) = floating_chunk(is_filled, done_pos, CAVEIN_SUPPORT_CAP)
                         {
                             // T1.14 (conservation cluster): stage the cave-in
@@ -24537,6 +24646,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     if !block_change.can_set_block(cell) {
                         break;
                     }
+                    // ★ UNLOADED MID-STAGGER HOLDS THE BAND (unloaded-terrain
+                    // audit, 2026-08-24): the `_ => {}` arm below advances the
+                    // cursor, which is right for a LOADED cell the world
+                    // changed (already air/stone) but permanently skipped an
+                    // unloaded one — lost yield plus the FR10 floating-canopy
+                    // residual. Err: retry this cell next tick, like the
+                    // `can_set_block` hold above.
+                    if terrain.get(cell).is_err() {
+                        break;
+                    }
                     match terrain.get(cell).ok().map(|b| b.kind()) {
                         Some(BlockKind::Wood) => {
                             block_change.set(cell, Block::empty());
@@ -24798,6 +24917,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         {
             let mut embed_iter = (&colonists, &mut positions, &mut velocities, &uids).lend_join();
             while let Some((_, mut pos, mut vel, uid)) = embed_iter.next() {
+                // Unloaded-read policy (deliberate): Err reads not-solid, so
+                // the embed watch never relocates a body on unseen terrain —
+                // a false negative here just waits for the chunk to load.
                 let core_solid = [(-0.2f32, -0.2f32), (-0.2, 0.2), (0.2, -0.2), (0.2, 0.2)]
                     .into_iter()
                     .all(|(dx, dy)| {
@@ -28046,6 +28168,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             //   (distant enablement / skill-ups — fingerprint-invisible).
             // Size-1 set ≡ per-cell CAP=N (subsumes the (A) form). All
             // writes uniform/per-job-independent — order-free.
+            // Unloaded-read policy (deliberate): Err bits read 0. A chunk
+            // load/unload transition therefore flips the fingerprint and
+            // reads as "world changed" — which CLEARS flags and re-tests
+            // (fail-open churn), never extends a flag's life.
             let solid =
                 |p: Vec3<i32>| terrain.get(p).map(|b| b.is_filled()).unwrap_or(false);
             let mask_of = |pos: Vec3<i32>| -> u8 {
