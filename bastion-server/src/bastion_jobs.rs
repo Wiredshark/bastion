@@ -4693,6 +4693,14 @@ pub fn commitment_factor(
 /// day's plans route around it, short enough that tomorrow retries.
 pub const CLIMB_BAN_SECS: f64 = 300.0;
 
+/// ★ THE VAULT'S OWN CLOCK (contract-window evidence: 79 vaults for one
+/// farmer, each behind the full 10s STUCK_TIMEOUT — walk-freeze-pop on
+/// repeat). A strictly-verified vault (waist-high solid sprite, promised
+/// cell standable past it) fires at 1.5s: the pause reads as the hop's
+/// wind-up, not a freeze. Only the vault class — early climb/step assists
+/// would pre-empt jumps the body was about to land.
+pub const VAULT_TIMEOUT: f32 = 1.5;
+
 /// ALARM v1 (Ben: "sound a alarm and base that on sound distance radius").
 /// How far the cry carries: civilians inside this radius of the perceiver's
 /// post take shelter; beyond it, life continues -- the whole point of a
@@ -21957,55 +21965,68 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     }
                                 }
                             }
-                            if active.stuck_time > STUCK_TIMEOUT || chaser_terminal {
-                                // ★★ THE ROUTER'S PROMISE IS A CONTRACT
-                                // (Ben, live, twice: "guarantee the colonist
-                                // can always vault the fences... when a
-                                // colonist is trying to do something we err
-                                // on the colonist side" → "if our pathing
-                                // system says they can reach their
-                                // destination they should be able to reach
-                                // it"). MOVE ASSIST: a timeout while the
-                                // chaser HOLDS a route head within reach
-                                // means the router promised this move and
-                                // the body failed it (the autopsy census
-                                // named the class: fence solid-height 1.09
-                                // vs ~1.0 jump clearance, chairs ×33,
-                                // tables ×8). The move COMPLETES — the
-                                // colonist is placed at the promised cell,
-                                // velocity zeroed, witnessed by class
-                                // counter and emit. Runs BEFORE the climb
-                                // ban: a fence must be vaulted, not detour
-                                // the whole field. Standability at the
-                                // destination is verified — an unverified
-                                // assist would embed colonists in walls.
-                                let assist = agent
-                                    .as_deref()
-                                    .and_then(|a| a.chaser.diagnostic_snapshot().route_head)
-                                    .filter(|head| {
-                                        let feet = pos.0.map(|e| e.floor() as i32);
-                                        let d = *head - feet;
-                                        d.xy().map(|e| e.abs()).reduce_max() <= 2
-                                            && d.z.abs() <= 3
-                                            && (d.xy() != Vec2::zero() || d.z != 0)
-                                    })
-                                    .filter(|head| {
-                                        let air = |q: Vec3<i32>| {
-                                            terrain.get(q).map(|b| !b.is_solid()).unwrap_or(false)
-                                        };
-                                        let solid_below = terrain
-                                            .get(*head - Vec3::unit_z())
-                                            .map(|b| b.is_solid())
-                                            .unwrap_or(false);
-                                        air(*head) && air(*head + Vec3::unit_z()) && solid_below
-                                    });
-                                if let Some(head) = assist {
+                            // ★★ THE ROUTER'S PROMISE IS A CONTRACT (Ben,
+                            // live, twice: "guarantee the colonist can
+                            // always vault the fences... err on the
+                            // colonist side" → "if our pathing system says
+                            // they can reach their destination they should
+                            // be able to reach it"). MOVE ASSIST: the
+                            // chaser HOLDS a route head within reach that
+                            // the body failed to take (the autopsy census
+                            // named the class: fence solid-height 1.09 vs
+                            // ~1.0 jump clearance, chairs ×33, tables ×8).
+                            // The move COMPLETES — placed at the promised
+                            // cell, velocity zeroed, class counter + emit.
+                            // Standability verified — an unverified assist
+                            // embeds colonists in walls.
+                            //
+                            // ★ TWO CLOCKS (contract-window evidence:
+                            // colonist 704, 79 vaults, each behind the full
+                            // 10s stare — a farmer's day read as walk-
+                            // freeze-pop on repeat). The VAULT class — a
+                            // strictly-verified waist-high sprite in the
+                            // press direction — fires at VAULT_TIMEOUT
+                            // (1.5s: a hop's wind-up, not a freeze). Every
+                            // other class keeps the full STUCK_TIMEOUT: a
+                            // climb/step assist firing early would pre-empt
+                            // jumps the body was about to land.
+                            let assist = agent
+                                .as_deref()
+                                .and_then(|a| a.chaser.diagnostic_snapshot().route_head)
+                                .filter(|head| {
                                     let feet = pos.0.map(|e| e.floor() as i32);
-                                    let front = terrain
+                                    let d = *head - feet;
+                                    d.xy().map(|e| e.abs()).reduce_max() <= 2
+                                        && d.z.abs() <= 3
+                                        && (d.xy() != Vec2::zero() || d.z != 0)
+                                })
+                                .filter(|head| {
+                                    let air = |q: Vec3<i32>| {
+                                        terrain.get(q).map(|b| !b.is_solid()).unwrap_or(false)
+                                    };
+                                    let solid_below = terrain
+                                        .get(*head - Vec3::unit_z())
+                                        .map(|b| b.is_solid())
+                                        .unwrap_or(false);
+                                    air(*head) && air(*head + Vec3::unit_z()) && solid_below
+                                })
+                                .map(|head| {
+                                    let feet = pos.0.map(|e| e.floor() as i32);
+                                    let front_block = terrain
                                         .get(feet + (head - feet).map(|e| e.signum()).with_z(0))
                                         .ok()
-                                        .and_then(|b| b.get_sprite());
-                                    let class = if front.is_some() && (head.z - feet.z) <= 1 {
+                                        .copied();
+                                    let front = front_block.and_then(|b| b.get_sprite());
+                                    // Strict vault: sprite + solid + waist-
+                                    // high band. The band excludes tall
+                                    // sprite obstacles (a 2m hedge is a
+                                    // wall, not a hurdle).
+                                    let vaultable = front_block.is_some_and(|b| {
+                                        b.get_sprite().is_some()
+                                            && b.is_solid()
+                                            && (0.2..=1.6).contains(&b.solid_height())
+                                    }) && (head.z - feet.z) <= 1;
+                                    let class = if vaultable {
                                         "vault"
                                     } else if head.z > feet.z {
                                         "climb"
@@ -22014,6 +22035,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     } else {
                                         "step"
                                     };
+                                    (head, class, front)
+                                });
+                            let vault_ready = assist
+                                .as_ref()
+                                .is_some_and(|(_, class, _)| *class == "vault")
+                                && active.stuck_time > VAULT_TIMEOUT;
+                            if vault_ready
+                                || active.stuck_time > STUCK_TIMEOUT
+                                || chaser_terminal
+                            {
+                                if let Some((head, class, front)) = assist {
                                     pending_assists.push((entity, head));
                                     *board
                                         .move_assists
@@ -22030,6 +22062,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     active.best_dist = f32::MAX;
                                     continue;
                                 }
+                                // From here on this is a REAL timeout
+                                // (assist had nothing to offer) — never the
+                                // early vault clock.
+                                debug_assert!(
+                                    !vault_ready,
+                                    "vault_ready implies assist was Some — the early clock                                     must never reach the ban/timeout machinery"
+                                );
                                 // ★ CLIMB BAN RECORDER (Ben: "they largely
                                 // get stuck because they get into infinite
                                 // climb loops"). A timeout while CLIMBING or
