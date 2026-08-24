@@ -435,7 +435,7 @@ fn do_pickup_loot(bdata: &mut BehaviorData) -> bool {
                 tgt_pos.0,
                 TraversalConfig {
                     min_tgt_dist: NPC_PICKUP_RANGE - 1.0,
-                    ..bdata.agent_data.traversal_config
+                    ..bdata.agent_data.traversal_config.clone()
                 },
                 &bdata.read_data.time,
             ) {
@@ -505,7 +505,7 @@ fn do_save_allies(bdata: &mut BehaviorData) -> bool {
                 target_pos.0,
                 TraversalConfig {
                     min_tgt_dist: MAX_INTERACT_RANGE * 0.5,
-                    ..bdata.agent_data.traversal_config
+                    ..bdata.agent_data.traversal_config.clone()
                 },
                 &bdata.read_data.time,
             ) {
