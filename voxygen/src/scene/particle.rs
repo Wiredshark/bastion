@@ -3736,6 +3736,21 @@ impl ParticleMgr {
                     dry_chance,
                 });
             }
+            // ★ SMOKE BUDGET (Ben, mega-city flyover screenshot: "reduce
+            // this smoke particles... amount is dynamic but this is too
+            // much at this scale"). `sum` grows LINEARLY with chimney
+            // count, so an 85-house city emitted a white blanket. Total
+            // emission now saturates: full strength up to a ~20-house
+            // village's dinner peak, square-root growth past it. The
+            // weighted sampler below already spreads whatever total exists
+            // across chimneys proportionally — every hearth keeps smoking,
+            // each thinner as the town grows, and a hamlet is untouched.
+            const SMOKE_SUM_BUDGET: f32 = 2048.0;
+            let sum = if sum > SMOKE_SUM_BUDGET {
+                SMOKE_SUM_BUDGET + (sum - SMOKE_SUM_BUDGET).sqrt()
+            } else {
+                sum
+            };
             let avg_particles = dt * sum * rate;
 
             let particle_count = avg_particles.trunc() as usize

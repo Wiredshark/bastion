@@ -8282,6 +8282,11 @@ pub struct JobBoard {
     /// normal, so routes snap to streets whenever the street isn't twice
     /// as long as the shortcut. Empty on unfounded worlds: zero effect.
     pub road_cells: std::sync::Arc<std::collections::HashSet<Vec2<i32>>>,
+    /// ★ MOVE ASSISTS by class (vault/climb/step/descend) — the honesty
+    /// counter for the router's-promise-is-a-contract law. Assists are
+    /// leniency, not silence: an exploding rate here is the tracked-red
+    /// that says the MOVER needs real work, and the fleet judge reads it.
+    pub move_assists: HashMap<&'static str, u32>,
     /// ★ PAINT NOTICES (Ben, live: "no one seems to take my mining jobs...
     /// ITS BEEN 44 DAYS" — the jobs were fine, the game just never said a
     /// word about when work happens or what standing his orders had). Each
@@ -19501,6 +19506,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
 
         // `Colonist`'s storage is change-tracked (synced comp) — mutable
         // multi-storage joins over it need `LendJoin`, not `Join`.
+        // MOVE ASSIST: position writes are DEFERRED past this loop — the
+        // join holds `positions` immutably, so the assist records the
+        // promised cell here and the apply runs once the borrow ends.
+        let mut pending_assists: Vec<(specs::Entity, Vec3<i32>)> = Vec::new();
         let mut upkeep_iter = (
             &entities,
             &mut colonists,
@@ -21919,6 +21928,78 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 }
                             }
                             if active.stuck_time > STUCK_TIMEOUT || chaser_terminal {
+                                // ★★ THE ROUTER'S PROMISE IS A CONTRACT
+                                // (Ben, live, twice: "guarantee the colonist
+                                // can always vault the fences... when a
+                                // colonist is trying to do something we err
+                                // on the colonist side" → "if our pathing
+                                // system says they can reach their
+                                // destination they should be able to reach
+                                // it"). MOVE ASSIST: a timeout while the
+                                // chaser HOLDS a route head within reach
+                                // means the router promised this move and
+                                // the body failed it (the autopsy census
+                                // named the class: fence solid-height 1.09
+                                // vs ~1.0 jump clearance, chairs ×33,
+                                // tables ×8). The move COMPLETES — the
+                                // colonist is placed at the promised cell,
+                                // velocity zeroed, witnessed by class
+                                // counter and emit. Runs BEFORE the climb
+                                // ban: a fence must be vaulted, not detour
+                                // the whole field. Standability at the
+                                // destination is verified — an unverified
+                                // assist would embed colonists in walls.
+                                let assist = agent
+                                    .as_deref()
+                                    .and_then(|a| a.chaser.diagnostic_snapshot().route_head)
+                                    .filter(|head| {
+                                        let feet = pos.0.map(|e| e.floor() as i32);
+                                        let d = *head - feet;
+                                        d.xy().map(|e| e.abs()).reduce_max() <= 2
+                                            && d.z.abs() <= 3
+                                            && (d.xy() != Vec2::zero() || d.z != 0)
+                                    })
+                                    .filter(|head| {
+                                        let air = |q: Vec3<i32>| {
+                                            terrain.get(q).map(|b| !b.is_solid()).unwrap_or(false)
+                                        };
+                                        let solid_below = terrain
+                                            .get(*head - Vec3::unit_z())
+                                            .map(|b| b.is_solid())
+                                            .unwrap_or(false);
+                                        air(*head) && air(*head + Vec3::unit_z()) && solid_below
+                                    });
+                                if let Some(head) = assist {
+                                    let feet = pos.0.map(|e| e.floor() as i32);
+                                    let front = terrain
+                                        .get(feet + (head - feet).map(|e| e.signum()).with_z(0))
+                                        .ok()
+                                        .and_then(|b| b.get_sprite());
+                                    let class = if front.is_some() && (head.z - feet.z) <= 1 {
+                                        "vault"
+                                    } else if head.z > feet.z {
+                                        "climb"
+                                    } else if head.z < feet.z {
+                                        "descend"
+                                    } else {
+                                        "step"
+                                    };
+                                    pending_assists.push((entity, head));
+                                    *board
+                                        .move_assists
+                                        .entry(class)
+                                        .or_insert(0) += 1;
+                                    info!(
+                                        colonist = uids.get(entity).map(|u| u.0.get()),
+                                        class,
+                                        ?head,
+                                        front = ?front,
+                                        "bastion: MOVE ASSIST — the router promised this cell; the vault/step completes"
+                                    );
+                                    active.stuck_time = 0.0;
+                                    active.best_dist = f32::MAX;
+                                    continue;
+                                }
                                 // ★ CLIMB BAN RECORDER (Ben: "they largely
                                 // get stuck because they get into infinite
                                 // climb loops"). A timeout while CLIMBING or
@@ -24839,6 +24920,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     }
                     to_release.push((entity, ReleaseReason::Completed, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
                 },
+            }
+        }
+        // ★ MOVE ASSIST apply (deferred past the upkeep join's positions
+        // borrow): the router promised these cells; the moves complete.
+        for (entity, head) in pending_assists.drain(..) {
+            if let Some(p) = positions.get_mut(entity) {
+                p.0 = head.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
+            }
+            if let Some(v) = velocities.get_mut(entity) {
+                v.0 = Vec3::zero();
             }
         }
         // ★ EAT RE-TARGET drain (2026-08-21): re-aim every EatFrom whose meal
