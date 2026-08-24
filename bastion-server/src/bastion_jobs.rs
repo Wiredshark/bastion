@@ -22091,7 +22091,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // Sleep to comfort + margin: completing
                                     // AT the band means decay re-crosses it
                                     // within seconds (rested, not barely).
-                                    slept = needs.rest >= cfg.rest.comfort + SLEEP_MARGIN;
+                                    // ★ STAY IN BED UNTIL MORNING (Ben's
+                                    // 11-day session: 29,267 sleep
+                                    // completions — ~330 per colonist per
+                                    // day. Completing at comfort+margin
+                                    // released the sleeper into a night
+                                    // whose schedule re-wanted them 60s
+                                    // later: a bed-metronome, all night,
+                                    // every night — the exact opposite of
+                                    // his 'goes HOME and stays in until
+                                    // light'. During the Sleep block the
+                                    // hold completes only when the block
+                                    // ends: rest banks to full and the
+                                    // sleeper LIES until dawn. Naps outside
+                                    // the block keep the old rule; hunger
+                                    // and the alarm still preempt.
+                                    let night = matches!(
+                                        default_schedule_block(hour_of_day(
+                                            rtsim.rt_state().data().time_of_day.0
+                                        )),
+                                        ScheduleBlock::Sleep
+                                    );
+                                    slept = needs.rest >= cfg.rest.comfort + SLEEP_MARGIN
+                                        && !night;
                                 }
                                 if slept {
                                     if let Some(controller) = controllers.get_mut(entity) {
