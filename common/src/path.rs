@@ -2248,6 +2248,610 @@ mod bastion_vertical_tests {
         }
     }
 
+// GENERATED from slot-101 read_block dump [7655,6330,180]..[7670,6343,186]
+// World offset: add (7655,6330,180) to recover absolute coords.
+// Freeze spot abs (7665,6335,181) -> local (10,5,1); bed abs (7657,6340,181) -> local (2,10,1).
+pub(super) fn trap_house_world() -> MockVol {
+    let mut blocks = StdHashMap::new();
+    let filled = |k: BlockKind| Block::new(k, Rgb::new(120, 100, 80));
+    let spr = |s: SpriteKind| Block::air(s);
+    blocks.insert(Vec3::new(0, 0, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 0, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(2, 0, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(3, 0, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(4, 0, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 0, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 0, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 0, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 0, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 0, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 0, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 0, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 0, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(13, 0, 0), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(14, 0, 0), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(15, 0, 0), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(0, 1, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 1, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(2, 1, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(3, 1, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(4, 1, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 1, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 1, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 1, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 1, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 1, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 1, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 1, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 1, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(13, 1, 0), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(14, 1, 0), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(15, 1, 0), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(0, 2, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 2, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(2, 2, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(3, 2, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(4, 2, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 2, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 2, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 2, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 2, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 2, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 2, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 2, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 2, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(13, 2, 0), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(14, 2, 0), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(15, 2, 0), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(0, 3, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 3, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(2, 3, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(3, 3, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(4, 3, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 3, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 3, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 3, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 3, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 3, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 3, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 3, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 3, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(13, 3, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(14, 3, 0), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(15, 3, 0), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(0, 4, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 4, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(2, 4, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(3, 4, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(4, 4, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 4, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 4, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 4, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 4, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 4, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 4, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 4, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 4, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(13, 4, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(14, 4, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(15, 4, 0), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(0, 5, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 5, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(2, 5, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(3, 5, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(4, 5, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 5, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 5, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 5, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 5, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 5, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 5, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 5, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 5, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(13, 5, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(14, 5, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(15, 5, 0), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(0, 6, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 6, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(2, 6, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(3, 6, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(4, 6, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 6, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 6, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 6, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 6, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 6, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 6, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 6, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 6, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(13, 6, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(14, 6, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(15, 6, 0), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(0, 7, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 7, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(2, 7, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(3, 7, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(4, 7, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 7, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 7, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 7, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 7, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 7, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 7, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 7, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 7, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(13, 7, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(14, 7, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(15, 7, 0), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(0, 8, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 8, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(2, 8, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(3, 8, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(4, 8, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 8, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 8, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 8, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 8, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 8, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 8, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 8, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 8, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(13, 8, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(14, 8, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(15, 8, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(0, 9, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 9, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(2, 9, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(3, 9, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(4, 9, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 9, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 9, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 9, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 9, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 9, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 9, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 9, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 9, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(13, 9, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(14, 9, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(15, 9, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(0, 10, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 10, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(2, 10, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(3, 10, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(4, 10, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 10, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 10, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 10, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 10, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 10, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 10, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 10, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 10, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(13, 10, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(14, 10, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(15, 10, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(0, 11, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 11, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(2, 11, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(3, 11, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(4, 11, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 11, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 11, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 11, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 11, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 11, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 11, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 11, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 11, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(13, 11, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(14, 11, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(15, 11, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(0, 12, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 12, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(2, 12, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(3, 12, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(4, 12, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 12, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 12, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 12, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 12, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 12, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 12, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 12, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 12, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(13, 12, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(14, 12, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(15, 12, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(0, 13, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 13, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(2, 13, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(3, 13, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(4, 13, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 13, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 13, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 13, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 13, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 13, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 13, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 13, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 13, 0), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(13, 13, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(14, 13, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(15, 13, 0), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(0, 0, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 0, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(2, 0, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(3, 0, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(4, 0, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 0, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 0, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 0, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 0, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 0, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 0, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 0, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(13, 0, 1), spr(SpriteKind::MediumGrass));
+    blocks.insert(Vec3::new(5, 1, 1), spr(SpriteKind::Crate));
+    blocks.insert(Vec3::new(10, 1, 1), spr(SpriteKind::Crate));
+    blocks.insert(Vec3::new(11, 1, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 2, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 2, 1), spr(SpriteKind::MediumGrass));
+    blocks.insert(Vec3::new(11, 3, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(15, 3, 1), spr(SpriteKind::JungleLeafyPlant));
+    blocks.insert(Vec3::new(11, 4, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 5, 1), spr(SpriteKind::ChairWoodWoodland));
+    blocks.insert(Vec3::new(11, 5, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(4, 6, 1), spr(SpriteKind::ChairWoodWoodland));
+    blocks.insert(Vec3::new(5, 6, 1), spr(SpriteKind::DiningtableWoodWoodlandRound));
+    blocks.insert(Vec3::new(6, 6, 1), spr(SpriteKind::ChairWoodWoodland));
+    blocks.insert(Vec3::new(8, 6, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 6, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 6, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 6, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 6, 1), spr(SpriteKind::LongGrass));
+    blocks.insert(Vec3::new(5, 7, 1), spr(SpriteKind::ChairWoodWoodland));
+    blocks.insert(Vec3::new(9, 7, 1), spr(SpriteKind::Ember));
+    blocks.insert(Vec3::new(10, 7, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 7, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(13, 7, 1), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(14, 7, 1), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(9, 8, 1), spr(SpriteKind::Ember));
+    blocks.insert(Vec3::new(10, 8, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 8, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 8, 1), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(13, 8, 1), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(14, 8, 1), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(15, 8, 1), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(8, 9, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 9, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 9, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 9, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 9, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(13, 9, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(14, 9, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(15, 9, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(2, 10, 1), spr(SpriteKind::BedWoodWoodlandHead));
+    blocks.insert(Vec3::new(3, 10, 1), spr(SpriteKind::BedWoodWoodlandMiddle));
+    blocks.insert(Vec3::new(4, 10, 1), spr(SpriteKind::BedWoodWoodlandTail));
+    blocks.insert(Vec3::new(11, 10, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 10, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(13, 10, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(14, 10, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(15, 10, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(0, 11, 1), spr(SpriteKind::CoatrackWoodWoodland));
+    blocks.insert(Vec3::new(1, 11, 1), spr(SpriteKind::DrawerWoodWoodlandL1));
+    blocks.insert(Vec3::new(2, 11, 1), spr(SpriteKind::BedWoodWoodlandHead));
+    blocks.insert(Vec3::new(3, 11, 1), spr(SpriteKind::BedWoodWoodlandMiddle));
+    blocks.insert(Vec3::new(4, 11, 1), spr(SpriteKind::BedWoodWoodlandTail));
+    blocks.insert(Vec3::new(5, 11, 1), spr(SpriteKind::Crate));
+    blocks.insert(Vec3::new(10, 11, 1), spr(SpriteKind::Crate));
+    blocks.insert(Vec3::new(11, 11, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 11, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(13, 11, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(14, 11, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(15, 11, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(0, 12, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 12, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(2, 12, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(3, 12, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(4, 12, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 12, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 12, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 12, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 12, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 12, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 12, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 12, 1), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 12, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(13, 12, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(14, 12, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(15, 12, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(0, 13, 1), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(1, 13, 1), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(2, 13, 1), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(3, 13, 1), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(4, 13, 1), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(5, 13, 1), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(6, 13, 1), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(7, 13, 1), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(8, 13, 1), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(9, 13, 1), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(10, 13, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(11, 13, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(12, 13, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(13, 13, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(14, 13, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(15, 13, 1), filled(BlockKind::Earth));
+    blocks.insert(Vec3::new(0, 0, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 0, 2), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(2, 0, 2), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(3, 0, 2), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(4, 0, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 0, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 0, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 0, 2), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(8, 0, 2), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(9, 0, 2), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(10, 0, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 0, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 1, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 2, 2), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(11, 3, 2), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(11, 4, 2), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(11, 5, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 6, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 6, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 6, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 6, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 7, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 7, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(14, 7, 2), spr(SpriteKind::ShortGrass));
+    blocks.insert(Vec3::new(10, 8, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 8, 2), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(8, 9, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 9, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 9, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 9, 2), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(13, 9, 2), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(14, 9, 2), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(15, 9, 2), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(11, 10, 2), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(12, 10, 2), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(13, 10, 2), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(14, 10, 2), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(15, 10, 2), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(11, 11, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 11, 2), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(13, 11, 2), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(14, 11, 2), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(15, 11, 2), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(0, 12, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 12, 2), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(2, 12, 2), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(3, 12, 2), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(4, 12, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 12, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 12, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 12, 2), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(8, 12, 2), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(9, 12, 2), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(10, 12, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 12, 2), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 12, 2), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(13, 12, 2), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(14, 12, 2), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(15, 12, 2), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(10, 13, 2), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(11, 13, 2), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(12, 13, 2), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(13, 13, 2), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(14, 13, 2), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(15, 13, 2), filled(BlockKind::Grass));
+    blocks.insert(Vec3::new(0, 0, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 0, 3), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(2, 0, 3), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(3, 0, 3), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(4, 0, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 0, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 0, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 0, 3), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(8, 0, 3), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(9, 0, 3), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(10, 0, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 0, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 1, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 2, 3), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(11, 3, 3), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(11, 4, 3), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(11, 5, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 6, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 6, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 6, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 6, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 6, 3), spr(SpriteKind::WallLampSmall));
+    blocks.insert(Vec3::new(8, 7, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 7, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 7, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 8, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 8, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 8, 3), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(8, 9, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 9, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 9, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 9, 3), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(11, 10, 3), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(11, 11, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(0, 12, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 12, 3), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(2, 12, 3), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(3, 12, 3), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(4, 12, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 12, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 12, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 12, 3), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(8, 12, 3), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(9, 12, 3), spr(SpriteKind::Window1));
+    blocks.insert(Vec3::new(10, 12, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 12, 3), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(12, 12, 3), spr(SpriteKind::WallLampSmall));
+    blocks.insert(Vec3::new(13, 12, 3), spr(SpriteKind::FenceWoodWoodland));
+    blocks.insert(Vec3::new(14, 12, 3), spr(SpriteKind::FenceWoodWoodland));
+    blocks.insert(Vec3::new(15, 12, 3), spr(SpriteKind::FenceWoodWoodland));
+    blocks.insert(Vec3::new(5, 13, 3), spr(SpriteKind::WallLampSmall));
+    blocks.insert(Vec3::new(0, 0, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 0, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(2, 0, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(3, 0, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(4, 0, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 0, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 0, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 0, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 0, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 0, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 0, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 0, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 1, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 2, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 3, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 4, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 5, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 6, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 6, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 6, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 6, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 7, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 7, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 7, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 8, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 8, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 8, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 9, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 9, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 9, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 9, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 10, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 11, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(0, 12, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(1, 12, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(2, 12, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(3, 12, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(4, 12, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(5, 12, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(6, 12, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(7, 12, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(8, 12, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 12, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 12, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 12, 4), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(0, 0, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(1, 0, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(2, 0, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(3, 0, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(4, 0, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(5, 0, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(6, 0, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(7, 0, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(8, 0, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(9, 0, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(10, 0, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(11, 0, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(11, 1, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(11, 2, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(11, 3, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(11, 4, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(11, 5, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(8, 6, 5), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 6, 5), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 6, 5), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 6, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(8, 7, 5), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 7, 5), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 7, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(8, 8, 5), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 8, 5), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 8, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(8, 9, 5), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 9, 5), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 9, 5), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 9, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(11, 10, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(11, 11, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(0, 12, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(1, 12, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(2, 12, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(3, 12, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(4, 12, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(5, 12, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(6, 12, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(7, 12, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(8, 12, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(9, 12, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(10, 12, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(11, 12, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(0, 13, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(1, 13, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(2, 13, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(3, 13, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(4, 13, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(5, 13, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(6, 13, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(7, 13, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(8, 13, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(9, 13, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(10, 13, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(11, 13, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(12, 13, 5), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(0, 0, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(1, 0, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(2, 0, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(3, 0, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(4, 0, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(5, 0, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(6, 0, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(7, 0, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(8, 0, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(9, 0, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(10, 0, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(11, 0, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(12, 0, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(11, 1, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(11, 2, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(11, 3, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(11, 4, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(11, 5, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(8, 6, 6), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 6, 6), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 6, 6), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 6, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(8, 7, 6), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 7, 6), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 7, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(8, 8, 6), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 8, 6), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 8, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(8, 9, 6), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(9, 9, 6), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(10, 9, 6), filled(BlockKind::Rock));
+    blocks.insert(Vec3::new(11, 9, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(11, 10, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(11, 11, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(0, 12, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(1, 12, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(2, 12, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(3, 12, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(4, 12, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(5, 12, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(6, 12, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(7, 12, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(8, 12, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(9, 12, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(10, 12, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(11, 12, 6), filled(BlockKind::Wood));
+    blocks.insert(Vec3::new(12, 12, 6), filled(BlockKind::Wood));
+    MockVol::from_parts(blocks, Block::empty())
+}
+
     pub(super) fn worker_cfg() -> TraversalConfig {
         TraversalConfig {
             node_tolerance: 1.5,
@@ -2771,6 +3375,64 @@ mod ledger_179_tests {
             scramble_reach: 0,
             search_allowed: false,
             ..worker_cfg()
+        }
+    }
+
+    /// ★ THE TRAP HOUSE (slot-101 read_block dump, byte-real geometry).
+    /// Old Poodest froze at local (10,5,1) with a live RestAt toward her
+    /// bed at local (2,10,1) — intermittently: some nights she walks, some
+    /// nights speed 0.0003 forever. PRE-REGISTERED: if this lab route
+    /// FAILS, the trap is STATIC geometry and this test holds the repro;
+    /// if it PASSES, the live trap is DYNAMIC (entities/timing/agent
+    /// state) and the row pivots away from the router. Either verdict is
+    /// progress; only silence is not.
+    #[test]
+    fn the_trap_house_routes_bed_from_the_freeze_spot() {
+        let vol = super::bastion_vertical_tests::trap_house_world();
+        let cfg = worker_cfg();
+        let route = {
+            let mut astar = None;
+            let mut out = PathResult::Pending;
+            for _ in 0..64 {
+                match find_path(
+                    &mut astar,
+                    &vol,
+                    Vec3::new(10.5, 5.5, 1.0),
+                    Vec3::new(2.5, 10.5, 1.5),
+                    &cfg,
+                    PathLength::Medium,
+                    None,
+                )
+                .0
+                {
+                    PathResult::Pending => continue,
+                    r => {
+                        out = r;
+                        break;
+                    },
+                }
+            }
+            out
+        };
+        match route {
+            PathResult::Path(path, _) => {
+                let end = path.nodes.last().copied().expect("nonempty path");
+                assert!(
+                    (end.xy() - Vec2::new(2, 10)).map(|e| e.abs()).reduce_max() <= 1,
+                    "route must end at the bed's cell or beside it, got {end:?}"
+                );
+            },
+            other => {
+                let name = match other {
+                    PathResult::None(_) => "None",
+                    PathResult::Exhausted(_) => "Exhausted",
+                    PathResult::Pending => "Pending",
+                    PathResult::Path(..) => unreachable!(),
+                };
+                panic!(
+                    "TRAP REPRODUCED IN THE LAB: the real house geometry defeats the router                      from the freeze spot ({name}) — the static-geometry verdict"
+                );
+            },
         }
     }
 
