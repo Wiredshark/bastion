@@ -2343,7 +2343,7 @@ pub(crate) fn flee_preempt_transition(
 /// person always favours the same spot (a regular's bench), deterministic
 /// on every run of one seed. The z rides the anchor's; the goal resolver's
 /// near-first column snap finds the standable cell.
-pub fn gathering_spot(anchor: Vec3<i32>, uid: Uid) -> Vec3<i32> {
+pub fn gathering_spot(anchor: Vec3<i32>, rank: usize) -> Vec3<i32> {
     const RING: [(i32, i32); 12] = [
         (3, 0),
         (2, 2),
@@ -2358,7 +2358,14 @@ pub fn gathering_spot(anchor: Vec3<i32>, uid: Uid) -> Vec3<i32> {
         (-5, -1),
         (-1, -5),
     ];
-    let (dx, dy) = RING[(uid.0.get() % RING.len() as u64) as usize];
+    // RANK, not hash: the fleet's first evening showed raw mod-12 colliding
+    // for the real colony (gather_seats=6 of 8), the falsify-first test then
+    // caught the Knuth-multiply ≡ 1 mod 12 (a fake fix), and Fibonacci
+    // high-bits still collided 8-into-12 (birthday arithmetic says most uid
+    // sets would). No per-uid hash can promise distinctness — the RANK in
+    // the colony's sorted uid list can, for any colony up to ring size.
+    // A new neighbour shifts the benches by one; the circle stays full.
+    let (dx, dy) = RING[rank % RING.len()];
     anchor + Vec3::new(dx, dy, 0)
 }
 
@@ -24393,7 +24400,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .stockpiles
                         .first()
                         .map(|(_, r)| {
-                            gathering_spot((r.min + r.max) / 2, uid)
+                            // Rank among living colonists, uid-sorted — the
+                            // collision-free seat (see gathering_spot's doc).
+                            let mut all: Vec<u64> = (&colonists, &uids)
+                                .join()
+                                .map(|(_, u)| u.0.get())
+                                .collect();
+                            all.sort_unstable();
+                            let rank = all
+                                .iter()
+                                .position(|&u| u == uid.0.get())
+                                .unwrap_or(0);
+                            gathering_spot((r.min + r.max) / 2, rank)
                         })
                         .unwrap_or(feet);
                     board.insert_recreate_job(spot, uid, until)
@@ -33458,11 +33476,17 @@ mod tests {
         // across runs.
         let anchor = Vec3::new(100, 200, 40);
         let mut seats = std::collections::HashSet::new();
-        for u in 1..=12u64 {
-            let uid = Uid(NonZeroU64::new(u).unwrap());
-            let a = gathering_spot(anchor, uid);
-            let b = gathering_spot(anchor, uid);
-            assert_eq!(a, b, "a regular's bench: same uid, same seat");
+        // RANK-BASED seating: the real colony that collided under mod-12
+        // (fleet: gather_seats=6 of 8) must seat 8 DISTINCT — and by
+        // construction ANY set up to ring size does; the 13th wraps.
+        let colony = [18u64, 19, 165, 174, 175, 193, 206, 212];
+        let mut sorted = colony.to_vec();
+        sorted.sort_unstable();
+        for u in colony {
+            let rank = sorted.iter().position(|&x| x == u).unwrap();
+            let a = gathering_spot(anchor, rank);
+            let b = gathering_spot(anchor, rank);
+            assert_eq!(a, b, "a regular's bench: same rank, same seat");
             let d = a - anchor;
             assert!(
                 d.x.abs() + d.y.abs() <= 6 && d.z == 0,
@@ -33470,7 +33494,12 @@ mod tests {
             );
             assert!(seats.insert(a), "no two colonists in one seat: {a:?}");
         }
-        assert_eq!(seats.len(), 12);
+        assert_eq!(seats.len(), 8, "eight colonists, eight distinct seats");
+        assert_eq!(
+            gathering_spot(anchor, 12),
+            gathering_spot(anchor, 0),
+            "the 13th villager shares the first bench — wrap, not panic"
+        );
     }
 
     #[test]
