@@ -1274,19 +1274,19 @@ fn main() {
             },
             ScriptCmd::ReadBlock { min, max } => {
                 let terrain = client.state().ecs().read_resource::<TerrainGrid>();
-                println!(
-                    "[{}] read_block [{},{},{}]..[{},{},{}]",
-                    ts(), min.x, min.y, min.z, max.x, max.y, max.z
-                );
+                log.log(&format!(
+                    "read_block [{},{},{}]..[{},{},{}]",
+                    min.x, min.y, min.z, max.x, max.y, max.z
+                ));
                 for z in min.z..=max.z {
                     for y in min.y..=max.y {
                         for x in min.x..=max.x {
                             match terrain.get(Vec3::new(x, y, z)) {
-                                Ok(b) => println!(
+                                Ok(b) => log.log(&format!(
                                     "BLOCK {} {} {} kind={:?} sprite={:?} filled={} solid={}",
                                     x, y, z, b.kind(), b.get_sprite(), b.is_filled(), b.is_solid()
-                                ),
-                                Err(_) => println!("BLOCK {x} {y} {z} UNLOADED"),
+                                )),
+                                Err(_) => log.log(&format!("BLOCK {x} {y} {z} UNLOADED")),
                             }
                         }
                     }

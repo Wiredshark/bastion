@@ -23068,6 +23068,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     });
                     job.progress += dur_mult
                         * crate::bastion_actions::work_progress(dt.0, skill_level, job.work, tool);
+                    // ★ THE INSPECTOR SEES ALL WORK (looking sweep: activity
+                    // read None mid-farm/mid-cook — only the chop arm below
+                    // ever wrote it, so the one field meant to answer "what
+                    // are they doing" answered only for lumberjacks). Chop
+                    // keeps its size-scaled write below; everyone else gets
+                    // the plain progress here.
+                    if !job.kind.is(DesignationKind::Chop)
+                        && let Some(arb) = arbiters.get_mut(entity)
+                    {
+                        arb.activity = Some((job.work, job.progress.clamp(0.0, 1.0)));
+                    }
                     // CHOP-FELLING (row 51.6): a base-cut completes at its
                     // SIZE-SCALED bar (CHOP_WORK_PER_BLOCK × Wood count,
                     // frozen at placement — bigger trees take longer, Ben's
