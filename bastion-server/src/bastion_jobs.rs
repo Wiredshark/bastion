@@ -3662,6 +3662,7 @@ pub fn preempt_cooldown_active(
     rest: f32,
     hunger: f32,
     mood_cfg: &common::bastion::MoodConfig,
+    sleep_block: bool,
 ) -> bool {
     let Some(until) = until else {
         return false;
@@ -3669,7 +3670,21 @@ pub fn preempt_cooldown_active(
     // Every write site inserts `now + PREEMPT_COOLDOWN_SECS`, so the start is
     // exact and the band can shorten the remaining wait without a new field.
     let set_at = until - PREEMPT_COOLDOWN_SECS;
-    now < set_at + band_preempt_cooldown_secs(worst_band(rest, hunger, mood_cfg))
+    // ★ BEDTIME PRICES RETRIES AT THE DIRE RATE (Alen sweep + the uid-206
+    // skip census: 983 cooldown skips, band=Fine cd=60 — the SCHEDULE forces
+    // the want at 22:00 but the band still reads the METER, which at bedtime
+    // is healthy, so schedule-driven rest attempts paid the full anti-thrash
+    // price meant for need-thrash: 60 sim-s ≈ 48 game-minutes per retry, and
+    // three retries is 02:00. During the Sleep block the retry cadence is
+    // the Dire floor — still non-zero, never removed, same law as the band
+    // ladder itself.
+    let band_cd = band_preempt_cooldown_secs(worst_band(rest, hunger, mood_cfg));
+    let cd = if sleep_block {
+        band_cd.min(PREEMPT_COOLDOWN_SECS / 12.0)
+    } else {
+        band_cd
+    };
+    now < set_at + cd
 }
 
 /// The band a colonist is judged on for [`band_preempt_cooldown_secs`]: its
@@ -16675,6 +16690,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 n.rest,
                                 n.hunger,
                                 mood_cfg,
+                                matches!(
+                                    default_schedule_block(hour_of_day(
+                                        rtsim.rt_state().data().time_of_day.0
+                                    )),
+                                    ScheduleBlock::Sleep
+                                ),
                             )
                         });
                         // AUTON-2 unification (site 4/6, ENDURE regression
@@ -18152,6 +18173,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     needs.rest,
                     needs.hunger,
                     &mood_cfg,
+                    matches!(sched_block, ScheduleBlock::Sleep),
                 ) {
                     let until = board.preempt_cooldown.get(uid).copied().unwrap_or(0.0);
                     let set_at = until - PREEMPT_COOLDOWN_SECS;
@@ -31238,7 +31260,7 @@ mod tests {
         let set_at = 1_000.0_f64;
         let until = set_at + PREEMPT_COOLDOWN_SECS;
         let active = |now: f64, rest: f32, hunger: f32| {
-            preempt_cooldown_active(Some(until), now, rest, hunger, &cfg)
+            preempt_cooldown_active(Some(until), now, rest, hunger, &cfg, false)
         };
 
         // ── A DIRE colonist waits the SHORT window. This is the case the band
@@ -31264,7 +31286,7 @@ mod tests {
 
         // ── NO COOLDOWN RECORDED = not on cooldown. An absent entry must never
         // read as active, or a colonist that never attempted anything is barred.
-        assert!(!preempt_cooldown_active(None, set_at, 0.0, 0.0, &cfg));
+        assert!(!preempt_cooldown_active(None, set_at, 0.0, 0.0, &cfg, false));
 
         // ── AND THE TWO BANDS MUST ACTUALLY DIFFER at some instant, or the
         // producer is uniform and the whole mechanism is decoration.
@@ -33652,6 +33674,30 @@ mod tests {
             "had_effect=true must wipe the watchdog accrual -- real work is the ground-truth \
              progress signal"
         );
+    }
+
+    #[test]
+    fn bedtime_prices_retries_at_the_dire_rate_and_day_does_not() {
+        // The Alen sweep's sleep tail: schedule forces the want at 22:00,
+        // the band still reads the healthy meter, and every retry paid the
+        // full 60s (≈48 game-minutes). During the Sleep block the cadence
+        // is the Dire floor — non-zero (the anti-thrash guard survives),
+        // and STRICTLY shorter than the Fine-band day price.
+        let cfg = common::bastion::MoodConfig::default();
+        let until = 1000.0; // cooldown written at 940.0
+        let healthy = (0.8f32, 0.8f32);
+        // Day, healthy bands: still cooling at +30s.
+        assert!(preempt_cooldown_active(
+            Some(until), 970.0, healthy.0, healthy.1, &cfg, false
+        ));
+        // Bedtime, same meters: the Dire floor (60/12 = 5s) has lapsed.
+        assert!(!preempt_cooldown_active(
+            Some(until), 970.0, healthy.0, healthy.1, &cfg, true
+        ));
+        // The floor is real: 3s in, even bedtime still cools.
+        assert!(preempt_cooldown_active(
+            Some(until), 943.0, healthy.0, healthy.1, &cfg, true
+        ));
     }
 
     #[test]
