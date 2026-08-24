@@ -82,6 +82,17 @@ break_over=$(grep -c "break over" "$V.w")
 helped=$(grep -c "HelpDownedEvent fired" "$V.w")
 helped_by_none=$(grep "HelpDownedEvent fired" "$V.w" | grep -c "helper=None")
 echo "@@@LEG slot=$SLOT arm='$ARM_ENV' fence=$FENCE longest_search=$lt top3_share=$top3 exhaust=$ex terminal_releases=${term:-NA} stuck=$stuck sleepers=$sleepers slept=$slept ate=$ate unreachable=$unreach arrived=$arrived died=$died outright=$outright belongings_drops=$bel_drops belongings_items=$bel_items final=${final_census:-NA} extinct=$extinct downed_plant=$downed_plant rescue_posted=$rescue_posted rescued=$rescued alarm_raised=$alarm_raised shelters=$shelters shelter_released=$shelter_released alarm_over=$alarm_over lounges=$lounges lounge_arrivals=$lounge_arrivals gather_seats=$gather_seats break_over=$break_over helped=$helped helped_by_none=$helped_by_none@@@"
+# RECREATE AUTOPSY (evening regression): the first three posted lounge
+# seats' full lifecycles — the posted line, then every subsequent line
+# naming that job id (claims, steers, releases with site numbers, arrival
+# or its absence). Needs BASTION_RELEASE_DIAG=1 in the arm env to carry
+# the per-job release lines.
+echo "@@@RECREATE-AUTOPSY slot=$SLOT"
+for J in $(grep "RECREATE posted (lounge seat)" "$V.w" | grep -o "job=[0-9]*" | cut -d= -f2 | head -3); do
+  echo "--- job $J:"
+  grep -E "job=$J[^0-9]|job=Some\($J\)" "$V.w" | tail -12 | sed 's/^.*bastion/bastion/' | cut -c1-200
+done
+echo "@@@END-AUTOPSY"
 # The chronicle half (Death records + actors incl. witnesses) via the real
 # wire path — one driver turn against the still-live world. Failure to turn
 # is reported, never silent: the chronicle bar reads VOID for that leg.

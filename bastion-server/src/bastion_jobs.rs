@@ -24166,6 +24166,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // Distinguish the two paths in the key so the fix cannot silently
             // launder a guess as a measurement: a `~`-prefixed class is
             // REMEMBERED, not observed at release time.
+            if std::env::var_os("BASTION_RELEASE_DIAG").is_some() {
+                // Per-JOB line (the census aggregates; the evening regression
+                // needed to know WHICH site killed WHICH Recreate and could
+                // not): id, kind-class, the reason, and the pushing site.
+                info!(
+                    job = ?active_jobs.get(*entity).map(|a| a.job),
+                    colonist = uids.get(*entity).map(|u| u.0.get()),
+                    class = live_class.unwrap_or("gone"),
+                    reason = ?release_reason,
+                    site = release_site,
+                    tick = tick.0,
+                    "bastion: RELEASE-DIAG per-job"
+                );
+            }
             let release_class = if live_class.is_none() && remembered.is_some() {
                 match release_class {
                     "eat" => "~eat",
@@ -24527,7 +24541,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             gathering_spot(anchor, rank)
                         })
                         .unwrap_or(feet);
-                    board.insert_recreate_job(spot, uid, until)
+                    let rid = board.insert_recreate_job(spot, uid, until);
+                    info!(
+                        job = rid,
+                        colonist = %uid,
+                        ?spot,
+                        until,
+                        "bastion: RECREATE posted (lounge seat)"
+                    );
+                    rid
                 },
                 // AUTON-2 unification (site 4/6, corrected per Fable
                 // DECISIONS #72): the job already exists — reclaim
