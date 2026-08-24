@@ -15814,6 +15814,85 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     "bastion: B7-2 beds assigned to their sleepers"
                 );
             }
+            // ★ MOVE-OUT v1.1 (measured 7 minutes into the city-pass soak:
+            // shared=15 of occupied=28 — the founding claim wave races
+            // terrain loading, so the first-registered houses get crammed
+            // and v1 had no way back out). A colonist SHARING a house
+            // (never the head — uid-sorted first member stays) upgrades to
+            // the nearest free bed in a VACANT house. Rate-limited to 2
+            // moves per sweep: the town un-crowds house by house as the
+            // city streams in, no migration stampede, and each move is a
+            // visible story (one family cart, not an exodus). No distance
+            // veto on purpose: a permanent house of one's own is worth a
+            // one-time cross-town move — the 186-block lesson priced a
+            // DAILY commute, not a moving day. Deterministic: houses in
+            // derive order, movers uid-sorted within, targets by
+            // claim-cost with position tiebreak.
+            {
+                let uid_entity: HashMap<common::uid::Uid, specs::Entity> =
+                    (&entities, &colonists)
+                        .join()
+                        .filter_map(|(e, _)| uids.get(e).map(|u| (*u, e)))
+                        .collect();
+                let mut vacant_free: Vec<Vec3<i32>> = board
+                    .beds
+                    .iter()
+                    .filter(|(p, s)| {
+                        s.owner.is_none()
+                            && bed_house
+                                .get(*p)
+                                .is_some_and(|&i| occupancy[i] == 0)
+                    })
+                    .map(|(p, _)| *p)
+                    .collect();
+                vacant_free.sort_by_key(|p| (p.x, p.y, p.z));
+                let mut moves = 0u32;
+                'houses: for h in households.iter().filter(|h| h.members.len() > 1) {
+                    for mover in h.members.iter().skip(1) {
+                        if moves >= 2 || vacant_free.is_empty() {
+                            break 'houses;
+                        }
+                        let Some(&ent) = uid_entity.get(mover) else { continue };
+                        let Some(old_bed) = colonists.get(ent).and_then(|c| c.0.owned_bed)
+                        else {
+                            continue;
+                        };
+                        let Some(best_i) = vacant_free
+                            .iter()
+                            .enumerate()
+                            .min_by_key(|(_, p)| bed_assignment_cost(**p, old_bed))
+                            .map(|(i, _)| i)
+                        else {
+                            continue;
+                        };
+                        let new_bed = vacant_free.swap_remove(best_i);
+                        // Both sides of ownership, atomically with the
+                        // occupancy the next candidate sees: the vacated
+                        // bed is NOT offered again this sweep (the old
+                        // house stays "theirs" until next derivation) so
+                        // two movers can't swap into each other's rooms.
+                        if let Some(slot) = board.beds.get_mut(&old_bed) {
+                            slot.owner = None;
+                        }
+                        if let Some(slot) = board.beds.get_mut(&new_bed) {
+                            slot.owner = Some(*mover);
+                        }
+                        if let Some(&i) = bed_house.get(&new_bed) {
+                            occupancy[i] += 1;
+                        }
+                        if let Some(mut c) = colonists.get_mut(ent) {
+                            c.0.owned_bed = Some(new_bed);
+                        }
+                        moves += 1;
+                        info!(
+                            colonist = mover.0.get(),
+                            from = ?old_bed,
+                            to = ?new_bed,
+                            "bastion: MOVED OUT — a sharer takes a vacant house of their own"
+                        );
+                    }
+                }
+            }
             // ★ HOUSEHOLDS v1 census: how the town actually lives. `vacant`
             // is claimable housing supply (the growth headroom number);
             // `shared` houses are families-in-waiting, not failures —
