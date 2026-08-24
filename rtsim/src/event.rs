@@ -63,6 +63,10 @@ pub struct OnHealthChange {
     pub cause: Option<Actor>,
     pub new_health_fraction: f32,
     pub change: f32,
+    /// Pre-change fraction — the wound-line CROSSING test needs both sides
+    /// (change is absolute HP; a fraction cannot be recovered from it).
+    /// In-process event, not wire: extending it is compile-checked.
+    pub old_health_fraction: f32,
 }
 impl Event for OnHealthChange {
     type SystemData<'a> = ();

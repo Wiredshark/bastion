@@ -308,6 +308,12 @@ impl ServerEvent for HealthChangeEvent {
                             .map(|by| by.uid())
                             .and_then(|uid| data.id_maps.uid_entity(uid))
                             .and_then(entity_as_actor);
+                        // Pre-change fraction, recovered from the post state
+                        // and the absolute delta (clamped: overkill would
+                        // otherwise read as >1 on the way down).
+                        let old_fraction = ((health.current() - ev.change.amount)
+                            / health.maximum().max(1.0))
+                        .clamp(0.0, 1.0);
                         data.rtsim.hook_rtsim_actor_hp_change(
                             &data.world,
                             data.index.as_index_ref(),
@@ -315,6 +321,7 @@ impl ServerEvent for HealthChangeEvent {
                             cause,
                             health.fraction(),
                             ev.change.amount,
+                            old_fraction,
                         );
                     }
                 }

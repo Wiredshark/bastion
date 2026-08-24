@@ -109,6 +109,11 @@ pub enum ChronicleKind {
     //    per the lock's extension rule as their emitter landed.
     SleptInBed,
     SleptOnGround,
+    /// bastion (looking-sweep row, 2026-08-23): a colonist crossed below
+    /// the wound line under attack — the sweep's finding was a cook mauled
+    /// twice with no record ("the village diary refuses to see violence").
+    /// Appended per the lock's extension rule as its emitter landed.
+    Wounded,
 }
 
 /// The importance BAND (S5) — a small canonical enum, `Purpose`-enum

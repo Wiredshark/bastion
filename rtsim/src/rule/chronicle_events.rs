@@ -1,7 +1,7 @@
 use crate::{
     RtState, Rule, RuleError,
     data::{ChronicleKind, Importance, Scope},
-    event::{EventCtx, OnDeath, OnTheft},
+    event::{EventCtx, OnDeath, OnHealthChange, OnTheft},
 };
 
 /// bastion (HIST-1, row 54): the Chronicle's first event-bus emitters — a
@@ -15,10 +15,53 @@ pub struct ChronicleEvents;
 impl Rule for ChronicleEvents {
     fn start(rtstate: &mut RtState) -> Result<Self, RuleError> {
         rtstate.bind::<Self, OnDeath>(on_death);
+        rtstate.bind::<Self, OnHealthChange>(on_wounded);
         rtstate.bind::<Self, OnTheft>(on_theft);
 
         Ok(Self)
     }
+}
+
+/// bastion (looking-sweep row): the diary SEES violence now. One record
+/// per wound-line CROSSING (prev >= 0.5 > new, hostile cause required), so
+/// a flurry of blows in one fight records once on the way down — recover
+/// above the line and a later mauling records again. Witnesses ride the
+/// same actors list as Death (the sweep's cook was mauled twice with no
+/// record and no one to remember it).
+fn on_wounded(ctx: EventCtx<ChronicleEvents, OnHealthChange>) {
+    const WOUND_LINE: f32 = 0.5;
+    let ev = &ctx.event;
+    let Some(cause) = ev.cause else { return };
+    if !(ev.change < 0.0
+        && ev.old_health_fraction >= WOUND_LINE
+        && ev.new_health_fraction < WOUND_LINE)
+    {
+        return;
+    }
+    let data = &mut *ctx.state.data_mut();
+    let now = data.time_of_day;
+    let wpos = match ev.actor {
+        common::rtsim::Actor::Npc(id) => data.npcs.get(id).map(|n| n.wpos),
+        _ => None,
+    };
+    let mut actors = vec![ev.actor, cause];
+    if let Some(wpos) = wpos {
+        actors.extend(witness_actors(
+            data.npcs.nearby(None, wpos, 32.0),
+            ev.actor,
+            Some(cause),
+        ));
+    }
+    data.chronicle.record(
+        now,
+        ChronicleKind::Wounded,
+        actors,
+        None,
+        wpos.map(|p| p.map(|e| e.floor() as i32)),
+        Importance::Routine,
+        Scope::World,
+        None,
+    );
 }
 
 fn on_death(ctx: EventCtx<ChronicleEvents, OnDeath>) {

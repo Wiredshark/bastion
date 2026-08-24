@@ -1084,6 +1084,7 @@ impl RtSim {
         cause: Option<Actor>,
         new_hp_fraction: f32,
         change: f32,
+        old_hp_fraction: f32,
     ) {
         self.state.emit(
             OnHealthChange {
@@ -1091,6 +1092,7 @@ impl RtSim {
                 cause,
                 new_health_fraction: new_hp_fraction,
                 change,
+                old_health_fraction: old_hp_fraction,
             },
             &mut (),
             world,
