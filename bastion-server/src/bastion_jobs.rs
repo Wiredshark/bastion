@@ -8265,6 +8265,14 @@ pub struct JobBoard {
     /// at the wall foot for six minutes, "displacing" every window while
     /// making zero net progress toward its target.
     travel_stall_watch: HashMap<Uid, (Vec3<f32>, f32, f64)>,
+    /// ★ Detour tier ledger — (target, next tier) surviving a
+    /// budget-exhausted attempt. The escalation ladder read its tier from
+    /// `detours`, and exhaustion REMOVED the entry: tier reset to 0 every
+    /// retry, Medium ran forever, Long never ran (watched live: the same
+    /// two colonists exhausting Medium every ~300 ticks, tier=0 each
+    /// time). Success and target-moved clear it; Unreachable (a proof,
+    /// not a budget) does not write it.
+    detour_tiers: HashMap<Uid, (Vec3<f32>, u8)>,
     /// bastion (ITEM 29, flag-gated): per-colonist DETOUR — (waypoints, the
     /// leg-ahead steer index, the final target it was computed for, searches
     /// bought so far). Board-side and NOT on `ActiveJob`, which is
@@ -22308,8 +22316,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         common::path::PathState::Exhausted
                                     )
                             });
-                            let tier =
-                                board.detours.get(&u).map(|(_, _, _, t)| *t).unwrap_or(0);
+                            let tier = board
+                                .detours
+                                .get(&u)
+                                .map(|(_, _, _, t)| *t)
+                                .unwrap_or(0)
+                                .max(
+                                    board
+                                        .detour_tiers
+                                        .get(&u)
+                                        .filter(|(t, _)| {
+                                            t.distance_squared(steer) <= 1.0
+                                        })
+                                        .map(|(_, t)| *t)
+                                        .unwrap_or(0),
+                                );
                             if stalled
                                 && wall_face
                                 && tier < DETOUR_ATTEMPTS_MAX
@@ -26966,6 +26987,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         let leg = detour_leg_end(&path, 0);
                         let nodes = path.len();
                         board.detours.insert(u, (path, leg, to, tier + 1));
+                        board.detour_tiers.remove(&u);
                         board.detours_installed += 1;
                         ("path", nodes, leg)
                     },
@@ -26990,6 +27012,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     common::path::FullPathOutcome::BudgetExhausted => {
                         board.detours_budget_exhausted += 1;
                         board.detours.remove(&u);
+                        // The rung memory the retry climbs (see the
+                        // ledger's doc): next attempt runs one tier up.
+                        board.detour_tiers.insert(u, (to, tier + 1));
                         ("budget_exhausted", 0, 0)
                     },
                 };
