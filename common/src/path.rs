@@ -1760,6 +1760,49 @@ where
                     .into_iter()
                     .flatten(),
             )
+            // ★ VAULT EDGES (the 13-tps bisect's conclusion: fence-tops-
+            // not-floors made fully-fenced FIELDS unreachable, so every
+            // farm-job search ran to exhaustion — the costliest outcome —
+            // and the tick ground down; the cost-feature levers proved it
+            // was none of them). The router now crosses a waist-band
+            // sprite the way the BODY already can (the vault contract):
+            // from a standable cell, over a hurdle cell (solid sprite,
+            // 0.2..=1.6 solid height), onto the standable cell beyond —
+            // two blocks of travel priced at two flat moves plus half (a
+            // gate or gap stays cheaper where one exists; walking ALONG
+            // the fence line stays impossible). Colonist-gated like
+            // scrambles: vanilla NPCs keep their own rules.
+            .chain(
+                (traversal_cfg.scramble_reach > 0)
+                    .then(|| {
+                        [
+                            Vec3::new(1, 0, 0),
+                            Vec3::new(-1, 0, 0),
+                            Vec3::new(0, 1, 0),
+                            Vec3::new(0, -1, 0),
+                        ]
+                        .into_iter()
+                        .filter_map(move |dir| {
+                            let hurdle = pos + dir;
+                            let landing = pos + dir * 2;
+                            let is_hurdle = vol.get(hurdle).is_ok_and(|b| {
+                                b.get_sprite().is_some()
+                                    && b.is_solid()
+                                    && (0.2..=1.6).contains(&b.solid_height())
+                            });
+                            (is_hurdle && is_walkable(&landing)).then(|| {
+                                let next_node = Node {
+                                    pos: landing,
+                                    last_dir: dir.xy(),
+                                    last_dir_count: 0,
+                                };
+                                (next_node, 7.5)
+                            })
+                        })
+                    })
+                    .into_iter()
+                    .flatten(),
+            )
         // .chain(
         //     DIAGONALS
         //         .iter()
