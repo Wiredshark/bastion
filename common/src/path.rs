@@ -154,6 +154,14 @@ pub struct TraversalConfig {
     /// data. Walk destinations in this set pay [`WALL_MARGIN`] unless they
     /// are road cells. Empty for vanilla/emergency callers: zero effect.
     pub wall_margin_cells: std::sync::Arc<std::collections::HashSet<Vec2<i32>>>,
+    /// ★ INTERIOR PRICING (Ben: "colonists try to go through homes to
+    /// reach their destination"): every column of a Building tile,
+    /// founding-computed. Walk edges into these pay [`INTERIOR_SURCHARGE`]
+    /// additively — entering your DESTINATION building stays cheap (a few
+    /// cells), cutting THROUGH a house prices the whole crossing, so
+    /// through-traffic goes around. Empty for vanilla/emergency: zero
+    /// effect.
+    pub interior_cells: std::sync::Arc<std::collections::HashSet<Vec2<i32>>>,
 }
 
 /// Walk-edge multiplier for a move INTO a road column. 0.5: a street path
@@ -169,6 +177,11 @@ pub const ROAD_FACTOR: f32 = 0.5;
 /// one-cell-out line wins along a wall, a doorway pays it twice and goes
 /// through anyway.
 pub const WALL_MARGIN: f32 = 1.5;
+/// Additive per-column surcharge for walking INSIDE a building. 2.0 ≈ a
+/// 12-column house crossing costs +24 — always dearer than rounding it —
+/// while a doorway-to-bed entry (~4 cells) costs +8, cheaper than any
+/// detour to a different building. Additive keeps the heuristic admissible.
+pub const INTERIOR_SURCHARGE: f32 = 2.0;
 fn road_pricing_off() -> bool {
     static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *OFF.get_or_init(|| std::env::var_os("BASTION_NO_ROAD_PRICING").is_some())
@@ -177,6 +190,10 @@ fn road_pricing_off() -> bool {
 fn wall_margin_off() -> bool {
     static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *OFF.get_or_init(|| std::env::var_os("BASTION_NO_WALL_MARGIN").is_some())
+}
+fn interior_pricing_off() -> bool {
+    static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *OFF.get_or_init(|| std::env::var_os("BASTION_NO_INTERIOR_PRICING").is_some())
 }
 fn jitter_off() -> bool {
     static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -1637,6 +1654,15 @@ where
                 // column set exactly like road_cells: one hash lookup, zero
                 // block reads. Roads exempt by construction (a walled
                 // street is still the street).
+                // ★ INTERIOR (see the field's doc): roads exempt by
+                // disjointness (streets are never Building tiles).
+                let interior = if !interior_pricing_off()
+                    && traversal_cfg.interior_cells.contains(&next_node.pos.xy())
+                {
+                    INTERIOR_SURCHARGE
+                } else {
+                    0.0
+                };
                 let wall_margin = if !wall_margin_off()
                     && road >= 1.0
                     && traversal_cfg.wall_margin_cells.contains(&next_node.pos.xy())
@@ -1672,7 +1698,8 @@ where
                         + if dir.z == 0 { edge_cost } else { 0.0 }
                         + swim)
                         * road
-                        + wall_margin)
+                        + wall_margin
+                        + interior)
                         * jitter,
                 )
             })
@@ -3101,6 +3128,7 @@ pub(super) fn trap_house_world() -> MockVol {
             road_cells: Default::default(),
             route_jitter_seed: 0,
             wall_margin_cells: Default::default(),
+            interior_cells: Default::default(),
         }
     }
 

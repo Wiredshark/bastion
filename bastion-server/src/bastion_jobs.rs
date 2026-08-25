@@ -6212,6 +6212,7 @@ fn m3_promoted_corridor_waypoint(
             road_cells: Default::default(),
             route_jitter_seed: 0,
             wall_margin_cells: Default::default(),
+            interior_cells: Default::default(),
         };
         let path = common::path::bastion_full_path(terrain, position, mount_center, &cfg)?;
         if path.is_empty() || path.len() > 64 || path.last().copied() != Some(mount) {
@@ -6548,6 +6549,7 @@ where
         road_cells: Default::default(),
         route_jitter_seed: 0,
         wall_margin_cells: Default::default(),
+        interior_cells: Default::default(),
     };
     let Some(path) = common::path::bastion_full_path(terrain, actual_start, target, &cfg) else {
         return (None, None);
@@ -8343,6 +8345,9 @@ pub struct JobBoard {
     /// walls, founding-computed from site tiles; searches price them via
     /// TraversalConfig. Empty pre-founding.
     pub wall_margin_cells: std::sync::Arc<std::collections::HashSet<Vec2<i32>>>,
+    /// ★ Building-interior columns (see TraversalConfig::interior_cells).
+    /// Empty pre-founding.
+    pub interior_cells: std::sync::Arc<std::collections::HashSet<Vec2<i32>>>,
     /// ★ MOVE ASSISTS by class (vault/climb/step/descend) — the honesty
     /// counter for the router's-promise-is-a-contract law. Assists are
     /// leniency, not silence: an exploding rate here is the tracked-red
@@ -21856,6 +21861,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     road_cells: board.road_cells.clone(),
                                     route_jitter_seed: 0,
                                     wall_margin_cells: board.wall_margin_cells.clone(),
+                                    interior_cells: board.interior_cells.clone(),
                                 };
                                 match common::path::bastion_full_path(
                                     &*terrain, pos.0, target, &cfg,
@@ -22070,6 +22076,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     time.0,
                                     &board.road_cells,
                                     &board.wall_margin_cells,
+                                    &board.interior_cells,
                                 );
                                 detour_requests.push((u, pos.0, steer, cfg, tier, active.job));
                             }
@@ -22270,12 +22277,35 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // then drop). Same speed, same distance —
                                 // just never through a block face.
                                 let d = target - pos.0;
-                                let phased = if d.z > 0.2 {
+                                // ★ THE GLIDE, v5 (Ben on ledges: "why is
+                                // this so hard — it should just glide
+                                // them"; extensive external research,
+                                // unanimous — Unity CharacterController
+                                // stepOffset, Godot KCC snap-up/snap-down,
+                                // ammo.js stepHeight, rapier's controller:
+                                // a WALKING body never stops to rise in
+                                // place; motion stays HORIZONTAL and the
+                                // controller offsets the feet to the
+                                // surface while crossing a sub-threshold
+                                // step, snapping DOWN on step-offs so it
+                                // never floats). v3's axis-phasing was
+                                // climbing-body prior art applied to a
+                                // walker — the stop-rise-walk seam WAS the
+                                // ledge hesitation, and the micro-collider
+                                // holding any in-place rise under a canopy
+                                // or eave turned it into a hard stall.
+                                // Route steps are ±1 block by construction,
+                                // so ONE VOXEL is the step offset; only
+                                // deeper promises keep the phased shape.
+                                let horiz = Vec3::new(d.x, d.y, 0.0);
+                                let phased = if d.z > 1.2 {
                                     Vec3::new(0.0, 0.0, d.z)
-                                } else if d.z < -0.2 && d.xy().magnitude() > 0.3 {
-                                    Vec3::new(d.x, d.y, 0.0)
+                                } else if d.z < -1.2 && horiz.magnitude() > 0.3 {
+                                    horiz
+                                } else if horiz.magnitude() > 0.05 {
+                                    horiz // GLIDE: z comes from the surface
                                 } else {
-                                    d
+                                    d // xy arrived: settle the last of z
                                 };
                                 let dist = phased.magnitude();
                                 if dist > 0.05 {
@@ -22298,42 +22328,79 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     let anim = (d / d.magnitude().max(0.01))
                                         * KINEMATIC_WALK_SPEED;
                                     let try_pos = pos.0 + dir * step;
-                                    // ★ MICRO-COLLIDER (Ben live: "colonists
-                                    // try to pass through walls"). v3's
-                                    // phased stepping stopped VERTICAL
-                                    // tunneling; the lookahead's corner-cut
-                                    // — and a far-off head after a re-path —
-                                    // could still carry the body through a
-                                    // wall HORIZONTALLY, because a kinematic
-                                    // mover has no physics to stop it. Never
-                                    // enter a solid cell: if the stepped-to
-                                    // column is solid at feet or head
-                                    // height, slide along whichever single
-                                    // axis is free; if both are blocked,
-                                    // HOLD — the watchdog clock then runs
-                                    // and the assist/repath machinery
-                                    // inherits the case honestly.
-                                    let blocked = |p: Vec3<f32>| {
-                                        let c = p.map(|e| e.floor() as i32);
-                                        (0..2).any(|dz| {
-                                            terrain
-                                                .get(Vec3::new(c.x, c.y, c.z + dz))
-                                                .is_ok_and(|b| b.is_solid())
-                                        })
+                                    // ★ SURFACE-FOLLOW + MICRO-COLLIDER in
+                                    // one probe: at the stepped-to column,
+                                    // find the standable surface within one
+                                    // step of the current feet (solid below,
+                                    // two clear above — the clearance the
+                                    // router promised). Found: the feet land
+                                    // THERE — glides up a 1-step rise, snaps
+                                    // down a 1-step drop, flat stays flat;
+                                    // and a wall can never be entered,
+                                    // because a wall column has no standable
+                                    // surface in the window. Not found: try
+                                    // each axis alone (the slide), else HOLD
+                                    // — the watchdog runs and the assist/
+                                    // repath machinery inherits the case
+                                    // honestly.
+                                    let surface_at = |p: Vec3<f32>| -> Option<f32> {
+                                        let cx = p.x.floor() as i32;
+                                        let cy = p.y.floor() as i32;
+                                        let fz = pos.0.z.floor() as i32;
+                                        // Nearest surface first: level, one
+                                        // up, one down (route steps are ±1).
+                                        for dz in [0i32, 1, -1] {
+                                            let solid = |q: Vec3<i32>| {
+                                                terrain
+                                                    .get(q)
+                                                    .is_ok_and(|b| b.is_solid())
+                                            };
+                                            let below =
+                                                Vec3::new(cx, cy, fz + dz - 1);
+                                            let feet =
+                                                Vec3::new(cx, cy, fz + dz);
+                                            let head =
+                                                Vec3::new(cx, cy, fz + dz + 1);
+                                            if solid(below)
+                                                && !solid(feet)
+                                                && !solid(head)
+                                            {
+                                                return Some((fz + dz) as f32);
+                                            }
+                                        }
+                                        None
                                     };
                                     let x_slide =
                                         Vec3::new(try_pos.x, pos.0.y, try_pos.z);
                                     let y_slide =
                                         Vec3::new(pos.0.x, try_pos.y, try_pos.z);
-                                    let new_pos = if !blocked(try_pos) {
-                                        Some(try_pos)
-                                    } else if dir.x.abs() > 0.01 && !blocked(x_slide) {
-                                        Some(x_slide)
-                                    } else if dir.y.abs() > 0.01 && !blocked(y_slide) {
-                                        Some(y_slide)
+                                    let mut new_pos = None;
+                                    if phased.xy().magnitude() <= 0.05 {
+                                        // Pure-vertical settle (xy arrived):
+                                        // z is the node's own promise — no
+                                        // surface probe, no slide.
+                                        new_pos = Some(try_pos);
                                     } else {
-                                        None
-                                    };
+                                        for cand in [try_pos, x_slide, y_slide] {
+                                            if let Some(gz) = surface_at(cand) {
+                                                new_pos = Some(Vec3::new(
+                                                    cand.x, cand.y, gz,
+                                                ));
+                                                break;
+                                            }
+                                        }
+                                        // Deep-drop walk-out: no surface in
+                                        // the window is EXPECTED over the
+                                        // void — keep the horizontal motion
+                                        // at current z; the settle branch
+                                        // drops once xy is done.
+                                        if new_pos.is_none()
+                                            && d.z < -1.2
+                                            && horiz.magnitude() > 0.3
+                                        {
+                                            new_pos = Some(try_pos);
+                                        }
+                                    }
                                     if let Some(np) = new_pos {
                                         pending_kinematic.push((entity, np, anim));
                                         // ★ v3 WATCHDOG TRUTH: under kinematic
