@@ -8359,6 +8359,14 @@ pub struct JobBoard {
     /// meeting hall UNTIL work appears). Meter-driven and evening-schedule
     /// breaks are NOT in this set — needs and evenings outrank work.
     pub idle_breaks: std::collections::HashSet<JobId>,
+    /// ★ PAR-ORIGIN jobs (colony-need generators: wood par, and siblings
+    /// to come). The first marked tree sat unclaimed 20+ minutes: with 800
+    /// routine jobs on the board, a structural-need job 150 cells out
+    /// loses every distance-scored contest to the haul next door — the
+    /// SAME defect as player paint before its mandate tier (513 painted
+    /// jobs, zero claims). Same cure: ids here claim ONE TIER UP, compared
+    /// before distance. RimWorld's work priorities, DF's job priorities.
+    pub par_jobs: std::collections::HashSet<JobId>,
     /// ★ MOVE ASSISTS by class (vault/climb/step/descend) — the honesty
     /// counter for the router's-promise-is-a-contract law. Assists are
     /// leniency, not silence: an exploding rate here is the tracked-red
@@ -10599,6 +10607,10 @@ impl JobBoard {
 
 
     pub fn remove_job(&mut self, id: JobId) -> Option<Job> {
+        // Membership sets ride THE removal path (B17's rule) so no caller
+        // can leak an entry.
+        self.idle_breaks.remove(&id);
+        self.par_jobs.remove(&id);
         let job = self.jobs.remove(&id);
         if let Some(j) = &job
             && let Some(rid) = j.reservation
@@ -16555,6 +16567,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         if !cells.is_empty()
                             && let Some(id) = board.place_chop_fell(&terrain, seed, &cells)
                         {
+                            // Par-origin: the colony NEEDS this wood — the
+                            // job claims a tier up (see par_jobs doc).
+                            board.par_jobs.insert(id);
                             info!(
                                 job = id,
                                 ?seed,
@@ -31221,6 +31236,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // chasing the job on top.
                 census.eligible += 1;
                 let priority = if job.is_access || job.kind.is(DesignationKind::Ladder) {
+                    priority.saturating_add(1)
+                } else {
+                    priority
+                };
+                // ★ PAR MANDATE (see par_jobs doc): colony-need jobs claim
+                // a tier up, so the marked tree beats the haul next door.
+                let priority = if board.par_jobs.contains(&id) {
                     priority.saturating_add(1)
                 } else {
                     priority
