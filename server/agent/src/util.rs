@@ -17,6 +17,16 @@ use rand::RngExt;
 use specs::Entity as EcsEntity;
 use vek::*;
 
+/// ★ KINEMATIC COLONIST MOVER flag (the paradigm-mismatch charter, Ben's
+/// research order 2026-08-24). Default OFF: unset env = byte-identical
+/// physics travel. When set, colonist Goto steering output is withdrawn
+/// (route retention/advancement unchanged) and the bastion jobs tick
+/// integrates the body along the route directly.
+pub fn kinematic_mover_enabled() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("BASTION_KINEMATIC_MOVER").is_some())
+}
+
 pub fn is_dead_or_invulnerable(entity: EcsEntity, read_data: &ReadData) -> bool {
     is_dead(entity, read_data) || is_invulnerable(entity, read_data)
 }

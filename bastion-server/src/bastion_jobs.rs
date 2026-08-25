@@ -4701,6 +4701,18 @@ pub const CLIMB_BAN_SECS: f64 = 300.0;
 /// would pre-empt jumps the body was about to land.
 pub const VAULT_TIMEOUT: f32 = 1.5;
 
+/// ★ KINEMATIC COLONIST MOVER (the paradigm-mismatch charter). Walk speed
+/// in blocks/sec for route-following integration — tuned to read as an
+/// unhurried villager (vanilla walk ≈ 2-3 b/s). The fixed dt matches the
+/// capped server tick; an uncapped fixture server just walks faster,
+/// which every fixture already tolerates (sim-time judged).
+pub const KINEMATIC_WALK_SPEED: f32 = 2.5;
+pub const KINEMATIC_DT: f32 = 1.0 / 30.0;
+pub(crate) fn kinematic_mover_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("BASTION_KINEMATIC_MOVER").is_some())
+}
+
 /// ALARM v1 (Ben: "sound a alarm and base that on sound distance radius").
 /// How far the cry carries: civilians inside this radius of the perceiver's
 /// post take shelter; beyond it, life continues -- the whole point of a
@@ -19548,6 +19560,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // join holds `positions` immutably, so the assist records the
         // promised cell here and the apply runs once the borrow ends.
         let mut pending_assists: Vec<(specs::Entity, Vec3<i32>)> = Vec::new();
+        // KINEMATIC MOVER: (entity, new position, velocity-for-animation).
+        let mut pending_kinematic: Vec<(specs::Entity, Vec3<f32>, Vec3<f32>)> = Vec::new();
         let mut upkeep_iter = (
             &entities,
             &mut colonists,
@@ -21747,6 +21761,37 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         TRAVEL_SPEED
                                     },
                                 ));
+                        }
+                        // ★ KINEMATIC COLONIST MOVER (charter, Ben's
+                        // research order): under the flag the body FOLLOWS
+                        // THE ROUTE — position integrated toward the
+                        // chaser's current node at walk speed, velocity
+                        // written so the walking animation reads true. The
+                        // agent tick withdrew its physics steering (see
+                        // action_nodes); route retention and node
+                        // advancement still key on position proximity, so
+                        // this integration drives them naturally. Deferred
+                        // write (positions are join-borrowed here).
+                        if kinematic_mover_on() {
+                            if let Some(head) = agent
+                                .as_deref()
+                                .and_then(|a| a.chaser.diagnostic_snapshot().route_head)
+                            {
+                                let target =
+                                    head.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
+                                let d = target - pos.0;
+                                let dist = d.magnitude();
+                                if dist > 0.05 {
+                                    let step =
+                                        (KINEMATIC_WALK_SPEED * KINEMATIC_DT).min(dist);
+                                    let dir = d / dist;
+                                    pending_kinematic.push((
+                                        entity,
+                                        pos.0 + dir * step,
+                                        dir * KINEMATIC_WALK_SPEED,
+                                    ));
+                                }
+                            }
                         }
                         // Watchdog: distance to the CURRENT steer target
                         // must keep improving; pacing near an unreachable
@@ -25069,6 +25114,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             }
             if let Some(v) = velocities.get_mut(entity) {
                 v.0 = Vec3::zero();
+            }
+        }
+        // ★ KINEMATIC MOVER apply: the route IS the motion.
+        for (entity, new_pos, vel) in pending_kinematic.drain(..) {
+            if let Some(p) = positions.get_mut(entity) {
+                p.0 = new_pos;
+            }
+            if let Some(v) = velocities.get_mut(entity) {
+                v.0 = vel;
             }
         }
         // ★ EAT RE-TARGET drain (2026-08-21): re-aim every EatFrom whose meal

@@ -1037,6 +1037,21 @@ impl AgentData<'_> {
                     {
                         controller.push_action(ControlAction::Unwield);
                     }
+                    // ★ KINEMATIC COLONIST MOVER (charter, Ben's research
+                    // order: "we tried fixing this 1000 times" — the
+                    // paradigm-mismatch verdict). Under the flag, a
+                    // COLONIST'S travel is not physics-driven: the chase
+                    // above still ran (it owns route retention and node
+                    // advancement, which key on position proximity), but
+                    // its steering output is withdrawn — the bastion jobs
+                    // tick integrates the body along the route directly.
+                    // Physics keeps gravity, knockback and combat; players
+                    // and vanilla NPCs are untouched.
+                    if crate::util::kinematic_mover_enabled()
+                        && read_data.colonists.contains(*self.entity)
+                    {
+                        controller.inputs.move_dir = Vec2::zero();
+                    }
                     break 'activity; // Don't fall through to idle wandering
                 },
 
