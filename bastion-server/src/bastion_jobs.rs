@@ -25562,6 +25562,66 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 v.0 = Vec3::zero();
             }
         }
+        // ★ RADIATE (external research: RimWorld's own crowd shape — no
+        // ORCA/velocity obstacles; walking pawns may overlap, but pawns
+        // "radiate to nearby available cells" when stacked at rest —
+        // Ben's screenshot: a line of colonists packed inside one wall
+        // cell). STATIONARY colonists sharing a cell get spread to
+        // adjacent standable cells, deterministic (uid order chooses who
+        // moves, cardinal order chooses where). Walkers are exempt: a
+        // passing crowd may briefly overlap, exactly like RimWorld.
+        if tick.0 % (ARBITRATION_INTERVAL as u64 * 4) == 2 {
+            let moved_now: HashSet<specs::Entity> =
+                pending_kinematic.iter().map(|(e, ..)| *e).collect();
+            let mut cell_of: HashMap<Vec3<i32>, specs::Entity> = HashMap::new();
+            let mut radiate: Vec<(specs::Entity, Vec3<i32>)> = Vec::new();
+            let mut standing: Vec<(u64, specs::Entity, Vec3<i32>)> = (&entities, &colonists, &positions)
+                .join()
+                .filter(|(e, _, _)| !moved_now.contains(e))
+                .filter_map(|(e, _, p)| {
+                    uids.get(e).map(|u| (u.0.get(), e, p.0.map(|v| v.floor() as i32)))
+                })
+                .collect();
+            standing.sort_by_key(|(u, _, _)| *u);
+            for (_, e, cell) in standing {
+                if cell_of.contains_key(&cell) {
+                    // Occupied by an earlier (lower-uid) stander: radiate.
+                    let spot = [
+                        Vec3::new(1, 0, 0),
+                        Vec3::new(-1, 0, 0),
+                        Vec3::new(0, 1, 0),
+                        Vec3::new(0, -1, 0),
+                        Vec3::new(1, 1, 0),
+                        Vec3::new(-1, -1, 0),
+                    ]
+                    .into_iter()
+                    .map(|d| cell + d)
+                    .find(|n| {
+                        !cell_of.contains_key(n)
+                            && terrain.get(*n).map(|b| !b.is_solid()).unwrap_or(false)
+                            && terrain
+                                .get(*n + Vec3::unit_z())
+                                .map(|b| !b.is_solid())
+                                .unwrap_or(false)
+                            && terrain
+                                .get(*n - Vec3::unit_z())
+                                .map(|b| b.is_solid())
+                                .unwrap_or(false)
+                    });
+                    if let Some(spot) = spot {
+                        cell_of.insert(spot, e);
+                        radiate.push((e, spot));
+                    }
+                } else {
+                    cell_of.insert(cell, e);
+                }
+            }
+            for (e, spot) in radiate {
+                if let Some(p) = positions.get_mut(e) {
+                    p.0 = spot.map(|v| v as f32) + Vec3::new(0.5, 0.5, 0.0);
+                }
+            }
+        }
         // ★ KINEMATIC MOVER apply (v2): the route IS the motion, and the
         // physics opt-out marker makes it SOLE OWNER — v1's A/B failed at
         // 1360 assists precisely because physics kept integrating gravity
