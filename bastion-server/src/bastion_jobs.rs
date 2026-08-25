@@ -28975,6 +28975,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     );
                     pos.0 = d.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
                     vel.0 = Vec3::zero();
+                    // ★ THE EJECT TESTIFIES (day-3: only 9 cells condemned
+                    // against 84 teleports — eject-bound colonists travel
+                    // the EMERGENCY pipeline and never hit the travel-arm
+                    // timeout counter, so the strongest unreachability
+                    // evidence never reached the condemner). A teleport is
+                    // worth three ordinary timeouts: two ejects at one
+                    // destination condemn it.
+                    *board
+                        .timeout_counts_by_pos
+                        .entry(d)
+                        .or_insert(0) += 3;
                     record_assist_write(
                         tick.0,
                         *uid,
