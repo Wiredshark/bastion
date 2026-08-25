@@ -230,8 +230,8 @@ impl Route {
             let next1 = self.next(1).unwrap_or(next0);
 
             // Stop using obstructed paths
-            if !walkable(vol, next0, traversal_cfg.is_target_loaded)
-                || !walkable(vol, next1, traversal_cfg.is_target_loaded)
+            if !walkable(vol, next0, traversal_cfg.is_target_loaded, traversal_cfg.scramble_reach > 0)
+                || !walkable(vol, next1, traversal_cfg.is_target_loaded, traversal_cfg.scramble_reach > 0)
             {
                 return Err(TraverseStop::InvalidPath);
             }
@@ -1082,7 +1082,7 @@ impl Chaser {
     }
 }
 
-fn walkable<V>(vol: &V, pos: Vec3<i32>, is_target_loaded: bool) -> bool
+fn walkable<V>(vol: &V, pos: Vec3<i32>, is_target_loaded: bool, colonist_rules: bool) -> bool
 where
     V: BaseVol<Vox = Block> + ReadVol,
 {
@@ -1128,7 +1128,9 @@ where
                         // height 0.2..=1.6) is something you vault OVER,
                         // never a platform you path ALONG; flat coverings
                         // (carpets etc., ≤0.2) stay floors.
-                        && (admission_fixes_off() || !(0.2..=1.6).contains(&h))
+                        && (!colonist_rules
+                            || admission_fixes_off()
+                            || !(0.2..=1.6).contains(&h))
                 })
         });
     let in_liquid = a.is_liquid();
@@ -1136,7 +1138,9 @@ where
     // window is a non-solid sprite, so a body cell inside one passed the
     // walkability check and every window became a door). A cell whose
     // body space holds a window sprite is not a place to stand or pass.
-    let through_window = !admission_fixes_off() && [a, b].iter().any(|blk| {
+    let through_window = colonist_rules
+        && !admission_fixes_off()
+        && [a, b].iter().any(|blk| {
         blk.get_sprite().is_some_and(|s| {
             matches!(
                 s,
@@ -1281,7 +1285,20 @@ fn find_path<V>(
 where
     V: BaseVol<Vox = Block> + ReadVol,
 {
-    let is_walkable = |pos: &Vec3<i32>| walkable(vol, *pos, traversal_cfg.is_target_loaded);
+    let is_walkable = |pos: &Vec3<i32>| {
+        walkable(
+            vol,
+            *pos,
+            traversal_cfg.is_target_loaded,
+            // ★ SCOPED ADMISSION (the metrics A/B: agent 49ms with the
+            // window/fence checks universal, 9.7ms without — 600 wild
+            // NPCs paid for town discipline they never needed). The
+            // colonist discriminator that already gates scrambles gates
+            // the admission rules too: town rules for town walkers,
+            // vanilla rules for the wilderness.
+            traversal_cfg.scramble_reach > 0,
+        )
+    };
     // ★ NEAR-FIRST, NEIGHBOURS-BEFORE-ROOF (flat-lab conviction 2026-08-23).
     // The old single-column ±16 alternation, faced with an INDOOR goal whose
     // column is roofed solid — a hearth under its chimney — marched straight
