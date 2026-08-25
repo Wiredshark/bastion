@@ -15769,9 +15769,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     .collect();
                 for p in newly {
                     board.condemned_cells.insert(p);
+                    // Day-4's bypass (14 of 114 teleports recurred AFTER
+                    // condemnation): jobs claimed before conviction kept
+                    // walking. Conviction now releases every live job at
+                    // the cell — claimed or not — so nobody finishes a
+                    // doomed walk.
+                    let doomed: Vec<JobId> = board
+                        .jobs
+                        .iter()
+                        .filter(|(_, j)| j.pos == p)
+                        .map(|(id, _)| *id)
+                        .collect();
+                    for id in doomed {
+                        board.remove_job(id);
+                    }
                     info!(
                         pos = ?p,
-                        "bastion: CELL CONDEMNED — repeatedly unreachable; jobs here will no longer be claimed"
+                        "bastion: CELL CONDEMNED — repeatedly unreachable; live jobs dropped, no walker will be sent again"
                     );
                 }
             }
@@ -28975,17 +28989,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     );
                     pos.0 = d.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
                     vel.0 = Vec3::zero();
-                    // ★ THE EJECT TESTIFIES (day-3: only 9 cells condemned
-                    // against 84 teleports — eject-bound colonists travel
-                    // the EMERGENCY pipeline and never hit the travel-arm
-                    // timeout counter, so the strongest unreachability
-                    // evidence never reached the condemner). A teleport is
-                    // worth three ordinary timeouts: two ejects at one
-                    // destination condemn it.
+                    // ★ THE EJECT TESTIFIES, FINAL FORM (day-4: 27 cells
+                    // condemned yet 110 teleports — the two-ejects-per-cell
+                    // tail was 100 of them). A teleport IS the system's
+                    // strongest possible proof: every lesser mechanism
+                    // already failed before the eject fires. One eject
+                    // condemns its destination outright.
                     *board
                         .timeout_counts_by_pos
                         .entry(d)
-                        .or_insert(0) += 3;
+                        .or_insert(0) += 6;
                     record_assist_write(
                         tick.0,
                         *uid,
