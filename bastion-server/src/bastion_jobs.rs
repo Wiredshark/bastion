@@ -2121,6 +2121,8 @@ pub struct ClaimRefusalCensus {
     pub materials: u32,
     pub skill_floor: u32,
     pub priority_zero: u32,
+    /// Jobs refused because their cell is condemned (proven unreachable).
+    pub condemned: u32,
     pub access_dist: u32,
     pub eligible: u32,
 }
@@ -2136,6 +2138,7 @@ impl ClaimRefusalCensus {
             + self.materials
             + self.skill_floor
             + self.priority_zero
+            + self.condemned
             + self.access_dist
     }
 
@@ -7910,6 +7913,13 @@ pub struct JobBoard {
     /// commutative reduction, so HashMap iteration order never leaks into
     /// the reported value — no determinism surface despite the hash map.
     pub timeout_counts_by_pos: HashMap<Vec3<i32>, u32>,
+    /// ★ CONDEMNED CELLS (day-2 acceptance: 8 bed condemnations didn't
+    /// dent 121 teleports — the majority were upper-floor HEARTHS, POTS
+    /// and CHESTS minting recurring jobs at cells the town proved
+    /// unreachable). Any cell at 6+ travel timeouts lands here; the claim
+    /// gauntlet refuses jobs at condemned cells, so re-minted work
+    /// wallflowers into the F3 prune instead of stranding a walker.
+    pub condemned_cells: HashSet<Vec3<i32>>,
     /// bastion (mechanism-2 terrain probe, Fable-directed, 2026-07-30):
     /// closest approach EVER achieved toward each job position, across
     /// every claim attempt (not reset per-claim, unlike the watchdog's own
@@ -15746,6 +15756,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     info!(
                         pos = ?p,
                         "bastion: BED CONDEMNED — the town proved it cannot reach this bed (6+ travel timeouts); its sleeper will be rehomed"
+                    );
+                }
+                // Generic cells: everything else the strike ledger has
+                // convicted (upper-floor hearths/pots/chests, sealed
+                // courtyards). One-way: the town's architecture is static.
+                let newly: Vec<Vec3<i32>> = board
+                    .timeout_counts_by_pos
+                    .iter()
+                    .filter(|(p, n)| **n >= 6 && !board.condemned_cells.contains(*p))
+                    .map(|(p, _)| *p)
+                    .collect();
+                for p in newly {
+                    board.condemned_cells.insert(p);
+                    info!(
+                        pos = ?p,
+                        "bastion: CELL CONDEMNED — repeatedly unreachable; jobs here will no longer be claimed"
                     );
                 }
             }
@@ -30681,6 +30707,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let priority = colonist.0.work_priorities.get(job.work);
                 if priority == 0 {
                     { census.priority_zero += 1; continue; }
+                }
+                // ★ CONDEMNED CELL: the town proved nobody can reach this
+                // cell — no walker is sent to strand there again.
+                if board.condemned_cells.contains(&job.pos) {
+                    { census.condemned += 1; continue; }
                 }
                 let dist = pos.0.distance(job.pos.map(|e| e as f32));
                 // B5.8: RESCUE access jobs are built by whoever is ON SITE —
