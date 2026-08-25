@@ -16092,6 +16092,114 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             }
         }
 
+        // ── WOOD PAR: the colony WANTS wood (ecosystem audit, Ben's
+        // order: "the colony never wants wood on its own" — the open half
+        // of the wood loop now that block-truth chop can SEE town trees).
+        // When no spare wood is stocked, no chop is already live, and a
+        // stockpile exists to receive the logs, the colony marks ONE tree:
+        // the nearest flat-lab forest-band chunk (bands sit at chunk
+        // coords ≡0 mod 4 by construction) is scanned for the tree
+        // signature (Wood with Leaves above — the same rule that keeps
+        // house walls out of the chop oracle) and one fell-set is placed.
+        // One tree at a time keeps the mint tripwire quiet; the standard
+        // fell → drop → haul pipeline carries the logs home, and ITEM 29's
+        // trade missions can finally afford to spend them.
+        if tick.0 % (ARBITRATION_INTERVAL as u64 * 80) == 12
+            && std::env::var_os("BASTION_NO_WOOD_PAR").is_none()
+        {
+            let wood_ok = stockpile_has_material(
+                CHOP_DROP_ITEM,
+                (&pickup_items, &positions, &uids).join(),
+                &board,
+            );
+            let chop_live = board
+                .jobs
+                .values()
+                .any(|j| j.kind.is(DesignationKind::Chop));
+            if !wood_ok && !chop_live && !board.stockpiles.is_empty() {
+                let anchor = board
+                    .gathering_anchor
+                    .or_else(|| board.stockpiles.first().map(|(_, r)| (r.min + r.max) / 2));
+                if let Some(anchor) = anchor {
+                    // Nearest band chunk: snap the anchor's chunk to the
+                    // 4-chunk grid in each direction, take the closest.
+                    let ac = anchor.xy().map(|e| e.div_euclid(32));
+                    let mut best: Option<(i64, Vec2<i32>)> = None;
+                    for gx in [ac.x.div_euclid(4) * 4, (ac.x.div_euclid(4) + 1) * 4] {
+                        for gy in [ac.y.div_euclid(4) * 4, (ac.y.div_euclid(4) + 1) * 4] {
+                            let g = Vec2::new(gx, gy);
+                            let d = (g - ac).map(|e| e as i64);
+                            let d2 = d.x * d.x + d.y * d.y;
+                            if best.is_none_or(|(bd, _)| d2 < bd) {
+                                best = Some((d2, g));
+                            }
+                        }
+                    }
+                    let is_tree = |p: Vec3<i32>| {
+                        terrain
+                            .get(p)
+                            .map(|b| {
+                                matches!(
+                                    b.kind(),
+                                    common::terrain::BlockKind::Wood
+                                        | common::terrain::BlockKind::Leaves
+                                )
+                            })
+                            .unwrap_or(false)
+                    };
+                    let seed = best.and_then(|(_, band)| {
+                        let base = band * 32;
+                        for x in base.x..base.x + 32 {
+                            for y in base.y..base.y + 32 {
+                                let mut wood_z = None;
+                                for z in (anchor.z - 8)..=(anchor.z + 20) {
+                                    let Ok(b) = terrain.get(Vec3::new(x, y, z)) else {
+                                        continue;
+                                    };
+                                    match b.kind() {
+                                        common::terrain::BlockKind::Wood => {
+                                            if wood_z.is_none() {
+                                                wood_z = Some(z);
+                                            }
+                                        },
+                                        common::terrain::BlockKind::Leaves => {
+                                            if let Some(wz) = wood_z {
+                                                if z > wz {
+                                                    return Some(Vec3::new(x, y, wz));
+                                                }
+                                            }
+                                        },
+                                        _ => {},
+                                    }
+                                }
+                            }
+                        }
+                        None
+                    });
+                    if let Some(seed) = seed {
+                        let cells = tree_fell_set(&is_tree, seed, 4096, 40, 16);
+                        if !cells.is_empty()
+                            && let Some(id) = board.place_chop_fell(&terrain, seed, &cells)
+                        {
+                            info!(
+                                job = id,
+                                ?seed,
+                                cells = cells.len(),
+                                "bastion: WOOD PAR — the colony wants wood; a tree is marked"
+                            );
+                        }
+                    } else {
+                        // A named refusal on the rare cadence: the band
+                        // chunk may simply not be loaded — presence VD
+                        // grows the city outward and the band will arrive.
+                        info!(
+                            "bastion: WOOD PAR — wood wanted but no tree signature in the nearest band (unloaded or felled out)"
+                        );
+                    }
+                }
+            }
+        }
+
         // ── ITEM 29: the TRADE MISSION generator ─────────────────────────
         // Par-stock pull: when colony food drops below TRADE_FOOD_PAR and
         // stockpiled wood exists to sell, mint ONE mission against the
