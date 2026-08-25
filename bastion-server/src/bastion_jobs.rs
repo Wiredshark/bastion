@@ -29043,6 +29043,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 } else {
                     board.rescue_progress.remove(uid);
                 }
+                // ★ ONE MOVEMENT AUTHORITY (rewrite stage 2; the Lileg
+                // trail: a colonist who slept, lounged and ate perfectly
+                // was teleported 75s into an ALARM-SHELTER walk by this
+                // watch — the pit-egress machinery, built for physics-era
+                // below-grade wedges, misfiring on ordinary kinematic
+                // walkers; at 54 alarms/day it was ~100 of the day's
+                // teleports, and the aligned flood proved the geometry
+                // was never sealed). Under the kinematic mover, a colonist
+                // WITH a job is governed by the mover's own chain — vault
+                // clock, assist, release, condemnation — and never by the
+                // pit watch. The watch keeps its original scope: joblessly
+                // stuck bodies in actual holes.
+                if kinematic_mover_on() && active.is_some() {
+                    watch_wipe(&mut board.stuck_watch, uid, "kinematic-owned");
+                    continue;
+                }
                 let secs = board.stuck_watch.entry(*uid).or_insert(0.0);
                 *secs += 1.0; // this pass runs ~once per second
                 if *secs < STUCK_TELEPORT_SECS {
