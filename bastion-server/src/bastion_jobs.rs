@@ -16170,6 +16170,123 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             }
         }
 
+        // ── ★ THE REACHABILITY FLOOD (the two-day steady-state run's
+        // verdict: runtime one-cell-at-a-time condemnation cannot exhaust
+        // a city whose generator built dozens of sealed spaces — day-2
+        // teleports held at ~70 with the learned set intact). Instead of
+        // learning the map by failure, the town SURVEYS it: a bounded BFS
+        // from the plaza over the loaded walkable graph (steps ±1z, plus
+        // fence-vault hops, the same moves colonists have), and any
+        // furnished or jobbed cell that is loaded-but-disconnected is
+        // condemned WHOLESALE before anyone is sent to strand there.
+        // Streams with the town: re-floods on a slow cadence while chunks
+        // keep loading; the failure-driven condemnation stays as the net
+        // for dynamic cases (items hauled into odd corners).
+        if tick.0 % (ARBITRATION_INTERVAL as u64 * 80) == 40
+            && std::env::var_os("BASTION_NO_REACH_FLOOD").is_none()
+            && let Some(anchor) = board.gathering_anchor
+        {
+            let is_open = |p: Vec3<i32>| {
+                terrain.get(p).map(|b| !b.is_solid()).unwrap_or(false)
+            };
+            let is_floor = |p: Vec3<i32>| {
+                terrain.get(p).map(|b| b.is_solid()).unwrap_or(false)
+            };
+            let standable = |p: Vec3<i32>| is_open(p) && is_open(p + Vec3::unit_z()) && is_floor(p - Vec3::unit_z());
+            // Resolve the anchor to a standable start.
+            let start = (-4..=4)
+                .map(|dz| anchor + Vec3::new(0, 0, dz))
+                .find(|p| standable(*p));
+            if let Some(start) = start {
+                let mut seen: HashSet<Vec3<i32>> = HashSet::new();
+                let mut queue: std::collections::VecDeque<Vec3<i32>> =
+                    std::collections::VecDeque::new();
+                seen.insert(start);
+                queue.push_back(start);
+                const FLOOD_CAP: usize = 220_000;
+                while let Some(p) = queue.pop_front() {
+                    if seen.len() >= FLOOD_CAP {
+                        break;
+                    }
+                    if (p.xy() - anchor.xy()).map(|e| e.abs()).reduce_max() > 260 {
+                        continue;
+                    }
+                    for d in [
+                        Vec2::new(1, 0),
+                        Vec2::new(-1, 0),
+                        Vec2::new(0, 1),
+                        Vec2::new(0, -1),
+                    ] {
+                        // Steps: same column ±1 z, colonist-grade.
+                        for dz in [0, 1, -1] {
+                            let n = p + Vec3::new(d.x, d.y, dz);
+                            if !seen.contains(&n) && standable(n) {
+                                seen.insert(n);
+                                queue.push_back(n);
+                            }
+                        }
+                        // Fence-vault hop: over a waist sprite to the far
+                        // cell — the router's vault edge, mirrored.
+                        let hurdle = p + Vec3::new(d.x, d.y, 0);
+                        let land = p + Vec3::new(d.x * 2, d.y * 2, 0);
+                        let hurdle_is_waist = terrain.get(hurdle).is_ok_and(|b| {
+                            b.get_sprite().is_some()
+                                && b.is_solid()
+                                && (0.2..=1.6).contains(&b.solid_height())
+                        });
+                        if hurdle_is_waist && !seen.contains(&land) && standable(land) {
+                            seen.insert(land);
+                            queue.push_back(land);
+                        }
+                    }
+                }
+                // Condemn loaded-but-disconnected furnished/jobbed cells.
+                // "Near" = within one cell of a reachable cell (arrival
+                // tolerances admit adjacent stands), so we only condemn
+                // when even the neighbourhood is dry.
+                let near_reach = |p: Vec3<i32>| {
+                    (-1..=1).any(|dx| {
+                        (-1..=1).any(|dy| {
+                            (-2..=2).any(|dz| seen.contains(&(p + Vec3::new(dx, dy, dz))))
+                        })
+                    })
+                };
+                let mut flood_condemned = 0u32;
+                let candidates: Vec<Vec3<i32>> = board
+                    .beds
+                    .keys()
+                    .copied()
+                    .chain(board.jobs.values().map(|j| j.pos))
+                    .filter(|p| {
+                        !board.condemned_cells.contains(p)
+                            && terrain.get(*p).is_ok()
+                            && !near_reach(*p)
+                    })
+                    .collect();
+                for p in candidates {
+                    board.condemned_cells.insert(p);
+                    board.beds.remove(&p);
+                    let doomed: Vec<JobId> = board
+                        .jobs
+                        .iter()
+                        .filter(|(_, j)| j.pos == p)
+                        .map(|(id, _)| *id)
+                        .collect();
+                    for id in doomed {
+                        board.remove_job(id);
+                    }
+                    flood_condemned += 1;
+                }
+                if flood_condemned > 0 {
+                    info!(
+                        flood_condemned,
+                        surveyed = seen.len(),
+                        "bastion: REACHABILITY FLOOD — disconnected furnished cells condemned wholesale (no walker will be sent to prove them)"
+                    );
+                }
+            }
+        }
+
         // ── WOOD PAR: the colony WANTS wood (ecosystem audit, Ben's
         // order: "the colony never wants wood on its own" — the open half
         // of the wood loop now that block-truth chop can SEE town trees).
