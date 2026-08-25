@@ -16125,20 +16125,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     .gathering_anchor
                     .or_else(|| board.stockpiles.first().map(|(_, r)| (r.min + r.max) / 2));
                 if let Some(anchor) = anchor {
-                    // Nearest band chunk: snap the anchor's chunk to the
-                    // 4-chunk grid in each direction, take the closest.
+                    // Band candidates: every 4-grid chunk within ±8 chunks,
+                    // nearest first — but SKIPPING any band inside the
+                    // town's cleared zone (~3 chunks of the anchor): the
+                    // first live firing proved the nearest band IS the
+                    // town's own chunk and the city generator razed it.
+                    // The woodcutter walks to the forest edge like a real
+                    // one; scan stops at the first band with a signature.
                     let ac = anchor.xy().map(|e| e.div_euclid(32));
-                    let mut best: Option<(i64, Vec2<i32>)> = None;
-                    for gx in [ac.x.div_euclid(4) * 4, (ac.x.div_euclid(4) + 1) * 4] {
-                        for gy in [ac.y.div_euclid(4) * 4, (ac.y.div_euclid(4) + 1) * 4] {
+                    let g0 = ac.map(|e| e.div_euclid(4) * 4);
+                    let mut bands: Vec<(i64, Vec2<i32>)> = Vec::new();
+                    for gx in (-2..=2).map(|k| g0.x + 4 * k) {
+                        for gy in (-2..=2).map(|k| g0.y + 4 * k) {
                             let g = Vec2::new(gx, gy);
                             let d = (g - ac).map(|e| e as i64);
                             let d2 = d.x * d.x + d.y * d.y;
-                            if best.is_none_or(|(bd, _)| d2 < bd) {
-                                best = Some((d2, g));
+                            if d2 > 9 {
+                                bands.push((d2, g));
                             }
                         }
                     }
+                    bands.sort_by_key(|(d2, g)| (*d2, g.x, g.y));
                     let is_tree = |p: Vec3<i32>| {
                         terrain
                             .get(p)
@@ -16151,8 +16158,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             })
                             .unwrap_or(false)
                     };
-                    let seed = best.and_then(|(_, band)| {
-                        let base = band * 32;
+                    let seed = bands.iter().find_map(|(_, band)| {
+                        let base = *band * 32;
                         for x in base.x..base.x + 32 {
                             for y in base.y..base.y + 32 {
                                 let mut wood_z = None;
