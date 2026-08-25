@@ -10012,6 +10012,61 @@ impl JobBoard {
             );
             return None;
         }
+        // ★ STANCE-AWARE BASE (the first live par tree sat on the board
+        // unclaimed forever, blocked_stance=1: a giant tree's root flare
+        // fills every column beside the lowest trunk cell, so the
+        // SolidTarget stance guard — working exactly as designed — never
+        // offered a place to stand. A real woodcutter starts on the root
+        // flare: the base becomes the LOWEST fell-set cell with a
+        // standable cell beside it; a tree whose whole set has none is
+        // refused OUT LOUD, not left to rot on the board.)
+        let standable_beside = |c: Vec3<i32>| -> bool {
+            let solid =
+                |q: Vec3<i32>| terrain.get(q).is_ok_and(|b| b.is_filled());
+            for dx in -1..=1i32 {
+                for dy in -1..=1i32 {
+                    if dx == 0 && dy == 0 {
+                        continue;
+                    }
+                    for dz in -1..=1i32 {
+                        let st = c + Vec3::new(dx, dy, dz);
+                        if solid(st - Vec3::unit_z())
+                            && !solid(st)
+                            && !solid(st + Vec3::unit_z())
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+            false
+        };
+        let base = if standable_beside(base) {
+            base
+        } else {
+            let mut sorted: Vec<Vec3<i32>> = kept.clone();
+            sorted.sort_by_key(|c| (c.z, c.x, c.y));
+            match sorted
+                .into_iter()
+                .find(|c| standable_beside(*c) && !occupied.contains(c))
+            {
+                Some(b) => {
+                    info!(
+                        original = ?base,
+                        chosen = ?b,
+                        "bastion: chop base re-anchored to a standable-adjacent cell (root flare)"
+                    );
+                    b
+                },
+                None => {
+                    info!(
+                        ?base,
+                        "bastion: chop fell-set has NO standable-adjacent cell — tree refused honestly"
+                    );
+                    return None;
+                },
+            }
+        };
         // TASK #61 (chop visibility, PARKED, 2026-08-03): two proactive/
         // lazy reachability-probe designs were built, measured, and
         // reverted here across the same day -- both are dead ends, kept
