@@ -52,6 +52,21 @@ impl Component for ConstructedLadderTraversal {
     type Storage = specs::DenseVecStorage<Self>;
 }
 
+/// ★ KINEMATIC TRAVEL MARKER (mover charter v2 — v1's pre-registered A/B
+/// FAILED at 1360 assists vs a <97 bar because physics kept integrating
+/// gravity and the animation velocity underneath the position writes; the
+/// body moved by assist-teleport chains). While this marker is present the
+/// physics system SKIPS the entity entirely (the `Is<Rider>` exclusion
+/// pattern): the bastion jobs tick owns position and velocity outright —
+/// the route IS the motion. Inserted only while a flagged colonist travels
+/// a held route; swept off every tick it isn't re-earned, so a released,
+/// arrived, fleeing or dead colonist falls back to physics immediately.
+#[derive(Default, Clone, Copy, Debug)]
+pub struct KinematicTravel;
+impl Component for KinematicTravel {
+    type Storage = specs::NullStorage<Self>;
+}
+
 /// Stage-1 B5.8: the single shared movement-owner discriminator for a
 /// route-owned off-mesh traversal.
 ///

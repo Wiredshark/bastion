@@ -11199,6 +11199,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // REQ-0074: bounded server-authored proof that the active route
             // transaction is using constructed ladder infrastructure.
             WriteStorage<'a, comp::bastion::ConstructedLadderTraversal>,
+            WriteStorage<'a, comp::bastion::KinematicTravel>,
             // Stage-1 B5.8: one shared movement-owner discriminator consumed
             // by Agent, RTSim and Controller. The task remains the authority;
             // this ECS component is its exact cross-system projection.
@@ -11294,6 +11295,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 mut needs_storage,
                 mut energies,
                 mut constructed_ladder_traversals,
+                mut kinematic_travels,
                 mut traversal_ownerships,
                 mut arbiters,
                 colliders,
@@ -25116,13 +25118,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 v.0 = Vec3::zero();
             }
         }
-        // ★ KINEMATIC MOVER apply: the route IS the motion.
-        for (entity, new_pos, vel) in pending_kinematic.drain(..) {
-            if let Some(p) = positions.get_mut(entity) {
-                p.0 = new_pos;
+        // ★ KINEMATIC MOVER apply (v2): the route IS the motion, and the
+        // physics opt-out marker makes it SOLE OWNER — v1's A/B failed at
+        // 1360 assists precisely because physics kept integrating gravity
+        // and the animation velocity underneath these writes. The marker
+        // is re-earned every tick: any colonist not kinematically moved
+        // THIS tick (arrived, released, fleeing, dead, flag off) is swept
+        // back to physics immediately, so nobody floats.
+        {
+            let moved: HashSet<specs::Entity> =
+                pending_kinematic.iter().map(|(e, ..)| *e).collect();
+            let marked: Vec<specs::Entity> =
+                (&entities, &kinematic_travels).join().map(|(e, _)| e).collect();
+            for e in marked {
+                if !moved.contains(&e) {
+                    kinematic_travels.remove(e);
+                }
             }
-            if let Some(v) = velocities.get_mut(entity) {
-                v.0 = vel;
+            for (entity, new_pos, vel) in pending_kinematic.drain(..) {
+                if let Some(p) = positions.get_mut(entity) {
+                    p.0 = new_pos;
+                }
+                if let Some(v) = velocities.get_mut(entity) {
+                    v.0 = vel;
+                }
+                let _ = kinematic_travels
+                    .insert(entity, comp::bastion::KinematicTravel);
             }
         }
         // ★ EAT RE-TARGET drain (2026-08-21): re-aim every EatFrom whose meal

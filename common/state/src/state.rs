@@ -458,6 +458,9 @@ impl State {
         // bastion (AUTON-0): the per-colonist drive arbiter.
         ecs.register::<comp::bastion::Arbiter>();
         ecs.register::<comp::bastion::ConstructedLadderTraversal>();
+        // bastion (mover charter v2): physics opt-out marker for
+        // route-owned kinematic travel.
+        ecs.register::<comp::bastion::KinematicTravel>();
         ecs.register::<comp::bastion::BastionTraversalOwnership>();
         ecs.register::<comp::BastionGodAnchor>();
         // bastion (B4): colonist job assignment (server-side).

@@ -181,6 +181,10 @@ pub struct PhysicsRead<'a> {
     colliders: ReadStorage<'a, Collider>,
     is_riders: ReadStorage<'a, Is<Rider>>,
     is_volume_riders: ReadStorage<'a, Is<VolumeRider>>,
+    // bastion (mover charter v2): route-owned kinematic travelers are
+    // excluded from physics exactly like riders — the jobs tick owns
+    // their position and velocity while the marker is present.
+    kinematic_travels: ReadStorage<'a, common::comp::bastion::KinematicTravel>,
     projectiles: ReadStorage<'a, Projectile>,
     character_states: ReadStorage<'a, CharacterState>,
     bodies: ReadStorage<'a, Body>,
@@ -796,6 +800,7 @@ impl PhysicsData<'_> {
             write.previous_phys_cache.mask(),
             !&read.is_riders,
             !&read.is_volume_riders,
+            !&read.kinematic_travels,
         )
             .join()
             .map(|t| (t.0, *t.2, *t.3, *t.4))
@@ -829,6 +834,7 @@ impl PhysicsData<'_> {
             read.scales.maybe(),
             !&read.is_riders,
             !&read.is_volume_riders,
+            !&read.kinematic_travels,
         )
             .par_join()
             .for_each_init(
@@ -847,6 +853,7 @@ impl PhysicsData<'_> {
                     mass,
                     density,
                     scale,
+                    _,
                     _,
                     _,
                 )| {
@@ -966,6 +973,7 @@ impl PhysicsData<'_> {
             previous_phys_cache,
             !&read.is_riders,
             !&read.is_volume_riders,
+            !&read.kinematic_travels,
         )
             .par_join()
             .filter(|tuple| tuple.3.is_voxel() == terrain_like_entities)
@@ -988,6 +996,7 @@ impl PhysicsData<'_> {
                     physics_state,
                     pos_vel_ori_defer,
                     previous_cache,
+                    _,
                     _,
                     _,
                 )| {
