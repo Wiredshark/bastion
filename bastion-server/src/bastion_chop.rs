@@ -110,6 +110,74 @@ pub fn detect_trees(
         // (`resourced_feature_cells` paints from the slab's first air cell
         // upward), which is the same fact the seed search below would have
         // learned from `col.alt` on real terrain.
+        // ★ TOWN TREES ARE INVISIBLE TO THE ORACLE (Ben, mega city: "no
+        // one ever cuts down trees even when I order it" — his own chat
+        // answered him: "No trees rooted in the marked area", painted over
+        // a visible orchard). `get_area_trees` is GENERATIVE — structure_gen
+        // plus a climate lottery — so it can only propose NATURAL forest-
+        // layer trees; a site's planted orchards and ornamentals, the trees
+        // a city player actually paints, are not in its universe. Same
+        // class as the arena (F8-C1 above), same shape of fix: a second
+        // candidate source at BLOCK TRUTH. Scan the painted region's
+        // columns for the tree SIGNATURE — a Wood block with Leaves above
+        // it in the same column within the fell height cap — and seed
+        // there. The signature is what keeps this honest: house walls and
+        // roofs are Wood with no Leaves above; fences are sprites, not
+        // Wood blocks; neither can seed. Bounded to 96×96 blocks (bigger
+        // paints keep the oracle only) and deduped by column so a natural
+        // tree never fells twice.
+        {
+            const BLOCK_TRUTH_MAX_SIDE: i32 = 96;
+            if max_xy.x - min_xy.x <= BLOCK_TRUTH_MAX_SIDE
+                && max_xy.y - min_xy.y <= BLOCK_TRUTH_MAX_SIDE
+            {
+                for x in min_xy.x..=max_xy.x {
+                    for y in min_xy.y..=max_xy.y {
+                        let p = Vec2::new(x, y);
+                        // Same-tree dedup: a 2×2 trunk carries the signature
+                        // in every column; anything within 4 cells of an
+                        // existing candidate (oracle or block-truth) is the
+                        // same tree, not a second one.
+                        if candidates
+                            .iter()
+                            .any(|(c, _)| (*c - p).map(|e| e.abs()).reduce_max() < 4)
+                        {
+                            continue;
+                        }
+                        let Some(col) = sampler.get((p, index_ref, calendar)) else {
+                            continue;
+                        };
+                        let base_z = col.alt as i32;
+                        let mut wood_z: Option<i32> = None;
+                        let mut signature = false;
+                        for z in (base_z - 2)..=(base_z + TREE_FELL_HEIGHT_CAP) {
+                            let Ok(b) = terrain.get(Vec3::new(x, y, z)) else {
+                                continue;
+                            };
+                            match b.kind() {
+                                BlockKind::Wood => {
+                                    if wood_z.is_none() {
+                                        wood_z = Some(z);
+                                    }
+                                },
+                                BlockKind::Leaves => {
+                                    if wood_z.is_some_and(|wz| {
+                                        z > wz && z - wz <= TREE_FELL_HEIGHT_CAP
+                                    }) {
+                                        signature = true;
+                                        break;
+                                    }
+                                },
+                                _ => {},
+                            }
+                        }
+                        if signature && let Some(_wz) = wood_z {
+                            candidates.push((p, base_z));
+                        }
+                    }
+                }
+            }
+        }
         if crate::bastion_flat_arena::resourced() {
             let centre = crate::bastion_flat_arena::world_center_wpos(world).map(|e| e as i32);
             for (offset, _height) in crate::bastion_flat_arena::RESOURCED_TREES {
