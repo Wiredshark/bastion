@@ -144,6 +144,11 @@ pub struct TraversalConfig {
     /// tens of thousands of cells. Empty (`Arc::default()`) for vanilla
     /// NPCs and every pre-roads caller — zero lookups hit, zero change.
     pub road_cells: std::sync::Arc<std::collections::HashSet<Vec2<i32>>>,
+    /// bastion (V4, Ben's ruling: "most efficient ≠ most natural;
+    /// deterministic rng"): per-colonist seed for the ±12% edge-cost
+    /// shimmer that individualises routes. 0 = off (vanilla, emergency
+    /// and corridor callers).
+    pub route_jitter_seed: u64,
 }
 
 /// Walk-edge multiplier for a move INTO a road column. 0.5: a street path
@@ -153,6 +158,12 @@ pub struct TraversalConfig {
 /// is 3.0/block, road flat is 1.5/block, both above the heuristic's
 /// 1.0/block lower bound.
 pub const ROAD_FACTOR: f32 = 0.5;
+
+/// bastion (V4): flat surcharge for a walk-destination hugging a wall
+/// (solid neighbour at body height, roads exempt). Half a flat move: the
+/// one-cell-out line wins along a wall, a doorway pays it twice and goes
+/// through anyway.
+pub const WALL_MARGIN: f32 = 1.5;
 fn road_pricing_off() -> bool {
     static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *OFF.get_or_init(|| std::env::var_os("BASTION_NO_ROAD_PRICING").is_some())
@@ -1535,12 +1546,64 @@ where
                 } else {
                     1.0
                 };
+                // bastion (V4 NATURAL ROUTES, prior-art: Recast/Detour
+                // inflates obstacles by agent radius so paths keep wall
+                // clearance BY SEARCH — Ben's flyover: "they hug the walls
+                // of the houses"). A destination cell with a solid
+                // neighbour at body height pays WALL_MARGIN: optimal grid
+                // paths graze corners by construction, and the margin makes
+                // the one-cell-out line cheaper except where walls pinch
+                // (doorways pay it briefly — a necessary passage, not a
+                // detour). Roads are exempt: a walled street is still the
+                // street.
+                const CARDINALS: [Vec3<i32>; 4] = [
+                    Vec3::new(1, 0, 0),
+                    Vec3::new(-1, 0, 0),
+                    Vec3::new(0, 1, 0),
+                    Vec3::new(0, -1, 0),
+                ];
+                let wall_margin = if road >= 1.0
+                    && CARDINALS.iter().any(|d| {
+                        let n = next_node.pos + *d;
+                        vol.get(n).map(|b| b.is_solid()).unwrap_or(false)
+                            && vol
+                                .get(n + Vec3::unit_z())
+                                .map(|b| b.is_solid())
+                                .unwrap_or(false)
+                    }) {
+                    WALL_MARGIN
+                } else {
+                    0.0
+                };
+                // bastion (V4, Ben's ruling: "the most efficient route is
+                // not the most natural route — deterministic rng"): a
+                // per-colonist seeded ±12% cost shimmer, keyed on (seed,
+                // cell). Different villagers favour slightly different
+                // lines through the same town — desire paths — and the
+                // same seed always walks the same way. Zero seed = off
+                // (vanilla, emergencies).
+                let jitter = if traversal_cfg.route_jitter_seed != 0 {
+                    let h = traversal_cfg
+                        .route_jitter_seed
+                        .wrapping_mul(0x9E3779B97F4A7C15)
+                        .wrapping_add(
+                            (next_node.pos.x as u64).wrapping_mul(0x85EBCA77C2B2AE63),
+                        )
+                        .wrapping_add(
+                            (next_node.pos.y as u64).wrapping_mul(0xC2B2AE3D27D4EB4F),
+                        );
+                    0.88 + ((h >> 40) as f32 / 16_777_216.0) * 0.24
+                } else {
+                    1.0
+                };
                 (
                     next_node,
-                    (transition(node, next_node)
+                    ((transition(node, next_node)
                         + if dir.z == 0 { edge_cost } else { 0.0 }
                         + swim)
-                        * road,
+                        * road
+                        + wall_margin)
+                        * jitter,
                 )
             })
             // Falls
@@ -2923,6 +2986,7 @@ pub(super) fn trap_house_world() -> MockVol {
             search_allowed: true,
             climb_ban: Vec::new(),
             road_cells: Default::default(),
+            route_jitter_seed: 0,
         }
     }
 

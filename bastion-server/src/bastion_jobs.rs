@@ -6207,6 +6207,7 @@ fn m3_promoted_corridor_waypoint(
             search_allowed: true,
             climb_ban: Vec::new(),
             road_cells: Default::default(),
+            route_jitter_seed: 0,
         };
         let path = common::path::bastion_full_path(terrain, position, mount_center, &cfg)?;
         if path.is_empty() || path.len() > 64 || path.last().copied() != Some(mount) {
@@ -6541,6 +6542,7 @@ where
         search_allowed: true,
         climb_ban: Vec::new(),
         road_cells: Default::default(),
+        route_jitter_seed: 0,
     };
     let Some(path) = common::path::bastion_full_path(terrain, actual_start, target, &cfg) else {
         return (None, None);
@@ -21556,6 +21558,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // ROADS: the steer full-path walks the
                                     // town like everyone else.
                                     road_cells: board.road_cells.clone(),
+                                    route_jitter_seed: 0,
                                 };
                                 match common::path::bastion_full_path(
                                     &*terrain, pos.0, target, &cfg,

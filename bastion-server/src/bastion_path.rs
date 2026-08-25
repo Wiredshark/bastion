@@ -108,6 +108,19 @@ pub fn traversal_config_for(
             })
             .unwrap_or_default(),
         road_cells: std::sync::Arc::clone(roads),
+        // V4 natural routes: colonists carry a uid-seeded shimmer so each
+        // villager favours their own line through town (deterministic —
+        // same colonist, same walk). Vanilla NPCs keep 0 = laser optimal.
+        route_jitter_seed: colonist
+            .map(|c| {
+                c.0.name
+                    .bytes()
+                    .fold(0xcbf29ce484222325u64, |h, b| {
+                        (h ^ b as u64).wrapping_mul(0x100000001b3)
+                    })
+                    .max(1)
+            })
+            .unwrap_or(0),
     }
 }
 
