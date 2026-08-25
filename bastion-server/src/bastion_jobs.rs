@@ -15721,6 +15721,34 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 .join()
                 .filter_map(|(e, _)| uids.get(e).copied())
                 .collect();
+            // ★ CONDEMN UNREACHABLE FURNITURE (the full-day acceptance
+            // run's 117 teleports split into two faces: beds on stairless
+            // upper floors teleported-to straight up, and courtyard cells
+            // whose only opening was a window — both PROVEN unreachable by
+            // the town's own repeated travel timeouts). A bed that has
+            // accumulated the strikes is condemned: slot removed, owner
+            // freed, and the existing vacancy machinery rehomes them into
+            // one of the town's spare houses next pass. Evidence-driven
+            // self-healing — no upfront reachability oracle, the town
+            // learns its own architecture.
+            {
+                let condemned: Vec<Vec3<i32>> = board
+                    .beds
+                    .keys()
+                    .filter(|p| {
+                        board.timeout_counts_by_pos.get(*p).copied().unwrap_or(0) >= 6
+                    })
+                    .copied()
+                    .collect();
+                for p in condemned {
+                    board.beds.remove(&p);
+                    board.timeout_counts_by_pos.remove(&p);
+                    info!(
+                        pos = ?p,
+                        "bastion: BED CONDEMNED — the town proved it cannot reach this bed (6+ travel timeouts); its sleeper will be rehomed"
+                    );
+                }
+            }
             // Release beds whose owner no longer exists, FIRST — otherwise a
             // dead colonist's bed is locked forever and the colony slowly
             // loses its housing to its own history.
