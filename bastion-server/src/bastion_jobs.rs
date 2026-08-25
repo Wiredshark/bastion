@@ -15689,19 +15689,35 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // and sorted below — join order is not a promise, and the posts
             // must land identically on two runs of one seed.
             let mut perceiver_posts: Vec<(u64, specs::Entity, Vec3<i32>)> = Vec::new();
+            // ★ INTERCEPT (the war census: 31 alarms answered, colony
+            // halved anyway — posts landed at the PERCEIVER's feet, the
+            // trouble's proxy, while the monster mauled the downed 15
+            // cells away and no guard ever closed on it; 665 was executed
+            // where they lay with the rescuer en route). The perceiver's
+            // `target` IS the hostile entity — post guards AT ITS ACTUAL
+            // POSITION, and the refresh below keeps the post tracking it
+            // while Defend holds. Proximity puts the guard in the
+            // monster's aggro; the bravery-gated flee suppression holds
+            // them there; vanilla combat does the rest — Ben's
+            // best-of-both-worlds ruling working as kept.
+            let mut hostile_spots: Vec<Vec3<i32>> = Vec::new();
             for (c_ent, _, c_pos) in (&entities, &colonists, &positions).join() {
-                if agents
-                    .get(c_ent)
-                    .and_then(|ag| ag.target)
-                    .is_some_and(|t| t.hostile)
+                if let Some(t) = agents.get(c_ent).and_then(|ag| ag.target)
+                    && t.hostile
                 {
                     threats += 1;
+                    let spot = positions
+                        .get(t.target)
+                        .map(|hp| hp.0.map(|e| e.floor() as i32))
+                        .unwrap_or_else(|| c_pos.0.map(|e| e.floor() as i32));
+                    hostile_spots.push(spot);
                     if let Some(u) = uids.get(c_ent) {
-                        perceiver_posts
-                            .push((u.0.get(), c_ent, c_pos.0.map(|e| e.floor() as i32)));
+                        perceiver_posts.push((u.0.get(), c_ent, spot));
                     }
                 }
             }
+            hostile_spots.sort_unstable_by_key(|p| (p.x, p.y, p.z));
+            hostile_spots.dedup();
             // F16: the ladder is a pure function so its ORDER can be pinned —
             // the order is the entire content of the decision, and getting it
             // wrong made a starving colony unable to defend itself.
@@ -15850,6 +15866,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // cry now rather than letting it run out its hold.
                     if board.alarm.take().is_some() {
                         info!("bastion: ALARM over (drive left Defend)");
+                    }
+                }
+            }
+            // ★ INTERCEPT refresh: while Defend holds, every auto-guard
+            // post TRACKS the nearest currently-perceived hostile — the
+            // job steer follows job.pos, so the guard walks onto the
+            // threat instead of holding a stale coordinate.
+            if board.colony_drive.0 == common::bastion::ColonyDrive::Defend
+                && !hostile_spots.is_empty()
+            {
+                let ids: Vec<JobId> = board.auto_guard_jobs.clone();
+                for id in ids {
+                    if let Some(job) = board.jobs.get_mut(&id) {
+                        if let Some(best) = hostile_spots.iter().min_by_key(|h| {
+                            (h.xy() - job.pos.xy()).map(|e| i64::from(e) * i64::from(e)).sum()
+                        }) {
+                            job.pos = *best;
+                        }
                     }
                 }
             }
