@@ -16435,6 +16435,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let mut cols_loaded = 0u32;
                     let mut cols_unloaded = 0u32;
                     let mut bare_trunks = 0u32;
+                    let mut run_histo: std::collections::BTreeMap<i32, u32> =
+                        std::collections::BTreeMap::new();
+                    let mut best_run_len = 0i32;
                     // ★ THE SPECIES PROBE: the corrected 3×3-canopy
                     // signature STILL finds zero across bands carrying
                     // 183-656 wood columns — one example column's full
@@ -16468,15 +16471,42 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 ) {
                                     return Some(seed);
                                 }
-                                if (anchor.z - 8..=anchor.z + 20).any(|z| {
-                                    terrain.get(Vec3::new(x, y, z)).is_ok_and(|b| {
-                                        matches!(
-                                            b.kind(),
-                                            common::terrain::BlockKind::Wood
-                                        )
-                                    })
-                                }) {
+                                // ★ PROBE v2 (the v1 probe always showed
+                                // the band's FIRST wood column — inevitably
+                                // a fringe branch-clip — so "do trunks
+                                // exist here at all" stayed unanswered
+                                // across 656 wood columns): track this
+                                // column's LONGEST contiguous wood run;
+                                // the example shown is the band's BEST
+                                // column, and the histogram makes the
+                                // trunk question data.
+                                let mut run = 0i32;
+                                let mut best = 0i32;
+                                for z in anchor.z - 8..=anchor.z + 20 {
+                                    let wood = terrain
+                                        .get(Vec3::new(x, y, z))
+                                        .is_ok_and(|b| {
+                                            matches!(
+                                                b.kind(),
+                                                common::terrain::BlockKind::Wood
+                                            )
+                                        });
+                                    if wood {
+                                        run += 1;
+                                        best = best.max(run);
+                                    } else {
+                                        run = 0;
+                                    }
+                                }
+                                if best > 0 {
                                     bare_trunks += 1;
+                                    *run_histo
+                                        .entry(best.min(5))
+                                        .or_insert(0u32) += 1;
+                                    if best > best_run_len {
+                                        best_run_len = best;
+                                        example_column = None; // re-showcase
+                                    }
                                     if example_column.is_none() {
                                         let profile: Vec<String> = (anchor.z - 8
                                             ..=anchor.z + 20)
@@ -16527,6 +16557,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             cols_unloaded,
                             bare_trunks,
                             ring,
+                            wood_run_histogram = ?run_histo,
+                            best_run = best_run_len,
                             bands_scanned = bands.len(),
                             example = ?example_column,
                             "bastion: WOOD PAR — wood wanted, no tree signature this firing (rotating ring)"
