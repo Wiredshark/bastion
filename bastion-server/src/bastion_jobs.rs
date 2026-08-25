@@ -16372,6 +16372,36 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         }
                     }
                     bands.sort_by_key(|(d2, g)| (*d2, g.x, g.y));
+                    // ★ LOADED-AWARE (the 24-pop ladder rung shrank the
+                    // presence bubble and every outer band read
+                    // cols_loaded=0 — the rotation was spending its whole
+                    // budget on terrain that isn't streamed): probe each
+                    // band's center column and rotate only through bands
+                    // that exist. If the WHOLE outer ring is dark, fall
+                    // back INWARD to the town's own loaded chunks — the
+                    // plaza and garden trees are real trees, and the first
+                    // witnessed felling outranks one ornamental (the
+                    // replant arc restores it later).
+                    let band_loaded = |band: Vec2<i32>| {
+                        let c = band * 32 + 16;
+                        terrain.get(Vec3::new(c.x, c.y, anchor.z)).is_ok()
+                    };
+                    let mut ring = "outer";
+                    bands.retain(|(_, b)| band_loaded(*b));
+                    if bands.is_empty() {
+                        ring = "inner-fallback";
+                        for gx in (-2..=2).map(|k| g0.x + 4 * k) {
+                            for gy in (-2..=2).map(|k| g0.y + 4 * k) {
+                                let g = Vec2::new(gx, gy);
+                                let d = (g - ac).map(|e| e as i64);
+                                let d2 = d.x * d.x + d.y * d.y;
+                                if d2 <= 9 && band_loaded(g) {
+                                    bands.push((d2, g));
+                                }
+                            }
+                        }
+                        bands.sort_by_key(|(d2, g)| (*d2, g.x, g.y));
+                    }
                     // ★ BOUNDED + SELF-DIAGNOSING (the first ring scan ran
                     // ~24 bands × 1024 columns × 29 z in ONE tick and the
                     // server died seconds later; and its refusal could not
@@ -16491,6 +16521,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             cols_loaded,
                             cols_unloaded,
                             bare_trunks,
+                            ring,
                             bands_scanned = bands.len(),
                             example = ?example_column,
                             "bastion: WOOD PAR — wood wanted, no tree signature this firing (rotating ring)"
@@ -19888,11 +19919,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // first (no mid-task yank), needs still outrank via
                         // the earlier candidates, and the cooldown below
                         // keeps it from re-firing every pass.
-                        || (matches!(
+                        //
+                        // ★ IDLE REPERTOIRE v1 (Ben 2026-08-25: "research how
+                        // colonists create their own jobs and idles so they
+                        // don't look like glitchy messes"; researched — DF:
+                        // idle dwarves congregate at meeting areas; RimWorld:
+                        // idle pawns take joy activities; Sims: venues
+                        // advertise to the unoccupied): the Leisure-only gate
+                        // widens to EVERY block except Sleep. An unoccupied,
+                        // unserviced colonist at any waking hour takes a
+                        // venue break — the plaza/tavern seat machinery below
+                        // — and the 60s cooldown paces them into an alternation
+                        // of sitting and wandering instead of a frozen stand.
+                        // Nights stay bed-bound (Sleep block excluded) per the
+                        // HUMAN HOURS acceptance bar.
+                        || (!matches!(
                             default_schedule_block(hour_of_day(
                                 rtsim.rt_state().data().time_of_day.0
                             )),
-                            ScheduleBlock::Leisure
+                            ScheduleBlock::Sleep
                         ) && active_jobs.get(entity).is_none()))
                     // ★★ ITEM 11 ROOT CAUSE (2026-08-20, 34,720-row census):
                     // this line used `contains_key`, but NOTHING prunes
@@ -19915,7 +19960,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         recreation = needs.recreation,
                         comfort = mood_cfg.recreation.comfort,
                         secs = RECREATION_BREAK_SECS,
-                        "bastion: need preempt -- recreation below comfort (ITEM 11)"
+                        "bastion: need preempt -- recreation break (below comfort, or idle at a waking hour)"
                     );
                     preempt_pending.push((entity, *uid, PendingNeed::Recreate(until)));
                 }
