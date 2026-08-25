@@ -8348,6 +8348,17 @@ pub struct JobBoard {
     /// ★ Building-interior columns (see TraversalConfig::interior_cells).
     /// Empty pre-founding.
     pub interior_cells: std::sync::Arc<std::collections::HashSet<Vec2<i32>>>,
+    /// ★ Idle-origin recreation breaks — PREEMPTIBLE BY REAL WORK. The
+    /// first live run of the all-waking-hours idle break starved the whole
+    /// job board (claim census: colonists_seen=0 for thousands of ticks —
+    /// break 120s vs cooldown 60s chains break→break with no seek gap; the
+    /// freshly marked chop trees sat unclaimed forever): A GUARD MUST NOT
+    /// STARVE ITS PROTECTEE. Ids here are breaks that exist only because
+    /// the colonist had nothing to do; the claim pass treats their holders
+    /// as seekers and a won job releases the break (DF: idlers hang at the
+    /// meeting hall UNTIL work appears). Meter-driven and evening-schedule
+    /// breaks are NOT in this set — needs and evenings outrank work.
+    pub idle_breaks: std::collections::HashSet<JobId>,
     /// ★ MOVE ASSISTS by class (vault/climb/step/descend) — the honesty
     /// counter for the router's-promise-is-a-contract law. Assists are
     /// leniency, not silence: an exploding rate here is the tracked-red
@@ -18592,7 +18603,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             /// LOWEST PRIORITY of every variant here by construction: it is
             /// only ever pushed after Rest/Eat/Despond have declined, so a
             /// hungry or exhausted colonist can never relax instead.
-            Recreate(f64),
+            /// The bool: IDLE-ORIGIN (true = fired only because the
+            /// colonist had nothing to do → preemptible by real work via
+            /// JobBoard::idle_breaks; false = the meter or the evening
+            /// schedule asked → protected).
+            Recreate(f64, bool),
             // AUTON-2 unification (site 4/6, row 50, 2026-08-09): a
             // SUSPENDED self-job (RestAt/EatFrom) this colonist already
             // owns — re-activate it verbatim (same job id, same target,
@@ -19267,7 +19282,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         colonist = %uid,
                         "bastion: leisure lounge — evening break (schedule, not need)"
                     );
-                    preempt_pending.push((entity, *uid, PendingNeed::Recreate(until)));
+                    preempt_pending.push((entity, *uid, PendingNeed::Recreate(until, false)));
                     board
                         .preempt_cooldown
                         .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
@@ -20004,7 +20019,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         secs = RECREATION_BREAK_SECS,
                         "bastion: need preempt -- recreation break (below comfort, or idle at a waking hour)"
                     );
-                    preempt_pending.push((entity, *uid, PendingNeed::Recreate(until)));
+                    preempt_pending.push((
+                        entity,
+                        *uid,
+                        PendingNeed::Recreate(
+                            until,
+                            // Idle-origin: the meter did NOT ask — this
+                            // break exists only because no work claimed
+                            // them, so work may take them back.
+                            needs.recreation >= mood_cfg.recreation.comfort,
+                        ),
+                    ));
                 }
             }
         // ★ APPLY THE PACK MEALS. Deferred out of the need loop because
@@ -24259,6 +24284,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             if let Some(controller) = controllers.get_mut(entity) {
                                 controller.push_action(comp::ControlAction::Stand);
                             }
+                            board.idle_breaks.remove(&active.job);
                             board.remove_job(active.job);
                             to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
                         } else if let Some(controller) = controllers.get_mut(entity) {
@@ -26330,7 +26356,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // bastion (ITEM 11): recreation's break, same self-job
                 // shape as Despond above — at the colonist's own feet,
                 // pre-claimed, idling until `until`.
-                PendingNeed::Recreate(until) => {
+                PendingNeed::Recreate(until, idle_origin) => {
                     let feet = positions
                         .get(entity)
                         .map(|p| p.0.map(|v| v.floor() as i32))
@@ -26391,6 +26417,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         })
                         .unwrap_or(feet);
                     let rid = board.insert_recreate_job(spot, uid, until);
+                    if idle_origin {
+                        board.idle_breaks.insert(rid);
+                    }
                     info!(
                         job = rid,
                         colonist = %uid,
@@ -30682,9 +30711,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // claimants by Uid makes the whole assignment independent of ECS
         // iteration order.
         let mut claim_order: Vec<(specs::Entity, Uid)> =
-            (&entities, &colonists, &uids, !&active_jobs)
+            (&entities, &colonists, &uids, active_jobs.maybe())
                 .join()
-                .filter(|(e, _, _, _)| is_loaded(*e))
+                .filter(|(e, _, _, aj)| {
+                    // Jobless — or on an IDLE-ORIGIN break, which real work
+                    // preempts (see JobBoard::idle_breaks).
+                    is_loaded(*e)
+                        && aj.is_none_or(|a| board.idle_breaks.contains(&a.job))
+                })
                 .map(|(e, _, u, _)| (e, *u))
                 .collect();
         claim_order.sort_by_key(|(_, u)| u.0.get());
@@ -31962,6 +31996,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         }
 
         for (entity, job_id, stance) in assignments {
+            // A seeker who was on an idle-origin break: the break dies the
+            // moment real work wins. remove_job (not to_release — that
+            // would clobber the assignment written just below); the seat
+            // and Sit stance clear with the job.
+            if let Some(old_active) = active_jobs.get(entity)
+                && board.idle_breaks.remove(&old_active.job)
+            {
+                info!(
+                    job = old_active.job,
+                    "bastion: idle break preempted — real work won"
+                );
+                board.remove_job(old_active.job);
+            }
             let _ = active_jobs.insert(entity, ActiveJob {
                 job: job_id,
                 state: ActiveJobState::Traveling,
