@@ -4709,7 +4709,7 @@ pub const VAULT_TIMEOUT: f32 = 1.5;
 /// unhurried villager (vanilla walk ≈ 2-3 b/s). The fixed dt matches the
 /// capped server tick; an uncapped fixture server just walks faster,
 /// which every fixture already tolerates (sim-time judged).
-pub const KINEMATIC_WALK_SPEED: f32 = 3.2;
+pub const KINEMATIC_WALK_SPEED: f32 = 4.2;
 pub const KINEMATIC_DT: f32 = 1.0 / 30.0;
 pub(crate) fn kinematic_mover_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -22155,12 +22155,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // this integration drives them naturally. Deferred
                         // write (positions are join-borrowed here).
                         if kinematic_mover_on() {
-                            if let Some(head) = agent
-                                .as_deref()
-                                .and_then(|a| a.chaser.diagnostic_snapshot().route_head)
+                            if let Some((head, ahead)) =
+                                agent.as_deref().map(|a| a.chaser.diagnostic_snapshot()).and_then(
+                                    |s| s.route_head.map(|h| (h, s.route_ahead)),
+                                )
                             {
-                                let target =
+                                // ★ LOOKAHEAD (Ben's rubber-band report:
+                                // "moving then teleporting to the original
+                                // position" — the mover paused one tick at
+                                // every node waiting for the advance
+                                // handshake while the client predicted
+                                // onward from the animation velocity and
+                                // snapped back; once per node, every node,
+                                // every walker). Within arrival range of
+                                // the head, steer for the node BEYOND it —
+                                // continuous motion, nothing to snap back.
+                                let head_c =
                                     head.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
+                                let steer_node = if (head_c - pos.0).magnitude() < 0.9
+                                    && let Some(a) = ahead
+                                {
+                                    a
+                                } else {
+                                    head
+                                };
+                                let target =
+                                    steer_node.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
                                 // ★ v3 VOXEL-FOLLOW (v2's A/B localized the
                                 // residual: climb assists 12→140 because a
                                 // straight lerp toward a raised node TUNNELS

@@ -545,6 +545,11 @@ pub struct ChaserDiagnosticSnapshot {
     pub route_target: Option<Vec3<f32>>,
     pub route_complete: Option<bool>,
     pub route_head: Option<Vec3<i32>>,
+    /// The node AFTER the head — the kinematic mover's lookahead, so a
+    /// walker sails through nodes instead of pausing for the advance
+    /// handshake (the pause read as client rubber-banding: predicted
+    /// motion snapping back once per node, every node).
+    pub route_ahead: Option<Vec3<i32>>,
     pub route_next_idx: Option<usize>,
     pub path_state: PathState,
     pub recent_state_count: usize,
@@ -1069,6 +1074,9 @@ impl Chaser {
                 .route
                 .as_ref()
                 .and_then(|(route, _, _)| route.get_path().nodes().get(route.next_idx()).copied()),
+            route_ahead: self.route.as_ref().and_then(|(route, _, _)| {
+                route.get_path().nodes().get(route.next_idx() + 1).copied()
+            }),
             route_next_idx: self.route.as_ref().map(|(route, _, _)| route.next_idx()),
             path_state: self.path_state,
             recent_state_count: self.recent_states.len(),
