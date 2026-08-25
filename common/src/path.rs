@@ -1357,6 +1357,11 @@ where
             nd.sqrt() * ((diff / d).dot(ndiff / nd) + 0.1).max(0.0) * 10.0
         })
     };
+    // Per-search memo for the V4 wall-margin (see the edge closure): cell →
+    // margin, so adjacency probes run once per unique cell, not per edge.
+    let wall_memo: core::cell::RefCell<hashbrown::HashMap<Vec3<i32>, f32>> =
+        core::cell::RefCell::new(hashbrown::HashMap::new());
+    let wall_memo = &wall_memo;
     let transition = |a: Node, b: Node| {
         1.0
             // Discourage travelling in the same direction for too long: this encourages
@@ -1585,22 +1590,29 @@ where
                 // (doorways pay it briefly — a necessary passage, not a
                 // detour). Roads are exempt: a walled street is still the
                 // street.
+                // ★ PERF (the loop's own catch: 8 probes per edge inside
+                // the A* hot loop ground the server to 13% tick rate):
+                // wall adjacency is a property of the CELL, and cells are
+                // touched many times per search — memoized per search,
+                // probes halved to body level only. Roads skip entirely.
                 const CARDINALS: [Vec3<i32>; 4] = [
                     Vec3::new(1, 0, 0),
                     Vec3::new(-1, 0, 0),
                     Vec3::new(0, 1, 0),
                     Vec3::new(0, -1, 0),
                 ];
-                let wall_margin = if road >= 1.0
-                    && CARDINALS.iter().any(|d| {
-                        let n = next_node.pos + *d;
-                        vol.get(n).map(|b| b.is_solid()).unwrap_or(false)
-                            && vol
-                                .get(n + Vec3::unit_z())
+                let wall_margin = if road >= 1.0 {
+                    *wall_memo.borrow_mut().entry(next_node.pos).or_insert_with(|| {
+                        if CARDINALS.iter().any(|d| {
+                            vol.get(next_node.pos + *d + Vec3::unit_z())
                                 .map(|b| b.is_solid())
                                 .unwrap_or(false)
-                    }) {
-                    WALL_MARGIN
+                        }) {
+                            WALL_MARGIN
+                        } else {
+                            0.0
+                        }
+                    })
                 } else {
                     0.0
                 };
