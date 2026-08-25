@@ -22500,6 +22500,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         if board.par_jobs.contains(&active.job)
                             && tick.0 % 900 == 0
                         {
+                            // Chaser state attached (the wall-foot pin
+                            // fired NO detour — which of its conditions is
+                            // false decides whether this is a SEARCH
+                            // failure or an EXECUTION one, and the pin
+                            // reproduces deterministically at
+                            // (3037,7263), so one window answers it).
+                            let snap = agent
+                                .as_deref()
+                                .map(|a| a.chaser.diagnostic_snapshot());
                             info!(
                                 job = active.job,
                                 colonist = uids.get(entity).map(|u| u.0.get()),
@@ -22507,6 +22516,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 dist = pos.0.xy().distance(
                                     job.pos.xy().map(|e| e as f32)
                                 ) as i32,
+                                route_complete = ?snap.as_ref().and_then(|s| s.route_complete),
+                                path_state = ?snap.as_ref().map(|s| s.path_state),
+                                route_head = ?snap.as_ref().and_then(|s| s.route_head),
+                                steer = ?steer.map(|e| e as i32),
                                 "bastion: PAR TREK telemetry"
                             );
                         }
