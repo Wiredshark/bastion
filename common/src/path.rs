@@ -173,6 +173,15 @@ fn road_pricing_off() -> bool {
     static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *OFF.get_or_init(|| std::env::var_os("BASTION_NO_ROAD_PRICING").is_some())
 }
+/// Bisect levers for the 13-tps hunt: cost features off one at a time.
+fn wall_margin_off() -> bool {
+    static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *OFF.get_or_init(|| std::env::var_os("BASTION_NO_WALL_MARGIN").is_some())
+}
+fn jitter_off() -> bool {
+    static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *OFF.get_or_init(|| std::env::var_os("BASTION_NO_ROUTE_JITTER").is_some())
+}
 
 const DIAGONALS: [Vec2<i32>; 8] = [
     Vec2::new(1, 0),
@@ -1599,7 +1608,8 @@ where
                 // column set exactly like road_cells: one hash lookup, zero
                 // block reads. Roads exempt by construction (a walled
                 // street is still the street).
-                let wall_margin = if road >= 1.0
+                let wall_margin = if !wall_margin_off()
+                    && road >= 1.0
                     && traversal_cfg.wall_margin_cells.contains(&next_node.pos.xy())
                 {
                     WALL_MARGIN
@@ -1613,7 +1623,7 @@ where
                 // lines through the same town — desire paths — and the
                 // same seed always walks the same way. Zero seed = off
                 // (vanilla, emergencies).
-                let jitter = if traversal_cfg.route_jitter_seed != 0 {
+                let jitter = if !jitter_off() && traversal_cfg.route_jitter_seed != 0 {
                     let h = traversal_cfg
                         .route_jitter_seed
                         .wrapping_mul(0x9E3779B97F4A7C15)
