@@ -30,6 +30,48 @@ use vek::*;
 /// where the single base-cut job sits (CHOP-FELLING, row 51.6); the cells
 /// are the stored fell-set. Under the non-worldgen stub World (no oracle)
 /// this degrades to no trees.
+/// ★ THE TREE SIGNATURE, CORRECTED BY ITS OWN DIAGNOSTIC (wood-par ring
+/// scan: bands fully loaded, bare_trunks up to 656 per band, signatures
+/// ZERO): a Veloren trunk column is Wood to the tip — the canopy lives in
+/// NEIGHBOURING columns, so "Leaves directly above Wood in the same
+/// column" matches almost no real tree. The corrected rule: topmost Wood
+/// in the column, then Leaves anywhere in the 3×3 columns within 6 blocks
+/// above it. House walls stay excluded — no canopy hangs over a wall —
+/// and fences never enter (sprites, not Wood blocks).
+pub fn tree_signature_seed(
+    terrain: &TerrainGrid,
+    x: i32,
+    y: i32,
+    z_lo: i32,
+    z_hi: i32,
+) -> Option<Vec3<i32>> {
+    let mut top_wood: Option<i32> = None;
+    let mut first_wood: Option<i32> = None;
+    for z in z_lo..=z_hi {
+        if let Ok(b) = terrain.get(Vec3::new(x, y, z)) {
+            if matches!(b.kind(), BlockKind::Wood) {
+                if first_wood.is_none() {
+                    first_wood = Some(z);
+                }
+                top_wood = Some(z);
+            }
+        }
+    }
+    let (fw, tw) = (first_wood?, top_wood?);
+    for dz in 1..=6 {
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                if let Ok(b) = terrain.get(Vec3::new(x + dx, y + dy, tw + dz)) {
+                    if matches!(b.kind(), BlockKind::Leaves) {
+                        return Some(Vec3::new(x, y, fw));
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 pub fn detect_trees(
     world: &World,
     index: &IndexOwned,
@@ -148,30 +190,15 @@ pub fn detect_trees(
                             continue;
                         };
                         let base_z = col.alt as i32;
-                        let mut wood_z: Option<i32> = None;
-                        let mut signature = false;
-                        for z in (base_z - 2)..=(base_z + TREE_FELL_HEIGHT_CAP) {
-                            let Ok(b) = terrain.get(Vec3::new(x, y, z)) else {
-                                continue;
-                            };
-                            match b.kind() {
-                                BlockKind::Wood => {
-                                    if wood_z.is_none() {
-                                        wood_z = Some(z);
-                                    }
-                                },
-                                BlockKind::Leaves => {
-                                    if wood_z.is_some_and(|wz| {
-                                        z > wz && z - wz <= TREE_FELL_HEIGHT_CAP
-                                    }) {
-                                        signature = true;
-                                        break;
-                                    }
-                                },
-                                _ => {},
-                            }
-                        }
-                        if signature && let Some(_wz) = wood_z {
+                        if tree_signature_seed(
+                            terrain,
+                            x,
+                            y,
+                            base_z - 2,
+                            base_z + TREE_FELL_HEIGHT_CAP,
+                        )
+                        .is_some()
+                        {
                             candidates.push((p, base_z));
                         }
                     }

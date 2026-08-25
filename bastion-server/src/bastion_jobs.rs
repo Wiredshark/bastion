@@ -11200,6 +11200,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // transaction is using constructed ladder infrastructure.
             WriteStorage<'a, comp::bastion::ConstructedLadderTraversal>,
             WriteStorage<'a, comp::bastion::KinematicTravel>,
+            WriteStorage<'a, comp::Ori>,
             // Stage-1 B5.8: one shared movement-owner discriminator consumed
             // by Agent, RTSim and Controller. The task remains the authority;
             // this ECS component is its exact cross-system projection.
@@ -11296,6 +11297,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 mut energies,
                 mut constructed_ladder_traversals,
                 mut kinematic_travels,
+                mut orientations,
                 mut traversal_ownerships,
                 mut arbiters,
                 colliders,
@@ -16178,36 +16180,38 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         let base = *band * 32;
                         for x in base.x..base.x + 32 {
                             for y in base.y..base.y + 32 {
-                                let mut wood_z = None;
-                                let mut any_loaded = false;
-                                for z in (anchor.z - 8)..=(anchor.z + 20) {
-                                    let Ok(b) = terrain.get(Vec3::new(x, y, z)) else {
-                                        continue;
-                                    };
-                                    any_loaded = true;
-                                    match b.kind() {
-                                        common::terrain::BlockKind::Wood => {
-                                            if wood_z.is_none() {
-                                                wood_z = Some(z);
-                                            }
-                                        },
-                                        common::terrain::BlockKind::Leaves => {
-                                            if let Some(wz) = wood_z {
-                                                if z > wz {
-                                                    return Some(Vec3::new(x, y, wz));
-                                                }
-                                            }
-                                        },
-                                        _ => {},
-                                    }
-                                }
-                                if any_loaded {
-                                    cols_loaded += 1;
-                                    if wood_z.is_some() {
-                                        bare_trunks += 1;
-                                    }
-                                } else {
+                                let loaded = terrain
+                                    .get(Vec3::new(x, y, anchor.z))
+                                    .is_ok();
+                                if !loaded {
                                     cols_unloaded += 1;
+                                    continue;
+                                }
+                                cols_loaded += 1;
+                                // The CORRECTED signature (this scan's own
+                                // diagnostic found 656 bare trunks and zero
+                                // same-column canopies): topmost Wood, then
+                                // Leaves in the 3×3 above — shared with the
+                                // chop oracle so both paths see the same
+                                // trees.
+                                if let Some(seed) = crate::bastion_chop::tree_signature_seed(
+                                    &terrain,
+                                    x,
+                                    y,
+                                    anchor.z - 8,
+                                    anchor.z + 20,
+                                ) {
+                                    return Some(seed);
+                                }
+                                if (anchor.z - 8..=anchor.z + 20).any(|z| {
+                                    terrain.get(Vec3::new(x, y, z)).is_ok_and(|b| {
+                                        matches!(
+                                            b.kind(),
+                                            common::terrain::BlockKind::Wood
+                                        )
+                                    })
+                                }) {
+                                    bare_trunks += 1;
                                 }
                             }
                         }
@@ -25326,6 +25330,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 }
                 if let Some(v) = velocities.get_mut(entity) {
                     v.0 = vel;
+                }
+                // ★ FACE THE TRAVEL (Ben's flyover: "colonists don't face
+                // the direction they're traveling so it looks like they're
+                // floating") — orientation was the physics steering's job
+                // and the mover disconnected it; the body now turns with
+                // its own walk.
+                if let Some(o) = orientations.get_mut(entity)
+                    && let Some(new_ori) =
+                        comp::Ori::from_unnormalized_vec(vel.xy().with_z(0.0))
+                {
+                    *o = new_ori;
                 }
                 let _ = kinematic_travels
                     .insert(entity, comp::bastion::KinematicTravel);
