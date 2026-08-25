@@ -22668,7 +22668,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 (0..2).all(|dz| {
                                                     terrain
                                                         .get(c + Vec3::new(0, 0, dz))
-                                                        .is_ok_and(|b| !b.is_solid())
+                                                        .is_ok_and(|b| {
+                                                            !b.is_solid()
+                                                                && !common::path::blocks_colonist_body(b)
+                                                        })
                                                 })
                                             };
                                             open(head + Vec3::new(d.x, 0, 0))
@@ -22770,10 +22773,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         // Nearest surface first: level, one
                                         // up, one down (route steps are ±1).
                                         for dz in [0i32, 1, -1] {
+                                            // Body cells refuse windows too
+                                            // (the shared router rule).
                                             let solid = |q: Vec3<i32>| {
-                                                terrain
-                                                    .get(q)
-                                                    .is_ok_and(|b| b.is_solid())
+                                                terrain.get(q).is_ok_and(|b| {
+                                                    b.is_solid()
+                                                        || common::path::blocks_colonist_body(b)
+                                                })
                                             };
                                             let below =
                                                 Vec3::new(cx, cy, fz + dz - 1);
@@ -22856,7 +22862,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     let cy = try_pos.y.floor() as i32;
                                     let fz = pos.0.z.floor() as i32;
                                     let solid = |q: Vec3<i32>| {
-                                        terrain.get(q).is_ok_and(|b| b.is_solid())
+                                        terrain.get(q).is_ok_and(|b| {
+                                            b.is_solid()
+                                                || common::path::blocks_colonist_body(b)
+                                        })
                                     };
                                     let mut landed = None;
                                     for dz in [0i32, 1, -1] {
@@ -23311,7 +23320,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     }
                                     let dir = dirv / m;
                                     let solid = |q: Vec3<i32>| {
-                                        terrain.get(q).is_ok_and(|b| b.is_solid())
+                                        terrain.get(q).is_ok_and(|b| {
+                                            b.is_solid()
+                                                || common::path::blocks_colonist_body(b)
+                                        })
                                     };
                                     for dist_try in [2.0f32, 1.5, 1.0] {
                                         let cand = pos.0

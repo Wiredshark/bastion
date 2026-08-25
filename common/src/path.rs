@@ -1165,21 +1165,31 @@ where
     // body space holds a window sprite is not a place to stand or pass.
     let through_window = colonist_rules
         && !admission_fixes_off()
-        && [a, b].iter().any(|blk| {
-        blk.get_sprite().is_some_and(|s| {
-            matches!(
-                s,
-                crate::terrain::SpriteKind::Window1
-                    | crate::terrain::SpriteKind::Window2
-                    | crate::terrain::SpriteKind::Window3
-                    | crate::terrain::SpriteKind::Window4
-                    | crate::terrain::SpriteKind::WindowArabic
-                    | crate::terrain::SpriteKind::SeaDecorWindowHor
-                    | crate::terrain::SpriteKind::SeaDecorWindowVer
-            )
-        })
-    });
+        && [a, b].iter().any(|blk| blocks_colonist_body(blk));
     (on_ground || in_liquid) && !a.is_solid() && !b.is_solid() && !through_window
+}
+
+/// ★ THE SHARED BODY-CELL RULE (Ben, live: "i just saw them try to go
+/// through one" — the ROUTER refused windows but the kinematic mover's
+/// own probes (glide surface-follow, search-gap bridge, unstuck nudge,
+/// corner-LOS) checked only `is_solid`, and a window pane is a non-solid
+/// sprite: routes went around the glass while the shortcuts walked
+/// through it). One predicate, used by the router's admission AND every
+/// mover probe, so a cell no route may use is a cell no shortcut may
+/// use either.
+pub fn blocks_colonist_body(blk: &Block) -> bool {
+    blk.get_sprite().is_some_and(|s| {
+        matches!(
+            s,
+            crate::terrain::SpriteKind::Window1
+                | crate::terrain::SpriteKind::Window2
+                | crate::terrain::SpriteKind::Window3
+                | crate::terrain::SpriteKind::Window4
+                | crate::terrain::SpriteKind::WindowArabic
+                | crate::terrain::SpriteKind::SeaDecorWindowHor
+                | crate::terrain::SpriteKind::SeaDecorWindowVer
+        )
+    })
 }
 
 #[derive(Copy, Clone, Debug)]
