@@ -229,6 +229,13 @@ $EnvVars = if ($Mode -eq 'megatown') {
         BASTION_AUTOFOUND_COLONY       = '48'
         BASTION_SEED_FOOD              = '256'
         BASTION_SEED_MATERIALS         = '256'
+        # ★ THE KINEMATIC MOVER (research charter, v3): colonists follow
+        # their routes directly — no physics fighting, no fence-catching,
+        # no jitter. Validated on the observer city: 0 assists, 0 climb
+        # bans, 0 stuck, +61% arrivals vs the physics mover, same seed,
+        # same pre-registered bar that failed v1 (1360) and v2 (317).
+        # Remove this line to fall back to physics travel instantly.
+        BASTION_KINEMATIC_MOVER        = '1'
     }
 } elseif ($Mode -eq 'flattown') {
     # ★ THE FLAT MAP TOWN, v2 (2026-08-23). The old flat DISC
