@@ -16186,11 +16186,42 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             && std::env::var_os("BASTION_NO_REACH_FLOOD").is_none()
             && let Some(anchor) = board.gathering_anchor
         {
+            // ★ THE SURVEYOR MOVES BY THE ROUTER'S RULES (first live
+            // flood: 216k cells surveyed, ONE condemned, 146 teleports —
+            // this survey walked through windows and stood on fence rails,
+            // so sealed spaces read as connected. An instrument more
+            // permissive than the thing it audits certifies exactly the
+            // failures it exists to catch).
+            let is_window = |b: &common::terrain::Block| {
+                b.get_sprite().is_some_and(|sp| {
+                    matches!(
+                        sp,
+                        common::terrain::SpriteKind::Window1
+                            | common::terrain::SpriteKind::Window2
+                            | common::terrain::SpriteKind::Window3
+                            | common::terrain::SpriteKind::Window4
+                            | common::terrain::SpriteKind::WindowArabic
+                            | common::terrain::SpriteKind::SeaDecorWindowHor
+                            | common::terrain::SpriteKind::SeaDecorWindowVer
+                    )
+                })
+            };
             let is_open = |p: Vec3<i32>| {
-                terrain.get(p).map(|b| !b.is_solid()).unwrap_or(false)
+                terrain
+                    .get(p)
+                    .map(|b| !b.is_solid() && !is_window(b))
+                    .unwrap_or(false)
             };
             let is_floor = |p: Vec3<i32>| {
-                terrain.get(p).map(|b| b.is_solid()).unwrap_or(false)
+                terrain
+                    .get(p)
+                    .map(|b| {
+                        b.is_solid()
+                            && !b.get_sprite().is_some_and(|_| {
+                                (0.2..=1.6).contains(&b.solid_height())
+                            })
+                    })
+                    .unwrap_or(false)
             };
             let standable = |p: Vec3<i32>| is_open(p) && is_open(p + Vec3::unit_z()) && is_floor(p - Vec3::unit_z());
             // Resolve the anchor to a standable start.
