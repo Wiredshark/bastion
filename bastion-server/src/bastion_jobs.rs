@@ -16146,6 +16146,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         }
                     }
                     bands.sort_by_key(|(d2, g)| (*d2, g.x, g.y));
+                    // ★ BOUNDED + SELF-DIAGNOSING (the first ring scan ran
+                    // ~24 bands × 1024 columns × 29 z in ONE tick and the
+                    // server died seconds later; and its refusal could not
+                    // say WHY it found nothing): at most TWO bands per
+                    // firing, rotating through the ring across firings, and
+                    // the refusal now counts loaded/unloaded columns and
+                    // bare trunks so "unloaded", "treeless" and "trees
+                    // without leaves" finally read differently.
+                    let rot = ((tick.0 / (ARBITRATION_INTERVAL as u64 * 80)) as usize)
+                        .checked_rem(bands.len().max(1))
+                        .unwrap_or(0);
+                    bands.rotate_left(rot);
+                    bands.truncate(2);
                     let is_tree = |p: Vec3<i32>| {
                         terrain
                             .get(p)
@@ -16158,15 +16171,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             })
                             .unwrap_or(false)
                     };
+                    let mut cols_loaded = 0u32;
+                    let mut cols_unloaded = 0u32;
+                    let mut bare_trunks = 0u32;
                     let seed = bands.iter().find_map(|(_, band)| {
                         let base = *band * 32;
                         for x in base.x..base.x + 32 {
                             for y in base.y..base.y + 32 {
                                 let mut wood_z = None;
+                                let mut any_loaded = false;
                                 for z in (anchor.z - 8)..=(anchor.z + 20) {
                                     let Ok(b) = terrain.get(Vec3::new(x, y, z)) else {
                                         continue;
                                     };
+                                    any_loaded = true;
                                     match b.kind() {
                                         common::terrain::BlockKind::Wood => {
                                             if wood_z.is_none() {
@@ -16182,6 +16200,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         },
                                         _ => {},
                                     }
+                                }
+                                if any_loaded {
+                                    cols_loaded += 1;
+                                    if wood_z.is_some() {
+                                        bare_trunks += 1;
+                                    }
+                                } else {
+                                    cols_unloaded += 1;
                                 }
                             }
                         }
@@ -16200,11 +16226,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             );
                         }
                     } else {
-                        // A named refusal on the rare cadence: the band
-                        // chunk may simply not be loaded — presence VD
-                        // grows the city outward and the band will arrive.
+                        // The refusal now names its reason: mostly-unloaded
+                        // bands mean presence hasn't streamed the treeline
+                        // yet; loaded-but-bare means the flat lab's bands
+                        // hold no signature trees where scanned; bare
+                        // trunks without leaves are their own finding.
                         info!(
-                            "bastion: WOOD PAR — wood wanted but no tree signature in the nearest band (unloaded or felled out)"
+                            cols_loaded,
+                            cols_unloaded,
+                            bare_trunks,
+                            bands_scanned = bands.len(),
+                            "bastion: WOOD PAR — wood wanted, no tree signature this firing (rotating ring)"
                         );
                     }
                 }
