@@ -22390,7 +22390,6 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // lines an hour, not a firehose.
                         if board.par_jobs.contains(&active.job)
                             && tick.0 % 900 == 0
-                            && let Some(job) = board.jobs.get(&active.job)
                         {
                             info!(
                                 job = active.job,
