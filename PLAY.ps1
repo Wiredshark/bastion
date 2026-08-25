@@ -229,13 +229,15 @@ $EnvVars = if ($Mode -eq 'megatown') {
         BASTION_AUTOFOUND_COLONY       = '48'
         BASTION_SEED_FOOD              = '256'
         BASTION_SEED_MATERIALS         = '256'
-        # ★ THE KINEMATIC MOVER (research charter, v3): colonists follow
-        # their routes directly — no physics fighting, no fence-catching,
-        # no jitter. Validated on the observer city: 0 assists, 0 climb
-        # bans, 0 stuck, +61% arrivals vs the physics mover, same seed,
-        # same pre-registered bar that failed v1 (1360) and v2 (317).
-        # Remove this line to fall back to physics travel instantly.
-        BASTION_KINEMATIC_MOVER        = '1'
+        # ★ KINEMATIC MOVER: OFF for Ben's sessions (2026-08-25). The
+        # observer's counters were perfect (0 assists/bans/stuck) but his
+        # flyover found mass pathology the frames missed: "a ton of
+        # colonists frozen in place playing movement animations, or
+        # jumping back and forth a couple feet" — in some ways WORSE than
+        # physics. His session is the acceptance test and it outranks
+        # every counter. Kinematic iterates OBSERVER-ONLY until it beats
+        # physics in his eyes; re-enable by restoring
+        # BASTION_KINEMATIC_MOVER = '1' here.
     }
 } elseif ($Mode -eq 'flattown') {
     # ★ THE FLAT MAP TOWN, v2 (2026-08-23). The old flat DISC
