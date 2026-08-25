@@ -58,6 +58,7 @@ macro_rules! synced_components {
             // bastion (B3): colony membership + roster data (markers,
             // box-select, inspector).
             colonist: Colonist,
+            kinematic_travel: KinematicTravel,
             // TODO: change this to `SyncFrom::ClientEntity` and sync the bare minimum
             // from other entities (e.g. just keys needed to show appearance
             // based on their loadout). Also, it looks like this actually has
@@ -141,6 +142,19 @@ impl NetSync for Stats {
 
 // bastion (B3)
 impl NetSync for Colonist {
+    const SYNC_FROM: SyncFrom = SyncFrom::AnyEntity;
+}
+
+// bastion (full-authority movement, stage 1b): the kinematic-ownership
+// marker must reach CLIENTS, because clients re-simulate remote entities
+// with local physics and only blend 10%/frame toward the server's
+// positions. On flat ground the two simulations agree; at a LEDGE they
+// cannot (client physics holds the body on the lip or drops it
+// ballistically while the server steps down the route), so every ledge
+// rubber-bands. Syncing the marker lets the shared phys system skip
+// marked bodies client-side too — they render purely from clamped
+// network interpolation, one authority end to end.
+impl NetSync for KinematicTravel {
     const SYNC_FROM: SyncFrom = SyncFrom::AnyEntity;
 }
 

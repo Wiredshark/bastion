@@ -22252,21 +22252,56 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // travel, not straight up.
                                     let anim = (d / d.magnitude().max(0.01))
                                         * KINEMATIC_WALK_SPEED;
-                                    pending_kinematic.push((
-                                        entity,
-                                        pos.0 + dir * step,
-                                        anim,
-                                    ));
-                                    // ★ v3 WATCHDOG TRUTH: under kinematic
-                                    // the body ALWAYS closes on its node —
-                                    // straight-line stall metrics (sdist)
-                                    // can't see vertical progress and were
-                                    // timing out mid-climb. Progress toward
-                                    // the node IS progress; the clock only
-                                    // runs when the integrator has nothing
-                                    // to do (routeless or at a node the
-                                    // chaser refuses to advance).
-                                    active.stuck_time = 0.0;
+                                    let try_pos = pos.0 + dir * step;
+                                    // ★ MICRO-COLLIDER (Ben live: "colonists
+                                    // try to pass through walls"). v3's
+                                    // phased stepping stopped VERTICAL
+                                    // tunneling; the lookahead's corner-cut
+                                    // — and a far-off head after a re-path —
+                                    // could still carry the body through a
+                                    // wall HORIZONTALLY, because a kinematic
+                                    // mover has no physics to stop it. Never
+                                    // enter a solid cell: if the stepped-to
+                                    // column is solid at feet or head
+                                    // height, slide along whichever single
+                                    // axis is free; if both are blocked,
+                                    // HOLD — the watchdog clock then runs
+                                    // and the assist/repath machinery
+                                    // inherits the case honestly.
+                                    let blocked = |p: Vec3<f32>| {
+                                        let c = p.map(|e| e.floor() as i32);
+                                        (0..2).any(|dz| {
+                                            terrain
+                                                .get(Vec3::new(c.x, c.y, c.z + dz))
+                                                .is_ok_and(|b| b.is_solid())
+                                        })
+                                    };
+                                    let x_slide =
+                                        Vec3::new(try_pos.x, pos.0.y, try_pos.z);
+                                    let y_slide =
+                                        Vec3::new(pos.0.x, try_pos.y, try_pos.z);
+                                    let new_pos = if !blocked(try_pos) {
+                                        Some(try_pos)
+                                    } else if dir.x.abs() > 0.01 && !blocked(x_slide) {
+                                        Some(x_slide)
+                                    } else if dir.y.abs() > 0.01 && !blocked(y_slide) {
+                                        Some(y_slide)
+                                    } else {
+                                        None
+                                    };
+                                    if let Some(np) = new_pos {
+                                        pending_kinematic.push((entity, np, anim));
+                                        // ★ v3 WATCHDOG TRUTH: under kinematic
+                                        // the body ALWAYS closes on its node —
+                                        // straight-line stall metrics (sdist)
+                                        // can't see vertical progress and were
+                                        // timing out mid-climb. Progress toward
+                                        // the node IS progress; the clock only
+                                        // runs when the integrator has nothing
+                                        // to do (routeless, refused advance, or
+                                        // held by the collider).
+                                        active.stuck_time = 0.0;
+                                    }
                                 }
                             }
                         }

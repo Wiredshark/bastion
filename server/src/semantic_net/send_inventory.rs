@@ -208,7 +208,13 @@ mod tests {
         // (events/information.rs, PluginArtifactData) joined the tree from
         // the other lane and is classified PostAuthCandidate exactly like
         // its legacy PluginData sibling. INTENTIONAL, accounted here.
-        assert_eq!(n, 134, "PostAuthCandidate count drifted -- update this row's own commit-message accounting if the change is intentional");
+        // DESIGNATION SYNC (f17a58b278): 134 -> 133. The three direct
+        // BastionDesignation echoes + the BastionDesignationRemoved echo
+        // in sys/msg/in_game.rs (4 sites) collapsed into TWO client.rs
+        // helper-body sends (send + mirror record in one call), and the
+        // founding-refusal server_msg joined: -4 +3 = -1. INTENTIONAL,
+        // accounted here.
+        assert_eq!(n, 133, "PostAuthCandidate count drifted -- update this row's own commit-message accounting if the change is intentional");
     }
 
     #[test]

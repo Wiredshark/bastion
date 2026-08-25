@@ -226,7 +226,10 @@ $EnvVars = if ($Mode -eq 'megatown') {
         # — nobody lived out there so it never loaded so nobody could live
         # there. A city needs its whole footprint resident.
         BASTION_COLONY_PRESENCE_VD     = '7'
-        BASTION_AUTOFOUND_COLONY       = '48'
+        # POP LADDER (Ben): keep the city footprint, limit the population,
+        # and work the count UP rung by rung to find where it breaks.
+        # Rung 1 = 24. Raise only after a rung looks clean in a flyover.
+        BASTION_AUTOFOUND_COLONY       = '24'
         BASTION_SEED_FOOD              = '256'
         BASTION_SEED_MATERIALS         = '256'
         # ★ KINEMATIC MOVER: ON (Ben's ruling, 2026-08-25: "DO NOT bench

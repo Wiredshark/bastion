@@ -1047,8 +1047,13 @@ impl AgentData<'_> {
                     // tick integrates the body along the route directly.
                     // Physics keeps gravity, knockback and combat; players
                     // and vanilla NPCs are untouched.
+                    // Keyed on the OWNERSHIP MARKER, not on being a
+                    // colonist: an idle wander has no bastion job, so no
+                    // integrator would take over — zeroing its input left
+                    // idle colonists paralyzed mid-intent (walk animation,
+                    // no motion) while working ones moved perfectly.
                     if crate::util::kinematic_mover_enabled()
-                        && read_data.colonists.contains(*self.entity)
+                        && read_data.kinematic_travels.contains(*self.entity)
                     {
                         controller.inputs.move_dir = Vec2::zero();
                     }

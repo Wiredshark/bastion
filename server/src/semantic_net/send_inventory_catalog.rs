@@ -17,7 +17,7 @@ use super::SendSiteClassV1::{
     V1EgressMechanism,
 };
 
-pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 201] = [
+pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 200] = [
     ("weather/tick.rs", "lazy_msg = Some(client.prepare(ServerGeneral::WeatherUpdate(", 0, PostAuthCandidate),
     ("weather/tick.rs", "lazy_msg.as_ref().map(|msg| client.send_prepared(msg));", 0, PostAuthCandidate),
     // APEX-T3.6.03: the legacy-disconnect inventory SCANS for send
@@ -52,6 +52,15 @@ pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 201] = 
     ("client.rs", "| ServerGeneral::Notification(_) => self.general_stream.lock().unwrap().send(g),", 0, LegacyMechanism),
     ("client.rs", "ServerMsg::Ping(m) => self.ping_stream.lock().unwrap().send(m),", 0, LegacyMechanism),
     ("client.rs", "pub(crate) fn send_fallible<M: Into<ServerMsg>>(&self, msg: M) { let _ = self.send(msg); }", 0, LegacyMechanism),
+    // DESIGNATION SYNC (f17a58b278): the designation echo moved out of
+    // sys/msg/in_game.rs into these two helper bodies (send + mirror
+    // record in ONE call, per their own doc). Same messages, same status
+    // as the in_game.rs entries they replace: genuine post-auth
+    // ServerGeneral producers not yet migrated to the outbox -- NOT
+    // LegacyMechanism, which is reserved for the content-agnostic
+    // transport primitives.
+    ("client.rs", "self.send(ServerGeneral::BastionDesignation {", 0, PostAuthCandidate),
+    ("client.rs", "self.send(ServerGeneral::BastionDesignationRemoved { region })?;", 0, PostAuthCandidate),
     ("client.rs", "pub(crate) fn send_prepared(&self, msg: &PreparedMsg) -> Result<(), StreamError> {", 0, LegacyMechanism),
     ("client.rs", "SemanticStreamIdV1::Bootstrap => self.register_stream.send(frame_bytes),", 0, V1EgressMechanism),
     ("client.rs", "SemanticStreamIdV1::CharacterScreen => self.character_screen_stream.send(frame_bytes),", 0, V1EgressMechanism),
@@ -202,19 +211,24 @@ pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 201] = 
     ("sys/terrain.rs", "client.send_fallible(ServerGeneral::TerrainChunkUpdate {", 0, PostAuthCandidate),
     ("sys/msg/in_game.rs", "client.send(ServerGeneral::ExitInGameSuccess)?;", 0, PostAuthCandidate),
     ("sys/msg/in_game.rs", "client.send(ServerGeneral::SetViewDistance(clamped_vds.terrain))?;", 0, PostAuthCandidate),
-    ("sys/msg/in_game.rs", "client.send(ServerGeneral::BastionDesignation {", 0, PostAuthCandidate),
+    // DESIGNATION SYNC (f17a58b278): the three direct BastionDesignation
+    // echo sends and the BastionDesignationRemoved echo that used to sit
+    // between these server_msg entries moved into client.rs's
+    // send_bastion_designation/-_removed helper bodies (catalogued
+    // there).
     ("sys/msg/in_game.rs", "client.send(ServerGeneral::server_msg(", 0, PostAuthCandidate),
     ("sys/msg/in_game.rs", "client.send(ServerGeneral::server_msg(", 1, PostAuthCandidate),
     ("sys/msg/in_game.rs", "client.send(ServerGeneral::server_msg(", 2, PostAuthCandidate),
-    ("sys/msg/in_game.rs", "client.send(ServerGeneral::BastionDesignation {", 1, PostAuthCandidate),
-    ("sys/msg/in_game.rs", "client.send(ServerGeneral::BastionDesignation {", 2, PostAuthCandidate),
     ("sys/msg/in_game.rs", "client.send(ServerGeneral::server_msg(", 3, PostAuthCandidate),
     ("sys/msg/in_game.rs", "client.send(ServerGeneral::server_msg(", 4, PostAuthCandidate),
-    ("sys/msg/in_game.rs", "client.send(ServerGeneral::BastionDesignationRemoved { region })?;", 0, PostAuthCandidate),
     ("sys/msg/in_game.rs", "client.send(ServerGeneral::server_msg(", 5, PostAuthCandidate),
     ("sys/msg/in_game.rs", "client.send(ServerGeneral::server_msg(", 6, PostAuthCandidate),
     ("sys/msg/in_game.rs", "client.send(ServerGeneral::server_msg(", 7, PostAuthCandidate),
     ("sys/msg/in_game.rs", "client.send(ServerGeneral::server_msg(", 8, PostAuthCandidate),
+    // DESIGNATION SYNC (f17a58b278): the founding-refusal player message
+    // in the post-loop drain. Same class as its nine server_msg siblings
+    // above; the `let _ =` prefix makes it a distinct snippet key.
+    ("sys/msg/in_game.rs", "let _ = client.send(ServerGeneral::server_msg(", 0, PostAuthCandidate),
     ("sys/msg/in_game.rs", "client.send(ServerGeneral::BastionInspectInfo { target, payload });", 0, PostAuthCandidate),
     ("sys/waypoint.rs", "client.send_fallible(ServerGeneral::Notification(", 0, PostAuthCandidate),
     ("sys/terrain_sync.rs", "lazy_msg = Some(client.prepare(ServerGeneral::TerrainBlockUpdates(", 0, PostAuthCandidate),

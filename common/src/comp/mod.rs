@@ -55,7 +55,7 @@ pub use self::{
     anchor::Anchor,
     arcing::{ArcProperties, Arcing},
     aura::{Aura, AuraChange, AuraKind, Auras, EnteredAuras},
-    bastion::{BastionGodAnchor, BastionSelected, Colonist, PlayerColony},
+    bastion::{BastionGodAnchor, BastionSelected, Colonist, KinematicTravel, PlayerColony},
     beam::Beam,
     body::{
         AllBodies, Body, BodyData, Gender, arthropod, biped_large, biped_small, bird_large,

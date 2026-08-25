@@ -61,10 +61,12 @@ impl Component for ConstructedLadderTraversal {
 /// the route IS the motion. Inserted only while a flagged colonist travels
 /// a held route; swept off every tick it isn't re-earned, so a released,
 /// arrived, fleeing or dead colonist falls back to physics immediately.
-#[derive(Default, Clone, Copy, Debug)]
+#[derive(Default, Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct KinematicTravel;
 impl Component for KinematicTravel {
-    type Storage = specs::NullStorage<Self>;
+    // Flagged so the net-sync layer can track insert/remove — the marker
+    // must reach clients (see common-net synced_components).
+    type Storage = specs::DerefFlaggedStorage<Self, specs::NullStorage<Self>>;
 }
 
 /// Stage-1 B5.8: the single shared movement-owner discriminator for a

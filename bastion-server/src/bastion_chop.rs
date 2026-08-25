@@ -45,26 +45,46 @@ pub fn tree_signature_seed(
     z_lo: i32,
     z_hi: i32,
 ) -> Option<Vec3<i32>> {
-    let mut top_wood: Option<i32> = None;
-    let mut first_wood: Option<i32> = None;
+    // ★ SIGNATURE v3, taught by its own species probe (a lone Wood block
+    // floating at z=190 with air both sides — the "bare trunks" were
+    // BRANCH-CLIP columns from neighbouring canopies, and the real trees
+    // are pines whose trunk tip pokes ABOVE the canopy, so leaves-above-
+    // top-wood fails by species). A real trunk is a CONTIGUOUS WOOD RUN
+    // (>=4 stacked — branch clips are 1-2); tree-ness is confirmed by
+    // Leaves anywhere in the 5x5 columns across the window (a pine's
+    // skirt, an oak's crown — and a house WALL, the one other wood run,
+    // has no leaves anywhere near it).
+    let mut run_start: Option<i32> = None;
+    let mut best_run: Option<(i32, i32)> = None; // (base, len)
+    let mut cur = 0i32;
     for z in z_lo..=z_hi {
-        if let Ok(b) = terrain.get(Vec3::new(x, y, z)) {
-            if matches!(b.kind(), BlockKind::Wood) {
-                if first_wood.is_none() {
-                    first_wood = Some(z);
-                }
-                top_wood = Some(z);
+        let wood = terrain
+            .get(Vec3::new(x, y, z))
+            .is_ok_and(|b| matches!(b.kind(), BlockKind::Wood));
+        if wood {
+            if cur == 0 {
+                run_start = Some(z);
             }
+            cur += 1;
+            if best_run.is_none_or(|(_, l)| cur > l) {
+                best_run = run_start.map(|s| (s, cur));
+            }
+        } else {
+            cur = 0;
         }
     }
-    let (fw, tw) = (first_wood?, top_wood?);
-    for dz in 1..=6 {
-        for dx in -1..=1 {
-            for dy in -1..=1 {
-                if let Ok(b) = terrain.get(Vec3::new(x + dx, y + dy, tw + dz)) {
-                    if matches!(b.kind(), BlockKind::Leaves) {
-                        return Some(Vec3::new(x, y, fw));
-                    }
+    let (base, len) = best_run?;
+    if len < 4 {
+        return None;
+    }
+    for dx in -2..=2 {
+        for dy in -2..=2 {
+            for z in z_lo..=z_hi {
+                if terrain
+                    .get(Vec3::new(x + dx, y + dy, z))
+                    .is_ok_and(|b| matches!(b.kind(), BlockKind::Leaves))
+                {
+                    return Some(Vec3::new(x, y, base));
                 }
             }
         }
