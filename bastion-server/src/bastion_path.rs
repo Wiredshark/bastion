@@ -65,6 +65,7 @@ pub fn traversal_config_for(
     // vanilla NPCs get them too — a villager also takes the road. An
     // `Arc` clone per config: a refcount, not a copy.
     roads: &std::sync::Arc<std::collections::HashSet<vek::Vec2<i32>>>,
+    walls: &std::sync::Arc<std::collections::HashSet<vek::Vec2<i32>>>,
 ) -> TraversalConfig {
     // This controls how picky NPCs are about their pathfinding.
     // Giants are larger and so can afford to be less precise
@@ -108,6 +109,7 @@ pub fn traversal_config_for(
             })
             .unwrap_or_default(),
         road_cells: std::sync::Arc::clone(roads),
+        wall_margin_cells: std::sync::Arc::clone(walls),
         // V4 natural routes: colonists carry a uid-seeded shimmer so each
         // villager favours their own line through town (deterministic —
         // same colonist, same walk). Vanilla NPCs keep 0 = laser optimal.
@@ -300,6 +302,7 @@ impl<'a> System<'a> for Sys {
                 false,
                 time.0,
                 &board.road_cells,
+                &board.wall_margin_cells,
             );
             if let Some(endpoint_tolerance) = endpoint_tolerance {
                 cfg.node_tolerance = cfg.node_tolerance.min(endpoint_tolerance);

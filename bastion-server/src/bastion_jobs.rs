@@ -6208,6 +6208,7 @@ fn m3_promoted_corridor_waypoint(
             climb_ban: Vec::new(),
             road_cells: Default::default(),
             route_jitter_seed: 0,
+            wall_margin_cells: Default::default(),
         };
         let path = common::path::bastion_full_path(terrain, position, mount_center, &cfg)?;
         if path.is_empty() || path.len() > 64 || path.last().copied() != Some(mount) {
@@ -6543,6 +6544,7 @@ where
         climb_ban: Vec::new(),
         road_cells: Default::default(),
         route_jitter_seed: 0,
+        wall_margin_cells: Default::default(),
     };
     let Some(path) = common::path::bastion_full_path(terrain, actual_start, target, &cfg) else {
         return (None, None);
@@ -8327,6 +8329,10 @@ pub struct JobBoard {
     /// normal, so routes snap to streets whenever the street isn't twice
     /// as long as the shortcut. Empty on unfounded worlds: zero effect.
     pub road_cells: std::sync::Arc<std::collections::HashSet<Vec2<i32>>>,
+    /// ★ V4 wall margin (the roads pattern): columns hugging building
+    /// walls, founding-computed from site tiles; searches price them via
+    /// TraversalConfig. Empty pre-founding.
+    pub wall_margin_cells: std::sync::Arc<std::collections::HashSet<Vec2<i32>>>,
     /// ★ MOVE ASSISTS by class (vault/climb/step/descend) — the honesty
     /// counter for the router's-promise-is-a-contract law. Assists are
     /// leniency, not silence: an exploding rate here is the tracked-red
@@ -21588,6 +21594,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // town like everyone else.
                                     road_cells: board.road_cells.clone(),
                                     route_jitter_seed: 0,
+                                    wall_margin_cells: board.wall_margin_cells.clone(),
                                 };
                                 match common::path::bastion_full_path(
                                     &*terrain, pos.0, target, &cfg,
@@ -21801,6 +21808,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     false,
                                     time.0,
                                     &board.road_cells,
+                                    &board.wall_margin_cells,
                                 );
                                 detour_requests.push((u, pos.0, steer, cfg, tier, active.job));
                             }

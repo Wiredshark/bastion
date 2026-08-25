@@ -346,6 +346,7 @@ impl<'a> System<'a> for Sys {
                         goto_scheduled,
                         read_data.time.0,
                         &bastion_board.road_cells,
+                        &bastion_board.wall_margin_cells,
                     );
                     let health_fraction = health.map_or(1.0, Health::fraction);
 

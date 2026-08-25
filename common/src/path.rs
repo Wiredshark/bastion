@@ -149,6 +149,11 @@ pub struct TraversalConfig {
     /// shimmer that individualises routes. 0 = off (vanilla, emergency
     /// and corridor callers).
     pub route_jitter_seed: u64,
+    /// bastion (V4 wall margin, the roads pattern): columns adjacent to a
+    /// building wall, computed ONCE at founding from the site's own tile
+    /// data. Walk destinations in this set pay [`WALL_MARGIN`] unless they
+    /// are road cells. Empty for vanilla/emergency callers: zero effect.
+    pub wall_margin_cells: std::sync::Arc<std::collections::HashSet<Vec2<i32>>>,
 }
 
 /// Walk-edge multiplier for a move INTO a road column. 0.5: a street path
@@ -1357,11 +1362,7 @@ where
             nd.sqrt() * ((diff / d).dot(ndiff / nd) + 0.1).max(0.0) * 10.0
         })
     };
-    // Per-search memo for the V4 wall-margin (see the edge closure): cell →
-    // margin, so adjacency probes run once per unique cell, not per edge.
-    let wall_memo: core::cell::RefCell<hashbrown::HashMap<Vec3<i32>, f32>> =
-        core::cell::RefCell::new(hashbrown::HashMap::new());
-    let wall_memo = &wall_memo;
+
     let transition = |a: Node, b: Node| {
         1.0
             // Discourage travelling in the same direction for too long: this encourages
@@ -1590,29 +1591,18 @@ where
                 // (doorways pay it briefly — a necessary passage, not a
                 // detour). Roads are exempt: a walled street is still the
                 // street.
-                // ★ PERF (the loop's own catch: 8 probes per edge inside
-                // the A* hot loop ground the server to 13% tick rate):
-                // wall adjacency is a property of the CELL, and cells are
-                // touched many times per search — memoized per search,
-                // probes halved to body level only. Roads skip entirely.
-                const CARDINALS: [Vec3<i32>; 4] = [
-                    Vec3::new(1, 0, 0),
-                    Vec3::new(-1, 0, 0),
-                    Vec3::new(0, 1, 0),
-                    Vec3::new(0, -1, 0),
-                ];
-                let wall_margin = if road >= 1.0 {
-                    *wall_memo.borrow_mut().entry(next_node.pos).or_insert_with(|| {
-                        if CARDINALS.iter().any(|d| {
-                            vol.get(next_node.pos + *d + Vec3::unit_z())
-                                .map(|b| b.is_solid())
-                                .unwrap_or(false)
-                        }) {
-                            WALL_MARGIN
-                        } else {
-                            0.0
-                        }
-                    })
+                // ★ PERF, THE ROADS PATTERN AGAIN (the loop caught its own
+                // regression twice: live probes in the A* hot loop ground
+                // the tick to 13%, then per-poll memoization only reached
+                // 12.5 tps because retained searches re-poll across ticks).
+                // Town walls are STATIC — adjacency is a founding-computed
+                // column set exactly like road_cells: one hash lookup, zero
+                // block reads. Roads exempt by construction (a walled
+                // street is still the street).
+                let wall_margin = if road >= 1.0
+                    && traversal_cfg.wall_margin_cells.contains(&next_node.pos.xy())
+                {
+                    WALL_MARGIN
                 } else {
                     0.0
                 };
@@ -3028,6 +3018,7 @@ pub(super) fn trap_house_world() -> MockVol {
             climb_ban: Vec::new(),
             road_cells: Default::default(),
             route_jitter_seed: 0,
+            wall_margin_cells: Default::default(),
         }
     }
 

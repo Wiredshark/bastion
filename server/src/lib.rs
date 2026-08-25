@@ -7334,7 +7334,7 @@ impl Server {
                         // whichever house holds the stockpile plot. Soft
                         // preference by construction — it only moves where
                         // breaks AIM; needs, curfew and work still outrank.
-                        if let Some((_, _, _, Some(plaza), _, _)) = adoption.as_ref() {
+                        if let Some((_, _, _, Some(plaza), _, _, _)) = adoption.as_ref() {
                             let z = self
                                 .world
                                 .sim()
@@ -7351,15 +7351,16 @@ impl Server {
                         // colony's shared road set — every colonist's path
                         // search prices walk edges onto these columns at
                         // half, so routes follow the streets.
-                        if let Some((_, _, _, _, roads, buildings)) = adoption.as_ref() {
+                        if let Some((_, _, _, _, roads, walls, buildings)) = adoption.as_ref() {
                             let mut board = self
                                 .state
                                 .ecs_mut()
                                 .write_resource::<bastion_jobs::JobBoard>();
                             board.road_cells = std::sync::Arc::new(roads.clone());
+                            board.wall_margin_cells = std::sync::Arc::new(walls.clone());
                             board.town_buildings = buildings.clone();
                         }
-                        let adopted_names = if let Some((asp, _, plots, _, _, _)) = adoption.as_ref() {
+                        let adopted_names = if let Some((asp, _, plots, _, _, _, _)) = adoption.as_ref() {
                             let names = self.bastion_adopt_town_people(
                                 *asp,
                                 asp.xy().map(|e| e as i32),
@@ -7418,7 +7419,7 @@ impl Server {
                         // (`place_preset`), so the captured colony is the one
                         // an overseer would found rather than a lookalike.
                         // MODE A placement in a helper (t0_27 discipline).
-                        if let Some((_, town_origin, plots, _, _, _)) = adoption {
+                        if let Some((_, town_origin, plots, _, _, _, _)) = adoption {
                             Self::bastion_adopt_place(
                                 self.state.ecs(),
                                 town_origin,
@@ -7515,6 +7516,7 @@ impl Server {
         Vec<(common::bastion::DesignationKind, Vec2<i32>, Vec2<i32>)>,
         Option<Vec2<i32>>,
         std::collections::HashSet<Vec2<i32>>,
+        std::collections::HashSet<Vec2<i32>>,
         Vec<(
             bastion_server::bastion_jobs::TownBuildingKind,
             Vec2<i32>,
@@ -7592,7 +7594,7 @@ impl Server {
                  creation, else spawn"
             );
             let player_chose = chosen.is_some() || picked.is_some();
-            let (town_origin, plots, plaza, roads, buildings) = Self::bastion_adoptable_town_plots(
+            let (town_origin, plots, plaza, roads, walls, buildings) = Self::bastion_adoptable_town_plots(
                 self.index.as_index_ref(),
                 self.world.sim(),
                 near,
@@ -7648,7 +7650,7 @@ impl Server {
                     )
                 })
                 .unwrap_or(sp);
-            Some((asp, town_origin, plots, plaza, roads, buildings))
+            Some((asp, town_origin, plots, plaza, roads, walls, buildings))
         }
     }
 
@@ -7752,6 +7754,7 @@ impl Server {
         Vec2<i32>,
         Vec<(common::bastion::DesignationKind, Vec2<i32>, Vec2<i32>)>,
         Option<Vec2<i32>>,
+        std::collections::HashSet<Vec2<i32>>,
         std::collections::HashSet<Vec2<i32>>,
         Vec<(
             bastion_server::bastion_jobs::TownBuildingKind,
@@ -7992,6 +7995,55 @@ impl Server {
             road_columns = roads.len(),
             "bastion: ADOPT-A-TOWN street map ingested (roads, plazas, paths, bridges)"
         );
+        // ★ V4 WALL MARGIN (the roads pattern, twice perf-burned into
+        // shape): columns HUGGING a building tile — every non-building
+        // column cardinal-adjacent to a Building/Castle/Wall tile's cells.
+        // One founding sweep, zero runtime probes.
+        let mut walls = std::collections::HashSet::new();
+        {
+            use world::site::TileKind as TK;
+            let is_bld = |tpos: vek::Vec2<i32>| {
+                matches!(
+                    site.tiles.get(tpos).kind,
+                    TK::Building | TK::Castle | TK::Wall(_) | TK::Tower(_) | TK::Keep(_)
+                )
+            };
+            for ty in b.min.y..=b.max.y {
+                for tx in b.min.x..=b.max.x {
+                    let tpos = Vec2::new(tx, ty);
+                    if is_bld(tpos) {
+                        continue;
+                    }
+                    // Cells of this non-building tile that touch a
+                    // building tile's cells: cheap over-approximation —
+                    // if ANY cardinal tile is a building, the whole
+                    // tile's border row toward it hugs the wall; mark
+                    // the tile's cells adjacent to that edge.
+                    let w = site.tile_wpos(tpos);
+                    for (d, edge) in [
+                        (Vec2::new(1, 0), 5),
+                        (Vec2::new(-1, 0), 0),
+                        (Vec2::new(0, 1), 5),
+                        (Vec2::new(0, -1), 0),
+                    ] {
+                        if is_bld(tpos + d) {
+                            for k in 0..world::site::TILE_SIZE as i32 {
+                                let c = if d.x != 0 {
+                                    w + Vec2::new(edge, k)
+                                } else {
+                                    w + Vec2::new(k, edge)
+                                };
+                                walls.insert(c);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        tracing::info!(
+            wall_margin_columns = walls.len(),
+            "bastion: ADOPT-A-TOWN wall-margin map ingested (columns hugging building tiles)"
+        );
         // ★ BUILDING PURPOSES (Ben: "every building needs to be labeled
         // for its purpose and uses for the colonists"): worldgen already
         // labels every plot — the colony now READS the non-residential
@@ -8028,7 +8080,7 @@ impl Server {
             docks = buildings.iter().filter(|(k, ..)| *k == TB::Dock).count(),
             "bastion: TOWN BUILDINGS labeled — worldgen's own purposes, finally read"
         );
-        Some((site.origin, plots, plaza, roads, buildings))
+        Some((site.origin, plots, plaza, roads, walls, buildings))
     }
 
     /// bastion (ITEM 11 fixture lever, 2026-08-20): `BASTION_SEED_FOOD=<n>`
