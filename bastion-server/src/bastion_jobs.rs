@@ -16178,6 +16178,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let mut cols_loaded = 0u32;
                     let mut cols_unloaded = 0u32;
                     let mut bare_trunks = 0u32;
+                    // ★ THE SPECIES PROBE: the corrected 3×3-canopy
+                    // signature STILL finds zero across bands carrying
+                    // 183-656 wood columns — one example column's full
+                    // z-profile makes the "tree" name its own kind
+                    // (dead-forest roll? shrub wood? something else?).
+                    let mut example_column: Option<(Vec2<i32>, Vec<String>)> = None;
                     let seed = bands.iter().find_map(|(_, band)| {
                         let base = *band * 32;
                         for x in base.x..base.x + 32 {
@@ -16214,6 +16220,28 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     })
                                 }) {
                                     bare_trunks += 1;
+                                    if example_column.is_none() {
+                                        let profile: Vec<String> = (anchor.z - 8
+                                            ..=anchor.z + 20)
+                                            .filter_map(|z| {
+                                                terrain
+                                                    .get(Vec3::new(x, y, z))
+                                                    .ok()
+                                                    .map(|b| {
+                                                        format!(
+                                                            "{}:{:?}{}",
+                                                            z,
+                                                            b.kind(),
+                                                            b.get_sprite()
+                                                                .map(|s| format!("/{s:?}"))
+                                                                .unwrap_or_default()
+                                                        )
+                                                    })
+                                            })
+                                            .collect();
+                                        example_column =
+                                            Some((Vec2::new(x, y), profile));
+                                    }
                                 }
                             }
                         }
@@ -16242,6 +16270,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             cols_unloaded,
                             bare_trunks,
                             bands_scanned = bands.len(),
+                            example = ?example_column,
                             "bastion: WOOD PAR — wood wanted, no tree signature this firing (rotating ring)"
                         );
                     }
@@ -21961,8 +21990,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 };
                                 let dist = phased.magnitude();
                                 if dist > 0.05 {
+                                    // ★ REAL SIM DT, NOT A CONSTANT (Ben's
+                                    // live find: "fast forward worsens
+                                    // things and doesn't affect their
+                                    // movement speed" — at 4x the world
+                                    // ran 4x while walkers stepped a
+                                    // hardcoded 1/30s per tick, falling 4x
+                                    // behind their own watchdogs: the mass
+                                    // freeze. The observer only ever
+                                    // tested 1x — the A/B now covers the
+                                    // player's time-scale envelope).
                                     let step =
-                                        (KINEMATIC_WALK_SPEED * KINEMATIC_DT).min(dist);
+                                        (KINEMATIC_WALK_SPEED * dt.0).min(dist);
                                     let dir = phased / dist;
                                     // Velocity carries the FULL intent
                                     // direction so the animation faces
