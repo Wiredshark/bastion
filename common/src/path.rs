@@ -1100,10 +1100,39 @@ where
         || below.get_sprite().is_some_and(|sprite| {
             sprite
                 .solid_height()
-                .is_some_and(|h| ((below_z - 1) as f32) < h && h <= below_z as f32)
+                .is_some_and(|h| {
+                    ((below_z - 1) as f32) < h
+                        && h <= below_z as f32
+                        // bastion (Ben's flyover screenshots: colonists
+                        // "mounting fences, running along them" — a fence
+                        // rail at 1.09 counted as a FLOOR, so routes ran
+                        // the fence line). A waist-band sprite (hurdle
+                        // height 0.2..=1.6) is something you vault OVER,
+                        // never a platform you path ALONG; flat coverings
+                        // (carpets etc., ≤0.2) stay floors.
+                        && !(0.2..=1.6).contains(&h)
+                })
         });
     let in_liquid = a.is_liquid();
-    (on_ground || in_liquid) && !a.is_solid() && !b.is_solid()
+    // bastion (Ben's flyover: colonists "jump in and out of windows" — a
+    // window is a non-solid sprite, so a body cell inside one passed the
+    // walkability check and every window became a door). A cell whose
+    // body space holds a window sprite is not a place to stand or pass.
+    let through_window = [a, b].iter().any(|blk| {
+        blk.get_sprite().is_some_and(|s| {
+            matches!(
+                s,
+                crate::terrain::SpriteKind::Window1
+                    | crate::terrain::SpriteKind::Window2
+                    | crate::terrain::SpriteKind::Window3
+                    | crate::terrain::SpriteKind::Window4
+                    | crate::terrain::SpriteKind::WindowArabic
+                    | crate::terrain::SpriteKind::SeaDecorWindowHor
+                    | crate::terrain::SpriteKind::SeaDecorWindowVer
+            )
+        })
+    });
+    (on_ground || in_liquid) && !a.is_solid() && !b.is_solid() && !through_window
 }
 
 #[derive(Copy, Clone, Debug)]

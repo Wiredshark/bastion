@@ -229,15 +229,12 @@ $EnvVars = if ($Mode -eq 'megatown') {
         BASTION_AUTOFOUND_COLONY       = '48'
         BASTION_SEED_FOOD              = '256'
         BASTION_SEED_MATERIALS         = '256'
-        # ★ KINEMATIC MOVER: OFF for Ben's sessions (2026-08-25). The
-        # observer's counters were perfect (0 assists/bans/stuck) but his
-        # flyover found mass pathology the frames missed: "a ton of
-        # colonists frozen in place playing movement animations, or
-        # jumping back and forth a couple feet" — in some ways WORSE than
-        # physics. His session is the acceptance test and it outranks
-        # every counter. Kinematic iterates OBSERVER-ONLY until it beats
-        # physics in his eyes; re-enable by restoring
-        # BASTION_KINEMATIC_MOVER = '1' here.
+        # ★ KINEMATIC MOVER: ON (Ben's ruling, 2026-08-25: "DO NOT bench
+        # it — this is the right approach; physics movement is broken
+        # too"). Iterating LIVE with his sessions: the dt bug (fast-
+        # forward mass freeze) and the walking-in-place ghost are fixed;
+        # unloaded-chunk tolerance under a moving camera is the open face.
+        BASTION_KINEMATIC_MOVER        = '1'
     }
 } elseif ($Mode -eq 'flattown') {
     # ★ THE FLAT MAP TOWN, v2 (2026-08-23). The old flat DISC

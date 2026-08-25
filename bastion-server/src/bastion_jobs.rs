@@ -25364,6 +25364,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             for e in marked {
                 if !moved.contains(&e) {
                     kinematic_travels.remove(e);
+                    // ★ NO GHOST-WALKING (Ben: "frozen in place playing
+                    // animation of movement"): the last kinematic velocity
+                    // was written for the ANIMATION; leaving it behind
+                    // when the marker drops makes a standing colonist
+                    // moonwalk. Physics resumes from rest.
+                    if let Some(v) = velocities.get_mut(e) {
+                        v.0 = Vec3::zero();
+                    }
                 }
             }
             for (entity, new_pos, vel) in pending_kinematic.drain(..) {
