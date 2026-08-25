@@ -3306,7 +3306,16 @@ pub fn tightdig_enabled() -> bool {
 /// Read once.
 pub fn walldetour_enabled() -> bool {
     static WALLDETOUR: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *WALLDETOUR.get_or_init(|| std::env::var("BASTION_WALLDETOUR").is_ok_and(|v| v == "1"))
+    // ★ DEFAULT-ON (2026-08-25). Built flag-gated for ITEM 29's A/B and
+    // never promoted — while the exact failure it cures ran live: chaser
+    // telemetry caught TWO different colonists pinned at the same wall-foot
+    // coordinate (3037,7263), path_state=Exhausted, route_complete=false,
+    // oscillating for minutes, and the cure sat dark behind this flag.
+    // House pattern now (roads, wall margin, admission fixes): on by
+    // default, BASTION_NO_WALLDETOUR is the kill-switch, and the stall
+    // test that feeds it convicts on net-progress so the oscillator
+    // qualifies (see travel_stall_watch's doc).
+    *WALLDETOUR.get_or_init(|| std::env::var_os("BASTION_NO_WALLDETOUR").is_none())
 }
 
 /// bastion (ROW B, 2026-08-04): the VARIANT toggle for the amnesty-bench
