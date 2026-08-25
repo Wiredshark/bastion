@@ -16111,7 +16111,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 CHOP_DROP_ITEM,
                 (&pickup_items, &positions, &uids).join(),
                 &board,
-            );
+            ) && std::env::var_os("BASTION_PLANT_WOOD_PAR").is_none();
+            // ^ the PLANT (fixture lever): forces "wood wanted" so the
+            // whole autonomous chain — band scan, fell-set, claim, fell,
+            // haul — is exercisable on demand in a live leg regardless of
+            // seeded stock. No balance number changed.
             let chop_live = board
                 .jobs
                 .values()
