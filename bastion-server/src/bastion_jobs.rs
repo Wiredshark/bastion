@@ -4706,7 +4706,7 @@ pub const VAULT_TIMEOUT: f32 = 1.5;
 /// unhurried villager (vanilla walk ≈ 2-3 b/s). The fixed dt matches the
 /// capped server tick; an uncapped fixture server just walks faster,
 /// which every fixture already tolerates (sim-time judged).
-pub const KINEMATIC_WALK_SPEED: f32 = 2.5;
+pub const KINEMATIC_WALK_SPEED: f32 = 3.2;
 pub const KINEMATIC_DT: f32 = 1.0 / 30.0;
 pub(crate) fn kinematic_mover_on() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -21889,17 +21889,51 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             {
                                 let target =
                                     head.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
+                                // ★ v3 VOXEL-FOLLOW (v2's A/B localized the
+                                // residual: climb assists 12→140 because a
+                                // straight lerp toward a raised node TUNNELS
+                                // diagonally into the ledge face — physics
+                                // no longer stops it — and route resolution
+                                // degrades until the watchdog fires). The
+                                // step is axis-phased like a walking body:
+                                // ASCEND first when the node is above (rise
+                                // clear of the ledge, then walk in), DESCEND
+                                // last when below (walk out over the edge,
+                                // then drop). Same speed, same distance —
+                                // just never through a block face.
                                 let d = target - pos.0;
-                                let dist = d.magnitude();
+                                let phased = if d.z > 0.2 {
+                                    Vec3::new(0.0, 0.0, d.z)
+                                } else if d.z < -0.2 && d.xy().magnitude() > 0.3 {
+                                    Vec3::new(d.x, d.y, 0.0)
+                                } else {
+                                    d
+                                };
+                                let dist = phased.magnitude();
                                 if dist > 0.05 {
                                     let step =
                                         (KINEMATIC_WALK_SPEED * KINEMATIC_DT).min(dist);
-                                    let dir = d / dist;
+                                    let dir = phased / dist;
+                                    // Velocity carries the FULL intent
+                                    // direction so the animation faces
+                                    // travel, not straight up.
+                                    let anim = (d / d.magnitude().max(0.01))
+                                        * KINEMATIC_WALK_SPEED;
                                     pending_kinematic.push((
                                         entity,
                                         pos.0 + dir * step,
-                                        dir * KINEMATIC_WALK_SPEED,
+                                        anim,
                                     ));
+                                    // ★ v3 WATCHDOG TRUTH: under kinematic
+                                    // the body ALWAYS closes on its node —
+                                    // straight-line stall metrics (sdist)
+                                    // can't see vertical progress and were
+                                    // timing out mid-climb. Progress toward
+                                    // the node IS progress; the clock only
+                                    // runs when the integrator has nothing
+                                    // to do (routeless or at a node the
+                                    // chaser refuses to advance).
+                                    active.stuck_time = 0.0;
                                 }
                             }
                         }
