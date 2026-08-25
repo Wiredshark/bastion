@@ -16493,11 +16493,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // the refusal now counts loaded/unloaded columns and
                     // bare trunks so "unloaded", "treeless" and "trees
                     // without leaves" finally read differently.
-                    let rot = ((tick.0 / (ARBITRATION_INTERVAL as u64 * 80)) as usize)
-                        .checked_rem(bands.len().max(1))
-                        .unwrap_or(0);
-                    bands.rotate_left(rot);
-                    bands.truncate(2);
+                    // ★ NEAREST-FIRST (the first claimed par tree cost a
+                    // 220-cell trek that ate the whole work block — the
+                    // rotation was picking survey bands, not felling
+                    // targets): the two NEAREST loaded bands are ALWAYS
+                    // scanned, so the marked tree is the closest one that
+                    // exists; one extra band rotates through the remainder
+                    // so distant bands still get surveyed over time.
+                    let mut chosen: Vec<(i64, Vec2<i32>)> =
+                        bands.iter().take(2).copied().collect();
+                    if bands.len() > 2 {
+                        let rot = ((tick.0 / (ARBITRATION_INTERVAL as u64 * 80))
+                            as usize)
+                            .checked_rem(bands.len() - 2)
+                            .unwrap_or(0);
+                        chosen.push(bands[2 + rot]);
+                    }
+                    let bands = chosen;
                     let is_tree = |p: Vec3<i32>| {
                         terrain
                             .get(p)
@@ -22369,6 +22381,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // advancement still key on position proximity, so
                         // this integration drives them naturally. Deferred
                         // write (positions are join-borrowed here).
+                        // ★ PAR TREK TELEMETRY (the first trek was 12+
+                        // silent minutes — moving, never stuck, never
+                        // arriving; the census cannot tell a slow trek
+                        // from an oscillating one): while traveling a
+                        // par job, position + remaining distance every
+                        // ~30s. Par jobs are ≤2 live, so this is a few
+                        // lines an hour, not a firehose.
+                        if board.par_jobs.contains(&active.job)
+                            && tick.0 % 900 == 0
+                            && let Some(job) = board.jobs.get(&active.job)
+                        {
+                            info!(
+                                job = active.job,
+                                colonist = uids.get(entity).map(|u| u.0.get()),
+                                pos = ?pos.0.map(|e| e as i32),
+                                dist = pos.0.xy().distance(
+                                    job.pos.xy().map(|e| e as f32)
+                                ) as i32,
+                                "bastion: PAR TREK telemetry"
+                            );
+                        }
                         if kinematic_mover_on() {
                             if let Some((head, ahead)) =
                                 agent.as_deref().map(|a| a.chaser.diagnostic_snapshot()).and_then(
