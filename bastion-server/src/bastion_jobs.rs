@@ -8250,7 +8250,12 @@ pub struct JobBoard {
     /// Feeds the detour detector ONLY; it is never an input to
     /// `best_dist`/`stuck_time` (FR15 law: change what the detector sees,
     /// never the stall economy's inputs).
-    travel_stall_watch: HashMap<Uid, (Vec3<f32>, f64)>,
+    /// (anchor position, distance-to-steer at anchor time, window start).
+    /// The middle term exists because an OSCILLATOR defeats a pure
+    /// displacement test — the first wall-pinned trek wobbled ±1-2 cells
+    /// at the wall foot for six minutes, "displacing" every window while
+    /// making zero net progress toward its target.
+    travel_stall_watch: HashMap<Uid, (Vec3<f32>, f32, f64)>,
     /// bastion (ITEM 29, flag-gated): per-colonist DETOUR — (waypoints, the
     /// leg-ahead steer index, the final target it was computed for, searches
     /// bought so far). Board-side and NOT on `ActiveJob`, which is
@@ -22248,18 +22253,28 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // The displacement clock: always on, steer- and
                             // fetch-agnostic (see the field doc for why the
                             // watchdog cannot serve here).
+                            let cur_d = pos.0.distance(steer);
                             let stalled = match board.travel_stall_watch.get(&u).copied() {
                                 None => {
-                                    board.travel_stall_watch.insert(u, (pos.0, time.0));
+                                    board
+                                        .travel_stall_watch
+                                        .insert(u, (pos.0, cur_d, time.0));
                                     false
                                 },
-                                Some((anchor, since)) => {
+                                Some((anchor, d0, since)) => {
                                     if time.0 - since < DETOUR_STALL_WINDOW {
                                         false
                                     } else {
                                         let displaced = pos.0.distance(anchor);
-                                        board.travel_stall_watch.insert(u, (pos.0, time.0));
+                                        board
+                                            .travel_stall_watch
+                                            .insert(u, (pos.0, cur_d, time.0));
+                                        // Either test convicts: no wobble,
+                                        // OR wobble with no net progress
+                                        // toward the steer (the oscillator
+                                        // at the wall foot).
                                         displaced < DETOUR_MIN_DISPLACEMENT
+                                            || (d0 - cur_d) < DETOUR_MIN_DISPLACEMENT
                                     }
                                 },
                             };
