@@ -182,6 +182,10 @@ fn jitter_off() -> bool {
     static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *OFF.get_or_init(|| std::env::var_os("BASTION_NO_ROUTE_JITTER").is_some())
 }
+fn admission_fixes_off() -> bool {
+    static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *OFF.get_or_init(|| std::env::var_os("BASTION_NO_ADMISSION_FIXES").is_some())
+}
 
 const DIAGONALS: [Vec2<i32>; 8] = [
     Vec2::new(1, 0),
@@ -1124,7 +1128,7 @@ where
                         // height 0.2..=1.6) is something you vault OVER,
                         // never a platform you path ALONG; flat coverings
                         // (carpets etc., ≤0.2) stay floors.
-                        && !(0.2..=1.6).contains(&h)
+                        && (admission_fixes_off() || !(0.2..=1.6).contains(&h))
                 })
         });
     let in_liquid = a.is_liquid();
@@ -1132,7 +1136,7 @@ where
     // window is a non-solid sprite, so a body cell inside one passed the
     // walkability check and every window became a door). A cell whose
     // body space holds a window sprite is not a place to stand or pass.
-    let through_window = [a, b].iter().any(|blk| {
+    let through_window = !admission_fixes_off() && [a, b].iter().any(|blk| {
         blk.get_sprite().is_some_and(|s| {
             matches!(
                 s,
