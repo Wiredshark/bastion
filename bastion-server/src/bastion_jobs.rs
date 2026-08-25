@@ -16468,6 +16468,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     y,
                                     anchor.z - 8,
                                     anchor.z + 20,
+                                    // Outer-ring bands are wilderness by
+                                    // construction; the inner fallback is
+                                    // the town itself, where walls demand
+                                    // the leaf test.
+                                    ring == "outer",
                                 ) {
                                     return Some(seed);
                                 }

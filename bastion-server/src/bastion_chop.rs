@@ -38,12 +38,24 @@ use vek::*;
 /// in the column, then Leaves anywhere in the 3×3 columns within 6 blocks
 /// above it. House walls stay excluded — no canopy hangs over a wall —
 /// and fences never enter (sprites, not Wood blocks).
+/// Town-context signature: leaf confirmation REQUIRED (walls are wood runs).
+pub fn tree_signature_seed_town(
+    terrain: &TerrainGrid,
+    x: i32,
+    y: i32,
+    z_lo: i32,
+    z_hi: i32,
+) -> Option<Vec3<i32>> {
+    tree_signature_seed(terrain, x, y, z_lo, z_hi, false)
+}
+
 pub fn tree_signature_seed(
     terrain: &TerrainGrid,
     x: i32,
     y: i32,
     z_lo: i32,
     z_hi: i32,
+    wilderness: bool,
 ) -> Option<Vec3<i32>> {
     // ★ SIGNATURE v3, taught by its own species probe (a lone Wood block
     // floating at z=190 with air both sides — the "bare trunks" were
@@ -76,6 +88,16 @@ pub fn tree_signature_seed(
     let (base, len) = best_run?;
     if len < 4 {
         return None;
+    }
+    // ★ v4, taught by probe v2 (best_run=14 columns REFUSED): these are
+    // GIANT trees — branches reach 8+ columns out (every "bare trunk" clip
+    // the old probes showcased), so the canopy shell lies far beyond a
+    // ±2-column leaf search, which sees only wood and air near the trunk.
+    // In WILDERNESS bands a 6+ run IS a tree — nothing else out there
+    // stacks six wood — while town context keeps the leaf requirement
+    // (a house wall is exactly a tall wood run with a garden nearby).
+    if wilderness && len >= 6 {
+        return Some(Vec3::new(x, y, base));
     }
     for dx in -2..=2 {
         for dy in -2..=2 {
@@ -210,7 +232,7 @@ pub fn detect_trees(
                             continue;
                         };
                         let base_z = col.alt as i32;
-                        if tree_signature_seed(
+                        if tree_signature_seed_town(
                             terrain,
                             x,
                             y,
