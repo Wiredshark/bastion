@@ -16398,6 +16398,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         "bastion: REACHABILITY FLOOD — disconnected furnished cells condemned wholesale (no walker will be sent to prove them)"
                     );
                 }
+                // ★ COVERAGE BBOX (the walled-city question: does the
+                // flood exit the gates at all? The wall probe found a
+                // full-height ring; if this bbox hugs the wall line, the
+                // town is sealed and every outside par is structurally
+                // unmarkable — a gate/door admission row, not a scan row).
+                {
+                    let (mut bmin, mut bmax) =
+                        (Vec2::broadcast(i32::MAX), Vec2::broadcast(i32::MIN));
+                    for p in seen.iter() {
+                        bmin = Vec2::partial_min(bmin, p.xy());
+                        bmax = Vec2::partial_max(bmax, p.xy());
+                    }
+                    info!(
+                        cells = seen.len(),
+                        min = ?bmin,
+                        max = ?bmax,
+                        "bastion: FLOOD COVERAGE bbox"
+                    );
+                }
             }
         }
 
@@ -16651,6 +16670,57 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             }
                         }
                         None
+                    });
+                    // ★ INNER-TOWN SECOND PASS (live finding: the WHOLE
+                    // outer ring can be walled off — every signature was
+                    // conn-refused, firing after firing: a fully walled
+                    // city whose flood may never exit the gates. The
+                    // town's own trees are inside the flood by
+                    // definition; the leaf test (wilderness=false) keeps
+                    // house walls from ever reading as trunks). One
+                    // ornamental beats a wood loop that never closes —
+                    // and the replant arc restores it.
+                    let seed = seed.or_else(|| {
+                        if ring != "outer" || conn_refused == 0 {
+                            return None;
+                        }
+                        let mut inner: Vec<(i64, Vec2<i32>)> = Vec::new();
+                        for gx in (-2..=2).map(|k| g0.x + 4 * k) {
+                            for gy in (-2..=2).map(|k| g0.y + 4 * k) {
+                                let g = Vec2::new(gx, gy);
+                                let d = (g - ac).map(|e| e as i64);
+                                let d2 = d.x * d.x + d.y * d.y;
+                                if d2 <= 9 && band_loaded(g) {
+                                    inner.push((d2, g));
+                                }
+                            }
+                        }
+                        inner.sort_by_key(|(d2, g)| (*d2, g.x, g.y));
+                        inner.iter().find_map(|(_, band)| {
+                            let base = *band * 32;
+                            for x in base.x..base.x + 32 {
+                                for y in base.y..base.y + 32 {
+                                    if let Some(seed) =
+                                        crate::bastion_chop::tree_signature_seed(
+                                            &terrain,
+                                            x,
+                                            y,
+                                            anchor.z - 8,
+                                            anchor.z + 20,
+                                            false,
+                                        )
+                                        && !connectivity_refuses(
+                                            &board.connected_cells,
+                                            board.connectivity_prev_cells,
+                                            seed,
+                                        )
+                                    {
+                                        return Some(seed);
+                                    }
+                                }
+                            }
+                            None
+                        })
                     });
                     if let Some(seed) = seed {
                         let cells = tree_fell_set(&is_tree, seed, 4096, 40, 16);
