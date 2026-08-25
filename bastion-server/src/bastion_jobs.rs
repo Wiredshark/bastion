@@ -16528,6 +16528,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let mut run_histo: std::collections::BTreeMap<i32, u32> =
                         std::collections::BTreeMap::new();
                     let mut best_run_len = 0i32;
+                    let mut conn_refused = 0u32;
                     // ★ THE SPECIES PROBE: the corrected 3×3-canopy
                     // signature STILL finds zero across bands carrying
                     // 183-656 wood columns — one example column's full
@@ -16564,7 +16565,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // the leaf test.
                                     ring == "outer",
                                 ) {
-                                    return Some(seed);
+                                    // ★ MARK ONLY WHAT THE TOWN CAN WALK
+                                    // TO (trek telemetry pinned the first
+                                    // claimant at (3037,7263) for six
+                                    // minutes: a 5-7 block TOWN WALL runs
+                                    // between town and tree, and the
+                                    // search dies at its foot before ever
+                                    // finding a gate). The reachability
+                                    // flood flows THROUGH gates — consult
+                                    // the same index the claim gate reads
+                                    // (same reference frame), fail-open
+                                    // when untrusted. A walled-off tree is
+                                    // skipped IN the scan, so nearest-
+                                    // first moves to the next candidate
+                                    // instead of remarking it forever.
+                                    if connectivity_refuses(
+                                        &board.connected_cells,
+                                        board.connectivity_prev_cells,
+                                        seed,
+                                    ) {
+                                        conn_refused += 1;
+                                    } else {
+                                        return Some(seed);
+                                    }
                                 }
                                 // ★ PROBE v2 (the v1 probe always showed
                                 // the band's FIRST wood column — inevitably
@@ -16657,6 +16680,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             ring,
                             wood_run_histogram = ?run_histo,
                             best_run = best_run_len,
+                            conn_refused,
                             bands_scanned = bands.len(),
                             example = ?example_column,
                             "bastion: WOOD PAR — wood wanted, no tree signature this firing (rotating ring)"
