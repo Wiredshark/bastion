@@ -83,7 +83,17 @@ impl InterpolatableComponent for Pos {
         }
         let (t0prime, m0) = vel.buf[(i + vel.buf.len() - 1) % vel.buf.len()];
         let (t1prime, m1) = vel.buf[i % vel.buf.len()];
-        let t = (t2 - t0) / (t1 - t0);
+        // bastion (full-authority movement rewrite, stage 1 — NPC net-sync
+        // discipline): this lerp was UNCLAMPED, so whenever the client's
+        // clock ran past the last authoritative update (a slow or hiccuping
+        // server), t exceeded 1 and every remote entity EXTRAPOLATED along
+        // its last segment — gliding onward, then snapping back on the next
+        // packet. One overloaded night made the whole world rubber-band,
+        // airships included. Industry shape: a small extrapolation grace
+        // (a quarter of an update interval), then HOLD at the last known
+        // position. A healthy server never reaches the clamp; a degraded
+        // one now looks calm instead of elastic.
+        let t = ((t2 - t0) / (t1 - t0)).min(1.25);
         let mut out = if ENABLE_POSITION_HERMITE
             && ((t0 - t0prime).abs() < f64::EPSILON && (t1 - t1prime).abs() < f64::EPSILON)
         {
