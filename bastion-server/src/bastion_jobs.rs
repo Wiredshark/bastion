@@ -149,6 +149,10 @@ pub struct ChopFell {
     pub cells: Vec<Vec3<i32>>,
     pub threshold: f32,
     pub wood_count: u32,
+    /// ★ CREW FELLING (Ben: "let multiple colonists work on one tree"):
+    /// the TREE-level work pool. Every crew member's contribution lands
+    /// here; the first to cross the threshold fells the tree.
+    pub accum: f32,
 }
 
 /// bastion (CHOP-FELLING): a tree mid-fall — the v1.5 top-down stagger.
@@ -8273,6 +8277,9 @@ pub struct JobBoard {
     /// time). Success and target-moved clear it; Unreachable (a proof,
     /// not a budget) does not write it.
     detour_tiers: HashMap<Uid, (Vec3<f32>, u8)>,
+    /// ★ Crew-slot chop jobs → their tree's primary job (whose
+    /// `chop_fell_sets` entry holds the shared work pool).
+    chop_crew: HashMap<JobId, JobId>,
     /// bastion (ITEM 29, flag-gated): per-colonist DETOUR — (waypoints, the
     /// leg-ahead steer index, the final target it was computed for, searches
     /// bought so far). Board-side and NOT on `ActiveJob`, which is
@@ -10155,15 +10162,60 @@ impl JobBoard {
             affordance: AffordanceClass::SolidTarget,
         });
         self.chop_fell_sets.insert(id, ChopFell {
-            cells: kept,
+            cells: kept.clone(),
             threshold: (CHOP_WORK_PER_BLOCK * wood_count as f32).max(1.0),
             wood_count,
+            accum: 0.0,
         });
         self.designated.push((Region { min, max }, DesignationKind::Chop));
+        // ★ CREW SLOTS (Ben: "let multiple colonists work on one tree to
+        // speed up the cutting"): up to two companion jobs at their own
+        // standable-adjacent cells of the same tree, Chebyshev ≥2 from the
+        // base and each other so the crew spreads around the trunk. They
+        // pool work into the primary's fell entry via `chop_crew`.
+        let mut crew_bases: Vec<Vec3<i32>> = vec![base];
+        for &c in kept.iter().rev() {
+            if crew_bases.len() >= 3 {
+                break;
+            }
+            if crew_bases.iter().all(|b| {
+                (c.x - b.x).abs().max((c.y - b.y).abs()) >= 2
+            }) && standable_beside(c)
+            {
+                crew_bases.push(c);
+            }
+        }
+        for &cb in crew_bases.iter().skip(1) {
+            let cid = self.next_id;
+            self.next_id += 1;
+            self.jobs.insert(cid, Job {
+                player_ordered: false,
+                kind: common::bastion::JobKind::Designated(DesignationKind::Chop),
+                work: DesignationKind::Chop.work_type(),
+                pos: cb,
+                skill_floor: 0,
+                claimed_by: None,
+                suspended_for: None,
+                unreachable: false,
+                progress: 0.0,
+                required_item: None,
+                needs_materials: false,
+                carve_attempted: false,
+                is_access: false,
+                stuck_strikes: 0,
+                benched_until_tick: None,
+                depth: 0,
+                reservation: None,
+                affordance: AffordanceClass::SolidTarget,
+            });
+            self.chop_crew.insert(cid, id);
+            info!(companion = cid, primary = id, pos = ?cb, "bastion: chop crew slot placed");
+        }
         info!(
             job = id,
             ?base,
             wood = wood_count,
+            crew = crew_bases.len(),
             "bastion: chop base-cut placed (CHOP-FELLING)"
         );
         Some(id)
@@ -10688,6 +10740,7 @@ impl JobBoard {
         // can leak an entry.
         self.idle_breaks.remove(&id);
         self.par_jobs.remove(&id);
+        self.chop_crew.remove(&id);
         let job = self.jobs.remove(&id);
         if let Some(j) = &job
             && let Some(rid) = j.reservation
@@ -22554,10 +22607,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             );
                         }
                         if kinematic_mover_on() {
-                            if let Some((head, ahead)) =
-                                agent.as_deref().map(|a| a.chaser.diagnostic_snapshot()).and_then(
-                                    |s| s.route_head.map(|h| (h, s.route_ahead)),
-                                )
+                            // ★ SEARCH-GAP BRIDGE (the step-freeze
+                            // fingerprint: 14/14 assists at dz=0 dist=1
+                            // with vel=(0,0,0) and searched_for=Some — the
+                            // route ends, the scheduler searches, and a
+                            // kinematic body has NOTHING to follow, so it
+                            // stands dead for seconds at the foot of every
+                            // step where a route segment ends. Physics
+                            // walkers coasted on steering through search
+                            // gaps; the bridge restores that: no route →
+                            // glide toward the live steer. The collider
+                            // and surface probe keep blind walking legal —
+                            // it holds at real obstacles, and the watchdog
+                            // runs while held).
+                            let snap = agent
+                                .as_deref()
+                                .map(|a| a.chaser.diagnostic_snapshot());
+                            let bridge = snap
+                                .as_ref()
+                                .is_some_and(|s| {
+                                    s.route_head.is_none()
+                                        && s.last_search_target.is_some()
+                                })
+                                .then_some(steer);
+                            if let Some((head, ahead)) = snap
+                                .and_then(|s| s.route_head.map(|h| (h, s.route_ahead)))
+                                .map(Some)
+                                .unwrap_or(None)
                             {
                                 // ★ LOOKAHEAD (Ben's rubber-band report:
                                 // "moving then teleporting to the original
@@ -22573,6 +22649,34 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     head.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
                                 let steer_node = if (head_c - pos.0).magnitude() < 0.9
                                     && let Some(a) = ahead
+                                    // ★ CORNER LOS (Ben: "for the life of
+                                    // me why do they keep hugging the
+                                    // walls" — the cut aims INSIDE a
+                                    // blocked corner, the collider catches
+                                    // it, and the SLIDE branch walks the
+                                    // body along the facade; every corner
+                                    // by a house became a wall-scrape).
+                                    // A diagonal cut is taken only when
+                                    // both grazed corner cells are open at
+                                    // body height; otherwise walk the full
+                                    // node path, which never touches the
+                                    // wall.
+                                    && {
+                                        let d = a - head;
+                                        if d.x != 0 && d.y != 0 {
+                                            let open = |c: Vec3<i32>| {
+                                                (0..2).all(|dz| {
+                                                    terrain
+                                                        .get(c + Vec3::new(0, 0, dz))
+                                                        .is_ok_and(|b| !b.is_solid())
+                                                })
+                                            };
+                                            open(head + Vec3::new(d.x, 0, 0))
+                                                && open(head + Vec3::new(0, d.y, 0))
+                                        } else {
+                                            true
+                                        }
+                                    }
                                 {
                                     a
                                 } else {
@@ -22728,6 +22832,53 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         // runs when the integrator has nothing
                                         // to do (routeless, refused advance, or
                                         // held by the collider).
+                                        active.stuck_time = 0.0;
+                                    }
+                                }
+                            } else if let Some(bt) = bridge {
+                                // The bridge glide: one straight kinematic
+                                // step toward the steer while the search
+                                // runs. Same speed, same collider rules —
+                                // implemented as a plain horizontal step
+                                // with the surface probe (the full phased
+                                // machinery is unnecessary: the bridge
+                                // only spans flat-to-one-step ground, and
+                                // anything harder holds honestly until the
+                                // real route lands).
+                                let d = bt - pos.0;
+                                let horiz = Vec3::new(d.x, d.y, 0.0);
+                                let hd = horiz.magnitude();
+                                if hd > 0.05 {
+                                    let step = (KINEMATIC_WALK_SPEED * dt.0).min(hd);
+                                    let dir = horiz / hd;
+                                    let try_pos = pos.0 + dir * step;
+                                    let cx = try_pos.x.floor() as i32;
+                                    let cy = try_pos.y.floor() as i32;
+                                    let fz = pos.0.z.floor() as i32;
+                                    let solid = |q: Vec3<i32>| {
+                                        terrain.get(q).is_ok_and(|b| b.is_solid())
+                                    };
+                                    let mut landed = None;
+                                    for dz in [0i32, 1, -1] {
+                                        let below = Vec3::new(cx, cy, fz + dz - 1);
+                                        let feet = Vec3::new(cx, cy, fz + dz);
+                                        let head_c = Vec3::new(cx, cy, fz + dz + 1);
+                                        if solid(below)
+                                            && !solid(feet)
+                                            && !solid(head_c)
+                                        {
+                                            landed = Some((fz + dz) as f32);
+                                            break;
+                                        }
+                                    }
+                                    if let Some(gz) = landed {
+                                        let anim = (d / d.magnitude().max(0.01))
+                                            * KINEMATIC_WALK_SPEED;
+                                        pending_kinematic.push((
+                                            entity,
+                                            Vec3::new(try_pos.x, try_pos.y, gz),
+                                            anim,
+                                        ));
                                         active.stuck_time = 0.0;
                                     }
                                 }
@@ -23022,9 +23173,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     };
                                     (head, class, front)
                                 });
+                            // ★ Steps ride the fast clock too (Ben:
+                            // "still get stuck going up a step" — the
+                            // bridge above cures the cause, this bounds
+                            // the symptom: an adjacent same-or-one-up
+                            // promised cell completes at 1.5s, not 9).
                             let vault_ready = assist
                                 .as_ref()
-                                .is_some_and(|(_, class, _)| *class == "vault")
+                                .is_some_and(|(_, class, _)| {
+                                    *class == "vault" || *class == "step"
+                                })
                                 && active.stuck_time > VAULT_TIMEOUT;
                             if vault_ready
                                 || active.stuck_time > STUCK_TIMEOUT
@@ -23124,6 +23282,84 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     !vault_ready,
                                     "vault_ready implies assist was Some — the early clock                                     must never reach the ban/timeout machinery"
                                 );
+                                // ★ UNSTUCK NUDGE (Ben: "add a fail safe
+                                // where the colonist is nudged where it
+                                // wants to go so it gets unstuck"): the
+                                // universal rung under the assist — no
+                                // promised adjacent cell qualified, but a
+                                // stall is a stall. Displace up to 2 cells
+                                // toward the live steer onto a probed-
+                                // standable cell, witnessed and counted
+                                // like an assist. stuck_strikes caps it (a
+                                // wall must not be nudged through grain by
+                                // grain); past the cap the ban/timeout
+                                // machinery below owns the case.
+                                let nudge_steer = agent.as_deref().and_then(|a| {
+                                    match a.rtsim_controller.activity {
+                                        Some(common::rtsim::NpcActivity::Goto(t, _)) => Some(t),
+                                        _ => None,
+                                    }
+                                });
+                                let nudged = nudge_steer.and_then(|st| {
+                                    if job.stuck_strikes >= 6 {
+                                        return None;
+                                    }
+                                    let dirv = st.xy() - pos.0.xy();
+                                    let m = dirv.magnitude();
+                                    if m < 0.5 {
+                                        return None;
+                                    }
+                                    let dir = dirv / m;
+                                    let solid = |q: Vec3<i32>| {
+                                        terrain.get(q).is_ok_and(|b| b.is_solid())
+                                    };
+                                    for dist_try in [2.0f32, 1.5, 1.0] {
+                                        let cand = pos.0
+                                            + Vec3::new(
+                                                dir.x * dist_try,
+                                                dir.y * dist_try,
+                                                0.0,
+                                            );
+                                        let cx = cand.x.floor() as i32;
+                                        let cy = cand.y.floor() as i32;
+                                        let fz = pos.0.z.floor() as i32;
+                                        for dz in [0i32, 1, -1, 2] {
+                                            let below =
+                                                Vec3::new(cx, cy, fz + dz - 1);
+                                            let feet =
+                                                Vec3::new(cx, cy, fz + dz);
+                                            let headc =
+                                                Vec3::new(cx, cy, fz + dz + 1);
+                                            if solid(below)
+                                                && !solid(feet)
+                                                && !solid(headc)
+                                            {
+                                                return Some(Vec3::new(
+                                                    cx, cy, fz + dz,
+                                                ));
+                                            }
+                                        }
+                                    }
+                                    None
+                                });
+                                if let Some(np) = nudged {
+                                    job.stuck_strikes =
+                                        job.stuck_strikes.saturating_add(1);
+                                    *board
+                                        .move_assists
+                                        .entry("nudge")
+                                        .or_insert(0) += 1;
+                                    info!(
+                                        colonist = uids.get(entity).map(|u| u.0.get()),
+                                        to = ?np,
+                                        strikes = job.stuck_strikes,
+                                        "bastion: UNSTUCK NUDGE — displaced toward the steer (fail-safe rung)"
+                                    );
+                                    pending_assists.push((entity, np));
+                                    active.stuck_time = 0.0;
+                                    active.best_dist = f32::MAX;
+                                    continue;
+                                }
                                 // ★ CLIMB BAN RECORDER (Ben: "they largely
                                 // get stuck because they get into infinite
                                 // climb loops"). A timeout while CLIMBING or
@@ -24958,6 +25194,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             "bastion: FETCH_DIAG working-tick carried"
                         );
                     }
+                    // ★ WORK REQUIRES PRESENCE (Ben live: "a colonist
+                    // can walk away out of the tree range and keep
+                    // working the job"): drift past working range sends
+                    // the state back to Traveling — the travel machinery
+                    // walks them back; no accrual at range, for ANY kind.
+                    {
+                        let jp = job.pos.map(|e| e as f32)
+                            + Vec3::new(0.5, 0.5, 0.0);
+                        if pos.0.xy().distance(jp.xy()) > 5.0
+                            || (pos.0.z - jp.z).abs() > 4.0
+                        {
+                            active.state = ActiveJobState::Traveling;
+                            continue;
+                        }
+                    }
                     // B5: accumulate work, rate scaled by the relevant skill.
                     // TOOL-0 (TOOLS-UPGRADE §3): × the EQUIPPED-tool factor —
                     // bare hands/wrong tool = the slow base, a matching
@@ -24980,8 +25231,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 _ => None,
                             })
                     });
-                    job.progress += dur_mult
+                    let contribution = dur_mult
                         * crate::bastion_actions::work_progress(dt.0, skill_level, job.work, tool);
+                    job.progress += contribution;
+                    // ★ CREW FELLING: chop work pools at the TREE
+                    // (companions resolve to the primary via chop_crew);
+                    // job.progress still advances for the inspector bar.
+                    let tree_id = board
+                        .chop_crew
+                        .get(&active.job)
+                        .copied()
+                        .unwrap_or(active.job);
+                    if job.kind.is(DesignationKind::Chop)
+                        && let Some(f) = board.chop_fell_sets.get_mut(&tree_id)
+                    {
+                        f.accum += contribution;
+                    }
                     // ★ THE INSPECTOR SEES ALL WORK (looking sweep: activity
                     // read None mid-farm/mid-cook — only the chop arm below
                     // ever wrote it, so the one field meant to answer "what
@@ -25001,7 +25266,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // the `jobs` borrow.
                     let threshold = board
                         .chop_fell_sets
-                        .get(&active.job)
+                        .get(&tree_id)
                         .map_or(1.0, |f| f.threshold);
                     // CHOP-PROGRESS-INDICATOR (row 51.61): surface this work
                     // job + its progress on the colonist's Arbiter for the
@@ -25014,7 +25279,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     if let Some(arb) = arbiters.get_mut(entity) {
                         arb.activity = Some((job.work, (job.progress / threshold).clamp(0.0, 1.0)));
                     }
-                    if job.progress < threshold {
+                    if job.kind.is(DesignationKind::Chop) {
+                        match board.chop_fell_sets.get(&tree_id) {
+                            // Still chopping — the POOL is the bar, so a
+                            // crew of three crosses it three times as fast.
+                            Some(f) if f.accum < f.threshold => continue,
+                            Some(_) => {},
+                            // The tree already fell — a crewmate crossed
+                            // first. This slot's work is done.
+                            None => {
+                                info!(
+                                    job = active.job,
+                                    "bastion: crew slot done — tree already felled"
+                                );
+                                board.remove_job(active.job);
+                                to_release.push((entity, ReleaseReason::Other, line!()));
+                                continue;
+                            },
+                        }
+                    } else if job.progress < threshold {
                         continue;
                     }
 
@@ -25432,7 +25715,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // time, per Wood cell in place (DF's logs, raining down
                     // with the stagger).
                     if job.kind.is(DesignationKind::Chop)
-                        && let Some(fell) = board.chop_fell_sets.remove(&active.job)
+                        && let Some(fell) = board.chop_fell_sets.remove(&tree_id)
                     {
                         let done_pos = job.pos;
                         // X1 · XP WITNESS (F8-C3's other half). The chop grant
@@ -25466,6 +25749,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             cursor: 0,
                         });
                         board.remove_job(active.job);
+                        // Reap the rest of the crew: unclaimed slots and
+                        // the primary (if this finisher was a companion)
+                        // vanish now; CLAIMED crewmates self-complete at
+                        // their next tick via the set-gone arm above.
+                        let crew: Vec<JobId> = board
+                            .chop_crew
+                            .iter()
+                            .filter(|(_, prim)| **prim == tree_id)
+                            .map(|(c, _)| *c)
+                            .chain(std::iter::once(tree_id))
+                            .collect();
+                        for cid in crew {
+                            if cid != active.job
+                                && board
+                                    .jobs
+                                    .get(&cid)
+                                    .is_some_and(|j| j.claimed_by.is_none())
+                            {
+                                board.remove_job(cid);
+                            }
+                        }
                         // B-LIVE3 parity with the classic arm: the tree's
                         // designation AABB retires now (its only job is
                         // gone) — the client outline clears as the tree
@@ -31485,7 +31789,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 };
                 // ★ PAR MANDATE (see par_jobs doc): colony-need jobs claim
                 // a tier up, so the marked tree beats the haul next door.
-                let priority = if board.par_jobs.contains(&id) {
+                let priority = if board.par_jobs.contains(&id)
+                    || board
+                        .chop_crew
+                        .get(&id)
+                        .is_some_and(|prim| board.par_jobs.contains(prim))
+                {
                     priority.saturating_add(1)
                 } else {
                     priority
