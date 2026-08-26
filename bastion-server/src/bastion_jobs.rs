@@ -23437,8 +23437,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         let cy = p.y.floor() as i32;
                                         let fz = pos.0.z.floor() as i32;
                                         // Nearest surface first: level, one
-                                        // up, one down (route steps are ±1).
-                                        for dz in [0i32, 1, -1] {
+                                        // up, one down — and TWO down (Ben's
+                                        // mechanism report, 2026-08-26: "the
+                                        // reason why colonists get stuck on
+                                        // ledges is because they can't drop
+                                        // two blocks deep". The router's
+                                        // Falls arm already ADMITS 2-block
+                                        // drops at honest fall pricing, but
+                                        // this window refused to land them,
+                                        // so surface-following legs froze at
+                                        // every 2-step terrace and detoured
+                                        // along the lip. A walking body
+                                        // steps down two as it steps down
+                                        // one — snap, no hesitation; 3+
+                                        // stays the override's business).
+                                        for dz in [0i32, 1, -1, -2] {
                                             // Body cells refuse windows too
                                             // (the shared router rule).
                                             let solid = |q: Vec3<i32>| {
@@ -23694,7 +23707,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         })
                                     };
                                     let mut landed = None;
-                                    for dz in [0i32, 1, -1] {
+                                    // Two-down included — same ledge rule
+                                    // as the chaser probe (Ben's report).
+                                    for dz in [0i32, 1, -1, -2] {
                                         let below = Vec3::new(cx, cy, fz + dz - 1);
                                         let feet = Vec3::new(cx, cy, fz + dz);
                                         let head_c = Vec3::new(cx, cy, fz + dz + 1);

@@ -1755,7 +1755,27 @@ where
                         _ => 1.5 * (down - 2) as f32,
                     }
                 } else {
-                    transition(node, next_node) + FALL_COST * down as f32
+                    // ★ BEN'S LEDGE RULING (2026-08-26, his own mechanism
+                    // report: "the reason why colonists get stuck on ledges
+                    // is because they can't drop two blocks deep" + "make
+                    // the router's admission rules allow 2-block (maybe
+                    // 3-block) downward steps at low cost — that's ordinary
+                    // human movement off a ledge; colonists have climb
+                    // abilities"). The uniform re-pricing that killed the
+                    // one-way descent lattice hazard-priced ORDINARY
+                    // step-downs with it, so routes detoured around every
+                    // 2-step terrace and walkers froze at the lip. Split
+                    // where the bug actually lived: stepping down 1-2 is
+                    // walking (flat cost — and climb reach 2 makes it
+                    // symmetric, no one-way basin for colonists); 3 pays
+                    // one fall-step premium (allowed, discouraged); 4+
+                    // keeps uniform per-block fall pricing — the descent-
+                    // lattice fix stands where deep falls made it needed.
+                    transition(node, next_node) + match down {
+                        1..=2 => 0.0,
+                        3 => FALL_COST,
+                        _ => FALL_COST * down as f32,
+                    }
                 }))
             }))
             // bastion (B5.8): LADDER edges — vertical moves in a cell
@@ -4152,10 +4172,34 @@ mod ledger_179_tests {
         // transition of a fall edge is the 1.0 constant, plus FALL_COST per
         // block of drop. Kept in one expression so a change there that this
         // does not follow shows up as a failure, not a stale duplicate.
-        let fall = |down: i32| 1.0 + FALL_COST * down as f32;
+        // Mirrors the live arm post-LEDGE-RULING: 1-2 free, 3 one
+        // premium, 4+ per-block.
+        let fall = |down: i32| {
+            1.0 + match down {
+                1..=2 => 0.0,
+                3 => FALL_COST,
+                _ => FALL_COST * down as f32,
+            }
+        };
         let flat = 3.0; // pinned against `transition` by the scramble test
 
-        for down in 1..=12 {
+        // ★ BEN'S LEDGE RULING carves the walking range OUT of the
+        // lattice pin: stepping down 1-2 blocks IS walking and must never
+        // cost more than a flat step (the uniform 3.5/block pricing goes
+        // RED here — the planted old defect that froze walkers at every
+        // terrace lip and made routes detour around ordinary ledges).
+        for down in 1..=2 {
+            assert!(
+                fall(down) <= flat,
+                "a {down}-block step-down ({}) is ordinary walking and must not              exceed one flat step ({flat}): hazard-priced step-downs detour              routes around every terrace and freeze walkers at the lip",
+                fall(down),
+            );
+        }
+        // 3 blocks: allowed at a real premium — dearer than one flat step,
+        // far cheaper than a wall.
+        assert!(fall(3) > flat && fall(3) < flat * 20.0);
+        // 4+: the one-way descent lattice pin stands where the bug lived.
+        for down in 4..=12 {
             assert!(
                 fall(down) >= flat * down as f32,
                 "a {down}-block drop ({}) must cost at least walking {down} flat              blocks ({}): cheaper falls make every ledge a bargain and terraced              ground a one-way descent lattice — the old 1.5*(down-2) pricing              charged HALF a flat step for a 3-block drop",
