@@ -24246,6 +24246,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         colonist = uids.get(entity).map(|u| u.0.get()),
                                         to = ?np,
                                         strikes = job.stuck_strikes,
+                                        // ★ CONVICTION-SITE CENSUS (sixth
+                                        // falsification's lesson): name the
+                                        // convicted walker's OWNER and
+                                        // stance at the moment of nudge —
+                                        // marker=false here means a
+                                        // population the mover still does
+                                        // not own; marker=true means the
+                                        // mover moved them and the verdict
+                                        // is oscillation/waypoint churn.
+                                        marker = kinematic_travels.contains(entity),
+                                        stance = ?char_states.get(entity),
+                                        stuck_secs = active.stuck_time,
+                                        best_dist = active.best_dist,
+                                        kind = ?job.kind,
                                         "bastion: UNSTUCK NUDGE — displaced toward the steer (fail-safe rung)"
                                     );
                                     pending_assists.push((entity, np));
