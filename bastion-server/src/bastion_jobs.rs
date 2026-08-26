@@ -23484,6 +23484,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // always engages and the in-place
                                     // vertical trap (probe returns own feet)
                                     // convicts instead of self-absolving.
+                                    let mut overridden = false;
                                     if std::env::var_os("BASTION_NO_GLIDE_OVERRIDE")
                                         .is_none()
                                     {
@@ -23491,6 +23492,28 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             (np - pos.0).magnitude() > 1e-3
                                         });
                                         if !displaced {
+                                            // ★ THE HOLD MUST WIND ITS OWN
+                                            // ESCAPEMENT (round-5 falsifier:
+                                            // 682 nudges in 15 sim-hours,
+                                            // override count ZERO — the
+                                            // external stall clock only
+                                            // accrues when the integrator
+                                            // pushed nothing, so the hold-
+                                            // push starved the very clock
+                                            // its override reads, froze the
+                                            // body, and the strike window
+                                            // convicted every held walker
+                                            // into a nudge instead. A guard
+                                            // starving its protectee,
+                                            // literally). The hold accrues
+                                            // the clock inline; once the
+                                            // override engages it KEEPS
+                                            // gliding — override displacement
+                                            // does not reset the clock (only
+                                            // probe-approved motion does), so
+                                            // the walk is continuous at full
+                                            // speed, not one step per second.
+                                            active.stuck_time += dt.0;
                                             if active.stuck_time > 1.0 {
                                                 let dm = d.magnitude().max(0.01);
                                                 new_pos = Some(
@@ -23500,6 +23523,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                                 * dt.0)
                                                                 .min(dm),
                                                 );
+                                                overridden = true;
                                                 if tick.0 % 30 == 0 {
                                                     info!(
                                                         uid = uids
@@ -23513,7 +23537,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             } else if new_pos.is_none() {
                                                 // Marker-held hold: the Goto
                                                 // stays zeroed, physics stays
-                                                // out, the clock runs.
+                                                // out, the clock winds.
                                                 pending_kinematic.push((
                                                     entity,
                                                     pos.0,
@@ -23536,8 +23560,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         // to do (routeless, refused advance, or
                                         // held by the collider) — and, post-
                                         // Grib, an in-place push is "nothing
-                                        // to do": only DISPLACEMENT resets.
-                                        if displaced {
+                                        // to do": only PROBE-APPROVED
+                                        // displacement resets; an override
+                                        // glide keeps its conviction so it
+                                        // persists to the node.
+                                        if displaced && !overridden {
                                             active.stuck_time = 0.0;
                                         }
                                     }
@@ -23597,8 +23624,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     .is_none()
                                     {
                                         // Same refusal crack as the chaser:
-                                        // hold with the marker, then glide
-                                        // raw once the clock convicts.
+                                        // hold with the marker, wind the
+                                        // clock inline (the hold-push starves
+                                        // the external accrual), glide once
+                                        // convicted — and the override glide
+                                        // never resets the clock, so it
+                                        // persists instead of stuttering.
+                                        active.stuck_time += dt.0;
                                         if active.stuck_time > 1.0 {
                                             let anim = (d / d.magnitude().max(0.01))
                                                 * KINEMATIC_WALK_SPEED;
