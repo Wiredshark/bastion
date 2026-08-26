@@ -2174,10 +2174,24 @@ pub(crate) fn designated_sweep_should_reap(
     claimed: bool,
     is_designated: bool,
     is_renewable: bool,
+    carries_fell_progress: bool,
     unclaimed_secs: f64,
     threshold_secs: f64,
 ) -> bool {
-    !claimed && is_designated && !is_renewable && unclaimed_secs >= threshold_secs
+    // ★ THE SWEEP-CHURN FINDING (staged world, days 1-3): a crew-felled
+    // tree is a MULTI-SHIFT job — every claimant releases at night, so
+    // "unclaimed past threshold" is its NORMAL nightly state, not an
+    // orphan signature. Sweeping it destroys the shared ChopFell accum
+    // pool (remove_job clears chop_fell_sets), so the same 786-block
+    // tree was marked three times across three days and never fell —
+    // crewmates misread the vanished set as "already felled". A job
+    // carrying accumulated fell work is exempt; a never-worked mark
+    // (accum == 0) is still a legitimate orphan and reaps normally.
+    !claimed
+        && is_designated
+        && !is_renewable
+        && !carries_fell_progress
+        && unclaimed_secs >= threshold_secs
 }
 
 /// ITEM8-V4 F6 (generic leak-witness backstop): whether a claim's held
@@ -31587,6 +31601,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             j.kind,
                             common::bastion::JobKind::Designated(DesignationKind::Farm)
                         ),
+                        // Fell progress = irreplaceable state; see the
+                        // predicate's comment. accum > 0 means shifts of
+                        // crew work are banked in this job's pool.
+                        board
+                            .chop_fell_sets
+                            .get(*id)
+                            .is_some_and(|f| f.accum > 0.0),
                         unclaimed_secs,
                         reap_threshold_secs,
                     )
@@ -37757,24 +37778,24 @@ mod tests {
         const T: f64 = 10.0;
         // The one case that should sweep: unclaimed, Designated, at or
         // past the threshold.
-        assert!(designated_sweep_should_reap(false, true, false, T, T));
-        assert!(designated_sweep_should_reap(false, true, false, T + 1.0, T));
+        assert!(designated_sweep_should_reap(false, true, false, false, T, T));
+        assert!(designated_sweep_should_reap(false, true, false, false, T + 1.0, T));
         // Claimed: never swept, regardless of how long it's been
         // "unclaimed" by a stale counter (that would be a double-remove
         // race against the job's own claimant).
-        assert!(!designated_sweep_should_reap(true, true, false, T + 100.0, T));
+        assert!(!designated_sweep_should_reap(true, true, false, false, T + 100.0, T));
         // Not a Designated kind (Haul/RestAt/EatFrom/Despond/DepositRun):
         // out of this sweep's declared scope, never touched.
-        assert!(!designated_sweep_should_reap(false, false, false, T + 100.0, T));
+        assert!(!designated_sweep_should_reap(false, false, false, false, T + 100.0, T));
         // Under threshold: too soon, not yet a backstop case.
-        assert!(!designated_sweep_should_reap(false, true, false, T - 1.0, T));
+        assert!(!designated_sweep_should_reap(false, true, false, false, T - 1.0, T));
         // ★ RENEWABLE EXEMPTION (Ben, 2026-08-23: "so our simulation doesn't
         // get messed up by junk jobs"): a farm job the pass re-derives from
         // cell state next cycle is NEVER reaped, at ANY staleness — reaping
         // it only churns job ids (8,364 created vs ~600 completed in one
         // measured leg, 3,477 reaps). Non-renewables keep the backstop.
         assert!(
-            !designated_sweep_should_reap(false, true, true, T + 10_000.0, T),
+            !designated_sweep_should_reap(false, true, true, false, T + 10_000.0, T),
             "a renewable (farm) designation is exempt from the reap forever"
         );
     }
@@ -37792,14 +37813,14 @@ mod tests {
         // no longer consulted by this predicate or its caller.
         const T: f64 = 10.0;
         assert!(
-            !designated_sweep_should_reap(false, true, false, 0.0, T),
+            !designated_sweep_should_reap(false, true, false, false, 0.0, T),
             "a job observed unclaimed for the first time this pass (0.0s) must not be reapable, \
              even if a prior job at its position was stale for a long time -- that history \
              belongs to the position, not to this job"
         );
         // A job one arbitration pass old (well under any real threshold)
         // is still safely inside its grace period.
-        assert!(!designated_sweep_should_reap(false, true, false, 0.5, T));
+        assert!(!designated_sweep_should_reap(false, true, false, false, 0.5, T));
     }
 
     #[test]
@@ -37808,8 +37829,28 @@ mod tests {
         // fix -- a job that has been unclaimed, by ITS OWN clock, for
         // longer than the threshold is still a legitimate backstop case.
         const T: f64 = 10.0;
-        assert!(designated_sweep_should_reap(false, true, false, T, T));
-        assert!(designated_sweep_should_reap(false, true, false, 3600.0, T));
+        assert!(designated_sweep_should_reap(false, true, false, false, T, T));
+        assert!(designated_sweep_should_reap(false, true, false, false, 3600.0, T));
+    }
+
+    #[test]
+    fn sweep_spares_a_fell_in_progress_but_reaps_a_never_worked_mark() {
+        // THE SWEEP-CHURN FINDING, pinned both ways. Left un-guarded,
+        // the route-3 backstop reaped the 786-block monster tree's fell
+        // job every night (crews release for Sleep -> unclaimed past
+        // threshold), destroying the accum pool; the tree was re-marked
+        // three times over three game days and never fell.
+        const T: f64 = 10.0;
+        assert!(
+            !designated_sweep_should_reap(false, true, false, true, 3600.0, T),
+            "a fell job with banked crew work must survive any unclaimed stretch \
+             (nightly release is its normal cycle, not an orphan signature)"
+        );
+        assert!(
+            designated_sweep_should_reap(false, true, false, false, 3600.0, T),
+            "a mark nobody ever worked (accum == 0) is still a real orphan \
+             and the backstop must keep reaping it"
+        );
     }
 
     #[test]
