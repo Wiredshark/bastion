@@ -2174,23 +2174,31 @@ pub(crate) fn designated_sweep_should_reap(
     claimed: bool,
     is_designated: bool,
     is_renewable: bool,
-    carries_fell_progress: bool,
+    crew_owned: bool,
     unclaimed_secs: f64,
     threshold_secs: f64,
 ) -> bool {
-    // ★ THE SWEEP-CHURN FINDING (staged world, days 1-3): a crew-felled
-    // tree is a MULTI-SHIFT job — every claimant releases at night, so
-    // "unclaimed past threshold" is its NORMAL nightly state, not an
-    // orphan signature. Sweeping it destroys the shared ChopFell accum
-    // pool (remove_job clears chop_fell_sets), so the same 786-block
-    // tree was marked three times across three days and never fell —
-    // crewmates misread the vanished set as "already felled". A job
-    // carrying accumulated fell work is exempt; a never-worked mark
-    // (accum == 0) is still a legitimate orphan and reaps normally.
+    // ★ THE SWEEP-CHURN FINDING, v2 (staged worlds, both rounds): a
+    // crew-felled tree is a MULTI-SHIFT job whose claims are SCHEDULE-
+    // GATED — crews release at night and cannot re-claim until the work
+    // block opens, so "unclaimed past threshold" is its normal nightly
+    // state. The v1 guard exempted only accum > 0 and the very next
+    // world falsified it: a mark placed outside the work block was
+    // swept 93s later, before any crew member COULD claim — the
+    // "never-worked marks still reap" pin was pinning the defect.
+    // The true boundary is OWNERSHIP, not progress: a job registered
+    // in the crew system (the fell job in chop_fell_sets, its slots in
+    // chop_crew) has its own lifecycle — crew claims, TIMBER reap,
+    // unreachable strikes — and this backstop must not touch it. Jobs
+    // with no other cleanup path (the backstop's actual charter) still
+    // reap. Known cost, accepted and logged: a fell whose entire crew
+    // benches can linger until re-claim or an unreachable verdict; that
+    // bounded leak is the crew-reclaim row's business, not a reason to
+    // let the reaper kill every overnight mark.
     !claimed
         && is_designated
         && !is_renewable
-        && !carries_fell_progress
+        && !crew_owned
         && unclaimed_secs >= threshold_secs
 }
 
@@ -31601,13 +31609,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             j.kind,
                             common::bastion::JobKind::Designated(DesignationKind::Farm)
                         ),
-                        // Fell progress = irreplaceable state; see the
-                        // predicate's comment. accum > 0 means shifts of
-                        // crew work are banked in this job's pool.
-                        board
-                            .chop_fell_sets
-                            .get(*id)
-                            .is_some_and(|f| f.accum > 0.0),
+                        // Crew-owned = the crew system's lifecycle
+                        // (claims are schedule-gated; reap is TIMBER's);
+                        // see the predicate's comment.
+                        board.chop_fell_sets.contains_key(*id)
+                            || board.chop_crew.contains_key(*id),
                         unclaimed_secs,
                         reap_threshold_secs,
                     )
@@ -37834,22 +37840,25 @@ mod tests {
     }
 
     #[test]
-    fn sweep_spares_a_fell_in_progress_but_reaps_a_never_worked_mark() {
-        // THE SWEEP-CHURN FINDING, pinned both ways. Left un-guarded,
-        // the route-3 backstop reaped the 786-block monster tree's fell
-        // job every night (crews release for Sleep -> unclaimed past
-        // threshold), destroying the accum pool; the tree was re-marked
-        // three times over three game days and never fell.
+    fn sweep_never_touches_crew_owned_jobs_but_reaps_unowned_designations() {
+        // THE SWEEP-CHURN FINDING, pinned at the TRUE boundary (v2). The
+        // v1 pin ("never-worked marks still reap") was falsified live in
+        // one night: a fell job marked outside the work block was swept
+        // 93s later, before its schedule-gated crew could possibly claim
+        // — progress is the wrong discriminator because progress requires
+        // the very claims the schedule forbids. Ownership is the right
+        // one: crew-registered jobs (fell + slots) are NEVER the
+        // backstop's business, at any age, at any progress.
         const T: f64 = 10.0;
         assert!(
             !designated_sweep_should_reap(false, true, false, true, 3600.0, T),
-            "a fell job with banked crew work must survive any unclaimed stretch \
-             (nightly release is its normal cycle, not an orphan signature)"
+            "a crew-owned job (fell or slot) must survive any unclaimed stretch \
+             including its very first night, when no crew member can yet claim"
         );
         assert!(
             designated_sweep_should_reap(false, true, false, false, 3600.0, T),
-            "a mark nobody ever worked (accum == 0) is still a real orphan \
-             and the backstop must keep reaping it"
+            "a Designated job with no owning system is still the backstop's \
+             charter and must keep reaping"
         );
     }
 
