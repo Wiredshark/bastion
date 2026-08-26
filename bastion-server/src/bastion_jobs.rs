@@ -27735,6 +27735,40 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 ) if !wps.is_empty() => {
                                     board.path_cache.insert(u, (wps, 0, ps.target));
                                 },
+                                (
+                                    SearchLane::Fill,
+                                    common::path::FullPathOutcome::Unreachable,
+                                ) => {
+                                    board.path_cache.remove(&u);
+                                    // ★ THE VERDICT REACHES THE JOB (Ben's
+                                    // wall-press cluster: the search said
+                                    // Unreachable, the blocked-designation
+                                    // reporter said it in chat, and the JOB
+                                    // stayed claimable — so colonists kept
+                                    // walking to the nearest face and
+                                    // standing pressed against the wall,
+                                    // one after another). An Unreachable
+                                    // proof strikes the claimant's job;
+                                    // three strikes mark it unreachable and
+                                    // the claim gauntlet stops offering it.
+                                    let held: Option<JobId> = (&entities, &active_jobs)
+                                        .join()
+                                        .find(|(e, _)| uids.get(*e) == Some(&u))
+                                        .map(|(_, aj)| aj.job);
+                                    if let Some(j) = held
+                                        && let Some(job) = board.jobs.get_mut(&j)
+                                    {
+                                        job.stuck_strikes =
+                                            job.stuck_strikes.saturating_add(1);
+                                        if job.stuck_strikes >= 3 {
+                                            job.unreachable = true;
+                                            info!(
+                                                job = j,
+                                                "bastion: UNREACHABLE PROVEN — job benched off the board (three failed route proofs)"
+                                            );
+                                        }
+                                    }
+                                },
                                 (SearchLane::Fill, _) => {
                                     board.path_cache.remove(&u);
                                 },
