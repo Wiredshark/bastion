@@ -23457,7 +23457,74 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             new_pos = Some(try_pos);
                                         }
                                     }
+                                    // ★ THE REFUSAL CRACK (looking sweep 3:
+                                    // Grib, uid 725, starved a full day
+                                    // WALLRUNNING under a roof-node steer).
+                                    // Two composed defects: (1) a node more
+                                    // than one step up is unreachable BY
+                                    // CONSTRUCTION for this probe (window is
+                                    // ±1 of the feet) and nothing ever
+                                    // rejected it; (2) every refused tick
+                                    // fell through without a push, the apply
+                                    // block swept the marker, and PHYSICS
+                                    // RESUMED WITH THE GOTO STILL ARMED —
+                                    // vanilla wall-hugging re-entered through
+                                    // the crack (347 nudges/day town-wide).
+                                    // The mend, per the standing ruling
+                                    // ("remove all collision — just have
+                                    // everyone glide from point A to B"):
+                                    // a refused tick HOLDS WITH THE MARKER
+                                    // (zero velocity — no wallrun, no ghost-
+                                    // walk), and once the stall clock shows a
+                                    // full second without displacement the
+                                    // body glides RAW at its node, collision
+                                    // waived, and arrives. The hold no longer
+                                    // resets the clock — only actual
+                                    // displacement does — so the override
+                                    // always engages and the in-place
+                                    // vertical trap (probe returns own feet)
+                                    // convicts instead of self-absolving.
+                                    if std::env::var_os("BASTION_NO_GLIDE_OVERRIDE")
+                                        .is_none()
+                                    {
+                                        let displaced = new_pos.is_some_and(|np| {
+                                            (np - pos.0).magnitude() > 1e-3
+                                        });
+                                        if !displaced {
+                                            if active.stuck_time > 1.0 {
+                                                let dm = d.magnitude().max(0.01);
+                                                new_pos = Some(
+                                                    pos.0
+                                                        + (d / dm)
+                                                            * (KINEMATIC_WALK_SPEED
+                                                                * dt.0)
+                                                                .min(dm),
+                                                );
+                                                if tick.0 % 30 == 0 {
+                                                    info!(
+                                                        uid = uids
+                                                            .get(entity)
+                                                            .map(|u| u.0.get()),
+                                                        node = ?steer_node,
+                                                        feet = ?pos.0,
+                                                        "bastion: CHASER GLIDE OVERRIDE — refused node walked by ruling"
+                                                    );
+                                                }
+                                            } else if new_pos.is_none() {
+                                                // Marker-held hold: the Goto
+                                                // stays zeroed, physics stays
+                                                // out, the clock runs.
+                                                pending_kinematic.push((
+                                                    entity,
+                                                    pos.0,
+                                                    Vec3::zero(),
+                                                ));
+                                            }
+                                        }
+                                    }
                                     if let Some(np) = new_pos {
+                                        let displaced =
+                                            (np - pos.0).magnitude() > 1e-3;
                                         pending_kinematic.push((entity, np, anim));
                                         // ★ v3 WATCHDOG TRUTH: under kinematic
                                         // the body ALWAYS closes on its node —
@@ -23467,8 +23534,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         // the node IS progress; the clock only
                                         // runs when the integrator has nothing
                                         // to do (routeless, refused advance, or
-                                        // held by the collider).
-                                        active.stuck_time = 0.0;
+                                        // held by the collider) — and, post-
+                                        // Grib, an in-place push is "nothing
+                                        // to do": only DISPLACEMENT resets.
+                                        if displaced {
+                                            active.stuck_time = 0.0;
+                                        }
                                     }
                                 }
                             } else if let Some(bt) = bridge {
@@ -23513,12 +23584,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     if let Some(gz) = landed {
                                         let anim = (d / d.magnitude().max(0.01))
                                             * KINEMATIC_WALK_SPEED;
-                                        pending_kinematic.push((
-                                            entity,
-                                            Vec3::new(try_pos.x, try_pos.y, gz),
-                                            anim,
-                                        ));
-                                        active.stuck_time = 0.0;
+                                        let np = Vec3::new(try_pos.x, try_pos.y, gz);
+                                        let displaced =
+                                            (np - pos.0).magnitude() > 1e-3;
+                                        pending_kinematic.push((entity, np, anim));
+                                        if displaced {
+                                            active.stuck_time = 0.0;
+                                        }
+                                    } else if std::env::var_os(
+                                        "BASTION_NO_GLIDE_OVERRIDE"
+                                    )
+                                    .is_none()
+                                    {
+                                        // Same refusal crack as the chaser:
+                                        // hold with the marker, then glide
+                                        // raw once the clock convicts.
+                                        if active.stuck_time > 1.0 {
+                                            let anim = (d / d.magnitude().max(0.01))
+                                                * KINEMATIC_WALK_SPEED;
+                                            pending_kinematic
+                                                .push((entity, try_pos, anim));
+                                        } else {
+                                            pending_kinematic.push((
+                                                entity,
+                                                pos.0,
+                                                Vec3::zero(),
+                                            ));
+                                        }
                                     }
                                 }
                             }
