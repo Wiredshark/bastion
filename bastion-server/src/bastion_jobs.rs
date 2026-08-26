@@ -8373,6 +8373,13 @@ pub struct JobBoard {
     /// guard NPCs ring the plaza each boot (self-healing across
     /// restarts); the colonist militia stays the citizen-response layer.
     pub garrison_spawned: bool,
+    /// ★ THREAT MEMORY (the evening-massacre autopsy: 9/9 day-0 deaths in
+    /// the Leisure block — the mandated evening gathers the whole town
+    /// outdoors at exactly the hour walkers arrive). Sim-time of the last
+    /// alarm; while it is fresh (20 sim-min) evening venues go INDOOR-ONLY
+    /// (taverns — DF's tavern-under-siege shape) and peace returns the
+    /// plaza.
+    pub last_alarm_time: f64,
     /// bastion (ITEM 29, flag-gated): per-colonist DETOUR — (waypoints, the
     /// leg-ahead steer index, the final target it was computed for, searches
     /// bought so far). Board-side and NOT on `ActiveJob`, which is
@@ -15976,6 +15983,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     {
                         let until = time.0 + ALARM_HOLD_SECS;
                         board.alarm = Some((*cry_pos, until));
+                        board.last_alarm_time = time.0;
                         let mut sheltered = 0u32;
                         let mut skipped_working = 0u32;
                         let mut skipped_bedless = 0u32;
@@ -27312,8 +27320,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .filter(|(k, ..)| *k == TownBuildingKind::Tavern)
                                 .map(|(_, _, _, a)| *a)
                                 .collect();
-                            let (venue, within) =
-                                venue_and_rank(rank, 1 + taverns.len());
+                            // ★ THREAT-AWARE EVENING (see last_alarm_time):
+                            // fresh danger moves the whole evening indoors.
+                            let threat_fresh = time.0 - board.last_alarm_time
+                                < 600.0
+                                && board.last_alarm_time > 0.0;
+                            let (venue, within) = if threat_fresh
+                                && !taverns.is_empty()
+                            {
+                                (1 + (rank % taverns.len()), rank / taverns.len())
+                            } else {
+                                venue_and_rank(rank, 1 + taverns.len())
+                            };
                             let anchor = if venue == 0 {
                                 anchor
                             } else {
