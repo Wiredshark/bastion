@@ -8372,7 +8372,7 @@ pub struct JobBoard {
     /// ship them; the adopted city never got its garrison. Four vanilla
     /// guard NPCs ring the plaza each boot (self-healing across
     /// restarts); the colonist militia stays the citizen-response layer.
-    pub garrison_spawned: bool,
+    pub garrison_spawned: u32,
     /// ★ THREAT MEMORY (the evening-massacre autopsy: 9/9 day-0 deaths in
     /// the Leisure block — the mandated evening gathers the whole town
     /// outdoors at exactly the hour walkers arrive). Sim-time of the last

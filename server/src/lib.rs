@@ -1527,12 +1527,20 @@ impl Server {
         // guards ring the plaza, once per boot. The raid spawner's exact
         // template with the friendly config — Alignment::Npc passes both
         // corks, vanilla guard AI hunts aggressors on its own.
-        if !board.garrison_spawned
+        // ★ WEALTH-SCALED (the paced-danger world's day-1: raids now
+        // scale with colony wealth — 964 and climbing — and four guards
+        // lost 18 downs to them. RimWorld's own answer: a richer town
+        // affords a bigger garrison. 4 + wealth/400, cap 8; re-checked
+        // each cadence so growth hires guards as it grows raids.
+        let garrison_want =
+            (4 + (board.colony_wealth as usize / 400)).min(8) as u32;
+        if board.garrison_spawned < garrison_want
             && let Some(anchor) = board
                 .gathering_anchor
                 .or_else(|| board.stockpiles.first().map(|(_, r)| (r.min + r.max) / 2))
         {
-            board.garrison_spawned = true;
+            let start = board.garrison_spawned;
+            board.garrison_spawned = garrison_want;
             let config_path = "common.entity.village.guard";
             // Same door the /spawn command and the raid use: RON-wrapped.
             if let Ok(config) = common::assets::Ron::<
@@ -1544,8 +1552,8 @@ impl Server {
                     <rand_chacha::ChaCha8Rng as rand::SeedableRng>::seed_from_u64(
                         0x6A22_51D0_0000_0011,
                     );
-                for i in 0..4u32 {
-                    let angle = std::f32::consts::TAU * (i as f32 / 4.0);
+                for i in start..garrison_want {
+                    let angle = std::f32::consts::TAU * (i as f32 / 8.0);
                     let pos = anchor.map(|e| e as f32)
                         + Vec3::new(angle.cos() * 20.0, angle.sin() * 20.0, 2.0);
                     let info = common::generation::EntityInfo::at(pos, &mut rng)
@@ -1571,7 +1579,10 @@ impl Server {
                 }
                 tracing::info!(
                     ?anchor,
-                    "bastion: THE GARRISON — four town guards posted at the plaza"
+                    hired = garrison_want - start,
+                    total = garrison_want,
+                    wealth = board.colony_wealth,
+                    "bastion: THE GARRISON — town guards posted (wealth-scaled)"
                 );
             }
         }
