@@ -8314,6 +8314,15 @@ pub struct JobBoard {
     /// 3.3 tps). At most one fill per colonist per 2 sim-seconds; failed
     /// searches are the expensive case and are limited exactly the same.
     path_fill_at: HashMap<Uid, f64>,
+    /// ★ THE MUSTER BENCH (band-5 world, day 1: 16 downs, 8 of them the
+    /// two militia cycling muster→downed→recover→muster against a hot
+    /// spawn table — they FIGHT now (ITEM 14 engaged=true) and lose to
+    /// cyclops-class monsters two tool-axes cannot kill). A town's
+    /// judgment: a downed guard is WOUNDED and stays home a while; a town
+    /// whose militia is all benched hides instead of sending meat. Uid →
+    /// sim-time until which musters skip them and the alarm shelters them
+    /// like civilians.
+    muster_bench: HashMap<Uid, f64>,
     /// bastion (ITEM 29, flag-gated): per-colonist DETOUR — (waypoints, the
     /// leg-ahead steer index, the final target it was computed for, searches
     /// bought so far). Board-side and NOT on `ActiveJob`, which is
@@ -12335,9 +12344,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // vanilla's own helper.
                         if comp::is_downed(healths.get(e), char_states.get(e))
                             && let Some(u) = uids.get(e).copied()
-                            && !targeted.contains(&u)
                         {
-                            new_rescues.push((u, p.0.map(|v| v.floor() as i32)));
+                            // A down benches the fighter — 5 sim-minutes
+                            // of no musters (see muster_bench's doc).
+                            brd.muster_bench.insert(u, time.0 + 300.0);
+                            if !targeted.contains(&u) {
+                                new_rescues.push((u, p.0.map(|v| v.floor() as i32)));
+                            }
                         }
                     }
                     // Uid-sorted: job ids assign identically on every run.
@@ -15821,6 +15834,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         if posted >= 2 {
                             break;
                         }
+                        // Wounded guards stay home (the bench).
+                        if board
+                            .muster_bench
+                            .get(&Uid(std::num::NonZeroU64::new(*u).expect("uid nonzero")))
+                            .is_some_and(|until| time.0 < *until)
+                        {
+                            continue;
+                        }
                         let Some(post) = nearest_spot(*ent) else {
                             break;
                         };
@@ -15911,8 +15932,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         let mut out_of_earshot = 0u32;
                         let mut civ: Vec<(u64, specs::Entity, Vec3<i32>)> = Vec::new();
                         for (ent, c, p) in (&entities, &colonists, &positions).join() {
-                            if c.0.work_priorities.get(common::bastion::WorkType::Guard) >= 4 {
-                                continue; // the militia runs TOWARD it
+                            if c.0.work_priorities.get(common::bastion::WorkType::Guard) >= 4
+                                && !uids.get(ent).is_some_and(|u| {
+                                    board
+                                        .muster_bench
+                                        .get(u)
+                                        .is_some_and(|until| time.0 < *until)
+                                })
+                            {
+                                continue; // FIT militia runs TOWARD it; the
+                                          // benched hide like anyone else.
                             }
                             let feet = p.0.map(|e| e.floor() as i32);
                             if (feet.xy() - cry_pos.xy()).map(|e| e as f32).magnitude()
