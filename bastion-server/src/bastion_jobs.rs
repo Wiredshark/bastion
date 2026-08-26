@@ -23550,8 +23550,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     if std::env::var_os("BASTION_NO_GLIDE_OVERRIDE")
                                         .is_none()
                                     {
+                                        // ★ A CRUMB IS NOT A STEP (742's
+                                        // trace: 0.02 blocks/s of wall-
+                                        // slide crumbs reset this clock
+                                        // every tick and starved the
+                                        // override — the oscillator law at
+                                        // the producer). Progress means at
+                                        // least 30% of a real step.
+                                        let real_step =
+                                            (KINEMATIC_WALK_SPEED * dt.0) * 0.3;
                                         let displaced = new_pos.is_some_and(|np| {
-                                            (np - pos.0).magnitude() > 1e-3
+                                            (np - pos.0).magnitude() > real_step
                                         });
                                         if !displaced {
                                             // ★ THE HOLD MUST WIND ITS OWN
@@ -23609,8 +23618,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         }
                                     }
                                     if let Some(np) = new_pos {
-                                        let displaced =
-                                            (np - pos.0).magnitude() > 1e-3;
+                                        let displaced = (np - pos.0).magnitude()
+                                            > (KINEMATIC_WALK_SPEED * dt.0) * 0.3;
                                         pending_kinematic.push((entity, np, anim));
                                         // ★ v3 WATCHDOG TRUTH: under kinematic
                                         // the body ALWAYS closes on its node —
@@ -23674,8 +23683,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         let anim = (d / d.magnitude().max(0.01))
                                             * KINEMATIC_WALK_SPEED;
                                         let np = Vec3::new(try_pos.x, try_pos.y, gz);
-                                        let displaced =
-                                            (np - pos.0).magnitude() > 1e-3;
+                                        let displaced = (np - pos.0).magnitude()
+                                            > (KINEMATIC_WALK_SPEED * dt.0) * 0.3;
                                         pending_kinematic.push((entity, np, anim));
                                         if displaced {
                                             active.stuck_time = 0.0;
