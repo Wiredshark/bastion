@@ -1703,6 +1703,45 @@ impl Server {
             } else {
                 HAMMER
             };
+            // ★ THE ARMORY (defense arc — the siege world's autopsy: the
+            // militia fought cyclops-class monsters with WORK AXES, the
+            // exact weapons vanilla balance prices for chopping wood, and
+            // lost a war the town's drill was otherwise winning. Vanilla
+            // city guards wield modular cobalt swords — the militia gets
+            // the same, deterministically the FIRST generated variant.
+            // Tools still ride in the bag for work hours; the sword is
+            // the mainhand a guard-priority colonist stands watch with).
+            if colonist
+                .0
+                .work_priorities
+                .get(common::bastion::WorkType::Guard)
+                >= 4
+            {
+                if let Ok(mut swords) = comp::item::modular::generate_weapons(
+                    comp::item::tool::ToolKind::Sword,
+                    comp::item::Material::Cobalt,
+                    None,
+                ) {
+                    if !swords.is_empty() {
+                        let sword = swords.remove(0);
+                        for asset in [PICK, AXE, HAMMER] {
+                            if let Ok(item) = comp::Item::new_from_asset(asset) {
+                                let _ = inv.push(item);
+                            }
+                        }
+                        let _ = inv.replace_loadout_item(
+                            comp::slot::EquipSlot::ActiveMainhand,
+                            Some(sword),
+                            time,
+                        );
+                        armed += 1;
+                        tracing::info!(
+                            "bastion: THE ARMORY — militia issued a sword"
+                        );
+                        continue;
+                    }
+                }
+            }
             for asset in [PICK, AXE, HAMMER] {
                 if asset == equip {
                     continue;
