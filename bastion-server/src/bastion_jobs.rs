@@ -4776,7 +4776,14 @@ pub(crate) fn kinematic_mover_on() -> bool {
 /// How far the cry carries: civilians inside this radius of the perceiver's
 /// post take shelter; beyond it, life continues -- the whole point of a
 /// SOUND radius over colony omniscience.
-const ALARM_RADIUS: f32 = 64.0;
+// ★ THE BELL (defense stage 2c — pump-world autopsy: out_of_earshot
+// 11-13 PER ALARM on a 200-cell town; the sheltered were 3-5 and the
+// dead civilians were the deaf ones. 64 is a SHOUT; the mandate says
+// BELL — "an alarm (bell, shouts — sound with a radius)" — and a bell
+// carries across the settlement. Still a radius, still honest sound
+// propagation: a colonist beyond 160 of the cry is genuinely out of
+// town and genuinely doesn't hear it.)
+const ALARM_RADIUS: f32 = 160.0;
 /// How long one cry holds without renewal. Defend persisting extends it.
 const ALARM_HOLD_SECS: f64 = 90.0;
 /// bastion (RUN-0, row 47): the emergency-run gait — the full vanilla
