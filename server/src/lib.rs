@@ -7449,7 +7449,7 @@ impl Server {
                         // whichever house holds the stockpile plot. Soft
                         // preference by construction — it only moves where
                         // breaks AIM; needs, curfew and work still outrank.
-                        if let Some((_, _, _, Some(plaza), _, _, _, _)) = adoption.as_ref() {
+                        if let Some((_, _, _, Some(plaza), _, _, _, _, _)) = adoption.as_ref() {
                             let z = self
                                 .world
                                 .sim()
@@ -7466,7 +7466,7 @@ impl Server {
                         // colony's shared road set — every colonist's path
                         // search prices walk edges onto these columns at
                         // half, so routes follow the streets.
-                        if let Some((_, _, _, _, roads, walls, interiors, buildings)) = adoption.as_ref() {
+                        if let Some((_, _, _, _, roads, walls, interiors, tile_graph, buildings)) = adoption.as_ref() {
                             let mut board = self
                                 .state
                                 .ecs_mut()
@@ -7487,6 +7487,12 @@ impl Server {
                                 }
                                 board.settlement_bounds =
                                     Some((bmin - 24, bmax + 24));
+                                board.tile_graph = Some(
+                                    bastion_server::bastion_jobs::BastionTileGraph {
+                                        origin: tile_graph.origin,
+                                        tiles: tile_graph.tiles.clone(),
+                                    },
+                                );
                                 tracing::info!(
                                     min = ?(bmin - 24),
                                     max = ?(bmax + 24),
@@ -7495,7 +7501,7 @@ impl Server {
                             }
                             board.town_buildings = buildings.clone();
                         }
-                        let adopted_names = if let Some((asp, _, plots, _, _, _, _, _)) = adoption.as_ref() {
+                        let adopted_names = if let Some((asp, _, plots, _, _, _, _, _, _)) = adoption.as_ref() {
                             let names = self.bastion_adopt_town_people(
                                 *asp,
                                 asp.xy().map(|e| e as i32),
@@ -7554,7 +7560,7 @@ impl Server {
                         // (`place_preset`), so the captured colony is the one
                         // an overseer would found rather than a lookalike.
                         // MODE A placement in a helper (t0_27 discipline).
-                        if let Some((_, town_origin, plots, _, _, _, _, _)) = adoption {
+                        if let Some((_, town_origin, plots, _, _, _, _, _, _)) = adoption {
                             Self::bastion_adopt_place(
                                 self.state.ecs(),
                                 town_origin,
@@ -7653,6 +7659,7 @@ impl Server {
         std::collections::HashSet<Vec2<i32>>,
         std::collections::HashSet<Vec2<i32>>,
         std::collections::HashSet<Vec2<i32>>,
+        bastion_server::bastion_jobs::BastionTileGraph,
         Vec<(
             bastion_server::bastion_jobs::TownBuildingKind,
             Vec2<i32>,
@@ -7730,7 +7737,7 @@ impl Server {
                  creation, else spawn"
             );
             let player_chose = chosen.is_some() || picked.is_some();
-            let (town_origin, plots, plaza, roads, walls, interiors, buildings) = Self::bastion_adoptable_town_plots(
+            let (town_origin, plots, plaza, roads, walls, interiors, tile_graph, buildings) = Self::bastion_adoptable_town_plots(
                 self.index.as_index_ref(),
                 self.world.sim(),
                 near,
@@ -7786,7 +7793,7 @@ impl Server {
                     )
                 })
                 .unwrap_or(sp);
-            Some((asp, town_origin, plots, plaza, roads, walls, interiors, buildings))
+            Some((asp, town_origin, plots, plaza, roads, walls, interiors, tile_graph, buildings))
         }
     }
 
@@ -7893,6 +7900,7 @@ impl Server {
         std::collections::HashSet<Vec2<i32>>,
         std::collections::HashSet<Vec2<i32>>,
         std::collections::HashSet<Vec2<i32>>,
+        bastion_server::bastion_jobs::BastionTileGraph,
         Vec<(
             bastion_server::bastion_jobs::TownBuildingKind,
             Vec2<i32>,
@@ -8193,6 +8201,70 @@ impl Server {
             interior_columns = interiors.len(),
             "bastion: ADOPT-A-TOWN wall-margin map ingested (columns hugging building tiles)"
         );
+        // ★ TILE-TRUNK ROUTING ingest (Ben's research order): vanilla's
+        // no-stuck secret is the tile graph — export it. Cost classes port
+        // rtsim's path_in_site; buildings carry their plot id and door
+        // flag so the router admits them only through doors.
+        let tile_graph = {
+            use world::site::TileKind as TK;
+            use world::site::Structure as _;
+            let mut tiles: std::collections::HashMap<
+                Vec2<i32>,
+                (f32, Option<u32>, bool),
+            > = std::collections::HashMap::new();
+
+            for ty in b.min.y..=b.max.y {
+                for tx in b.min.x..=b.max.x {
+                    let tpos = Vec2::new(tx, ty);
+                    let tile = site.tiles.get(tpos);
+                    let cost = match &tile.kind {
+                        TK::Empty => 3.0,
+                        TK::Hazard(_) => 50.0,
+                        TK::Field => 8.0,
+                        TK::Plaza
+                        | TK::Road { .. }
+                        | TK::Path { .. }
+                        | TK::Bridge => 1.0,
+                        _ => 5.0,
+                    };
+                    let (plot, door) = if matches!(
+                        tile.kind,
+                        TK::Building
+                            | TK::Castle
+                            | TK::Wall(_)
+                            | TK::Tower(_)
+                            | TK::Keep(_)
+                    ) {
+                        // Plot identity via its root tile (the Id type
+                        // is private): unique per plot within one town.
+                        let pid = tile.plot.map(|p| {
+                            let rt = site.plot(p).root_tile();
+                            (rt.x as u16 as u32) << 16 | (rt.y as u16 as u32)
+                        });
+                        let door = tile
+                            .plot
+                            .is_some_and(|p| site.plot(p).door_tile() == Some(tpos));
+                        (pid, door)
+                    } else {
+                        (None, false)
+                    };
+                    tiles.insert(tpos, (cost, plot, door));
+                }
+            }
+            bastion_server::bastion_jobs::BastionTileGraph {
+                origin: site.origin,
+                tiles: tiles.into_iter().collect(),
+            }
+        };
+        tracing::info!(
+            tiles = tile_graph.tiles.len(),
+            doors = tile_graph
+                .tiles
+                .values()
+                .filter(|(_, _, d)| *d)
+                .count(),
+            "bastion: TILE GRAPH ingested (the trunk router's map)"
+        );
         // ★ BUILDING PURPOSES (Ben: "every building needs to be labeled
         // for its purpose and uses for the colonists"): worldgen already
         // labels every plot — the colony now READS the non-residential
@@ -8229,7 +8301,7 @@ impl Server {
             docks = buildings.iter().filter(|(k, ..)| *k == TB::Dock).count(),
             "bastion: TOWN BUILDINGS labeled — worldgen's own purposes, finally read"
         );
-        Some((site.origin, plots, plaza, roads, walls, interiors, buildings))
+        Some((site.origin, plots, plaza, roads, walls, interiors, tile_graph, buildings))
     }
 
     /// bastion (ITEM 11 fixture lever, 2026-08-20): `BASTION_SEED_FOOD=<n>`

@@ -160,6 +160,118 @@ pub struct ChopFell {
 /// intermediate state the remainder is base-connected (no-float BY
 /// CONSTRUCTION — the base is in the LAST band) and the order is a total
 /// order (gate determinism). `cursor` = next cell to clear.
+/// ★ TILE-TRUNK ROUTING (Ben: "veloren base game manages to move all
+/// their npcs in a way that doesn't get them stuck — really research into
+/// how they do it"). The research: vanilla routes town travel over the
+/// 6x6 TILE GRAPH (rtsim's path_in_site) — ~30-node searches that follow
+/// roads by construction and admit buildings ONLY through their door
+/// tile. This is that graph, exported at adoption as a lightweight copy
+/// (no world/index plumbing, deterministic), consumed by [`tile_route`]
+/// as the TRUNK of every committed path; the block-exact machinery serves
+/// only the final hop.
+pub struct BastionTileGraph {
+    pub origin: Vec2<i32>,
+    /// tile -> (terrain cost class, plot id, is-door)
+    pub tiles: HashMap<Vec2<i32>, (f32, Option<u32>, bool)>,
+}
+
+impl BastionTileGraph {
+    pub fn wpos_tile(&self, wpos: Vec2<i32>) -> Vec2<i32> {
+        (wpos - self.origin).map(|e| e.div_euclid(6))
+    }
+
+    pub fn tile_center_wpos(&self, tile: Vec2<i32>) -> Vec2<i32> {
+        self.origin + tile * 6 + 3
+    }
+}
+
+/// The vanilla transition function, ported: distance x terrain class +
+/// the door rule (building tiles admit only via their plot's door tile;
+/// crossing between different buildings' tiles is fenced at 10000).
+pub fn tile_route(
+    graph: &BastionTileGraph,
+    start: Vec2<i32>,
+    end: Vec2<i32>,
+) -> Option<Vec<Vec2<i32>>> {
+    if start == end {
+        return Some(vec![start]);
+    }
+    let get = |t: Vec2<i32>| {
+        graph
+            .tiles
+            .get(&t)
+            .copied()
+            .unwrap_or((3.0, None, false))
+    };
+    let mut open: std::collections::BinaryHeap<
+        std::cmp::Reverse<(u64, u64, i32, i32)>,
+    > = std::collections::BinaryHeap::new();
+    let mut best: HashMap<Vec2<i32>, (f32, Vec2<i32>)> = HashMap::new();
+    let h = |t: Vec2<i32>| ((t - end).map(|e| e.abs()).sum() as f32);
+    open.push(std::cmp::Reverse((
+        (h(start) * 100.0) as u64,
+        0,
+        start.x,
+        start.y,
+    )));
+    best.insert(start, (0.0, start));
+    let mut iters = 0;
+    while let Some(std::cmp::Reverse((_, gcost_m, cx, cy))) = open.pop() {
+        iters += 1;
+        if iters > 4000 {
+            break;
+        }
+        let cur = Vec2::new(cx, cy);
+        let g = gcost_m as f32 / 100.0;
+        if best.get(&cur).is_some_and(|(bg, _)| g > *bg + 0.001) {
+            continue;
+        }
+        if cur == end {
+            let mut path = vec![cur];
+            let mut at = cur;
+            while at != start {
+                at = best.get(&at)?.1;
+                path.push(at);
+            }
+            path.reverse();
+            return Some(path);
+        }
+        let (_, a_plot, _) = get(cur);
+        for d in [
+            Vec2::new(1, 0),
+            Vec2::new(-1, 0),
+            Vec2::new(0, 1),
+            Vec2::new(0, -1),
+        ] {
+            let nb = cur + d;
+            let (n_cost, b_plot, b_door) = get(nb);
+            let (_, _, a_door) = get(cur);
+            let a_bld = a_plot.is_some();
+            let b_bld = b_plot.is_some();
+            let building = if a_bld && !b_bld {
+                if a_door { 1.0 } else { 10000.0 }
+            } else if b_bld && !a_bld {
+                if b_door { 1.0 } else { 10000.0 }
+            } else if (a_bld || b_bld) && a_plot != b_plot {
+                10000.0
+            } else {
+                1.0
+            };
+            let ng = g + n_cost + building;
+            if best.get(&nb).is_none_or(|(bg, _)| ng < *bg) {
+                best.insert(nb, (ng, cur));
+                open.push(std::cmp::Reverse((
+                    ((ng + h(nb)) * 100.0) as u64,
+                    (ng * 100.0) as u64,
+                    nb.x,
+                    nb.y,
+                )));
+            }
+        }
+    }
+    None
+}
+
 /// One in-flight stepped full-path search (see JobBoard::path_searches).
 pub struct PendingSearch {
     pub search: common::path::FullPathSearch,
@@ -8380,6 +8492,9 @@ pub struct JobBoard {
     /// (taverns — DF's tavern-under-siege shape) and peace returns the
     /// plaza.
     pub last_alarm_time: f64,
+    /// ★ The adopted town's tile graph (see BastionTileGraph). None until
+    /// adoption ingests it.
+    pub tile_graph: Option<BastionTileGraph>,
     /// bastion (ITEM 29, flag-gated): per-colonist DETOUR — (waypoints, the
     /// leg-ahead steer index, the final target it was computed for, searches
     /// bought so far). Board-side and NOT on `ActiveJob`, which is
@@ -22538,20 +22653,53 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     wall_margin_cells: board.wall_margin_cells.clone(),
                                     interior_cells: board.interior_cells.clone(),
                                 };
-                                // → the SEARCH PUMP: enqueue, never
-                                // compute inline (the collapse class).
-                                board.path_searches.insert(
-                                    u.0.get(),
-                                    PendingSearch {
-                                        search: common::path::FullPathSearch::new(
-                                            common::path::PathLength::Medium,
-                                        ),
-                                        startf: pos.0,
-                                        target,
-                                        cfg,
-                                        lane: SearchLane::Fill,
-                                    },
-                                );
+                                // ★ TILE TRUNK first: microsecond graph
+                                // route along roads and through doors; the
+                                // exact target rides as the final hop. The
+                                // block-search pump is only the fallback.
+                                let trunked = board
+                                    .tile_graph
+                                    .as_ref()
+                                    .and_then(|g| {
+                                        let st = g.wpos_tile(
+                                            pos.0.xy().map(|e| e.floor() as i32),
+                                        );
+                                        let et = g.wpos_tile(
+                                            target.xy().map(|e| e.floor() as i32),
+                                        );
+                                        tile_route(g, st, et).map(|tiles| {
+                                            let z = pos.0.z.floor() as i32;
+                                            let mut wps: Vec<Vec3<i32>> = tiles
+                                                .into_iter()
+                                                .map(|t| {
+                                                    let c = g.tile_center_wpos(t);
+                                                    Vec3::new(c.x, c.y, z)
+                                                })
+                                                .collect();
+                                            wps.push(
+                                                target.map(|e| e.floor() as i32),
+                                            );
+                                            wps
+                                        })
+                                    });
+                                if let Some(wps) = trunked {
+                                    board.path_cache.insert(u, (wps, 0, target));
+                                } else {
+                                    // → the SEARCH PUMP: enqueue, never
+                                    // compute inline (the collapse class).
+                                    board.path_searches.insert(
+                                        u.0.get(),
+                                        PendingSearch {
+                                            search: common::path::FullPathSearch::new(
+                                                common::path::PathLength::Medium,
+                                            ),
+                                            startf: pos.0,
+                                            target,
+                                            cfg,
+                                            lane: SearchLane::Fill,
+                                        },
+                                    );
+                                }
                             }
                             let mut steer = target;
                             let mut exhausted = false;
