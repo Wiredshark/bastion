@@ -864,6 +864,8 @@ impl<'a> System<'a> for Sys {
             }
         }
 
+        // Row 11, second faucet: the cork's footprint, read once (Copy).
+        let bastion_settlement_bounds = job_board.settlement_bounds;
         let mut create_event = |id: NpcId, npc: &Npc, steering: Option<NpcBuilder>| match npc.body {
             Body::Ship(body) => {
                 create_ship_emitter.emit(CreateShipEvent {
@@ -886,6 +888,24 @@ impl<'a> System<'a> for Sys {
                     .into_npc_data_inner()
                     .expect("Entity loaded from assets cannot be special")
                     .to_npc_builder();
+
+                // ★ THE SECOND FAUCET (bastion row 11): the chunk-
+                // supplement cork held and the SAME fixed street
+                // coordinate kept spawning — a resident rtsim monster
+                // whose den predates the city, re-manifested through THIS
+                // path every time its chunk loads. Same rule, same
+                // bounds: hostile/wild rtsim residents inside the
+                // settlement stay in rtsim (persistent, unmanifested);
+                // citizens and visitors pass.
+                if matches!(
+                    npc_builder.alignment,
+                    comp::Alignment::Enemy | comp::Alignment::Wild
+                ) && bastion_settlement_bounds.is_some_and(|(bmin, bmax)| {
+                    let p = pos.0.xy().map(|e| e.floor() as i32);
+                    p.x >= bmin.x && p.y >= bmin.y && p.x <= bmax.x && p.y <= bmax.y
+                }) {
+                    return;
+                }
 
                 if let Some(agent) = &mut npc_builder.agent {
                     agent.rtsim_outbox = Some(Default::default());
