@@ -11423,6 +11423,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         WriteExpect<'a, BlockChange>,
         ReadExpect<'a, TerrainGrid>,
         ReadExpect<'a, common::event::EventBus<CreateItemDropEvent>>,
+        // ★ THE HOSTILE BUDGET (raider accumulation reaper).
+        ReadStorage<'a, comp::Alignment>,
+        ReadExpect<'a, common::event::EventBus<common::event::DeleteEvent>>,
         // COORDINATION-stigmergic-v1 (FR13-REV Q4): the coordination bark.
         ReadExpect<'a, common::event::EventBus<common::event::ChatEvent>>,
         ReadStorage<'a, comp::CharacterState>,
@@ -11552,6 +11555,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             mut block_change,
             terrain,
             item_drop_events,
+            alignments,
+            delete_events,
             chat_events,
             char_states,
             mut velocities,
@@ -16766,6 +16771,60 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // One tree at a time keeps the mint tripwire quiet; the standard
         // fell → drop → haul pipeline carries the logs home, and ITEM 29's
         // trade missions can finally afford to spend them.
+        // ★ THE HOSTILE BUDGET (every stack's day-1 back-half broke the
+        // same way: raiders that nobody finishes LINGER, and four paced
+        // raids compound into an ambient siege by evening — the kill
+        // ledger never being measurable was the tell). Standard raid
+        // design expires attackers (RimWorld raiders flee): at most 4
+        // living hostiles within the settlement halo; beyond that, the
+        // farthest-from-anchor extras despawn (uid-sorted, deterministic).
+        // A raid is an EVENT with an ending, not a deposit.
+        if tick.0 % (ARBITRATION_INTERVAL as u64 * 40) == 21
+            && let Some((bmin, bmax)) = board.settlement_bounds
+        {
+            let mut hostiles: Vec<(u64, specs::Entity, i64)> = Vec::new();
+            let anchor_xy = board
+                .gathering_anchor
+                .map(|a| a.xy())
+                .unwrap_or((bmin + bmax) / 2);
+            for (e, al, p) in (&entities, &alignments, &positions).join() {
+                let hostile = matches!(al, comp::Alignment::Enemy)
+                    || (matches!(al, comp::Alignment::Wild)
+                        && agents
+                            .get(e)
+                            .is_some_and(|a| a.psyche.aggro_dist.is_some()));
+                if !hostile {
+                    continue;
+                }
+                let f = p.0.xy().map(|v| v.floor() as i32);
+                if f.x < bmin.x - 64
+                    || f.y < bmin.y - 64
+                    || f.x > bmax.x + 64
+                    || f.y > bmax.y + 64
+                {
+                    continue;
+                }
+                let d2 = i64::from(f.x - anchor_xy.x).pow(2)
+                    + i64::from(f.y - anchor_xy.y).pow(2);
+                if let Some(u) = uids.get(e) {
+                    hostiles.push((u.0.get(), e, d2));
+                }
+            }
+            if hostiles.len() > 4 {
+                // Farthest first — the ones already leaving; uid breaks
+                // ties so two runs of one seed reap identically.
+                hostiles.sort_by_key(|(u, _, d2)| (std::cmp::Reverse(*d2), *u));
+                let excess = hostiles.len() - 4;
+                let mut delete_emitter = delete_events.emitter();
+                for (u, e, _) in hostiles.into_iter().take(excess) {
+                    delete_emitter.emit(common::event::DeleteEvent(e));
+                    info!(
+                        uid = u,
+                        "bastion: HOSTILE BUDGET — lingering raider expires"
+                    );
+                }
+            }
+        }
         if tick.0 % (ARBITRATION_INTERVAL as u64 * 80) == 12
             && std::env::var_os("BASTION_NO_WOOD_PAR").is_none()
         {
