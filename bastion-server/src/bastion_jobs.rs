@@ -27469,10 +27469,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .get(entity)
                         .map(|p| p.0.map(|v| v.floor() as i32))
                         .unwrap_or_default();
+                    // ★ MOPE AT HOME AFTER DARK (looking sweep, breaker 3:
+                    // Despond-ing colonists stood in the open plaza at
+                    // hour 0-1 — from the street indistinguishable from
+                    // stuck bodies, and quietly breaking "nights in owned
+                    // beds". A night-time mope happens at home; daytime
+                    // moping keeps its own feet, visible sadness being
+                    // half the point of Despond.)
+                    let spot = if matches!(
+                        default_schedule_block(hour_of_day(
+                            rtsim.rt_state().data().time_of_day.0
+                        )),
+                        ScheduleBlock::Sleep
+                    ) {
+                        colonists
+                            .get(entity)
+                            .and_then(|c| c.0.owned_bed)
+                            .unwrap_or(feet)
+                    } else {
+                        feet
+                    };
                     if std::env::var_os("BASTION_SELFJOB_COMPLETION_DIAG").is_some() {
                         info!(kind = "Despond", "bastion SELFJOB-CREATED-DIAG");
                     }
-                    board.insert_despond_job(feet, uid, until)
+                    board.insert_despond_job(spot, uid, until)
                 },
                 // bastion (ITEM 11): recreation's break, same self-job
                 // shape as Despond above — at the colonist's own feet,
