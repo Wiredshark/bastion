@@ -8365,6 +8365,14 @@ pub struct JobBoard {
     /// the defense drill beat every genuinely-external wave and lost only
     /// to this faucet). Visitors and travellers (Alignment::Npc) pass.
     pub settlement_bounds: Option<(Vec2<i32>, Vec2<i32>)>,
+    /// ★ THE GARRISON's once-per-boot latch (row 11's closing layer):
+    /// with both spawn faucets corked, the residual pressure is WALKERS —
+    /// mobile hostiles entering and hunting through the quarters. Real
+    /// towns answer walkers with professional guards, and vanilla cities
+    /// ship them; the adopted city never got its garrison. Four vanilla
+    /// guard NPCs ring the plaza each boot (self-healing across
+    /// restarts); the colonist militia stays the citizen-response layer.
+    pub garrison_spawned: bool,
     /// bastion (ITEM 29, flag-gated): per-colonist DETOUR — (waypoints, the
     /// leg-ahead steer index, the final target it was computed for, searches
     /// bought so far). Board-side and NOT on `ActiveJob`, which is

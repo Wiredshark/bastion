@@ -1523,6 +1523,58 @@ impl Server {
         let uids = ecs.read_storage::<common::uid::Uid>();
         let mut board = ecs.write_resource::<bastion_jobs::JobBoard>();
         let mut inventories = ecs.write_storage::<comp::Inventory>();
+        // ★ THE GARRISON (see JobBoard::garrison_spawned): four vanilla
+        // guards ring the plaza, once per boot. The raid spawner's exact
+        // template with the friendly config — Alignment::Npc passes both
+        // corks, vanilla guard AI hunts aggressors on its own.
+        if !board.garrison_spawned
+            && let Some(anchor) = board
+                .gathering_anchor
+                .or_else(|| board.stockpiles.first().map(|(_, r)| (r.min + r.max) / 2))
+        {
+            board.garrison_spawned = true;
+            let config_path = "common.entity.village.guard";
+            // Same door the /spawn command and the raid use: RON-wrapped.
+            if let Ok(config) = common::assets::Ron::<
+                common::generation::EntityConfig,
+            >::load(config_path)
+            {
+                let config = config.read().clone().into_inner();
+                let mut rng =
+                    <rand_chacha::ChaCha8Rng as rand::SeedableRng>::seed_from_u64(
+                        0x6A22_51D0_0000_0011,
+                    );
+                for i in 0..4u32 {
+                    let angle = std::f32::consts::TAU * (i as f32 / 4.0);
+                    let pos = anchor.map(|e| e as f32)
+                        + Vec3::new(angle.cos() * 20.0, angle.sin() * 20.0, 2.0);
+                    let info = common::generation::EntityInfo::at(pos, &mut rng)
+                        .with_entity_config(
+                            config.clone(),
+                            Some(config_path),
+                            &mut rng,
+                            None,
+                        );
+                    if let crate::sys::terrain::SpawnEntityData::Npc(data) =
+                        crate::sys::terrain::SpawnEntityData::from_entity_info(info)
+                    {
+                        let (npc, _) = data.to_npc_builder();
+                        ecs.read_resource::<common::event::EventBus<
+                            common::event::CreateNpcEvent,
+                        >>()
+                        .emit_now(common::event::CreateNpcEvent {
+                            pos: comp::Pos(pos),
+                            ori: comp::Ori::default(),
+                            npc,
+                        });
+                    }
+                }
+                tracing::info!(
+                    ?anchor,
+                    "bastion: THE GARRISON — four town guards posted at the plaza"
+                );
+            }
+        }
         let (mut topped, mut already) = (0u32, 0u32);
         let mut skipped_already_issued = 0u32;
         for (_, entity) in (&colonists, &entities).join() {
