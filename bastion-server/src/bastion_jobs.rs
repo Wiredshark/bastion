@@ -15750,14 +15750,89 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // released by the existing gone-sweep like any removed job.
                 if want == D::Defend {
                     perceiver_posts.sort_by_key(|(u, ..)| *u);
-                    // v1.1: IDLE perceivers only — a self-job must be born
-                    // claimed with its ActiveJob inserted (the B7-2 shape;
-                    // the open claim loop never offers a Guard, which is why
-                    // v1's unclaimed posts sat unstaffed: 2-13 posts/leg,
-                    // ZERO claimed). Idle-only sidesteps the mid-job steal:
-                    // releasing a worker's claim and inserting a fresh
-                    // ActiveJob in one tick would race the release drain.
+                    // ★ THE MUSTER (intercept run, day 0: 4 alarms, ZERO
+                    // guards posted — v1.1's idle-only staffing starves the
+                    // militia during work hours, which is exactly when
+                    // raids happen; everyone was employed so no one was
+                    // eligible to fight). The mandate's own words — "the
+                    // guard guards" — outrank a held haul: MILITIA (Guard
+                    // priority ≥4, the alarm's own predicate) drop their
+                    // civilian job for the intercept, via the inline
+                    // release-and-overwrite shape the idle-break preempt
+                    // proved (claimed_by cleared + ActiveJob overwritten
+                    // in one place, never through to_release — no drain
+                    // race). Idle perceivers remain the fallback so a
+                    // militia-less colony still posts someone. Squad cap 2
+                    // stands — a colony that sends everyone to fight has
+                    // stopped being a colony.
+                    let mut muster: Vec<(u64, specs::Entity)> = (&entities, &colonists, &uids)
+                        .join()
+                        .filter(|(_, c, _)| {
+                            c.0.work_priorities.get(common::bastion::WorkType::Guard) >= 4
+                        })
+                        .map(|(e, _, u)| (u.0.get(), e))
+                        .collect();
+                    muster.sort_by_key(|(u, _)| *u);
+                    let nearest_spot = |ent: specs::Entity| -> Option<Vec3<i32>> {
+                        let feet = positions.get(ent)?.0.xy();
+                        hostile_spots
+                            .iter()
+                            .min_by_key(|h| {
+                                (h.xy().map(|e| e as f32) - feet).magnitude() as i64
+                            })
+                            .copied()
+                    };
                     let mut posted = 0;
+                    for (u, ent) in muster.iter() {
+                        if posted >= 2 {
+                            break;
+                        }
+                        let Some(post) = nearest_spot(*ent) else {
+                            break;
+                        };
+                        let uid = Uid(std::num::NonZeroU64::new(*u).expect("uid nonzero"));
+                        if let Some(old_active) = active_jobs.get(*ent) {
+                            // Inline release: the held job returns to the
+                            // pool (claim cleared, watches wiped); the
+                            // guard ActiveJob overwrites below. Never
+                            // to_release — that drain would clobber the
+                            // fresh insert (the v1.1 race, sidestepped
+                            // rather than raced).
+                            let held = old_active.job;
+                            if board.idle_breaks.remove(&held) {
+                                board.remove_job(held);
+                            } else if let Some(j) = board.jobs.get_mut(&held) {
+                                j.claimed_by = None;
+                            }
+                            board.progress_watch.remove(&uid);
+                            board.path_cache.remove(&uid);
+                            board.last_steer.remove(&uid);
+                            board.detours.remove(&uid);
+                            board.travel_stall_watch.remove(&uid);
+                            info!(
+                                colonist = *u,
+                                released = held,
+                                "bastion: MUSTER — militia drops work for the intercept"
+                            );
+                        }
+                        let id = board.insert_auto_guard_job(post, uid);
+                        let _ = active_jobs.insert(*ent, comp::bastion::ActiveJob {
+                            job: id,
+                            state: comp::bastion::ActiveJobState::Traveling,
+                            best_dist: f32::MAX,
+                            stuck_time: 0.0,
+                            reset_dist: f32::MAX,
+                            soft_granted: false,
+                            stance: Vec3::unit_z(),
+                        });
+                        posted += 1;
+                        info!(
+                            job = id,
+                            colonist = *u,
+                            ?post,
+                            "bastion: AUTO-GUARD posted and STAFFED (militia muster)"
+                        );
+                    }
                     for (u, ent, post) in perceiver_posts.iter() {
                         if posted >= 2 {
                             break;
