@@ -1681,7 +1681,20 @@ impl Server {
                     .iter()
                     .any(|w| common::bastion::work_tool_kind(*w) == Some(have))
                 });
-            if holds_work_tool {
+            // A SWORD counts as armed too (the armory's first smoke: 80
+            // issues for three militia — a sword is not a work tool, so
+            // the once-ever latch never latched and the mint re-fired
+            // every cadence; conjuring, the kit's own named defect).
+            let holds_sword = inv
+                .equipped(comp::slot::EquipSlot::ActiveMainhand)
+                .is_some_and(|i| {
+                    matches!(
+                        &*i.kind(),
+                        comp::item::ItemKind::Tool(t)
+                            if t.kind == comp::item::tool::ToolKind::Sword
+                    )
+                });
+            if holds_work_tool || holds_sword {
                 already_armed += 1;
                 continue;
             }
