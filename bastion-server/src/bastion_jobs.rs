@@ -4915,8 +4915,18 @@ pub const VAULT_TIMEOUT: f32 = 1.5;
 pub const KINEMATIC_WALK_SPEED: f32 = 4.2;
 pub const KINEMATIC_DT: f32 = 1.0 / 30.0;
 pub(crate) fn kinematic_mover_on() -> bool {
+    // ★ DEFAULT ON (the twelve-round lesson, 2026-08-26): this was v1's
+    // opt-in A/B default, and after Ben's 2026-08-25 ruling ("DO NOT
+    // bench") PLAY.ps1 set the env — but the observer harness never did,
+    // so every harness world since ran VANILLA physics travel while six
+    // successive mover fixes were adjudicated against a dead branch
+    // (marker=false on 95/95 nudge convictions was the tell). Ben's
+    // flights and the observer's verdicts were different movement
+    // paradigms. The charter paradigm is now the default everywhere;
+    // BASTION_NO_KINEMATIC_MOVER is the kill switch (the old opt-in env
+    // remains harmless if set).
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("BASTION_KINEMATIC_MOVER").is_some())
+    *ON.get_or_init(|| std::env::var_os("BASTION_NO_KINEMATIC_MOVER").is_none())
 }
 
 /// ALARM v1 (Ben: "sound a alarm and base that on sound distance radius").
