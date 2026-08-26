@@ -8307,6 +8307,13 @@ pub struct JobBoard {
     /// ★ Crew-slot chop jobs → their tree's primary job (whose
     /// `chop_fell_sets` entry holds the shared work pool).
     chop_crew: HashMap<JobId, JobId>,
+    /// ★ Per-colonist full-path recompute clock (the plan-walk fill ran
+    /// bastion_full_path INLINE on every steer change with a 1-cell
+    /// staleness trigger — moving targets made 24 colonists recompute
+    /// cross-town A* essentially every tick and the server collapsed to
+    /// 3.3 tps). At most one fill per colonist per 2 sim-seconds; failed
+    /// searches are the expensive case and are limited exactly the same.
+    path_fill_at: HashMap<Uid, f64>,
     /// bastion (ITEM 29, flag-gated): per-colonist DETOUR — (waypoints, the
     /// leg-ahead steer index, the final target it was computed for, searches
     /// bought so far). Board-side and NOT on `ActiveJob`, which is
@@ -22311,8 +22318,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             let stale = board
                                 .path_cache
                                 .get(&u)
-                                .is_none_or(|(_, _, for_t)| for_t.distance_squared(target) > 1.0);
-                            if stale {
+                                // 3 cells of drift before a moving target
+                                // (fetch, intercept) forces a re-path.
+                                .is_none_or(|(_, _, for_t)| for_t.distance_squared(target) > 9.0);
+                            let fill_ok = board
+                                .path_fill_at
+                                .get(&u)
+                                .is_none_or(|at| time.0 - at >= 2.0);
+                            if stale && fill_ok {
+                                board.path_fill_at.insert(u, time.0);
                                 let cfg = common::path::TraversalConfig {
                                     node_tolerance: 1.5,
                                     slow_factor: 0.0,
