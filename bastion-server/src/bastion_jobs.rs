@@ -15887,15 +15887,37 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 out_of_earshot += 1;
                                 continue;
                             }
-                            if active_jobs.contains(ent) {
-                                skipped_working += 1;
-                                continue;
-                            }
+                            // ★ STAGE 2 (the day-1 autopsy: 14 of 18
+                            // downs were CIVILIANS — this `continue` made
+                            // employed colonists FINISH THEIR JOBS while a
+                            // monster walked up; the militia survived its
+                            // fights and the farmers died in the fields).
+                            // Working civilians now DROP the job — the
+                            // muster's inline release-and-overwrite shape,
+                            // never to_release (no drain race) — and the
+                            // shelter insert below overwrites their
+                            // ActiveJob. `skipped_working` keeps counting
+                            // (now: releases) so the census stays
+                            // comparable.
                             let Some(home) = c.0.owned_bed else {
                                 skipped_bedless += 1;
                                 continue;
                             };
                             if let Some(u) = uids.get(ent) {
+                                if let Some(old_active) = active_jobs.get(ent) {
+                                    let held = old_active.job;
+                                    skipped_working += 1;
+                                    if board.idle_breaks.remove(&held) {
+                                        board.remove_job(held);
+                                    } else if let Some(j) = board.jobs.get_mut(&held) {
+                                        j.claimed_by = None;
+                                    }
+                                    board.progress_watch.remove(u);
+                                    board.path_cache.remove(u);
+                                    board.last_steer.remove(u);
+                                    board.detours.remove(u);
+                                    board.travel_stall_watch.remove(u);
+                                }
                                 civ.push((u.0.get(), ent, home));
                             }
                         }
@@ -15912,12 +15934,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 soft_granted: false,
                                 stance: Vec3::unit_z(),
                             });
+                            // ★ RUN — the mandate reserves running for
+                            // emergencies, and this is the emergency. The
+                            // travel arm picks RUN_SPEED off this flag;
+                            // the shelter release (all-clear) clears it.
+                            if let Some(mut c) = colonists.get_mut(ent) {
+                                c.0.running = true;
+                            }
                             sheltered += 1;
                             info!(
                                 job = id,
                                 colonist = u,
                                 ?home,
-                                "bastion: ALARM — civilian takes shelter at home"
+                                "bastion: ALARM — civilian DROPS WORK and runs home"
                             );
                         }
                         info!(
@@ -24847,6 +24876,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // shape — a hiding villager READS as one.
                     if let common::bastion::JobKind::Shelter { until, .. } = job.kind {
                         if time.0 >= until || board.alarm.is_none() {
+                            // The emergency is over — walking pace returns.
+                            colonist.0.running = false;
                             info!(
                                 job = active.job,
                                 colonist = uids.get(entity).map(|u| u.0.get()),
