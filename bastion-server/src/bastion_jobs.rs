@@ -19043,6 +19043,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // for whatever it's being preempted FROM.
             Reclaim(JobId),
         }
+        // ★ TICK PROFILER (Ben: "tick rate seems off, everyone jittery"
+        // — metrics named bastion_jobs at 40.5ms/tick, alone over the
+        // 33ms budget of 30tps; WHICH region pays is the question).
+        // Wall-clock spans, diagnostics only (never sim-facing), logged
+        // at the census cadence.
+        let prof_t0 = crate::bastion_diag::span_start();
+        let mut prof_pre_us: u128 = 0;
+        let mut prof_need_us: u128 = 0;
+        let mut prof_travel_us: u128 = 0;
         let mut preempt_pending: Vec<(specs::Entity, Uid, PendingNeed)> = Vec::new();
         // T0.5 (master build order; ledger #55): PAUSE SAFETY — this pass
         // makes DISCRETE autonomy changes (breakdown rolls, need preempts)
@@ -20504,6 +20513,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // MOVE ASSIST: position writes are DEFERRED past this loop — the
         // join holds `positions` immutably, so the assist records the
         // promised cell here and the apply runs once the borrow ends.
+        prof_need_us = prof_t0.elapsed().as_micros();
         let mut pending_assists: Vec<(specs::Entity, Vec3<i32>)> = Vec::new();
         // KINEMATIC MOVER: (entity, new position, velocity-for-animation).
         let mut pending_kinematic: Vec<(specs::Entity, Vec3<f32>, Vec3<f32>)> = Vec::new();
@@ -31511,6 +31521,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 })
                 .map(|(e, _, u, _)| (e, *u))
                 .collect();
+        prof_travel_us = prof_t0.elapsed().as_micros();
         claim_order.sort_by_key(|(_, u)| u.0.get());
         // CLAIM-COLLAPSE row: refusals counted by reason across this tick's
         // whole claim pass. Declared here so it spans every colonist -- the
@@ -32797,6 +32808,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             );
         }
 
+        if tick.0 % 300 == 7 {
+            let total = prof_t0.elapsed().as_micros();
+            info!(
+                pre_need_ms = prof_need_us as f64 / 1000.0,
+                need_to_claims_ms = (prof_travel_us - prof_need_us) as f64 / 1000.0,
+                claims_ms = (total - prof_travel_us) as f64 / 1000.0,
+                total_ms = total as f64 / 1000.0,
+                "bastion: TICK PROFILE"
+            );
+        }
+        let _ = prof_pre_us;
         for (entity, job_id, stance) in assignments {
             // A seeker who was on an idle-origin break: the break dies the
             // moment real work wins. remove_job (not to_release — that

@@ -20,6 +20,7 @@ pub mod bastion_actions;
 // shim — an inherent impl on the server type cannot live in a leaf crate.)
 #[cfg(feature = "worldgen")] pub mod bastion_assets;
 pub mod bastion_chop;
+pub mod bastion_diag;
 pub mod bastion_entity_event_log;
 pub mod bastion_flat_arena;
 pub mod bastion_flight_recorder;

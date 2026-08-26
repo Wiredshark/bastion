@@ -181,7 +181,14 @@ pub const ROAD_FACTOR: f32 = 0.5;
 /// way"), while any corridor along a facade pays +12 per step and always
 /// loses to the one-cell-out line. Roads stay exempt (a walled street is
 /// still the street).
-pub const WALL_MARGIN: f32 = 12.0;
+pub const WALL_MARGIN: f32 = 5.0;
+// ^ 12.0 broke DOORWAYS: every home entry is wall-adjacent by geometry, so
+// the additive band inflated g far above h at each door and A* exhausted
+// its budget before accepting one — 218 budget_exhausted in a morning, 17
+// of 66 alarm shelter runs never arrived, nine downed at their own doors.
+// 5.0 keeps Ben's band (a facade corridor pays +5/step and always loses)
+// while a door crossing (+10-15 once) stays inside every search budget.
+// The full cure is a door-cell exemption at ingest — queued.
 /// Additive per-column surcharge for walking INSIDE a building. 2.0 ≈ a
 /// 12-column house crossing costs +24 — always dearer than rounding it —
 /// while a doorway-to-bed entry (~4 cells) costs +8, cheaper than any
