@@ -7411,7 +7411,25 @@ impl Server {
                             board.road_cells = std::sync::Arc::new(roads.clone());
                             board.wall_margin_cells = std::sync::Arc::new(walls.clone());
                             board.interior_cells = std::sync::Arc::new(interiors.clone());
-                            board.interior_cells = std::sync::Arc::new(interiors.clone());
+                            // Row 11: the faucet cork's footprint — interior
+                            // bbox + 24 columns of street margin.
+                            if !interiors.is_empty() {
+                                let (mut bmin, mut bmax) = (
+                                    Vec2::broadcast(i32::MAX),
+                                    Vec2::broadcast(i32::MIN),
+                                );
+                                for c in interiors.iter() {
+                                    bmin = Vec2::partial_min(bmin, *c);
+                                    bmax = Vec2::partial_max(bmax, *c);
+                                }
+                                board.settlement_bounds =
+                                    Some((bmin - 24, bmax + 24));
+                                tracing::info!(
+                                    min = ?(bmin - 24),
+                                    max = ?(bmax + 24),
+                                    "bastion: SETTLEMENT BOUNDS ingested (spawn cork)"
+                                );
+                            }
                             board.town_buildings = buildings.clone();
                         }
                         let adopted_names = if let Some((asp, _, plots, _, _, _, _, _)) = adoption.as_ref() {

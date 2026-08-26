@@ -80,6 +80,7 @@ event_emitters! {
 
 #[derive(SystemData)]
 pub struct Data<'a> {
+    bastion_board: Read<'a, bastion_server::bastion_jobs::JobBoard>,
     events: Events<'a>,
     tick: Read<'a, Tick>,
     server_settings: Read<'a, Settings>,
@@ -167,6 +168,8 @@ impl<'a> System<'a> for Sys {
         // `let mut rng = rand::rng();` here (OS entropy, unused since T0.36
         // moved keying to the per-chunk sites) so no ambient RNG survives.
         let spawn_seed_base = u64::from(data.server_settings.world_seed);
+        // Row 11: read once per run — the cork's footprint.
+        let bastion_bounds = data.bastion_board.settlement_bounds;
         // Fetch any generated `TerrainChunk`s and insert them into the terrain.
         // Also, send the chunk data to anybody that is close by.
         let mut new_chunks = Vec::new();
@@ -302,6 +305,29 @@ impl<'a> System<'a> for Sys {
                             },
                             SpawnEntityData::Npc(data) => {
                                 let (npc_builder, pos) = data.to_npc_builder();
+
+                                // ★ THE FAUCET CORK (bastion row 11):
+                                // hostile/wild chunk spawns inside the
+                                // settlement footprint are skipped — the
+                                // town's streets stop materialising
+                                // monsters on every chunk reload. NPC
+                                // alignment (visitors, travellers) passes.
+                                if matches!(
+                                    npc_builder.alignment,
+                                    comp::Alignment::Enemy | comp::Alignment::Wild
+                                ) && bastion_bounds.is_some_and(|(bmin, bmax)| {
+                                    let p = pos.0.xy().map(|e| e.floor() as i32);
+                                    p.x >= bmin.x
+                                        && p.y >= bmin.y
+                                        && p.x <= bmax.x
+                                        && p.y <= bmax.y
+                                }) {
+                                    tracing::debug!(
+                                        ?pos,
+                                        "bastion: spawn corked (hostile inside settlement)"
+                                    );
+                                    continue;
+                                }
 
                                 emitters.emit(CreateNpcEvent {
                                     pos,

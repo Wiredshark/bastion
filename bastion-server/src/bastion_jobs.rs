@@ -8357,6 +8357,14 @@ pub struct JobBoard {
     /// enqueue — find_path resets on a moved start, so a live position
     /// would restart the search every step, forever.
     path_searches: std::collections::BTreeMap<u64, PendingSearch>,
+    /// ★ THE ECOLOGY FAUCET's cork (row 11): the settlement's XY bounding
+    /// box, computed at adoption from the building-interior columns plus a
+    /// street margin. Chunk-supplement spawns with hostile/wild alignment
+    /// inside it are SKIPPED at intake — monsters stop materialising in
+    /// the streets (7+ distinct attacker uids at fixed street coordinates;
+    /// the defense drill beat every genuinely-external wave and lost only
+    /// to this faucet). Visitors and travellers (Alignment::Npc) pass.
+    pub settlement_bounds: Option<(Vec2<i32>, Vec2<i32>)>,
     /// bastion (ITEM 29, flag-gated): per-colonist DETOUR — (waypoints, the
     /// leg-ahead steer index, the final target it was computed for, searches
     /// bought so far). Board-side and NOT on `ActiveJob`, which is
