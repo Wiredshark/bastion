@@ -8360,7 +8360,13 @@ impl Server {
             .and_then(|s| s.parse::<u64>().ok())
             .is_some_and(|t| t == tick);
         // Slow cadence: a raid is an EVENT, not weather.
-        if !forced && tick % 1800 != 137 {
+        // ★ EVENT, NOT WEATHER (the tile-trunk world drew 41 raids in a
+        // day and a half and survived it — but the code's own comment says
+        // a raid is an EVENT: 1800 ticks rolled every sim-minute and
+        // wealth-gating fired most rolls for a rich town). ~3 rolls per
+        // sim-day: one to three actual raids, RimWorld's storyteller
+        // breathing room between them.
+        if !forced && tick % 21600 != 137 {
             return;
         }
         let (wealth, origin) = {
