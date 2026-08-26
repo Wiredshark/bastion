@@ -23921,6 +23921,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // of inventing a parallel path. Tier resets on
                             // retarget (path.rs), so a stale verdict cannot
                             // leak onto a fresh target.
+                            // ★ A VERDICT NAMES ITS TARGET (rounds 13-14:
+                            // every remaining nudge was a ONE-TICK
+                            // chaser-terminal conviction, stuck_secs=0.03 —
+                            // impossible for a real exhaust, which takes
+                            // pumped slices. The chaser's (Longest,
+                            // Exhausted) state PERSISTS across retargets,
+                            // so a fresh leg inherited the PREVIOUS leg's
+                            // hopeless verdict on its first tick: instant
+                            // nudge, instant strike, and — worst — a
+                            // goal_verdict recorded AGAINST THE NEW GOAL
+                            // from the old goal's exhaust. Terminal now
+                            // counts only when the exhausted search was FOR
+                            // the leg being judged).
                             let chaser_terminal = agent.as_deref().is_some_and(|a| {
                                 matches!(
                                     a.chaser.state(),
@@ -23928,7 +23941,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         common::path::PathLength::Longest,
                                         common::path::PathState::Exhausted
                                     )
-                                )
+                                ) && a
+                                    .chaser
+                                    .diagnostic_snapshot()
+                                    .last_search_target
+                                    .is_some_and(|t| {
+                                        t.xy().distance(target.xy()) < 4.0
+                                    })
                             });
                             if chaser_terminal {
                                 if active.stuck_time <= STUCK_TIMEOUT {
