@@ -24009,7 +24009,46 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     *class == "vault" || *class == "step"
                                 })
                                 && active.stuck_time > VAULT_TIMEOUT;
-                            if vault_ready
+                            // ★ INTENTIONAL STILLNESS IS NOT A STALL
+                            // (round-7 census, clock-validated: nudges
+                            // rained ~uniformly around the WHOLE day —
+                            // sleepers at 3am took 100+/hour, evening
+                            // sitters took the peak. The victims all hold
+                            // an armed Goto: they ARRIVED at bed/seat but
+                            // the self-job keeps steering, the Traveling
+                            // state persists, stillness accrues
+                            // stuck_time, and the nudge YANKS a sleeper
+                            // out of bed to walk back and be yanked
+                            // again — the machinery was fighting the
+                            // visible-bed-use mandate itself). A body in
+                            // a resting stance (Sit, Dance, or protected
+                            // Crawl = lying in bed) or standing with its
+                            // steer at its own feet is where it MEANS to
+                            // be: the stall clock has no jurisdiction.
+                            let resting_stance = matches!(
+                                char_states.get(entity),
+                                Some(comp::CharacterState::Sit)
+                                    | Some(comp::CharacterState::Dance)
+                            ) || (matches!(
+                                char_states.get(entity),
+                                Some(comp::CharacterState::Crawl)
+                            ) && healths
+                                .get(entity)
+                                .is_some_and(|h| !h.has_consumed_death_protection()));
+                            let steer_at_own_feet = agent
+                                .as_deref()
+                                .and_then(|a| match a.rtsim_controller.activity {
+                                    Some(common::rtsim::NpcActivity::Goto(t, _)) => {
+                                        Some(t)
+                                    },
+                                    _ => None,
+                                })
+                                .is_some_and(|t| {
+                                    t.xy().distance(pos.0.xy()) < 1.2
+                                });
+                            if resting_stance || steer_at_own_feet {
+                                active.stuck_time = 0.0;
+                            } else if vault_ready
                                 || active.stuck_time > STUCK_TIMEOUT
                                 || chaser_terminal
                             {
