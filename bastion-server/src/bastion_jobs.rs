@@ -3299,6 +3299,25 @@ pub fn coord_cell(pos: Vec3<i32>) -> Vec2<i32> {
 /// interim measurement (tick-determinism is the real fix, a separate B8
 /// block); the default stays OFF until the Opus gate rules on the
 /// evidence.
+/// ★ PLAN-THEN-WALK (Ben, after the fifth real-but-insufficient ledge
+/// fix: "you need a real deal research into why this is happening").
+/// The research verdict is the paradigm's own charter line: DF has no
+/// execution layer at all ("the game picks a path, which the dwarf then
+/// follows"); RimWorld's Pawn_PathFollower is a stored waypoint list, a
+/// per-cell cost countdown, and a VISUAL-ONLY interpolator — pawns cannot
+/// stall mid-walk because nothing sits between plan and motion to
+/// disagree. Our five stall families (search-gap freeze, corner-cut
+/// slide, advance refusal, collider hold, frontier oscillation) were all
+/// negotiations between three authorities (incremental searcher, probing
+/// integrator, assist floor). This flag makes the committed full path
+/// (the TIGHTDIG cache — built, reverted against the OLD physics-era
+/// stuck economy, dark since) the integrator's DIRECT source: the plan
+/// is the walk. Default ON; BASTION_NO_PLAN_WALK is the kill-switch.
+pub fn plan_walk_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("BASTION_NO_PLAN_WALK").is_none())
+}
+
 pub fn tightdig_enabled() -> bool {
     static TIGHTDIG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *TIGHTDIG.get_or_init(|| std::env::var("BASTION_TIGHTDIG").is_ok_and(|v| v == "1"))
@@ -22274,7 +22293,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         let staged_at_anchor = anchor_steer.is_some();
                         let steer = if let Some(s) = anchor_steer {
                             s
-                        } else if tightdig_enabled()
+                        } else if (tightdig_enabled() || plan_walk_on())
                             && let Some(u) = uids.get(entity).copied()
                         {
                             // FR15-TIGHTDIG Part 2 (flag-gated, Opus-gated
@@ -22776,11 +22795,42 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         && s.last_search_target.is_some()
                                 })
                                 .then_some(steer);
-                            if let Some((head, ahead)) = snap
-                                .and_then(|s| s.route_head.map(|h| (h, s.route_ahead)))
-                                .map(Some)
-                                .unwrap_or(None)
-                            {
+                            // ★ PLAN-THEN-WALK: the committed path is the
+                            // integrator's FIRST source — head/ahead come
+                            // straight off the waypoint list (advance is
+                            // owned by the steer block above); the chaser
+                            // serves only as the no-cache fallback, and
+                            // the bridge covers neither.
+                            let committed: Option<(Vec3<i32>, Option<Vec3<i32>>)> =
+                                if plan_walk_on() {
+                                    uids.get(entity).and_then(|u| {
+                                        board.path_cache.get(u).and_then(
+                                            |(wps, idx, _)| {
+                                                wps.get(*idx).map(|h| {
+                                                    (*h, wps.get(*idx + 1).copied())
+                                                })
+                                            },
+                                        )
+                                    })
+                                } else {
+                                    None
+                                };
+                            // ★ BEN'S SIMPLICITY RULING ("remove all
+                            // collision, just have everyone glide from
+                            // point A to B so we can keep working on the
+                            // other stuff"): a COMMITTED path walks by
+                            // PURE INTERPOLATION — no probes, no slides,
+                            // no holds. The route was admissible when the
+                            // router computed it (walls, windows and
+                            // interiors already refused there); nothing
+                            // between the plan and the motion is allowed
+                            // to disagree anymore.
+                            let pure_glide = committed.is_some();
+                            if let Some((head, ahead)) = committed.or_else(|| {
+                                snap.and_then(|s| {
+                                    s.route_head.map(|h| (h, s.route_ahead))
+                                })
+                            }) {
                                 // ★ LOOKAHEAD (Ben's rubber-band report:
                                 // "moving then teleporting to the original
                                 // position" — the mover paused one tick at
@@ -22867,7 +22917,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // so ONE VOXEL is the step offset; only
                                 // deeper promises keep the phased shape.
                                 let horiz = Vec3::new(d.x, d.y, 0.0);
-                                let phased = if d.z > 1.2 {
+                                let phased = if pure_glide {
+                                    d // A to B, straight — the ruling.
+                                } else if d.z > 1.2 {
                                     Vec3::new(0.0, 0.0, d.z)
                                 } else if d.z < -1.2 && horiz.magnitude() > 0.3 {
                                     horiz
@@ -22947,7 +22999,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     let y_slide =
                                         Vec3::new(pos.0.x, try_pos.y, try_pos.z);
                                     let mut new_pos = None;
-                                    if phased.xy().magnitude() <= 0.05 {
+                                    if pure_glide {
+                                        new_pos = Some(try_pos);
+                                    } else if phased.xy().magnitude() <= 0.05 {
                                         // Pure-vertical settle (xy arrived):
                                         // z is the node's own promise — no
                                         // surface probe, no slide.
