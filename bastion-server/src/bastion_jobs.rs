@@ -20227,6 +20227,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // over-reserving; the physical stack is
                                 // untouched until whoever arrives actually
                                 // eats.
+                                // ★ THE CURFEW (the night-massacre autopsy:
+                                // 12/12 deaths in the Sleep block, hours
+                                // 2-5, at GROUND level and outside walls —
+                                // the dead were never in their beds; they
+                                // were STRAGGLERS pulled outside by
+                                // midnight hunger walking into nocturnal
+                                // hunters. The mandate's own words: "at
+                                // night everyone goes HOME and stays in
+                                // until light." A night-hungry colonist
+                                // eats from the pack — that lane already
+                                // ran above — or endures until dawn; the
+                                // town does not send anyone out for a
+                                // mushroom at 3am.)
+                                if matches!(
+                                    default_schedule_block(hour_of_day(
+                                        rtsim.rt_state().data().time_of_day.0
+                                    )),
+                                    ScheduleBlock::Sleep
+                                ) {
+                                    if need_skip_diag {
+                                        info!(
+                                            colonist = %uid,
+                                            "bastion: NEED-SKIP curfew — night hunger holds until dawn"
+                                        );
+                                    }
+                                    continue 'candidates;
+                                }
                                 let rid = board.reserve(item, amount);
                                 board
                                     .preempt_cooldown
