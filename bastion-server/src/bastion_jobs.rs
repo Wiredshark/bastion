@@ -22673,6 +22673,52 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 .into_iter()
                                                 .map(|t| {
                                                     let c = g.tile_center_wpos(t);
+                                                    // ★ THE DOOR CELL (sweep
+                                                    // breaker 2: Adarg
+                                                    // thrashed 46s at his
+                                                    // own gate — the trunk
+                                                    // delivered tile
+                                                    // CENTERS, and a door
+                                                    // tile's center is
+                                                    // inside the wall
+                                                    // line). A door tile's
+                                                    // waypoint is the
+                                                    // actual Door sprite
+                                                    // cell, probed once at
+                                                    // route build.
+                                                    let is_door = g
+                                                        .tiles
+                                                        .get(&t)
+                                                        .is_some_and(|(_, _, d)| *d);
+                                                    if is_door {
+                                                        let base = g.origin + t * 6;
+                                                        for dx in 0..6 {
+                                                            for dy in 0..6 {
+                                                                for dz in [0i32, 1, -1] {
+                                                                    let q = Vec3::new(
+                                                                        base.x + dx,
+                                                                        base.y + dy,
+                                                                        z + dz,
+                                                                    );
+                                                                    if terrain
+                                                                        .get(q)
+                                                                        .ok()
+                                                                        .and_then(|b| b.get_sprite())
+                                                                        .is_some_and(|sp| {
+                                                                            matches!(
+                                                                                sp,
+                                                                                common::terrain::SpriteKind::Door
+                                                                                    | common::terrain::SpriteKind::DoorDark
+                                                                                    | common::terrain::SpriteKind::DoorWide
+                                                                            )
+                                                                        })
+                                                                    {
+                                                                        return q;
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
                                                     Vec3::new(c.x, c.y, z)
                                                 })
                                                 .collect();
