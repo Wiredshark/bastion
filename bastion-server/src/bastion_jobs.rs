@@ -23640,7 +23640,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         }
                                     }
                                 }
-                            } else if let Some(bt) = bridge {
+                            } else {
+                                // ★ THE MOVER OWNS EVERY TRAVELER (the
+                                // fifth falsification's lesson, 2026-08-26):
+                                // a routeless leg — fill failed, trunk None,
+                                // pump exhausted, no chaser route — fell
+                                // through to vanilla physics with the Goto
+                                // armed. THAT population was the nudge
+                                // storm: crumb-walking against walls
+                                // outside every guard built here (which is
+                                // why refusals read zero and the override
+                                // never fired — the storm never entered
+                                // this branch). A beeline IS a one-node
+                                // route: walk it through the same bridge
+                                // machinery — horizontal step, surface
+                                // probe, marker-held hold, 1s glide
+                                // override — so no traveling colonist is
+                                // ever owned by physics again.
+                                let bt = bridge.unwrap_or(steer);
                                 // The bridge glide: one straight kinematic
                                 // step toward the steer while the search
                                 // runs. Same speed, same collider rules —
