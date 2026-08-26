@@ -2131,6 +2131,64 @@ pub enum FullPathOutcome {
 /// the failure arms separated. Same one-shot drive of the SAME [`find_path`]
 /// (B17 one-implementation), so walkable/transition semantics cannot drift
 /// between the incremental scheduler path and this one.
+/// ★ THE STEPPED FULL-PATH (the tick-collapse class, killed
+/// structurally). `bastion_full_path_ext` loops `find_path`'s bounded
+/// slices to a terminal result INSIDE ONE CALL — up to 52 slices for
+/// Long ≈ seconds of wall time — and both heavy colony lanes (the
+/// plan-walk fill and the wall-detour drain) paid it inside the tick:
+/// one exhausting search collapsed the server to 0.45 tps, worst
+/// exactly during alarms when every colonist retargets at once. This
+/// API is the same search paid one slice per call: the CALLER holds the
+/// resumable state and steps it across ticks; cross-town searches keep
+/// their full cumulative budget at milliseconds per tick.
+pub struct FullPathSearch {
+    astar: Option<(Astar<Node, FxBuildHasher>, Vec3<f32>)>,
+    pub length: PathLength,
+}
+
+impl FullPathSearch {
+    pub fn new(length: PathLength) -> Self {
+        Self { astar: None, length }
+    }
+}
+
+pub enum FullPathStep {
+    Pending,
+    Done(FullPathOutcome),
+}
+
+pub fn bastion_full_path_step<V>(
+    search: &mut FullPathSearch,
+    vol: &V,
+    startf: Vec3<f32>,
+    endf: Vec3<f32>,
+    traversal_cfg: &TraversalConfig,
+) -> FullPathStep
+where
+    V: BaseVol<Vox = Block> + ReadVol,
+{
+    match find_path(
+        &mut search.astar,
+        vol,
+        startf,
+        endf,
+        traversal_cfg,
+        search.length,
+        None,
+    )
+    .0
+    {
+        PathResult::Pending => FullPathStep::Pending,
+        PathResult::Path(path, _cost) => FullPathStep::Done(FullPathOutcome::Path(
+            path.nodes.into_iter().collect(),
+        )),
+        PathResult::None(_) => FullPathStep::Done(FullPathOutcome::Unreachable),
+        PathResult::Exhausted(_) => {
+            FullPathStep::Done(FullPathOutcome::BudgetExhausted)
+        },
+    }
+}
+
 pub fn bastion_full_path_ext<V>(
     vol: &V,
     startf: Vec3<f32>,

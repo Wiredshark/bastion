@@ -160,6 +160,22 @@ pub struct ChopFell {
 /// intermediate state the remainder is base-connected (no-float BY
 /// CONSTRUCTION — the base is in the LAST band) and the order is a total
 /// order (gate determinism). `cursor` = next cell to clear.
+/// One in-flight stepped full-path search (see JobBoard::path_searches).
+pub struct PendingSearch {
+    pub search: common::path::FullPathSearch,
+    pub startf: Vec3<f32>,
+    pub target: Vec3<f32>,
+    pub cfg: common::path::TraversalConfig,
+    pub lane: SearchLane,
+}
+
+pub enum SearchLane {
+    /// Plan-walk committed-path fill → delivers into `path_cache`.
+    Fill,
+    /// Wall-detour → delivers into `detours`/`detour_tiers` + counters.
+    Detour { tier: u8, job: JobId },
+}
+
 pub struct FellingTree {
     pub cells: Vec<Vec3<i32>>,
     pub cursor: usize,
@@ -8323,6 +8339,17 @@ pub struct JobBoard {
     /// sim-time until which musters skip them and the alarm shelters them
     /// like civilians.
     muster_bench: HashMap<Uid, f64>,
+    /// ★ THE SEARCH PUMP (the tick-collapse killer). Both heavy full-path
+    /// lanes — the plan-walk FILL and the wall-detour DRAIN — used to pay a
+    /// whole search inside one tick (up to 52 bounded slices for Long ≈
+    /// seconds of wall time; one exhausting search collapsed the server to
+    /// 0.45 tps, worst during alarms when everyone retargets at once).
+    /// Searches now live here as resumable state and the pump steps TWO
+    /// slices per tick total: full cumulative budgets, milliseconds per
+    /// tick. BTreeMap for deterministic step order. Start is FROZEN at
+    /// enqueue — find_path resets on a moved start, so a live position
+    /// would restart the search every step, forever.
+    path_searches: std::collections::BTreeMap<u64, PendingSearch>,
     /// bastion (ITEM 29, flag-gated): per-colonist DETOUR — (waypoints, the
     /// leg-ahead steer index, the final target it was computed for, searches
     /// bought so far). Board-side and NOT on `ActiveJob`, which is
@@ -22394,16 +22421,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     wall_margin_cells: board.wall_margin_cells.clone(),
                                     interior_cells: board.interior_cells.clone(),
                                 };
-                                match common::path::bastion_full_path(
-                                    &*terrain, pos.0, target, &cfg,
-                                ) {
-                                    Some(wps) if !wps.is_empty() => {
-                                        board.path_cache.insert(u, (wps, 0, target));
+                                // → the SEARCH PUMP: enqueue, never
+                                // compute inline (the collapse class).
+                                board.path_searches.insert(
+                                    u.0.get(),
+                                    PendingSearch {
+                                        search: common::path::FullPathSearch::new(
+                                            common::path::PathLength::Medium,
+                                        ),
+                                        startf: pos.0,
+                                        target,
+                                        cfg,
+                                        lane: SearchLane::Fill,
                                     },
-                                    _ => {
-                                        board.path_cache.remove(&u);
-                                    },
-                                }
+                                );
                             }
                             let mut steer = target;
                             let mut exhausted = false;
@@ -27540,6 +27571,103 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // budget, spent in a single tick. `DETOUR_SEARCHES_PER_TICK` is the
         // only bound that exists on it, which is why it is 1 and why
         // `DETOUR_ATTEMPTS_MAX` caps the searches any one claim can buy.
+        // ★ THE SEARCH PUMP: two slices per tick across all pending
+        // searches, deterministic rotation, deliveries by lane.
+        {
+            let keys: Vec<u64> = board.path_searches.keys().copied().collect();
+            if !keys.is_empty() {
+                let rot = (tick.0 as usize) % keys.len();
+                let mut stepped = 0usize;
+                for i in 0..keys.len() {
+                    if stepped >= 2 {
+                        break;
+                    }
+                    let k = keys[(rot + i) % keys.len()];
+                    let Some(mut ps) = board.path_searches.remove(&k) else {
+                        continue;
+                    };
+                    stepped += 1;
+                    match common::path::bastion_full_path_step(
+                        &mut ps.search,
+                        &*terrain,
+                        ps.startf,
+                        ps.target,
+                        &ps.cfg,
+                    ) {
+                        common::path::FullPathStep::Pending => {
+                            board.path_searches.insert(k, ps);
+                        },
+                        common::path::FullPathStep::Done(outcome) => {
+                            let u = Uid(
+                                std::num::NonZeroU64::new(k).expect("uid nonzero"),
+                            );
+                            match (ps.lane, outcome) {
+                                (
+                                    SearchLane::Fill,
+                                    common::path::FullPathOutcome::Path(wps),
+                                ) if !wps.is_empty() => {
+                                    board.path_cache.insert(u, (wps, 0, ps.target));
+                                },
+                                (SearchLane::Fill, _) => {
+                                    board.path_cache.remove(&u);
+                                },
+                                (
+                                    SearchLane::Detour { tier, job },
+                                    common::path::FullPathOutcome::Path(path),
+                                ) if path.len() > 1 => {
+                                    let leg = detour_leg_end(&path, 0);
+                                    let nodes = path.len();
+                                    board
+                                        .detours
+                                        .insert(u, (path, leg, ps.target, tier + 1));
+                                    board.detour_tiers.remove(&u);
+                                    board.detours_installed += 1;
+                                    info!(
+                                        uid = k,
+                                        job,
+                                        nodes,
+                                        tier,
+                                        "bastion: wall detour search outcome=\"path\" (pumped)"
+                                    );
+                                },
+                                (
+                                    SearchLane::Detour { .. },
+                                    common::path::FullPathOutcome::Path(_),
+                                ) => {
+                                    board.detours.remove(&u);
+                                },
+                                (
+                                    SearchLane::Detour { .. },
+                                    common::path::FullPathOutcome::Unreachable,
+                                ) => {
+                                    board.detours_unreachable += 1;
+                                    board.detours.remove(&u);
+                                    info!(
+                                        uid = k,
+                                        "bastion: wall detour search outcome=\"unreachable\" (pumped)"
+                                    );
+                                },
+                                (
+                                    SearchLane::Detour { tier, .. },
+                                    common::path::FullPathOutcome::BudgetExhausted,
+                                ) => {
+                                    board.detours_budget_exhausted += 1;
+                                    board.detours.remove(&u);
+                                    board
+                                        .detour_tiers
+                                        .insert(u, (ps.target, tier + 1));
+                                    info!(
+                                        uid = k,
+                                        tier,
+                                        "bastion: wall detour search outcome=\"budget_exhausted\" (pumped)"
+                                    );
+                                },
+                            }
+                        },
+                    }
+                }
+            }
+        }
         detour_requests.sort_unstable_by_key(|(u, ..)| u.0.get());
         for (u, from, to, cfg, tier, job) in
             detour_requests.into_iter().take(DETOUR_SEARCHES_PER_TICK)
@@ -27552,6 +27680,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             } else {
                 common::path::PathLength::Long
             };
+            // → the SEARCH PUMP: enqueue, never compute inline. Terminal
+            // handling (install/ledger/counters/log) moved to the pump's
+            // delivery arm; a fill pending for the same uid is displaced —
+            // the detour outranks it (the colonist is STALLED).
+            if let Some(u_key) = Some(u.0.get()) {
+                board.path_searches.insert(u_key, PendingSearch {
+                    search: common::path::FullPathSearch::new(length),
+                    startf: from,
+                    target: to,
+                    cfg,
+                    lane: SearchLane::Detour { tier, job },
+                });
+            }
+            continue;
+            #[allow(unreachable_code)]
             let (outcome, nodes, leg) =
                 match common::path::bastion_full_path_ext(&*terrain, from, to, &cfg, length) {
                     common::path::FullPathOutcome::Path(path) if path.len() > 1 => {
