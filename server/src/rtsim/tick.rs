@@ -897,6 +897,13 @@ impl<'a> System<'a> for Sys {
                 // bounds: hostile/wild rtsim residents inside the
                 // settlement stay in rtsim (persistent, unmanifested);
                 // citizens and visitors pass.
+                // ★ PACED DANGER (see the terrain cork's twin): flat-world
+                // Enemy manifestations end globally; raids own danger.
+                if matches!(npc_builder.alignment, comp::Alignment::Enemy)
+                    && std::env::var_os("BASTION_FLAT_WORLD").is_some()
+                {
+                    return;
+                }
                 if matches!(
                     npc_builder.alignment,
                     comp::Alignment::Enemy | comp::Alignment::Wild

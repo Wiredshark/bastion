@@ -312,6 +312,25 @@ impl<'a> System<'a> for Sys {
                                 // town's streets stop materialising
                                 // monsters on every chunk reload. NPC
                                 // alignment (visitors, travellers) passes.
+                                // ★ PACED DANGER (the seventh defense
+                                // iteration's structural verdict: 25+
+                                // alarms/day is the flat lab's uniform
+                                // wilderness, not a siege — no town
+                                // survives perpetual ambient contact, and
+                                // the mandate wants fear "when actually
+                                // attacked"). On the flat test vehicle,
+                                // Enemy-aligned ambient spawns end
+                                // GLOBALLY; the raid system and planted
+                                // drills own danger, paced like a
+                                // storyteller. Wild stays — deer in the
+                                // fields are life, not threat.
+                                if matches!(
+                                    npc_builder.alignment,
+                                    comp::Alignment::Enemy
+                                ) && std::env::var_os("BASTION_FLAT_WORLD").is_some()
+                                {
+                                    continue;
+                                }
                                 if matches!(
                                     npc_builder.alignment,
                                     comp::Alignment::Enemy | comp::Alignment::Wild
