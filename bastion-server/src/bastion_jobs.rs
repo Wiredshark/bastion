@@ -160,6 +160,19 @@ pub struct ChopFell {
 /// intermediate state the remainder is base-connected (no-float BY
 /// CONSTRUCTION — the base is in the LAST band) and the order is a total
 /// order (gate determinism). `cursor` = next cell to clear.
+/// ★ REFUSAL CENSUS (instrument, 2026-08-26): two storm falsifications
+/// in a row proved the nudge storm's feeder is NOT understood — the probe
+/// refuses somewhere town-wide and every handler patch guessed wrong.
+/// These counters watch the refusal INTERIOR: how often, where, and with
+/// what terrain state. Diagnostic only — read and logged on a cadence,
+/// never gameplay-consulted.
+pub static REFUSAL_TICKS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+pub static REFUSAL_TERRAIN_ERR: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+pub static REFUSAL_VERT_TRAP: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 /// ★ TILE-TRUNK ROUTING (Ben: "veloren base game manages to move all
 /// their npcs in a way that doesn't get them stuck — really research into
 /// how they do it"). The research: vanilla routes town travel over the
@@ -16916,6 +16929,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // living hostiles within the settlement halo; beyond that, the
         // farthest-from-anchor extras despawn (uid-sorted, deterministic).
         // A raid is an EVENT with an ending, not a deposit.
+        if tick.0 % 300 == 11 {
+            use std::sync::atomic::Ordering::Relaxed;
+            let rt = REFUSAL_TICKS.swap(0, Relaxed);
+            let te = REFUSAL_TERRAIN_ERR.swap(0, Relaxed);
+            let vt = REFUSAL_VERT_TRAP.swap(0, Relaxed);
+            if rt > 0 || vt > 0 {
+                info!(
+                    tick = tick.0,
+                    refusal_ticks = rt,
+                    terrain_err = te,
+                    vert_trap = vt,
+                    "bastion: REFUSAL CENSUS (last 300 ticks)"
+                );
+            }
+        }
         if tick.0 % (ARBITRATION_INTERVAL as u64 * 40) == 21
             && let Some((bmin, bmax)) = board.settlement_bounds
         {
@@ -23485,6 +23513,40 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // vertical trap (probe returns own feet)
                                     // convicts instead of self-absolving.
                                     let mut overridden = false;
+                                    if new_pos.is_none() {
+                                        use std::sync::atomic::Ordering::Relaxed;
+                                        REFUSAL_TICKS.fetch_add(1, Relaxed);
+                                        let cx = try_pos.x.floor() as i32;
+                                        let cy = try_pos.y.floor() as i32;
+                                        let fz = pos.0.z.floor() as i32;
+                                        let t_err = terrain
+                                            .get(Vec3::new(cx, cy, fz - 1))
+                                            .is_err();
+                                        if t_err {
+                                            REFUSAL_TERRAIN_ERR.fetch_add(1, Relaxed);
+                                        }
+                                        if tick.0 % 30 == 7 {
+                                            info!(
+                                                uid = uids.get(entity).map(|u| u.0.get()),
+                                                feet = ?pos.0,
+                                                node = ?steer_node,
+                                                terrain_err = t_err,
+                                                dz = d.z,
+                                                stuck = active.stuck_time,
+                                                "bastion: REFUSAL SAMPLE (probe found no surface)"
+                                            );
+                                        }
+                                    } else if phased.xy().magnitude() <= 0.05
+                                        && d.z.abs() > 1.2
+                                    {
+                                        // The in-place vertical trap face
+                                        // (settle pushing toward an
+                                        // unreachable z) counts separately.
+                                        REFUSAL_VERT_TRAP.fetch_add(
+                                            1,
+                                            std::sync::atomic::Ordering::Relaxed,
+                                        );
+                                    }
                                     if std::env::var_os("BASTION_NO_GLIDE_OVERRIDE")
                                         .is_none()
                                     {
