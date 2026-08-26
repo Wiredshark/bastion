@@ -899,9 +899,15 @@ impl<'a> System<'a> for Sys {
                 // citizens and visitors pass.
                 // ★ PACED DANGER (see the terrain cork's twin): flat-world
                 // Enemy manifestations end globally; raids own danger.
-                if matches!(npc_builder.alignment, comp::Alignment::Enemy)
+                if (matches!(npc_builder.alignment, comp::Alignment::Enemy)
+                    || (matches!(npc_builder.alignment, comp::Alignment::Wild)
+                        && npc_builder
+                            .agent
+                            .as_ref()
+                            .is_some_and(|a| a.psyche.aggro_dist.is_some())))
                     && std::env::var_os("BASTION_FLAT_WORLD").is_some()
                 {
+                    // Predators are Wild (see the terrain twin).
                     return;
                 }
                 if matches!(

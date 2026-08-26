@@ -324,11 +324,23 @@ impl<'a> System<'a> for Sys {
                                 // drills own danger, paced like a
                                 // storyteller. Wild stays — deer in the
                                 // fields are life, not threat.
-                                if matches!(
+                                if (matches!(
                                     npc_builder.alignment,
                                     comp::Alignment::Enemy
-                                ) && std::env::var_os("BASTION_FLAT_WORLD").is_some()
+                                ) || (matches!(
+                                    npc_builder.alignment,
+                                    comp::Alignment::Wild
+                                ) && npc_builder
+                                    .agent
+                                    .as_ref()
+                                    .is_some_and(|a| a.psyche.aggro_dist.is_some())))
+                                    && std::env::var_os("BASTION_FLAT_WORLD").is_some()
                                 {
+                                    // Predators are Wild, not Enemy — the
+                                    // raid config's own path said so
+                                    // (wild.aggressive.wolf). Aggression
+                                    // is the psyche's aggro_dist; grazers
+                                    // (None) stay.
                                     continue;
                                 }
                                 if matches!(
