@@ -172,11 +172,16 @@ pub struct TraversalConfig {
 /// 1.0/block lower bound.
 pub const ROAD_FACTOR: f32 = 0.5;
 
-/// bastion (V4): flat surcharge for a walk-destination hugging a wall
-/// (solid neighbour at body height, roads exempt). Half a flat move: the
-/// one-cell-out line wins along a wall, a doorway pays it twice and goes
-/// through anyway.
-pub const WALL_MARGIN: f32 = 1.5;
+/// bastion (V4 → THE BAND, Ben's ruling 2026-08-26: "for the love of god
+/// can you just put a colonist band from touching the walls unless it's
+/// the only way"): wall-adjacent columns are effectively FORBIDDEN, not
+/// discouraged — +12 per cell means a route only touches a wall when no
+/// alternative exists. Doorways survive by construction: a door crossing
+/// is one or two cells to a DESTINATION (no alternative = "the only
+/// way"), while any corridor along a facade pays +12 per step and always
+/// loses to the one-cell-out line. Roads stay exempt (a walled street is
+/// still the street).
+pub const WALL_MARGIN: f32 = 12.0;
 /// Additive per-column surcharge for walking INSIDE a building. 2.0 ≈ a
 /// 12-column house crossing costs +24 — always dearer than rounding it —
 /// while a doorway-to-bed entry (~4 cells) costs +8, cheaper than any
