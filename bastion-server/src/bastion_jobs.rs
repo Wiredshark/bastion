@@ -17106,11 +17106,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // skipped IN the scan, so nearest-
                                     // first moves to the next candidate
                                     // instead of remarking it forever.
-                                    if connectivity_refuses(
-                                        &board.connected_cells,
-                                        board.connectivity_prev_cells,
-                                        seed,
-                                    ) {
+                                    // z-BAND probe (2.5 refused days on a
+                                    // flood that demonstrably covers the
+                                    // trees: the check demanded the seed's
+                                    // exact cell — trunk wood at z=185 —
+                                    // while the flood walked the air beside
+                                    // the root flare a level or two off;
+                                    // the one successful mark slipped
+                                    // through an index trust-gap, not
+                                    // maturity). Any connected cell within
+                                    // z±2 of the seed's column admits.
+                                    let refused = (-2i32..=3).all(|dz| {
+                                        connectivity_refuses(
+                                            &board.connected_cells,
+                                            board.connectivity_prev_cells,
+                                            seed + Vec3::new(0, 0, dz),
+                                        )
+                                    });
+                                    if refused {
                                         conn_refused += 1;
                                     } else {
                                         return Some(seed);
