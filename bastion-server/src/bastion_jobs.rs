@@ -166,7 +166,15 @@ pub struct FellingTree {
 }
 
 pub(crate) fn work_rate(skill_level: u16) -> f32 {
-    (1.0 + skill_level as f32 * WORK_SKILL_BONUS) / WORK_DURATION_BASE
+    // ★ MASTERY PLATEAUS (looking sweep, day 5: the skill-164 master
+    // farmer completed FIVE jobs in 2.1 real seconds — flicker-teleport
+    // farming — because this curve was linear-unbounded while mastery
+    // grew huge; 0.18s/job at 164 vs 3.7s at the median 3). DF/RimWorld
+    // shape: legendary skill is 2-3x speed, never 21x. Capped at 10 the
+    // fastest master takes 2 visible seconds per job — the minimum work
+    // dwell falls out of the cap, and it serves the cook-legibility row
+    // in the same stroke (a meal now visibly occupies its cook).
+    (1.0 + skill_level.min(10) as f32 * WORK_SKILL_BONUS) / WORK_DURATION_BASE
 }
 
 /// bastion (B5.8): is `p` inside the colony's ACCESS mask — XY within a
@@ -35408,6 +35416,17 @@ mod tests {
     /// bonus is ever zeroed (or inverted), rate(5) == rate(0) and this test
     /// goes red BY NAME, rather than "skills feel flat" surfacing as a vague
     /// play report months later.
+    #[test]
+    fn work_rate_plateaus_at_mastery() {
+        // The sweep's flicker-farmer pin: skill above the cap gains
+        // nothing more (and the cap is still faster than journeyman).
+        assert_eq!(work_rate(10), work_rate(164));
+        assert!(work_rate(10) > work_rate(5));
+        // The dwell floor the cap guarantees: no threshold-1.0 job
+        // completes faster than 2 sim-seconds.
+        assert!(1.0 / work_rate(u16::MAX) >= 2.0);
+    }
+
     #[test]
     fn item17_work_rate_strictly_increases_with_level() {
         let r0 = work_rate(0);
