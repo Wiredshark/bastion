@@ -24265,6 +24265,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // bridge above cures the cause, this bounds
                             // the symptom: an adjacent same-or-one-up
                             // promised cell completes at 1.5s, not 9).
+                            // ★ Era-3 + committed-walker gates apply at
+                            // the SOURCE (the first era-3 boot panicked on
+                            // the vault_ready/assist coherence assert:
+                            // filtering only at consumption left
+                            // vault_ready computed from the unfiltered
+                            // assist — the exact incoherence the assert
+                            // exists to catch).
+                            let committed_walker = plan_walk_on()
+                                && uids.get(entity).is_some_and(|u| {
+                                    board.path_cache.contains_key(u)
+                                });
+                            let assist = assist
+                                .filter(|_| !committed_walker && !vanilla_travel_on());
                             let vault_ready = assist
                                 .as_ref()
                                 .is_some_and(|(_, class, _)| {
@@ -24340,18 +24353,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // detour: a committed-path walker has ONE
                                 // owner — no assist teleports; the
                                 // conviction ladder's releases still run.
-                                let committed_walker = plan_walk_on()
-                                    && uids.get(entity).is_some_and(|u| {
-                                        board.path_cache.contains_key(u)
-                                    });
-                                // Era-3: vanilla recovery (stuck-shuffle,
-                                // jump/roll) owns un-sticking; teleport
-                                // assists stand down entirely.
-                                if let Some((head, class, front)) = assist
-                                    .filter(|_| {
-                                        !committed_walker && !vanilla_travel_on()
-                                    })
-                                {
+                                if let Some((head, class, front)) = assist {
                                     pending_assists.push((entity, head));
                                     *board
                                         .move_assists
