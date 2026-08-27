@@ -23281,6 +23281,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 committed = uids
                                     .get(entity)
                                     .is_some_and(|u| board.path_cache.contains_key(u)),
+                                // ★ round-27 falsifier: the advance
+                                // predicate held at a traced frame yet the
+                                // steer alternated — a monotone idx cannot
+                                // alternate, so the CACHE is being replaced
+                                // or double-written. These fields decide.
+                                route = ?uids.get(entity).and_then(|u| {
+                                    board
+                                        .path_cache
+                                        .get(u)
+                                        .map(|(wps, idx, _)| (*idx, wps.len()))
+                                }),
                                 fetching = fetch_steer.is_some(),
                                 "bastion: STEER-DIAG"
                             );
