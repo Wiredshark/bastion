@@ -23425,7 +23425,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // serves only as the no-cache fallback, and
                             // the bridge covers neither.
                             let committed: Option<(Vec3<i32>, Option<Vec3<i32>>)> =
-                                if plan_walk_on() {
+                                // ★ THE MOVER MUST WALK THE FETCH (the cook
+                                // saga's true site, found at the FETCH
+                                // BUDGET's own death ledger: five expiries
+                                // at dist≈89 — the station→stockpile
+                                // distance — mean the body NEVER LEFT the
+                                // station. The fetch overrides `steer`
+                                // (22981) but this committed source reads
+                                // path_cache directly — filled toward the
+                                // JOB — so pure glide marched bodies to the
+                                // pot while the fetch clock measured
+                                // distance to the pantry and expired at
+                                // 90s. Every earlier cook fix aimed at the
+                                // wrong leg). While a fetch owns the trip,
+                                // the committed path yields and the bridge
+                                // glides at the fetch steer; `carrying`
+                                // flips it back and the job route resumes.
+                                if plan_walk_on() && fetch_steer.is_none() {
                                     uids.get(entity).and_then(|u| {
                                         board.path_cache.get(u).and_then(
                                             |(wps, idx, _)| {
