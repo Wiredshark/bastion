@@ -20175,14 +20175,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     }
                     continue;
                 }
-                // Already on a need job? (Either kind — no re-preempt.)
+                // Already on a need job? — but URGENCY RULES BETWEEN
+                // NEEDS (round-21's skip census closed the starvation
+                // chain at THIS line: "either kind, no re-preempt" meant
+                // a colonist holding an unfinished RestAt walk was
+                // refused the EAT service while hunger fell to 0.0 —
+                // then collapse (consc=false) froze the walk, the RestAt
+                // never completed, and the refusal became permanent. The
+                // deterministic 14/10 split was simply whose night-1 bed
+                // walk was slow. DF/RimWorld shape: a more urgent need
+                // interrupts a less urgent need-job). Holding EatFrom
+                // still skips both (eating finishes in seconds); holding
+                // RestAt skips ONLY when the most urgent candidate is
+                // rest itself — a starving sleeper-to-be eats first, the
+                // eat arm's own release seam dropping the held RestAt.
+                let eat_is_most_urgent =
+                    candidates.first().is_some_and(|(_, k)| *k == 1);
                 if active_jobs.get(entity).is_some_and(|aj| {
                     board.jobs.get(&aj.job).is_some_and(|j| {
-                        matches!(
-                            j.kind,
-                            common::bastion::JobKind::RestAt { .. }
-                                | common::bastion::JobKind::EatFrom { .. }
-                        )
+                        matches!(j.kind, common::bastion::JobKind::EatFrom { .. })
+                            || (matches!(
+                                j.kind,
+                                common::bastion::JobKind::RestAt { .. }
+                            ) && !eat_is_most_urgent)
                     })
                 }) {
                     if need_skip_diag {
