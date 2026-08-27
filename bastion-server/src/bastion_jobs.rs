@@ -3482,8 +3482,18 @@ pub fn plan_walk_on() -> bool {
 }
 
 pub fn tightdig_enabled() -> bool {
+    // ★ DEFAULT ON (2026-08-27, the mover-flag story repeated): the
+    // displacement-window measure was designed so "the steer and the
+    // metric change TOGETHER" — committed-path steers became waypoints
+    // while this flag slept, so the live watchdog measured distance-to-
+    // WAYPOINT and accrued through every short hop's plateau (best_dist
+    // could not improve past the previous waypoint's best until the new
+    // hop completed; five door-cell hops ≈ the 9s timeout). Census cost:
+    // 45 eat + 43 cook TimedOut releases in two days — ~40% of the food
+    // pipeline — convicting healthy walkers mid-route. Kill switch
+    // BASTION_NO_TIGHTDIG; the old opt-in env remains harmless.
     static TIGHTDIG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *TIGHTDIG.get_or_init(|| std::env::var("BASTION_TIGHTDIG").is_ok_and(|v| v == "1"))
+    *TIGHTDIG.get_or_init(|| std::env::var_os("BASTION_NO_TIGHTDIG").is_none())
 }
 
 /// bastion (ITEM 29, wall-detour row): the VARIANT toggle for the stall
