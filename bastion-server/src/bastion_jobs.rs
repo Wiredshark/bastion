@@ -16190,6 +16190,28 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 skipped_bedless += 1;
                                 continue;
                             };
+                            // ★ A SLEEPER AT HOME IS ALREADY SHELTERED
+                            // (round-17 dawn, the THIRD sleep blocker:
+                            // 742's night alternated ALARM-drops-work with
+                            // rest preempts — the sweep read his WORKING
+                            // RestAt as a job to drop and sent him "home"
+                            // to the bed it just evicted him from, one
+                            // fresh shelter job per alarm wave, all night
+                            // on a raid-heavy night). A colonist whose
+                            // active job is RestAt AT their own bed is the
+                            // maximally-indoors state the drill exists to
+                            // produce: leave them asleep.
+                            if active_jobs.get(ent).is_some_and(|aj| {
+                                board.jobs.get(&aj.job).is_some_and(|j| {
+                                    matches!(
+                                        j.kind,
+                                        common::bastion::JobKind::RestAt { bed_pos }
+                                            if bed_pos == home
+                                    )
+                                })
+                            }) {
+                                continue;
+                            }
                             if let Some(u) = uids.get(ent) {
                                 if let Some(old_active) = active_jobs.get(ent) {
                                     let held = old_active.job;
