@@ -22998,6 +22998,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             && !staged_at_anchor
                             && !is_emergency_access
                             && let Some(u) = uids.get(entity).copied()
+                            // ★ THE DETOUR NEVER OVERRIDES A COMMITTED
+                            // PATH (707's station orbit, traced steer-by-
+                            // steer: roof-height detour targets z185/186
+                            // hijacked a leg pure glide walks through — the
+                            // ladder predates the glide and preempted it,
+                            // so cook legs orbited their buildings forever;
+                            // 27 cook timeouts per two days, unchanged by
+                            // every watchdog fix, all this one rival. A
+                            // committed-path walker cannot wall-stall by
+                            // construction; the detour serves only the
+                            // chaser fallback population).
+                            && !(plan_walk_on() && board.path_cache.contains_key(&u))
                         {
                             // Anchor staging and emergency routes own
                             // movement exclusively by design
