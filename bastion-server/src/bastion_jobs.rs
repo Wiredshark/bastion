@@ -2222,6 +2222,48 @@ pub(crate) fn designated_sweep_should_reap(
         && unclaimed_secs >= threshold_secs
 }
 
+/// ROW 20: how far (blocks) from the hauler's feet a neighbor pickup may be
+/// to join the current load. Sized so the sweep reads as ONE errand — the
+/// same pile, the same yard — not a tour that walks past the stockpile to
+/// keep collecting.
+pub(crate) const HAUL_CHAIN_RADIUS: f32 = 12.0;
+/// ROW 20: stop extending the load once this many UNITS of the def are
+/// aboard (amounts summed; spawn-loadout stacks of the same def count too —
+/// conservative, they deposit with the rest either way).
+pub(crate) const HAUL_CHAIN_MAX_LOAD: u32 = 16;
+
+/// ROW 20 (micro-haul treadmill): can job `j` EXTEND the load a hauler is
+/// already carrying? The unit of a haul is the LOAD, not the item — DF
+/// (bins/wheelbarrows), RimWorld (carry capacity), Song of Syx (carry
+/// amounts) all move N nearby items per trip, and our measured shape was
+/// the opposite: one minted job per loose item is right for the LEDGER
+/// (reservations and refusal witnesses stay per-item) but was also the
+/// unit of the LEGS — 593 haul round-trips against 13 farm actions on one
+/// harvest world. Qualifying = an unclaimed, unowned, reachable, unbenched
+/// `Haul` to the SAME destination zone with the SAME item def (leg-2
+/// `deposit_all_of` empties the bag BY DEF — a different def would ride
+/// along undeposited, a stranded-cargo class), whose pickup cell is within
+/// [`HAUL_CHAIN_RADIUS`] of the hauler's feet. Pure for unit pins, like
+/// `designated_sweep_should_reap` above.
+pub(crate) fn haul_chain_candidate(
+    j: &Job,
+    destination: common::bastion::ZoneId,
+    req_def: &'static str,
+    feet: Vec3<f32>,
+    tick: u64,
+) -> bool {
+    j.claimed_by.is_none()
+        && j.suspended_for.is_none()
+        && !j.unreachable
+        && j.benched_until_tick.is_none_or(|t| t <= tick)
+        && matches!(j.kind, common::bastion::JobKind::Haul { destination: d, .. } if d == destination)
+        && j.required_item == Some(req_def)
+        && {
+            let stand = j.pos.map(|v| v as f32) + Vec3::new(0.5, 0.5, 0.0);
+            stand.distance_squared(feet) <= HAUL_CHAIN_RADIUS * HAUL_CHAIN_RADIUS
+        }
+}
+
 /// ITEM8-V4 F6 (generic leak-witness backstop): whether a claim's held
 /// duration crosses the leak threshold, pure for the same unit-pinnable
 /// reason as the two functions above — the live version scans
@@ -3489,6 +3531,16 @@ pub fn plan_walk_on() -> bool {
     }
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var_os("BASTION_NO_PLAN_WALK").is_none())
+}
+
+/// ROW 20 (micro-haul treadmill): haul chaining — with cargo aboard, sweep
+/// nearby same-def/same-zone loose items into the bag before walking the
+/// zone leg (one trip per LOAD, not per item; see `haul_chain_candidate`).
+/// Default ON; BASTION_NO_HAUL_CHAIN is the kill-switch — the mover-flag
+/// story bans shipping features behind opt-ins that nothing sets.
+pub fn haul_chain_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("BASTION_NO_HAUL_CHAIN").is_none())
 }
 
 pub fn tightdig_enabled() -> bool {
@@ -26200,10 +26252,102 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 continue;
                             }
                             if carrying {
-                                // Cargo aboard — LEG 2: retarget the zone's
+                                // ── ROW 20: THE LOAD IS THE UNIT, NOT THE
+                                // ITEM. With cargo aboard, sweep the nearest
+                                // qualifying neighbor pickup into THIS trip
+                                // instead of walking the zone leg now (see
+                                // `haul_chain_candidate` — the DF/RimWorld
+                                // shape). Leg-2 `deposit_all_of` empties the
+                                // bag BY DEF, so the absorbed job's delivery
+                                // obligation rides this bag: remove it (the
+                                // one removal path releases its reservation
+                                // on the already-consumed item uid) and hop
+                                // `active` onto the neighbor as a fresh
+                                // assignment — leg-1 re-runs every pickup
+                                // guard on the hop (snipe re-check, fallen-
+                                // item re-aim), so chaining inherits the
+                                // protections instead of copying them.
+                                let cur_id = active.job;
+                                let req = job.required_item;
+                                let aboard: u32 = req
+                                    .and_then(|r| {
+                                        inventories.get(entity).map(|inv| {
+                                            inv.slots()
+                                                .flatten()
+                                                .filter(|i| {
+                                                    i.item_definition_id().itemdef_id()
+                                                        == Some(r)
+                                                })
+                                                .map(|i| i.amount())
+                                                .sum()
+                                        })
+                                    })
+                                    .unwrap_or(0);
+                                let feet_pos = positions.get(entity).map(|p| p.0);
+                                if haul_chain_on()
+                                    && aboard < HAUL_CHAIN_MAX_LOAD
+                                    && let (Some(req_def), Some(feet)) = (req, feet_pos)
+                                {
+                                    // Deterministic pick: nearest first,
+                                    // job-id tiebreak — `jobs` is a HashMap
+                                    // and iteration order MUST NOT choose.
+                                    let next = board
+                                        .jobs
+                                        .iter()
+                                        .filter(|(id, j)| {
+                                            **id != cur_id
+                                                && haul_chain_candidate(
+                                                    j,
+                                                    destination,
+                                                    req_def,
+                                                    feet,
+                                                    tick.0,
+                                                )
+                                        })
+                                        .map(|(id, j)| {
+                                            let stand = j.pos.map(|v| v as f32)
+                                                + Vec3::new(0.5, 0.5, 0.0);
+                                            (*id, stand.distance_squared(feet))
+                                        })
+                                        .min_by(|a, b| {
+                                            a.1.total_cmp(&b.1).then(a.0.cmp(&b.0))
+                                        })
+                                        .map(|(id, _)| id);
+                                    if let Some(next_id) = next {
+                                        info!(
+                                            job = cur_id,
+                                            next = next_id,
+                                            aboard,
+                                            "bastion: haul chains — cargo rides to the next pickup"
+                                        );
+                                        board.remove_job(cur_id);
+                                        if let Some(nj) = board.jobs.get_mut(&next_id) {
+                                            nj.claimed_by = uids.get(entity).copied();
+                                            active.job = next_id;
+                                            active.state = ActiveJobState::Traveling;
+                                            active.best_dist = f32::MAX;
+                                            active.reset_dist = f32::MAX;
+                                            active.stuck_time = 0.0;
+                                            active.soft_granted = false;
+                                            active.stance = Vec3::new(0, 0, 1);
+                                            continue;
+                                        }
+                                        // Scan hit vanished before the claim
+                                        // (single-threaded pass — shouldn't
+                                        // happen): cur_id is already removed,
+                                        // so the re-fetch below releases.
+                                    }
+                                }
+                                // No chain — LEG 2: retarget the zone's
                                 // drop cell (center column, REAL GROUND — the
                                 // painted top snapped onto roofs, see
-                                // `stockpile_drop_cell`).
+                                // `stockpile_drop_cell`). Re-fetch `job`: the
+                                // chain scan above ended the arm's long-lived
+                                // borrow.
+                                let Some(job) = board.jobs.get_mut(&cur_id) else {
+                                    to_release.push((entity, ReleaseReason::Other, line!()));
+                                    continue;
+                                };
                                 if let Some((_, r)) =
                                     board.stockpiles.iter().find(|(z, _)| *z == destination)
                                 {
@@ -38427,6 +38571,78 @@ mod tests {
         const T: f64 = 10.0;
         assert!(designated_sweep_should_reap(false, true, false, false, T, T));
         assert!(designated_sweep_should_reap(false, true, false, false, 3600.0, T));
+    }
+
+    /// ROW 20 (micro-haul treadmill): the chain predicate — the unit of a
+    /// haul is the LOAD, not the item. Both directions: the qualifying
+    /// shape passes, and every disqualifier flips it ALONE (each planted).
+    #[test]
+    fn haul_chain_extends_only_unclaimed_same_def_same_zone_nearby_hauls() {
+        let def: &'static str = "common.items.food.cheese";
+        let other_def: &'static str = "common.items.crafting_ing.stones";
+        let feet = Vec3::new(10.5, 10.5, 1.0);
+        let base = || Job {
+            player_ordered: false,
+            kind: common::bastion::JobKind::Haul {
+                item: common::uid::Uid(NonZeroU64::new(11).expect("nonzero")),
+                destination: 7,
+            },
+            work: DesignationKind::Stockpile.work_type(),
+            pos: Vec3::new(14, 10, 0),
+            skill_floor: 0,
+            claimed_by: None,
+            suspended_for: None,
+            unreachable: false,
+            progress: 0.0,
+            required_item: Some(def),
+            needs_materials: false,
+            carve_attempted: false,
+            is_access: false,
+            stuck_strikes: 0,
+            benched_until_tick: None,
+            depth: 0,
+            reservation: None,
+            affordance: AffordanceClass::Untargeted,
+        };
+        assert!(haul_chain_candidate(&base(), 7, def, feet, 100));
+        // An EXPIRED bench is eligible again (<=, not <).
+        let mut j = base();
+        j.benched_until_tick = Some(100);
+        assert!(haul_chain_candidate(&j, 7, def, feet, 100));
+        let mut j = base();
+        j.claimed_by = Some(common::uid::Uid(NonZeroU64::new(3).expect("nonzero")));
+        assert!(!haul_chain_candidate(&j, 7, def, feet, 100), "claimed");
+        let mut j = base();
+        j.suspended_for = Some(common::uid::Uid(NonZeroU64::new(3).expect("nonzero")));
+        assert!(!haul_chain_candidate(&j, 7, def, feet, 100), "suspended: still owned");
+        let mut j = base();
+        j.unreachable = true;
+        assert!(!haul_chain_candidate(&j, 7, def, feet, 100), "unreachable");
+        let mut j = base();
+        j.benched_until_tick = Some(101);
+        assert!(!haul_chain_candidate(&j, 7, def, feet, 100), "benched into the future");
+        assert!(
+            !haul_chain_candidate(&base(), 8, def, feet, 100),
+            "a different destination zone would leave the bag's obligation stranded"
+        );
+        assert!(
+            !haul_chain_candidate(&base(), 7, other_def, feet, 100),
+            "a different def rides along undeposited — deposit_all_of empties BY DEF"
+        );
+        let mut j = base();
+        j.kind = common::bastion::JobKind::DepositRun { destination: 7 };
+        assert!(!haul_chain_candidate(&j, 7, def, feet, 100), "not a Haul");
+        let mut j = base();
+        j.pos = Vec3::new(23, 10, 0);
+        assert!(
+            !haul_chain_candidate(&j, 7, def, feet, 100),
+            "outside HAUL_CHAIN_RADIUS"
+        );
+        // Boundary honesty: exactly AT the radius qualifies (<=). stand =
+        // (22.5, 10.5, 1.0), feet = (10.5, 10.5, 1.0) → 12.0 = the radius.
+        let mut j = base();
+        j.pos = Vec3::new(22, 10, 1);
+        assert!(haul_chain_candidate(&j, 7, def, feet, 100), "at-radius inclusive");
     }
 
     #[test]
