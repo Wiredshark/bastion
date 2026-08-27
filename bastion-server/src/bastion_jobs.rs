@@ -4344,6 +4344,7 @@ pub const FOUNDING_SEED_STOCK: u32 = 8;
 
 /// bastion (B7-2): the preempt-attempt cooldown (game-seconds) — the
 /// anti-livelock (c) guard window.
+pub const BREAKDOWN_PHYSIOLOGY_FLOOR: f32 = 0.3;
 pub const PREEMPT_COOLDOWN_SECS: f64 = 60.0;
 
 /// bastion (ITEM 29): the leg-ahead cursor for a detour path — the farthest
@@ -19723,6 +19724,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .preempt_cooldown
                                 .get(uid)
                                 .is_some_and(|until| time.0 < *until)
+                            // ★ PHYSIOLOGY OUTRANKS MOOD (sweep 4 + the
+                            // 739 trail: preempt→BREAKDOWN→preempt all
+                            // night; this arm's own release site freed 38
+                            // claimed REST jobs in one night, its cooldown
+                            // then zeroed Personal severity, and ten
+                            // colonists stood at rest 0.02 BESIDE their own
+                            // beds — the breakdown blocking the sleep that
+                            // is its own cure, the flee_hurt law's shape in
+                            // the mood system. The old comment above — "a
+                            // break outranks a need preempt" — was the
+                            // defect stated as intent). A body below its
+                            // physiological floor cannot BREAK: it sleeps
+                            // or eats first, and the mope fires afterward
+                            // if the mood is still broken. Floor sits above
+                            // every trait-staggered interrupt threshold
+                            // (observed 0.16-0.22) so the cure pass always
+                            // gets its window first.
+                            && needs_storage.get(entity).is_none_or(|n| {
+                                n.rest > BREAKDOWN_PHYSIOLOGY_FLOOR
+                                    && n.hunger > BREAKDOWN_PHYSIOLOGY_FLOOR
+                            })
                             // T0.32 (master build order; ledger #51): the
                             // break roll is CADENCE-INVARIANT — the RON
                             // `break_chance` keeps its tuned meaning (chance
