@@ -23249,15 +23249,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // Stand; genuinely downed colonists (consumed
                         // protection) are not touched — they crawl because
                         // they must.
-                        if matches!(
+                        if (matches!(
                             char_states.get(entity),
                             Some(comp::CharacterState::Crawl)
                         ) && healths
                             .get(entity)
-                            .is_some_and(|h| !h.has_consumed_death_protection())
-                            && let Some(controller) = controllers.get_mut(entity)
+                            .is_some_and(|h| !h.has_consumed_death_protection()))
+                            // ★ Sit joins Crawl (round-18): the kinematic
+                            // mover writes position, not movement input,
+                            // so Sit never self-exits — a preempted
+                            // lounger must STAND to walk to bed.
+                            || matches!(
+                                char_states.get(entity),
+                                Some(comp::CharacterState::Sit)
+                            )
                         {
-                            controller.push_action(comp::ControlAction::Stand);
+                            if let Some(controller) = controllers.get_mut(entity) {
+                                controller.push_action(comp::ControlAction::Stand);
+                            }
                         }
                         if let Some(agent) = agent.as_deref_mut()
                             && auton_travel_ok
@@ -24192,7 +24201,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .is_some_and(|t| {
                                     t.xy().distance(pos.0.xy()) < 1.2
                                 });
-                            if resting_stance || steer_at_own_feet {
+                            // ★ v2 (round-18: 675 sat at a lounge seat
+                            // when his rest preempt landed; the kinematic
+                            // mover issues no movement input so Sit never
+                            // exits, and the STANCE half of this exemption
+                            // read the seated traveler as intentional
+                            // stillness — stall clock pinned to zero, no
+                            // timeout, no override, silent from hour 16 to
+                            // dawn. The stance test was redundant for real
+                            // resters — a body in its bed has steer at its
+                            // feet — and a cloak for seated travelers).
+                            let _ = resting_stance;
+                            if steer_at_own_feet {
                                 active.stuck_time = 0.0;
                             } else if vault_ready
                                 || active.stuck_time > STUCK_TIMEOUT
