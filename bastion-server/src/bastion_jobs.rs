@@ -23182,160 +23182,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             wps.push(
                                                 target.map(|e| e.floor() as i32),
                                             );
-                                            // ★ ROW 28: LOS-SAFE TRUNK
-                                            // EDGES. A tile-graph edge
-                                            // promises ADJACENCY; the glide
-                                            // walks the LINE between
-                                            // centers, and that chord can
-                                            // clip a building corner
-                                            // intruding into either tile —
-                                            // 998 embeds in three days, 62%
-                                            // at ONE corner, every victim
-                                            // relocated onto the ROOF (the
-                                            // rooftop figures in Ben's own
-                                            // screenshots). Where a chord
-                                            // crosses solid at walker
-                                            // height, keep the actual
-                                            // crossing: probe the chord
-                                            // midpoint's neighbourhood
-                                            // (the shared tile edge is one
-                                            // axis) for an open column
-                                            // whose sub-chords are clean,
-                                            // and insert it as a waypoint.
-                                            // The plan becomes true AS A
-                                            // LINE — the admissibility
-                                            // ruling completed, not
-                                            // reversed; the glide stays
-                                            // pure. No crossing found →
-                                            // keep the chord (pump and
-                                            // watchdog stay the backstop).
-                                            let solid = |c: Vec3<i32>| {
-                                                terrain
-                                                    .get(c)
-                                                    .map(|b| b.is_solid())
-                                                    .unwrap_or(false)
-                                            };
-                                            let open_col = |c: Vec3<i32>| {
-                                                !solid(c)
-                                                    && !solid(c + Vec3::unit_z())
-                                                    && solid(c - Vec3::unit_z())
-                                            };
-                                            // ★ v2 (round 44, hour-16
-                                            // falsification: embeds held at
-                                            // the SAME corner at the same
-                                            // rate — v1 sampled the chord at
-                                            // the NOMINAL street z while the
-                                            // glide surface-follows the
-                                            // terrain UP, so the wall at
-                                            // z182-184 sat two blocks above
-                                            // every sample). A WALL is two
-                                            // consecutive solid cells
-                                            // anywhere in the body's climb
-                                            // window; a single solid cell is
-                                            // a terrain step the glide
-                                            // legally takes.
-                                            // ★ v4a (round 46, witnessed:
-                                            // 1,257 of 1,384 blocked chords
-                                            // found no crossing — the v2
-                                            // window reached one block past
-                                            // a 2-high body and read street
-                                            // AWNINGS as walls). A wall is
-                                            // two consecutive solid cells
-                                            // in the BODY's own two-cell
-                                            // window or one step above it:
-                                            // pairs (0,1) and (1,2) only.
-                                            let chord_blocked =
-                                                |a: Vec3<i32>, b: Vec3<i32>| {
-                                                    cells_on_chord(a, b)
-                                                        .into_iter()
-                                                        .any(|c| {
-                                                            (0..=1i32).any(|dz| {
-                                                                solid(c + Vec3::unit_z() * dz)
-                                                                    && solid(
-                                                                        c + Vec3::unit_z()
-                                                                            * (dz + 1),
-                                                                    )
-                                                            })
-                                                        })
-                                                };
-                                            // ★ v4b (round 46, witnessed:
-                                            // the corner's own lines read
-                                            // to=(2843,7361,187) — a final
-                                            // hop from the DOOR straight to
-                                            // an UPSTAIRS target chords
-                                            // through the facade; no
-                                            // midpoint probe can solve an
-                                            // interior staircase). When the
-                                            // FINAL hop cannot be walked as
-                                            // a line, end the route at the
-                                            // door: the mover's committed
-                                            // source runs out of waypoints
-                                            // there and the CHASER — the
-                                            // block-level searcher that
-                                            // walked interiors for months
-                                            // before the trunk existed —
-                                            // owns the climb.
-                                            let target_wp =
-                                                wps.last().copied();
-                                            let interior_final = wps.len() >= 2
-                                                && target_wp.is_some_and(|t| {
-                                                    let door = wps[wps.len() - 2];
-                                                    (t.z - door.z).abs() >= 2
-                                                        && chord_blocked(door, t)
-                                                });
-                                            if interior_final {
-                                                info!(
-                                                    door = ?wps[wps.len() - 2],
-                                                    target = ?target_wp,
-                                                    "bastion: CHORD-FIX interior final hop — route ends at the door, chaser owns the climb"
-                                                );
-                                                wps.pop();
-                                            }
-                                            let mut safe: Vec<Vec3<i32>> =
-                                                Vec::with_capacity(wps.len() + 4);
-                                            for wp in wps {
-                                                if let Some(&prev) = safe.last() {
-                                                    if chord_blocked(prev, wp) {
-                                                        let mid = (prev + wp) / 2;
-                                                        let cross = (0..=3i32)
-                                                            .flat_map(|d| {
-                                                                [
-                                                                    Vec3::new(mid.x + d, mid.y, mid.z),
-                                                                    Vec3::new(mid.x - d, mid.y, mid.z),
-                                                                    Vec3::new(mid.x, mid.y + d, mid.z),
-                                                                    Vec3::new(mid.x, mid.y - d, mid.z),
-                                                                ]
-                                                            })
-                                                            .find(|c| {
-                                                                open_col(*c)
-                                                                    && !chord_blocked(prev, *c)
-                                                                    && !chord_blocked(*c, wp)
-                                                            });
-                                                        if let Some(c) = cross {
-                                                            // ROW 28 v3: the
-                                                            // fix WITNESSES —
-                                                            // two silent
-                                                            // versions died
-                                                            // unfalsifiable.
-                                                            info!(
-                                                                from = ?prev,
-                                                                to = ?wp,
-                                                                kept = ?c,
-                                                                "bastion: CHORD-FIX corner kept"
-                                                            );
-                                                            safe.push(c);
-                                                        } else {
-                                                            info!(
-                                                                from = ?prev,
-                                                                to = ?wp,
-                                                                "bastion: CHORD-FIX blocked chord, NO crossing found"
-                                                            );
-                                                        }
-                                                    }
-                                                }
-                                                safe.push(wp);
-                                            }
-                                            safe
+                                            // ★ ROW 28 REVERTED (round 47
+                                            // verdict): four same-day
+                                            // route-shape fixes each made
+                                            // embeds WORSE (207/282/304/
+                                            // 415 by hour 16) and v4's
+                                            // door-ending collapsed haul
+                                            // chains 4x by dumping
+                                            // elevated-target routes onto
+                                            // chaser legs. The builder
+                                            // returns to its pre-row-28
+                                            // shape; the embed victims'
+                                            // classification (v3) stays.
+                                            // The row re-queues as a
+                                            // DESIGNED pass: overnight
+                                            // cycles, fleet A/B, and the
+                                            // visible half (eject-to-ROOF)
+                                            // treated at eject_dest.
+                                            wps
                                         })
                                     });
                                 if let Some(wps) = trunked {
