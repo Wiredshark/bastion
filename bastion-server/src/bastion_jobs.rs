@@ -23220,15 +23220,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                     && !solid(c + Vec3::unit_z())
                                                     && solid(c - Vec3::unit_z())
                                             };
+                                            // ★ v2 (round 44, hour-16
+                                            // falsification: embeds held at
+                                            // the SAME corner at the same
+                                            // rate — v1 sampled the chord at
+                                            // the NOMINAL street z while the
+                                            // glide surface-follows the
+                                            // terrain UP, so the wall at
+                                            // z182-184 sat two blocks above
+                                            // every sample). A WALL is two
+                                            // consecutive solid cells
+                                            // anywhere in the body's climb
+                                            // window; a single solid cell is
+                                            // a terrain step the glide
+                                            // legally takes.
                                             let chord_blocked =
                                                 |a: Vec3<i32>, b: Vec3<i32>| {
                                                     cells_on_chord(a, b)
                                                         .into_iter()
                                                         .any(|c| {
-                                                            solid(c)
-                                                                || solid(
-                                                                    c + Vec3::unit_z(),
-                                                                )
+                                                            (0..=2i32).any(|dz| {
+                                                                solid(c + Vec3::unit_z() * dz)
+                                                                    && solid(
+                                                                        c + Vec3::unit_z()
+                                                                            * (dz + 1),
+                                                                    )
+                                                            })
                                                         })
                                                 };
                                             let mut safe: Vec<Vec3<i32>> =
