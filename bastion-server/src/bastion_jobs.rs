@@ -27959,19 +27959,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // LIVENESS (`suspended_for` + whether that uid is still a live,
         // loaded entity), not on `claimed_by` alone — see the sweep's
         // own doc.
+        // ★ FAILURES DISSOLVE (the A/B's synthesis, row 22 — era-3's
+        // failure semantics on era-2's execution). This drain used to
+        // SUSPEND a timed-out self-job (claimed_by cleared, suspended_for
+        // set, pending_self_job armed) and hand it to the need scan's
+        // reclaim ladder — the held-state family behind five straight
+        // bimodal dawns (frozen holders excluded from the scan, reclaim
+        // trickles, 71s conversion law). Era-3's fleet-measured night win
+        // came from failures that DIE and needs that re-preempt fresh:
+        // the job is removed outright (the one removal path frees bed
+        // occupancy and reservations), no pending state survives, and
+        // the existing per-uid preempt cooldown is the only residue —
+        // time-expiring, job-side, exactly the research's lawful shape.
         for (entity, job_id) in &to_suspend {
             active_jobs.remove(*entity);
-            if let Some(uid) = uids.get(*entity).copied()
-                && let Some(job) = board.jobs.get_mut(job_id)
-            {
-                job.claimed_by = None;
-                job.suspended_for = Some(uid);
-            }
+            board.remove_job(*job_id);
             if let Some(arb) = arbiters.get_mut(*entity) {
                 arb.activity = None;
-                arb.pending_self_job = Some(*job_id);
+                arb.pending_self_job = None;
             }
             if let Some(u) = uids.get(*entity) {
+                board
+                    .preempt_cooldown
+                    .insert(*u, time.0 + PREEMPT_COOLDOWN_SECS);
                 board.progress_watch.remove(u);
                 board.path_cache.remove(u);
                 board.last_steer.remove(u);
