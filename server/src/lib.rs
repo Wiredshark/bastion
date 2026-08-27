@@ -7492,9 +7492,9 @@ impl Server {
                                         origin: tile_graph.origin,
                                         tiles: tile_graph.tiles.clone(),
                                         // Street level = the adoption
-                                        // spawn's ground (the walkable
-                                        // feet cell).
-                                        ground_z: asp.z as i32,
+                                        // spawn's FEET cell (spawn z is
+                                        // one above it — the drop-in).
+                                        ground_z: asp.z as i32 - 1,
                                     },
                                 );
                                 tracing::info!(

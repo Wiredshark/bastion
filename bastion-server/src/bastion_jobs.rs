@@ -28457,22 +28457,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     SearchLane::Fill,
                                     common::path::FullPathOutcome::Path(wps),
                                 ) if !wps.is_empty() => {
-                                    // ★ A LATE DELIVERY MUST NOT CLOBBER A
-                                    // FRESHER ROUTE (round-28: the route idx
-                                    // ran BACKWARD — a leftover per-uid
-                                    // search from the previous leg delivered
-                                    // onto the new leg's trunk route,
-                                    // resetting idx and flip-flopping the
-                                    // steer). Deliveries land only when the
-                                    // cache has no entry for a different
-                                    // target.
-                                    let fresh_conflict = board
-                                        .path_cache
-                                        .get(&u)
-                                        .is_some_and(|(_, _, for_t)| {
-                                            for_t.distance_squared(ps.target) > 9.0
-                                        });
-                                    if !fresh_conflict {
+                                    // ★ THE PUMP IS A PURE FALLBACK
+                                    // (round-29 falsified the v1 guard: the
+                                    // idx-reset alternation was a SAME-
+                                    // target delivery — the trunk inserts
+                                    // instantly and the double-enqueued pump
+                                    // delivers the same leg ~2s later,
+                                    // resetting idx to 0; v1 passed same-
+                                    // target deliveries freely and, worse,
+                                    // protected STALE entries against fresh
+                                    // pump routes on pump-only legs — cook
+                                    // timeouts doubled). The rule that
+                                    // cannot invert: a delivery lands ONLY
+                                    // into an empty cache; whoever filled
+                                    // it first — trunk or an earlier
+                                    // delivery — owns the leg until the
+                                    // fill's own staleness replaces it.
+                                    if board.path_cache.get(&u).is_none() {
                                         board
                                             .path_cache
                                             .insert(u, (wps, 0, ps.target));
