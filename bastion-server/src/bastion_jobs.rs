@@ -1874,6 +1874,50 @@ pub fn schedule_block_at(offset_hours: u32, hour: u32) -> ScheduleBlock {
 /// dusk — a human night-shift day.
 pub(crate) const NIGHT_WATCH_OFFSET: u32 = 14;
 
+/// ROW 28 (the chord through the wall): every XY cell a straight line
+/// from `a` to `b` touches — SUPERCOVER, not Bresenham, deliberately:
+/// Bresenham steps past grazed corners, and grazed corners are the
+/// entire bug (998 embeds in three days, 62% at one building corner a
+/// trunk chord clipped). Endpoints included; z rides `a.z` (trunk
+/// waypoints share street level). Pure for unit pins.
+pub(crate) fn cells_on_chord(a: Vec3<i32>, b: Vec3<i32>) -> Vec<Vec3<i32>> {
+    let (x0, y0) = (a.x, a.y);
+    let (x1, y1) = (b.x, b.y);
+    let dx = (x1 - x0).abs();
+    let dy = (y1 - y0).abs();
+    let sx = if x1 > x0 { 1 } else { -1 };
+    let sy = if y1 > y0 { 1 } else { -1 };
+    let (mut x, mut y) = (x0, y0);
+    let mut cells = vec![Vec3::new(x, y, a.z)];
+    // Supercover DDA: compare the error term against zero and, when the
+    // line passes exactly through a cell corner, take BOTH neighbours.
+    let mut err = dx - dy;
+    while x != x1 || y != y1 {
+        let e2 = 2 * err;
+        if e2 == 0 && x != x1 && y != y1 {
+            // Exact corner crossing: the ideal line touches both
+            // adjacent cells — include both, then step diagonally.
+            cells.push(Vec3::new(x + sx, y, a.z));
+            cells.push(Vec3::new(x, y + sy, a.z));
+            x += sx;
+            y += sy;
+            err += dx - dy;
+        } else if e2 > -dy && x != x1 {
+            err -= dy;
+            x += sx;
+        } else if e2 < dx && y != y1 {
+            err += dx;
+            y += sy;
+        } else if x != x1 {
+            x += sx;
+        } else {
+            y += sy;
+        }
+        cells.push(Vec3::new(x, y, a.z));
+    }
+    cells
+}
+
 /// ROW 27: the colonist's schedule block at this wall hour — night
 /// watchmen run the rotated day, everyone else the default. Takes the
 /// SET, not the board, so callers holding disjoint mutable board borrows
@@ -23138,7 +23182,83 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             wps.push(
                                                 target.map(|e| e.floor() as i32),
                                             );
-                                            wps
+                                            // ★ ROW 28: LOS-SAFE TRUNK
+                                            // EDGES. A tile-graph edge
+                                            // promises ADJACENCY; the glide
+                                            // walks the LINE between
+                                            // centers, and that chord can
+                                            // clip a building corner
+                                            // intruding into either tile —
+                                            // 998 embeds in three days, 62%
+                                            // at ONE corner, every victim
+                                            // relocated onto the ROOF (the
+                                            // rooftop figures in Ben's own
+                                            // screenshots). Where a chord
+                                            // crosses solid at walker
+                                            // height, keep the actual
+                                            // crossing: probe the chord
+                                            // midpoint's neighbourhood
+                                            // (the shared tile edge is one
+                                            // axis) for an open column
+                                            // whose sub-chords are clean,
+                                            // and insert it as a waypoint.
+                                            // The plan becomes true AS A
+                                            // LINE — the admissibility
+                                            // ruling completed, not
+                                            // reversed; the glide stays
+                                            // pure. No crossing found →
+                                            // keep the chord (pump and
+                                            // watchdog stay the backstop).
+                                            let solid = |c: Vec3<i32>| {
+                                                terrain
+                                                    .get(c)
+                                                    .map(|b| b.is_solid())
+                                                    .unwrap_or(false)
+                                            };
+                                            let open_col = |c: Vec3<i32>| {
+                                                !solid(c)
+                                                    && !solid(c + Vec3::unit_z())
+                                                    && solid(c - Vec3::unit_z())
+                                            };
+                                            let chord_blocked =
+                                                |a: Vec3<i32>, b: Vec3<i32>| {
+                                                    cells_on_chord(a, b)
+                                                        .into_iter()
+                                                        .any(|c| {
+                                                            solid(c)
+                                                                || solid(
+                                                                    c + Vec3::unit_z(),
+                                                                )
+                                                        })
+                                                };
+                                            let mut safe: Vec<Vec3<i32>> =
+                                                Vec::with_capacity(wps.len() + 4);
+                                            for wp in wps {
+                                                if let Some(&prev) = safe.last() {
+                                                    if chord_blocked(prev, wp) {
+                                                        let mid = (prev + wp) / 2;
+                                                        let cross = (0..=3i32)
+                                                            .flat_map(|d| {
+                                                                [
+                                                                    Vec3::new(mid.x + d, mid.y, mid.z),
+                                                                    Vec3::new(mid.x - d, mid.y, mid.z),
+                                                                    Vec3::new(mid.x, mid.y + d, mid.z),
+                                                                    Vec3::new(mid.x, mid.y - d, mid.z),
+                                                                ]
+                                                            })
+                                                            .find(|c| {
+                                                                open_col(*c)
+                                                                    && !chord_blocked(prev, *c)
+                                                                    && !chord_blocked(*c, wp)
+                                                            });
+                                                        if let Some(c) = cross {
+                                                            safe.push(c);
+                                                        }
+                                                    }
+                                                }
+                                                safe.push(wp);
+                                            }
+                                            safe
                                         })
                                     });
                                 if let Some(wps) = trunked {
@@ -38328,6 +38448,49 @@ mod tests {
                 && work_claims_open(default_schedule_block(15)),
             "the full 8-hour work block stays open at both ends"
         );
+    }
+
+    /// ROW 28: the chord walker is SUPERCOVER — grazed corners are the
+    /// entire bug (62% of embeds at one clipped building corner), so an
+    /// exact-diagonal chord must include BOTH corner neighbours; plain
+    /// Bresenham steps past them and a planted naive walker fails here.
+    #[test]
+    fn chord_cells_are_supercover_so_grazed_corners_are_seen() {
+        let a = Vec3::new(0, 0, 5);
+        let line = cells_on_chord(a, Vec3::new(3, 0, 5));
+        assert_eq!(
+            line,
+            vec![
+                Vec3::new(0, 0, 5),
+                Vec3::new(1, 0, 5),
+                Vec3::new(2, 0, 5),
+                Vec3::new(3, 0, 5),
+            ]
+        );
+        let diag = cells_on_chord(a, Vec3::new(2, 2, 5));
+        for c in [
+            Vec3::new(1, 0, 5),
+            Vec3::new(0, 1, 5),
+            Vec3::new(2, 1, 5),
+            Vec3::new(1, 2, 5),
+            Vec3::new(1, 1, 5),
+            Vec3::new(2, 2, 5),
+        ] {
+            assert!(
+                diag.contains(&c),
+                "supercover must include {c:?} — got {diag:?}"
+            );
+        }
+        let off = cells_on_chord(a, Vec3::new(4, 2, 5));
+        assert_eq!(off.first(), Some(&a));
+        assert_eq!(off.last(), Some(&Vec3::new(4, 2, 5)));
+        for w in off.windows(2) {
+            let d = (w[1] - w[0]).map(|e| e.abs());
+            assert!(
+                d.x <= 1 && d.y <= 1,
+                "chord walk must step to neighbours: {w:?}"
+            );
+        }
     }
 
     /// ROW 27 (NIGHT WATCH): the schedule-offset source. Both directions:
