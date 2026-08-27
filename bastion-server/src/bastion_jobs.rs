@@ -23274,6 +23274,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 agent_present = agent.is_some(),
                                 ?steer,
                                 feet = ?pos.0,
+                                // ★ round-25 falsifier: the detour cut
+                                // changed nothing for cooks, so the
+                                // committed path must be ABSENT on their
+                                // station legs — this field decides.
+                                committed = uids
+                                    .get(entity)
+                                    .is_some_and(|u| board.path_cache.contains_key(u)),
+                                fetching = fetch_steer.is_some(),
                                 "bastion: STEER-DIAG"
                             );
                         }
