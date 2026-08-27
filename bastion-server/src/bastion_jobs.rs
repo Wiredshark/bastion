@@ -23269,7 +23269,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                                     && !chord_blocked(*c, wp)
                                                             });
                                                         if let Some(c) = cross {
+                                                            // ROW 28 v3: the
+                                                            // fix WITNESSES —
+                                                            // two silent
+                                                            // versions died
+                                                            // unfalsifiable.
+                                                            info!(
+                                                                from = ?prev,
+                                                                to = ?wp,
+                                                                kept = ?c,
+                                                                "bastion: CHORD-FIX corner kept"
+                                                            );
                                                             safe.push(c);
+                                                        } else {
+                                                            info!(
+                                                                from = ?prev,
+                                                                to = ?wp,
+                                                                "bastion: CHORD-FIX blocked chord, NO crossing found"
+                                                            );
                                                         }
                                                     }
                                                 }
@@ -28843,6 +28860,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             tracing::warn!(
                                 embedded_at = ?pos.0,
                                 relocated_to = ?d,
+                                // ROW 28 v3 (instrument-only, after TWO
+                                // predicate guesses died at the same
+                                // corner): the victim CLASSIFIES itself —
+                                // a cache-backed mover body means the
+                                // trunk fix's population; neither flag
+                                // means bridge/chaser/physics walkers the
+                                // trunk post-process can never reach.
+                                uid = uid.0.get(),
+                                committed = board.path_cache.contains_key(uid),
                                 "bastion EMBED WATCH: colonist WEDGED in \
                                  terrain (persisted a full second) — \
                                  relocated; hunt the writer"
