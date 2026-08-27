@@ -20597,6 +20597,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         }
                     } else {
                         // ---- REST candidate ----
+                        // ★ A NEED BEING SERVICED IS NOT A NEED TO PREEMPT
+                        // (round-16 dawn: seven still exhausted with ZERO
+                        // breakdowns — the second blocker behind the fixed
+                        // one. 657's trail: the 60s cooldown lapsed MID-
+                        // SLEEP, rest still below interrupt because sleep
+                        // restores slower than the cooldown, so the next
+                        // preempt fired, its release clause dropped his own
+                        // WORKING RestAt, and the picker — his bed now
+                        // "occupied" by himself a moment earlier — offered
+                        // one 130 blocks away. The preempt was evicting
+                        // sleepers from their own beds all night). A
+                        // colonist whose active job is already RestAt is
+                        // being serviced: leave them asleep.
+                        if active_jobs.get(entity).is_some_and(|aj| {
+                            board.jobs.get(&aj.job).is_some_and(|j| {
+                                matches!(
+                                    j.kind,
+                                    common::bastion::JobKind::RestAt { .. }
+                                )
+                            })
+                        }) {
+                            continue 'candidates;
+                        }
                         // AUTON-2 unification (site 4/6, 2026-08-09): a
                         // SUSPENDED RestAt job of mine already exists.
                         // Reclaim it verbatim (same bed) instead of
@@ -20640,7 +20663,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         let own = colonist
                             .0
                             .owned_bed
-                            .filter(|p| board.beds.get(p).is_some_and(|s| s.occupant.is_none()));
+                            // My own bed is available TO ME whether empty or
+                            // held by my own occupancy (the re-preempt case
+                            // was reading self-occupancy as "taken" and
+                            // routing the sleeper across town).
+                            .filter(|p| {
+                                board.beds.get(p).is_some_and(|s| {
+                                    s.occupant.is_none()
+                                        || s.occupant == Some(*uid)
+                                })
+                            });
                         let bed = own.or_else(|| {
                             board
                                 .beds
