@@ -23326,6 +23326,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 committed = uids
                                     .get(entity)
                                     .is_some_and(|u| board.path_cache.contains_key(u)),
+                                marker = kinematic_travels.contains(entity),
                                 // ★ round-27 falsifier: the advance
                                 // predicate held at a traced frame yet the
                                 // steer alternated — a monotone idx cannot
@@ -27570,7 +27571,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             let mut radiate: Vec<(specs::Entity, Vec3<i32>)> = Vec::new();
             let mut standing: Vec<(u64, specs::Entity, Vec3<i32>)> = (&entities, &colonists, &positions)
                 .join()
-                .filter(|(e, _, _)| !moved_now.contains(e))
+                // ★ A TRAVELER IS NEVER RADIATED (724's traced bed walk:
+                // his mover went quiet at a wall choke, the radiator —
+                // seeing a "stander" — snapped him to exact cell-centers
+                // every cadence while the Goto walked him 0.8 blocks back,
+                // and the cumulative southward picks drifted him NINE
+                // BLOCKS off his own route: the door-queue clusters and
+                // sweep-5's parked bodies are this cycle at every choke.
+                // The radiator exists to spread RESTING crowds — RimWorld's
+                // own rule lets walking pawns overlap — so anyone whose
+                // active job is Traveling is exempt, not merely anyone who
+                // moved this tick).
+                .filter(|(e, _, _)| {
+                    !moved_now.contains(e)
+                        && !active_jobs.get(*e).is_some_and(|aj| {
+                            matches!(
+                                aj.state,
+                                comp::bastion::ActiveJobState::Traveling
+                            )
+                        })
+                })
                 .filter_map(|(e, _, p)| {
                     uids.get(e).map(|u| (u.0.get(), e, p.0.map(|v| v.floor() as i32)))
                 })
