@@ -1853,6 +1853,43 @@ pub fn default_schedule_block(hour: u32) -> ScheduleBlock {
     }
 }
 
+/// ROW 27 (NIGHT WATCH — motivated by a body): uid 663 heard the 2am
+/// alarm, ran home correctly, and was killed at his own doorstep — the
+/// 23/23 sleep closure removed the accidental night watch of exhausted
+/// stragglers, so a night raid now meets a fully asleep town. DF answers
+/// with military alerts + burrows, RimWorld with per-pawn schedule rows;
+/// both reduce to: SOME people's working day is the night. This is the
+/// per-colonist schedule SOURCE Ben chartered on `default_schedule_block`
+/// ("a per-colonist stored schedule... all just replace this call"): the
+/// same pure 8/8/8 day, rotated. Offset 0 is the identity by construction
+/// (the fallback-must-be-identity law) — every non-watch colonist is
+/// bit-identical to before.
+pub fn schedule_block_at(offset_hours: u32, hour: u32) -> ScheduleBlock {
+    default_schedule_block((hour + 24 - (offset_hours % 24)) % 24)
+}
+
+/// The night watch's rotation: Work 8-15 maps onto 22-05 (the raid
+/// hours), Sleep 22-05 onto 12-19... i.e. the watchman works the night,
+/// sleeps through the afternoon, and takes his leisure around dawn and
+/// dusk — a human night-shift day.
+pub(crate) const NIGHT_WATCH_OFFSET: u32 = 14;
+
+/// ROW 27: the colonist's schedule block at this wall hour — night
+/// watchmen run the rotated day, everyone else the default. Takes the
+/// SET, not the board, so callers holding disjoint mutable board borrows
+/// stay legal.
+pub(crate) fn colonist_schedule_block(
+    night_watch: &HashSet<common::uid::Uid>,
+    uid: Option<&common::uid::Uid>,
+    hour: u32,
+) -> ScheduleBlock {
+    if uid.is_some_and(|u| night_watch.contains(u)) {
+        schedule_block_at(NIGHT_WATCH_OFFSET, hour)
+    } else {
+        default_schedule_block(hour)
+    }
+}
+
 /// ★ THE EMERGENCY BACKOUT (Ben: "a emergency backout if the colonist is
 /// starving to death").
 ///
@@ -7793,6 +7830,17 @@ pub struct JobBoard {
     command_admission: common::command_protocol::AdmissionLedger,
     next_id: JobId,
     pub jobs: HashMap<JobId, Job>,
+    /// ROW 27 (NIGHT WATCH): colonists running the rotated day
+    /// ([`NIGHT_WATCH_OFFSET`]) — their Work block covers the raid hours.
+    /// Re-derived every cycle from the guard lane (renewable by
+    /// construction, like farm demand): militia sorted by uid, even
+    /// indices take the watch, so any colony with one guard has a night
+    /// watchman and larger colonies split. Runtime-only, like the board.
+    pub night_watch: HashSet<common::uid::Uid>,
+    /// ROW 27b: the standing posts the watch holds tonight (watchman →
+    /// job id). Minted for idle watchmen while the town sleeps, drained
+    /// through the one removal path at dawn.
+    pub night_posts: HashMap<common::uid::Uid, JobId>,
     /// bastion (AUTON-2 unification, FIXTURE 1's invariant made live in
     /// EVERY scenario, 2026-08-08): a silent, cumulative counter --
     /// incremented at the EXISTING orphan sweep's own cadence
@@ -18780,9 +18828,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 n.hunger,
                                 mood_cfg,
                                 matches!(
-                                    default_schedule_block(hour_of_day(
-                                        rtsim.rt_state().data().time_of_day.0
-                                    )),
+                                    colonist_schedule_block(
+                                        &board.night_watch,
+                                        uids.get(entity),
+                                        hour_of_day(
+                                            rtsim.rt_state().data().time_of_day.0
+                                        )
+                                    ),
                                     ScheduleBlock::Sleep
                                 ),
                             )
@@ -20131,7 +20183,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // `schedule_permits_need` keeps the schedule from killing
                 // anyone.
                 let sched_hour = hour_of_day(rtsim.rt_state().data().time_of_day.0);
-                let sched_block = default_schedule_block(sched_hour);
+                let sched_block =
+                    colonist_schedule_block(&board.night_watch, Some(&uid), sched_hour);
                 // Forced labour is Ben's later conscription mod; wired as a
                 // parameter so that becomes a caller change, never `false`
                 // today.
@@ -20247,9 +20300,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // the block never ran from its old position further down.
                 if recreation_enabled()
                     && matches!(
-                        default_schedule_block(hour_of_day(
-                            rtsim.rt_state().data().time_of_day.0
-                        )),
+                        colonist_schedule_block(
+                            &board.night_watch,
+                            uids.get(entity),
+                            hour_of_day(rtsim.rt_state().data().time_of_day.0)
+                        ),
                         ScheduleBlock::Leisure
                     )
                     && active_jobs.get(entity).is_none()
@@ -20726,9 +20781,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // town does not send anyone out for a
                                 // mushroom at 3am.)
                                 if matches!(
-                                    default_schedule_block(hour_of_day(
-                                        rtsim.rt_state().data().time_of_day.0
-                                    )),
+                                    colonist_schedule_block(
+                                        &board.night_watch,
+                                        uids.get(entity),
+                                        hour_of_day(
+                                            rtsim.rt_state().data().time_of_day.0
+                                        )
+                                    ),
                                     ScheduleBlock::Sleep
                                 ) {
                                     if need_skip_diag {
@@ -21046,9 +21105,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // Nights stay bed-bound (Sleep block excluded) per the
                         // HUMAN HOURS acceptance bar.
                         || (!matches!(
-                            default_schedule_block(hour_of_day(
-                                rtsim.rt_state().data().time_of_day.0
-                            )),
+                            colonist_schedule_block(
+                                &board.night_watch,
+                                uids.get(entity),
+                                hour_of_day(rtsim.rt_state().data().time_of_day.0)
+                            ),
                             ScheduleBlock::Sleep
                         ) && active_jobs.get(entity).is_none()))
                     // ★★ ITEM 11 ROOT CAUSE (2026-08-20, 34,720-row census):
@@ -25542,10 +25603,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // sleeper LIES until dawn. Naps outside
                                     // the block keep the old rule; hunger
                                     // and the alarm still preempt.
+                                    // ROW 27: the WATCHMAN's night is his
+                                    // own — he holds in bed through his
+                                    // afternoon Sleep block and gets up
+                                    // for the night shift.
                                     let night = matches!(
-                                        default_schedule_block(hour_of_day(
-                                            rtsim.rt_state().data().time_of_day.0
-                                        )),
+                                        colonist_schedule_block(
+                                            &board.night_watch,
+                                            uids.get(entity),
+                                            hour_of_day(
+                                                rtsim.rt_state().data().time_of_day.0
+                                            )
+                                        ),
                                         ScheduleBlock::Sleep
                                     );
                                     slept = needs.rest >= cfg.rest.comfort + SLEEP_MARGIN
@@ -28392,9 +28461,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // moping keeps its own feet, visible sadness being
                     // half the point of Despond.)
                     let spot = if matches!(
-                        default_schedule_block(hour_of_day(
-                            rtsim.rt_state().data().time_of_day.0
-                        )),
+                        colonist_schedule_block(
+                            &board.night_watch,
+                            uids.get(entity),
+                            hour_of_day(rtsim.rt_state().data().time_of_day.0)
+                        ),
                         ScheduleBlock::Sleep
                     ) {
                         colonists
@@ -33047,9 +33118,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // nights are for going home. Self-jobs are born claimed and
             // never pass this door; the emergency-access ladder keeps its
             // exemption above.
-            if !work_claims_open(default_schedule_block(hour_of_day(
-                rtsim.rt_state().data().time_of_day.0,
-            ))) && !owns_emergency_access
+            // ROW 27: the door opens by the COLONIST'S schedule — a night
+            // watchman's work block is the town's night, so his Guard
+            // claims open at 22:00 while everyone else's door is shut.
+            if !work_claims_open(colonist_schedule_block(
+                &board.night_watch,
+                Some(&uid),
+                hour_of_day(rtsim.rt_state().data().time_of_day.0),
+            )) && !owns_emergency_access
                 && !rescue_open
             {
                 census.colonist_off_hours += 1;
@@ -33082,6 +33158,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             for id in board.decision_job_ids() {
                 census.considered += 1;
                 let job = &board.jobs[&id];
+                // ROW 27: ON WATCH, THE GUARD GUARDS. A night watchman's
+                // door is open while the town sleeps, but he claims only
+                // his own lane — without this he'd haul crates at 3am,
+                // the exact "works at midnight" look the schedule exists
+                // to kill. His day-shift hours never reach here (the door
+                // above closes on his own Sleep/Leisure blocks).
+                // Uncensused by design: a lane hold, not a defect state.
+                if board.night_watch.contains(uid)
+                    && matches!(
+                        default_schedule_block(hour_of_day(
+                            rtsim.rt_state().data().time_of_day.0
+                        )),
+                        ScheduleBlock::Sleep
+                    )
+                    && job.work != common::bastion::WorkType::Guard
+                {
+                    continue;
+                }
                 // The priority gate below is the ONLY consumer of
                 // `WorkPriorities`, and this is the filter that decides what
                 // ever reaches it — see `Job::is_claim_candidate`, which
@@ -33963,6 +34057,102 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     game_day = (tod / common::resources::DAY).floor() as i64,
                     "bastion: DAY SCHEDULE — the clock the arbiter is reading"
                 );
+                // ROW 27: derive the NIGHT WATCH roster on the same clock
+                // cadence — renewable by construction (re-derived from the
+                // guard lane each time, like farm demand; a died/demoted
+                // watchman simply drops out). Militia = Guard priority ≥4
+                // (the alarm's own predicate), sorted by uid; EVEN indices
+                // take the watch, so one guard = one night watchman and a
+                // larger militia splits day/night. Logged on change only.
+                let mut militia: Vec<common::uid::Uid> = (&colonists, &uids)
+                    .join()
+                    .filter(|(c, _)| {
+                        c.0.work_priorities.get(common::bastion::WorkType::Guard) >= 4
+                    })
+                    .map(|(_, u)| *u)
+                    .collect();
+                militia.sort_by_key(|u| u.0.get());
+                let watch: HashSet<common::uid::Uid> = militia
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| i % 2 == 0)
+                    .map(|(_, u)| *u)
+                    .collect();
+                if watch != board.night_watch {
+                    info!(
+                        watchmen = ?{
+                            let mut w: Vec<u64> =
+                                watch.iter().map(|u| u.0.get()).collect();
+                            w.sort_unstable();
+                            w
+                        },
+                        militia = militia.len(),
+                        "bastion: NIGHT WATCH roster"
+                    );
+                    board.night_watch = watch;
+                }
+                // ROW 27b: THE POST. A watchman on shift with nothing
+                // handed to him stands at the plaza, visibly — an idle
+                // watchman reads as "frozen off shift", and the watcher
+                // naming his job at a glance is the mandate's own bar.
+                // While the TOWN sleeps, every idle watchman gets a
+                // pre-claimed Guard post at the gathering anchor (first
+                // stockpile as the pre-anchor fallback, the evening
+                // ring's own shape); at dawn the posts drain through the
+                // one removal path and the stale ActiveJob releases via
+                // the executor's missing-job arm next tick. Re-post is
+                // leak-proof: a watchman only gets a new post if his
+                // recorded one no longer exists on the board.
+                let town_night =
+                    matches!(default_schedule_block(hour), ScheduleBlock::Sleep);
+                if town_night {
+                    let post_cell = board.gathering_anchor.or_else(|| {
+                        board
+                            .stockpiles
+                            .first()
+                            .map(|(_, r)| stockpile_drop_cell(&terrain, r))
+                    });
+                    if let Some(post) = post_cell {
+                        let idle_watch: Vec<(specs::Entity, common::uid::Uid)> =
+                            (&entities, &uids, &colonists)
+                                .join()
+                                .filter_map(|(e, u, _)| {
+                                    (board.night_watch.contains(u)
+                                        && active_jobs.get(e).is_none()
+                                        && board
+                                            .night_posts
+                                            .get(u)
+                                            .is_none_or(|id| !board.jobs.contains_key(id)))
+                                    .then_some((e, *u))
+                                })
+                                .collect();
+                        for (entity, u) in idle_watch {
+                            let id = board.insert_auto_guard_job(post, u);
+                            board.night_posts.insert(u, id);
+                            let _ = active_jobs.insert(entity, comp::bastion::ActiveJob {
+                                job: id,
+                                state: comp::bastion::ActiveJobState::Traveling,
+                                best_dist: f32::MAX,
+                                stuck_time: 0.0,
+                                reset_dist: f32::MAX,
+                                soft_granted: false,
+                                stance: Vec3::unit_z(),
+                            });
+                            info!(
+                                job = id,
+                                colonist = u.0.get(),
+                                ?post,
+                                "bastion: NIGHT WATCH takes post"
+                            );
+                        }
+                    }
+                } else if !board.night_posts.is_empty() {
+                    let posts: Vec<JobId> = board.night_posts.drain().map(|(_, id)| id).collect();
+                    for id in posts {
+                        board.remove_job(id);
+                    }
+                    info!("bastion: NIGHT WATCH stands down");
+                }
             }
             // ★ REBUILD THE CONNECTIVITY INDEX (researched: RimWorld's zone
             // index / DF's connected segments). Seeded from a live colonist's
@@ -38137,6 +38327,60 @@ mod tests {
             work_claims_open(default_schedule_block(8))
                 && work_claims_open(default_schedule_block(15)),
             "the full 8-hour work block stays open at both ends"
+        );
+    }
+
+    /// ROW 27 (NIGHT WATCH): the schedule-offset source. Both directions:
+    /// offset 0 is the IDENTITY (fallback-must-be-identity — every
+    /// non-watch colonist bit-identical to before), the night watch's
+    /// work block covers the raid hours, the 8/8/8 totals survive any
+    /// rotation, and the planted wrong-sign defect (hour+offset instead
+    /// of hour-offset) is caught by the 2am pin.
+    #[test]
+    fn night_watch_offset_rotates_the_day_without_changing_its_shape() {
+        for h in 0..24 {
+            assert_eq!(
+                schedule_block_at(0, h),
+                default_schedule_block(h),
+                "offset 0 must be the identity at hour {h}"
+            );
+        }
+        // The watchman WORKS the raid hours (663 died at wall-clock 2am).
+        for h in [22, 23, 0, 1, 2, 3, 4, 5] {
+            assert_eq!(
+                schedule_block_at(NIGHT_WATCH_OFFSET, h),
+                ScheduleBlock::Work,
+                "night watch works wall hour {h}"
+            );
+        }
+        // He sleeps the afternoon (12-19) and is NOT asleep at his post.
+        for h in [12, 15, 19] {
+            assert_eq!(
+                schedule_block_at(NIGHT_WATCH_OFFSET, h),
+                ScheduleBlock::Sleep,
+                "night watch sleeps wall hour {h}"
+            );
+        }
+        // The rotated day keeps the exact 8/8/8 shape for ANY offset.
+        for off in [NIGHT_WATCH_OFFSET, 1, 7, 23] {
+            let (mut s, mut w, mut l) = (0, 0, 0);
+            for h in 0..24 {
+                match schedule_block_at(off, h) {
+                    ScheduleBlock::Sleep => s += 1,
+                    ScheduleBlock::Work => w += 1,
+                    ScheduleBlock::Leisure => l += 1,
+                }
+            }
+            assert_eq!((s, w, l), (8, 8, 8), "offset {off} broke the 8/8/8 day");
+        }
+        // Planted defect (wrong sign): hour PLUS offset puts 2am in
+        // Leisure, not Work — the raid-hours pin above must catch a
+        // future sign flip, so prove the wrong sign actually differs.
+        let wrong = default_schedule_block((2 + NIGHT_WATCH_OFFSET) % 24);
+        assert_ne!(
+            wrong,
+            ScheduleBlock::Work,
+            "the wrong-sign rotation must be distinguishable at 2am, or the pin pins nothing"
         );
     }
 
