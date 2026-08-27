@@ -1598,7 +1598,20 @@ where
                 // re-picking the same wall until the teleport backstop.
                 // Single steps (dir.z == 1, doorsteps) stay legal.
                 (dir.z < 2
-                    || !traversal_cfg.climb_ban.contains(&(*pos + **dir).xy()))
+                    || (!traversal_cfg.climb_ban.contains(&(*pos + **dir).xy())
+                        // ★ ROOFS ARE NOT ROUTES (707's traced orbit,
+                        // 2026-08-27: the pump routed cooks OVER their
+                        // tavern — up-jumps are cheap and 1-2-block drops
+                        // are free walking, so buildings became speed
+                        // bumps; the roof leg then flip-flopped at the
+                        // eave's 3D-arrival edge and the stall budget
+                        // always won the race. Ben's law: climbing is a
+                        // last resort, never a shortcut — a jump or
+                        // scramble may never LAND on a building column;
+                        // doors are the way in).
+                        && !traversal_cfg
+                            .interior_cells
+                            .contains(&(*pos + **dir).xy())))
                     && (traversal_cfg.can_fly || is_walkable(pos) && is_walkable(&(*pos + **dir)))
                     && ((dir.z < 1
                         || vol
