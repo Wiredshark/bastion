@@ -12882,6 +12882,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // (U8 grep-assert enforces future sites).
         {
             let mut climb_iter = (
+                &entities,
                 &mut colonists,
                 &char_states,
                 &mut velocities,
@@ -12897,6 +12898,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             )
                 .lend_join();
             while let Some((
+                entity,
                 mut colonist,
                 cs,
                 vel,
@@ -12911,6 +12913,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 energy,
             )) = climb_iter.next()
             {
+                // ★ ONE OWNER — THE FAMILY GATE (round 41's SIGNED
+                // conviction: adj-snap/LEDGE SNAP, 448 POS-WRITEs in 724's
+                // stall window, from=x2894.05-2894.59 fractional glide
+                // positions over the gap, to=(2893.5,7345.5,181) behind it,
+                // once a second all night. The glide crosses the gap,
+                // physics still reports on_wall for the brushing capsule,
+                // `supported` reads the glider as a hanging climber, and
+                // the ledge snap yanks him back. Round 39 was the crest-
+                // dismount magnet's turn at the SAME gap — gating one
+                // sibling promoted the next. This whole block — ladder
+                // magnet, column snap, velocity lift, ledge snap — is
+                // physics-era rescue machinery; for a body the kinematic
+                // mover owns, every writer in it is a rival by
+                // construction. One gate at the population entry retires
+                // the family: committed-route holders and marker-carriers
+                // skip it all; physics climbers keep every rescue.)
+                if (plan_walk_on() && board.path_cache.contains_key(uid))
+                    || kinematic_travels.contains(entity)
+                {
+                    continue;
+                }
                 // REQ-0068: a pre-route settle episode deliberately hands
                 // horizontal intent to the ordinary Goto controller and
                 // vertical resolution to normal physics. The legacy generic
