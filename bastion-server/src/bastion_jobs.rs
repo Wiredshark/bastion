@@ -186,6 +186,13 @@ pub struct BastionTileGraph {
     pub origin: Vec2<i32>,
     /// tile -> (terrain cost class, plot id, is-door)
     pub tiles: HashMap<Vec2<i32>, (f32, Option<u32>, bool)>,
+    /// ★ Street level (round-28: the trunk wrote tile-center waypoints
+    /// at the WALKER's z, so an upper-floor colonist got a cross-town
+    /// route at second-story height and the final hop dived 4 blocks at
+    /// the end — the stairwell flip-flop's raw material). Set from the
+    /// adoption spawn's ground at ingest; 0 = unknown (fall back to
+    /// walker z).
+    pub ground_z: i32,
 }
 
 impl BastionTileGraph {
@@ -22842,7 +22849,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             target.xy().map(|e| e.floor() as i32),
                                         );
                                         tile_route(g, st, et).map(|tiles| {
-                                            let z = pos.0.z.floor() as i32;
+                                            // Street level, not walker level
+                                            // — upstairs walkers route via
+                                            // the ground like everyone else.
+                                            let z = if g.ground_z != 0 {
+                                                g.ground_z
+                                            } else {
+                                                pos.0.z.floor() as i32
+                                            };
                                             let mut wps: Vec<Vec3<i32>> = tiles
                                                 .into_iter()
                                                 .map(|t| {
@@ -28443,7 +28457,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     SearchLane::Fill,
                                     common::path::FullPathOutcome::Path(wps),
                                 ) if !wps.is_empty() => {
-                                    board.path_cache.insert(u, (wps, 0, ps.target));
+                                    // ★ A LATE DELIVERY MUST NOT CLOBBER A
+                                    // FRESHER ROUTE (round-28: the route idx
+                                    // ran BACKWARD — a leftover per-uid
+                                    // search from the previous leg delivered
+                                    // onto the new leg's trunk route,
+                                    // resetting idx and flip-flopping the
+                                    // steer). Deliveries land only when the
+                                    // cache has no entry for a different
+                                    // target.
+                                    let fresh_conflict = board
+                                        .path_cache
+                                        .get(&u)
+                                        .is_some_and(|(_, _, for_t)| {
+                                            for_t.distance_squared(ps.target) > 9.0
+                                        });
+                                    if !fresh_conflict {
+                                        board
+                                            .path_cache
+                                            .insert(u, (wps, 0, ps.target));
+                                    }
                                 },
                                 (
                                     SearchLane::Fill,

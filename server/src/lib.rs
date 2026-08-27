@@ -7466,7 +7466,7 @@ impl Server {
                         // colony's shared road set — every colonist's path
                         // search prices walk edges onto these columns at
                         // half, so routes follow the streets.
-                        if let Some((_, _, _, _, roads, walls, interiors, tile_graph, buildings)) = adoption.as_ref() {
+                        if let Some((asp, _, _, _, roads, walls, interiors, tile_graph, buildings)) = adoption.as_ref() {
                             let mut board = self
                                 .state
                                 .ecs_mut()
@@ -7491,6 +7491,10 @@ impl Server {
                                     bastion_server::bastion_jobs::BastionTileGraph {
                                         origin: tile_graph.origin,
                                         tiles: tile_graph.tiles.clone(),
+                                        // Street level = the adoption
+                                        // spawn's ground (the walkable
+                                        // feet cell).
+                                        ground_z: asp.z as i32,
                                     },
                                 );
                                 tracing::info!(
@@ -8254,6 +8258,7 @@ impl Server {
             bastion_server::bastion_jobs::BastionTileGraph {
                 origin: site.origin,
                 tiles: tiles.into_iter().collect(),
+                ground_z: 0,
             }
         };
         tracing::info!(
