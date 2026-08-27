@@ -3543,6 +3543,31 @@ pub fn haul_chain_on() -> bool {
     *ON.get_or_init(|| std::env::var_os("BASTION_NO_HAUL_CHAIN").is_none())
 }
 
+/// ROW 21 (the oscillator hunt): SIGNED POSITION WRITES. 724's two-point
+/// A/B oscillation (round 39: feet flipping between two exact cell centers
+/// at arb cadence, route idx frozen, all night) had SEVEN candidate
+/// writers; the witnessed ones (embed net, nudge, stranding teleport) were
+/// each cleared by their own witness and every silent one cost a wrong
+/// story. Under BASTION_POS_WRITE_DIAG each teleport-class write logs its
+/// site tag — a write that signs itself ends the genre. `min_jump` lets
+/// the mover's per-tick glide (~0.1 blocks) sign only teleport-class
+/// jumps.
+pub(crate) fn pos_write_diag(
+    site: &'static str,
+    uid: Option<u64>,
+    from: Vec3<f32>,
+    to: Vec3<f32>,
+    min_jump: f32,
+) {
+    if std::env::var_os("BASTION_POS_WRITE_DIAG").is_none() {
+        return;
+    }
+    if from.distance_squared(to) < min_jump * min_jump {
+        return;
+    }
+    tracing::info!(site, uid, ?from, ?to, "bastion: POS-WRITE");
+}
+
 pub fn tightdig_enabled() -> bool {
     // ★ DEFAULT ON (2026-08-27, the mover-flag story repeated): the
     // displacement-window measure was designed so "the steer and the
@@ -14889,8 +14914,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 );
                             }
                         } else {
+                            let prev = pos.0;
                             pos.0 = target.map(|value| value as f32) + Vec3::new(0.5, 0.5, 0.0);
                             vel.0 = Vec3::zero();
+                            pos_write_diag("emergency-link", Some(uid.0.get()), prev, pos.0, 0.75);
                         }
                     }
                 }
@@ -15061,8 +15088,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // Blocked → hold position; the ledge/belt
                             // machinery stays the recovery path.
                             if !solid_at(Vec3::new(cc.x, cc.y, sz + 1)) {
+                                let prev = pos.0;
                                 pos.0 = Vec3::new(cc.x as f32 + 0.5, cc.y as f32 + 0.5, sz as f32);
                                 vel.0 = Vec3::zero();
+                                pos_write_diag("ladder-floor-snap", None, prev, pos.0, 0.75);
                                 record_assist_write(
                                     tick.0,
                                     *uid,
@@ -15131,8 +15160,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             !solid(*c) && !solid(*c + Vec3::unit_z()) && solid(*c - Vec3::unit_z())
                         });
                     if let Some(c) = snap {
+                        let prev = pos.0;
                         pos.0 = Vec3::new(c.x as f32 + 0.5, c.y as f32 + 0.5, c.z as f32);
                         vel.0 = Vec3::zero();
+                        pos_write_diag("adj-snap", None, prev, pos.0, 0.75);
                     }
                 }
                 if climb_free
@@ -15220,8 +15251,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     }
                 }
                 if let Some((c, _)) = best {
+                    let prev = pos.0;
                     pos.0 = Vec3::new(c.x as f32 + 0.5, c.y as f32 + 0.5, c.z as f32);
                     vel.0 = Vec3::zero();
+                    pos_write_diag("magnet-snap", None, prev, pos.0, 0.75);
                 }
             }
         }
@@ -23390,6 +23423,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         .get(u)
                                         .map(|(wps, idx, _)| (*idx, wps.len()))
                                 }),
+                                // ★ round-39 oscillator: are the two flip
+                                // cells his own waypoints? These name the
+                                // route's local truth at the stall.
+                                wp_prev = ?uids.get(entity).and_then(|u| {
+                                    board.path_cache.get(u).and_then(|(wps, idx, _)| {
+                                        wps.get(idx.wrapping_sub(1)).copied()
+                                    })
+                                }),
+                                wp_head = ?uids.get(entity).and_then(|u| {
+                                    board.path_cache.get(u).and_then(|(wps, idx, _)| {
+                                        wps.get(*idx).copied()
+                                    })
+                                }),
                                 fetching = fetch_steer.is_some(),
                                 "bastion: STEER-DIAG"
                             );
@@ -27694,7 +27740,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // borrow): the router promised these cells; the moves complete.
         for (entity, head) in pending_assists.drain(..) {
             if let Some(p) = positions.get_mut(entity) {
+                let prev = p.0;
                 p.0 = head.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
+                pos_write_diag(
+                    "assist-apply",
+                    uids.get(entity).map(|u| u.0.get()),
+                    prev,
+                    p.0,
+                    0.75,
+                );
             }
             if let Some(v) = velocities.get_mut(entity) {
                 v.0 = Vec3::zero();
@@ -27775,7 +27829,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             }
             for (e, spot) in radiate {
                 if let Some(p) = positions.get_mut(e) {
+                    let prev = p.0;
                     p.0 = spot.map(|v| v as f32) + Vec3::new(0.5, 0.5, 0.0);
+                    pos_write_diag(
+                        "radiate",
+                        uids.get(e).map(|u| u.0.get()),
+                        prev,
+                        p.0,
+                        0.75,
+                    );
                 }
             }
         }
@@ -27806,7 +27868,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             }
             for (entity, new_pos, vel) in pending_kinematic.drain(..) {
                 if let Some(p) = positions.get_mut(entity) {
+                    let prev = p.0;
                     p.0 = new_pos;
+                    // Teleport-class only (1.5) — a real glide step is
+                    // ~0.1 blocks; signing every step would flood.
+                    pos_write_diag(
+                        "mover",
+                        uids.get(entity).map(|u| u.0.get()),
+                        prev,
+                        p.0,
+                        1.5,
+                    );
                 }
                 if let Some(v) = velocities.get_mut(entity) {
                     v.0 = vel;
