@@ -24304,7 +24304,28 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 || active.stuck_time > STUCK_TIMEOUT
                                 || chaser_terminal
                             {
-                                if let Some((head, class, front)) = assist {
+                                // ★ THE LAST RIVAL WRITER (724's frozen
+                                // bed walk, traced: committed=true,
+                                // route=(1,28) forever, feet 2-cycling
+                                // z182↔z181 on a farm terrace — the glide
+                                // walked him forward-down while THIS
+                                // assist, built for the physics era,
+                                // teleported him backward-up onto the
+                                // promised ledge cell; the oscillation
+                                // kept the net-progress window convicting,
+                                // which kept the assist armed, forever.
+                                // Ben's ledge clusters are this loop × a
+                                // route chokepoint). Same law as the
+                                // detour: a committed-path walker has ONE
+                                // owner — no assist teleports; the
+                                // conviction ladder's releases still run.
+                                let committed_walker = plan_walk_on()
+                                    && uids.get(entity).is_some_and(|u| {
+                                        board.path_cache.contains_key(u)
+                                    });
+                                if let Some((head, class, front)) =
+                                    assist.filter(|_| !committed_walker)
+                                {
                                     pending_assists.push((entity, head));
                                     *board
                                         .move_assists
