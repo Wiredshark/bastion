@@ -3484,6 +3484,9 @@ pub fn coord_cell(pos: Vec3<i32>) -> Vec2<i32> {
 /// stuck economy, dark since) the integrator's DIRECT source: the plan
 /// is the walk. Default ON; BASTION_NO_PLAN_WALK is the kill-switch.
 pub fn plan_walk_on() -> bool {
+    if vanilla_travel_on() {
+        return false;
+    }
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| std::env::var_os("BASTION_NO_PLAN_WALK").is_none())
 }
@@ -3516,6 +3519,9 @@ pub fn tightdig_enabled() -> bool {
 /// the watchdog's `measure_steer` is the same binding `steer` always was.
 /// Read once.
 pub fn walldetour_enabled() -> bool {
+    if vanilla_travel_on() {
+        return false;
+    }
     static WALLDETOUR: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     // ★ DEFAULT-ON (2026-08-25). Built flag-gated for ITEM 29's A/B and
     // never promoted — while the exact failure it cures ran live: chaser
@@ -4932,6 +4938,18 @@ pub const VAULT_TIMEOUT: f32 = 1.5;
 /// which every fixture already tolerates (sim-time judged).
 pub const KINEMATIC_WALK_SPEED: f32 = 4.2;
 pub const KINEMATIC_DT: f32 = 1.0 / 30.0;
+/// ★ ERA-3 (Ben's mega-deep-search verdict, row 21, awaiting his
+/// ruling): BASTION_VANILLA_TRAVEL=1 re-bases colonist travel on the
+/// vanilla loop — the brain issues destinations, the chaser paths, and
+/// physics walks; committed paths, the kinematic mover, the wall-detour
+/// ladder, and the assist/nudge teleports all stand down (failures
+/// dissolve upward through the existing release ladder). Unset =
+/// byte-identical era-2.
+pub(crate) fn vanilla_travel_on() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var_os("BASTION_VANILLA_TRAVEL").is_some())
+}
+
 pub(crate) fn kinematic_mover_on() -> bool {
     // ★ DEFAULT ON (the twelve-round lesson, 2026-08-26): this was v1's
     // opt-in A/B default, and after Ben's 2026-08-25 ruling ("DO NOT
@@ -4944,7 +4962,10 @@ pub(crate) fn kinematic_mover_on() -> bool {
     // BASTION_NO_KINEMATIC_MOVER is the kill switch (the old opt-in env
     // remains harmless if set).
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| std::env::var_os("BASTION_NO_KINEMATIC_MOVER").is_none())
+    !vanilla_travel_on()
+        && *ON.get_or_init(|| {
+            std::env::var_os("BASTION_NO_KINEMATIC_MOVER").is_none()
+        })
 }
 
 /// ALARM v1 (Ben: "sound a alarm and base that on sound distance radius").
@@ -24323,8 +24344,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     && uids.get(entity).is_some_and(|u| {
                                         board.path_cache.contains_key(u)
                                     });
-                                if let Some((head, class, front)) =
-                                    assist.filter(|_| !committed_walker)
+                                // Era-3: vanilla recovery (stuck-shuffle,
+                                // jump/roll) owns un-sticking; teleport
+                                // assists stand down entirely.
+                                if let Some((head, class, front)) = assist
+                                    .filter(|_| {
+                                        !committed_walker && !vanilla_travel_on()
+                                    })
                                 {
                                     pending_assists.push((entity, head));
                                     *board
