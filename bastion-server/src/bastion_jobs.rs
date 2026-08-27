@@ -15199,11 +15199,36 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // and excluded). The 60s teleport stays the ultimate backstop.
         {
             let solid = |p: Vec3<i32>| terrain.get(p).map(|b| b.is_solid()).unwrap_or(false);
-            let mut dismount_iter = (&active_jobs, &mut positions, &mut velocities).lend_join();
-            while let Some((active, pos, vel)) = dismount_iter.next() {
+            let mut dismount_iter =
+                (&entities, &active_jobs, &mut positions, &mut velocities, &uids).lend_join();
+            while let Some((entity, active, pos, vel, uid)) = dismount_iter.next() {
                 let Some(job) = board.jobs.get(&active.job) else {
                     continue;
                 };
+                // ★ ONE OWNER (Ben's live verdict, round 40: "colonists on
+                // ledges are stuck and rubber-banding — it's awful"). The
+                // signed-write census named THIS block: 18,121 magnet-snap
+                // POS-WRITEs by hour 14 of one day — a "rare climber
+                // top-out rescue" firing 4/sec, because "hanging at the
+                // job's crest height" matches every committed glider
+                // crossing any gap at any distance from the job (the
+                // trigger has NO XY gate). The glide walks them forward,
+                // this snap yanks them sideways-back, the client
+                // interpolates the war = the rubber-band. Same law as the
+                // assist, the detour, and the radiator before it: a
+                // committed-path walker has ONE owner. The dismount keeps
+                // its charter — physics climbers topping out — for
+                // everyone the mover does not own. BOTH mover populations
+                // are exempt: committed-route holders (path_cache) AND
+                // bridge gliders (marker only — the search-gap walkers Ben
+                // watched rubber-band at ledges carry no cache entry; the
+                // marker is last tick's, which is exactly "the mover owned
+                // this body when it last moved").
+                if (plan_walk_on() && board.path_cache.contains_key(uid))
+                    || kinematic_travels.contains(entity)
+                {
+                    continue;
+                }
                 let feet = pos.0.map(|e| e.floor() as i32);
                 // The walkable stance ATOP the target block (Mine/access
                 // arrive = stand-on-top): a dismounting colonist's feet-block
