@@ -23234,12 +23234,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             // window; a single solid cell is
                                             // a terrain step the glide
                                             // legally takes.
+                                            // ★ v4a (round 46, witnessed:
+                                            // 1,257 of 1,384 blocked chords
+                                            // found no crossing — the v2
+                                            // window reached one block past
+                                            // a 2-high body and read street
+                                            // AWNINGS as walls). A wall is
+                                            // two consecutive solid cells
+                                            // in the BODY's own two-cell
+                                            // window or one step above it:
+                                            // pairs (0,1) and (1,2) only.
                                             let chord_blocked =
                                                 |a: Vec3<i32>, b: Vec3<i32>| {
                                                     cells_on_chord(a, b)
                                                         .into_iter()
                                                         .any(|c| {
-                                                            (0..=2i32).any(|dz| {
+                                                            (0..=1i32).any(|dz| {
                                                                 solid(c + Vec3::unit_z() * dz)
                                                                     && solid(
                                                                         c + Vec3::unit_z()
@@ -23248,6 +23258,39 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                             })
                                                         })
                                                 };
+                                            // ★ v4b (round 46, witnessed:
+                                            // the corner's own lines read
+                                            // to=(2843,7361,187) — a final
+                                            // hop from the DOOR straight to
+                                            // an UPSTAIRS target chords
+                                            // through the facade; no
+                                            // midpoint probe can solve an
+                                            // interior staircase). When the
+                                            // FINAL hop cannot be walked as
+                                            // a line, end the route at the
+                                            // door: the mover's committed
+                                            // source runs out of waypoints
+                                            // there and the CHASER — the
+                                            // block-level searcher that
+                                            // walked interiors for months
+                                            // before the trunk existed —
+                                            // owns the climb.
+                                            let target_wp =
+                                                wps.last().copied();
+                                            let interior_final = wps.len() >= 2
+                                                && target_wp.is_some_and(|t| {
+                                                    let door = wps[wps.len() - 2];
+                                                    (t.z - door.z).abs() >= 2
+                                                        && chord_blocked(door, t)
+                                                });
+                                            if interior_final {
+                                                info!(
+                                                    door = ?wps[wps.len() - 2],
+                                                    target = ?target_wp,
+                                                    "bastion: CHORD-FIX interior final hop — route ends at the door, chaser owns the climb"
+                                                );
+                                                wps.pop();
+                                            }
                                             let mut safe: Vec<Vec3<i32>> =
                                                 Vec::with_capacity(wps.len() + 4);
                                             for wp in wps {
