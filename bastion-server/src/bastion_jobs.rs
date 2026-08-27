@@ -21085,6 +21085,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             };
             match active.state {
                 ActiveJobState::Traveling => {
+                    // ★ WATCHERS CAN NAME THE JOB (sweep 4: 240/240
+                    // activity samples read None — the field only filled
+                    // during work ticks, so a hauler read as nothing for
+                    // 95% of their day and professions were unnameable
+                    // from watching). A traveling claimant now shows
+                    // their job at 0 progress — "Hauling 0%", "Cooking
+                    // 0%" — the walk is part of the work's story.
+                    if let Some(arb) = arbiters.get_mut(entity) {
+                        arb.activity = Some((job.work, 0.0));
+                    }
                     // ── B6 FETCH LEG (Build material from a stockpile) ──
                     // A claimant holding an item reservation and NOT yet
                     // carrying steers at the RESERVED ITEM, not the site;
