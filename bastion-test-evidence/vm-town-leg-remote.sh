@@ -44,6 +44,9 @@ term=$(grep "CONN-SHADOW census" "$V.w" | tail -1 | grep -o "chaser_terminal_rel
 stuck=$(grep -c "STUCK CENSUS" "$V.w")
 sleepers=$(grep "bastion: slept" "$V.w" | grep -o "uid=[0-9]*" | sort -u | wc -l)
 slept=$(grep -c "bastion: slept" "$V.w"); ate=$(grep -c "bastion: ate" "$V.w")
+# Row 32 instrument debt: the wood-loop's DIRECT witnesses, so a par fan's
+# verdict never again rests on the aggregate chop signature alone.
+fells=$(grep -c "TIMBER" "$V.w"); wood_wanted=$(grep -c "wanted=true" "$V.w")
 unreach=$(grep -c "job unreachable" "$V.w"); arrived=$(grep -c "colonist arrived at job site" "$V.w")
 top3=$(grep "LONGEST-TIER SEARCH" "$V.w" | grep -oE "resolved_end=Vec3 \{ x: [0-9-]+, y: [0-9-]+, z: [0-9-]+" | sort | uniq -c | sort -rn | head -3 | awk '{s+=$1} END {print s+0}')
 # ITEM 36 field block (df2c19b5a0's bars, greppable halves): the death roll,
@@ -87,7 +90,7 @@ helped_by_none=$(grep "HelpDownedEvent fired" "$V.w" | grep -c "helper=None")
 # 02:00-06:00 window of any day (tick mod 54000 in [38250,49500]). Bar:
 # near zero -- people reach their beds in the evening, not the small hours.
 late_bed_entries=$(awk '/ITEM 39 tick cost/ {if (match($0, /tick=[0-9]+/)) t=substr($0, RSTART+5, RLENGTH-5)+0} /arrived at job site/ && /RestAt/ {d=t%54000; if (d>=38250 && d<=49500) n++} END {print n+0}' "$V.w")
-echo "@@@LEG slot=$SLOT arm='$ARM_ENV' fence=$FENCE longest_search=$lt top3_share=$top3 exhaust=$ex terminal_releases=${term:-NA} stuck=$stuck sleepers=$sleepers slept=$slept ate=$ate unreachable=$unreach arrived=$arrived died=$died outright=$outright belongings_drops=$bel_drops belongings_items=$bel_items final=${final_census:-NA} extinct=$extinct downed_plant=$downed_plant rescue_posted=$rescue_posted rescued=$rescued alarm_raised=$alarm_raised shelters=$shelters shelter_released=$shelter_released alarm_over=$alarm_over lounges=$lounges lounge_arrivals=$lounge_arrivals gather_seats=$gather_seats break_over=$break_over helped=$helped helped_by_none=$helped_by_none late_bed_entries=$late_bed_entries@@@"
+echo "@@@LEG slot=$SLOT arm='$ARM_ENV' fence=$FENCE longest_search=$lt top3_share=$top3 exhaust=$ex terminal_releases=${term:-NA} stuck=$stuck sleepers=$sleepers slept=$slept ate=$ate unreachable=$unreach arrived=$arrived died=$died outright=$outright belongings_drops=$bel_drops belongings_items=$bel_items final=${final_census:-NA} extinct=$extinct downed_plant=$downed_plant rescue_posted=$rescue_posted rescued=$rescued alarm_raised=$alarm_raised shelters=$shelters shelter_released=$shelter_released alarm_over=$alarm_over lounges=$lounges lounge_arrivals=$lounge_arrivals gather_seats=$gather_seats break_over=$break_over helped=$helped helped_by_none=$helped_by_none late_bed_entries=$late_bed_entries fells=$fells wood_wanted=$wood_wanted@@@"
 # RECREATE AUTOPSY (evening regression): the first three posted lounge
 # seats' full lifecycles — the posted line, then every subsequent line
 # naming that job id (claims, steers, releases with site numbers, arrival
