@@ -1,4 +1,9 @@
 #!/bin/sh
+# ⛔ VM WORK BLOCKED (Ben, 2026-08-28, out of credits — see vm-town-legs.sh).
+if [ "${BASTION_VM_UNBLOCK:-}" != "ben-said-go" ]; then
+  echo "⛔ VM WORK IS BLOCKED (Ben 2026-08-28). Lift: BASTION_VM_UNBLOCK=ben-said-go" >&2
+  exit 86
+fi
 # vm-town-leg-remote.sh — ONE town leg on a VM (testing framework rule 9: THE
 # VM FLEET RUNS THE LEGS). Runs FROM the checkout the pool reset, so this
 # script always matches the code it measures.

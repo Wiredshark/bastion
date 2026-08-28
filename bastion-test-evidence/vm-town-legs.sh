@@ -1,4 +1,14 @@
 #!/bin/sh
+# ⛔⛔ VM WORK BLOCKED (Ben, 2026-08-28): "block all the vm work i'm out of
+# credits ... i've been charged 70 dollars without an alert." The fleet is
+# DISMANTLED (instances, disks, four stale machine images deleted; one seed
+# image kept). This guard fails LOUDLY and first; it lifts ONLY when Ben
+# himself sets the env below — no agent may set it on its own authority.
+if [ "${BASTION_VM_UNBLOCK:-}" != "ben-said-go" ]; then
+  echo "⛔ VM WORK IS BLOCKED (Ben 2026-08-28, out of credits — \$70 charged without alert)." >&2
+  echo "   The fleet is dismantled. Lift requires Ben: BASTION_VM_UNBLOCK=ben-said-go" >&2
+  exit 86
+fi
 # vm-town-legs.sh — the town-leg A/B on the VM FLEET (testing framework rule
 # 9, Ben 2026-08-23: THE VM FLEET RUNS THE LEGS; the local desktop is the
 # play surface and the build box). One VM per leg: an uncapped town server
