@@ -5380,6 +5380,47 @@ pub const RUN_SPEED: f32 = 1.0;
 /// a shift to it. A v1 number, and the first thing an A/B should move.
 pub const RECREATION_BREAK_SECS: f64 = 120.0;
 
+/// ROW 36 (plaza evenings): the thin plaza was ARITHMETIC, not machinery —
+/// round 53's ten days logged 1,352 lounge breaks (≈6 per colonist per
+/// day, the benches deterministic and collision-free) yet the plaza read
+/// empty, because a sit lasts [`RECREATION_BREAK_SECS`] = 2 sim-minutes:
+/// 24 colonists × 6 sits × 2 min across a six-hour evening averages
+/// UNDER ONE simultaneous lounger. The Sims/Animal Crossing shape is
+/// LINGER — evening social is measured in hours. Schedule-driven evening
+/// lounges (the "schedule, not need" mint below) last this multiple of
+/// the midday need-break; needs, alarms and bedtime still preempt, so a
+/// linger is interruptible comfort, not a freeze. Expected occupancy at
+/// 4×: three-to-four on the benches at any evening moment, and longer
+/// co-located sits feed the ITEM-22 sentiment pairs — the "chatting"
+/// half of the mandate emerges from proximity duration.
+pub const EVENING_LINGER_MULT: f64 = 4.0;
+
+/// ROW 36b (Ben, verbatim intent: "colonists while lounging shouldn't
+/// just sit — they should socialize but also go for walks, do
+/// activities, go home") — THE EVENING PALETTE v1, a deterministic
+/// per-colonist-per-evening choice: 0=SIT (the bench linger), 1=STROLL
+/// (a far outer-ring seat — the walk out IS the activity, visibly),
+/// 2=VISIT (the seat paired beside a neighbour's regular bench —
+/// co-located sits feed the ITEM-22 sentiment pairs), 3=HOME (some
+/// evenings you just go home; bedless colonists fall back to the
+/// bench). Weights 4/3/2/1 by explicit hash range — no RNG, per the
+/// determinism law; a colonist's evenings VARY across days but replay
+/// identically for a seed. ★ PERSONALITY HOOK (Ben, chartered for
+/// later): this weight table becomes a function of traits/desires —
+/// the extrovert visits, the conscientious heads home, the restless
+/// strolls.
+pub(crate) fn evening_activity(uid_raw: u64, game_day: u64) -> u8 {
+    let h = uid_raw
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add(game_day.wrapping_mul(0xBF58_476D_1CE4_E5B9));
+    match (h >> 32) % 10 {
+        0..=3 => 0,
+        4..=6 => 1,
+        7..=8 => 2,
+        _ => 3,
+    }
+}
+
 /// bastion (ITEM 11): recreation breaks are OFF unless asked for.
 ///
 /// Turning boredom into scheduled behaviour changes colony throughput —
@@ -20835,7 +20876,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .get(uid)
                         .is_some_and(|until| time.0 < *until)
                 {
-                    let until = time.0 + RECREATION_BREAK_SECS;
+                    // ROW 36: evenings LINGER (see EVENING_LINGER_MULT) —
+                    // the midday need-break stays brisk at its own site.
+                    let until = time.0 + RECREATION_BREAK_SECS * EVENING_LINGER_MULT;
                     info!(
                         colonist = %uid,
                         "bastion: leisure lounge — evening break (schedule, not need)"
@@ -29089,9 +29132,40 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             } else {
                                 taverns[venue - 1]
                             };
-                            gathering_spot(anchor, within)
+                            // ROW 36b: what kind of evening is this? The
+                            // palette turns the one bench into a life —
+                            // stroll seats live in the outer rings (+24
+                            // ranks ≈ radius 10+), visits pair adjacent
+                            // ranks (0↔1, 2↔3 — beside the neighbour's
+                            // regular bench), home is the own-bed hearth.
+                            let day = (rtsim.rt_state().data().time_of_day.0
+                                / common::resources::DAY)
+                                .floor() as u64;
+                            let act = evening_activity(uid.0.get(), day);
+                            match act {
+                                1 => gathering_spot(anchor, within + 24),
+                                2 => gathering_spot(anchor, within ^ 1),
+                                3 => board
+                                    .beds
+                                    .iter()
+                                    .find(|(_, s)| s.owner == Some(uid))
+                                    .map(|(p, _)| *p)
+                                    .unwrap_or_else(|| {
+                                        gathering_spot(anchor, within)
+                                    }),
+                                _ => gathering_spot(anchor, within),
+                            }
                         })
                         .unwrap_or(feet);
+                    let day_now = (rtsim.rt_state().data().time_of_day.0
+                        / common::resources::DAY)
+                        .floor() as u64;
+                    let act_label = match evening_activity(uid.0.get(), day_now) {
+                        1 => "stroll",
+                        2 => "visit",
+                        3 => "home",
+                        _ => "sit",
+                    };
                     let rid = board.insert_recreate_job(spot, uid, until);
                     if idle_origin {
                         board.idle_breaks.insert(rid);
@@ -29101,6 +29175,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         colonist = %uid,
                         ?spot,
                         until,
+                        activity = act_label,
                         "bastion: RECREATE posted (lounge seat)"
                     );
                     rid
@@ -39146,6 +39221,53 @@ mod tests {
         // A restarted streak counts from zero again.
         let (c3, trip) = mine_dry_step(c2, 0, slabs);
         assert_eq!((c3, trip), (1, false));
+    }
+
+    /// ROW 36: the evening linger is a real multiple (the plaza-occupancy
+    /// arithmetic needs ≥3× to clear one simultaneous lounger at pop 24)
+    /// and the midday break stays its brisk self — the pin that catches a
+    /// future retune quietly flattening evenings back to coffee breaks.
+    #[test]
+    fn evenings_linger_while_midday_breaks_stay_brisk() {
+        assert!(
+            EVENING_LINGER_MULT >= 3.0,
+            "under 3x the plaza averages below one simultaneous lounger at pop 24"
+        );
+        assert!(
+            RECREATION_BREAK_SECS * EVENING_LINGER_MULT <= 900.0,
+            "a linger is an evening's sit, not a freeze — needs must get their turn"
+        );
+    }
+
+    /// ROW 36b: the evening palette is weighted as designed, deterministic
+    /// on its inputs, and VARIED across days for one person — the pin that
+    /// keeps evenings a life, not a loop.
+    #[test]
+    fn evening_palette_is_weighted_deterministic_and_varied() {
+        let (mut sit, mut stroll, mut visit, mut home) = (0, 0, 0, 0);
+        for uid in 1..=1000u64 {
+            match evening_activity(uid, 5) {
+                0 => sit += 1,
+                1 => stroll += 1,
+                2 => visit += 1,
+                _ => home += 1,
+            }
+        }
+        assert!((300..=500).contains(&sit), "sit ~40%: {sit}");
+        assert!((200..=400).contains(&stroll), "stroll ~30%: {stroll}");
+        assert!((120..=280).contains(&visit), "visit ~20%: {visit}");
+        assert!((40..=170).contains(&home), "home ~10%: {home}");
+        assert_eq!(
+            evening_activity(724, 9),
+            evening_activity(724, 9),
+            "deterministic"
+        );
+        let firsts: std::collections::HashSet<u8> =
+            (0..10u64).map(|d| evening_activity(724, d)).collect();
+        assert!(
+            firsts.len() >= 2,
+            "ten evenings must not all look the same for one colonist"
+        );
     }
 
     /// ROW 35: the muster scales with the threat and never breaks Ben's
