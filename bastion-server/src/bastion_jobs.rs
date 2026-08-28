@@ -8052,6 +8052,18 @@ pub struct JobBoard {
     /// The survey's rotating ring cursor (one ring radius per firing —
     /// PATH-0's bounded-work discipline).
     pub quarry_survey_cursor: u8,
+    /// ROW 31 (PROFESSIONS): rolling per-colonist lane tallies — bumped
+    /// at every open-claim commit, halved daily (exponential window).
+    pub lane_counts: HashMap<(common::uid::Uid, common::bastion::WorkType), u32>,
+    /// ROW 31: the derived PROFESSION — each colonist's named lane, the
+    /// label a watcher reads. Argmax of `lane_counts` with hysteresis
+    /// (an incumbent yields only to a challenger 3/2 its weight), so the
+    /// name is STICKY the way identity is: a farmer who hauls for an
+    /// afternoon is still the farmer.
+    pub professions: HashMap<common::uid::Uid, common::bastion::WorkType>,
+    /// ROW 31: the last game-day the tallies were halved and the
+    /// professions derived (once daily, at the schedule cadence).
+    pub profession_day: i64,
     /// bastion (R2b, renderer roadmap): container-sprite cells the stockpile
     /// visuals pass has placed — cell → the sprite standing there.
     /// Runtime-only (JobBoard is not serialized); after a restart both this
@@ -33611,6 +33623,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // question "why did claims go to zero" is about the PASS, not one
         // colonist.
         let mut census = ClaimRefusalCensus::default();
+        // ROW 31: lane-tally bumps deferred past the loop's board borrows.
+        let mut board_lane_bump: HashMap<
+            (common::uid::Uid, common::bastion::WorkType),
+            u32,
+        > = HashMap::new();
         for (entity, uid) in claim_order {
             census.colonists_seen += 1;
             let uid = &uid;
@@ -34419,6 +34436,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 if let Some(job) = board.jobs.get_mut(&job_id) {
                     job.claimed_by = Some(*uid);
                     job.reservation = job.reservation.or(fetch_rid);
+                    // ROW 31: the profession tally — every open claim votes
+                    // for its lane; the daily halving keeps the window
+                    // rolling and the derivation names the argmax.
+                    *board_lane_bump.entry((*uid, job.work)).or_insert(0) += 1;
                     // ITEM 27 claim-commit witness: the stall (arrive
                     // empty-handed) can only come from one of THESE
                     // branches — print which. carried= names the claim
@@ -34549,6 +34570,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let stance = standable.get(&job_id).copied().unwrap_or(Vec3::unit_z());
                 assignments.push((entity, job_id, stance));
             }
+        }
+        // ROW 31: merge the deferred lane bumps into the rolling tallies.
+        for (k, v) in board_lane_bump.drain() {
+            *board.lane_counts.entry(k).or_insert(0) += v;
         }
         // CLAIM-COLLAPSE row: one line per cadence window, never per candidate
         // -- ten sites across ~50 jobs and 8 colonists every tick would drown
@@ -34723,6 +34748,68 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         board.remove_job(id);
                     }
                     info!("bastion: NIGHT WATCH stands down");
+                }
+                // ROW 31: the PROFESSION derivation — once per game-day:
+                // halve every lane tally (the rolling exponential window)
+                // and name each colonist's argmax lane, STICKY (the
+                // incumbent yields only to a challenger at 3/2 its
+                // weight — a farmer who hauled an afternoon is still the
+                // farmer). Names change rarely and each change witnesses.
+                let today = (tod / common::resources::DAY).floor() as i64;
+                if today != board.profession_day {
+                    board.profession_day = today;
+                    board.lane_counts.retain(|_, v| {
+                        *v /= 2;
+                        *v > 0
+                    });
+                    let mut entries: Vec<(common::uid::Uid, common::bastion::WorkType, u32)> =
+                        board
+                            .lane_counts
+                            .iter()
+                            .map(|((u, w), c)| (*u, *w, *c))
+                            .collect();
+                    // Deterministic order: uid, then the lane's debug name
+                    // (WorkType lacks Ord; the string is stable).
+                    entries.sort_by(|a, b| {
+                        (a.0 .0.get(), format!("{:?}", a.1))
+                            .cmp(&(b.0 .0.get(), format!("{:?}", b.1)))
+                    });
+                    let mut tops: HashMap<common::uid::Uid, (common::bastion::WorkType, u32)> =
+                        HashMap::new();
+                    for (u, w, c) in entries {
+                        if tops.get(&u).is_none_or(|(_, bc)| c > *bc) {
+                            tops.insert(u, (w, c));
+                        }
+                    }
+                    let mut named: Vec<(common::uid::Uid, common::bastion::WorkType, u32)> =
+                        Vec::new();
+                    for (u, (w, c)) in tops {
+                        let switch = match board.professions.get(&u) {
+                            None => true,
+                            Some(inc) if *inc == w => false,
+                            Some(inc) => {
+                                let inc_c = board
+                                    .lane_counts
+                                    .get(&(u, *inc))
+                                    .copied()
+                                    .unwrap_or(0);
+                                c * 2 >= inc_c * 3
+                            },
+                        };
+                        if switch {
+                            board.professions.insert(u, w);
+                            named.push((u, w, c));
+                        }
+                    }
+                    named.sort_by_key(|(u, ..)| u.0.get());
+                    for (u, w, c) in named {
+                        info!(
+                            colonist = u.0.get(),
+                            profession = ?w,
+                            weight = c,
+                            "bastion: PROFESSION — the town knows them as"
+                        );
+                    }
                 }
             }
             // ★ REBUILD THE CONNECTIVITY INDEX (researched: RimWorld's zone
