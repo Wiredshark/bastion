@@ -2526,6 +2526,26 @@ pub(crate) const WOOD_PAR_PER_COLONIST: u32 = 4;
 /// 256-stone seed; construction drains, the par pulls back.
 pub(crate) const STONE_PAR_PER_COLONIST: u32 = 4;
 
+/// ★ THE QUARRY's survey rings (blocks from the colony anchor) — one per
+/// dry firing, rotating. Starts past the generator's own radius (24) and
+/// reaches the documented deadlock cases (stone at 60+).
+pub(crate) const QUARRY_SURVEY_RINGS: [i32; 5] = [32, 48, 64, 80, 96];
+
+/// ★ THE QUARRY: one step of the dry-wrap detector — pure for pins.
+/// Returns (new_counter, survey_now). The counter rises only on a firing
+/// that had quota open yet saw zero rock, resets the moment any rock is
+/// seen, and trips exactly at a full slab wrap (every slab tried, all
+/// dry). A counter that never reset would survey with stone in reach; a
+/// counter that trips early would survey before the wrap finished — the
+/// pins plant both.
+pub(crate) fn mine_dry_step(counter: u8, rock_seen: usize, slabs: u8) -> (u8, bool) {
+    if rock_seen > 0 {
+        return (0, false);
+    }
+    let next = counter.saturating_add(1);
+    (next, next >= slabs)
+}
+
 pub fn stockpile_has_material<'a>(
     def: &str,
     items: impl IntoIterator<Item = (&'a PickupItem, &'a comp::Pos, &'a Uid)>,
@@ -8003,6 +8023,20 @@ pub struct JobBoard {
     /// door — hostile entity → (door cell, fight start time, witnessed).
     /// Runtime-only; entity keys never serialize.
     pub door_fights: HashMap<specs::Entity, (Vec3<i32>, f64, bool)>,
+    /// ★ THE QUARRY (colony arc — the ranging row the mine generator's
+    /// own doc banked): the found rock face the generator works when the
+    /// colony's own radius runs dry. The scan anchor swaps here; the
+    /// whole existing scan/mint machinery (rock-class, exposed,
+    /// standable-stance) works the site unchanged. Cleared if a later
+    /// full wrap AT the quarry also runs dry (the face exhausted — the
+    /// survey resumes).
+    pub quarry_site: Option<Vec3<i32>>,
+    /// Consecutive generator firings (quota open) that saw ZERO rock —
+    /// a full slab-wrap dry trips the quarry survey.
+    pub mine_dry_slabs: u8,
+    /// The survey's rotating ring cursor (one ring radius per firing —
+    /// PATH-0's bounded-work discipline).
+    pub quarry_survey_cursor: u8,
     /// bastion (R2b, renderer roadmap): container-sprite cells the stockpile
     /// visuals pass has placed — cell → the sprite standing there.
     /// Runtime-only (JobBoard is not serialized); after a restart both this
@@ -16089,7 +16123,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     );
                 }
                 if quota > 0 && n > 0 {
-                    let anchor = (sum / n).map(|e| e as i32);
+                    // ★ THE QUARRY SWAP: with a founded site, the scan
+                    // centers there — the colony commutes to its stone.
+                    let anchor = board
+                        .quarry_site
+                        .unwrap_or_else(|| (sum / n).map(|e| e as i32));
                     // Columns the colony's intent occupies are off-limits
                     // (don't dig under the blueprint, the stockpile, the
                     // plot, or a bed).
@@ -16248,6 +16286,97 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             ?anchor,
                             "bastion: AUTON-1 mine generator WANTED stone and emitted NOTHING"
                         );
+                    }
+                    // ★ THE QUARRY (the ranging row the doc above banked:
+                    // "a fixed radius deadlocks... the real answer is
+                    // ranging — a design row, not a constant"). A full
+                    // slab-wrap with quota open and ZERO rock seen means
+                    // the colony's own radius is genuinely dry — the 778-
+                    // fire witness world. Then: survey outward, one ring
+                    // per dry firing, for a rock face that passes the
+                    // SCAN'S OWN questions (rock-class + exposed +
+                    // standable — the two-predicates-must-agree lesson,
+                    // honored by asking the same ones); found → the scan
+                    // anchor swaps to the site and the whole existing
+                    // machinery works the quarry unchanged. A later full
+                    // wrap dry AT the quarry clears it (face exhausted —
+                    // the survey resumes farther).
+                    let (dry, survey_now) =
+                        mine_dry_step(board.mine_dry_slabs, rock_seen, MINE_GEN_Z_SLABS as u8);
+                    board.mine_dry_slabs = dry;
+                    if survey_now {
+                        board.mine_dry_slabs = 0;
+                        if board.quarry_site.take().is_some() {
+                            info!("bastion: QUARRY EXHAUSTED — face dry through a full wrap; survey resumes");
+                        }
+                        let ring = QUARRY_SURVEY_RINGS
+                            [board.quarry_survey_cursor as usize % QUARRY_SURVEY_RINGS.len()];
+                        board.quarry_survey_cursor = board.quarry_survey_cursor.wrapping_add(1);
+                        let colony_anchor = (sum / n).map(|e| e as i32);
+                        let mut found: Option<Vec3<i32>> = None;
+                        let mut t = -ring;
+                        'ring: while t <= ring {
+                            for probe_xy in [
+                                Vec2::new(colony_anchor.x + t, colony_anchor.y - ring),
+                                Vec2::new(colony_anchor.x + t, colony_anchor.y + ring),
+                                Vec2::new(colony_anchor.x - ring, colony_anchor.y + t),
+                                Vec2::new(colony_anchor.x + ring, colony_anchor.y + t),
+                            ] {
+                                for dz in -8i32..=8 {
+                                    let pos = Vec3::new(
+                                        probe_xy.x,
+                                        probe_xy.y,
+                                        colony_anchor.z + dz,
+                                    );
+                                    let Ok(block) = terrain.get(pos) else { continue };
+                                    if !matches!(
+                                        block.kind(),
+                                        BlockKind::Rock | BlockKind::WeakRock
+                                    ) {
+                                        continue;
+                                    }
+                                    let exposed = [
+                                        Vec3::unit_x(),
+                                        -Vec3::unit_x(),
+                                        Vec3::unit_y(),
+                                        -Vec3::unit_y(),
+                                        Vec3::unit_z(),
+                                        -Vec3::unit_z(),
+                                    ]
+                                    .iter()
+                                    .any(|d| {
+                                        terrain
+                                            .get(pos + *d)
+                                            .ok()
+                                            .is_some_and(|b| !b.is_filled())
+                                    });
+                                    if exposed
+                                        && has_standable_stance(&terrain, pos).is_some()
+                                    {
+                                        found = Some(pos);
+                                        break 'ring;
+                                    }
+                                }
+                            }
+                            t += 8;
+                        }
+                        if let Some(site) = found {
+                            let dist = (site.xy() - colony_anchor.xy())
+                                .map(|e| e.abs())
+                                .reduce_max();
+                            info!(
+                                ?site,
+                                dist,
+                                ring,
+                                "bastion: ★ QUARRY FOUNDED — the colony ranges for its stone"
+                            );
+                            board.quarry_site = Some(site);
+                        } else {
+                            info!(
+                                ring,
+                                "bastion: quarry survey — ring dry, rotating outward"
+                            );
+                        }
                     }
                 }
             }
@@ -38755,6 +38884,28 @@ mod tests {
                 && work_claims_open(default_schedule_block(15)),
             "the full 8-hour work block stays open at both ends"
         );
+    }
+
+    /// THE QUARRY's dry-wrap detector — both directions: a full wrap of
+    /// dry slabs trips the survey EXACTLY at the wrap (early would range
+    /// with unswept slabs left; the planted early-trip fails), and ANY
+    /// rock resets (a never-reset counter would found quarries beside
+    /// standing stone; the planted no-reset fails).
+    #[test]
+    fn quarry_survey_trips_exactly_on_a_full_dry_wrap() {
+        let slabs = 9u8;
+        let mut c = 0u8;
+        for i in 1..=slabs {
+            let (n, trip) = mine_dry_step(c, 0, slabs);
+            c = n;
+            assert_eq!(trip, i == slabs, "trip only at the full wrap (slab {i})");
+        }
+        // Any rock resets the streak.
+        let (c2, trip) = mine_dry_step(c, 3, slabs);
+        assert_eq!((c2, trip), (0, false), "rock seen must reset, never trip");
+        // A restarted streak counts from zero again.
+        let (c3, trip) = mine_dry_step(c2, 0, slabs);
+        assert_eq!((c3, trip), (1, false));
     }
 
     /// ROW 29 (THE DOOR FIGHT): every gate must pass and expiry must
