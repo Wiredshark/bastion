@@ -1918,6 +1918,72 @@ pub(crate) fn cells_on_chord(a: Vec3<i32>, b: Vec3<i32>) -> Vec<Vec3<i32>> {
     cells
 }
 
+/// ROW 35 (INTERCEPT FORCE): the muster size for a threat, threat-scaled
+/// — round 53's wave killed a 2-guard intercept and rolled on to two
+/// farmers: THREE distinct raider groups in two days against a hard cap
+/// of two. Two guards per perceived threat spot, floored at 2, CEILED at
+/// half the militia rounded up — Ben's principle survives the scaling:
+/// a colony that sends everyone to fight has stopped being a colony.
+/// Pure for pins.
+pub(crate) fn threat_scaled_muster_cap(threat_spots: usize, militia: usize) -> usize {
+    if militia == 0 {
+        // The perceiver fallback (militia-less colony): the old cap,
+        // unchanged — identity with pre-row-35 behaviour.
+        return 2;
+    }
+    let ceiling = militia.div_ceil(2).max(1);
+    let floor = 2.min(ceiling);
+    (threat_spots.max(1) * 2).clamp(floor, ceiling)
+}
+
+/// ROW 35b (split the approach): cry positions from MULTI-VECTOR raids
+/// disagree, and their single centroid lands in the useless middle. Split
+/// the cries at the farthest pair (deterministic — no RNG, ties broken by
+/// scan order), assign each cry to its nearer pole, and return both
+/// cluster centroids — SECOND is Some only when the poles stand at least
+/// `min_split` apart (tight cries stay one post, exactly as before:
+/// fallback-is-identity). Pure for pins.
+pub(crate) fn split_cry_clusters(
+    cries: &[Vec3<i32>],
+    min_split: i32,
+) -> Option<(Vec3<i32>, Option<Vec3<i32>>)> {
+    if cries.is_empty() {
+        return None;
+    }
+    let centroid = |v: &[Vec3<i32>]| -> Vec3<i32> {
+        let mut s = Vec3::<i64>::zero();
+        for c in v {
+            s += c.map(|e| e as i64);
+        }
+        (s / v.len() as i64).map(|e| e as i32)
+    };
+    let mut best = (0usize, 0usize, -1i64);
+    for i in 0..cries.len() {
+        for j in (i + 1)..cries.len() {
+            let d = cries[i].map(|e| e as i64) - cries[j].map(|e| e as i64);
+            let d2 = d.x * d.x + d.y * d.y;
+            if d2 > best.2 {
+                best = (i, j, d2);
+            }
+        }
+    }
+    if best.2 < (min_split as i64) * (min_split as i64) {
+        return Some((centroid(cries), None));
+    }
+    let (pa, pb) = (cries[best.0], cries[best.1]);
+    let (mut a, mut b): (Vec<Vec3<i32>>, Vec<Vec3<i32>>) = (Vec::new(), Vec::new());
+    for c in cries {
+        let da = (c.xy() - pa.xy()).map(|e| e as i64).magnitude_squared();
+        let db = (c.xy() - pb.xy()).map(|e| e as i64).magnitude_squared();
+        if da <= db {
+            a.push(*c);
+        } else {
+            b.push(*c);
+        }
+    }
+    Some((centroid(&a), Some(centroid(&b))))
+}
+
 /// ROW 29 (THE DOOR FIGHT): how long a door holds a raider before it
 /// gives way — the window 663 died short of, twice (rounds 42 + 48,
 /// same scripted raid: alarm and muster both correct, militia seconds
@@ -16682,8 +16748,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             .copied()
                     };
                     let mut posted = 0;
+                    // ROW 35: the cap scales with the perceived threat —
+                    // three groups in two days ate a 2-guard intercept and
+                    // then two farmers. Two per hostile spot, ceiling half
+                    // the militia (the colony stays a colony).
+                    let muster_cap =
+                        threat_scaled_muster_cap(hostile_spots.len(), muster.len());
                     for (u, ent) in muster.iter() {
-                        if posted >= 2 {
+                        if posted >= muster_cap {
                             break;
                         }
                         // Wounded guards stay home (the bench).
@@ -16748,7 +16820,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         );
                     }
                     for (u, ent, post) in perceiver_posts.iter() {
-                        if posted >= 2 {
+                        // ROW 35: same scaled cap for the perceiver
+                        // fallback (a militia-less colony still posts
+                        // someone, now threat-many someones).
+                        if posted >= muster_cap {
                             break;
                         }
                         if active_jobs.contains(*ent) {
@@ -34750,20 +34825,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // a guard, not the edge-most civilian. No cries
                         // yet → everyone holds the plaza as before.
                         idle_watch.sort_by_key(|(_, u)| u.0.get());
-                        let approach = if board.recent_cries.is_empty() {
-                            None
-                        } else {
-                            let mut s = Vec3::<i64>::zero();
-                            for c in &board.recent_cries {
-                                s += c.map(|e| e as i64);
-                            }
-                            Some((s / board.recent_cries.len() as i64).map(|e| e as i32))
-                        };
-                        let mut first = true;
+                        // ROW 35b: multi-vector raids make ONE centroid the
+                        // useless middle — split the cries at the farthest
+                        // pair when the poles stand ≥24 apart; the first TWO
+                        // watchmen cover the two cluster centroids. Tight
+                        // cries collapse to one post exactly as before.
+                        let clusters = split_cry_clusters(&board.recent_cries, 24);
+                        let mut nth = 0usize;
                         for (entity, u) in idle_watch {
-                            let stand = match (first, approach) {
-                                (true, Some(a)) => {
-                                    first = false;
+                            let stand = match (nth, clusters) {
+                                (0, Some((a, _))) => {
                                     info!(
                                         colonist = u.0.get(),
                                         ?a,
@@ -34771,8 +34842,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     );
                                     a
                                 },
+                                (1, Some((_, Some(b)))) => {
+                                    info!(
+                                        colonist = u.0.get(),
+                                        a = ?b,
+                                        "bastion: NIGHT WATCH covers the approach (second vector)"
+                                    );
+                                    b
+                                },
                                 _ => post,
                             };
+                            nth += 1;
                             let post = stand;
                             let id = board.insert_auto_guard_job(post, u);
                             // ROW 31 residual: the night post votes Guard —
@@ -39066,6 +39146,58 @@ mod tests {
         // A restarted streak counts from zero again.
         let (c3, trip) = mine_dry_step(c2, 0, slabs);
         assert_eq!((c3, trip), (1, false));
+    }
+
+    /// ROW 35: the muster scales with the threat and never breaks Ben's
+    /// principle — both directions, degenerate corners pinned.
+    #[test]
+    fn muster_cap_scales_with_threat_but_the_colony_stays_a_colony() {
+        assert_eq!(threat_scaled_muster_cap(1, 8), 2, "one group: the old cap");
+        assert_eq!(threat_scaled_muster_cap(2, 8), 4, "two groups: four");
+        assert_eq!(
+            threat_scaled_muster_cap(3, 8),
+            4,
+            "three groups: CEILING half the militia — never everyone"
+        );
+        assert_eq!(threat_scaled_muster_cap(3, 7), 4, "ceil(7/2)=4");
+        assert_eq!(threat_scaled_muster_cap(5, 3), 2, "small militia: ceil(3/2)=2");
+        assert_eq!(threat_scaled_muster_cap(5, 1), 1, "one guard is all there is");
+        assert_eq!(
+            threat_scaled_muster_cap(3, 0),
+            2,
+            "militia-less perceiver fallback: identity with the old cap"
+        );
+        assert_eq!(threat_scaled_muster_cap(0, 8), 2, "no spots still floors at 2");
+    }
+
+    /// ROW 35b: cry clusters — tight cries stay ONE post (identity with
+    /// row 33), split cries produce both poles' centroids, deterministic.
+    #[test]
+    fn cry_clusters_split_only_when_vectors_disagree() {
+        assert_eq!(split_cry_clusters(&[], 24), None, "no cries, no posts");
+        let tight = [
+            Vec3::new(2790, 7370, 181),
+            Vec3::new(2794, 7365, 181),
+            Vec3::new(2792, 7368, 181),
+        ];
+        let one = split_cry_clusters(&tight, 24).expect("some");
+        assert!(one.1.is_none(), "tight cries: one post, as row 33 shipped");
+        assert_eq!(one.0, Vec3::new(2792, 7367, 181), "the centroid");
+        let split = [
+            Vec3::new(2790, 7370, 181),
+            Vec3::new(2794, 7365, 181),
+            Vec3::new(2950, 7200, 181),
+            Vec3::new(2954, 7204, 181),
+        ];
+        let two = split_cry_clusters(&split, 24).expect("some");
+        let b = two.1.expect("two vectors ⇒ two posts");
+        assert_eq!(two.0, Vec3::new(2792, 7367, 181), "west cluster centroid");
+        assert_eq!(b, Vec3::new(2952, 7202, 181), "east cluster centroid");
+        assert_eq!(
+            split_cry_clusters(&split, 24),
+            split_cry_clusters(&split, 24),
+            "deterministic"
+        );
     }
 
     /// ROW 29 (THE DOOR FIGHT): every gate must pass and expiry must
