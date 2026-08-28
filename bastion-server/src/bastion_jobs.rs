@@ -2488,6 +2488,37 @@ impl ClaimRefusalCensus {
 /// (recomputed per cycle from a colony-wide carried set), so the dashboard
 /// composes `needs_materials && !stockpile_has_material(..)` rather than
 /// re-deriving either half.
+/// ★ THE COLONY ARC (Ben's spine, layer 1): the UNIT-COUNTING sibling of
+/// [`stockpile_has_material`] — a par is a quantity, and the boolean
+/// existence check kept the wood loop dark for weeks (128 seeded logs
+/// satisfied "has any" forever). Counts total stockpiled UNITS of `def`
+/// (amounts summed — items merge into piles), reservation-agnostic: par
+/// measures colony stock, not availability.
+pub fn stockpile_material_units<'a>(
+    def: &str,
+    items: impl IntoIterator<Item = (&'a PickupItem, &'a comp::Pos, &'a Uid)>,
+    board: &JobBoard,
+) -> u32 {
+    items
+        .into_iter()
+        .filter(|(pi, ipos, _)| {
+            pi.item().item_definition_id().itemdef_id() == Some(def)
+                && board
+                    .stockpile_at(ipos.0.map(|e| e.floor() as i32))
+                    .is_some()
+        })
+        .map(|(pi, ..)| pi.amount() as u32)
+        .sum()
+}
+
+/// ★ Per-colonist wood target: the standing demand that keeps the chop
+/// loop ALIVE — rung provisioning and future construction draw stock
+/// down, the par pulls it back. Four units a head keeps a 24-colonist
+/// town's par (96) under the 128-log fixture seed (seeded soaks stay
+/// honest: quiet until consumption bites) while a no-seed world demands
+/// wood from minute one.
+pub(crate) const WOOD_PAR_PER_COLONIST: u32 = 4;
+
 pub fn stockpile_has_material<'a>(
     def: &str,
     items: impl IntoIterator<Item = (&'a PickupItem, &'a comp::Pos, &'a Uid)>,
@@ -17450,15 +17481,36 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         if tick.0 % (ARBITRATION_INTERVAL as u64 * 80) == 12
             && std::env::var_os("BASTION_NO_WOOD_PAR").is_none()
         {
-            let wood_ok = stockpile_has_material(
+            // ★ THE COLONY ARC's FIRST CUT (Ben's spine, layer 1 — the
+            // demand signal): the old gate was `stockpile_has_material` —
+            // a BOOLEAN, "has ANY wood" — and BASTION_SEED_MATERIALS
+            // pours 128 logs at founding, so on every fixture world the
+            // gate was satisfied from minute one, forever: the whole
+            // autonomous chain below (band scan, fell-set, par-tier
+            // claim, TIMBER, haul) sat dark for WEEKS not because it was
+            // broken but because nothing ever WANTED wood. A par is a
+            // QUANTITY: the colony holds a per-capita wood target and
+            // demand exists below it. On seeded soaks the par sits
+            // satisfied until consumption draws it down — honest; the
+            // no-seed falsifier leg proves liveness.
+            let wood_units = stockpile_material_units(
                 CHOP_DROP_ITEM,
                 (&pickup_items, &positions, &uids).join(),
                 &board,
-            ) && std::env::var_os("BASTION_PLANT_WOOD_PAR").is_none();
+            );
+            let wood_par = WOOD_PAR_PER_COLONIST * colonists.count() as u32;
+            let wood_ok = wood_units >= wood_par
+                && std::env::var_os("BASTION_PLANT_WOOD_PAR").is_none();
             // ^ the PLANT (fixture lever): forces "wood wanted" so the
             // whole autonomous chain — band scan, fell-set, claim, fell,
             // haul — is exercisable on demand in a live leg regardless of
             // seeded stock. No balance number changed.
+            info!(
+                stock = wood_units,
+                par = wood_par,
+                wanted = !wood_ok,
+                "bastion: WOOD PAR — the colony's standing demand signal"
+            );
             let chop_live = board
                 .jobs
                 .values()
