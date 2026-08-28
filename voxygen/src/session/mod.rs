@@ -4154,6 +4154,10 @@ impl PlayState for SessionState {
                     target_entities: &self.interactables.entities,
                     loaded_distance: client.loaded_distance(),
                     terrain_view_distance: client.view_distance().unwrap_or(1),
+                    terrain_distance_plan_v1: global_state
+                        .settings
+                        .graphics
+                        .terrain_distance_plan_v1,
                     entity_view_distance: client
                         .view_distance()
                         .unwrap_or(1)
@@ -4250,6 +4254,7 @@ impl PlayState for SessionState {
             target_entities: &self.interactables.entities,
             loaded_distance: client.loaded_distance(),
             terrain_view_distance: client.view_distance().unwrap_or(1),
+            terrain_distance_plan_v1: settings.graphics.terrain_distance_plan_v1,
             entity_view_distance: client
                 .view_distance()
                 .unwrap_or(1)
