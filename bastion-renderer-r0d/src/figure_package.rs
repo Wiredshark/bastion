@@ -1,0 +1,925 @@
+//! BUILD-007A10.3 — D2 reproducible VOX-to-FigurePackage compilation substrate
+//! (design §8). Self-contained, golden-vector-checkable core:
+//!
+//! - §8.2 machine-path normalization: the closed rejection grammar (`.`/`..`,
+//!   absolute, drive prefixes, backslashes, trailing dot/space, Windows
+//!   reserved names, control chars) with typed failures.
+//! - §8.1 `FigurePackageV1`: a content-addressed package — fixed header,
+//!   canonical-CBOR manifest, `SectionTagV1`-sorted section table, raw section
+//!   bytes, trailing package SHA-256. Uncompressed by construction.
+//! - §8.4 deterministic greedy voxel meshing: frozen visit order producing
+//!   quads whose bytes are invariant to worker count and partition-completion
+//!   order (the gather-sort-commit property golden-tested here in Rust rather
+//!   than imported from oneTBB).
+//!
+//! The full §8.8 reproducibility matrix (multi-OS clean builds, temp roots) is
+//! the CI/integration surface; the worker-order independence it certifies is
+//! proven at the unit level by
+//! [`tests::partition_order_does_not_change_bytes`].
+
+use crate::cbor::{CanonicalErrorV1, CanonicalValueV1, try_int_map};
+use sha2::{Digest, Sha256};
+use std::collections::BTreeSet;
+
+// ----------------------------------------------------------------------------
+// §8.2 machine-path normalization
+// ----------------------------------------------------------------------------
+
+/// Typed path-normalization failures (§8.2). A malformed source path is never
+/// silently repaired — it terminates asset admission.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PathError {
+    Empty,
+    Backslash,
+    DrivePrefix,
+    AbsolutePath,
+    DotSegment,
+    TrailingDotOrSpace,
+    ControlChar,
+    NonAsciiOrUppercase,
+    WindowsReservedName { name: String },
+}
+
+const WINDOWS_RESERVED: &[&str] = &[
+    "con", "prn", "aux", "nul", "com1", "com2", "com3", "com4", "com5", "com6", "com7", "com8",
+    "com9", "lpt1", "lpt2", "lpt3", "lpt4", "lpt5", "lpt6", "lpt7", "lpt8", "lpt9",
+];
+
+/// Normalize a repository-relative source path to a canonical machine path
+/// (§8.2): slash-separated, lowercase ASCII, no `.`/`..`, no absolute/drive/
+/// backslash forms, no trailing dot/space, no control chars, no Windows
+/// reserved segment names. Returns the accepted path unchanged (it must already
+/// be canonical) or a typed [`PathError`].
+pub fn normalize_machine_path(raw: &str) -> Result<String, PathError> {
+    if raw.is_empty() {
+        return Err(PathError::Empty);
+    }
+    if raw.contains('\\') {
+        return Err(PathError::Backslash);
+    }
+    // Drive prefix like `c:` anywhere is rejected; catch the classic leading form.
+    let bytes = raw.as_bytes();
+    if bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
+        return Err(PathError::DrivePrefix);
+    }
+    if raw.starts_with('/') {
+        return Err(PathError::AbsolutePath);
+    }
+    for &b in bytes {
+        if b < 0x20 || b == 0x7f {
+            return Err(PathError::ControlChar);
+        }
+        if b >= 0x80 || b.is_ascii_uppercase() {
+            return Err(PathError::NonAsciiOrUppercase);
+        }
+    }
+    for seg in raw.split('/') {
+        if seg.is_empty() {
+            // Leading/trailing/double slash yields an empty segment.
+            return Err(PathError::DotSegment);
+        }
+        if seg == "." || seg == ".." {
+            return Err(PathError::DotSegment);
+        }
+        if seg.ends_with('.') || seg.ends_with(' ') {
+            return Err(PathError::TrailingDotOrSpace);
+        }
+        // Windows reserved name check applies to the segment stem (before first dot).
+        let stem = seg.split('.').next().unwrap_or(seg);
+        if WINDOWS_RESERVED.contains(&stem) {
+            return Err(PathError::WindowsReservedName {
+                name: stem.to_string(),
+            });
+        }
+    }
+    Ok(raw.to_string())
+}
+
+/// A normalized source file (§8.2): canonical path + content digest. The
+/// canonical sort is by normalized path, then by source SHA-256.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SourceFileV1 {
+    pub path: String,
+    pub sha256: [u8; 32],
+}
+
+/// Sort source files by the frozen §8.2 key: normalized path, then source
+/// digest.
+pub fn sort_source_files(mut files: Vec<SourceFileV1>) -> Vec<SourceFileV1> {
+    files.sort_by(|a, b| a.path.cmp(&b.path).then(a.sha256.cmp(&b.sha256)));
+    files
+}
+
+// ----------------------------------------------------------------------------
+// §8.1 FigurePackageV1 content-addressed package format
+// ----------------------------------------------------------------------------
+
+/// Package section tag (§8.1). The section table is sorted by this value, so a
+/// package's bytes never depend on section insertion order.
+pub type SectionTagV1 = u16;
+
+/// One package section: its tag, media type, and raw uncompressed bytes.
+#[derive(Clone, Debug)]
+pub struct SectionV1 {
+    pub tag: SectionTagV1,
+    pub media_type: String,
+    pub bytes: Vec<u8>,
+}
+
+/// OCI-style content descriptor (§8.1).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ContentDescriptorV1 {
+    pub media_type: String,
+    pub sha256: [u8; 32],
+    pub size: u64,
+    pub section_tag: SectionTagV1,
+}
+
+/// Fixed package header magic (§8.1). `FigurePackageV1`, version 1.
+const PKG_MAGIC: &[u8; 8] = b"BSTRFP1\0";
+const PKG_VERSION: u32 = 1;
+pub const MAX_FIGURE_PACKAGE_SECTIONS_V1: usize = 64;
+pub const MAX_FIGURE_PACKAGE_SECTION_BYTES_V1: usize = 16 * 1024 * 1024;
+pub const MAX_FIGURE_PACKAGE_BYTES_V1: usize = 64 * 1024 * 1024;
+pub const MAX_FIGURE_PACKAGE_MEDIA_TYPE_BYTES_V1: usize = 96;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum FigurePackageErrorV1 {
+    UnsupportedVersion(u32),
+    InvalidMagic,
+    TooManySections(usize),
+    DuplicateSectionTag(SectionTagV1),
+    InvalidSectionTag,
+    InvalidMediaType,
+    SectionTooLarge { tag: SectionTagV1, bytes: usize },
+    PackageTooLarge(usize),
+    Manifest(CanonicalErrorV1),
+    MalformedManifest,
+    DescriptorOrder,
+    DescriptorCountMismatch,
+    DescriptorDigestMismatch(SectionTagV1),
+    Truncated,
+    TrailingBytes(usize),
+    DigestMismatch,
+    LengthOverflow,
+    AllocationFailure,
+}
+
+impl From<CanonicalErrorV1> for FigurePackageErrorV1 {
+    fn from(value: CanonicalErrorV1) -> Self { Self::Manifest(value) }
+}
+
+/// A `FigurePackageV1` builder. `canonical_bytes` produces the uncompressed
+/// content-addressed package; `package_sha256` is the trailing digest.
+#[derive(Clone, Debug, Default)]
+pub struct FigurePackageV1 {
+    sections: Vec<SectionV1>,
+}
+
+impl FigurePackageV1 {
+    #[must_use]
+    pub fn new() -> Self { Self::default() }
+
+    /// Add a section to the builder. Duplicate tags and all bounds are rejected
+    /// by the fallible canonical build; no duplicate has last-writer meaning.
+    pub fn with_section(mut self, tag: SectionTagV1, media_type: &str, bytes: Vec<u8>) -> Self {
+        self.sections.push(SectionV1 {
+            tag,
+            media_type: media_type.to_string(),
+            bytes,
+        });
+        self
+    }
+
+    #[must_use]
+    pub fn sections(&self) -> &[SectionV1] { &self.sections }
+
+    #[must_use]
+    pub fn section(&self, tag: SectionTagV1) -> Option<&SectionV1> {
+        self.sections.iter().find(|section| section.tag == tag)
+    }
+
+    pub fn try_from_sections(sections: Vec<SectionV1>) -> Result<Self, FigurePackageErrorV1> {
+        validate_sections(&sections)?;
+        Ok(Self { sections })
+    }
+
+    /// Descriptors sorted by section tag (§8.1).
+    fn sorted_descriptors(
+        &self,
+    ) -> Result<Vec<(ContentDescriptorV1, &[u8])>, FigurePackageErrorV1> {
+        let mut d = Vec::new();
+        d.try_reserve_exact(self.sections.len())
+            .map_err(|_| FigurePackageErrorV1::AllocationFailure)?;
+        for section in &self.sections {
+            d.push((
+                ContentDescriptorV1 {
+                    media_type: section.media_type.clone(),
+                    sha256: Sha256::digest(&section.bytes).into(),
+                    size: u64::try_from(section.bytes.len())
+                        .map_err(|_| FigurePackageErrorV1::LengthOverflow)?,
+                    section_tag: section.tag,
+                },
+                section.bytes.as_slice(),
+            ));
+        }
+        d.sort_by_key(|(desc, _)| desc.section_tag);
+        Ok(d)
+    }
+
+    /// The canonical-CBOR `FigurePackageManifestV1`: schema + the sorted
+    /// descriptor table (media type, digest, size, tag) as an integer-keyed
+    /// map.
+    fn manifest_cbor(
+        &self,
+        descriptors: &[(ContentDescriptorV1, &[u8])],
+    ) -> Result<Vec<u8>, crate::cbor::CanonicalErrorV1> {
+        let descs: Result<Vec<CanonicalValueV1>, _> = descriptors
+            .iter()
+            .map(|(d, _)| {
+                try_int_map(vec![
+                    (0, CanonicalValueV1::Uint(u64::from(d.section_tag))),
+                    (1, CanonicalValueV1::Text(d.media_type.clone())),
+                    (2, CanonicalValueV1::Bytes(d.sha256.to_vec())),
+                    (3, CanonicalValueV1::Uint(d.size)),
+                ])
+            })
+            .collect();
+        try_int_map(vec![
+            (0, CanonicalValueV1::Uint(u64::from(PKG_VERSION))),
+            (1, CanonicalValueV1::Array(descs?)),
+        ])?
+        .to_canonical_bytes()
+    }
+
+    /// The full canonical package bytes, package SHA-256 appended (§8.1):
+    /// `magic || version_le || manifest_len_le || manifest || section_count_le
+    /// || raw section bytes (tag order) || package_sha256`.
+    pub fn try_canonical_bytes(&self) -> Result<Vec<u8>, FigurePackageErrorV1> {
+        validate_sections(&self.sections)?;
+        let descriptors = self.sorted_descriptors()?;
+        let manifest = self.manifest_cbor(&descriptors)?;
+        let mut out = Vec::new();
+        let payload_bytes = descriptors.iter().try_fold(0_usize, |total, (_, bytes)| {
+            total
+                .checked_add(bytes.len())
+                .ok_or(FigurePackageErrorV1::LengthOverflow)
+        })?;
+        let capacity = 8_usize
+            .checked_add(4)
+            .and_then(|value| value.checked_add(4))
+            .and_then(|value| value.checked_add(manifest.len()))
+            .and_then(|value| value.checked_add(4))
+            .and_then(|value| value.checked_add(payload_bytes))
+            .and_then(|value| value.checked_add(32))
+            .ok_or(FigurePackageErrorV1::LengthOverflow)?;
+        if capacity > MAX_FIGURE_PACKAGE_BYTES_V1 {
+            return Err(FigurePackageErrorV1::PackageTooLarge(capacity));
+        }
+        out.try_reserve_exact(capacity)
+            .map_err(|_| FigurePackageErrorV1::AllocationFailure)?;
+        out.extend_from_slice(PKG_MAGIC);
+        out.extend_from_slice(&PKG_VERSION.to_le_bytes());
+        out.extend_from_slice(
+            &u32::try_from(manifest.len())
+                .map_err(|_| FigurePackageErrorV1::LengthOverflow)?
+                .to_le_bytes(),
+        );
+        out.extend_from_slice(&manifest);
+        out.extend_from_slice(
+            &u32::try_from(descriptors.len())
+                .map_err(|_| FigurePackageErrorV1::LengthOverflow)?
+                .to_le_bytes(),
+        );
+        for (_, bytes) in &descriptors {
+            out.extend_from_slice(bytes);
+        }
+        let digest = Sha256::digest(&out);
+        out.extend_from_slice(&digest);
+        Ok(out)
+    }
+
+    pub fn canonical_bytes(&self) -> Result<Vec<u8>, FigurePackageErrorV1> {
+        self.try_canonical_bytes()
+    }
+
+    /// The trailing package digest (§8.1) — the content address.
+    pub fn package_sha256(&self) -> Result<[u8; 32], FigurePackageErrorV1> {
+        let full = self.try_canonical_bytes()?;
+        let mut d = [0u8; 32];
+        d.copy_from_slice(&full[full.len() - 32..]);
+        Ok(d)
+    }
+
+    pub fn decode_exact(bytes: &[u8]) -> Result<Self, FigurePackageErrorV1> {
+        if bytes.len() > MAX_FIGURE_PACKAGE_BYTES_V1 {
+            return Err(FigurePackageErrorV1::PackageTooLarge(bytes.len()));
+        }
+        if bytes.len() < 8 + 4 + 4 + 4 + 32 {
+            return Err(FigurePackageErrorV1::Truncated);
+        }
+        let digest_offset = bytes
+            .len()
+            .checked_sub(32)
+            .ok_or(FigurePackageErrorV1::Truncated)?;
+        let expected: [u8; 32] = Sha256::digest(&bytes[..digest_offset]).into();
+        if bytes[digest_offset..] != expected {
+            return Err(FigurePackageErrorV1::DigestMismatch);
+        }
+        let mut reader = PackageReaderV1::new(&bytes[..digest_offset]);
+        if reader.take(8)? != PKG_MAGIC {
+            return Err(FigurePackageErrorV1::InvalidMagic);
+        }
+        let version = reader.u32()?;
+        if version != PKG_VERSION {
+            return Err(FigurePackageErrorV1::UnsupportedVersion(version));
+        }
+        let manifest_len =
+            usize::try_from(reader.u32()?).map_err(|_| FigurePackageErrorV1::LengthOverflow)?;
+        let manifest = CanonicalValueV1::decode_exact(reader.take(manifest_len)?)?;
+        let descriptors = parse_manifest_v1(manifest)?;
+        let count =
+            usize::try_from(reader.u32()?).map_err(|_| FigurePackageErrorV1::LengthOverflow)?;
+        if count != descriptors.len() {
+            return Err(FigurePackageErrorV1::DescriptorCountMismatch);
+        }
+        let mut sections = Vec::new();
+        sections
+            .try_reserve_exact(count)
+            .map_err(|_| FigurePackageErrorV1::AllocationFailure)?;
+        for descriptor in descriptors {
+            let section_bytes = reader.take(
+                usize::try_from(descriptor.size)
+                    .map_err(|_| FigurePackageErrorV1::LengthOverflow)?,
+            )?;
+            let actual: [u8; 32] = Sha256::digest(section_bytes).into();
+            if actual != descriptor.sha256 {
+                return Err(FigurePackageErrorV1::DescriptorDigestMismatch(
+                    descriptor.section_tag,
+                ));
+            }
+            sections.push(SectionV1 {
+                tag: descriptor.section_tag,
+                media_type: descriptor.media_type,
+                bytes: section_bytes.to_vec(),
+            });
+        }
+        if reader.remaining() != 0 {
+            return Err(FigurePackageErrorV1::TrailingBytes(reader.remaining()));
+        }
+        let package = Self::try_from_sections(sections)?;
+        if package.try_canonical_bytes()?.as_slice() != bytes {
+            return Err(FigurePackageErrorV1::DigestMismatch);
+        }
+        Ok(package)
+    }
+}
+
+fn validate_sections(sections: &[SectionV1]) -> Result<(), FigurePackageErrorV1> {
+    if sections.len() > MAX_FIGURE_PACKAGE_SECTIONS_V1 {
+        return Err(FigurePackageErrorV1::TooManySections(sections.len()));
+    }
+    let mut tags = BTreeSet::new();
+    let mut total = 0_usize;
+    for section in sections {
+        if section.tag == 0 {
+            return Err(FigurePackageErrorV1::InvalidSectionTag);
+        }
+        if !tags.insert(section.tag) {
+            return Err(FigurePackageErrorV1::DuplicateSectionTag(section.tag));
+        }
+        if section.media_type.is_empty()
+            || section.media_type.len() > MAX_FIGURE_PACKAGE_MEDIA_TYPE_BYTES_V1
+            || !section.media_type.bytes().all(|byte| {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || b"/.+-".contains(&byte)
+            })
+        {
+            return Err(FigurePackageErrorV1::InvalidMediaType);
+        }
+        if section.bytes.len() > MAX_FIGURE_PACKAGE_SECTION_BYTES_V1 {
+            return Err(FigurePackageErrorV1::SectionTooLarge {
+                tag: section.tag,
+                bytes: section.bytes.len(),
+            });
+        }
+        total = total
+            .checked_add(section.bytes.len())
+            .ok_or(FigurePackageErrorV1::LengthOverflow)?;
+    }
+    if total > MAX_FIGURE_PACKAGE_BYTES_V1 {
+        return Err(FigurePackageErrorV1::PackageTooLarge(total));
+    }
+    Ok(())
+}
+
+fn parse_manifest_v1(
+    value: CanonicalValueV1,
+) -> Result<Vec<ContentDescriptorV1>, FigurePackageErrorV1> {
+    let CanonicalValueV1::IntMap(mut root) = value else {
+        return Err(FigurePackageErrorV1::MalformedManifest);
+    };
+    if root.len() != 2 {
+        return Err(FigurePackageErrorV1::MalformedManifest);
+    }
+    let Some(CanonicalValueV1::Uint(version)) = root.remove(&0) else {
+        return Err(FigurePackageErrorV1::MalformedManifest);
+    };
+    if version != u64::from(PKG_VERSION) {
+        return Err(FigurePackageErrorV1::UnsupportedVersion(
+            u32::try_from(version).unwrap_or(u32::MAX),
+        ));
+    }
+    let Some(CanonicalValueV1::Array(values)) = root.remove(&1) else {
+        return Err(FigurePackageErrorV1::MalformedManifest);
+    };
+    if values.len() > MAX_FIGURE_PACKAGE_SECTIONS_V1 {
+        return Err(FigurePackageErrorV1::TooManySections(values.len()));
+    }
+    let mut descriptors = Vec::new();
+    let mut previous = None;
+    for value in values {
+        let CanonicalValueV1::IntMap(mut fields) = value else {
+            return Err(FigurePackageErrorV1::MalformedManifest);
+        };
+        if fields.len() != 4 {
+            return Err(FigurePackageErrorV1::MalformedManifest);
+        }
+        let Some(CanonicalValueV1::Uint(tag)) = fields.remove(&0) else {
+            return Err(FigurePackageErrorV1::MalformedManifest);
+        };
+        let tag =
+            SectionTagV1::try_from(tag).map_err(|_| FigurePackageErrorV1::InvalidSectionTag)?;
+        if tag == 0 {
+            return Err(FigurePackageErrorV1::InvalidSectionTag);
+        }
+        if previous.is_some_and(|value| tag <= value) {
+            return Err(FigurePackageErrorV1::DescriptorOrder);
+        }
+        previous = Some(tag);
+        let Some(CanonicalValueV1::Text(media_type)) = fields.remove(&1) else {
+            return Err(FigurePackageErrorV1::MalformedManifest);
+        };
+        let Some(CanonicalValueV1::Bytes(digest)) = fields.remove(&2) else {
+            return Err(FigurePackageErrorV1::MalformedManifest);
+        };
+        let sha256: [u8; 32] = digest
+            .try_into()
+            .map_err(|_| FigurePackageErrorV1::MalformedManifest)?;
+        let Some(CanonicalValueV1::Uint(size)) = fields.remove(&3) else {
+            return Err(FigurePackageErrorV1::MalformedManifest);
+        };
+        if size
+            > u64::try_from(MAX_FIGURE_PACKAGE_SECTION_BYTES_V1)
+                .map_err(|_| FigurePackageErrorV1::LengthOverflow)?
+        {
+            return Err(FigurePackageErrorV1::SectionTooLarge {
+                tag,
+                bytes: usize::try_from(size).unwrap_or(usize::MAX),
+            });
+        }
+        descriptors.push(ContentDescriptorV1 {
+            media_type,
+            sha256,
+            size,
+            section_tag: tag,
+        });
+    }
+    let sections = descriptors
+        .iter()
+        .map(|descriptor| SectionV1 {
+            tag: descriptor.section_tag,
+            media_type: descriptor.media_type.clone(),
+            bytes: Vec::new(),
+        })
+        .collect::<Vec<_>>();
+    validate_sections(&sections)?;
+    Ok(descriptors)
+}
+
+struct PackageReaderV1<'a> {
+    bytes: &'a [u8],
+    position: usize,
+}
+
+impl<'a> PackageReaderV1<'a> {
+    const fn new(bytes: &'a [u8]) -> Self { Self { bytes, position: 0 } }
+
+    fn take(&mut self, count: usize) -> Result<&'a [u8], FigurePackageErrorV1> {
+        let end = self
+            .position
+            .checked_add(count)
+            .ok_or(FigurePackageErrorV1::LengthOverflow)?;
+        let value = self
+            .bytes
+            .get(self.position..end)
+            .ok_or(FigurePackageErrorV1::Truncated)?;
+        self.position = end;
+        Ok(value)
+    }
+
+    fn u32(&mut self) -> Result<u32, FigurePackageErrorV1> {
+        let bytes: [u8; 4] = self
+            .take(4)?
+            .try_into()
+            .map_err(|_| FigurePackageErrorV1::Truncated)?;
+        Ok(u32::from_le_bytes(bytes))
+    }
+
+    fn remaining(&self) -> usize { self.bytes.len().saturating_sub(self.position) }
+}
+
+// ----------------------------------------------------------------------------
+// §8.4 deterministic greedy voxel meshing
+// ----------------------------------------------------------------------------
+
+/// A dense voxel volume. `mat[index(x,y,z)]` is the material id; `0` is empty.
+/// Indexing is `x + y*sx + z*sx*sy` so iterating `x` fastest walks the frozen
+/// `(z, y, x)` source-voxel order (§8.3 item 6).
+#[derive(Clone, Debug)]
+pub struct VoxelVolumeV1 {
+    pub dims: [u32; 3],
+    pub mat: Vec<u16>,
+}
+
+impl VoxelVolumeV1 {
+    #[must_use]
+    pub fn new(dims: [u32; 3]) -> Self {
+        Self {
+            mat: vec![0; (dims[0] * dims[1] * dims[2]) as usize],
+            dims,
+        }
+    }
+
+    fn idx(&self, c: [u32; 3]) -> usize {
+        (c[0] + c[1] * self.dims[0] + c[2] * self.dims[0] * self.dims[1]) as usize
+    }
+
+    pub fn set(&mut self, c: [u32; 3], m: u16) {
+        let i = self.idx(c);
+        self.mat[i] = m;
+    }
+
+    /// Material at `c`, or `0` (empty) if out of bounds.
+    fn at(&self, c: [i64; 3]) -> u16 {
+        for a in 0..3 {
+            if c[a] < 0 || c[a] >= i64::from(self.dims[a]) {
+                return 0;
+            }
+        }
+        self.mat[self.idx([c[0] as u32, c[1] as u32, c[2] as u32])]
+    }
+}
+
+/// A merged greedy quad (§8.4). `dir_tag` is the frozen face-direction index;
+/// `slice` is the coordinate along the face axis; `(u0,v0)` is the frozen
+/// in-plane origin; `(du,dv)` the merged extent; `material` the surface id.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct QuadV1 {
+    pub dir_tag: u8,
+    pub slice: u32,
+    pub u0: u32,
+    pub v0: u32,
+    pub du: u32,
+    pub dv: u32,
+    pub material: u16,
+}
+
+/// Frozen face-direction order (§8.4 step 2): `-X,+X,-Y,+Y,-Z,+Z`.
+const FACE_DIRS: [(usize, i64); 6] = [(0, -1), (0, 1), (1, -1), (1, 1), (2, -1), (2, 1)];
+
+fn dir_tag(axis: usize, sign: i64) -> u8 { (axis as u8) * 2 + u8::from(sign > 0) }
+
+/// The in-plane `(u, v)` axes for a face whose normal is along `axis` (frozen).
+fn uv_axes(axis: usize) -> (usize, usize) {
+    match axis {
+        0 => (1, 2),
+        1 => (0, 2),
+        _ => (0, 1),
+    }
+}
+
+/// Greedy-mesh one face direction into quads (§8.4 steps 1-8), in the frozen
+/// slice / row-major-mask / first-unconsumed / width-then-height order. This is
+/// one independently-constructible partition; the caller assembles partitions
+/// by the total order.
+fn mesh_direction(vol: &VoxelVolumeV1, axis: usize, sign: i64) -> Vec<QuadV1> {
+    let (ua, va) = uv_axes(axis);
+    let nu = vol.dims[ua];
+    let nv = vol.dims[va];
+    let mut quads = Vec::new();
+    for slice in 0..vol.dims[axis] {
+        // Build the visible-face mask (row-major: v outer, u inner).
+        let mut mask = vec![0u16; (nu * nv) as usize];
+        for iv in 0..nv {
+            for iu in 0..nu {
+                let mut here = [0i64; 3];
+                here[axis] = i64::from(slice);
+                here[ua] = i64::from(iu);
+                here[va] = i64::from(iv);
+                let m = vol.at(here);
+                if m == 0 {
+                    continue;
+                }
+                let mut nb = here;
+                nb[axis] += sign;
+                if vol.at(nb) == 0 {
+                    mask[(iv * nu + iu) as usize] = m;
+                }
+            }
+        }
+        // Greedy-merge: first unconsumed cell, extend width then height.
+        let mut consumed = vec![false; (nu * nv) as usize];
+        for iv in 0..nv {
+            for iu in 0..nu {
+                let base = (iv * nu + iu) as usize;
+                if consumed[base] || mask[base] == 0 {
+                    continue;
+                }
+                let m = mask[base];
+                let mut w = 1;
+                while iu + w < nu {
+                    let j = (iv * nu + iu + w) as usize;
+                    if consumed[j] || mask[j] != m {
+                        break;
+                    }
+                    w += 1;
+                }
+                let mut h = 1;
+                'height: while iv + h < nv {
+                    for k in 0..w {
+                        let j = ((iv + h) * nu + iu + k) as usize;
+                        if consumed[j] || mask[j] != m {
+                            break 'height;
+                        }
+                    }
+                    h += 1;
+                }
+                for dv in 0..h {
+                    for du in 0..w {
+                        consumed[((iv + dv) * nu + iu + du) as usize] = true;
+                    }
+                }
+                quads.push(QuadV1 {
+                    dir_tag: dir_tag(axis, sign),
+                    slice,
+                    u0: iu,
+                    v0: iv,
+                    du: w,
+                    dv: h,
+                    material: m,
+                });
+            }
+        }
+    }
+    quads
+}
+
+/// Deterministic greedy mesh (§8.4): all six directions concatenated in the
+/// frozen total order. Byte-identical regardless of how the six partitions are
+/// scheduled (see [`assemble_partitions`]).
+#[must_use]
+pub fn greedy_mesh(vol: &VoxelVolumeV1) -> Vec<QuadV1> {
+    let mut out = Vec::new();
+    for (axis, sign) in FACE_DIRS {
+        out.extend(mesh_direction(vol, axis, sign));
+    }
+    out
+}
+
+/// Gather-sort-commit assembly (§8.4 step 9 / §8.9): given per-direction
+/// partitions produced in ANY order, sort by direction tag and concatenate.
+/// Worker count and completion order cannot affect the result.
+#[must_use]
+pub fn assemble_partitions(mut partitions: Vec<Vec<QuadV1>>) -> Vec<QuadV1> {
+    partitions.sort_by_key(|p| p.first().map_or(u8::MAX, |q| q.dir_tag));
+    partitions.into_iter().flatten().collect()
+}
+
+/// Length-framed canonical serialization of a quad stream, for content-address
+/// digesting and golden vectors.
+#[must_use]
+pub fn serialize_quads(quads: &[QuadV1]) -> Vec<u8> {
+    let mut b = Vec::with_capacity(quads.len() * 23);
+    b.extend_from_slice(&(quads.len() as u64).to_le_bytes());
+    for q in quads {
+        b.push(q.dir_tag);
+        b.extend_from_slice(&q.slice.to_le_bytes());
+        b.extend_from_slice(&q.u0.to_le_bytes());
+        b.extend_from_slice(&q.v0.to_le_bytes());
+        b.extend_from_slice(&q.du.to_le_bytes());
+        b.extend_from_slice(&q.dv.to_le_bytes());
+        b.extend_from_slice(&q.material.to_le_bytes());
+    }
+    b
+}
+
+/// The mesh content address: SHA-256 over the canonical quad serialization.
+#[must_use]
+pub fn mesh_digest(quads: &[QuadV1]) -> [u8; 32] { Sha256::digest(serialize_quads(quads)).into() }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::hex_bytes;
+
+    // -------- §8.2 path normalization --------
+
+    #[test]
+    fn accepts_clean_machine_path() {
+        assert_eq!(
+            normalize_machine_path("voxel/humanoid/head.vox").unwrap(),
+            "voxel/humanoid/head.vox"
+        );
+    }
+
+    #[test]
+    fn rejects_each_malformed_form() {
+        assert_eq!(normalize_machine_path(""), Err(PathError::Empty));
+        assert_eq!(normalize_machine_path("a\\b"), Err(PathError::Backslash));
+        assert_eq!(normalize_machine_path("c:/a"), Err(PathError::DrivePrefix));
+        assert_eq!(
+            normalize_machine_path("/etc/x"),
+            Err(PathError::AbsolutePath)
+        );
+        assert_eq!(normalize_machine_path("a/../b"), Err(PathError::DotSegment));
+        assert_eq!(normalize_machine_path("a/./b"), Err(PathError::DotSegment));
+        assert_eq!(normalize_machine_path("a//b"), Err(PathError::DotSegment));
+        assert_eq!(
+            normalize_machine_path("a/b."),
+            Err(PathError::TrailingDotOrSpace)
+        );
+        assert_eq!(
+            normalize_machine_path("a/b "),
+            Err(PathError::TrailingDotOrSpace)
+        );
+        assert_eq!(
+            normalize_machine_path("a/\x01b"),
+            Err(PathError::ControlChar)
+        );
+        assert_eq!(
+            normalize_machine_path("A/b"),
+            Err(PathError::NonAsciiOrUppercase)
+        );
+        assert_eq!(
+            normalize_machine_path("a/con/b"),
+            Err(PathError::WindowsReservedName {
+                name: "con".to_string()
+            })
+        );
+        assert_eq!(
+            normalize_machine_path("a/nul.vox"),
+            Err(PathError::WindowsReservedName {
+                name: "nul".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn source_files_sort_by_path_then_digest() {
+        let f = |p: &str, d: u8| SourceFileV1 {
+            path: p.to_string(),
+            sha256: [d; 32],
+        };
+        let out = sort_source_files(vec![f("b", 1), f("a", 9), f("a", 1)]);
+        let got: Vec<_> = out.iter().map(|x| (x.path.as_str(), x.sha256[0])).collect();
+        assert_eq!(got, vec![("a", 1), ("a", 9), ("b", 1)]);
+    }
+
+    // -------- §8.1 package format --------
+
+    #[test]
+    fn package_section_table_is_tag_sorted_and_address_stable() {
+        // Insert sections OUT of tag order; the package bytes must be identical
+        // to the tag-sorted build => insertion order cannot leak into the address.
+        let a = FigurePackageV1::new()
+            .with_section(7, "application/vnd.bastion.mesh", b"mesh-bytes".to_vec())
+            .with_section(2, "application/vnd.bastion.skel", b"skel".to_vec());
+        let b = FigurePackageV1::new()
+            .with_section(2, "application/vnd.bastion.skel", b"skel".to_vec())
+            .with_section(7, "application/vnd.bastion.mesh", b"mesh-bytes".to_vec());
+        assert_eq!(a.canonical_bytes().unwrap(), b.canonical_bytes().unwrap());
+        assert_eq!(a.package_sha256().unwrap(), b.package_sha256().unwrap());
+    }
+
+    #[test]
+    fn frozen_package_address() {
+        let pkg = FigurePackageV1::new().with_section(
+            1,
+            "application/vnd.bastion.mesh",
+            b"AAAA".to_vec(),
+        );
+        // Golden content address of the minimal single-section package. A second
+        // independent implementation of §8.1 must reproduce this exact digest.
+        assert_eq!(
+            hex_bytes(&pkg.package_sha256().unwrap()),
+            "856e131c1f789ca014032137214c0fb5966632cf046ae673b6fcca9fa2b1d9e6",
+            "frozen package address drift"
+        );
+    }
+
+    #[test]
+    fn bounded_package_builder_and_exact_decoder_fail_closed() {
+        let duplicate = FigurePackageV1::new()
+            .with_section(1, "application/vnd.bastion.mesh", b"a".to_vec())
+            .with_section(1, "application/vnd.bastion.mesh", b"b".to_vec());
+        assert_eq!(
+            duplicate.canonical_bytes(),
+            Err(FigurePackageErrorV1::DuplicateSectionTag(1))
+        );
+        let oversized =
+            FigurePackageV1::new().with_section(1, "application/vnd.bastion.mesh", vec![
+                0;
+                MAX_FIGURE_PACKAGE_SECTION_BYTES_V1
+                    + 1
+            ]);
+        assert!(matches!(
+            oversized.canonical_bytes(),
+            Err(FigurePackageErrorV1::SectionTooLarge { tag: 1, .. })
+        ));
+        let package = FigurePackageV1::new()
+            .with_section(1, "application/vnd.bastion.mesh", b"valid".to_vec())
+            .canonical_bytes()
+            .unwrap();
+        assert_eq!(
+            FigurePackageV1::decode_exact(&package)
+                .unwrap()
+                .canonical_bytes()
+                .unwrap(),
+            package
+        );
+        let mut corrupt = package.clone();
+        corrupt[12] ^= 1;
+        assert!(FigurePackageV1::decode_exact(&corrupt).is_err());
+        assert!(FigurePackageV1::decode_exact(&package[..package.len() - 1]).is_err());
+        let mut trailing = package;
+        trailing.push(0);
+        assert!(FigurePackageV1::decode_exact(&trailing).is_err());
+    }
+
+    // -------- §8.4 greedy meshing --------
+
+    fn solid(dims: [u32; 3], m: u16) -> VoxelVolumeV1 {
+        let mut v = VoxelVolumeV1::new(dims);
+        for z in 0..dims[2] {
+            for y in 0..dims[1] {
+                for x in 0..dims[0] {
+                    v.set([x, y, z], m);
+                }
+            }
+        }
+        v
+    }
+
+    #[test]
+    fn solid_cube_meshes_to_six_merged_quads() {
+        // A solid NxNxN block has exactly one merged quad per face direction.
+        let q = greedy_mesh(&solid([2, 2, 2], 1));
+        assert_eq!(q.len(), 6);
+        for quad in &q {
+            assert_eq!(
+                (quad.du, quad.dv),
+                (2, 2),
+                "each face merges to one 2x2 quad"
+            );
+        }
+        // Directions appear in the frozen order -X,+X,-Y,+Y,-Z,+Z.
+        let tags: Vec<u8> = q.iter().map(|x| x.dir_tag).collect();
+        assert_eq!(tags, vec![0, 1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn single_voxel_has_six_unit_faces() {
+        let q = greedy_mesh(&solid([1, 1, 1], 5));
+        assert_eq!(q.len(), 6);
+        assert!(q.iter().all(|x| x.du == 1 && x.dv == 1 && x.material == 5));
+    }
+
+    #[test]
+    fn frozen_mesh_digest_domino() {
+        // A 2x1x1 domino: the ±Y and ±Z faces span 2 along X and merge; the ±X
+        // faces are unit. Frozen digest pins the exact quad stream.
+        let q = greedy_mesh(&solid([2, 1, 1], 3));
+        assert_eq!(
+            hex_bytes(&mesh_digest(&q)),
+            "106d4ec284b90d66024151dc8f0991805c0cf898faaf0612a8646f842034c2d0",
+            "frozen domino mesh digest drift",
+        );
+    }
+
+    #[test]
+    fn partition_order_does_not_change_bytes() {
+        // The gather-sort-commit property: meshing the six directions as
+        // independent partitions and assembling them in REVERSED completion
+        // order yields byte-identical output to the in-order mesh. Worker count
+        // / completion order cannot affect the mesh address.
+        let vol = solid([3, 2, 2], 1);
+        let in_order = greedy_mesh(&vol);
+        let mut partitions: Vec<Vec<QuadV1>> = FACE_DIRS
+            .iter()
+            .map(|&(axis, sign)| mesh_direction(&vol, axis, sign))
+            .collect();
+        partitions.reverse(); // simulate out-of-order worker completion
+        let assembled = assemble_partitions(partitions);
+        assert_eq!(mesh_digest(&in_order), mesh_digest(&assembled));
+    }
+}

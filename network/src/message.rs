@@ -135,7 +135,19 @@ impl Message {
         // invariant; a short consume is a malformed frame and fails closed.
         match decode_from_slice(&uncompressed_data, legacy()) {
             Ok((m, consumed)) if consumed == uncompressed_data.len() => Ok(m),
-            Ok((_, consumed)) => Err(StreamError::TrailingBytes { consumed, total: uncompressed_data.len() }),
+            Ok((_, consumed)) => {
+                // Diagnostic beside the refusal: NAME the type and show the
+                // frame head — a bare count pair cost a night of guessing.
+                tracing::warn!(
+                    ty = std::any::type_name::<M>(),
+                    consumed,
+                    total = uncompressed_data.len(),
+                    head = ?&uncompressed_data[..uncompressed_data.len().min(24)],
+                    tail = ?&uncompressed_data[consumed.min(uncompressed_data.len())..],
+                    "DET-NET-017: trailing bytes on strict decode"
+                );
+                Err(StreamError::TrailingBytes { consumed, total: uncompressed_data.len() })
+            },
             Err(e) => Err(StreamError::Deserialize(Box::new(e))),
         }
     }

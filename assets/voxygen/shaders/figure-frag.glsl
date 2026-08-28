@@ -39,6 +39,12 @@ layout(location = 1) flat in vec3 f_norm;
 /*centroid */layout(location = 2) in vec2 f_uv_pos;
 layout(location = 3) in vec3 m_pos;
 layout(location = 4) in float scale;
+#ifdef FIGURE_BATCHED
+layout(location = 5) flat in vec4 batch_highlight_col;
+layout(location = 6) flat in vec4 batch_model_light;
+layout(location = 7) flat in vec4 batch_model_glow;
+layout(location = 8) flat in int batch_flags;
+#endif
 // in float f_alt;
 // in vec4 f_shadow;
 // in vec3 light_pos[2];
@@ -64,6 +70,7 @@ uniform sampler s_col_light;
 //    ShadowLocals shadowMats[/*MAX_LAYER_FACES*/192];
 //};
 
+#ifndef FIGURE_BATCHED
 layout (std140, set = 3, binding = 0)
 uniform u_locals {
     mat4 model_mat;
@@ -86,6 +93,12 @@ layout (std140, set = 3, binding = 1)
 uniform u_bones {
     BoneData bones[16];
 };
+#else
+#define highlight_col batch_highlight_col
+#define model_light batch_model_light
+#define model_glow batch_model_glow
+#define flags batch_flags
+#endif
 
 layout(location = 0) out vec4 tgt_color;
 layout(location = 1) out uvec4 tgt_mat;

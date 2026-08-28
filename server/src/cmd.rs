@@ -6237,7 +6237,7 @@ fn handle_weather_zone(
                     .write_resource::<Option<WeatherJob>>()
                     .as_mut()
                 {
-                    weather_job.queue_zone(weather, pos, radius, time);
+                    let _ = weather_job.queue_zone(weather, pos, radius, time);
                 }
             }
         };

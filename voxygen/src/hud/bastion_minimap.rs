@@ -68,6 +68,74 @@ const EVICT_MARGIN: i32 = 4;
 /// resolution target — the texel is 1/block; display upscales it).
 const ZOOM_MAX: f64 = 4.0;
 
+/// The weather lens shares the minimap's existing top control row. Keep the
+/// badge between the left zoom controls and the right-side controls instead
+/// of placing it over the map image, where the image's clipping hid the text.
+const LENS_BADGE_RESERVED_HEADER_WIDTH: f64 = 68.0;
+const LENS_BADGE_HEIGHT: f64 = 18.0;
+const LENS_BADGE_FONT_SIZE: u32 = 9;
+const LENS_BADGE_MAX_GLYPHS: usize = 32;
+
+#[derive(Clone, Debug, PartialEq)]
+struct LensBadgeDrawPlanV1 {
+    label: String,
+    glyph_count: usize,
+    width: f64,
+    height: f64,
+    top_margin: f64,
+    font_size: u32,
+}
+
+/// Produce the exact bounded text draw consumed by the real minimap widget.
+/// `None` means that no lens glyph/background widgets may be submitted.
+fn lens_badge_draw_plan_v1(
+    label: Option<&str>,
+    map_width: f64,
+    scale: f64,
+) -> Option<LensBadgeDrawPlanV1> {
+    let label = label?.trim();
+    let glyph_count = label.chars().count();
+    if label.is_empty()
+        || !label.is_ascii()
+        || glyph_count > LENS_BADGE_MAX_GLYPHS
+        || !map_width.is_finite()
+        || !scale.is_finite()
+        || scale <= 0.0
+    {
+        return None;
+    }
+    let width = map_width - LENS_BADGE_RESERVED_HEADER_WIDTH * scale;
+    (width >= 48.0 * scale).then_some(LensBadgeDrawPlanV1 {
+        label: label.to_owned(),
+        glyph_count,
+        width,
+        height: LENS_BADGE_HEIGHT * scale,
+        top_margin: 0.0,
+        font_size: LENS_BADGE_FONT_SIZE,
+    })
+}
+
+/// Submit the badge through Conrod's proven button-label owner. Unlike a
+/// standalone `Text` widget, the button owns, parents, and clips its generated
+/// text primitive as one visible header control.
+fn set_lens_badge_widget_v1(
+    plan: &LensBadgeDrawPlanV1,
+    frame_id: widget::Id,
+    badge_id: widget::Id,
+    font_id: conrod_core::text::font::Id,
+    ui: &mut conrod_core::UiCell<'_>,
+) {
+    Button::new()
+        .w_h(plan.width, plan.height)
+        .label(&plan.label)
+        .label_font_size(plan.font_size)
+        .label_font_id(font_id)
+        .label_color(Color::Rgba(0.82, 0.94, 1.0, 1.0))
+        .color(Color::Rgba(0.015, 0.035, 0.06, 0.96))
+        .mid_top_with_margin_on(frame_id, plan.top_margin)
+        .set(badge_id, ui);
+}
+
 /// One cached chunk tile: per-block top color + the z it was sampled at
 /// (the height field that drives hillshading).
 struct Tile {
@@ -133,15 +201,17 @@ pub enum MinimapLayer {
     Piles,
     Frustum,
     Alerts,
+    Weather,
 }
 
 impl MinimapLayer {
-    pub const ALL: [MinimapLayer; 5] = [
+    pub const ALL: [MinimapLayer; 6] = [
         MinimapLayer::Colonists,
         MinimapLayer::Zones,
         MinimapLayer::Piles,
         MinimapLayer::Frustum,
         MinimapLayer::Alerts,
+        MinimapLayer::Weather,
     ];
 
     /// One-letter chip label (icon art is a backlog item for the asset lab).
@@ -152,6 +222,7 @@ impl MinimapLayer {
             MinimapLayer::Piles => "P",
             MinimapLayer::Frustum => "F",
             MinimapLayer::Alerts => "!",
+            MinimapLayer::Weather => "W",
         }
     }
 }
@@ -166,6 +237,7 @@ pub struct LayerFlags {
     pub piles: bool,
     pub frustum: bool,
     pub alerts: bool,
+    pub weather: bool,
 }
 
 impl Default for LayerFlags {
@@ -176,6 +248,7 @@ impl Default for LayerFlags {
             piles: true,
             frustum: true,
             alerts: true,
+            weather: true,
         }
     }
 }
@@ -188,6 +261,7 @@ impl LayerFlags {
             MinimapLayer::Piles => self.piles,
             MinimapLayer::Frustum => self.frustum,
             MinimapLayer::Alerts => self.alerts,
+            MinimapLayer::Weather => self.weather,
         }
     }
 
@@ -198,6 +272,7 @@ impl LayerFlags {
             MinimapLayer::Piles => self.piles = !self.piles,
             MinimapLayer::Frustum => self.frustum = !self.frustum,
             MinimapLayer::Alerts => self.alerts = !self.alerts,
+            MinimapLayer::Weather => self.weather = !self.weather,
         }
     }
 }
@@ -500,6 +575,7 @@ widget_ids! {
         size_btn,
         level_text,
         north_text,
+        lens_bg,
         toggle_btn,
     }
 }
@@ -1021,6 +1097,31 @@ impl Widget for BastionMiniMap<'_> {
             .graphics_for(state.ids.map_bg)
             .set(state.ids.north_text, ui);
 
+        // R1G: one real, bounded lens on the existing map surface. The frame
+        // is already camera/selection/generation-bound by the production
+        // adapter; this widget only visualizes its canonical label.
+        let lens_badge_plan = if self.tiles.layers.weather
+            && let Some(lens) = crate::r1g_lens::latest_frame()
+            && lens.mode() == bastion_renderer_r0d::lens::LensModeV1::Weather
+            && let Some(datum) = lens.datums().first()
+        {
+            lens_badge_draw_plan_v1(Some(&datum.label), map_size.x, scale)
+        } else {
+            None
+        };
+        if let Some(plan) = lens_badge_plan {
+            debug_assert!(plan.glyph_count > 0);
+            let mut scaled_plan = plan;
+            scaled_plan.font_size = self.fonts.cyri.scale(scaled_plan.font_size);
+            set_lens_badge_widget_v1(
+                &scaled_plan,
+                state.ids.frame,
+                state.ids.lens_bg,
+                self.fonts.cyri.conrod_id,
+                ui,
+            );
+        }
+
         // ---- Layer chips ---------------------------------------------------
         if state.ids.layer_chips.len() < MinimapLayer::ALL.len() {
             state.update(|s| {
@@ -1090,5 +1191,94 @@ impl Widget for BastionMiniMap<'_> {
         }
 
         events
+    }
+}
+
+#[cfg(test)]
+mod r1g_lens_badge_tests {
+    use super::{LENS_BADGE_MAX_GLYPHS, lens_badge_draw_plan_v1, set_lens_badge_widget_v1};
+    use conrod_core::{
+        Colorable, Positionable, UiBuilder, Widget, render::PrimitiveKind, text, widget::Rectangle,
+    };
+
+    #[test]
+    fn weather_label_submits_bounded_header_glyphs() {
+        let label = "CLEAR 0% WIND 3.2m/s";
+        let plan = lens_badge_draw_plan_v1(Some(label), 175.0, 1.0)
+            .expect("the production weather label must submit a header draw");
+
+        assert_eq!(plan.label, label);
+        assert_eq!(plan.glyph_count, label.chars().count());
+        assert!(plan.glyph_count > 0);
+        assert_eq!(plan.width, 107.0);
+        assert_eq!(plan.height, 18.0);
+        assert_eq!(plan.top_margin, 0.0);
+        assert_eq!(plan.font_size, 9);
+        assert!(plan.width <= 175.0);
+    }
+
+    #[test]
+    fn weather_label_reaches_unclipped_visible_conrod_text_primitive() {
+        let mut ui = UiBuilder::new([1280.0, 720.0]).build();
+        let font = text::Font::from_bytes(include_bytes!(
+            "../../../assets/voxygen/font/OpenSans-Regular.ttf"
+        ))
+        .expect("test font must parse");
+        let font_id = ui.fonts.insert(font);
+        let mut id_generator = ui.widget_id_generator();
+        let frame_id = id_generator.next();
+        let badge_id = id_generator.next();
+        drop(id_generator);
+
+        let plan = lens_badge_draw_plan_v1(Some("CLEAR 0% WIND 3.2m/s"), 175.0, 1.0)
+            .expect("weather badge plan");
+        {
+            let mut cell = ui.set_widgets();
+            Rectangle::fill([175.0, 175.0])
+                .top_right_with_margins_on(cell.window, 0.0, 0.0)
+                .color(conrod_core::color::BLACK)
+                .set(frame_id, &mut cell);
+            set_lens_badge_widget_v1(&plan, frame_id, badge_id, font_id, &mut cell);
+        }
+
+        let mut primitives = ui.draw();
+        let mut visible_text_primitives = 0usize;
+        let mut visible_glyphs = 0usize;
+        while let Some(primitive) = primitives.next() {
+            if let PrimitiveKind::Text { color, text, .. } = primitive.kind {
+                let [_, _, _, alpha] = color.to_fsa();
+                let (left, right, bottom, top) = primitive.rect.l_r_b_t();
+                let (clip_left, clip_right, clip_bottom, clip_top) = primitive.scizzor.l_r_b_t();
+                let unclipped = left >= clip_left
+                    && right <= clip_right
+                    && bottom >= clip_bottom
+                    && top <= clip_top;
+                let glyph_count = text
+                    .positioned_glyphs(1.0)
+                    .iter()
+                    .filter(|glyph| glyph.pixel_bounding_box().is_some())
+                    .count();
+                if alpha > 0.0 && unclipped && primitive.rect.w() > 0.0 && primitive.rect.h() > 0.0
+                {
+                    visible_text_primitives += 1;
+                    visible_glyphs += glyph_count;
+                }
+            }
+        }
+
+        assert_eq!(visible_text_primitives, 1);
+        assert!(visible_glyphs >= plan.glyph_count - 4);
+    }
+
+    #[test]
+    fn off_or_invalid_label_submits_no_badge_widgets() {
+        assert!(lens_badge_draw_plan_v1(None, 175.0, 1.0).is_none());
+        assert!(lens_badge_draw_plan_v1(Some(""), 175.0, 1.0).is_none());
+        assert!(lens_badge_draw_plan_v1(Some("RAIN \u{2602}"), 175.0, 1.0).is_none());
+        assert!(
+            lens_badge_draw_plan_v1(Some(&"X".repeat(LENS_BADGE_MAX_GLYPHS + 1)), 175.0, 1.0)
+                .is_none()
+        );
+        assert!(lens_badge_draw_plan_v1(Some("CLEAR"), 60.0, 1.0).is_none());
     }
 }

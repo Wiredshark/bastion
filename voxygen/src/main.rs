@@ -132,6 +132,24 @@ fn main() {
 
     // Load the settings
     let mut settings = Settings::load(&config_dir);
+    if veloren_voxygen::r0p_observer::enabled() {
+        let graphics = std::mem::take(&mut settings.graphics);
+        settings.graphics = match std::env::var("BASTION_R0P_GRAPHICS_PRESET").as_deref() {
+            Ok("medium") => graphics.into_medium(),
+            Ok("high") => graphics.into_high(),
+            Ok("ultra") => graphics.into_ultra(),
+            _ => graphics,
+        };
+    }
+    if std::env::var("BASTION_POST_R2_DISTANCE_PROFILE").as_deref() == Ok("far-band-v1") {
+        let plan = bastion_renderer_r0d::terrain_distance::TerrainDistancePlanV1::far_band(1);
+        if let Err(error) = settings.graphics.apply_terrain_distance_plan_v1(plan, 1) {
+            warn!(
+                ?error,
+                "POST-R2 terrain-distance profile rejected; preserving reference settings"
+            );
+        }
+    }
     settings.display_warnings();
 
     panic_handler::set_panic_hook(log_filename, logs_dir);

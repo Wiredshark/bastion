@@ -95,6 +95,9 @@ pub mod projection_schema;
 pub mod ray;
 pub mod recipe;
 pub mod region;
+/// renderer-bench (R0D W1): the canonical semantic-encoding contract —
+/// always compiled, runtime-inert (no feature gate, per the W0 handoff).
+pub mod renderer_bench;
 pub mod rtsim;
 pub mod skillset_builder;
 pub mod slowjob;

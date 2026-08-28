@@ -1,7 +1,12 @@
+pub mod bastion_r0d;
 pub mod bound;
 mod buffer;
 pub mod consts;
 mod error;
+mod figure_batch;
+pub(crate) mod figure_gpu;
+mod gpu_cull;
+mod indirect_draw;
 pub mod instances;
 pub mod mesh;
 pub mod model;
@@ -482,6 +487,48 @@ pub struct PipelineModes {
 }
 
 impl PipelineModes {
+    /// Stable R0D projection of the fields that select compiled pipelines.
+    /// The unordered experimental-shader set is sorted before encoding.
+    pub fn bastion_identity_bytes(&self) -> Result<Vec<u8>, ()> {
+        fn push_label(output: &mut Vec<u8>, label: &str) -> Result<(), ()> {
+            output.extend_from_slice(&u64::try_from(label.len()).map_err(|_| ())?.to_le_bytes());
+            output.extend_from_slice(label.as_bytes());
+            Ok(())
+        }
+        let mut output = Vec::new();
+        for label in [
+            format!("{:?}", self.aa),
+            format!("{:?}", self.cloud),
+            format!("{:?}", self.fluid),
+            format!("{:?}", self.reflection),
+            format!("{:?}", self.lighting),
+            format!("{:?}", self.shadow),
+            format!("{:?}", self.rain_occlusion),
+            format!("{:?}", self.bloom),
+        ] {
+            push_label(&mut output, &label)?;
+        }
+        output.push(u8::from(self.rain_enabled));
+        output.extend_from_slice(&self.point_glow.to_bits().to_le_bytes());
+        output.push(u8::from(self.flashing_lights_enabled));
+        let mut experimental: Vec<String> = self
+            .experimental_shaders
+            .iter()
+            .map(|shader| format!("{shader:?}"))
+            .collect();
+        experimental.sort();
+        output.extend_from_slice(
+            &u64::try_from(experimental.len())
+                .map_err(|_| ())?
+                .to_le_bytes(),
+        );
+        for label in experimental {
+            push_label(&mut output, &label)?;
+        }
+        output.push(u8::from(self.enable_naga));
+        Ok(output)
+    }
+
     pub fn remove_unsupported(&mut self) {
         // Only enable experimental shaders that are supported by the game's current
         // state

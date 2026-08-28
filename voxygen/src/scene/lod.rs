@@ -154,6 +154,15 @@ impl Lod {
 
     pub fn get_data(&self) -> &LodData { &self.data }
 
+    /// Whether the production first-pass LOD terrain draw has an uploaded
+    /// model available for this frame.
+    #[must_use]
+    pub fn terrain_draw_ready_v1(&self) -> bool { self.model.is_some() }
+
+    /// Exact current production LOD terrain mesh detail.
+    #[must_use]
+    pub fn terrain_detail_v1(&self) -> u32 { self.data.tgt_detail }
+
     pub fn set_detail(&mut self, detail: u32) {
         // Make sure the recorded detail is even.
         self.data.tgt_detail = (detail - detail % 2).clamp(100, 500);
@@ -268,13 +277,22 @@ impl Lod {
         }
 
         if !matches!(culling_mode, CullingMode::Underground) {
-            // Draw LoD objects
+            // Hash-map residency order must never control the draw stream.
+            let mut draws: Vec<(Vec2<i32>, lod::ObjectKind, &ObjectGroup)> = self
+                .zone_objects
+                .iter()
+                .flat_map(|(zone, groups)| {
+                    groups
+                        .iter()
+                        .filter(|(_, group)| group.visible)
+                        .map(move |(kind, group)| (*zone, *kind, group))
+                })
+                .collect();
+            draws.sort_by_key(|(zone, kind, _)| (zone.y, zone.x, *kind as u16));
             let mut drawer = drawer.draw_lod_objects();
-            for groups in self.zone_objects.values() {
-                for (kind, group) in groups.iter().filter(|(_, g)| g.visible) {
-                    if let Some((model, _, _)) = self.object_data.get(kind) {
-                        drawer.draw(model, &group.instances);
-                    }
+            for (_, kind, group) in draws {
+                if let Some((model, _, _)) = self.object_data.get(&kind) {
+                    drawer.draw(model, &group.instances);
                 }
             }
         }

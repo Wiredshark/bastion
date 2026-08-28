@@ -21,9 +21,13 @@ pub use bastion_server::bastion_assets;
 pub use bastion_server::{
     bastion_actions, bastion_chop, bastion_entity_event_log, bastion_flat_arena,
     bastion_flight_recorder, bastion_founding_preset, bastion_jobs, bastion_mood, bastion_path,
-    bastion_piles, bastion_traversal, bastion_traversal_tooling,
+    bastion_piles, bastion_renderer_bench, bastion_traversal, bastion_traversal_tooling,
 };
 pub mod bootstrap_freshness_minter;
+// r1f (lw port): authoritative weather fixtures — stays a local module (an
+// `impl Server`-adjacent shim, same reasoning as bastion_arena above).
+#[cfg(feature = "worldgen")]
+pub mod bastion_weather_fixture;
 mod character_creator;
 pub mod chat;
 pub mod chunk_generator;
@@ -60,6 +64,12 @@ pub mod session_registry;
 pub mod settings;
 pub mod state_ext;
 pub mod sys;
+
+/// Opt-in deterministic simulation policy for the isolated renderer
+/// certification fixture. Production servers never call this entry point.
+pub fn bastion_enable_renderer_certification_determinism() {
+    ::rtsim::enable_deterministic_rtsim();
+}
 #[cfg(feature = "persistent_world")]
 pub mod terrain_persistence;
 
@@ -710,6 +720,19 @@ impl Server {
         state
             .ecs_mut()
             .insert(bastion_path::PathScheduler::default());
+        // renderer-bench W2: the run-state resource (None = inert; the
+        // system arms it lazily from the env gate on its first tick).
+        state
+            .ecs_mut()
+            .insert(None::<bastion_renderer_bench::RendererBenchRun>);
+        // renderer-bench W3: the client-signal inbox and announce outbox
+        // (msg handlers fill / bench sys drains, and vice versa).
+        state
+            .ecs_mut()
+            .insert(common::renderer_bench::RendererBenchClientSignals::default());
+        state
+            .ecs_mut()
+            .insert(common::renderer_bench::RendererBenchNetOutbox::default());
         state
             .ecs_mut()
             .insert(common::bastion::ActivityZones::default());
@@ -1244,6 +1267,40 @@ impl Server {
             colony_terminal_zero_streak_samples = bastion_jobs::COLONY_TERMINAL_ZERO_STREAK_SAMPLES,
             "bastion effective ITEM8-V4 config (F6 backstop threshold, sentinel S1 streak)"
         );
+
+        // renderer-bench W3: pin the arena's terrain regime BY
+        // CONSTRUCTION. The first client leg proved the observer changed
+        // the experiment — its presence loaded the arena chunks, turning
+        // vacuum physics into collision physics and splitting run_root
+        // from the clientless twins. A bench owns its regime: when a run
+        // is armed, force-load + pin the chunks around the fixture's
+        // arena origin at boot, identically in every leg, observers or
+        // none.
+        if let Ok(mpath) = std::env::var("BASTION_RENDERER_BENCH_MANIFEST") {
+            match std::fs::read(&mpath).map_err(|e| e.to_string()).and_then(|b| {
+                common::renderer_bench::FixtureManifestV1::decode(&b)
+                    .map_err(|e| format!("{e:?}"))
+            }) {
+                Ok(m) => {
+                    let origin = Vec2::new(
+                        m.arena_origin_mm[0] as f32,
+                        m.arena_origin_mm[1] as f32,
+                    ) / 1000.0;
+                    let n = this.bastion_force_load_area(origin, 4);
+                    info!(
+                        chunks = n,
+                        x = origin.x,
+                        y = origin.y,
+                        "bastion: renderer-bench arena force-loaded (pinned)"
+                    );
+                },
+                Err(e) => warn!(
+                    %e,
+                    "bastion: renderer-bench manifest unreadable at boot — no arena \
+                     preload (the bench system will refuse loudly on its own)"
+                ),
+            }
+        }
 
         Ok(this)
     }
@@ -3811,12 +3868,13 @@ impl Server {
     }
 
     /// bastion (B5.8 ladder-fixture geometry PROBE, harness read): the emitted
-    /// emergency `EmergencyTraversalKind` for a colonist by name — "CarvedStair"
-    /// (walkable, Phase-1), "ConstructedLadder" (ladder_pillar — the fixture's
-    /// target), or "NaturalShaft" (wrong climb kind). Read from the live route
-    /// descriptor board. This is the read leg of the architect's 2-part pre-build
-    /// proof that a candidate narrow shaft lands on ConstructedLadder, not a
-    /// stair and not NaturalShaft. `None` = no emergency route owned yet.
+    /// emergency `EmergencyTraversalKind` for a colonist by name —
+    /// "CarvedStair" (walkable, Phase-1), "ConstructedLadder"
+    /// (ladder_pillar — the fixture's target), or "NaturalShaft" (wrong
+    /// climb kind). Read from the live route descriptor board. This is the
+    /// read leg of the architect's 2-part pre-build proof that a candidate
+    /// narrow shaft lands on ConstructedLadder, not a stair and not
+    /// NaturalShaft. `None` = no emergency route owned yet.
     pub fn bastion_colonist_route_kind(&self, name: &str) -> Option<String> {
         use specs::Join;
         let ecs = self.state.ecs();

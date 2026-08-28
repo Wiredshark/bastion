@@ -28,6 +28,28 @@ pub struct BoneData {
 
 pub type BoundLocals = Bound<(Consts<Locals>, Consts<BoneData>)>;
 
+#[repr(C)]
+#[derive(Copy, Clone, Debug, Zeroable, Pod)]
+pub struct FigureBatchInstance {
+    pub locals: Locals,
+    pub bones: [BoneData; 16],
+}
+
+impl FigureBatchInstance {
+    #[must_use]
+    pub fn new(locals: Locals, bones: &[BoneData]) -> Self {
+        let mut padded = [BoneData::default(); 16];
+        let count = bones.len().min(padded.len());
+        padded[..count].copy_from_slice(&bones[..count]);
+        Self {
+            locals,
+            bones: padded,
+        }
+    }
+}
+
+const _: () = assert!(core::mem::size_of::<FigureBatchInstance>() == 2_192);
+
 impl Locals {
     pub fn new(
         model_mat: anim::vek::Mat4<f32>,
@@ -102,38 +124,54 @@ pub type BoneMeshes = (Mesh<Vertex>, anim::vek::Aabb<f32>);
 
 pub struct FigureLayout {
     pub locals: wgpu::BindGroupLayout,
+    pub batch_instances: wgpu::BindGroupLayout,
 }
 
 impl FigureLayout {
     pub fn new(device: &wgpu::Device) -> Self {
+        let locals = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: None,
+            entries: &[
+                // locals
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // bone data
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+            ],
+        });
+        let batch_instances = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("bastion figure batch instances layout"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
         Self {
-            locals: device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: None,
-                entries: &[
-                    // locals
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    // bone data
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
-            }),
+            locals,
+            batch_instances,
         }
     }
 
@@ -264,6 +302,98 @@ impl FigurePipeline {
         Self {
             pipeline: render_pipeline,
         }
+    }
+}
+
+pub struct FigureBatchPipeline {
+    pub pipeline: wgpu::RenderPipeline,
+}
+
+impl FigureBatchPipeline {
+    pub fn new(
+        device: &wgpu::Device,
+        vs_module: &wgpu::ShaderModule,
+        fs_module: &wgpu::ShaderModule,
+        global_layout: &GlobalsLayouts,
+        layout: &FigureLayout,
+        format: wgpu::TextureFormat,
+        pipeline_modes: &PipelineModes,
+    ) -> Self {
+        let render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Bastion figure batch pipeline layout"),
+                push_constant_ranges: &[],
+                bind_group_layouts: &[
+                    &global_layout.globals,
+                    &global_layout.shadow_textures,
+                    global_layout.figure_sprite_atlas_layout.layout(),
+                    &layout.batch_instances,
+                ],
+            });
+        let samples = pipeline_modes.aa.samples();
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Bastion figure batch pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: vs_module,
+                entry_point: Some("main"),
+                buffers: &[Vertex::desc()],
+                compilation_options: Default::default(),
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                unclipped_depth: false,
+                polygon_mode: if pipeline_modes
+                    .experimental_shaders
+                    .contains(&ExperimentalShader::Wireframe)
+                {
+                    wgpu::PolygonMode::Line
+                } else {
+                    wgpu::PolygonMode::Fill
+                },
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: wgpu::TextureFormat::Depth32Float,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::GreaterEqual,
+                stencil: wgpu::StencilState {
+                    front: wgpu::StencilFaceState::IGNORE,
+                    back: wgpu::StencilFaceState::IGNORE,
+                    read_mask: !0,
+                    write_mask: 0,
+                },
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: samples,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: fs_module,
+                entry_point: Some("main"),
+                targets: &[
+                    Some(wgpu::ColorTargetState {
+                        format,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }),
+                    Some(wgpu::ColorTargetState {
+                        format: wgpu::TextureFormat::Rgba8Uint,
+                        blend: None,
+                        write_mask: wgpu::ColorWrites::ALL,
+                    }),
+                ],
+                compilation_options: Default::default(),
+            }),
+            multiview: None,
+            cache: None,
+        });
+        Self { pipeline }
     }
 }
 

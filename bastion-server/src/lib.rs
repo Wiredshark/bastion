@@ -30,6 +30,7 @@ pub mod bastion_mood;
 pub mod bastion_recipes;
 pub mod bastion_path;
 pub mod bastion_piles;
+pub mod bastion_renderer_bench;
 pub mod bastion_traversal;
 pub mod bastion_tick_cost;
 pub mod bastion_traversal_tooling;

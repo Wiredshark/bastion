@@ -18,6 +18,7 @@ use std::{
 };
 use tokio::runtime::Runtime;
 use tracing::{error, info, trace, warn};
+use vek::Vec3;
 
 mod singleplayer_world;
 pub use singleplayer_world::{SingleplayerWorld, SingleplayerWorlds};
@@ -290,6 +291,170 @@ impl SingleplayerState {
         });
     }
 
+    /// Certification-only flat arena boot: a fresh fixed-seed world with one
+    /// deterministic colony fixture. The CLI flag is explicit, the data root
+    /// is process-unique, and normal singleplayer persistence is untouched.
+    pub fn run_bastion_flat_arena(&mut self, runtime: &Arc<Runtime>) {
+        if matches!(self, Self::Running(_)) {
+            error!("run_bastion_flat_arena called, but singleplayer is already running");
+            return;
+        }
+        server::bastion_enable_renderer_certification_determinism();
+        let server_data_dir =
+            std::env::temp_dir().join(format!("bastion-flat-arena-{}", std::process::id()));
+        if let Err(e) = std::fs::create_dir_all(&server_data_dir) {
+            error!(?e, "could not create flat arena data dir");
+            return;
+        }
+
+        let mut settings = server::Settings::singleplayer(&server_data_dir);
+        settings.map_file = None;
+        settings.world_seed = 1337;
+        let editable_settings = server::EditableSettings::singleplayer(&server_data_dir);
+        let database_settings = DatabaseSettings {
+            db_dir: server_data_dir.join("saves"),
+            sql_log_mode: SqlLogMode::Disabled,
+        };
+
+        let (stop_server_s, stop_server_r) = unbounded();
+        let (server_stage_tx, server_stage_rx) = unbounded();
+        let paused = Arc::new(AtomicBool::new(false));
+        let paused1 = Arc::clone(&paused);
+        let (result_sender, result_receiver) = bounded(1);
+
+        let builder = thread::Builder::new().name("singleplayer-server-thread".into());
+        let runtime = Arc::clone(runtime);
+        let thread = builder
+            .spawn(move || {
+                trace!("starting bastion flat-arena server thread");
+                let (server, init_result) = match Server::new(
+                    settings,
+                    editable_settings,
+                    database_settings,
+                    &server_data_dir,
+                    &|init_stage| {
+                        let _ = server_stage_tx.send(init_stage);
+                    },
+                    runtime,
+                ) {
+                    Ok(mut server) => {
+                        let center = server.bastion_world_center_wpos();
+                        let fixture_position = server::bastion_flat_arena::spawn_wpos(center);
+                        let r1d_scale_smoke = std::env::var_os("BASTION_R1D_SCALE_SMOKE").is_some();
+                        // Normal certification remains bounded to 64. The
+                        // explicit R1D closure lane may request the already
+                        // accepted 512-visible policy ceiling.
+                        let maximum_figure_count = if r1d_scale_smoke { 512 } else { 64 };
+                        let figure_count = std::env::var("BASTION_R1BC_FIGURE_COUNT")
+                            .ok()
+                            .and_then(|value| value.parse::<u16>().ok())
+                            .filter(|count| (1..=maximum_figure_count).contains(count))
+                            .unwrap_or(1);
+                        let r1d_tier_smoke = std::env::var_os("BASTION_R1D_TIER_SMOKE").is_some();
+                        let r1d_group_smoke = std::env::var_os("BASTION_R1D_GROUP_SMOKE").is_some();
+                        let fixture = if figure_count == 1 {
+                            server.bastion_spawn_colony(fixture_position, 1)
+                        } else {
+                            // The population certification lane must exercise
+                            // genuinely compatible figures. Repeating the
+                            // existing one-colonist fixture at a stable grid
+                            // preserves the same deterministic body/equipment
+                            // source while giving every figure a distinct
+                            // world position and server identity.
+                            let width = if r1d_scale_smoke { 32_u16 } else { 8_u16 };
+                            (0..figure_count)
+                                .flat_map(|ordinal| {
+                                    let (x, y) = if r1d_scale_smoke {
+                                        // Sixteen explicit rows of 32 people.
+                                        // Presentation declarations, not these
+                                        // positions, own group membership.
+                                        let row = ordinal / width;
+                                        let column = ordinal % width;
+                                        let depth = f32::from(row) * 6.0;
+                                        let lateral = (f32::from(column) - 15.5) * 2.0;
+                                        (depth + lateral, depth - lateral)
+                                    } else if r1d_group_smoke {
+                                        // Two declared fixture-owned groups:
+                                        // a near wedge and a middle-distance
+                                        // four-column grid. Membership comes
+                                        // from the explicit presentation
+                                        // declaration, never these positions.
+                                        if ordinal < 12 {
+                                            let local = i32::from(ordinal);
+                                            let row = (local + 1) / 2;
+                                            let side = if local == 0 {
+                                                0.0
+                                            } else if local % 2 == 1 {
+                                                -1.0
+                                            } else {
+                                                1.0
+                                            };
+                                            let depth = row as f32 * 1.8;
+                                            let lateral = side * row as f32 * 1.8;
+                                            (depth + lateral, depth - lateral)
+                                        } else {
+                                            let local = i32::from(ordinal - 12);
+                                            let row = local / 4;
+                                            let column = local % 4;
+                                            let depth = 26.0 + row as f32 * 2.5;
+                                            let lateral = (column as f32 - 1.5) * 2.2;
+                                            (depth + lateral, depth - lateral)
+                                        }
+                                    } else if r1d_tier_smoke {
+                                        // Four depth bands follow the declared
+                                        // capture camera's +X/+Y view axis.
+                                        // Lateral offsets keep bodies visibly
+                                        // distinct without changing semantic
+                                        // tier selection by enumeration order.
+                                        let band = usize::from(ordinal / 6).min(3);
+                                        let depth = [0.0_f32, 9.0, 22.0, 40.0][band];
+                                        let lateral = (f32::from(ordinal % 6) - 2.5) * 1.6;
+                                        (depth + lateral, depth - lateral)
+                                    } else {
+                                        (
+                                            f32::from(ordinal % width) * 2.5,
+                                            f32::from(ordinal / width) * 2.5,
+                                        )
+                                    };
+                                    server.bastion_spawn_colony(
+                                        fixture_position + Vec3::new(x, y, 0.0),
+                                        1,
+                                    )
+                                })
+                                .collect()
+                        };
+                        info!(
+                            ?fixture,
+                            figure_count,
+                            r1d_tier_smoke,
+                            r1d_group_smoke,
+                            r1d_scale_smoke,
+                            world_seed = 1337,
+                            ?fixture_position,
+                            "bastion: capture flat-arena fixture declared"
+                        );
+                        (Some(server), Ok(()))
+                    },
+                    Err(err) => (None, Err(err)),
+                };
+                match (result_sender.send(init_result), server) {
+                    (Err(e), _) => warn!(?e, "Failed to send flat arena server init result"),
+                    (Ok(()), None) => (),
+                    (Ok(()), Some(server)) => run_server(server, stop_server_r, paused1),
+                }
+                trace!("ending bastion flat-arena server thread");
+            })
+            .unwrap();
+
+        *self = SingleplayerState::Running(Singleplayer {
+            _server_thread: thread,
+            stop_server_s,
+            init_stage_receiver: server_stage_rx,
+            receiver: result_receiver,
+            paused,
+        });
+    }
+
     pub fn as_running(&self) -> Option<&Singleplayer> {
         match_some!(self, SingleplayerState::Running(s) => s)
     }
@@ -306,6 +471,68 @@ fn run_server(mut server: Server, stop_server_r: Receiver<()>, paused: Arc<Atomi
 
     // Set up an fps clock
     let mut clock = Clock::new(Duration::from_secs_f64(1.0 / TPS as f64));
+    let continuous_streaming_measurement =
+        match crate::render::bastion_r0d::continuous_streaming_measurement_selected_v1() {
+            Ok(selected) => selected,
+            Err(fault) => {
+                // Row-81 exclusion (3) FIXED: an invalid declaration used
+                // to `return` here — killing the EMBEDDED SERVER (and the
+                // whole session with it) over a diagnostic env typo. The
+                // fault is recorded (any certification leg that expected
+                // the measurement sees it and refuses on its own), the
+                // error is loud, and the game keeps running unmeasured.
+                crate::render::bastion_r0d::record_certification_fixture_fault_v1(fault);
+                error!(
+                    fault,
+                    "bastion: invalid streaming-measurement declaration — measurement DISABLED, \
+                     server continues (fault recorded for the certification path)"
+                );
+                false
+            },
+        };
+    let certification_freeze_tick =
+        crate::render::bastion_r0d::certification_freeze_tick_for_runtime_v1(
+            std::env::var_os("BASTION_FLAT_ARENA").is_some(),
+            crate::render::bastion_r0d::absolute_time_capture_selected(),
+            continuous_streaming_measurement,
+        );
+    if certification_freeze_tick.is_some() || continuous_streaming_measurement {
+        crate::render::bastion_r0d::reset_certification_server_latch_v1();
+    }
+    // W5 ops mode (BASTION_R0D_FREEZE_AFTER_LOGIN=1): the freeze counts
+    // down from the moment a client is PRESENT instead of from boot. The
+    // fixed-tick default lost a race against login on a loaded host — the
+    // server froze mid-login and the client timed out (measured three
+    // times tonight). Default unchanged: exact-tick freeze semantics.
+    let freeze_after_login = std::env::var_os("BASTION_R0D_FREEZE_AFTER_LOGIN").is_some();
+    let mut deferred_freeze_target: Option<u64> = if freeze_after_login {
+        None // resolves when the first client arrives
+    } else {
+        certification_freeze_tick
+    };
+    let mut certification_weather_fixture =
+        match crate::r1f_weather::certification_fixture_declaration() {
+            crate::r1f_weather::CertificationFixtureDeclarationV1::Disabled => None,
+            crate::r1f_weather::CertificationFixtureDeclarationV1::Requested(kind) => {
+                Some((kind, None, false))
+            },
+            crate::r1f_weather::CertificationFixtureDeclarationV1::Invalid => {
+                // Same repair as the streaming-measurement arm above: fail
+                // LOUD, never fatal — a diagnostic env typo must not kill
+                // the embedded server. The fault is recorded; any
+                // certification leg that expected the fixture refuses on
+                // its own evidence.
+                let fault = "R1F_WEATHER_FIXTURE_INVALID_DECLARATION";
+                crate::render::bastion_r0d::record_certification_fixture_fault_v1(fault);
+                error!(
+                    fault,
+                    "bastion: invalid flat-arena weather fixture declaration — fixture \
+                     DISABLED, server continues (fault recorded)"
+                );
+                None
+            },
+        };
+    let mut completed_ticks = 0_u64;
 
     loop {
         // Check any event such as stopping and pausing
@@ -352,5 +579,137 @@ fn run_server(mut server: Server, stop_server_r: Receiver<()>, paused: Arc<Atomi
 
         // Clean up the server after a tick.
         server.cleanup();
+        if let Some((kind, requested_zone_generation, acknowledged)) =
+            &mut certification_weather_fixture
+            && !*acknowledged
+        {
+            use server::bastion_weather_fixture::{
+                BastionWeatherFixtureKindV1, BastionWeatherFixtureStepV1,
+            };
+            let server_kind = match *kind {
+                crate::r1f_weather::CertificationFixtureKindV1::Clear => {
+                    BastionWeatherFixtureKindV1::Clear
+                },
+                crate::r1f_weather::CertificationFixtureKindV1::Rain => {
+                    BastionWeatherFixtureKindV1::Rain
+                },
+                crate::r1f_weather::CertificationFixtureKindV1::Storm => {
+                    BastionWeatherFixtureKindV1::Storm
+                },
+            };
+            match server.bastion_weather_fixture_step_v1(server_kind, *requested_zone_generation) {
+                BastionWeatherFixtureStepV1::WaitingForWeatherJob => {},
+                BastionWeatherFixtureStepV1::Queued { zone_generation } => {
+                    *requested_zone_generation = Some(zone_generation);
+                    info!(
+                        ?kind,
+                        zone_generation, "bastion: authoritative flat-arena weather fixture queued"
+                    );
+                },
+                BastionWeatherFixtureStepV1::QueueGenerationOverflow => {
+                    let fault = "R1F_WEATHER_FIXTURE_QUEUE_GENERATION_OVERFLOW";
+                    crate::render::bastion_r0d::record_certification_fixture_fault_v1(fault);
+                    error!(fault, "bastion: weather fixture queue generation overflow");
+                    break;
+                },
+                BastionWeatherFixtureStepV1::WaitingForAuthoritativeSnapshot {
+                    requested_zone_generation,
+                    completed_zone_generation,
+                    observed_kind,
+                    observed_rain,
+                } => {
+                    trace!(
+                        ?kind,
+                        requested_zone_generation,
+                        completed_zone_generation,
+                        ?observed_kind,
+                        observed_rain,
+                        "bastion: awaiting authoritative flat-arena weather snapshot"
+                    );
+                },
+                BastionWeatherFixtureStepV1::Acknowledged {
+                    observed_kind,
+                    observed_rain,
+                } => {
+                    *acknowledged = true;
+                    info!(
+                        ?kind,
+                        ?observed_kind,
+                        observed_rain,
+                        "bastion: authoritative flat-arena weather fixture acknowledged"
+                    );
+                },
+            }
+        }
+        let Some(next_completed_tick) = completed_ticks.checked_add(1) else {
+            error!("bastion: renderer certification server tick overflow");
+            break;
+        };
+        completed_ticks = next_completed_tick;
+        if freeze_after_login
+            && certification_freeze_tick.is_some()
+            && deferred_freeze_target.is_none()
+            && {
+                // IN-WORLD presence ON A CLIENT: number_of_players()
+                // armed at connection (client still on the character
+                // screen), and bare Presence armed at server tick 1 —
+                // the COLONY presence (decision 106's chunk anchor)
+                // carries Presence with no client attached. Both froze
+                // the server before login (measured). Only a network
+                // client that has entered the world counts.
+                use specs::{Join, WorldExt};
+                let ecs = server.state().ecs();
+                (
+                    &ecs.read_storage::<common::comp::Presence>(),
+                    &ecs.read_storage::<server::client::Client>(),
+                )
+                    .join()
+                    .next()
+                    .is_some()
+            }
+        {
+            deferred_freeze_target =
+                certification_freeze_tick.map(|f| completed_ticks.saturating_add(f));
+            info!(
+                ?deferred_freeze_target,
+                completed_ticks, "bastion: deferred certification freeze armed (client present)"
+            );
+        }
+        if deferred_freeze_target == Some(completed_ticks) {
+            if certification_weather_fixture
+                .as_ref()
+                .is_some_and(|(_, _, acknowledged)| !acknowledged)
+            {
+                let fault = "R1F_WEATHER_FIXTURE_ACK_MISSING_BEFORE_FREEZE";
+                crate::render::bastion_r0d::record_certification_fixture_fault_v1(fault);
+                error!(
+                    fault,
+                    completed_ticks,
+                    "bastion: weather fixture was not authoritative before certification freeze"
+                );
+                break;
+            }
+            paused.store(true, Ordering::SeqCst);
+            info!(
+                completed_ticks,
+                "bastion: renderer certification simulation frozen"
+            );
+        }
+        if (certification_freeze_tick.is_some() || continuous_streaming_measurement)
+            && let Err(error) =
+                crate::render::bastion_r0d::record_certification_server_tick_for_runtime_v1(
+                    completed_ticks,
+                    // The RUNTIME's actual target — under login-deferred
+                    // freeze this is later than the fixed constant, and
+                    // None until the client arrives (not frozen yet).
+                    deferred_freeze_target,
+                )
+        {
+            error!(
+                ?error,
+                completed_ticks, "bastion: renderer certification server latch rejected tick"
+            );
+            break;
+        }
     }
 }

@@ -113,4 +113,16 @@ impl Shaders {
     pub fn get(&self, shader: &str) -> Option<impl core::ops::Deref<Target = Glsl> + use<>> {
         self.shaders.get(shader).map(|a| a.read())
     }
+
+    /// Stable source inventory for the renderer pipeline identity. The asset
+    /// map's iteration order is deliberately excluded.
+    pub fn bastion_sorted_sources(&self) -> Vec<(String, String)> {
+        let mut sources = self
+            .shaders
+            .iter()
+            .map(|(name, source)| (name.clone(), source.read().0.clone()))
+            .collect::<Vec<_>>();
+        sources.sort_by(|left, right| left.0.cmp(&right.0));
+        sources
+    }
 }

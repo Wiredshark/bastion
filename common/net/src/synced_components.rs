@@ -59,6 +59,9 @@ macro_rules! synced_components {
             // box-select, inspector).
             colonist: Colonist,
             kinematic_travel: KinematicTravel,
+            // renderer-bench (R0D W1): stable semantic entity id, synced so
+            // client-side captures key by fixture identity.
+            renderer_bench_entity_id: RendererBenchEntityId,
             // TODO: change this to `SyncFrom::ClientEntity` and sync the bare minimum
             // from other entities (e.g. just keys needed to show appearance
             // based on their loadout). Also, it looks like this actually has
@@ -88,6 +91,9 @@ macro_rules! reexport_comps {
         mod inner {
             pub use common::comp::*;
             pub use body::parts::Heads;
+            // renderer-bench (R0D W1): lives in comp::bastion, not comp root
+            // (comp/mod.rs is hash-bound read-only per R0D-CONTRA-003).
+            pub use common::comp::bastion::RendererBenchEntityId;
             pub use common::{interaction::Interactors, mounting::VolumeRiders};
             use common::link::Is;
             use common::{
@@ -155,6 +161,12 @@ impl NetSync for Colonist {
 // marked bodies client-side too — they render purely from clamped
 // network interpolation, one authority end to end.
 impl NetSync for KinematicTravel {
+    const SYNC_FROM: SyncFrom = SyncFrom::AnyEntity;
+}
+
+// renderer-bench (R0D W1): stable semantic entity id, synced so
+// client-side captures key by fixture identity.
+impl NetSync for common::comp::bastion::RendererBenchEntityId {
     const SYNC_FROM: SyncFrom = SyncFrom::AnyEntity;
 }
 

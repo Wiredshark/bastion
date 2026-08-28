@@ -651,6 +651,15 @@ impl Camera {
     /// Set the distance of the camera from the focus (i.e., zoom).
     pub fn set_distance(&mut self, dist: f32) { self.tgt_dist = dist; }
 
+    /// Set the camera distance without frame-time interpolation.
+    ///
+    /// This is used by declared deterministic capture scripts whose semantic
+    /// sample must not depend on host frame cadence.
+    pub fn set_distance_instant(&mut self, dist: f32) {
+        self.tgt_dist = dist;
+        self.dist = dist;
+    }
+
     pub fn update(&mut self, time: f64, dt: f32, smoothing_enabled: bool) {
         // This is horribly frame time dependent, but so is most of the game
         let delta = self.last_time.replace(time).map_or(0.0, |t| time - t);
@@ -787,9 +796,36 @@ impl Camera {
     /// Set the field of view of the camera in radians.
     pub fn set_fov(&mut self, fov: f32) { self.tgt_fov = fov; }
 
+    /// Set current and target base FOV together without interpolation.
+    ///
+    /// Exact diagnostic camera fixtures use this after ordinary camera
+    /// maintenance so host frame cadence cannot leave a different terminal
+    /// interpolation residual in otherwise identical runs.
+    pub fn set_fov_instant(&mut self, fov: f32) {
+        self.tgt_fov = fov;
+        self.fov = fov;
+    }
+
+    /// Return current and target base FOV for exact camera-authority evidence.
+    #[must_use]
+    pub fn fov_state_v1(&self) -> (f32, f32) { (self.fov, self.tgt_fov) }
+
     /// Set the 'fixation' proportion, allowing the camera to focus in with
     /// precise aiming. Fixation is applied on top of the regular FoV.
     pub fn set_fixate(&mut self, fixate: f32) { self.tgt_fixate = fixate; }
+
+    /// Set current and target fixation together without interpolation.
+    ///
+    /// This is used by exact diagnostic camera fixtures that must take
+    /// post-maintenance ownership of the effective field of view.
+    pub fn set_fixate_instant(&mut self, fixate: f32) {
+        self.tgt_fixate = fixate;
+        self.fixate = fixate;
+    }
+
+    /// Return current and target fixation for exact camera-authority evidence.
+    #[must_use]
+    pub fn fixation_state_v1(&self) -> (f32, f32) { (self.fixate, self.tgt_fixate) }
 
     /// Set the FOV in degrees
     pub fn set_fov_deg(&mut self, fov: u16) {
@@ -892,4 +928,31 @@ fn lerp_angle(a: f32, b: f32, rate: f32) -> f32 {
         .min_by_key(|offs: &&f32| ((a - (b + *offs)).abs() * 1000.0) as i32)
         .unwrap();
     Lerp::lerp(a, b + *offs, rate)
+}
+
+#[cfg(test)]
+mod post_r2_visible_horizon_tests {
+    use super::{Camera, CameraMode};
+
+    #[test]
+    fn immediate_fixation_updates_current_and_target_coherently() {
+        let mut camera = Camera::new(16.0 / 9.0, CameraMode::Overseer);
+        camera.set_fixate(0.4);
+        assert_eq!(camera.fixation_state_v1(), (1.0, 0.4));
+
+        camera.set_fixate_instant(1.0);
+        assert_eq!(camera.fixation_state_v1(), (1.0, 1.0));
+        assert_eq!(camera.get_effective_fov(), 1.1);
+    }
+
+    #[test]
+    fn immediate_base_fov_updates_current_and_target_coherently() {
+        let mut camera = Camera::new(16.0 / 9.0, CameraMode::Overseer);
+        camera.set_fov(0.8);
+        assert_eq!(camera.fov_state_v1(), (1.1, 0.8));
+
+        camera.set_fov_instant(1.25);
+        assert_eq!(camera.fov_state_v1(), (1.25, 1.25));
+        assert_eq!(camera.get_effective_fov(), 1.25);
+    }
 }

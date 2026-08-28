@@ -59,6 +59,20 @@ struct Visibility {
     in_frustum: bool,
 }
 
+/// Diagnostic census of the high-detail terrain chunks admitted by the
+/// production terrain frustum. This deliberately does not pretend that the
+/// separate global LOD-terrain draw is a collection of high-detail chunks.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct VisibleTerrainHorizonV1 {
+    pub total: u64,
+    pub near_0_8: u64,
+    pub reference_9_16: u64,
+    pub far_17_24: u64,
+    pub beyond_24: u64,
+    pub max_radius_chunks: u64,
+    pub max_distance_blocks: u64,
+}
+
 impl Visibility {
     /// Should the chunk actually get rendered?
     fn is_visible(&self) -> bool {
@@ -430,6 +444,7 @@ pub struct Terrain<V: RectRasterableVol = TerrainChunk> {
     mesh_todo: HashMap<Vec2<i32>, ChunkMeshState>,
     mesh_todos_active: Arc<AtomicU64>,
     mesh_recv_overflow: f32,
+    mesh_queue_pruned_total: u64,
 
     // GPU data
     // Maps sprite kind + variant to data detailing how to render it
@@ -446,6 +461,44 @@ pub struct Terrain<V: RectRasterableVol = TerrainChunk> {
 
 impl TerrainChunkData {
     pub fn can_shadow_sun(&self) -> bool { self.visible.is_visible() || self.can_shadow_sun }
+}
+
+fn canonical_mesh_queue_prune_order(
+    entries: impl IntoIterator<Item = (Vec2<i32>, bool)>,
+    focus_blocks: Vec2<i64>,
+    max_total: usize,
+) -> Vec<Vec2<i32>> {
+    let mut active_count = 0usize;
+    let mut inactive = Vec::new();
+    for (position, active) in entries {
+        if active {
+            active_count = active_count.saturating_add(1);
+        } else {
+            inactive.push(position);
+        }
+    }
+    if active_count.saturating_add(inactive.len()) <= max_total {
+        return Vec::new();
+    }
+    inactive.sort_unstable_by_key(|position| {
+        let block_position = position.as_::<i64>() * TerrainChunk::RECT_SIZE.as_::<i64>();
+        (
+            block_position.distance_squared(focus_blocks),
+            position.x,
+            position.y,
+        )
+    });
+    let keep_inactive = max_total.saturating_sub(active_count).min(inactive.len());
+    let mut prune = inactive.split_off(keep_inactive);
+    prune.sort_unstable_by_key(|position| {
+        let block_position = position.as_::<i64>() * TerrainChunk::RECT_SIZE.as_::<i64>();
+        (
+            core::cmp::Reverse(block_position.distance_squared(focus_blocks)),
+            position.x,
+            position.y,
+        )
+    });
+    prune
 }
 
 pub(crate) struct SpriteRenderState {
@@ -665,6 +718,7 @@ impl<V: RectRasterableVol> Terrain<V> {
             mesh_todo: HashMap::default(),
             mesh_todos_active: Arc::new(AtomicU64::new(0)),
             mesh_recv_overflow: 0.0,
+            mesh_queue_pruned_total: 0,
             sprite_render_state: sprite_render_context.state,
             sprite_globals: renderer.bind_sprite_globals(
                 global_model,
@@ -835,6 +889,7 @@ impl<V: RectRasterableVol> Terrain<V> {
         focus_pos: Vec3<f32>,
         loaded_distance: f32,
         camera: &Camera,
+        weather_presentation: Option<&bastion_renderer_r0d::weather::WeatherPresentationV1>,
     ) -> (
         Aabb<f32>,
         Vec<math::Vec3<f32>>,
@@ -1023,6 +1078,34 @@ impl<V: RectRasterableVol> Terrain<V> {
         }
         drop(guard);
 
+        if let Some(plan) = scene_data.terrain_distance_plan_v1 {
+            match plan.validate(plan.generation) {
+                Ok(()) => {
+                    let limit = usize::try_from(plan.max_mesh_queue).unwrap_or(usize::MAX);
+                    let focus = focus_pos.map(|value| value.trunc()).xy().as_::<i64>();
+                    let prune = canonical_mesh_queue_prune_order(
+                        self.mesh_todo
+                            .values()
+                            .map(|todo| (todo.pos, todo.is_worker_active)),
+                        focus,
+                        limit,
+                    );
+                    for position in &prune {
+                        self.mesh_todo.remove(position);
+                    }
+                    self.mesh_queue_pruned_total = self
+                        .mesh_queue_pruned_total
+                        .saturating_add(u64::try_from(prune.len()).unwrap_or(u64::MAX));
+                },
+                Err(error) => {
+                    warn!(
+                        ?error,
+                        "invalid POST-R2 terrain-distance plan; preserving existing mesh queue"
+                    );
+                },
+            }
+        }
+
         // Limit ourselves to u16::MAX even if larger textures are supported.
         let max_texture_size = renderer.max_texture_size();
         let meshing_cores = match num_cpus::get() as u64 {
@@ -1039,7 +1122,15 @@ impl<V: RectRasterableVol> Terrain<V> {
             .mesh_todo
             .values_mut()
             .filter(|todo| !todo.is_worker_active)
-            .min_by_key(|todo| ((todo.pos.as_::<i64>() * TerrainChunk::RECT_SIZE.as_::<i64>()).distance_squared(mesh_focus_pos), todo.started_tick))
+            .min_by_key(|todo| {
+                (
+                    (todo.pos.as_::<i64>() * TerrainChunk::RECT_SIZE.as_::<i64>())
+                        .distance_squared(mesh_focus_pos),
+                    todo.started_tick,
+                    todo.pos.x,
+                    todo.pos.y,
+                )
+            })
             // Find a reference to the actual `TerrainChunk` we're meshing
             .and_then(|todo| {
                 let pos = todo.pos;
@@ -1439,7 +1530,11 @@ impl<V: RectRasterableVol> Terrain<V> {
         let max_weather = scene_data
             .state
             .max_weather_near(focus_off.xy() + cam_pos.xy());
-        let (visible_occlusion_volume, visible_por_bounds) = if max_weather.rain > RAIN_THRESHOLD {
+        let is_raining = weather_presentation.map_or(
+            max_weather.rain > RAIN_THRESHOLD,
+            bastion_renderer_r0d::weather::WeatherPresentationV1::is_raining,
+        );
+        let (visible_occlusion_volume, visible_por_bounds) = if is_raining {
             let visible_bounding_box = math::Aabb::<f32> {
                 min: (visible_bounding_box.min - focus_off),
                 max: (visible_bounding_box.max - focus_off),
@@ -1448,8 +1543,19 @@ impl<V: RectRasterableVol> Terrain<V> {
                 min: visible_bounding_box.min.as_::<f64>(),
                 max: visible_bounding_box.max.as_::<f64>(),
             };
-            let weather = scene_data.client.weather_at_player();
-            let ray_direction = weather.rain_vel().normalized();
+            let ray_direction = weather_presentation.map_or_else(
+                || {
+                    scene_data
+                        .client
+                        .weather_at_player()
+                        .rain_vel()
+                        .normalized()
+                },
+                |weather| {
+                    let [x, y] = weather.wind_mm_s();
+                    Vec3::new(x as f32 / 1_000.0, y as f32 / 1_000.0, -30.0).normalized()
+                },
+            );
 
             // NOTE: We use proj_mat_treeculler here because
             // calc_focused_light_volume_points makes the assumption that the
@@ -1485,6 +1591,12 @@ impl<V: RectRasterableVol> Terrain<V> {
         )
     }
 
+    #[must_use]
+    pub fn mesh_queue_count(&self) -> usize { self.mesh_todo.len() }
+
+    #[must_use]
+    pub fn mesh_queue_pruned_total(&self) -> u64 { self.mesh_queue_pruned_total }
+
     pub fn get(&self, chunk_key: Vec2<i32>) -> Option<&TerrainChunkData> {
         self.chunks.get(&chunk_key)
     }
@@ -1496,6 +1608,21 @@ impl<V: RectRasterableVol> Terrain<V> {
             .iter()
             .filter(|(_, c)| c.visible.is_visible())
             .count()
+    }
+
+    #[must_use]
+    pub fn visible_horizon_census_v1(&self, focus_pos: Vec3<f32>) -> VisibleTerrainHorizonV1 {
+        let focus_chunk = Vec2::from(focus_pos)
+            .map2(TerrainChunk::RECT_SIZE, |position: f32, size: u32| {
+                (position as i32).div_euclid(size as i32)
+            });
+        visible_horizon_census_from_keys_v1(
+            self.chunks
+                .iter()
+                .filter_map(|(key, chunk)| chunk.visible.is_visible().then_some(*key)),
+            focus_chunk,
+            u64::from(TerrainChunk::RECT_SIZE.x),
+        )
     }
 
     pub fn shadow_chunk_count(&self) -> usize { self.shadow_chunks.len() }
@@ -1761,6 +1888,29 @@ impl<V: RectRasterableVol> Terrain<V> {
         drop(guard);
     }
 }
+
+fn visible_horizon_census_from_keys_v1(
+    keys: impl IntoIterator<Item = Vec2<i32>>,
+    focus_chunk: Vec2<i32>,
+    chunk_width_blocks: u64,
+) -> VisibleTerrainHorizonV1 {
+    let mut census = VisibleTerrainHorizonV1::default();
+    for key in keys {
+        let dx = i64::from(key.x).saturating_sub(i64::from(focus_chunk.x));
+        let dy = i64::from(key.y).saturating_sub(i64::from(focus_chunk.y));
+        let radius = dx.unsigned_abs().max(dy.unsigned_abs());
+        census.total = census.total.saturating_add(1);
+        match radius {
+            0..=8 => census.near_0_8 = census.near_0_8.saturating_add(1),
+            9..=16 => census.reference_9_16 = census.reference_9_16.saturating_add(1),
+            17..=24 => census.far_17_24 = census.far_17_24.saturating_add(1),
+            _ => census.beyond_24 = census.beyond_24.saturating_add(1),
+        }
+        census.max_radius_chunks = census.max_radius_chunks.max(radius);
+    }
+    census.max_distance_blocks = census.max_radius_chunks.saturating_mul(chunk_width_blocks);
+    census
+}
 /// Find the glow level (light from lamps) at the given world position.
 fn glow_at_wpos_inner<'a>(
     chunk_glow_map: impl Fn(Vec2<i32>) -> Option<&'a LightMapFn>,
@@ -1831,4 +1981,80 @@ fn glow_normal_at_wpos_inner<'a>(
         bias * weight,
         glow_at_wpos_inner(chunk_glow_map, wpos.map(|e| e.floor() as i32)),
     )
+}
+
+#[cfg(test)]
+mod post_r2_distance_tests {
+    use super::*;
+
+    #[test]
+    fn mesh_queue_pruning_is_bounded_and_input_order_independent() {
+        let entries = vec![
+            (Vec2::new(0, 0), true),
+            (Vec2::new(1, 0), false),
+            (Vec2::new(2, 0), false),
+            (Vec2::new(3, 0), false),
+            (Vec2::new(-3, 0), false),
+        ];
+        let mut reversed = entries.clone();
+        reversed.reverse();
+        let expected = vec![Vec2::new(-3, 0), Vec2::new(3, 0), Vec2::new(2, 0)];
+        assert_eq!(
+            canonical_mesh_queue_prune_order(entries, Vec2::zero(), 2),
+            expected
+        );
+        assert_eq!(
+            canonical_mesh_queue_prune_order(reversed, Vec2::zero(), 2),
+            expected
+        );
+    }
+
+    #[test]
+    fn active_mesh_work_is_never_pruned_early() {
+        let entries = vec![
+            (Vec2::new(0, 0), true),
+            (Vec2::new(1, 0), true),
+            (Vec2::new(2, 0), false),
+        ];
+        assert_eq!(
+            canonical_mesh_queue_prune_order(entries, Vec2::zero(), 1),
+            vec![Vec2::new(2, 0)]
+        );
+    }
+
+    #[test]
+    fn visible_horizon_ring_census_is_bounded_and_permutation_independent() {
+        let keys = vec![
+            Vec2::new(0, 0),
+            Vec2::new(8, -8),
+            Vec2::new(9, 0),
+            Vec2::new(-16, 2),
+            Vec2::new(17, 0),
+            Vec2::new(24, 24),
+            Vec2::new(25, 0),
+        ];
+        let mut reversed = keys.clone();
+        reversed.reverse();
+        let expected = VisibleTerrainHorizonV1 {
+            total: 7,
+            near_0_8: 2,
+            reference_9_16: 2,
+            far_17_24: 2,
+            beyond_24: 1,
+            max_radius_chunks: 25,
+            max_distance_blocks: 800,
+        };
+        assert_eq!(
+            visible_horizon_census_from_keys_v1(keys, Vec2::zero(), 32),
+            expected
+        );
+        assert_eq!(
+            visible_horizon_census_from_keys_v1(reversed, Vec2::zero(), 32),
+            expected
+        );
+        assert_eq!(
+            expected.near_0_8 + expected.reference_9_16 + expected.far_17_24 + expected.beyond_24,
+            expected.total
+        );
+    }
 }

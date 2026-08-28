@@ -68,7 +68,7 @@ use common::{
     slowjob::SlowJobPool,
     states::{equipping, idle, interact, utils::StageSection, wielding},
     terrain::{SpriteKind, TerrainChunk, TerrainGrid},
-    uid::IdMaps,
+    uid::{IdMaps, Uid},
     util::{Dir, div::checked_div},
     vol::{ReadVol, RectRasterableVol},
 };
@@ -86,7 +86,10 @@ use specs::{
     Entities, Entity as EcsEntity, Join, LazyUpdate, LendJoin, ReadExpect, ReadStorage, SystemData,
     WorldExt, shred,
 };
-use std::sync::Arc;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 use treeculler::{BVol, BoundingSphere};
 use vek::*;
 
@@ -105,6 +108,226 @@ pub type FigureModelRef<'a> = (
     SubModel<'a, TerrainVertex>,
     &'a AtlasTextures<pipelines::figure::Locals, FigureSpriteAtlasData>,
 );
+
+struct MainBatchCandidate<'a> {
+    semantic_entity: [u8; 32],
+    key: bastion_renderer_r0d::figure_batch::FigureBatchKeyV1,
+    model: SubModel<'a, TerrainVertex>,
+    bound: &'a pipelines::figure::BoundLocals,
+    atlas: &'a AtlasTextures<pipelines::figure::Locals, FigureSpriteAtlasData>,
+}
+
+struct ShadowBatchCandidate<'a> {
+    semantic_entity: [u8; 32],
+    key: bastion_renderer_r0d::figure_batch::FigureBatchKeyV1,
+    model: SubModel<'a, TerrainVertex>,
+    bound: &'a pipelines::figure::BoundLocals,
+}
+
+fn figure_semantic_digest(uid: Uid) -> Option<[u8; 32]> {
+    crate::r1a_presentation::production_entity_semantic_id(uid.0.get()).ok()
+}
+
+fn figure_batch_key_digest(
+    pass: bastion_renderer_r0d::figure_batch::FigurePassV1,
+    package_digest: [u8; 32],
+    body: &Body,
+    inventory: Option<&Inventory>,
+    model: &SubModel<'_, TerrainVertex>,
+    tier_decision: Option<bastion_renderer_r0d::individual_tier::IndividualTierDecisionV1>,
+    group: Option<crate::r1d_groups::ProductionMemberGroupV1>,
+) -> Option<bastion_renderer_r0d::figure_batch::FigureBatchKeyV1> {
+    use bastion_renderer_r0d::{
+        domain_hash_v1,
+        figure_batch::{
+            BlendModeV1, CompatibilityClassV1, CullModeV1, DepthModeV1, FigureBatchKeyV1,
+            FigureFormV1, FigurePassV1, IndexFormatV1, PrimitiveTopologyV1, RainModeV1,
+            ShadowTierV1,
+        },
+        figure_gpu::{
+            FIGURE_GPU_ABI_VERSION_V1, FIGURE_GPU_INSTANCE_STRIDE_V1, FIGURE_GPU_POSE_PAGE_BYTES_V1,
+        },
+        individual_tier::{AnimationTierV1, IndividualShadowTierV1, RepresentationTierV1},
+    };
+
+    let body_text = format!("{body:?}");
+    let inventory_text = format!("{inventory:?}");
+    let mut mesh_bytes = Vec::with_capacity(body_text.len() + inventory_text.len() + 16);
+    mesh_bytes.extend_from_slice(body_text.as_bytes());
+    mesh_bytes.extend_from_slice(inventory_text.as_bytes());
+    mesh_bytes.extend_from_slice(&model.vertex_range.start.to_le_bytes());
+    mesh_bytes.extend_from_slice(&model.vertex_range.end.to_le_bytes());
+    let mesh_digest = domain_hash_v1("bastion/r1bc/draw-mesh", 1, 0, &mesh_bytes).ok()?;
+    let material_digest = domain_hash_v1(
+        "bastion/r1bc/draw-material",
+        1,
+        0,
+        inventory_text.as_bytes(),
+    )
+    .ok()?;
+    let section_digest =
+        domain_hash_v1("bastion/r1bc/draw-section", 1, 0, body_text.as_bytes()).ok()?;
+    let pass_label = match pass {
+        FigurePassV1::Main => b"main".as_slice(),
+        FigurePassV1::Shadow => b"shadow".as_slice(),
+        FigurePassV1::Rain => b"rain".as_slice(),
+    };
+    let key = FigureBatchKeyV1 {
+        pass,
+        pipeline_digest: domain_hash_v1("bastion/r1bc/draw-pipeline", 1, 0, pass_label).ok()?,
+        shader_digest: domain_hash_v1("bastion/r1bc/draw-shader", 1, 0, pass_label).ok()?,
+        package_digest,
+        section_digest,
+        mesh_digest,
+        material_digest,
+        palette_digest: domain_hash_v1(
+            "bastion/r1bc/draw-palette",
+            1,
+            0,
+            inventory_text.as_bytes(),
+        )
+        .ok()?,
+        texture_or_atlas_digest: domain_hash_v1("bastion/r1bc/draw-atlas", 1, 0, &mesh_bytes)
+            .ok()?,
+        sampler_digest: domain_hash_v1(
+            "bastion/r1bc/draw-sampler",
+            1,
+            0,
+            b"figure-linear-clamp-v1",
+        )
+        .ok()?,
+        group_plan_digest: group.map_or([0; 32], |group| group.group_plan_root),
+        group_id: group.map_or([0; 32], |group| group.group_id),
+        group_tier: group.map(|group| group.group_tier),
+        formation: group.map(|group| group.formation),
+        form: match tier_decision.map(|decision| decision.representation) {
+            Some(RepresentationTierV1::Lod | RepresentationTierV1::Impostor) => FigureFormV1::Lod,
+            _ => FigureFormV1::Full,
+        },
+        lod_level: match tier_decision.map(|decision| decision.representation) {
+            Some(RepresentationTierV1::Lod) => 1,
+            Some(RepresentationTierV1::Impostor) => 2,
+            _ => 0,
+        },
+        animation_tier: tier_decision
+            .map(|decision| decision.animation)
+            .unwrap_or(AnimationTierV1::EveryTick),
+        fade_phase: tier_decision.map_or(0, |decision| decision.fade_phase),
+        abi_version: FIGURE_GPU_ABI_VERSION_V1,
+        instance_stride: u32::try_from(FIGURE_GPU_INSTANCE_STRIDE_V1).ok()?,
+        pose_page_bytes: u32::try_from(FIGURE_GPU_POSE_PAGE_BYTES_V1).ok()?,
+        cull: if pass == FigurePassV1::Shadow {
+            CullModeV1::Front
+        } else {
+            CullModeV1::Back
+        },
+        depth: if pass == FigurePassV1::Shadow {
+            DepthModeV1::ShadowWrite
+        } else {
+            DepthModeV1::ReadWrite
+        },
+        blend: BlendModeV1::Opaque,
+        topology: PrimitiveTopologyV1::TriangleList,
+        index_format: IndexFormatV1::U32,
+        index_count: model.len() / 4 * 6,
+        first_index: 0,
+        base_vertex: 0,
+        shadow_tier: if pass == FigurePassV1::Shadow {
+            match tier_decision.map(|decision| decision.shadow) {
+                Some(IndividualShadowTierV1::Proxy) => ShadowTierV1::Proxy,
+                Some(IndividualShadowTierV1::None) => return None,
+                _ => ShadowTierV1::MainMesh,
+            }
+        } else {
+            ShadowTierV1::None
+        },
+        rain_mode: if pass == FigurePassV1::Rain {
+            RainModeV1::Occluder
+        } else {
+            RainModeV1::None
+        },
+        compatibility: CompatibilityClassV1::StorageInstanced,
+    };
+    key.digest().ok()?;
+    Some(key)
+}
+
+fn batch_instance(
+    bound: &pipelines::figure::BoundLocals,
+) -> Option<pipelines::figure::FigureBatchInstance> {
+    let locals = *bound.0.values().first()?;
+    Some(pipelines::figure::FigureBatchInstance::new(
+        locals,
+        bound.1.values(),
+    ))
+}
+
+fn exact_batch_authorized<'a>(
+    ready: Option<bastion_renderer_r0d::presentation::PresentationReadyTokenV1>,
+    entries: impl Iterator<
+        Item = (
+            [u8; 32],
+            &'a bastion_renderer_r0d::figure_batch::FigureBatchKeyV1,
+        ),
+    >,
+) -> bool {
+    use bastion_renderer_r0d::figure_batch::{
+        FigureBatchPlanV1, FigureDrawInputV1, FigurePassMaskV1,
+    };
+    let Some((ready, authority)) = ready.zip(crate::render::figure_gpu::latest_draw_authority())
+    else {
+        return false;
+    };
+    if authority.plan.generation != ready.client_applied_generation
+        || authority.plan.frame_digest != ready.frame_digest
+        || authority.plan.resource_set_digest != ready.resource_set_digest
+    {
+        return false;
+    }
+    let mut inputs = Vec::new();
+    let mut requirements = Vec::new();
+    for (semantic_entity, key) in entries {
+        let Some(assignment) = authority
+            .plan
+            .assignments
+            .iter()
+            .find(|assignment| assignment.semantic_entity == semantic_entity)
+        else {
+            return false;
+        };
+        let mask = match key.pass {
+            bastion_renderer_r0d::figure_batch::FigurePassV1::Main => FigurePassMaskV1::MAIN,
+            bastion_renderer_r0d::figure_batch::FigurePassV1::Shadow => FigurePassMaskV1::SHADOW,
+            bastion_renderer_r0d::figure_batch::FigurePassV1::Rain => FigurePassMaskV1::RAIN,
+        };
+        requirements.push((semantic_entity, mask));
+        inputs.push(FigureDrawInputV1 {
+            semantic_entity,
+            key: key.clone(),
+            instance_slot: assignment.slot.instance_slot,
+            pose_page: assignment.slot.pose_page,
+            pose_offset: assignment.slot.pose_offset,
+            required_passes: mask,
+            fallback_reason: None,
+        });
+    }
+    FigureBatchPlanV1::build(
+        ready.semantic_tape_root,
+        &authority.plan,
+        &authority.receipt,
+        inputs,
+    )
+    .and_then(|plan| {
+        plan.validate_complete_pass_coverage(&requirements)?;
+        if plan.batches.len() != 1 || !plan.fallbacks.is_empty() {
+            return Err(
+                bastion_renderer_r0d::figure_batch::FigureBatchErrorV1::IncompletePassCoverage,
+            );
+        }
+        Ok(plan)
+    })
+    .is_ok()
+}
 
 pub trait ModelEntry {
     fn allocation(&self) -> &guillotiere::Allocation;
@@ -562,6 +785,8 @@ struct FigureReadData<'a> {
     volume_riders: ReadStorage<'a, VolumeRiders>,
     colliders: ReadStorage<'a, Collider>,
     heads: ReadStorage<'a, Heads>,
+    uids: ReadStorage<'a, Uid>,
+    colonists: ReadStorage<'a, comp::Colonist>,
 }
 
 struct FigureUpdateData<'a, CSS, COR> {
@@ -611,6 +836,8 @@ impl FigureReadData<'_> {
             volume_riders: self.volume_riders.get(entity),
             collider: self.colliders.get(entity),
             heads: self.heads.get(entity),
+            uid: self.uids.get(entity),
+            colonist: self.colonists.get(entity),
         })
     }
 
@@ -639,6 +866,8 @@ impl FigureReadData<'_> {
                 self.volume_riders.maybe(),
                 self.colliders.maybe(),
                 self.heads.maybe(),
+                self.uids.maybe(),
+                self.colonists.maybe(),
             ),
         )
             .join()
@@ -667,6 +896,8 @@ impl FigureReadData<'_> {
                         volume_riders,
                         collider,
                         heads,
+                        uid,
+                        colonist,
                     ),
                 )| FigureUpdateParams {
                     entity,
@@ -691,6 +922,8 @@ impl FigureReadData<'_> {
                     volume_riders,
                     collider,
                     heads,
+                    uid,
+                    colonist,
                 },
             )
     }
@@ -719,6 +952,8 @@ struct FigureUpdateParams<'a> {
     volume_riders: Option<&'a VolumeRiders>,
     collider: Option<&'a Collider>,
     heads: Option<&'a Heads>,
+    uid: Option<&'a Uid>,
+    colonist: Option<&'a comp::Colonist>,
 }
 
 pub struct FigureMgr {
@@ -1147,6 +1382,27 @@ impl FigureMgr {
                 .interpolated
                 .map_or(entity_data.pos.0, |i| i.pos);
 
+            let tier_decision = entity_data
+                .colonist
+                .zip(entity_data.uid)
+                .and_then(|(_, uid)| crate::r1d_tiers::decision_for_uid(uid.0.get()));
+            if let Some(decision) = tier_decision {
+                if decision.representation
+                    == bastion_renderer_r0d::individual_tier::RepresentationTierV1::Culled
+                {
+                    if let Some(state) = self.states.get_mut(entity_data.body, &entity_data.entity)
+                    {
+                        state.visible = false;
+                    }
+                    continue;
+                }
+                if !decision.should_sample_animation(data.tick) {
+                    // Reuse the previously accepted pose. Cadence is a pure
+                    // function of semantic identity's accepted tier and tick.
+                    continue;
+                }
+            }
+
             // Maintaining figure data and sending new figure data to the GPU turns out to
             // be a very expensive operation. We want to avoid doing it as much
             // as possible, so we make the assumption that players don't care so
@@ -1156,7 +1412,8 @@ impl FigureMgr {
             // interpolate motion
             const MIN_PERFECT_RATE_DIST: f32 = 100.0;
 
-            if !matches!(&entity_data.body, Body::Ship(_))
+            if tier_decision.is_none()
+                && !matches!(&entity_data.body, Body::Ship(_))
                 && !(i as u64 + data.tick).is_multiple_of(
                     ((((pos.distance_squared(focus_pos) / entity_data.scale.map_or(1.0, |s| s.0))
                         .powf(0.25)
@@ -1215,6 +1472,7 @@ impl FigureMgr {
             volume_riders: _,
             collider,
             heads,
+            ..
         } = *entity_data;
 
         let renderer = &mut *data.renderer;
@@ -1262,6 +1520,7 @@ impl FigureMgr {
             .as_mut()
             .map(|state| state.can_shadow_sun())
             .unwrap_or(false);
+        let r0d_no_cull = crate::render::bastion_r0d::deterministic_capture_enabled();
 
         // Don't process figures outside the vd
         let vd_frac = anim::vek::Vec2::from(pos.0 - data.player_pos)
@@ -1270,10 +1529,10 @@ impl FigureMgr {
             / data.view_distance as f32;
 
         // Keep from re-adding/removing entities on the border of the vd
-        if vd_frac > 1.2 {
+        if !r0d_no_cull && vd_frac > 1.2 {
             self.states.remove(body, &entity);
             return;
-        } else if vd_frac > 1.0 {
+        } else if !r0d_no_cull && vd_frac > 1.0 {
             state.as_mut().map(|state| state.visible = false);
             // Keep processing if this might be a shadow caster.
             // NOTE: Not worth to do for rain_occlusion, since that only happens in closeby
@@ -1295,7 +1554,8 @@ impl FigureMgr {
                 .coherent_test_against_frustum(data.frustum, meta.lpindex);
             let in_frustum = in_frustum
                 || matches!(body, Body::Ship(_))
-                || pos.0.distance_squared(data.focus_pos) < 32.0f32.powi(2);
+                || pos.0.distance_squared(data.focus_pos) < 32.0f32.powi(2)
+                || r0d_no_cull;
             meta.visible = in_frustum;
             meta.lpindex = lpindex;
             if in_frustum {
@@ -6916,57 +7176,153 @@ impl FigureMgr {
         state: &State,
         tick: u64,
         (camera, figure_lod_render_distance): CameraData,
+        pass: bastion_renderer_r0d::figure_batch::FigurePassV1,
         filter_state: impl Fn(&FigureStateMeta) -> bool,
     ) {
         let ecs = state.ecs();
         let time = ecs.read_resource::<Time>();
         let items = ecs.read_storage::<PickupItem>();
         let thrown_items = ecs.read_storage::<ThrownItem>();
-        (
-                &ecs.entities(),
-                &ecs.read_storage::<Pos>(),
-                ecs.read_storage::<Ori>().maybe(),
-                &ecs.read_storage::<Body>(),
-                ecs.read_storage::<Health>().maybe(),
-                ecs.read_storage::<Inventory>().maybe(),
-                ecs.read_storage::<Scale>().maybe(),
-                ecs.read_storage::<Collider>().maybe(),
-                ecs.read_storage::<Object>().maybe(),
-            )
+        let uids = ecs.read_storage::<Uid>();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let ready = crate::r1a_presentation::upload_complete_token();
+        let gpu = crate::render::figure_gpu::latest_evidence();
+        let batch_authority = ready.zip(gpu).filter(|(token, evidence)| {
+            token.client_applied_generation == evidence.generation
+                && token.frame_digest == evidence.frame_digest
+                && token.resource_set_digest == evidence.resource_set_digest
+        });
+        let mut groups: BTreeMap<[u8; 32], Vec<ShadowBatchCandidate<'_>>> = BTreeMap::new();
+        for (entity, pos, _, body, _, inventory, scale, collider, _) in (
+            &ecs.entities(),
+            &ecs.read_storage::<Pos>(),
+            ecs.read_storage::<Ori>().maybe(),
+            &ecs.read_storage::<Body>(),
+            ecs.read_storage::<Health>().maybe(),
+            ecs.read_storage::<Inventory>().maybe(),
+            ecs.read_storage::<Scale>().maybe(),
+            ecs.read_storage::<Collider>().maybe(),
+            ecs.read_storage::<Object>().maybe(),
+        )
             .join()
             // Don't render dead entities
             .filter(|(_, _, _, _, health, _, _, _, _)| health.is_none_or(|h| !h.is_dead))
             .filter(|(_, _, _, _, _, _, _, _, obj)| !self.should_flicker(*time, *obj))
-            .for_each(|(entity, pos, _, body, _, inventory, scale, collider, _)| {
-                if let Some((bound, model, _)) = self.get_model_for_render(
-                    tick,
-                    camera,
-                    None,
-                    entity,
-                    body,
-                    scale.copied(),
-                    inventory,
-                    false,
-                    pos.0,
-                    figure_lod_render_distance * scale.map_or(1.0, |s| s.0),
-                    match collider {
-                        Some(Collider::Volume(vol)) => vol.mut_count,
-                        _ => 0,
+        {
+            let tier_decision = colonists
+                .get(entity)
+                .zip(uids.get(entity))
+                .and_then(|(_, uid)| crate::r1d_tiers::decision_for_uid(uid.0.get()));
+            let shadow_allowed = uids
+                .get(entity)
+                .and_then(|uid| crate::r1f_shadows::should_render_uid(uid.0.get(), tick))
+                .unwrap_or_else(|| {
+                    tier_decision.is_none_or(|decision| {
+                        decision.shadow
+                            != bastion_renderer_r0d::individual_tier::IndividualShadowTierV1::None
+                    })
+                });
+            if tier_decision.is_some_and(|decision| {
+                decision.representation
+                    == bastion_renderer_r0d::individual_tier::RepresentationTierV1::Culled
+            }) || (pass == bastion_renderer_r0d::figure_batch::FigurePassV1::Shadow
+                && !shadow_allowed)
+            {
+                continue;
+            }
+            if let Some((bound, model, _)) = self.get_model_for_render(
+                tick,
+                camera,
+                None,
+                entity,
+                body,
+                scale.copied(),
+                inventory,
+                false,
+                pos.0,
+                figure_lod_render_distance * scale.map_or(1.0, |s| s.0),
+                tier_decision.and_then(|_| {
+                    uids.get(entity)
+                        .and_then(|uid| crate::r1d_tiers::forced_lod(uid.0.get()))
+                }),
+                match collider {
+                    Some(Collider::Volume(vol)) => vol.mut_count,
+                    _ => 0,
+                },
+                &filter_state,
+                match body {
+                    Body::Item(body) => match body {
+                        body::item::Body::Thrown(_) => thrown_items
+                            .get(entity)
+                            .map(|thrown_item| ItemKey::from(&thrown_item.0)),
+                        _ => items.get(entity).map(|item| ItemKey::from(item.item())),
                     },
-                    &filter_state,
-                    match body {
-                        Body::Item(body) => match body {
-                            body::item::Body::Thrown(_) => thrown_items
-                                .get(entity)
-                                .map(|thrown_item| ItemKey::from(&thrown_item.0)),
-                            _ => items.get(entity).map(|item| ItemKey::from(item.item())),
-                        },
-                        _ => None,
+                    _ => None,
+                },
+            ) {
+                let candidate = batch_authority
+                    .filter(|_| colonists.get(entity).is_some())
+                    .and_then(|(_, evidence)| {
+                        Some(ShadowBatchCandidate {
+                            semantic_entity: figure_semantic_digest(*uids.get(entity)?)?,
+                            key: figure_batch_key_digest(
+                                pass,
+                                evidence.package_digest,
+                                body,
+                                inventory,
+                                &model,
+                                tier_decision,
+                                uids.get(entity)
+                                    .and_then(|uid| crate::r1d_groups::member_group(uid.0.get())),
+                            )?,
+                            model: model.clone(),
+                            bound,
+                        })
+                    });
+                if let Some(candidate) = candidate {
+                    let key_digest = candidate.key.digest().ok();
+                    if let Some(key_digest) = key_digest {
+                        groups.entry(key_digest).or_default().push(candidate);
+                    } else {
+                        drawer.record_fallback(true);
+                        drawer.draw(candidate.model, candidate.bound);
                     }
-                ) {
+                } else {
+                    drawer.record_fallback(true);
                     drawer.draw(model, bound);
                 }
-            });
+            }
+        }
+        for mut group in groups.into_values() {
+            group.sort_by_key(|candidate| candidate.semantic_entity);
+            let first_buffer = group[0].model.runtime_buffer_identity();
+            let first_range = group[0].model.vertex_range.clone();
+            let compatible = group.iter().all(|candidate| {
+                candidate.model.runtime_buffer_identity() == first_buffer
+                    && candidate.model.vertex_range == first_range
+            }) && exact_batch_authorized(
+                ready,
+                group
+                    .iter()
+                    .map(|candidate| (candidate.semantic_entity, &candidate.key)),
+            );
+            let instances = group
+                .iter()
+                .map(|candidate| batch_instance(candidate.bound))
+                .collect::<Option<Vec<_>>>();
+            if compatible
+                && let Some(instances) = instances
+                && drawer
+                    .draw_batch(group[0].model.clone(), &instances)
+                    .is_ok()
+            {
+                continue;
+            }
+            for candidate in group {
+                drawer.record_fallback(!compatible);
+                drawer.draw(candidate.model, candidate.bound);
+            }
+        }
     }
 
     pub fn render_shadows<'a>(
@@ -6977,9 +7333,14 @@ impl FigureMgr {
         camera_data: CameraData,
     ) {
         span!(_guard, "render_shadows", "FigureManager::render_shadows");
-        self.render_shadow_mapping(drawer, state, tick, camera_data, |state| {
-            state.can_shadow_sun()
-        })
+        self.render_shadow_mapping(
+            drawer,
+            state,
+            tick,
+            camera_data,
+            bastion_renderer_r0d::figure_batch::FigurePassV1::Shadow,
+            |state| state.can_shadow_sun(),
+        )
     }
 
     pub fn render_rain_occlusion<'a>(
@@ -6994,9 +7355,14 @@ impl FigureMgr {
             "render_rain_occlusion",
             "FigureManager::render_rain_occlusion"
         );
-        self.render_shadow_mapping(drawer, state, tick, camera_data, |state| {
-            state.can_occlude_rain()
-        })
+        self.render_shadow_mapping(
+            drawer,
+            state,
+            tick,
+            camera_data,
+            bastion_renderer_r0d::figure_batch::FigurePassV1::Rain,
+            |state| state.can_occlude_rain(),
+        )
     }
 
     pub fn render_sprites<'a>(
@@ -7107,6 +7473,91 @@ impl FigureMgr {
         let character_state = character_state_storage.get(viewpoint_entity);
         let items = ecs.read_storage::<PickupItem>();
         let thrown_items = ecs.read_storage::<ThrownItem>();
+        let uids = ecs.read_storage::<Uid>();
+        let colonists = ecs.read_storage::<comp::Colonist>();
+        let ready = crate::r1a_presentation::upload_complete_token();
+        let gpu = crate::render::figure_gpu::latest_evidence();
+        let batch_authority = ready.zip(gpu).filter(|(token, evidence)| {
+            token.client_applied_generation == evidence.generation
+                && token.frame_digest == evidence.frame_digest
+                && token.resource_set_digest == evidence.resource_set_digest
+        });
+        // Build the complete semantic figure set before model lookup. The canonical CPU
+        // reference remains authoritative; GPU mode may affect admission only after
+        // exact ordered parity reconciliation.
+        let accelerated_admitted = ready.and_then(|token| {
+            let interpolated = ecs.read_storage::<crate::ecs::comp::Interpolated>();
+            let mut candidates = Vec::new();
+            for (entity, pos, body, _health, scale, _object, uid, _) in (
+                &ecs.entities(),
+                &ecs.read_storage::<Pos>(),
+                &ecs.read_storage::<Body>(),
+                ecs.read_storage::<Health>().maybe(),
+                ecs.read_storage::<Scale>().maybe(),
+                ecs.read_storage::<Object>().maybe(),
+                &uids,
+                &colonists,
+            )
+                .join()
+                .filter(|(_, _, _, health, _, _, _, _)| health.is_none_or(|h| !h.is_dead))
+                .filter(|(entity, _, _, _, _, _, _, _)| *entity != viewpoint_entity)
+                .filter(|(entity, _, _, _, _, object, _, _)| {
+                    !self.should_flicker(*time, *object)
+                        && !crate::r1d_tiers::decision_for_uid(
+                            uids.get(*entity).map_or(0, |uid| uid.0.get()),
+                        )
+                        .is_some_and(|decision| {
+                            decision.representation
+                                == bastion_renderer_r0d::individual_tier::RepresentationTierV1::Culled
+                        })
+                })
+            {
+                let semantic_entity = figure_semantic_digest(*uid)?;
+                let center = interpolated.get(entity).map_or(pos.0, |value| value.pos);
+                let radius = scale.map_or(1.0, |value| value.0) * 2.0;
+                let force_visible = crate::render::bastion_r0d::deterministic_capture_enabled()
+                    || matches!(body, Body::Ship(_))
+                    || center.distance_squared(camera.get_focus_pos()) < 32.0f32.powi(2);
+                candidates.push(
+                    bastion_renderer_r0d::gpu_cull::DrawCandidateV1::new(
+                        semantic_entity,
+                        bastion_renderer_r0d::gpu_cull::CullPassV1::Main,
+                        center.into_array(),
+                        radius,
+                        force_visible,
+                    )
+                    .ok()?,
+                );
+            }
+            if candidates.is_empty() {
+                return None;
+            }
+            let frustum = camera.frustum();
+            let snapshot = bastion_renderer_r0d::gpu_cull::FrustumSnapshotV1::new(
+                frustum.planes.map(|plane| [plane.x, plane.y, plane.z, plane.w]),
+                frustum.points.map(|point| [point.x, point.y, point.z]),
+            )
+            .ok()?;
+            let batch = bastion_renderer_r0d::gpu_cull::CanonicalCullBatchV1::new(
+                token.client_applied_generation,
+                snapshot,
+                candidates,
+            )
+            .ok()?;
+            let result = match drawer.reconcile_cull(&batch) {
+                Ok(result) => result,
+                Err(_) => batch.cpu_reference_result().ok()?,
+            };
+            Some((
+                result
+                    .admitted()
+                    .iter()
+                    .copied()
+                    .collect::<BTreeSet<_>>(),
+                result.result_digest,
+            ))
+        });
+        let mut groups: BTreeMap<[u8; 32], Vec<MainBatchCandidate<'_>>> = BTreeMap::new();
         for (entity, pos, body, _, inventory, scale, collider, _) in (
             &ecs.entities(),
             &ecs.read_storage::<Pos>(),
@@ -7124,6 +7575,24 @@ impl FigureMgr {
         .filter(|(entity, _, _, _, _, _, _, _)| *entity != viewpoint_entity)
         .filter(|(_, _, _, _, _, _, _, obj)| !self.should_flicker(*time, *obj))
         {
+            let tier_decision = colonists
+                .get(entity)
+                .zip(uids.get(entity))
+                .and_then(|(_, uid)| crate::r1d_tiers::decision_for_uid(uid.0.get()));
+            if tier_decision.is_some_and(|decision| {
+                decision.representation
+                    == bastion_renderer_r0d::individual_tier::RepresentationTierV1::Culled
+            }) {
+                continue;
+            }
+            if let Some((admitted, _)) = accelerated_admitted.as_ref()
+                && colonists.get(entity).is_some()
+                && let Some(uid) = uids.get(entity)
+                && let Some(semantic_entity) = figure_semantic_digest(*uid)
+                && !admitted.contains(&semantic_entity)
+            {
+                continue;
+            }
             if let Some((bound, model, atlas)) = self.get_model_for_render(
                 tick,
                 camera,
@@ -7135,6 +7604,10 @@ impl FigureMgr {
                 false,
                 pos.0,
                 figure_lod_render_distance * scale.map_or(1.0, |s| s.0),
+                tier_decision.and_then(|_| {
+                    uids.get(entity)
+                        .and_then(|uid| crate::r1d_tiers::forced_lod(uid.0.get()))
+                }),
                 match collider {
                     Some(Collider::Volume(vol)) => vol.mut_count,
                     _ => 0,
@@ -7150,7 +7623,79 @@ impl FigureMgr {
                     _ => None,
                 },
             ) {
-                drawer.draw(model, bound, atlas);
+                let candidate = batch_authority
+                    .filter(|_| colonists.get(entity).is_some())
+                    .and_then(|(_, evidence)| {
+                        Some(MainBatchCandidate {
+                            semantic_entity: figure_semantic_digest(*uids.get(entity)?)?,
+                            key: figure_batch_key_digest(
+                                bastion_renderer_r0d::figure_batch::FigurePassV1::Main,
+                                evidence.package_digest,
+                                body,
+                                inventory,
+                                &model,
+                                tier_decision,
+                                uids.get(entity)
+                                    .and_then(|uid| crate::r1d_groups::member_group(uid.0.get())),
+                            )?,
+                            model: model.clone(),
+                            bound,
+                            atlas,
+                        })
+                    });
+                if let Some(candidate) = candidate {
+                    let key_digest = candidate.key.digest().ok();
+                    if let Some(key_digest) = key_digest {
+                        groups.entry(key_digest).or_default().push(candidate);
+                    } else {
+                        drawer.record_fallback(true);
+                        drawer.draw(candidate.model, candidate.bound, candidate.atlas);
+                    }
+                } else {
+                    drawer.record_fallback(true);
+                    drawer.draw(model, bound, atlas);
+                }
+            }
+        }
+        for (batch_identity, mut group) in groups {
+            group.sort_by_key(|candidate| candidate.semantic_entity);
+            let first_buffer = group[0].model.runtime_buffer_identity();
+            let first_atlas = group[0].atlas.runtime_binding_identity();
+            let first_range = group[0].model.vertex_range.clone();
+            let compatible = group.iter().all(|candidate| {
+                candidate.model.runtime_buffer_identity() == first_buffer
+                    && candidate.atlas.runtime_binding_identity() == first_atlas
+                    && candidate.model.vertex_range == first_range
+            }) && exact_batch_authorized(
+                ready,
+                group
+                    .iter()
+                    .map(|candidate| (candidate.semantic_entity, &candidate.key)),
+            );
+            let instances = group
+                .iter()
+                .map(|candidate| batch_instance(candidate.bound))
+                .collect::<Option<Vec<_>>>();
+            if compatible
+                && let Some(instances) = instances
+                && let Some((_, culling_result_digest)) = accelerated_admitted.as_ref()
+                && let Some(ready) = ready
+                && drawer
+                    .draw_batch(
+                        group[0].model.clone(),
+                        group[0].atlas,
+                        &instances,
+                        ready.client_applied_generation,
+                        *culling_result_digest,
+                        batch_identity,
+                    )
+                    .is_ok()
+            {
+                continue;
+            }
+            for candidate in group {
+                drawer.record_fallback(!compatible);
+                drawer.draw(candidate.model, candidate.bound, candidate.atlas);
             }
         }
     }
@@ -7196,6 +7741,7 @@ impl FigureMgr {
                 true,
                 pos.0,
                 figure_lod_render_distance,
+                None,
                 0,
                 |state| state.visible(),
                 match body {
@@ -7210,6 +7756,7 @@ impl FigureMgr {
                     _ => None,
                 },
             ) {
+                drawer.record_fallback(false);
                 drawer.draw(model, bound, atlas);
                 /*renderer.render_player_shadow(
                     model,
@@ -7235,6 +7782,7 @@ impl FigureMgr {
         is_viewpoint: bool,
         pos: Vec3<f32>,
         figure_lod_render_distance: f32,
+        forced_lod: Option<usize>,
         mut_count: usize,
         filter_state: impl Fn(&FigureStateMeta) -> bool,
         item_key: Option<ItemKey>,
@@ -7717,7 +8265,9 @@ impl FigureMgr {
                 * scale.map_or(1.0, |s| s.0)
                 * 0.5;
 
-            let model = if pos.distance_squared(cam_pos) > figure_low_detail_distance.powi(2) {
+            let model = if let Some(lod) = forced_lod {
+                model_entry.lod_model(lod)
+            } else if pos.distance_squared(cam_pos) > figure_low_detail_distance.powi(2) {
                 model_entry.lod_model(2)
             } else if pos.distance_squared(cam_pos) > figure_mid_detail_distance.powi(2) {
                 model_entry.lod_model(1)
@@ -8403,6 +8953,7 @@ impl<S: Skeleton, D: FigureData> FigureState<S, D> {
         let computed_skeleton =
             anim::compute_matrices(&skeleton, anim::vek::Mat4::identity(), &mut buf, body);
         let bone_consts = figure_bone_data_from_anim(&buf);
+        let initial_locals = FigureLocals::default();
         Self {
             meta: FigureStateMeta {
                 primary_abs_trail_points: None,
@@ -8419,7 +8970,7 @@ impl<S: Skeleton, D: FigureData> FigureState<S, D> {
                 last_light: 1.0,
                 last_glow: (Vec3::zero(), 0.0),
                 acc_vel: 0.0,
-                bound: renderer.create_figure_bound_locals(&[FigureLocals::default()], bone_consts),
+                bound: renderer.create_figure_bound_locals(&[initial_locals], bone_consts),
                 squash: 1.0,
             },
             skeleton,

@@ -57,6 +57,7 @@ common-i18n = { package = "veloren-common-i18n", path = "../common/i18n" }
 common-net = { package = "veloren-common-net", path = "../common/net" }
 common-state = { package = "veloren-common-state", path = "../common/state" }
 common-systems = { package = "veloren-common-systems", path = "../common/systems" }
+bastion-renderer-r0d = { path = "../bastion-renderer-r0d" }
 
 anim = { package = "veloren-voxygen-anim", path = "anim" }
 i18n = { package = "veloren-client-i18n", path = "../client/i18n" }

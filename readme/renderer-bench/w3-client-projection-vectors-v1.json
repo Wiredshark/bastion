@@ -1,0 +1,51 @@
+{
+ "schema": "w3-client-projection-vectors-v1",
+ "tags": {
+  "domain": 5,
+  "leaf_id": 83886081,
+  "wire_type": 16,
+  "owner_kind": 3
+ },
+ "single": {
+  "semantic_id": 42,
+  "mm": [
+   1500,
+   -2500,
+   0
+  ],
+  "leaf": "9d04a82c66dced7d82e1432a4802ad4be9d384dad9d08f4cebeebd7b5cf6a058",
+  "owner_root": "9b5f8bc3f9ec7f5af18e980fe0059fca0e6fba0d90008a8e4a48fb335bbf1031",
+  "composite": "03040000002a000000",
+  "domain_root": "d90b7f8b88cfba4b6722740adaf3322337522317ea02f60fec0782798c11b8a8"
+ },
+ "triple": {
+  "entries": [
+   {
+    "semantic_id": 1,
+    "mm": [
+     0,
+     0,
+     0
+    ]
+   },
+   {
+    "semantic_id": 2,
+    "mm": [
+     -1,
+     250000,
+     -999
+    ]
+   },
+   {
+    "semantic_id": 7,
+    "mm": [
+     2147483647,
+     -2147483648,
+     1
+    ]
+   }
+  ],
+  "domain_root": "7085a72aebc4440457dc96ab3e7fff3ace7de8b2d6663c81a4d2fa64bc0efd56"
+ },
+ "empty_domain_root": "b5d176d21a59c1b8c1ff67d82f58277310c1f70614a41cc6fe1fd922adbc2a2c"
+}

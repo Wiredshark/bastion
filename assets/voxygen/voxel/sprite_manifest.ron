@@ -532,6 +532,26 @@ BasketWovenL: [(
     ],
     wind_sway: 0,
 )],
+BastionCrateStock: [(
+    variations: [
+        (
+            model: "voxygen.voxel.sprite.furniture.bastion_crate_stock",
+            offset: (-5.5, -5.5, 0.0),
+            lod_axes: (1.0, 1.0, 1.0),
+        ),
+    ],
+    wind_sway: 0,
+)],
+BastionBasketStock: [(
+    variations: [
+        (
+            model: "voxygen.voxel.sprite.furniture.bastion_basket_stock",
+            offset: (-6.0, -4.5, 0.0),
+            lod_axes: (1.0, 1.0, 1.0),
+        ),
+    ],
+    wind_sway: 0,
+)],
 BasketWovenM: [(
     variations: [
         (

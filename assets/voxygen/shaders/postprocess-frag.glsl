@@ -197,6 +197,22 @@ float dither(ivec2 p, float level) {
     return step((dither[p.x % 8][p.y % 8]+1) * 0.016, level);
 }
 
+float bastion_fog_view_distance(vec2 sample_uv) {
+    uvec2 size = textureSize(sampler2D(t_src_depth, s_src_depth), 0);
+    float depth = texelFetch(
+        sampler2D(t_src_depth, s_src_depth),
+        clamp(ivec2(sample_uv * size), ivec2(0), ivec2(size) - 1),
+        0
+    ).x;
+    if (depth <= 0.0) {
+        return bastion_fog_distances.y;
+    }
+    vec4 clip_space = vec4((sample_uv * 2.0 - 1.0) * vec2(1, -1), depth, 1.0);
+    vec4 view_space = proj_mat_inv * clip_space;
+    view_space /= view_space.w;
+    return length(view_space.xyz);
+}
+
 void main() {
 #ifdef EXPERIMENTAL_BAREMINIMUM
     tgt_color = vec4(texelFetch(sampler2D(t_src_color, s_src_color), ivec2(uv * textureSize(sampler2D(t_src_color, s_src_color), 0)), 0).rgb, 1);
@@ -280,6 +296,22 @@ void main() {
         aa_color.rgb = mix(vec3(0.0), aa_color.rgb * 0.8, clamp(1.0 - mag2 * 0.3, 0.0, 1.0));
     #endif
 
+    // R1F: generation-bound fog only hides already-visible scene content.
+    // Mode zero preserves the exact legacy path. Gameplay terrain/entity
+    // visibility remains authoritative on the CPU and is never expanded here.
+    if (bastion_fog_mode.x != 0u) {
+        float fog_near = bastion_fog_distances.x;
+        float fog_far = bastion_fog_distances.y;
+        float fog_span = max(fog_far - fog_near, 1.0);
+        float fog_amount = clamp(
+            (bastion_fog_view_distance(sample_uv) - fog_near) / fog_span,
+            0.0,
+            1.0
+        );
+        fog_amount *= fog_amount * (3.0 - 2.0 * fog_amount);
+        aa_color.rgb = mix(aa_color.rgb, bastion_fog_color.rgb, fog_amount);
+    }
+
     // Bloom
     #ifdef BLOOM_FACTOR
         vec4 bloom = textureLod(sampler2D(t_src_bloom, s_src_color), sample_uv, 0);
@@ -298,7 +330,11 @@ void main() {
     #else
         float gamma_offset = 0.3;
     #endif
-    aa_color.rgb = vec3(1.0) - exp(-aa_color.rgb * (gamma_exposure.y + exposure_offset));
+    float bastion_exposure_scale =
+        bastion_lighting_policy.x != 0.0 ? bastion_lighting_policy.y : 1.0;
+    aa_color.rgb = vec3(1.0) - exp(
+        -aa_color.rgb * (gamma_exposure.y + exposure_offset) * bastion_exposure_scale
+    );
     // gamma correction
     aa_color.rgb = pow(aa_color.rgb, vec3(gamma_exposure.x + gamma_offset));
     

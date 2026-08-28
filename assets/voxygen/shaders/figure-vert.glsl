@@ -25,6 +25,7 @@ layout(location = 1) in uint v_atlas_pos;
 // out vec3 light_pos[2];
 in uint v_ao_bone; */
 
+#ifndef FIGURE_BATCHED
 layout (std140, set = 3, binding = 0)
 uniform u_locals {
     mat4 model_mat;
@@ -54,6 +55,25 @@ uniform u_bones {
     // Warning: might not actually be 16 elements long. Don't index out of bounds!
     BoneData bones[16];
 };
+#else
+struct BoneData {
+    mat4 bone_mat;
+    mat4 normals_mat;
+};
+struct FigureBatchInstance {
+    mat4 model_mat;
+    vec4 highlight_col;
+    vec4 model_light;
+    vec4 model_glow;
+    ivec4 atlas_offs;
+    vec3 model_pos;
+    int flags;
+    BoneData bones[16];
+};
+layout (std430, set = 3, binding = 0) readonly buffer u_batch_instances {
+    FigureBatchInstance batch_instances[];
+};
+#endif
 
 //struct ShadowLocals {
 //  mat4 shadowMatrices;
@@ -72,6 +92,12 @@ layout(location = 1) flat out vec3 f_norm;
 /*centroid */layout(location = 2) out vec2 f_uv_pos;
 layout(location = 3) out vec3 m_pos;
 layout(location = 4) out float scale;
+#ifdef FIGURE_BATCHED
+layout(location = 5) flat out vec4 batch_highlight_col;
+layout(location = 6) flat out vec4 batch_model_light;
+layout(location = 7) flat out vec4 batch_model_glow;
+layout(location = 8) flat out int batch_flags;
+#endif
 // out vec3 f_col;
 // out float f_ao;
 // out float f_alt;
@@ -82,6 +108,21 @@ layout(location = 4) out float scale;
 // #endif
 
 void main() {
+#ifdef FIGURE_BATCHED
+    FigureBatchInstance batch_instance = batch_instances[gl_InstanceIndex];
+    #define model_mat batch_instance.model_mat
+    #define highlight_col batch_instance.highlight_col
+    #define model_light batch_instance.model_light
+    #define model_glow batch_instance.model_glow
+    #define atlas_offs batch_instance.atlas_offs
+    #define model_pos batch_instance.model_pos
+    #define flags batch_instance.flags
+    #define bones batch_instance.bones
+    batch_highlight_col = highlight_col;
+    batch_model_light = model_light;
+    batch_model_glow = model_glow;
+    batch_flags = flags;
+#endif
     // Pre-calculate bone matrix
     /* uint bone_idx = (v_ao_bone >> 2) & 0x3Fu; */
     uint bone_idx = (v_pos_norm >> 27) & 0xFu;

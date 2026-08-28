@@ -6,6 +6,7 @@ use bytemuck::Pod;
 /// single render pass.
 pub struct Consts<T: Copy + Pod> {
     buf: DynamicBuffer<T>,
+    cpu_values: Vec<T>,
 }
 
 impl<T: Copy + Pod> Consts<T> {
@@ -14,13 +15,22 @@ impl<T: Copy + Pod> Consts<T> {
         Self {
             // TODO: examine if all our consts need to be updatable
             buf: DynamicBuffer::new(device, len, wgpu::BufferUsages::UNIFORM),
+            cpu_values: vec![T::zeroed(); len],
         }
     }
 
     /// Update the GPU-side value represented by this constant handle.
     pub fn update(&mut self, queue: &wgpu::Queue, vals: &[T], offset: usize) {
-        self.buf.update(queue, vals, offset)
+        self.buf.update(queue, vals, offset);
+        if let Some(target) = self
+            .cpu_values
+            .get_mut(offset..offset.saturating_add(vals.len()))
+        {
+            target.copy_from_slice(vals);
+        }
     }
 
     pub fn buf(&self) -> &wgpu::Buffer { &self.buf.buf }
+
+    pub(crate) fn values(&self) -> &[T] { &self.cpu_values }
 }

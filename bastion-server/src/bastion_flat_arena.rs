@@ -484,6 +484,12 @@ pub fn spawn_wpos(center_wpos: Vec2<u32>) -> Vec3<f32> {
 /// `None` (callers fall through to the real generator). `center_wpos` =
 /// `world.get_center()` — the same anchor the default spawn waypoint uses,
 /// so the arena is exactly where Ben lands.
+// post-r2 (lw port): the radius predicate named and testable — the horizon
+// diagnostics reason about exactly this boundary.
+fn within_flat_override_radius(center_key: Vec2<i32>, key: Vec2<i32>) -> bool {
+    (key - center_key).map(i32::abs).reduce_max() <= FLAT_ARENA_RADIUS_CHUNKS
+}
+
 pub fn override_chunk(
     center_wpos: Vec2<u32>,
     key: Vec2<i32>,
@@ -492,7 +498,7 @@ pub fn override_chunk(
         return None;
     }
     let center_key = center_wpos.map2(TerrainChunkSize::RECT_SIZE, |e, sz| e as i32 / sz as i32);
-    if (key - center_key).map(|e| e.abs()).reduce_max() > FLAT_ARENA_RADIUS_CHUNKS {
+    if !within_flat_override_radius(center_key, key) {
         return None;
     }
     let mut chunk = TerrainChunk::new(
@@ -548,6 +554,22 @@ pub fn apply_resourced_features(chunk: &mut TerrainChunk, center_wpos: Vec2<u32>
 mod tests {
     use super::*;
     use common::vol::ReadVol;
+
+    // post-r2 (lw port): the override boundary, asserted at the corner and
+    // one past it.
+    #[test]
+    fn flat_override_radius_is_bounded_and_outside_is_not_overridden() {
+        let center = Vec2::new(100, 100);
+        assert!(within_flat_override_radius(center, center));
+        assert!(within_flat_override_radius(
+            center,
+            center + Vec2::new(FLAT_ARENA_RADIUS_CHUNKS, -FLAT_ARENA_RADIUS_CHUNKS)
+        ));
+        assert!(!within_flat_override_radius(
+            center,
+            center + Vec2::new(FLAT_ARENA_RADIUS_CHUNKS + 1, 0)
+        ));
+    }
 
     /// The world centre used by the tests — an arbitrary but fixed
     /// stand-in for `world.get_center()`.

@@ -18,6 +18,7 @@
 
 mod asset_test;
 mod determinism_regression;
+mod renderer_bench_golden;
 
 use clap::Parser;
 use common::resources::Time;
@@ -1533,6 +1534,34 @@ fn main() -> ExitCode {
     // Args::parse so even a --help/parse-error run identifies its exe.
     eprintln!("bastion-harness {BUILD_STAMP}");
 
+    // renderer-bench golden policy CLI: compare a candidate tape against a
+    // golden baseline and exit (0 pass / 1 mismatch / 2 malformed /
+    // 3 no-golden). Handled before any engine init — it is pure file work.
+    if let Some(pos) = std::env::args().position(|a| a == "--renderer-bench-golden") {
+        let cand = std::env::args().nth(pos + 1);
+        let gold = std::env::args().nth(pos + 2);
+        let (Some(cand), Some(gold)) = (cand, gold) else {
+            eprintln!("usage: --renderer-bench-golden <candidate.json> <golden.json>");
+            std::process::exit(2);
+        };
+        std::process::exit(renderer_bench_golden::run_cli(&cand, &gold));
+    }
+    // W6: privileged golden promotion — refuses without an --attest note;
+    // every promotion appends an audit line beside the golden.
+    if let Some(pos) = std::env::args().position(|a| a == "--renderer-bench-promote") {
+        let cand = std::env::args().nth(pos + 1);
+        let gold = std::env::args().nth(pos + 2);
+        let attest = std::env::args()
+            .position(|a| a == "--attest")
+            .and_then(|p| std::env::args().nth(p + 1));
+        let (Some(cand), Some(gold)) = (cand, gold) else {
+            eprintln!(
+                "usage: --renderer-bench-promote <candidate.json> <golden.json> --attest \"<who/why>\""
+            );
+            std::process::exit(2);
+        };
+        std::process::exit(renderer_bench_golden::promote_cli(&cand, &gold, attest.as_deref()));
+    }
     // T0.52: the probe flag must be visible before State construction —
     // scan argv directly (Args::parse happens later in some paths).
     if std::env::args().any(|a| a == "--deterministic-parallel") {

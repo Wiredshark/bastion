@@ -669,7 +669,10 @@ impl Sys {
             | ClientGeneral::RequestPluginArtifacts(_)
             // T3.4.19: the ack belongs to the General stream; arriving
             // here it is as wrong as any other misrouted message.
-            | ClientGeneral::CheckpointCommitAck(_) => {
+            | ClientGeneral::CheckpointCommitAck(_)
+            // W3 renderer-bench: both bench signals ride General too.
+            | ClientGeneral::RendererBenchReady
+            | ClientGeneral::RendererBenchProjectionAck(_) => {
                 debug!("Kicking possibly misbehaving client due to invalid client in game request");
                 deferred_events.push(DeferredInGameEvent::Disconnect(
                     event::ClientDisconnectEvent(

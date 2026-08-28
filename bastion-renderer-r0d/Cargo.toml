@@ -1,0 +1,11 @@
+[package]
+name = "bastion-renderer-r0d"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+sha2 = "0.10"
+
+[lints]
+workspace = true

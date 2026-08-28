@@ -2612,6 +2612,65 @@ pub(crate) fn extinction_step(
     *founded && colony_terminal_step(streak, alive, threshold)
 }
 
+/// bastion (R2b, renderer roadmap): which container sprite a stockpile CELL
+/// shows for its stored items — the ONE producer of that decision (the
+/// heartbeat visuals pass consumes it verbatim; unit tests below drive the
+/// same fn, so a green cannot mean a different machine from the one that
+/// ships).
+///
+/// Food-only cells read as a grain basket; any material presence reads as a
+/// crate (mixed cells hold materials, and the crate is the honest majority
+/// read); empty cells show nothing. Both kinds are deliberately NON-SOLID
+/// (neither appears in `SpriteKind`'s solid-height table — verified by read
+/// 2026-08-19), so the visual can never alter pathing, deposit or pickup.
+/// Re-verify live at the merge gate: a colonist must walk a container cell.
+pub(crate) fn stockpile_container_sprite(food: u32, other: u32) -> Option<SpriteKind> {
+    match (food, other) {
+        (0, 0) => None,
+        (_, 0) => Some(SpriteKind::BastionBasketStock),
+        _ => Some(SpriteKind::BastionCrateStock),
+    }
+}
+
+#[cfg(test)]
+mod stockpile_container_sprite_tests {
+    use super::*;
+
+    #[test]
+    fn empty_cell_shows_nothing() {
+        assert_eq!(stockpile_container_sprite(0, 0), None);
+    }
+
+    #[test]
+    fn food_only_reads_as_basket() {
+        assert_eq!(
+            stockpile_container_sprite(3, 0),
+            Some(SpriteKind::BastionBasketStock)
+        );
+    }
+
+    #[test]
+    fn materials_read_as_crate_even_mixed_with_food() {
+        assert_eq!(
+            stockpile_container_sprite(0, 5),
+            Some(SpriteKind::BastionCrateStock)
+        );
+        assert_eq!(
+            stockpile_container_sprite(9, 1),
+            Some(SpriteKind::BastionCrateStock)
+        );
+    }
+
+    /// The two chosen kinds must stay non-solid: a solid container would
+    /// silently turn a visual into a pathing obstacle. `solid_height()`
+    /// returning None IS the walkability claim the doc comment makes.
+    #[test]
+    fn chosen_sprites_are_non_solid() {
+        assert!(SpriteKind::BastionBasketStock.solid_height().is_none());
+        assert!(SpriteKind::BastionCrateStock.solid_height().is_none());
+    }
+}
+
 /// Drive a whole sample sequence through [`colony_terminal_step`], yielding
 /// the INDEX of every sample the sentinel fires on.
 ///
@@ -7906,6 +7965,13 @@ pub struct JobBoard {
     /// door — hostile entity → (door cell, fight start time, witnessed).
     /// Runtime-only; entity keys never serialize.
     pub door_fights: HashMap<specs::Entity, (Vec3<i32>, f64, bool)>,
+    /// bastion (R2b, renderer roadmap): container-sprite cells the stockpile
+    /// visuals pass has placed — cell → the sprite standing there.
+    /// Runtime-only (JobBoard is not serialized); after a restart both this
+    /// map AND the placed sprites are gone (terrain regenerates), so the two
+    /// re-derive together from the item census and cannot disagree across a
+    /// boot.
+    pub stockpile_container_cells: HashMap<Vec3<i32>, SpriteKind>,
     /// bastion (AUTON-2 unification, FIXTURE 1's invariant made live in
     /// EVERY scenario, 2026-08-08): a silent, cumulative counter --
     /// incremented at the EXISTING orphan sweep's own cadence
@@ -12835,6 +12901,80 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             ?body,
                             "bastion: ★ RESCUE posted — a neighbour is down and the                              town gets out of bed for this"
                         );
+                    }
+                }
+                // ── R2b (renderer roadmap): STOCKPILE CONTAINER VISUALS —
+                // cells holding stored items grow a container sprite (food →
+                // basket, materials → crate), removed when the cell empties
+                // or its zone is cancelled (a cancelled zone drops out of the
+                // census, so removal needs no cancel hook). Same cadence and
+                // join as the food heartbeat above: one bounded census,
+                // O(items + tracked cells), driven purely by sim state —
+                // tick-coupled by construction. Placement is polite: only an
+                // EMPTY air block gains a sprite (never overwrites ladders,
+                // crops or terrain); removal only clears a block that still
+                // IS our sprite; `try_set` avoids fighting a same-tick edit
+                // (the pass simply retries next heartbeat).
+                {
+                    let mut census: HashMap<Vec3<i32>, (u32, u32)> = HashMap::new();
+                    for (item, pos) in (&pickup_items, &positions).join() {
+                        let cell = pos.0.map(|e| e.floor() as i32);
+                        if board.stockpile_at(cell).is_none() {
+                            continue;
+                        }
+                        let is_food = item
+                            .item()
+                            .item_definition_id()
+                            .itemdef_id()
+                            .is_some_and(|def| FOOD_DEFS.contains(&def));
+                        let e = census.entry(cell).or_insert((0, 0));
+                        if is_food {
+                            e.0 += item.amount() as u32;
+                        } else {
+                            e.1 += item.amount() as u32;
+                        }
+                    }
+                    // Removals first, so a cell whose content CLASS changed
+                    // (basket ↔ crate) frees its block for this same pass's
+                    // placement half.
+                    let stale: Vec<(Vec3<i32>, SpriteKind)> = board
+                        .stockpile_container_cells
+                        .iter()
+                        .filter(|(cell, kind)| {
+                            census
+                                .get(*cell)
+                                .and_then(|&(f, o)| stockpile_container_sprite(f, o))
+                                != Some(**kind)
+                        })
+                        .map(|(c, k)| (*c, *k))
+                        .collect();
+                    for (cell, kind) in stale {
+                        let still_ours =
+                            terrain.get(cell).ok().and_then(|b| b.get_sprite()) == Some(kind);
+                        if !still_ours || block_change.try_set(cell, Block::empty()).is_some() {
+                            board.stockpile_container_cells.remove(&cell);
+                        }
+                    }
+                    for (cell, &(f, o)) in census.iter() {
+                        let Some(kind) = stockpile_container_sprite(f, o) else {
+                            continue;
+                        };
+                        if board.stockpile_container_cells.get(cell) == Some(&kind) {
+                            continue;
+                        }
+                        // Vacancy: empty air reports Some(SpriteKind::Empty)
+                        // from get_sprite(), NOT None — treat both as vacant,
+                        // anything else (ladder, crop, bedroll) as occupied.
+                        let vacant = terrain.get(*cell).ok().is_some_and(|b| {
+                            b.is_air()
+                                && matches!(
+                                    b.get_sprite(),
+                                    None | Some(SpriteKind::Empty)
+                                )
+                        });
+                        if vacant && block_change.try_set(*cell, Block::air(kind)).is_some() {
+                            board.stockpile_container_cells.insert(*cell, kind);
+                        }
                     }
                 }
             }

@@ -429,7 +429,10 @@ impl Client {
                     | ServerGeneral::SetPlayerRole(_)
                     | ServerGeneral::PluginData(_)
                     | ServerGeneral::PluginArtifactData(_)
-                    | ServerGeneral::CommandResult(_) => {
+                    | ServerGeneral::CommandResult(_)
+                    // W3 renderer-bench: out-of-band diagnostics ride the
+                    // general stream (mirrors `SemanticRouteV1`).
+                    | ServerGeneral::RendererBenchFrame(_) => {
                         PreparedMsg::new(3, &g, &self.general_stream_params)
                     },
                     // `APEX-T4.1` chunk 2a: physical stream 0, the SAME

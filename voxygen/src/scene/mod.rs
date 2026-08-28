@@ -135,6 +135,8 @@ pub struct Scene {
 
     integrated_rain_vel: f32,
     pub wind_vel: Vec2<f32>,
+    weather_presentation:
+        Option<std::sync::Arc<bastion_renderer_r0d::weather::WeatherPresentationV1>>,
     pub interpolated_time_of_day: Option<f64>,
     last_lightning: Option<(Vec3<f32>, f64)>,
     local_time: f64,
@@ -153,6 +155,8 @@ pub struct SceneData<'a> {
     pub target_entities: &'a HashSet<specs::Entity>,
     pub loaded_distance: f32,
     pub terrain_view_distance: u32, // not used currently
+    pub terrain_distance_plan_v1:
+        Option<bastion_renderer_r0d::terrain_distance::TerrainDistancePlanV1>,
     pub entity_view_distance: u32,
     pub tick: u64,
     pub gamma: f32,
@@ -379,6 +383,7 @@ impl Scene {
             ambience_mgr: AmbienceMgr::new(ambience::load_ambience_items()),
             integrated_rain_vel: 0.0,
             wind_vel: Vec2::zero(),
+            weather_presentation: None,
             interpolated_time_of_day: None,
             last_lightning: None,
             local_time: 0.0,
@@ -587,6 +592,14 @@ impl Scene {
         let dt = ecs.fetch::<DeltaTime>().0;
 
         self.local_time += dt as f64 * ecs.fetch::<TimeScale>().0;
+        match crate::r1f_weather::refresh_from_environment() {
+            Ok(value) => self.weather_presentation = value,
+            Err(error) => tracing::warn!(
+                target: "bastion_r1f_weather",
+                ?error,
+                "coherent weather presentation refresh rejected; preserving prior accepted state"
+            ),
+        }
 
         let positions = ecs.read_storage::<comp::Pos>();
 
@@ -670,7 +683,7 @@ impl Scene {
             }
         };
 
-        if self.camera.get_mode() == CameraMode::Overseer {
+        if self.camera.get_mode() == CameraMode::Overseer || crate::r1e_cutaway::enabled() {
             // bastion: overseer orientation is session-driven (fixed oblique
             // pitch, 90°-step yaw) — never slaved to an entity or analog look.
         } else if scene_data.mutable_viewpoint
@@ -1000,18 +1013,19 @@ impl Scene {
                 .map(|(_, p)| p.0)
                 .collect();
         }
-        let bastion_occ = if self.camera.get_mode() == CameraMode::Overseer {
-            // View radius ≈ the on-screen half-diagonal at this zoom, so the
-            // proximity window tracks the zoom (see to_uniform). Daylight
-            // scales the additive interior relight so it can't blow the night
-            // scene out to white.
-            let view_radius = self.camera.get_distance() * 1.4;
-            let daylight = (-scene_data.get_sun_dir().z).clamp(0.0, 1.0);
-            self.bastion_occlusion
-                .to_uniform(focus_pos, view_radius, daylight)
-        } else {
-            crate::bastion::occlusion::OcclusionUniform::solid()
-        };
+        let bastion_occ =
+            if self.camera.get_mode() == CameraMode::Overseer || crate::r1e_cutaway::enabled() {
+                // View radius ≈ the on-screen half-diagonal at this zoom, so the
+                // proximity window tracks the zoom (see to_uniform). Daylight
+                // scales the additive interior relight so it can't blow the night
+                // scene out to white.
+                let view_radius = self.camera.get_distance() * 1.4;
+                let daylight = (-scene_data.get_sun_dir().z).clamp(0.0, 1.0);
+                self.bastion_occlusion
+                    .to_uniform(focus_pos, view_radius, daylight)
+            } else {
+                crate::bastion::occlusion::OcclusionUniform::solid()
+            };
 
         let step = 0.5 * dt;
         self.screen_fade = if step > (self.screen_fade - self.screen_fade_tgt).abs() {
@@ -1039,6 +1053,108 @@ impl Scene {
                 0.0
             };
 
+        // Exact-capture mode removes all wall/render-clock shader inputs.
+        let (time_of_day, r0d_sim_time, r0d_local_time) =
+            if crate::render::bastion_r0d::freeze_time() {
+                crate::render::bastion_r0d::FROZEN_SHADER_TIME
+            } else {
+                (time_of_day, scene_data.state.get_time(), self.local_time)
+            };
+
+        let camera_world_pos = cam_pos + focus_off;
+        let camera_block = scene_data
+            .state
+            .terrain()
+            .get(camera_world_pos.map(|e| e.floor() as i32))
+            .ok()
+            .filter(|block| !(block.is_filled() && client.is_moderator()))
+            .map(|block| block.kind())
+            .unwrap_or(BlockKind::Air);
+        let camera_is_underground = scene_data
+            .state
+            .terrain()
+            .get_key(scene_data.state.terrain().pos_key(camera_world_pos.as_()))
+            .is_some_and(|chunk| {
+                camera_world_pos.z < chunk.meta().alt() - terrain::UNDERGROUND_ALT
+            });
+        let fog_uniform = if crate::r1f_fog::certification_legacy_rollback_requested() {
+            crate::r1f_fog::FogUniformV1::legacy_disabled()
+        } else if let Some(environment) = crate::r1f_environment::latest_projection() {
+            let medium = if camera_block.is_liquid() {
+                crate::r1f_fog::ProductionMediumV1::Water
+            } else if camera_block.is_filled() {
+                crate::r1f_fog::ProductionMediumV1::Solid
+            } else {
+                crate::r1f_fog::ProductionMediumV1::Air
+            };
+            let camera_mode_tag = match self.camera.get_mode() {
+                CameraMode::FirstPerson => 0,
+                CameraMode::ThirdPerson => 1,
+                CameraMode::Freefly => 2,
+                CameraMode::Overseer => 3,
+            };
+            let low_quality = matches!(
+                settings.graphics.render_mode.cloud,
+                crate::render::CloudMode::None
+                    | crate::render::CloudMode::Minimal
+                    | crate::render::CloudMode::Low
+            );
+            match crate::r1f_fog::update(&environment, crate::r1f_fog::FogProductionInputV1 {
+                medium,
+                underground: camera_is_underground,
+                camera_mode_tag,
+                low_quality,
+            }) {
+                Ok((_, uniform)) => uniform,
+                Err(error) => {
+                    tracing::warn!(
+                        target: "bastion_r1f_fog",
+                        ?error,
+                        "coherent fog policy rejected; hiding the scene fail-closed"
+                    );
+                    crate::r1f_fog::FogUniformV1::fail_closed()
+                },
+            }
+        } else {
+            crate::r1f_fog::FogUniformV1::legacy_disabled()
+        };
+        let lighting_uniform =
+            if let Some(environment) = crate::r1f_environment::latest_projection() {
+                let medium = if camera_block.is_liquid() {
+                    crate::r1f_lighting::LightingMediumV1::Water
+                } else if camera_block.is_filled() {
+                    crate::r1f_lighting::LightingMediumV1::Solid
+                } else {
+                    crate::r1f_lighting::LightingMediumV1::Air
+                };
+                let camera_mode_tag = match self.camera.get_mode() {
+                    CameraMode::FirstPerson => 0,
+                    CameraMode::ThirdPerson => 1,
+                    CameraMode::Freefly => 2,
+                    CameraMode::Overseer => 3,
+                };
+                match crate::r1f_lighting::update(
+                    &environment,
+                    crate::r1f_lighting::LightingProductionInputV1 {
+                        medium,
+                        underground: camera_is_underground,
+                        camera_mode_tag,
+                    },
+                ) {
+                    Ok((_, uniform)) => uniform,
+                    Err(error) => {
+                        tracing::warn!(
+                            target: "bastion_r1f_lighting",
+                            ?error,
+                            "coherent lighting policy rejected; using fail-closed exposure"
+                        );
+                        crate::r1f_lighting::LightingUniformV1::fail_closed()
+                    },
+                }
+            } else {
+                crate::r1f_lighting::LightingUniformV1::legacy_disabled()
+            };
+
         // Update global constants.
         renderer.update_consts(&mut self.data.globals, &[Globals::new(
             view_mat,
@@ -1049,22 +1165,14 @@ impl Scene {
             self.lod.get_data().tgt_detail as f32,
             self.map_bounds,
             time_of_day,
-            scene_data.state.get_time(),
-            self.local_time,
+            r0d_sim_time,
+            r0d_local_time,
             renderer.resolution().as_(),
             Vec2::new(SHADOW_NEAR, SHADOW_FAR),
             lights.len(),
             shadows.len(),
             NUM_DIRECTED_LIGHTS,
-            scene_data
-                .state
-                .terrain()
-                .get((cam_pos + focus_off).map(|e| e.floor() as i32))
-                .ok()
-                // Don't block the camera's view in solid blocks if the player is a moderator
-                .filter(|b| !(b.is_filled() && client.is_moderator()))
-                .map(|b| b.kind())
-                .unwrap_or(BlockKind::Air),
+            camera_block,
             self.select_pos.map(|e| e - focus_off.map(|e| e as i32)),
             scene_data.gamma,
             scene_data.exposure,
@@ -1079,6 +1187,8 @@ impl Scene {
             // everything else packs the "solid" (vanilla-look) uniform (built
             // above so this render call keeps a single clean borrow of self).
             bastion_occ,
+            fog_uniform,
+            lighting_uniform,
         )]);
         renderer.update_clouds_locals(CloudsLocals::new(proj_mat_inv, view_mat_inv));
         renderer.update_postprocess_locals(PostProcessLocals::new(proj_mat_inv, view_mat_inv));
@@ -1105,6 +1215,7 @@ impl Scene {
             focus_pos,
             self.loaded_distance,
             &self.camera,
+            self.weather_presentation.as_deref(),
         );
 
         // Maintain the figures.
@@ -1394,16 +1505,39 @@ impl Scene {
             )
         };
 
-        let weather = client
+        let coherent_weather = self.weather_presentation.as_deref();
+        let legacy_weather = client
             .state()
             .max_weather_near(focus_off.xy() + cam_pos.xy());
-        self.wind_vel = weather.wind_vel();
-        if weather.rain > RAIN_THRESHOLD {
-            let weather = client.weather_at_player();
-            let rain_vel = weather.rain_vel();
+        self.wind_vel = coherent_weather.map_or_else(
+            || legacy_weather.wind_vel(),
+            |weather| {
+                let [x, y] = weather.wind_mm_s();
+                Vec2::new(x as f32 / 1_000.0, y as f32 / 1_000.0)
+            },
+        );
+        let coherent_raining = coherent_weather.is_some_and(|weather| weather.is_raining());
+        if coherent_raining || (coherent_weather.is_none() && legacy_weather.rain > RAIN_THRESHOLD)
+        {
+            let (rain_vel, rain_density) = coherent_weather.map_or_else(
+                || {
+                    let weather = client.weather_at_player();
+                    (weather.rain_vel(), weather.rain)
+                },
+                |weather| {
+                    let [x, y] = weather.wind_mm_s();
+                    (
+                        Vec3::new(x as f32 / 1_000.0, y as f32 / 1_000.0, -30.0),
+                        f32::from(weather.rain_milli()) / 1_000.0,
+                    )
+                },
+            );
             let rain_view_mat = math::Mat4::look_at_rh(look_at, look_at + rain_vel, up);
 
-            self.integrated_rain_vel += rain_vel.magnitude() * dt;
+            self.integrated_rain_vel = coherent_weather.map_or_else(
+                || self.integrated_rain_vel + rain_vel.magnitude() * dt,
+                |weather| weather.phase_milli() as f32 / 1_000.0,
+            );
             let rain_dir_mat = Mat4::rotation_from_to_3d(-Vec3::unit_z(), rain_vel);
 
             let (shadow_mat, texture_mat) =
@@ -1413,7 +1547,7 @@ impl Scene {
                 shadow_mat,
                 texture_mat,
                 rain_dir_mat,
-                weather.rain,
+                rain_density,
                 self.integrated_rain_vel,
             );
 
@@ -1545,7 +1679,10 @@ impl Scene {
         let is_daylight = sun_dir.z < 0.0;
         let focus_pos = self.camera.get_focus_pos();
         let cam_pos = self.camera.dependents().cam_pos + focus_pos.map(|e| e.trunc());
-        let is_rain = state.max_weather_near(cam_pos.xy()).rain > RAIN_THRESHOLD;
+        let is_rain = self.weather_presentation.as_deref().map_or_else(
+            || state.max_weather_near(cam_pos.xy()).rain > RAIN_THRESHOLD,
+            bastion_renderer_r0d::weather::WeatherPresentationV1::is_raining,
+        );
         let culling_mode = if scene_data
             .state
             .terrain()

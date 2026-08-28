@@ -88,6 +88,12 @@ pub struct Globals {
     bastion_occ_c: [f32; 4],
     bastion_occ_d: [f32; 4],
     bastion_occ_targets: [[f32; 4]; crate::bastion::occlusion::MAX_TARGETS],
+    /// R1F coherent fog policy. Mode zero preserves the legacy path.
+    bastion_fog_mode: [u32; 4],
+    bastion_fog_distances: [f32; 4],
+    bastion_fog_color: [f32; 4],
+    /// R1F coherent presentation-only lighting policy. X zero preserves legacy.
+    bastion_lighting_policy: [f32; 4],
 }
 /// Make sure Globals is 16-byte-aligned.
 const _: () = assert!(core::mem::size_of::<Globals>().is_multiple_of(16));
@@ -111,7 +117,7 @@ pub const TIME_OVERFLOW: f64 = 300000.0;
 impl Globals {
     /// Create global consts from the provided parameters.
     #[expect(clippy::too_many_arguments)]
-    pub fn new(
+    pub(crate) fn new(
         view_mat: Mat4<f32>,
         proj_mat: Mat4<f32>,
         cam_pos: Vec3<f32>,
@@ -140,6 +146,8 @@ impl Globals {
         screen_fade: f32,
         // bastion (B1.6): packed overseer occlusion block; mode 0 = vanilla.
         bastion_occ: crate::bastion::occlusion::OcclusionUniform,
+        fog: crate::r1f_fog::FogUniformV1,
+        lighting: crate::r1f_lighting::LightingUniformV1,
     ) -> Self {
         Self {
             view_mat: view_mat.into_col_arrays(),
@@ -219,6 +227,10 @@ impl Globals {
             bastion_occ_c: bastion_occ.c,
             bastion_occ_d: bastion_occ.d,
             bastion_occ_targets: bastion_occ.targets,
+            bastion_fog_mode: fog.mode,
+            bastion_fog_distances: fog.distances,
+            bastion_fog_color: fog.color,
+            bastion_lighting_policy: lighting.policy,
         }
     }
 }
@@ -253,6 +265,8 @@ impl Default for Globals {
             0.0,
             1.0,
             crate::bastion::occlusion::OcclusionUniform::solid(),
+            crate::r1f_fog::FogUniformV1::legacy_disabled(),
+            crate::r1f_lighting::LightingUniformV1::legacy_disabled(),
         )
     }
 }
@@ -338,6 +352,16 @@ where
     pub(super) bind_group: wgpu::BindGroup,
     pub textures: [Texture; S::TEXTURES],
     phantom: std::marker::PhantomData<Locals>,
+}
+
+impl<Locals, S: AtlasData> AtlasTextures<Locals, S>
+where
+    [(); S::TEXTURES]:,
+{
+    /// Runtime bind compatibility only; never a semantic identity or sort key.
+    pub(crate) fn runtime_binding_identity(&self) -> usize {
+        core::ptr::from_ref(&self.bind_group).addr()
+    }
 }
 
 pub struct VoxelAtlasLayout<S: AtlasData>(wgpu::BindGroupLayout, PhantomData<S>);

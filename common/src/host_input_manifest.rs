@@ -140,6 +140,30 @@ const CATALOG: &[EnvVarSiteV1] = &[
         "headless auto-founds a colony for non-interactive determinism captures",
     ),
     site(
+        "bastion-server/src/bastion_renderer_bench.rs",
+        "BASTION_RENDERER_BENCH_MANIFEST",
+        GameplayVariant,
+        "renderer-bench W2: arms the bench from an RBDM fixture manifest (fail-closed decode)",
+    ),
+    site(
+        "bastion-server/src/bastion_renderer_bench.rs",
+        "BASTION_RENDERER_BENCH_OUT",
+        GameplayVariant,
+        "renderer-bench W2: semantic-tape artifact output path",
+    ),
+    site(
+        "bastion-server/src/bastion_renderer_bench.rs",
+        "BASTION_RENDERER_BENCH_TICKS",
+        GameplayVariant,
+        "renderer-bench W2: run length in ticks before the tape terminal",
+    ),
+    site(
+        "bastion-server/src/bastion_renderer_bench.rs",
+        "BASTION_RENDERER_BENCH_CADENCE",
+        GameplayVariant,
+        "renderer-bench W2: semantic-frame cadence in ticks",
+    ),
+    site(
         "server/src/lib.rs",
         "BASTION_AUTH_POS_LOG",
         Diagnostic,

@@ -126,6 +126,9 @@ impl CheckpointParticipantV1 for ServerGeneral {
             S::Disconnect(_) | S::CheckpointBegin(_) | S::CheckpointBarrier(_) | S::BootstrapManifest(_) => {
                 P::CheckpointControl
             },
+            // W3 renderer-bench: a benchmark observation channel — never
+            // checkpoint state, never replayed.
+            S::RendererBenchFrame(_) => P::OutOfBandDiagnostic,
         }
     }
 
@@ -152,7 +155,12 @@ impl CheckpointParticipantV1 for ServerGeneral {
             // the effect's own records inside the same checkpoint
             // (CMD-130/131 read as a phase ordering, not a convention).
             S::CommandResult(_) => Ph::OrderedEvent,
-            S::Disconnect(_) | S::CheckpointBegin(_) | S::CheckpointBarrier(_) | S::BootstrapManifest(_) => return None,
+            S::Disconnect(_)
+            | S::CheckpointBegin(_)
+            | S::CheckpointBarrier(_)
+            | S::BootstrapManifest(_)
+            // W3: OutOfBandDiagnostic requires no apply phase.
+            | S::RendererBenchFrame(_) => return None,
             _ => Ph::InGameState,
         })
     }
@@ -2303,7 +2311,8 @@ impl CheckpointEntityRefsV1 for ServerGeneral {
             | S::CheckpointBegin(_)
             | S::CheckpointBarrier(_)
             | S::CommandResult(_)
-            | S::BootstrapManifest(_) => {},
+            | S::BootstrapManifest(_)
+            | S::RendererBenchFrame(_) => {},
         }
         refs
     }

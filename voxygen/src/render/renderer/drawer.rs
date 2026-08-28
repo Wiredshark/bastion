@@ -23,6 +23,13 @@ use wgpu_profiler::{OwningScope, Scope};
 #[cfg(feature = "egui-ui")]
 use {common_base::span, egui_wgpu::ScreenDescriptor};
 
+macro_rules! observed_bind_group {
+    ($pass:expr, $index:expr, $bind_group:expr) => {{
+        crate::r0p_observer::record_bind_group_set();
+        $pass.set_bind_group($index, $bind_group, &[]);
+    }};
+}
+
 /// Gpu timing label prefix associated with the UI alpha premultiplication pass.
 pub const UI_PREMULTIPLY_PASS: &str = "ui_premultiply_pass";
 
@@ -163,6 +170,7 @@ pub struct Drawer<'frame> {
     surface_view: wgpu::TextureView,
     encoder: ManualScope<'frame>,
     borrow: RendererBorrow<'frame>,
+    figure_batch: &'frame mut crate::render::figure_batch::FigureBatchRuntimeV1,
     surface_texture: Option<wgpu::SurfaceTexture>,
     globals: &'frame GlobalsBindGroup,
     // Texture and other info for taking a screenshot
@@ -177,6 +185,7 @@ impl<'frame> Drawer<'frame> {
         surface_texture: wgpu::SurfaceTexture,
         globals: &'frame GlobalsBindGroup,
     ) -> Self {
+        renderer.figure_batch.begin_frame();
         let taking_screenshot = renderer.take_screenshot.take().map(|screenshot_fn| {
             super::screenshot::TakeScreenshot::new(
                 &renderer.device,
@@ -226,6 +235,7 @@ impl<'frame> Drawer<'frame> {
             surface_view,
             encoder,
             borrow,
+            figure_batch: &mut renderer.figure_batch,
             surface_texture: Some(surface_texture),
             globals,
             taking_screenshot,
@@ -238,6 +248,10 @@ impl<'frame> Drawer<'frame> {
     /// Returns None if the rain occlusion renderer is not enabled at some
     /// level, the pipelines are not available yet or clouds are disabled.
     pub fn rain_occlusion_pass(&mut self) -> Option<RainOcclusionPassDrawer<'_>> {
+        crate::render::bastion_r0d::record_pass(
+            crate::render::bastion_r0d::ranks::RAIN_OCCLUSION,
+            "rain_occlusion",
+        );
         if !self.borrow.pipeline_modes.cloud.is_enabled() {
             return None;
         }
@@ -262,11 +276,12 @@ impl<'frame> Drawer<'frame> {
                 },
             );
 
-            render_pass.set_bind_group(0, &self.globals.bind_group, &[]);
+            observed_bind_group!(render_pass, 0, &self.globals.bind_group);
 
             Some(RainOcclusionPassDrawer {
                 render_pass,
                 borrow: &self.borrow,
+                figure_batch: &mut *self.figure_batch,
                 rain_occlusion_renderer,
             })
         } else {
@@ -277,6 +292,10 @@ impl<'frame> Drawer<'frame> {
     /// Returns None if the shadow renderer is not enabled at some level or the
     /// pipelines are not available yet
     pub fn shadow_pass(&mut self) -> Option<ShadowPassDrawer<'_>> {
+        crate::render::bastion_r0d::record_pass(
+            crate::render::bastion_r0d::ranks::SHADOW,
+            "shadow",
+        );
         if !self.borrow.pipeline_modes.shadow.is_map() {
             return None;
         }
@@ -299,11 +318,12 @@ impl<'frame> Drawer<'frame> {
                         occlusion_query_set: None,
                     });
 
-            render_pass.set_bind_group(0, &self.globals.bind_group, &[]);
+            observed_bind_group!(render_pass, 0, &self.globals.bind_group);
 
             Some(ShadowPassDrawer {
                 render_pass,
                 borrow: &self.borrow,
+                figure_batch: &mut *self.figure_batch,
                 shadow_renderer,
             })
         } else {
@@ -313,6 +333,7 @@ impl<'frame> Drawer<'frame> {
 
     /// Returns None if all the pipelines are not available
     pub fn first_pass(&mut self) -> Option<FirstPassDrawer<'_>> {
+        crate::render::bastion_r0d::record_pass(crate::render::bastion_r0d::ranks::FIRST, "first");
         let pipelines = self.borrow.pipelines.all()?;
         // Note: this becomes Some once pipeline creation is complete even if shadows
         // are not enabled
@@ -354,12 +375,13 @@ impl<'frame> Drawer<'frame> {
                     occlusion_query_set: None,
                 });
 
-        render_pass.set_bind_group(0, &self.globals.bind_group, &[]);
-        render_pass.set_bind_group(1, &shadow.bind.bind_group, &[]);
+        observed_bind_group!(render_pass, 0, &self.globals.bind_group);
+        observed_bind_group!(render_pass, 1, &shadow.bind.bind_group);
 
         Some(FirstPassDrawer {
             render_pass,
             borrow: &self.borrow,
+            figure_batch: &mut *self.figure_batch,
             pipelines,
             globals: self.globals,
         })
@@ -367,6 +389,10 @@ impl<'frame> Drawer<'frame> {
 
     /// Returns None if the volumetrics pipeline is not available
     pub fn volumetric_pass(&mut self) -> Option<VolumetricPassDrawer<'_>> {
+        crate::render::bastion_r0d::record_pass(
+            crate::render::bastion_r0d::ranks::VOLUMETRIC,
+            "volumetric",
+        );
         let pipelines = &self.borrow.pipelines.all()?;
         let shadow = self.borrow.shadow?;
 
@@ -388,8 +414,8 @@ impl<'frame> Drawer<'frame> {
                     occlusion_query_set: None,
                 });
 
-        render_pass.set_bind_group(0, &self.globals.bind_group, &[]);
-        render_pass.set_bind_group(1, &shadow.bind.bind_group, &[]);
+        observed_bind_group!(render_pass, 0, &self.globals.bind_group);
+        observed_bind_group!(render_pass, 1, &shadow.bind.bind_group);
 
         Some(VolumetricPassDrawer {
             render_pass,
@@ -400,6 +426,10 @@ impl<'frame> Drawer<'frame> {
 
     /// Returns None if the trail pipeline is not available
     pub fn transparent_pass(&mut self) -> Option<TransparentPassDrawer<'_>> {
+        crate::render::bastion_r0d::record_pass(
+            crate::render::bastion_r0d::ranks::TRANSPARENT,
+            "transparent",
+        );
         let pipelines = &self.borrow.pipelines.all()?;
         let shadow = self.borrow.shadow?;
 
@@ -428,8 +458,8 @@ impl<'frame> Drawer<'frame> {
                     occlusion_query_set: None,
                 });
 
-        render_pass.set_bind_group(0, &self.globals.bind_group, &[]);
-        render_pass.set_bind_group(1, &shadow.bind.bind_group, &[]);
+        observed_bind_group!(render_pass, 0, &self.globals.bind_group);
+        observed_bind_group!(render_pass, 1, &shadow.bind.bind_group);
 
         Some(TransparentPassDrawer {
             render_pass,
@@ -442,6 +472,7 @@ impl<'frame> Drawer<'frame> {
     /// does nothing if the ingame pipelines are not yet ready
     /// does nothing if bloom is disabled
     pub fn run_bloom_passes(&mut self) {
+        crate::render::bastion_r0d::record_pass(crate::render::bastion_r0d::ranks::BLOOM, "bloom");
         let locals = &self.borrow.locals;
         let views = &self.borrow.views;
 
@@ -478,8 +509,13 @@ impl<'frame> Drawer<'frame> {
                 occlusion_query_set: None,
             });
 
-            render_pass.set_bind_group(0, bind, &[]);
+            observed_bind_group!(render_pass, 0, bind);
             render_pass.set_pipeline(pipeline);
+            crate::render::bastion_r0d::record_draw(
+                crate::render::bastion_r0d::draw_kind::BLOOM,
+                3,
+                1,
+            );
             render_pass.draw(0..3, 0..1);
         };
 
@@ -537,6 +573,10 @@ impl<'frame> Drawer<'frame> {
     /// Runs render passes with alpha premultiplication pipeline to complete any
     /// pending uploads.
     fn run_ui_premultiply_passes(&mut self) {
+        crate::render::bastion_r0d::record_pass(
+            crate::render::bastion_r0d::ranks::UI_PREMULTIPLY,
+            "ui_premultiply",
+        );
         prof_span!("run_ui_premultiply_passes");
         let Some(premultiply_alpha) = self.borrow.pipelines.premultiply_alpha() else {
             return;
@@ -569,8 +609,13 @@ impl<'frame> Drawer<'frame> {
             for upload in &uploads {
                 let (source_bind_group, push_constant_data) = upload.draw_data(&target_texture);
                 let bytes = bytemuck::bytes_of(&push_constant_data);
-                render_pass.set_bind_group(0, source_bind_group, &[]);
+                observed_bind_group!(render_pass, 0, source_bind_group);
                 render_pass.set_push_constants(wgpu::ShaderStages::VERTEX, 0, bytes);
+                crate::render::bastion_r0d::record_draw(
+                    crate::render::bastion_r0d::draw_kind::UI_PREMULTIPLY,
+                    6,
+                    1,
+                );
                 render_pass.draw(0..6, 0..1);
             }
         }
@@ -581,6 +626,7 @@ impl<'frame> Drawer<'frame> {
     /// Note, this automatically calls the internal `run_ui_premultiply_passes`
     /// to complete any pending image uploads for the UI.
     pub fn third_pass(&mut self) -> ThirdPassDrawer<'_> {
+        crate::render::bastion_r0d::record_pass(crate::render::bastion_r0d::ranks::THIRD, "third");
         self.run_ui_premultiply_passes();
 
         let mut render_pass =
@@ -606,7 +652,7 @@ impl<'frame> Drawer<'frame> {
                     occlusion_query_set: None,
                 });
 
-        render_pass.set_bind_group(0, &self.globals.bind_group, &[]);
+        observed_bind_group!(render_pass, 0, &self.globals.bind_group);
 
         ThirdPassDrawer {
             render_pass,
@@ -742,7 +788,7 @@ impl<'frame> Drawer<'frame> {
 
                 render_pass.set_pipeline(&shadow_renderer.point_pipeline.pipeline);
                 set_quad_index_buffer::<terrain::Vertex>(&mut render_pass, &self.borrow);
-                render_pass.set_bind_group(0, &self.globals.bind_group, &[]);
+                observed_bind_group!(render_pass, 0, &self.globals.bind_group);
 
                 (0../*20*/1).for_each(|point_light| {
                     render_pass.set_push_constants(
@@ -752,8 +798,13 @@ impl<'frame> Drawer<'frame> {
                             ..(6 * (point_light + 1) * STRIDE + (face + 1) as usize * STRIDE)],
                     );
                     chunks.clone().for_each(|(model, locals)| {
-                        render_pass.set_bind_group(1, &locals.bind_group, &[]);
+                        observed_bind_group!(render_pass, 1, &locals.bind_group);
                         render_pass.set_vertex_buffer(0, model.buf().slice(..));
+                        crate::render::bastion_r0d::record_draw(
+                            crate::render::bastion_r0d::draw_kind::POINT_SHADOW,
+                            model.len() as u32 / 4 * 6,
+                            1,
+                        );
                         render_pass.draw_indexed(0..model.len() as u32 / 4 * 6, 0, 0..1);
                     });
                 });
@@ -833,6 +884,7 @@ impl<'frame> Drawer<'frame> {
 
 impl Drop for Drawer<'_> {
     fn drop(&mut self) {
+        crate::render::bastion_r0d::emit_pass_tape();
         // If taking a screenshot and the blit pipeline is available
         // NOTE: blit pipeline should always be available for now so we don't report an
         // error if it isn't
@@ -861,7 +913,12 @@ impl Drop for Drawer<'_> {
                     },
                 );
                 render_pass.set_pipeline(&blit.pipeline);
-                render_pass.set_bind_group(0, screenshot.bind_group(), &[]);
+                observed_bind_group!(render_pass, 0, screenshot.bind_group());
+                crate::render::bastion_r0d::record_draw(
+                    crate::render::bastion_r0d::draw_kind::BLIT,
+                    3,
+                    1,
+                );
                 render_pass.draw(0..3, 0..1);
                 drop(render_pass);
                 // Issues a command to copy from the texture to a buffer and returns a closure
@@ -874,6 +931,7 @@ impl Drop for Drawer<'_> {
         profiler.resolve_queries(&mut encoder);
 
         // It is recommended to only do one submit per frame
+        crate::r0p_observer::record_submission();
         self.borrow.queue.submit(std::iter::once(encoder.finish()));
         // Need to call this after submit so the async mapping doesn't occur before
         // copying the screenshot to the buffer which will be mapped.
@@ -881,10 +939,12 @@ impl Drop for Drawer<'_> {
             f();
         }
         self.surface_texture.take().unwrap().present();
+        crate::r0p_observer::frame_presented();
 
         profiler
             .end_frame()
             .expect("Gpu profiler error! Maybe there was an unclosed scope?");
+        crate::r0p_observer::gpu_frame_submitted();
     }
 }
 
@@ -893,6 +953,7 @@ impl Drop for Drawer<'_> {
 pub struct ShadowPassDrawer<'pass> {
     render_pass: OwningScope<'pass, wgpu::RenderPass<'pass>>,
     borrow: &'pass RendererBorrow<'pass>,
+    figure_batch: &'pass mut crate::render::figure_batch::FigureBatchRuntimeV1,
     shadow_renderer: &'pass ShadowMapRenderer,
 }
 
@@ -900,10 +961,16 @@ impl<'pass> ShadowPassDrawer<'pass> {
     pub fn draw_figure_shadows(&mut self) -> FigureShadowDrawer<'_, 'pass> {
         let mut render_pass = self.render_pass.scope("directed_figure_shadows");
 
-        render_pass.set_pipeline(&self.shadow_renderer.figure_directed_pipeline.pipeline);
         set_quad_index_buffer::<terrain::Vertex>(&mut render_pass, self.borrow);
 
-        FigureShadowDrawer { render_pass }
+        FigureShadowDrawer {
+            render_pass,
+            queue: self.borrow.queue,
+            runtime: &mut *self.figure_batch,
+            legacy_pipeline: &self.shadow_renderer.figure_directed_pipeline.pipeline,
+            batch_pipeline: &self.shadow_renderer.figure_batch_directed_pipeline.pipeline,
+            pass: crate::render::figure_batch::RuntimeFigurePassV1::Shadow,
+        }
     }
 
     pub fn draw_terrain_shadows(&mut self) -> TerrainShadowDrawer<'_, 'pass> {
@@ -929,6 +996,7 @@ impl<'pass> ShadowPassDrawer<'pass> {
 pub struct RainOcclusionPassDrawer<'pass> {
     render_pass: OwningScope<'pass, wgpu::RenderPass<'pass>>,
     borrow: &'pass RendererBorrow<'pass>,
+    figure_batch: &'pass mut crate::render::figure_batch::FigureBatchRuntimeV1,
     rain_occlusion_renderer: &'pass RainOcclusionMapRenderer,
 }
 
@@ -936,10 +1004,16 @@ impl<'pass> RainOcclusionPassDrawer<'pass> {
     pub fn draw_figure_shadows(&mut self) -> FigureShadowDrawer<'_, 'pass> {
         let mut render_pass = self.render_pass.scope("directed_figure_rain_occlusion");
 
-        render_pass.set_pipeline(&self.rain_occlusion_renderer.figure_pipeline.pipeline);
         set_quad_index_buffer::<terrain::Vertex>(&mut render_pass, self.borrow);
 
-        FigureShadowDrawer { render_pass }
+        FigureShadowDrawer {
+            render_pass,
+            queue: self.borrow.queue,
+            runtime: &mut *self.figure_batch,
+            legacy_pipeline: &self.rain_occlusion_renderer.figure_pipeline.pipeline,
+            batch_pipeline: &self.rain_occlusion_renderer.figure_batch_pipeline.pipeline,
+            pass: crate::render::figure_batch::RuntimeFigurePassV1::Rain,
+        }
     }
 
     pub fn draw_terrain_shadows(&mut self) -> TerrainShadowDrawer<'_, 'pass> {
@@ -955,6 +1029,11 @@ impl<'pass> RainOcclusionPassDrawer<'pass> {
 #[must_use]
 pub struct FigureShadowDrawer<'pass_ref, 'pass: 'pass_ref> {
     render_pass: Scope<'pass_ref, wgpu::RenderPass<'pass>>,
+    queue: &'pass wgpu::Queue,
+    runtime: &'pass_ref mut crate::render::figure_batch::FigureBatchRuntimeV1,
+    legacy_pipeline: &'pass wgpu::RenderPipeline,
+    batch_pipeline: &'pass wgpu::RenderPipeline,
+    pass: crate::render::figure_batch::RuntimeFigurePassV1,
 }
 
 impl<'pass_ref, 'pass: 'pass_ref> FigureShadowDrawer<'pass_ref, 'pass> {
@@ -963,10 +1042,39 @@ impl<'pass_ref, 'pass: 'pass_ref> FigureShadowDrawer<'pass_ref, 'pass> {
         model: SubModel<'data, terrain::Vertex>,
         locals: &'data figure::BoundLocals,
     ) {
-        self.render_pass.set_bind_group(1, &locals.bind_group, &[]);
+        self.render_pass.set_pipeline(self.legacy_pipeline);
+        observed_bind_group!(self.render_pass, 1, &locals.bind_group);
         self.render_pass.set_vertex_buffer(0, model.buf());
+        crate::render::bastion_r0d::record_draw(
+            crate::render::bastion_r0d::draw_kind::FIGURE_SHADOW,
+            model.len() / 4 * 6,
+            1,
+        );
         self.render_pass
             .draw_indexed(0..model.len() / 4 * 6, 0, 0..1);
+    }
+
+    pub fn draw_batch<'data: 'pass>(
+        &mut self,
+        model: SubModel<'data, terrain::Vertex>,
+        instances: &[figure::FigureBatchInstance],
+    ) -> Result<(), crate::render::figure_batch::FigureBatchRuntimeErrorV1> {
+        let instance_range = self.runtime.stage(self.queue, self.pass, instances)?;
+        self.render_pass.set_pipeline(self.batch_pipeline);
+        observed_bind_group!(self.render_pass, 1, &self.runtime.bind_group);
+        self.render_pass.set_vertex_buffer(0, model.buf());
+        crate::render::bastion_r0d::record_draw(
+            crate::render::bastion_r0d::draw_kind::FIGURE_SHADOW,
+            model.len() / 4 * 6,
+            u32::try_from(instances.len()).unwrap_or(u32::MAX),
+        );
+        self.render_pass
+            .draw_indexed(0..model.len() / 4 * 6, 0, instance_range);
+        Ok(())
+    }
+
+    pub fn record_fallback(&self, incompatible_resource: bool) {
+        self.runtime.record_fallback(incompatible_resource);
     }
 }
 
@@ -998,8 +1106,13 @@ impl<'pass_ref, 'pass: 'pass_ref> TerrainShadowDrawer<'pass_ref, 'pass> {
 
         let submodel = model.submodel(index_range);
 
-        self.render_pass.set_bind_group(1, &locals.bind_group, &[]);
+        observed_bind_group!(self.render_pass, 1, &locals.bind_group);
         self.render_pass.set_vertex_buffer(0, submodel.buf());
+        crate::render::bastion_r0d::record_draw(
+            crate::render::bastion_r0d::draw_kind::TERRAIN_SHADOW,
+            submodel.len() / 4 * 6,
+            1,
+        );
         self.render_pass
             .draw_indexed(0..submodel.len() / 4 * 6, 0, 0..1);
     }
@@ -1016,8 +1129,13 @@ impl<'pass_ref, 'pass: 'pass_ref> DebugShadowDrawer<'pass_ref, 'pass> {
         model: &'data Model<debug::Vertex>,
         locals: &'data debug::BoundLocals,
     ) {
-        self.render_pass.set_bind_group(1, &locals.bind_group, &[]);
+        observed_bind_group!(self.render_pass, 1, &locals.bind_group);
         self.render_pass.set_vertex_buffer(0, model.buf().slice(..));
+        crate::render::bastion_r0d::record_draw(
+            crate::render::bastion_r0d::draw_kind::DEBUG_SHADOW,
+            model.len() as u32,
+            1,
+        );
         self.render_pass.draw(0..model.len() as u32, 0..1);
     }
 }
@@ -1027,6 +1145,7 @@ impl<'pass_ref, 'pass: 'pass_ref> DebugShadowDrawer<'pass_ref, 'pass> {
 pub struct FirstPassDrawer<'pass> {
     pub(super) render_pass: OwningScope<'pass, wgpu::RenderPass<'pass>>,
     borrow: &'pass RendererBorrow<'pass>,
+    figure_batch: &'pass mut crate::render::figure_batch::FigureBatchRuntimeV1,
     pipelines: &'pass super::Pipelines,
     globals: &'pass GlobalsBindGroup,
 }
@@ -1038,6 +1157,11 @@ impl<'pass> FirstPassDrawer<'pass> {
         render_pass.set_pipeline(&self.pipelines.skybox.pipeline);
         set_quad_index_buffer::<skybox::Vertex>(&mut render_pass, self.borrow);
         render_pass.set_vertex_buffer(0, model.buf().slice(..));
+        crate::render::bastion_r0d::record_draw(
+            crate::render::bastion_r0d::draw_kind::SKYBOX,
+            model.len() as u32,
+            1,
+        );
         render_pass.draw(0..model.len() as u32, 0..1);
     }
 
@@ -1056,17 +1180,28 @@ impl<'pass> FirstPassDrawer<'pass> {
         render_pass.set_pipeline(&self.pipelines.lod_terrain.pipeline);
         set_quad_index_buffer::<lod_terrain::Vertex>(&mut render_pass, self.borrow);
         render_pass.set_vertex_buffer(0, model.buf().slice(..));
+        crate::render::bastion_r0d::record_draw(
+            crate::render::bastion_r0d::draw_kind::LOD_TERRAIN,
+            model.len() as u32 / 4 * 6,
+            1,
+        );
         render_pass.draw_indexed(0..model.len() as u32 / 4 * 6, 0, 0..1);
     }
 
     pub fn draw_figures(&mut self) -> FigureDrawer<'_, 'pass> {
         let mut render_pass = self.render_pass.scope("figures");
 
-        render_pass.set_pipeline(&self.pipelines.figure.pipeline);
         // Note: figures use the same vertex type as the terrain
         set_quad_index_buffer::<terrain::Vertex>(&mut render_pass, self.borrow);
 
-        FigureDrawer { render_pass }
+        FigureDrawer {
+            render_pass,
+            queue: self.borrow.queue,
+            device: self.borrow.device,
+            runtime: &mut *self.figure_batch,
+            legacy_pipeline: &self.pipelines.figure.pipeline,
+            batch_pipeline: &self.pipelines.figure_batch.pipeline,
+        }
     }
 
     pub fn draw_terrain(&mut self) -> TerrainDrawer<'_, 'pass> {
@@ -1108,8 +1243,8 @@ impl<'pass> FirstPassDrawer<'pass> {
 
         render_pass.set_pipeline(&self.pipelines.sprite.pipeline);
         set_quad_index_buffer::<sprite::Vertex>(&mut render_pass, self.borrow);
-        render_pass.set_bind_group(0, &globals.bind_group, &[]);
-        render_pass.set_bind_group(2, &atlas_textures.bind_group, &[]);
+        observed_bind_group!(render_pass, 0, &globals.bind_group);
+        observed_bind_group!(render_pass, 2, &atlas_textures.bind_group);
 
         SpriteDrawer {
             render_pass,
@@ -1147,8 +1282,13 @@ impl<'pass_ref, 'pass: 'pass_ref> DebugDrawer<'pass_ref, 'pass> {
         model: &'data Model<debug::Vertex>,
         locals: &'data debug::BoundLocals,
     ) {
-        self.render_pass.set_bind_group(2, &locals.bind_group, &[]);
+        observed_bind_group!(self.render_pass, 2, &locals.bind_group);
         self.render_pass.set_vertex_buffer(0, model.buf().slice(..));
+        crate::render::bastion_r0d::record_draw(
+            crate::render::bastion_r0d::draw_kind::DEBUG,
+            model.len() as u32,
+            1,
+        );
         self.render_pass.draw(0..model.len() as u32, 0..1);
     }
 }
@@ -1156,9 +1296,24 @@ impl<'pass_ref, 'pass: 'pass_ref> DebugDrawer<'pass_ref, 'pass> {
 #[must_use]
 pub struct FigureDrawer<'pass_ref, 'pass: 'pass_ref> {
     render_pass: Scope<'pass_ref, wgpu::RenderPass<'pass>>,
+    queue: &'pass wgpu::Queue,
+    device: &'pass wgpu::Device,
+    runtime: &'pass_ref mut crate::render::figure_batch::FigureBatchRuntimeV1,
+    legacy_pipeline: &'pass wgpu::RenderPipeline,
+    batch_pipeline: &'pass wgpu::RenderPipeline,
 }
 
 impl<'pass_ref, 'pass: 'pass_ref> FigureDrawer<'pass_ref, 'pass> {
+    pub fn reconcile_cull(
+        &mut self,
+        batch: &bastion_renderer_r0d::gpu_cull::CanonicalCullBatchV1,
+    ) -> Result<
+        bastion_renderer_r0d::gpu_cull::AcceleratorResultV1,
+        crate::render::figure_batch::FigureBatchRuntimeErrorV1,
+    > {
+        self.runtime.reconcile_cull(self.device, self.queue, batch)
+    }
+
     pub fn draw<'data: 'pass>(
         &mut self,
         model: SubModel<'data, terrain::Vertex>,
@@ -1166,12 +1321,80 @@ impl<'pass_ref, 'pass: 'pass_ref> FigureDrawer<'pass_ref, 'pass> {
         // TODO: don't rebind this every time once they are shared between figures
         atlas_textures: &'data AtlasTextures<figure::Locals, FigureSpriteAtlasData>,
     ) {
-        self.render_pass
-            .set_bind_group(2, &atlas_textures.bind_group, &[]);
-        self.render_pass.set_bind_group(3, &locals.bind_group, &[]);
+        self.render_pass.set_pipeline(self.legacy_pipeline);
+        observed_bind_group!(self.render_pass, 2, &atlas_textures.bind_group);
+        observed_bind_group!(self.render_pass, 3, &locals.bind_group);
         self.render_pass.set_vertex_buffer(0, model.buf());
+        crate::render::bastion_r0d::record_draw(
+            crate::render::bastion_r0d::draw_kind::FIGURE,
+            model.len() / 4 * 6,
+            1,
+        );
         self.render_pass
             .draw_indexed(0..model.len() / 4 * 6, 0, 0..1);
+    }
+
+    pub fn draw_batch<'data: 'pass>(
+        &mut self,
+        model: SubModel<'data, terrain::Vertex>,
+        atlas_textures: &'data AtlasTextures<figure::Locals, FigureSpriteAtlasData>,
+        instances: &[figure::FigureBatchInstance],
+        generation: u64,
+        culling_result_digest: [u8; 32],
+        batch_identity: [u8; 32],
+    ) -> Result<(), crate::render::figure_batch::FigureBatchRuntimeErrorV1> {
+        let instance_count = u32::try_from(instances.len())
+            .map_err(|_| crate::render::figure_batch::FigureBatchRuntimeErrorV1::LengthOverflow)?;
+        let instance_range = self.runtime.stage(
+            self.queue,
+            crate::render::figure_batch::RuntimeFigurePassV1::Main,
+            instances,
+        )?;
+        self.render_pass.set_pipeline(self.batch_pipeline);
+        observed_bind_group!(self.render_pass, 2, &atlas_textures.bind_group);
+        observed_bind_group!(self.render_pass, 3, &self.runtime.bind_group);
+        self.render_pass.set_vertex_buffer(0, model.buf());
+        crate::render::bastion_r0d::record_draw(
+            crate::render::bastion_r0d::draw_kind::FIGURE,
+            model.len() / 4 * 6,
+            instance_count,
+        );
+        let reference = bastion_renderer_r0d::draw_submission::DirectDrawReferenceV1::new(
+            bastion_renderer_r0d::figure_batch::FigurePassV1::Main,
+            batch_identity,
+            model.len() / 4 * 6,
+            instance_count,
+            0,
+            0,
+            instance_range.start,
+        );
+        match reference {
+            Ok(reference) => match self.runtime.stage_indirect(
+                self.queue,
+                generation,
+                culling_result_digest,
+                reference,
+            ) {
+                Ok(offset) => self
+                    .render_pass
+                    .draw_indexed_indirect(self.runtime.indirect_buffer(), offset),
+                Err(_) => self
+                    .render_pass
+                    .draw_indexed(0..model.len() / 4 * 6, 0, instance_range),
+            },
+            Err(_) => {
+                self.runtime.record_indirect_submission_failure(
+                    bastion_renderer_r0d::draw_submission::SubmissionFallbackV1::InvalidRange,
+                );
+                self.render_pass
+                    .draw_indexed(0..model.len() / 4 * 6, 0, instance_range);
+            },
+        }
+        Ok(())
+    }
+
+    pub fn record_fallback(&self, incompatible_resource: bool) {
+        self.runtime.record_fallback(incompatible_resource);
     }
 }
 
@@ -1209,14 +1432,18 @@ impl<'pass_ref, 'pass: 'pass_ref> TerrainDrawer<'pass_ref, 'pass> {
             .filter(|current_atlas_textures| Arc::ptr_eq(current_atlas_textures, atlas_textures))
             .is_none()
         {
-            self.render_pass
-                .set_bind_group(2, &atlas_textures.bind_group, &[]);
+            observed_bind_group!(self.render_pass, 2, &atlas_textures.bind_group);
             self.atlas_textures = Some(atlas_textures);
         };
 
-        self.render_pass.set_bind_group(3, &locals.bind_group, &[]);
+        observed_bind_group!(self.render_pass, 3, &locals.bind_group);
 
         self.render_pass.set_vertex_buffer(0, submodel.buf());
+        crate::render::bastion_r0d::record_draw(
+            crate::render::bastion_r0d::draw_kind::TERRAIN,
+            submodel.len() / 4 * 6,
+            1,
+        );
         self.render_pass
             .draw_indexed(0..submodel.len() / 4 * 6, 0, 0..1);
     }
@@ -1239,6 +1466,11 @@ impl<'pass_ref, 'pass: 'pass_ref> ParticleDrawer<'pass_ref, 'pass> {
             self.render_pass.set_vertex_buffer(0, model.buf().slice(..));
             self.render_pass
                 .set_vertex_buffer(1, instances.buf().slice(..));
+            crate::render::bastion_r0d::record_draw(
+                crate::render::bastion_r0d::draw_kind::PARTICLE,
+                model.len() as u32 / 4 * 6,
+                instances.count() as u32,
+            );
             self.render_pass
             // TODO: since we cast to u32 maybe this should returned by the len/count functions?
             .draw_indexed(0..model.len() as u32 / 4 * 6, 0, 0..instances.count() as u32);
@@ -1260,9 +1492,14 @@ impl<'pass_ref, 'pass: 'pass_ref> RopeDrawer<'pass_ref, 'pass> {
         locals: &'data rope::BoundLocals,
     ) {
         self.render_pass.set_vertex_buffer(0, model.buf().slice(..));
-        self.render_pass.set_bind_group(2, &locals.bind_group, &[]);
+        observed_bind_group!(self.render_pass, 2, &locals.bind_group);
         // TODO: since we cast to u32 maybe this should returned by the len/count
         // functions?
+        crate::render::bastion_r0d::record_draw(
+            crate::render::bastion_r0d::draw_kind::ROPE,
+            model.len() as u32 / 4 * 6,
+            1,
+        );
         self.render_pass
             .draw_indexed(0..model.len() as u32 / 4 * 6, 0, 0..1);
     }
@@ -1293,12 +1530,16 @@ impl<'pass_ref, 'pass: 'pass_ref> SpriteDrawer<'pass_ref, 'pass> {
             return;
         }
 
-        self.render_pass
-            .set_bind_group(3, &terrain_locals.bind_group, &[]);
+        observed_bind_group!(self.render_pass, 3, &terrain_locals.bind_group);
 
         let subinstances = instances.subinstances(instance_range);
 
         self.render_pass.set_vertex_buffer(0, subinstances.buf());
+        crate::render::bastion_r0d::record_draw(
+            crate::render::bastion_r0d::draw_kind::SPRITE,
+            sprite::VERT_PAGE_SIZE / 4 * 6,
+            subinstances.count(),
+        );
         self.render_pass.draw_indexed(
             0..sprite::VERT_PAGE_SIZE / 4 * 6,
             0,
@@ -1310,8 +1551,7 @@ impl<'pass_ref, 'pass: 'pass_ref> SpriteDrawer<'pass_ref, 'pass> {
 impl<'pass_ref, 'pass: 'pass_ref> Drop for SpriteDrawer<'pass_ref, 'pass> {
     fn drop(&mut self) {
         // Reset to regular globals
-        self.render_pass
-            .set_bind_group(0, &self.globals.bind_group, &[]);
+        observed_bind_group!(self.render_pass, 0, &self.globals.bind_group);
     }
 }
 
@@ -1329,6 +1569,11 @@ impl<'pass_ref, 'pass: 'pass_ref> LodObjectDrawer<'pass_ref, 'pass> {
         self.render_pass.set_vertex_buffer(0, model.buf().slice(..));
         self.render_pass
             .set_vertex_buffer(1, instances.buf().slice(..));
+        crate::render::bastion_r0d::record_draw(
+            crate::render::bastion_r0d::draw_kind::LOD_OBJECT,
+            model.len() as u32,
+            instances.count() as u32,
+        );
         self.render_pass
             .draw(0..model.len() as u32, 0..instances.count() as u32);
     }
@@ -1346,7 +1591,12 @@ impl<'pass_ref, 'pass: 'pass_ref> FluidDrawer<'pass_ref, 'pass> {
         locals: &'data terrain::BoundLocals,
     ) {
         self.render_pass.set_vertex_buffer(0, model.buf().slice(..));
-        self.render_pass.set_bind_group(2, &locals.bind_group, &[]);
+        observed_bind_group!(self.render_pass, 2, &locals.bind_group);
+        crate::render::bastion_r0d::record_draw(
+            crate::render::bastion_r0d::draw_kind::FLUID,
+            model.len() as u32 / 4 * 6,
+            1,
+        );
         self.render_pass
             .draw_indexed(0..model.len() as u32 / 4 * 6, 0, 0..1);
     }
@@ -1364,8 +1614,16 @@ impl VolumetricPassDrawer<'_> {
     pub fn draw_clouds(&mut self) {
         self.render_pass
             .set_pipeline(&self.clouds_pipeline.pipeline);
-        self.render_pass
-            .set_bind_group(2, &self.borrow.locals.clouds_bind.bind_group, &[]);
+        observed_bind_group!(
+            self.render_pass,
+            2,
+            &self.borrow.locals.clouds_bind.bind_group
+        );
+        crate::render::bastion_r0d::record_draw(
+            crate::render::bastion_r0d::draw_kind::CLOUDS,
+            3,
+            1,
+        );
         self.render_pass.draw(0..3, 0..1);
     }
 }
@@ -1387,7 +1645,7 @@ impl<'pass> TransparentPassDrawer<'pass> {
         render_pass.set_pipeline(&self.trail_pipeline.pipeline);
         set_quad_index_buffer::<trail::Vertex>(&mut render_pass, self.borrow);
 
-        render_pass.set_bind_group(1, &shadow.bind.bind_group, &[]);
+        observed_bind_group!(render_pass, 1, &shadow.bind.bind_group);
 
         Some(TrailDrawer { render_pass })
     }
@@ -1401,6 +1659,11 @@ pub struct TrailDrawer<'pass_ref, 'pass: 'pass_ref> {
 impl<'pass_ref, 'pass: 'pass_ref> TrailDrawer<'pass_ref, 'pass> {
     pub fn draw(&mut self, submodel: SubModel<'pass, trail::Vertex>) {
         self.render_pass.set_vertex_buffer(0, submodel.buf());
+        crate::render::bastion_r0d::record_draw(
+            crate::render::bastion_r0d::draw_kind::TRAIL,
+            submodel.len() / 4 * 6,
+            1,
+        );
         self.render_pass
             .draw_indexed(0..submodel.len() / 4 * 6, 0, 0..1);
     }
@@ -1423,7 +1686,16 @@ impl<'pass> ThirdPassDrawer<'pass> {
 
         let mut render_pass = self.render_pass.scope("postprocess");
         render_pass.set_pipeline(&postprocess.pipeline);
-        render_pass.set_bind_group(1, &self.borrow.locals.postprocess_bind.bind_group, &[]);
+        observed_bind_group!(
+            render_pass,
+            1,
+            &self.borrow.locals.postprocess_bind.bind_group
+        );
+        crate::render::bastion_r0d::record_draw(
+            crate::render::bastion_r0d::draw_kind::POSTPROCESS,
+            3,
+            1,
+        );
         render_pass.draw(0..3, 0..1);
     }
 
@@ -1476,7 +1748,7 @@ impl<'pass_ref, 'pass: 'pass_ref> UiDrawer<'pass_ref, 'pass> {
 
 impl<'pass_ref, 'pass: 'pass_ref> PreparedUiDrawer<'pass_ref, 'pass> {
     pub fn set_locals<'data: 'pass>(&mut self, locals: &'data ui::BoundLocals) {
-        self.render_pass.set_bind_group(1, &locals.bind_group, &[]);
+        observed_bind_group!(self.render_pass, 1, &locals.bind_group);
     }
 
     pub fn set_model<'data: 'pass>(&mut self, model: &'data DynamicModel<ui::Vertex>) {
@@ -1494,7 +1766,12 @@ impl<'pass_ref, 'pass: 'pass_ref> PreparedUiDrawer<'pass_ref, 'pass> {
     }
 
     pub fn draw<'data: 'pass>(&mut self, texture: &'data ui::TextureBindGroup, verts: Range<u32>) {
-        self.render_pass.set_bind_group(2, &texture.bind_group, &[]);
+        observed_bind_group!(self.render_pass, 2, &texture.bind_group);
+        crate::render::bastion_r0d::record_draw(
+            crate::render::bastion_r0d::draw_kind::UI,
+            verts.end.saturating_sub(verts.start),
+            1,
+        );
         self.render_pass.draw(verts, 0..1);
     }
 }

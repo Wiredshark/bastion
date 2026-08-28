@@ -10,6 +10,7 @@ pub mod msg;
 pub mod object;
 pub mod persistence;
 pub mod pets;
+pub mod renderer_bench_net;
 pub mod semantic_egress;
 pub mod sentinel;
 pub mod server_info;
@@ -58,6 +59,13 @@ pub fn add_server_systems(dispatch_builder: &mut DispatcherBuilder) {
         &crate::bastion_path::Sys::sys_name(),
     ]);
     dispatch::<crate::bastion_piles::Sys>(dispatch_builder, &[]);
+    // renderer-bench W2 (fork): fixture loader + scripted driver + semantic
+    // tape. Env-gated; inert (one Option check) without the gate.
+    dispatch::<crate::bastion_renderer_bench::Sys>(dispatch_builder, &[]);
+    // W3: the announce drain runs after the bench sys filled the outbox.
+    dispatch::<renderer_bench_net::Sys>(dispatch_builder, &[
+        &crate::bastion_renderer_bench::Sys::sys_name(),
+    ]);
     dispatch::<terrain::Sys>(dispatch_builder, &[&msg::terrain::Sys::sys_name()]);
     dispatch::<waypoint::Sys>(dispatch_builder, &[]);
     dispatch::<teleporter::Sys>(dispatch_builder, &[]);

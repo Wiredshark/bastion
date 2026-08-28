@@ -350,6 +350,13 @@ impl Debug {
 
     pub fn get_shape(&self, id: DebugShapeId) -> Option<&DebugShape> { self.shapes.get(&id) }
 
+    /// True only after the renderer has accepted the shape's vertex buffer.
+    ///
+    /// Packet-scoped certification seams use this to distinguish canonical
+    /// CPU geometry from geometry that the production debug draw pass will
+    /// actually submit. It intentionally exposes no renderer handle.
+    pub fn has_draw_model(&self, id: DebugShapeId) -> bool { self.models.contains_key(&id) }
+
     pub fn set_context(&mut self, id: DebugShapeId, pos: [f32; 4], color: [f32; 4], ori: [f32; 4]) {
         self.pending_locals.insert(id, (pos, color, ori));
     }

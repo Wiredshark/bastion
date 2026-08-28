@@ -1,0 +1,53 @@
+{
+  "entries": [
+    {
+      "classification": "VERIFIED",
+      "evidence": "renderer-r0d-preflight-manifest-v1.json verdict versus Run-019/020 admission contract",
+      "id": "R0D-CONTRA-001",
+      "issue": "producer preflight declared W1 unblocked before parent admission artifacts existed",
+      "resolution": "producer PASS is source preflight only; only renderer-r0d-parent-admission-v1 may launch W1",
+      "status": "RESOLVED_IN_BUNDLE"
+    },
+    {
+      "classification": "VERIFIED",
+      "id": "R0D-CONTRA-002",
+      "issue": "previous 109-byte empty-manifest vector was internally invalid",
+      "resolution": "89-byte corrected vector is sole V1 authority; payload 9a93d62f... and domain 785c2035...",
+      "status": "WITHDRAWN_AND_REPLACED",
+      "withdrawn_sha256": "0fd55c8d3a3432d6200744d95927e8098d527d7e952baac6496a87fd9cd33f4e"
+    },
+    {
+      "classification": "VERIFIED",
+      "id": "R0D-CONTRA-003",
+      "issue": "earlier W1 packet allowed common/src/comp/mod.rs, while final W1 prompt excluded it",
+      "resolution": "common/src/comp/mod.rs is read-only and hash-bound; RendererBenchEntityId lives in common/src/comp/bastion.rs",
+      "source_fact": "current common/src/comp/mod.rs already contains pub mod bastion",
+      "status": "RESOLVED_IN_HANDOFF"
+    },
+    {
+      "classification": "VERIFIED",
+      "id": "R0D-CONTRA-004",
+      "issue": "earlier allowed path bastion-harness/src/renderer_bench_reference.rs would require an out-of-scope main.rs module edit to compile",
+      "resolution": "use new bastion-harness/tests/renderer_bench_reference.rs; bastion-harness/src/main.rs remains forbidden",
+      "source_fact": "bastion-harness is a binary package; Cargo integration tests can compile independently under tests/",
+      "status": "RESOLVED_IN_HANDOFF"
+    },
+    {
+      "classification": "VERIFIED",
+      "id": "R0D-CONTRA-005",
+      "issue": "canonical core vectors and W1 projection vectors existed as local research artifacts but were absent from the reviewed Drive handoff",
+      "resolution": "publish both files, both producer scripts, and an independent verifier/output under one checksum manifest",
+      "status": "RESOLVED_BY_PUBLICATION"
+    },
+    {
+      "classification": "PROPOSAL",
+      "id": "R0D-CONTRA-006",
+      "issue": "point-in-time preflight cleanliness can become stale before W1 begins",
+      "resolution": "parent admission is commit-bound, but W1 must rerun the exact freshness commands and refuse any mismatch before its first source edit",
+      "status": "MITIGATED_FAIL_CLOSED"
+    }
+  ],
+  "schema": "renderer-r0d-contradiction-ledger-v1",
+  "source_commit": "5de5361bc53cdac252c30c43cc979512550ae5e9",
+  "unresolved": []
+}

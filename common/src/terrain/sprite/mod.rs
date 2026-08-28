@@ -270,6 +270,13 @@ sprites! {
         BenchWood2Middle = 0xD1,
         BenchWood2Side = 0xD2,
         BenchWood2Middle2 = 0xD3,
+        // bastion (R2b renderer roadmap): stockpile container visuals —
+        // asset-lab Batch-A models registered as first-class sprites.
+        // Deliberately ABSENT from the solid-height table: a stockpile
+        // visual must never obstruct pathing/deposit (unit-asserted in
+        // bastion-server's stockpile_container tests).
+        BastionCrateStock = 0xD4,
+        BastionBasketStock = 0xD5,
     },
     // Sprites representing plants that may grow over time (this does not include plant parts, like fruit).
     Plant = 3 has Growth, Owned, SnowCovered, Collectable {

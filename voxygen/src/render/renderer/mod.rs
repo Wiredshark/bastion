@@ -171,6 +171,9 @@ pub struct Renderer {
     profile_times: Vec<wgpu_profiler::GpuTimerQueryResult>,
     profiler_features_enabled: bool,
 
+    figure_gpu: super::figure_gpu::FigureGpuRuntimeV1,
+    figure_batch: super::figure_batch::FigureBatchRuntimeV1,
+
     ui_premultiply_uploads: ui::BatchedUploads,
 
     #[cfg(feature = "egui-ui")]
@@ -275,6 +278,13 @@ impl Renderer {
         };
 
         let info = adapter.get_info();
+        crate::r0p_observer::record_adapter(
+            &info.name,
+            info.vendor,
+            info.device,
+            &format!("{:?}", info.backend),
+            &format!("{:?}", info.device_type),
+        );
         let supported_limits = adapter.limits();
         info!(
             ?info.name,
@@ -337,6 +347,7 @@ impl Renderer {
                     } else {
                         wgpu::Features::empty()
                     }
+                    | (adapter.features() & wgpu::Features::INDIRECT_FIRST_INSTANCE)
                     | (adapter.features() & wgpu_profiler::GpuProfiler::ALL_WGPU_TIMER_FEATURES),
                 required_limits,
                 experimental_features: wgpu::ExperimentalFeatures::disabled(),
@@ -574,6 +585,9 @@ impl Renderer {
             create_quad_index_buffer_u16(&device, QUAD_INDEX_BUFFER_U16_START_VERT_LEN as usize);
         let quad_index_buffer_u32 =
             create_quad_index_buffer_u32(&device, QUAD_INDEX_BUFFER_U32_START_VERT_LEN as usize);
+        if crate::r0p_observer::enabled() {
+            other_modes.profiler_enabled = true;
+        }
         other_modes.profiler_enabled &= profiler_features_enabled;
         #[cfg(not(feature = "tracy"))]
         let profiler =
@@ -605,6 +619,42 @@ impl Renderer {
             .into_iter()
             .filter_map(|present_mode| PresentMode::try_from(present_mode).ok())
             .collect();
+        let figure_gpu = super::figure_gpu::FigureGpuRuntimeV1::new(&device)
+            .map_err(|error| RenderError::CustomError(format!("{error:?}")))?;
+        let compute_supported = adapter
+            .get_downlevel_capabilities()
+            .flags
+            .contains(wgpu::DownlevelFlags::COMPUTE_SHADERS);
+        let indirect_supported = adapter
+            .get_downlevel_capabilities()
+            .flags
+            .contains(wgpu::DownlevelFlags::INDIRECT_EXECUTION)
+            && device
+                .features()
+                .contains(wgpu::Features::INDIRECT_FIRST_INSTANCE);
+        let indirect_enabled = match std::env::var("BASTION_R2_DRAW_MODE") {
+            Ok(value) if value == "direct" => false,
+            Ok(value) if value == "indirect" => true,
+            Ok(value) => {
+                return Err(RenderError::CustomError(format!(
+                    "invalid BASTION_R2_DRAW_MODE declaration: {value}"
+                )));
+            },
+            Err(std::env::VarError::NotPresent) => true,
+            Err(error) => {
+                return Err(RenderError::CustomError(format!(
+                    "invalid BASTION_R2_DRAW_MODE environment: {error}"
+                )));
+            },
+        };
+        let figure_batch = super::figure_batch::FigureBatchRuntimeV1::new(
+            &device,
+            &layouts.figure,
+            compute_supported,
+            indirect_supported,
+            indirect_enabled,
+        )
+        .map_err(|error| RenderError::CustomError(format!("{error:?}")))?;
 
         Ok(Self {
             device,
@@ -639,6 +689,9 @@ impl Renderer {
             profile_times: Vec::new(),
             profiler_features_enabled,
 
+            figure_gpu,
+            figure_batch,
+
             ui_premultiply_uploads: Default::default(),
 
             #[cfg(feature = "egui-ui")]
@@ -657,6 +710,25 @@ impl Renderer {
 
     /// Get the graphics backend being used.
     pub fn graphics_backend(&self) -> wgpu::Backend { self.graphics_backend }
+
+    /// Uploads one complete presentation generation into the persistent R1BC
+    /// figure pools and waits for the exact backend submission boundary.
+    pub fn upload_r1bc_figure_generation(
+        &mut self,
+        frame: &bastion_renderer_r0d::presentation::PresentationFrameV1,
+        package: &bastion_renderer_r0d::figure_asset::CompiledFigurePackageV1,
+        package_receipt: &bastion_renderer_r0d::figure_asset::PackageReceiptV1,
+    ) -> Result<bastion_renderer_r0d::figure_gpu::UploadReceiptV1, String> {
+        self.figure_gpu
+            .upload_generation(&self.device, &self.queue, frame, package, package_receipt)
+            .map_err(|error| format!("{error:?}"))
+    }
+
+    pub fn reset_r1bc_figure_gpu(&mut self) -> Result<(), String> {
+        self.figure_gpu = super::figure_gpu::FigureGpuRuntimeV1::new(&self.device)
+            .map_err(|error| format!("{error:?}"))?;
+        Ok(())
+    }
 
     /// Check the status of the intial pipeline creation
     /// Returns `None` if complete
@@ -1087,6 +1159,8 @@ impl Renderer {
             let timestamp_period = self.queue.get_timestamp_period();
             if let Some(profile_times) = self.profiler.process_finished_frame(timestamp_period) {
                 self.profile_times = profile_times;
+                let timings = self.timings();
+                crate::r0p_observer::record_gpu_timings(&timings);
             }
         }
 
@@ -1121,6 +1195,7 @@ impl Renderer {
                         shadow.point,
                         shadow.directed,
                         shadow.figure,
+                        shadow.figure_batch,
                         shadow.debug,
                         shadow_views,
                     );
@@ -1130,6 +1205,7 @@ impl Renderer {
                         &self.queue,
                         rain_occlusion.terrain,
                         rain_occlusion.figure,
+                        rain_occlusion.figure_batch,
                         rain_occlusion_view,
                     );
 
@@ -1181,32 +1257,38 @@ impl Renderer {
                         Some(point_pipeline),
                         Some(terrain_directed_pipeline),
                         Some(figure_directed_pipeline),
+                        Some(figure_batch_directed_pipeline),
                         Some(debug_directed_pipeline),
                         ShadowMap::Enabled(shadow_map),
                     ) = (
                         shadow_pipelines.point,
                         shadow_pipelines.directed,
                         shadow_pipelines.figure,
+                        shadow_pipelines.figure_batch,
                         shadow_pipelines.debug,
                         &mut shadow.map,
                     ) {
                         shadow_map.point_pipeline = point_pipeline;
                         shadow_map.terrain_directed_pipeline = terrain_directed_pipeline;
                         shadow_map.figure_directed_pipeline = figure_directed_pipeline;
+                        shadow_map.figure_batch_directed_pipeline = figure_batch_directed_pipeline;
                         shadow_map.debug_directed_pipeline = debug_directed_pipeline;
                     }
 
                     if let (
                         Some(terrain_directed_pipeline),
                         Some(figure_directed_pipeline),
+                        Some(figure_batch_directed_pipeline),
                         RainOcclusionMap::Enabled(rain_occlusion_map),
                     ) = (
                         rain_occlusion_pipelines.terrain,
                         rain_occlusion_pipelines.figure,
+                        rain_occlusion_pipelines.figure_batch,
                         &mut shadow.rain_map,
                     ) {
                         rain_occlusion_map.terrain_pipeline = terrain_directed_pipeline;
                         rain_occlusion_map.figure_pipeline = figure_directed_pipeline;
+                        rain_occlusion_map.figure_batch_pipeline = figure_batch_directed_pipeline;
                     }
 
                     self.pipeline_modes = new_pipeline_modes;
