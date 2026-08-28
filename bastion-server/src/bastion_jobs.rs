@@ -16719,6 +16719,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             );
                         }
                         let id = board.insert_auto_guard_job(post, uid);
+                        // ROW 31 residual: pre-claimed guard work bypasses
+                        // the open-claim tally — the muster votes here so
+                        // the militia's name can be Guard.
+                        *board
+                            .lane_counts
+                            .entry((uid, common::bastion::WorkType::Guard))
+                            .or_insert(0) += 1;
                         let _ = active_jobs.insert(*ent, comp::bastion::ActiveJob {
                             job: id,
                             state: comp::bastion::ActiveJobState::Traveling,
@@ -34724,6 +34731,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .collect();
                         for (entity, u) in idle_watch {
                             let id = board.insert_auto_guard_job(post, u);
+                            // ROW 31 residual: the night post votes Guard —
+                            // a watchman's whole working life was invisible
+                            // to the open-claim tally.
+                            *board
+                                .lane_counts
+                                .entry((u, common::bastion::WorkType::Guard))
+                                .or_insert(0) += 1;
                             board.night_posts.insert(u, id);
                             let _ = active_jobs.insert(entity, comp::bastion::ActiveJob {
                                 job: id,
