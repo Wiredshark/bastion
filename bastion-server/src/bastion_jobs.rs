@@ -4906,16 +4906,31 @@ pub fn farm_season(time_of_day: f64) -> common::time::Season {
 pub fn culture_alpha() -> Option<f32> {
     static A: std::sync::OnceLock<Option<f32>> = std::sync::OnceLock::new();
     *A.get_or_init(|| {
-        std::env::var("BASTION_CULTURE_ALPHA").ok().map(|v| {
-            let a: f32 = v.parse().unwrap_or_else(|_| {
-                panic!("BASTION_CULTURE_ALPHA={v:?} is not a float in [0,1]")
-            });
-            assert!(
-                (0.0..=1.0).contains(&a),
-                "BASTION_CULTURE_ALPHA={a} outside [0,1]"
-            );
-            a
-        })
+        // ★ ROW 31 WAKE (the mover-flag law's third instance): this knob
+        // gated the ENTIRE desires+skill claim weighting — the landed,
+        // A/B-passed identity machinery — and nothing in production ever
+        // set it, so every world claimed with weight 1.0 while the
+        // cowardly-aspiring-guard system slept. Default ON at the
+        // balanced blend; BASTION_CULTURE_ALPHA still overrides (0 =
+        // pure desire, 1 = pure skill); BASTION_NO_CULTURE_WEIGHT kills.
+        if std::env::var_os("BASTION_NO_CULTURE_WEIGHT").is_some() {
+            return None;
+        }
+        Some(
+            std::env::var("BASTION_CULTURE_ALPHA")
+                .ok()
+                .map(|v| {
+                    let a: f32 = v.parse().unwrap_or_else(|_| {
+                        panic!("BASTION_CULTURE_ALPHA={v:?} is not a float in [0,1]")
+                    });
+                    assert!(
+                        (0.0..=1.0).contains(&a),
+                        "BASTION_CULTURE_ALPHA={a} outside [0,1]"
+                    );
+                    a
+                })
+                .unwrap_or(0.5),
+        )
     })
 }
 
