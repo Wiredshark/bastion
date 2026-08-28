@@ -2519,6 +2519,13 @@ pub fn stockpile_material_units<'a>(
 /// wood from minute one.
 pub(crate) const WOOD_PAR_PER_COLONIST: u32 = 4;
 
+/// ★ Per-colonist stone target (Ben's spine, layer 1 — stone): the mine
+/// generator dug only what build plans owed, so a colony with no active
+/// builds NEVER mined — wood's disease in stone's coat. Same number,
+/// same fixture arithmetic as wood: a 24-town's par (96) sits under the
+/// 256-stone seed; construction drains, the par pulls back.
+pub(crate) const STONE_PAR_PER_COLONIST: u32 = 4;
+
 pub fn stockpile_has_material<'a>(
     def: &str,
     items: impl IntoIterator<Item = (&'a PickupItem, &'a comp::Pos, &'a Uid)>,
@@ -16014,7 +16021,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // pickups (stack AMOUNTS, not entities) and colonist bags
             // (fetched or hauled stock in transit) — so the generator
             // never over-digs while deliveries are mid-flight.
-            if generator_enabled(GeneratorKind::Mine) && demand > 0 {
+            // ★ COLONY ARC: the STANDING STONE PAR joins the plans' owed
+            // demand — the buffer the town keeps regardless of live
+            // construction, so the dig loop stays renewable like the farm
+            // and the grove. Seeded fixtures sit above par, honestly quiet.
+            let stone_par =
+                STONE_PAR_PER_COLONIST as usize * colonists.count();
+            if generator_enabled(GeneratorKind::Mine) && demand + stone_par > 0 {
                 let mut supply = 0u64;
                 for pickup in (&pickup_items).join() {
                     if pickup.item().item_definition_id().itemdef_id() == Some(MINE_DROP_ITEM) {
@@ -16034,7 +16047,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     .values()
                     .filter(|j| j.kind.is(DesignationKind::Mine))
                     .count();
-                let deficit = demand
+                let deficit = (demand + stone_par)
                     .saturating_sub(supply as usize)
                     .saturating_sub(pending_mine);
                 let cap = queue_snapshot.len() * MINE_GEN_JOBS_PER_COLONIST;
@@ -16064,6 +16077,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 if tick.0 % (ARBITRATION_INTERVAL as u64 * 20) == 2 {
                     info!(
                         demand,
+                        stone_par,
                         supply,
                         pending_mine,
                         quota,
