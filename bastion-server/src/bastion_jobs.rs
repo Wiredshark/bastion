@@ -34823,6 +34823,36 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     game_day = (tod / common::resources::DAY).floor() as i64,
                     "bastion: DAY SCHEDULE — the clock the arbiter is reading"
                 );
+                // ★ ROW 36c: THE PLAZA CENSUS — the row-36 verdict needs a
+                // SIMULTANEITY count and every proxy I reached for was
+                // blind: the inspector's `activity` reads WorkType::Haul
+                // for every self-job (a lounger is indistinguishable from
+                // a hauler), and the create/complete ledger cannot answer
+                // it either, because a lounge cut short by a need or
+                // bedtime is RELEASED without a completion. So the server
+                // counts what it alone can see: colonists whose ActiveJob
+                // IS a Recreate job, right now, beside the hour that gives
+                // the number meaning. Same cadence as the clock line, so
+                // an evening's occupancy reads straight off the log.
+                {
+                    let lounging = (&active_jobs, &colonists)
+                        .join()
+                        .filter(|(aj, _)| {
+                            board.jobs.get(&aj.job).is_some_and(|j| {
+                                matches!(
+                                    j.kind,
+                                    common::bastion::JobKind::Recreate { .. }
+                                )
+                            })
+                        })
+                        .count();
+                    info!(
+                        hour,
+                        lounging,
+                        pop = colonists.count(),
+                        "bastion: PLAZA CENSUS — who is lounging right now"
+                    );
+                }
                 // ROW 27: derive the NIGHT WATCH roster on the same clock
                 // cadence — renewable by construction (re-derived from the
                 // guard lane each time, like farm demand; a died/demoted

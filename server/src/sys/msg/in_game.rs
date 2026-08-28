@@ -1818,6 +1818,15 @@ impl<'a> System<'a> for Sys {
                                                         .unwrap_or_default()
                                                 })
                                                 .unwrap_or_default(),
+                                            // ROW 31c: the name the town knows
+                                            // them by — read from the SAME
+                                            // board map the identity stack
+                                            // feeds, so the nameplate cannot
+                                            // drift from the sim's own answer.
+                                            profession: job_board
+                                                .professions
+                                                .get(&uid)
+                                                .copied(),
                                         })
                                     })
                                     .map(BastionInspectKind::Colonist),

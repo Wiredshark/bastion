@@ -1247,6 +1247,16 @@ impl SessionState {
                         }
                         let mut lines = vec![
                             format!("- {} -", p.name),
+                            // ROW 31c: WHO THIS IS. The mandate's own test is
+                            // a watcher naming someone's job from an hour of
+                            // watching; the town already derives that name
+                            // daily (rolling dominant lane + hysteresis) —
+                            // this puts it where the watcher looks first,
+                            // under the name, above the machinery.
+                            match p.profession {
+                                Some(w) => format!("{:?}", w),
+                                None => "(no trade yet)".to_string(),
+                            },
                             format!(
                                 "Drive: {:?}  (W {:.2} / F {:.2} / I {:.2})",
                                 p.drive, p.last_scores.0, p.last_scores.1, p.last_scores.2

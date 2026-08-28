@@ -743,6 +743,15 @@ pub struct BastionInspectPayload {
     /// colonist uid when the target is a colony npc ("uid:N"), else the
     /// Target's debug form. Tail-appended (wire rule).
     pub sentiments: Vec<(String, f32)>,
+    /// ROW 31c (professions in lane, the LEGIBLE half): the name the town
+    /// knows this colonist by — the rolling dominant work lane with
+    /// hysteresis, derived daily server-side (`JobBoard::professions`, the
+    /// SAME map the claim scorer's identity stack feeds). `None` before the
+    /// first derivation (day 0) or for a colonist who has done no lane work
+    /// yet. The mandate's own test is a watcher naming a job from an hour of
+    /// watching; this is that name, on the nameplate. Tail-appended (wire
+    /// rule).
+    pub profession: Option<crate::bastion::WorkType>,
 }
 
 /// bastion (STATUS-SURFACE): the inspector's colonist status line — the
