@@ -8064,6 +8064,10 @@ pub struct JobBoard {
     /// ROW 31: the last game-day the tallies were halved and the
     /// professions derived (once daily, at the schedule cadence).
     pub profession_day: i64,
+    /// ROW 33 (watch coverage): the last eight alarm-cry positions —
+    /// the town's own record of where danger arrives; the approach
+    /// post derives from their centroid.
+    pub recent_cries: Vec<Vec3<i32>>,
     /// bastion (R2b, renderer roadmap): container-sprite cells the stockpile
     /// visuals pass has placed — cell → the sprite standing there.
     /// Runtime-only (JobBoard is not serialized); after a restart both this
@@ -16899,6 +16903,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             out_of_earshot,
                             "bastion: ★ ALARM RAISED — a colonist cried out and the town heard it"
                         );
+                        // ROW 33 (watch coverage): the cry is the town's own
+                        // record of WHERE danger arrives — the approach post
+                        // derives from these (three bodies at one address
+                        // taught the bar: first contact is a guard). Keep
+                        // the last eight.
+                        board.recent_cries.push(*cry_pos);
+                        if board.recent_cries.len() > 8 {
+                            board.recent_cries.remove(0);
+                        }
                     }
                 } else if cur == D::Defend {
                     let retracting: Vec<JobId> =
@@ -34716,7 +34729,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             .map(|(_, r)| stockpile_drop_cell(&terrain, r))
                     });
                     if let Some(post) = post_cell {
-                        let idle_watch: Vec<(specs::Entity, common::uid::Uid)> =
+                        let mut idle_watch: Vec<(specs::Entity, common::uid::Uid)> =
                             (&entities, &uids, &colonists)
                                 .join()
                                 .filter_map(|(e, u, _)| {
@@ -34729,7 +34742,38 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     .then_some((e, *u))
                                 })
                                 .collect();
+                        // ROW 33: deterministic order (a HashMap join must
+                        // not choose who stands where), and the FIRST
+                        // watchman covers the APPROACH — the centroid of
+                        // the town's own recent alarm cries. Three bodies
+                        // at one address taught the bar: first contact is
+                        // a guard, not the edge-most civilian. No cries
+                        // yet → everyone holds the plaza as before.
+                        idle_watch.sort_by_key(|(_, u)| u.0.get());
+                        let approach = if board.recent_cries.is_empty() {
+                            None
+                        } else {
+                            let mut s = Vec3::<i64>::zero();
+                            for c in &board.recent_cries {
+                                s += c.map(|e| e as i64);
+                            }
+                            Some((s / board.recent_cries.len() as i64).map(|e| e as i32))
+                        };
+                        let mut first = true;
                         for (entity, u) in idle_watch {
+                            let stand = match (first, approach) {
+                                (true, Some(a)) => {
+                                    first = false;
+                                    info!(
+                                        colonist = u.0.get(),
+                                        ?a,
+                                        "bastion: NIGHT WATCH covers the approach"
+                                    );
+                                    a
+                                },
+                                _ => post,
+                            };
+                            let post = stand;
                             let id = board.insert_auto_guard_job(post, u);
                             // ROW 31 residual: the night post votes Guard —
                             // a watchman's whole working life was invisible
