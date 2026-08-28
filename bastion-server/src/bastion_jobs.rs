@@ -1918,6 +1918,23 @@ pub(crate) fn cells_on_chord(a: Vec3<i32>, b: Vec3<i32>) -> Vec<Vec3<i32>> {
     cells
 }
 
+/// ROW 29 (THE DOOR FIGHT): how long a door holds a raider before it
+/// gives way — the window 663 died short of, twice (rounds 42 + 48,
+/// same scripted raid: alarm and muster both correct, militia seconds
+/// late). Ten seconds is the muster's measured arrival scale.
+pub(crate) const DOOR_FIGHT_SECS: f64 = 10.0;
+
+/// ROW 29: whether the door holds this tick — pure for pins. Every gate
+/// must pass: there IS a door at the hostile's feet, someone shelters
+/// behind it, and the door's strength is not yet spent.
+pub(crate) fn door_fight_holds(
+    at_door: bool,
+    occupant_sheltering: bool,
+    elapsed_secs: f64,
+) -> bool {
+    at_door && occupant_sheltering && elapsed_secs < DOOR_FIGHT_SECS
+}
+
 /// ROW 27: the colonist's schedule block at this wall hour — night
 /// watchmen run the rotated day, everyone else the default. Takes the
 /// SET, not the board, so callers holding disjoint mutable board borrows
@@ -7885,6 +7902,10 @@ pub struct JobBoard {
     /// job id). Minted for idle watchmen while the town sleeps, drained
     /// through the one removal path at dawn.
     pub night_posts: HashMap<common::uid::Uid, JobId>,
+    /// ROW 29 (THE DOOR FIGHT): hostiles currently held at a sheltered
+    /// door — hostile entity → (door cell, fight start time, witnessed).
+    /// Runtime-only; entity keys never serialize.
+    pub door_fights: HashMap<specs::Entity, (Vec3<i32>, f64, bool)>,
     /// bastion (AUTON-2 unification, FIXTURE 1's invariant made live in
     /// EVERY scenario, 2026-08-08): a silent, cumulative counter --
     /// incremented at the EXISTING orphan sweep's own cadence
@@ -28792,6 +28813,136 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             }
         }
 
+        // ── ROW 29: THE DOOR FIGHT ──────────────────────────────────────
+        // 663 died twice (rounds 42 + 48, the same seed-scripted raid, his
+        // own house): the alarm raised, the muster posted militia at his
+        // street MID-FIGHT, his one-charge death protection absorbed the
+        // first blow — and the raider walked through his door and landed
+        // the second before help crossed the last yards. Doors pass
+        // hostiles exactly as they pass colonists, so "run home" was a
+        // trap. RimWorld and DF both answer the same way: raiders BREAK
+        // doors, they don't ghost them — the breaking is the town's
+        // rescue window. Bastion-side only (no vanilla physics surgery):
+        // a hostile at a door with a sheltering occupant behind it is
+        // HELD at the outside stand cell (a position clamp on the
+        // population the mover never owns) while the door's ten seconds
+        // count down; expiry releases pursuit ("the door gave way").
+        // Witnessed both ways; the scripted raid is the live falsifier —
+        // 663 survives the next cycle or this row stays open.
+        {
+            board.door_fights.retain(|e, _| entities.is_alive(*e));
+            let door_at = |c: Vec3<i32>| -> bool {
+                terrain
+                    .get(c)
+                    .ok()
+                    .and_then(|b| b.get_sprite())
+                    .is_some_and(|sp| {
+                        matches!(
+                            sp,
+                            common::terrain::SpriteKind::Door
+                                | common::terrain::SpriteKind::DoorDark
+                                | common::terrain::SpriteKind::DoorWide
+                        )
+                    })
+            };
+            let mut held_now: Vec<(specs::Entity, Vec3<i32>)> = Vec::new();
+            for (e, al, p) in (&entities, &alignments, &positions).join() {
+                let hostile = matches!(al, comp::Alignment::Enemy)
+                    || (matches!(al, comp::Alignment::Wild)
+                        && agents
+                            .get(e)
+                            .is_some_and(|a| a.psyche.aggro_dist.is_some()));
+                if !hostile {
+                    continue;
+                }
+                let feet = p.0.map(|v| v.floor() as i32);
+                let door = [
+                    Vec3::zero(),
+                    Vec3::unit_x(),
+                    -Vec3::unit_x(),
+                    Vec3::unit_y(),
+                    -Vec3::unit_y(),
+                ]
+                .into_iter()
+                .flat_map(|d| [feet + d, feet + d + Vec3::unit_z()])
+                .find(|c| door_at(*c));
+                let Some(door) = door else {
+                    board.door_fights.remove(&e);
+                    continue;
+                };
+                // Someone sheltering behind it: a nearby colonist whose
+                // column is building-interior, or one holding a Shelter
+                // job — the population "run home" creates.
+                let occupied = (&colonists, &positions, &entities)
+                    .join()
+                    .any(|(_, cp, ce)| {
+                        let cf = cp.0.map(|v| v.floor() as i32);
+                        let close = (cf.x - door.x).abs().max((cf.y - door.y).abs())
+                            <= 12
+                            && (cf.z - door.z).abs() <= 6;
+                        close
+                            && (board.interior_cells.contains(&cf.xy())
+                                || active_jobs
+                                    .get(ce)
+                                    .and_then(|aj| board.jobs.get(&aj.job))
+                                    .is_some_and(|j| {
+                                        matches!(
+                                            j.kind,
+                                            common::bastion::JobKind::Shelter { .. }
+                                        )
+                                    }))
+                    });
+                let entry =
+                    board.door_fights.entry(e).or_insert((door, time.0, false));
+                let elapsed = time.0 - entry.1;
+                if !door_fight_holds(true, occupied, elapsed) {
+                    if occupied {
+                        info!(
+                            ?door,
+                            held_secs = elapsed,
+                            "bastion: DOOR GAVE WAY — pursuit resumes"
+                        );
+                    }
+                    board.door_fights.remove(&e);
+                    continue;
+                }
+                if !entry.2 {
+                    entry.2 = true;
+                    info!(
+                        ?door,
+                        "bastion: DOOR FIGHT — raider held at a sheltered door"
+                    );
+                }
+                held_now.push((e, door));
+            }
+            for (e, door) in held_now {
+                let outside = [
+                    Vec3::unit_x(),
+                    -Vec3::unit_x(),
+                    Vec3::unit_y(),
+                    -Vec3::unit_y(),
+                ]
+                .into_iter()
+                .map(|d| door + d)
+                .find(|c| !board.interior_cells.contains(&c.xy()))
+                .unwrap_or(door + Vec3::unit_x());
+                if let Some(p) = positions.get_mut(e) {
+                    let prev = p.0;
+                    p.0 = outside.map(|v| v as f32) + Vec3::new(0.5, 0.5, 0.0);
+                    pos_write_diag(
+                        "door-fight",
+                        uids.get(e).map(|u| u.0.get()),
+                        prev,
+                        p.0,
+                        0.75,
+                    );
+                }
+                if let Some(v) = velocities.get_mut(e) {
+                    v.0 = Vec3::zero();
+                }
+            }
+        }
+
         // ── 49.2/B37: drop churning hauls (gathered in-loop) ────────────
         // remove_job frees the reservation with the job — the whole point.
         for id in haul_drops {
@@ -38397,6 +38548,24 @@ mod tests {
             work_claims_open(default_schedule_block(8))
                 && work_claims_open(default_schedule_block(15)),
             "the full 8-hour work block stays open at both ends"
+        );
+    }
+
+    /// ROW 29 (THE DOOR FIGHT): every gate must pass and expiry must
+    /// release — a hold that never lets go turns raids into free wins,
+    /// and a hold without an occupant besieges empty houses.
+    #[test]
+    fn a_door_holds_only_while_sheltered_and_gives_way_on_time() {
+        assert!(door_fight_holds(true, true, 0.0));
+        assert!(door_fight_holds(true, true, DOOR_FIGHT_SECS - 0.1));
+        assert!(!door_fight_holds(false, true, 0.0), "no door, no hold");
+        assert!(
+            !door_fight_holds(true, false, 0.0),
+            "an empty house is not defended — the raider passes"
+        );
+        assert!(
+            !door_fight_holds(true, true, DOOR_FIGHT_SECS),
+            "the door gives way ON time — a permanent hold is a free win"
         );
     }
 
