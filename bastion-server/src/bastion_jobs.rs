@@ -2889,6 +2889,47 @@ pub fn stockpile_material_units<'a>(
         .sum()
 }
 
+/// ★ ROW 52 FIX (first soak, caught in its first game-hour): what the
+/// colony HOLDS of an item, anywhere — not what happens to be inside a
+/// stockpile zone.
+///
+/// The forge's par read `stockpile_material_units(CRAFT_OUTPUT_ITEM, ..)`
+/// and the completion drops the tool AT the station, which is a workshop
+/// and not a stockpile. So `tools_held` stayed 0 after three tools were
+/// made, the par could never be satisfied, and the forge would have kept
+/// minting until it had eaten every log in the town — the exact
+/// generator/consumer disagreement this project has a law about, shipped
+/// by me one row after writing that law down.
+///
+/// A tool lying at the forge IS a tool the town has. So is one in a
+/// colonist's hands. `stockpile_material_units` stays as it is, because
+/// its callers (wood/stone par) genuinely mean "delivered to a
+/// stockpile" — a log in the forest is not stock. A TOOL is different:
+/// it is finished goods, and where it sits is a logistics question, not
+/// an existence question.
+pub fn colony_item_units<'a>(
+    def: &str,
+    items: impl IntoIterator<Item = (&'a PickupItem, &'a comp::Pos, &'a Uid)>,
+    inventories: impl IntoIterator<Item = &'a comp::Inventory>,
+) -> u32 {
+    let loose: u32 = items
+        .into_iter()
+        .filter(|(pi, ..)| pi.item().item_definition_id().itemdef_id() == Some(def))
+        .map(|(pi, ..)| pi.amount() as u32)
+        .sum();
+    let carried: u32 = inventories
+        .into_iter()
+        .map(|inv| {
+            inv.slots()
+                .flatten()
+                .filter(|it| it.item_definition_id().itemdef_id() == Some(def))
+                .map(|it| it.amount())
+                .sum::<u32>()
+        })
+        .sum();
+    loose + carried
+}
+
 /// ★ Per-colonist wood target: the standing demand that keeps the chop
 /// loop ALIVE — rung provisioning and future construction draw stock
 /// down, the par pulls it back. Four units a head keeps a 24-colonist
@@ -19258,17 +19299,28 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 (&pickup_items, &positions, &uids).join(),
                 &board,
             );
-            let tools_held = stockpile_material_units(
+            // ROW 52 FIX: what the town HOLDS, not what is in a zone —
+            // the completion drops the tool at the forge, which is not a
+            // stockpile, so the stockpile-scoped count could never see the
+            // forge's own output and the par could never be satisfied.
+            let tools_held = colony_item_units(
                 CRAFT_OUTPUT_ITEM,
                 (&pickup_items, &positions, &uids).join(),
-                &board,
+                (&inventories).join(),
             );
             // Deterministic order: the board's building list is built once
             // at adoption, but sorting makes the FIRST station a total
             // order rather than an insertion accident.
             let mut stations = workshops.clone();
             stations.sort_by_key(|c| (c.x, c.y, c.z));
-            let mut last: Option<CraftVerdict> = None;
+            // ROW 52 FIX: AGGREGATE the pass, do not report the last
+            // station examined. v1 kept only the final station's verdict,
+            // so the line could read station_busy while a different
+            // workshop had just been given work — a witness that
+            // misreports the pass it is witnessing.
+            let mut refusals: std::collections::BTreeMap<&'static str, u32> =
+                std::collections::BTreeMap::new();
+            let mut fired_at: Option<Vec3<i32>> = None;
             for st in stations {
                 let open_here = board.jobs.values().any(|j| {
                     matches!(j.kind, common::bastion::JobKind::Craft { station } if station == st)
@@ -19281,11 +19333,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     tools_held,
                     roster,
                 );
-                let fired = verdict.fired;
-                last = Some(verdict);
-                if !fired {
+                if !verdict.fired {
+                    *refusals.entry(verdict.deciding).or_insert(0) += 1;
                     continue;
                 }
+                fired_at = Some(st);
                 let id = board.next_id;
                 board.next_id += 1;
                 board.jobs.insert(id, Job {
@@ -19323,12 +19375,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // The witness fires on the cadence whether or not work was
             // made: a workshop that never lights up must say WHY, or a
             // dead generator is indistinguishable from a satisfied one.
-            if tick.0 % (ARBITRATION_INTERVAL as u64 * 40) == 5
-                && let Some(v) = last
-            {
+            if tick.0 % (ARBITRATION_INTERVAL as u64 * 40) == 5 {
+                let refused = refusals
+                    .iter()
+                    .map(|(k, n)| format!("{k}={n}"))
+                    .collect::<Vec<_>>()
+                    .join(" ");
                 info!(
-                    fired = v.fired,
-                    deciding = v.deciding,
+                    fired = fired_at.is_some(),
+                    at = ?fired_at,
+                    %refused,
                     workshops = workshops.len(),
                     wood_units,
                     tools_held,
@@ -41301,6 +41357,61 @@ mod tests {
             );
         }
         assert!(craft_verdict(true, 3, false, CRAFT_WOOD_PER_TOOL, 0, 24).fired);
+    }
+
+    /// ★ ROW 52 FIX (caught in the row's FIRST game-hour on world 111):
+    /// the forge's par must be able to SEE the forge's own output. v1 read
+    /// a stockpile-scoped count while the completion drops the tool at the
+    /// workshop, so `tools_held` stayed 0 after three tools were made and
+    /// the par could never be satisfied — the forge would have eaten every
+    /// log in the town. This is the generator/consumer disagreement I have
+    /// a standing law about, shipped one row after writing it down.
+    ///
+    /// Pinned as the PROPERTY that failed: a produced tool must raise the
+    /// number the gate reads, wherever it physically sits.
+    #[test]
+    fn the_forge_can_see_its_own_output() {
+        // The gate, in the two readings. `held_stockpiled` is what v1 saw;
+        // `held_anywhere` is what the town actually has.
+        let roster = 26u32;
+        let par = TOOL_PAR_PER_COLONIST * roster;
+        // Three tools made and lying at the forge, none in a stockpile.
+        let held_stockpiled = 0u32;
+        let held_anywhere = 3u32;
+        // v1: blind. The forge keeps firing no matter how many it has made.
+        for made in 0..200u32 {
+            let _ = made;
+            assert!(
+                craft_verdict(true, 5, false, 99, held_stockpiled, roster).fired,
+                "the SHIPPED reading never stops — this is the churn engine"
+            );
+        }
+        // Fixed: the same tools now count, and at par the forge stops.
+        assert!(
+            craft_verdict(true, 5, false, 99, held_anywhere, roster).fired,
+            "three tools for twenty-six people is still short: keep working"
+        );
+        assert!(
+            !craft_verdict(true, 5, false, 99, par, roster).fired,
+            "a town holding its par must stop, and it can only stop if the              count includes tools that never reached a stockpile"
+        );
+        // ★ AND THE TERMINATION PROPERTY, stated directly: counting from
+        // zero, the forge must reach a state where it refuses. With the
+        // blind reading it never does; with the true one it always does.
+        let mut held = 0u32;
+        let mut fired = 0u32;
+        while craft_verdict(true, 5, false, 99, held, roster).fired && fired < 10_000 {
+            held += 1;
+            fired += 1;
+        }
+        assert_eq!(
+            fired, par,
+            "the forge must make exactly par tools and then stop; it made {fired}"
+        );
+        assert_eq!(
+            craft_verdict(true, 5, false, 99, held, roster).deciding,
+            "tools_at_par"
+        );
     }
 
     /// ★ ROW 52: the lane must be REACHABLE, which is the failure this row
