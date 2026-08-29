@@ -35374,6 +35374,41 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         pop = colonists.count(),
                         "bastion: PLAZA CENSUS — who is lounging right now"
                     );
+                    // ★ ROW 45: THE BED CENSUS — the third standing ruling,
+                    // never yet verified. "They sleep in their own bed, in
+                    // their own house, VISIBLY — lying down, not standing
+                    // next to furniture." The code pushes vanilla's own
+                    // ControlAction::Crawl at the bed, with a careful
+                    // argument for why that cannot be confused with being
+                    // downed — but NOTHING has ever checked that the pose
+                    // actually takes. A ruling with no witness is a hope.
+                    // Counted beside the sleepers who hold a RestAt job, so
+                    // "in bed" and "lying down" can be compared: equal means
+                    // the ruling holds; a gap is the exact defect Ben named
+                    // (standing next to the furniture).
+                    let mut in_bed = 0usize;
+                    let mut lying = 0usize;
+                    for (aj, _, e) in (&active_jobs, &colonists, &entities).join() {
+                        let holds_rest = board.jobs.get(&aj.job).is_some_and(|j| {
+                            matches!(j.kind, common::bastion::JobKind::RestAt { .. })
+                        });
+                        if !holds_rest || aj.state != comp::bastion::ActiveJobState::Arrived {
+                            continue;
+                        }
+                        in_bed += 1;
+                        if matches!(char_states.get(e), Some(comp::CharacterState::Crawl)) {
+                            lying += 1;
+                        }
+                    }
+                    if in_bed > 0 {
+                        info!(
+                            hour,
+                            in_bed,
+                            lying,
+                            standing = in_bed - lying,
+                            "bastion: BED CENSUS — are the sleepers lying down"
+                        );
+                    }
                 }
                 // ROW 27: derive the NIGHT WATCH roster on the same clock
                 // cadence — renewable by construction (re-derived from the
