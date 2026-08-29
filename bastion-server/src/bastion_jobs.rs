@@ -2354,6 +2354,29 @@ pub(crate) fn bed_claim_cost(base: i64, house_members: Option<u32>) -> i64 {
 /// lane is pulled off it. A sixth of the colony (min 2) matches the
 /// "work crew" a town would actually send: 8 of 48, 2 of 8.
 /// `BASTION_PLAYER_CREW` overrides for experiments.
+/// ROW 43 (THE CHEF): how many colonists may hold a station Cook job at
+/// once. The mandate's words are the spec — "the chef cooks for the town
+/// ... specialized meals only from the chef" — and the measured town
+/// failed it flatly: NINE of twenty-five colonists were named Cook,
+/// because any colonist with a nonzero cook priority could take a stove
+/// job, so the tally named a third of the town chefs. A watcher cannot
+/// name a job from an hour of watching when everyone does everything.
+///
+/// DF assigns a cook and others do not touch the stove; RimWorld's
+/// priority grid does the same; Song of Syx employs people AT a
+/// workplace. All three converge on: cooking is a POST, not a chore
+/// anyone picks up. One chef per twelve mouths, never fewer than one —
+/// a hamlet still eats, a city gets a second kitchen hand. Eating and
+/// carrying your own food are untouched: this caps the STOVE, not the
+/// mouth (home cooking for yourself stays everyone's business).
+pub(crate) fn kitchen_crew_cap(roster: usize) -> usize {
+    static ENV: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
+    ENV.get_or_init(|| {
+        std::env::var("BASTION_KITCHEN_CREW").ok().and_then(|v| v.parse().ok())
+    })
+    .unwrap_or_else(|| (roster / 12).max(1))
+}
+
 pub(crate) fn player_paint_crew_cap(roster: usize) -> usize {
     static ENV: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
     ENV.get_or_init(|| {
@@ -20315,6 +20338,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         board.farm_tilled_season.get(&col).copied(),
                                         season_idx,
                                     );
+                                    // ★ ROW 41b: ASK THE WORKER'S OWN
+                                    // QUESTION. The witness named this
+                                    // exactly — "wanted_seed=true
+                                    // here_sprite=Empty here_filled=false
+                                    // below_kind=Some(Grass)": the sow arm
+                                    // of the work tick requires the ground
+                                    // below to be EARTH, and the seasonal
+                                    // verdict never looked at the ground at
+                                    // all. First-sight grace then stamped a
+                                    // grass column as "tilled this season"
+                                    // and minted a sow nobody could ever
+                                    // complete — 138 re-mints on one cell.
+                                    // A generator that offers work its own
+                                    // worker will refuse is a churn engine
+                                    // by construction, so the ground gets
+                                    // the deciding vote: unbroken soil
+                                    // needs the TILL first, whatever the
+                                    // calendar says.
+                                    let ground_ready = terrain
+                                        .get(gpos)
+                                        .is_ok_and(|b| b.kind() == BlockKind::Earth);
+                                    let verdict = if ground_ready {
+                                        verdict
+                                    } else {
+                                        SeasonalTillVerdict::Till
+                                    };
                                     match verdict {
                                         SeasonalTillVerdict::SowGrace => {
                                             board
@@ -34163,6 +34212,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             .filter(|j| j.player_ordered && j.claimed_by.is_some())
             .count();
         let player_crew_cap = player_paint_crew_cap((&colonists).join().count());
+        // ROW 43: the kitchen has a CREW, not a queue. Counted the same way
+        // the paint crew is — live claims on the board — so the cap binds
+        // on what is actually being cooked right now, and a chef who
+        // finishes frees the post for the next claimant (usually themselves,
+        // since the scorer's commitment window and their cook skill both
+        // favour them).
+        let mut kitchen_crew: usize = board
+            .jobs
+            .values()
+            .filter(|j| {
+                j.claimed_by.is_some()
+                    && matches!(j.kind, common::bastion::JobKind::Cook { .. })
+            })
+            .count();
+        let kitchen_cap = kitchen_crew_cap((&colonists).join().count());
         // DET-COL-JOB-001: claim jobs for idle colonists in a canonical order
         // (stable Uid) instead of ECS join order. Each colonist greedily
         // claims its best-scoring job and pushes to claimed_pos, which feeds
@@ -34321,6 +34385,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // to kill. His day-shift hours never reach here (the door
                 // above closes on his own Sleep/Leisure blocks).
                 // Uncensused by design: a lane hold, not a defect state.
+                // ROW 43: THE STOVE IS A POST. With the kitchen crew full,
+                // a stove job is simply not a candidate for anyone else —
+                // the chef keeps cooking (the commitment window and their
+                // own cook skill re-win it) and the other twenty-four
+                // people go do their own trades, which is the only way a
+                // watcher can name a chef by watching. Uncensused
+                // deliberately: a full post is a healthy state, not a
+                // defect, exactly like the night watch's lane hold.
+                if matches!(job.kind, common::bastion::JobKind::Cook { .. })
+                    && kitchen_crew >= kitchen_cap
+                {
+                    continue;
+                }
                 if board.night_watch.contains(uid)
                     && matches!(
                         default_schedule_block(hour_of_day(
@@ -35051,6 +35128,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // against the crew cap immediately.
                     if job.player_ordered {
                         player_crew += 1;
+                    }
+                    // ROW 43: same rule for the kitchen — a stove claimed
+                    // this pass fills the post immediately, so a single
+                    // sweep cannot hand the whole colony an apron.
+                    if matches!(job.kind, common::bastion::JobKind::Cook { .. }) {
+                        kitchen_crew += 1;
                     }
                     // B-LIVE4: count every claim event (initial + re-claim)
                     // for the mine-oscillation claims-per-job telemetry.
@@ -39766,6 +39849,34 @@ mod tests {
                 RECREATION_BREAK_SECS,
                 "hour {hour} is not a leisure window: the break must be untouched"
             );
+        }
+    }
+
+    /// ROW 43 (THE CHEF): the kitchen is a POST with a crew, not a chore
+    /// the whole town picks up. Measured failure: 9 of 25 colonists named
+    /// Cook. Both directions — a hamlet still eats, a city never turns
+    /// into a kitchen brigade.
+    #[test]
+    fn the_kitchen_has_a_crew_not_a_queue() {
+        assert_eq!(kitchen_crew_cap(0), 1, "even a colony of nobody keeps one post open");
+        assert_eq!(kitchen_crew_cap(8), 1, "a hamlet has ONE cook");
+        assert_eq!(kitchen_crew_cap(12), 1);
+        assert_eq!(kitchen_crew_cap(24), 2, "a town of 24 gets a second pair of hands");
+        assert_eq!(kitchen_crew_cap(60), 5);
+        // The mandate's own bar: the kitchen must never be able to swallow
+        // the town. At every plausible roster the crew stays a small
+        // minority — this is what makes "the chef cooks" nameable.
+        for roster in 1..=120usize {
+            let cap = kitchen_crew_cap(roster);
+            assert!(cap >= 1, "roster {roster}: someone must be able to cook");
+            assert!(
+                cap * 4 <= roster.max(4),
+                "roster {roster}: cap {cap} is more than a quarter of the town — that is not a chef, that is a canteen"
+            );
+        }
+        // Monotone: growing the town never REDUCES its kitchen.
+        for r in 0..120usize {
+            assert!(kitchen_crew_cap(r) <= kitchen_crew_cap(r + 1));
         }
     }
 
