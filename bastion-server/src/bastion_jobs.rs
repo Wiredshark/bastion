@@ -36312,6 +36312,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let mut in_bed = 0usize;
                     let mut lying = 0usize;
                     let mut downed_in_bed = 0usize;
+                    let mut standers: Vec<u64> = Vec::new();
                     for (aj, _, e) in (&active_jobs, &colonists, &entities).join() {
                         if let Some(u) = uids.get(e)
                             && let Some(j) = board.jobs.get(&aj.job)
@@ -36347,6 +36348,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             } else {
                                 downed_in_bed += 1;
                             }
+                        } else if let Some(u) = uids.get(e) {
+                            // ★ NAME THE STANDER (measured 2026-08-29): the
+                            // census read 98.3% lying over 13,534 samples,
+                            // with a residual of 1-2 standing. The COUNT
+                            // stayed at 1-2 while occupancy grew 10 -> 45
+                            // and only the FREQUENCY rose (12% -> 85% of
+                            // samples), which is the signature of a short
+                            // arrival transient rather than somebody who
+                            // never lies down. But an aggregate cannot tell
+                            // one persistent stander from a stream of
+                            // transients, and "standing next to the
+                            // furniture" is the exact defect Ben named this
+                            // ruling against. So the witness names them: a
+                            // repeated uid across samples is a real
+                            // stander, a uid that appears once is a body
+                            // still arriving.
+                            standers.push(u.0.get());
                         }
                     }
                     if in_bed > 0 {
@@ -36356,6 +36374,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             lying,
                             downed_in_bed,
                             standing = in_bed - lying - downed_in_bed,
+                            standing_uids = ?standers,
                             "bastion: BED CENSUS — are the sleepers lying down"
                         );
                     }
