@@ -2666,6 +2666,25 @@ pub(crate) const STONE_PAR_PER_COLONIST: u32 = 4;
 /// reaches the documented deadlock cases (stone at 60+).
 pub(crate) const QUARRY_SURVEY_RINGS: [i32; 5] = [32, 48, 64, 80, 96];
 
+/// ROW 33 v2: how long the town remembers where danger came from — two
+/// game days on the measured clock (1800 sim-seconds per game day). Long
+/// enough that a raid's approach still shapes tonight's watch, short
+/// enough that a quiet week returns the guard to the plaza.
+pub(crate) const CRY_MEMORY_SECS: f64 = 3600.0;
+
+/// ROW 36f (review): the palette's seats must stay UNIQUE. `gathering_spot`
+/// guarantees rank→cell injectivity, and the first palette threw that away:
+/// STROLL used `rank + 24` (which is another colonist's seat once the
+/// colony passes 24, and lands at radius 6 — not the "outer ring" its own
+/// comment promised) and VISIT used `rank ^ 1`, which is not BESIDE the
+/// neighbour's bench but exactly ON it. Two colonists in one cell is the
+/// overlap the mandate forbids and the anti-crowd radiator then fights.
+/// STROLL now takes its own far band — rank 512+ lands on the square ring
+/// at radius 22, a real walk out of town — and VISIT sits in one of the
+/// eight cells AROUND the paired bench, chosen by the visitor's own rank
+/// so two guests of one host never share a chair.
+pub(crate) const STROLL_BAND: usize = 512;
+
 /// ★ THE QUARRY: one step of the dry-wrap detector — pure for pins.
 /// Returns (new_counter, survey_now). The counter rises only on a firing
 /// that had quota open yet saw zero rock, resets the moment any rock is
@@ -8307,7 +8326,12 @@ pub struct JobBoard {
     /// ROW 33 (watch coverage): the last eight alarm-cry positions —
     /// the town's own record of where danger arrives; the approach
     /// post derives from their centroid.
-    pub recent_cries: Vec<Vec3<i32>>,
+    /// ★ v2 (review): cries carry their TIME. v1 kept the last eight
+    /// forever, so a watch posted against raids game-days stale, and —
+    /// worse — once ANY cry existed the cluster split always returned
+    /// Some, making the plaza fallback unreachable for the life of the
+    /// process. A memory of danger should fade like one.
+    pub recent_cries: Vec<(Vec3<i32>, f64)>,
     /// bastion (R2b, renderer roadmap): container-sprite cells the stockpile
     /// visuals pass has placed — cell → the sprite standing there.
     /// Runtime-only (JobBoard is not serialized); after a restart both this
@@ -17157,7 +17181,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // derives from these (three bodies at one address
                         // taught the bar: first contact is a guard). Keep
                         // the last eight.
-                        board.recent_cries.push(*cry_pos);
+                        board.recent_cries.push((*cry_pos, time.0));
                         if board.recent_cries.len() > 8 {
                             board.recent_cries.remove(0);
                         }
@@ -29387,8 +29411,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // intentions, not of evenings. `act` now falls
                             // back with the seat, so the label cannot lie.
                             match act {
-                                1 => (gathering_spot(anchor, within + 24), 1u8),
-                                2 => (gathering_spot(anchor, within ^ 1), 2),
+                                // STROLL: its own far band (see STROLL_BAND)
+                                // — a walk to the town's edge and back.
+                                1 => (
+                                    gathering_spot(anchor, within + STROLL_BAND),
+                                    1u8,
+                                ),
+                                // VISIT: BESIDE the neighbour's bench, never
+                                // on it; the visitor's own rank picks which
+                                // of the eight surrounding cells.
+                                2 => {
+                                    const AROUND: [(i32, i32); 8] = [
+                                        (1, 0),
+                                        (0, 1),
+                                        (-1, 0),
+                                        (0, -1),
+                                        (1, 1),
+                                        (-1, 1),
+                                        (1, -1),
+                                        (-1, -1),
+                                    ];
+                                    let bench = gathering_spot(anchor, within ^ 1);
+                                    let (dx, dy) = AROUND[within % 8];
+                                    (bench + Vec3::new(dx, dy, 0), 2)
+                                },
                                 3 => board
                                     .beds
                                     .iter()
@@ -35195,7 +35241,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // pair when the poles stand ≥24 apart; the first TWO
                         // watchmen cover the two cluster centroids. Tight
                         // cries collapse to one post exactly as before.
-                        let clusters = split_cry_clusters(&board.recent_cries, 24);
+                        // ★ v2: only cries the town could still be
+                        // answering. Two game days of memory (1800s per
+                        // game day on the measured clock); older raids
+                        // release the watch back to the plaza, which is
+                        // also the only way that fallback stays reachable.
+                        let fresh: Vec<Vec3<i32>> = board
+                            .recent_cries
+                            .iter()
+                            .filter(|(_, t)| time.0 - *t <= CRY_MEMORY_SECS)
+                            .map(|(p, _)| *p)
+                            .collect();
+                        let clusters = split_cry_clusters(&fresh, 24);
                         let mut nth = 0usize;
                         for (entity, u) in idle_watch {
                             let stand = match (nth, clusters) {
@@ -39590,6 +39647,79 @@ mod tests {
                 leisure_hold_secs(hour, RECREATION_BREAK_SECS, EVENING_LINGER_MULT),
                 RECREATION_BREAK_SECS,
                 "hour {hour} is not a leisure window: the break must be untouched"
+            );
+        }
+    }
+
+    /// ROW 36f (review): NO TWO COLONISTS IN ONE CHAIR. The palette must
+    /// preserve `gathering_spot`'s rank→cell injectivity across every
+    /// activity at once — the first version broke it two ways (STROLL's
+    /// +24 collided with a real seat past 24 colonists; VISIT sat exactly
+    /// ON the neighbour's bench). Simulates a whole colony choosing
+    /// different evenings simultaneously and asserts every cell distinct.
+    #[test]
+    fn every_evening_seat_is_its_own_cell() {
+        const AROUND: [(i32, i32); 8] = [
+            (1, 0),
+            (0, 1),
+            (-1, 0),
+            (0, -1),
+            (1, 1),
+            (-1, 1),
+            (1, -1),
+            (-1, -1),
+        ];
+        let anchor = Vec3::new(1000, 2000, 40);
+        let seat = |act: u8, rank: usize| -> Vec3<i32> {
+            match act {
+                1 => gathering_spot(anchor, rank + STROLL_BAND),
+                2 => {
+                    let bench = gathering_spot(anchor, rank ^ 1);
+                    let (dx, dy) = AROUND[rank % 8];
+                    bench + Vec3::new(dx, dy, 0)
+                },
+                _ => gathering_spot(anchor, rank),
+            }
+        };
+        // A 30-person colony where every colonist rolls a DIFFERENT
+        // activity than their neighbours — the worst case for collisions.
+        let mut cells: std::collections::HashMap<Vec3<i32>, (u8, usize)> =
+            std::collections::HashMap::new();
+        for rank in 0..30usize {
+            let act = (rank % 3) as u8; // 0 sit, 1 stroll, 2 visit
+            let c = seat(act, rank);
+            if let Some(prev) = cells.insert(c, (act, rank)) {
+                panic!(
+                    "seat collision at {c:?}: act {act} rank {rank} lands on act {} rank {}",
+                    prev.0, prev.1
+                );
+            }
+        }
+        // And the pathological case the first version actually hit: every
+        // colonist strolling while every OTHER colonist sits.
+        let mut cells2: std::collections::HashSet<Vec3<i32>> = Default::default();
+        for rank in 0..30usize {
+            assert!(cells2.insert(seat(0, rank)), "sit rank {rank} collided");
+        }
+        for rank in 0..30usize {
+            assert!(
+                cells2.insert(seat(1, rank)),
+                "stroll rank {rank} landed on an occupied seat — the +24 defect"
+            );
+        }
+        // A stroll must be a WALK: the far band sits well outside the
+        // benches (radius 3-5), not on the first ring.
+        let stroll = seat(1, 0) - anchor;
+        assert!(
+            stroll.x.abs().max(stroll.y.abs()) >= 12,
+            "a stroll that ends 6 blocks from the plaza is not a walk: {stroll:?}"
+        );
+        // A visit is BESIDE the host, not on them.
+        for rank in 0..12usize {
+            assert_ne!(
+                seat(2, rank),
+                gathering_spot(anchor, rank ^ 1),
+                "visit rank {rank} sat in the host's own chair"
             );
         }
     }
