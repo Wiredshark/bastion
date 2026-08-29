@@ -24758,7 +24758,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // impossible pair that read as a finding.
                             colonist = uids.get(entity).map(|uid| uid.0.get()),
                             kind = ?job.kind,
-                            pos = ?job.pos,
+                            // ★ PRINT WHAT YOU DELIVERED, NOT WHAT YOU
+                            // INTENDED (adversarial review, 2026-08-29).
+                            // This field was named `pos` and carried
+                            // `job.pos` — the job's own cell, restated. A
+                            // reader looking for "where is the colonist"
+                            // found a number that could never disagree with
+                            // the job, so 113,155 RestAt arrivals could not
+                            // tell anyone WHERE the bodies were. The sleep
+                            // investigation could name the bed but never
+                            // what physically moved the body off it,
+                            // precisely because of this line.
+                            //
+                            // Renamed to say which is which, and the BODY
+                            // is printed beside it with its distance from
+                            // the stance the arrival actually admitted on.
+                            job_pos = ?job.pos,
+                            body = ?pos.0,
+                            arrive_dist = pos.0.distance(
+                                crate::bastion_actions::approach_target(
+                                    job.pos,
+                                    active.stance,
+                                )
+                            ),
                             // ITEM 27: arrival with a live reservation should
                             // be impossible while un-carrying (the fetch leg
                             // suppresses it) — print the fact so the
