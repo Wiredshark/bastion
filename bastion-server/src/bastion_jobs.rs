@@ -2702,8 +2702,42 @@ pub(crate) fn kitchen_admits(crew: usize, cap: usize, cook_priority: u8) -> bool
 /// Childhood is a DURATION, not a counter that must tick: nothing is
 /// incremented anywhere, and a save that sits for a year does not age
 /// anybody by surprise.
-pub(crate) fn has_come_of_age(today: i64, born: Option<i64>) -> bool {
-    born.is_some_and(|b| today - b >= CHILDHOOD_DAYS)
+pub(crate) fn has_come_of_age(
+    now_tick: u64,
+    born_tick: Option<u64>,
+    ticks_per_game_day: f64,
+) -> bool {
+    let Some(b) = born_tick else { return false };
+    // A tick counter that ran backwards means the record is from a future
+    // that no longer exists (a rolled-back save); refuse rather than
+    // underflow, and say so by simply not aging the child.
+    let Some(elapsed) = now_tick.checked_sub(b) else { return false };
+    let per_day = if ticks_per_game_day.is_finite() && ticks_per_game_day > 0.0 {
+        ticks_per_game_day
+    } else {
+        // Fallback is IDENTITY-shaped: the measured default-server figure
+        // (54,000 ticks = one game day), never zero, which would age every
+        // child instantly.
+        54_000.0
+    };
+    (elapsed as f64) / per_day >= CHILDHOOD_DAYS as f64
+}
+
+/// ★ ROW 50 FIX: rtsim ticks per GAME DAY, derived rather than assumed.
+///
+/// `TimeOfDay` advances by `dt * day_cycle_coefficient` while a tick is
+/// `dt` of wall-sim time, so one game day (DAY game-seconds) takes
+/// `DAY / (dt * coefficient)` ticks. At the default server (dt = 1/30,
+/// coefficient 48) that is 54,000 — exactly the figure measured off the
+/// live log — and it tracks a harness running any other `day_length`
+/// instead of silently meaning something else there.
+pub(crate) fn ticks_per_game_day(dt_secs: f64, day_cycle_coefficient: f64) -> f64 {
+    let denom = dt_secs * day_cycle_coefficient;
+    if denom.is_finite() && denom > 0.0 {
+        common::resources::DAY / denom
+    } else {
+        54_000.0
+    }
 }
 
 pub(crate) fn kitchen_crew_cap(roster: usize) -> usize {
@@ -36782,15 +36816,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // town has actually named, so a colony short of
                     // builders raises builders. Sorted before the min so
                     // a tie resolves identically on every run.
-                    let mut lane_pop: Vec<(common::bastion::WorkType, usize)> = [
-                        common::bastion::WorkType::Farm,
-                        common::bastion::WorkType::Build,
-                        common::bastion::WorkType::Chop,
-                        common::bastion::WorkType::Mine,
-                        common::bastion::WorkType::Cook,
-                        common::bastion::WorkType::Guard,
-                        common::bastion::WorkType::Haul,
-                    ]
+                    // The PERSISTENT clock for the childhood gate (see
+                    // `has_come_of_age`): `Data.tick` survives a restart,
+                    // `time_of_day` does not.
+                    let rtsim_now_tick = rtsim.rt_state().data().tick;
+                    let tpgd = ticks_per_game_day(
+                        f64::from(dt.0),
+                        server_constants.day_cycle_coefficient,
+                    );
+                    let mut lane_pop: Vec<(common::bastion::WorkType, usize)> =
+                        common::bastion::WorkType::ALL
                     .into_iter()
                     .map(|w| (w, board.professions.values().filter(|p| **p == w).count()))
                     .collect();
@@ -36801,7 +36836,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             .join()
                             .filter(|(_, c, _)| {
                                 c.0.work_priorities.is_all_zero()
-                                    && has_come_of_age(today, c.0.born_day)
+                                    && has_come_of_age(
+                                        rtsim_now_tick,
+                                        c.0.born_tick,
+                                        tpgd,
+                                    )
                             })
                             .map(|(e, c, u)| {
                                 // The parent's lane, read off the parent's
@@ -41495,32 +41534,57 @@ mod tests {
             (1..=30).contains(&CHILDHOOD_DAYS),
             "a childhood must end, and must be visible inside a soak"
         );
-        for born in [0i64, 3, 17, 4000] {
+        // ★ THE CLOCK MUST BE PERSISTENT. `born_day` is stamped from
+        // `time_of_day`, which the server resets to
+        // settings.world.start_time at EVERY boot — measured on world 109,
+        // restarted on its own save: game_day read 0 after both boots having
+        // reached ~4 before. A gate on that clock stops aging children the
+        // moment anyone restarts the server. The gate reads `Data.tick`.
+        let tpgd = ticks_per_game_day(1.0 / 30.0, 48.0);
+        assert!(
+            (tpgd - 54_000.0).abs() < 1.0,
+            "the default server is 54,000 ticks per game day (measured off the live log); got {tpgd}"
+        );
+        for born in [0u64, 3, 17, 4_000_000] {
+            let day = |d: f64| born + (d * tpgd) as u64;
             assert!(
-                !has_come_of_age(born + CHILDHOOD_DAYS - 1, Some(born)),
+                !has_come_of_age(day(CHILDHOOD_DAYS as f64 - 0.05), Some(born), tpgd),
                 "born {born}: not one day early"
             );
             assert!(
-                has_come_of_age(born + CHILDHOOD_DAYS, Some(born)),
-                "born {born}: grows up ON the boundary day"
+                has_come_of_age(day(CHILDHOOD_DAYS as f64), Some(born), tpgd),
+                "born {born}: grows up ON the boundary"
             );
             assert!(
-                has_come_of_age(born + CHILDHOOD_DAYS + 1, Some(born)),
+                has_come_of_age(day(CHILDHOOD_DAYS as f64 + 10.0), Some(born), tpgd),
                 "born {born}: and stays grown up"
             );
+            // ★ THE RESTART CASE, stated directly: a tick counter that went
+            // BACKWARDS (a rolled-back save) must refuse, not underflow.
             assert!(
-                !has_come_of_age(born - 1, Some(born)),
+                !has_come_of_age(born.saturating_sub(1), Some(born), tpgd),
                 "born {born}: a clock that ran backwards must not age a child"
             );
         }
-        // A colonist with no birthday was never a child — founders and
+        // A colonist with no birth tick was never a child — founders and
         // settlers arrive grown, and must never be swept up by this rule.
-        for today in [0i64, 1, 99, 100_000] {
+        for now in [0u64, 1, 99, 100_000_000] {
             assert!(
-                !has_come_of_age(today, None),
-                "day {today}: a colonist with no born_day must never come of age"
+                !has_come_of_age(now, None, tpgd),
+                "tick {now}: a colonist with no birth tick must never come of age"
             );
         }
+        // ★ AND THE CLOCK IS DERIVED, not assumed: a harness running a
+        // different day_length must still age children in GAME days.
+        let harness = ticks_per_game_day(1.0 / 30.0, 720.0); // day_length 2.0
+        assert!(harness > 0.0 && harness < tpgd, "a faster day is fewer ticks");
+        assert!(
+            has_come_of_age((CHILDHOOD_DAYS as f64 * harness) as u64, Some(0), harness),
+            "childhood must be CHILDHOOD_DAYS of GAME time on any day_length"
+        );
+        // A degenerate clock must never age everyone instantly.
+        assert!(!has_come_of_age(1, Some(0), 0.0), "a zero clock must not age a child");
+        assert!(!has_come_of_age(1, Some(0), f64::NAN), "nor a NaN one");
     }
 
     /// ROW 51 (Ben chartered): personality SHIFTS the evening, never
@@ -41738,6 +41802,69 @@ mod tests {
             craft_verdict(true, 5, false, 99, held, roster, 0, 9).deciding,
             "tools_at_par"
         );
+    }
+
+    /// ★ REVIEW FIX PIN (2026-08-29): every lane is covered, and the guard
+    /// is the COMPILER, not this test.
+    ///
+    /// The adversarial review found three hand-written lists of `WorkType`'s
+    /// variants that had fallen behind when `Craft` was appended. A unit
+    /// test cannot catch that class of defect on its own — it would need its
+    /// own copy of the same list, which is the very thing that goes stale.
+    /// So `WorkType::lane_index` is a match with no wildcard: adding a
+    /// variant without adding it to `ALL` fails to COMPILE. This test proves
+    /// the two agree, which is what makes the compile-time guard meaningful.
+    #[test]
+    fn every_work_lane_is_covered_exactly_once() {
+        use common::bastion::WorkType;
+        assert_eq!(WorkType::ALL.len(), WorkType::COUNT);
+        // ★ NOTE ON WHAT THIS TEST CAN AND CANNOT DO. Enumerating from `ALL`
+        // cannot prove `ALL` is complete — my first version of this pin did
+        // exactly that and passed happily when `Craft` was dropped and
+        // `COUNT` set to 7. The completeness guard is the compile-time
+        // `_ALL_AGREES_WITH_LANE_INDEX` in common/src/bastion.rs, backed by
+        // two wildcard-free matches (`lane_index`, `label`) that make a new
+        // variant a compile error until it is handled here.
+        //
+        // What THIS test adds is the consumer coverage below: every lane in
+        // `ALL` must actually route to a skill, a priority and a label — the
+        // failure mode that put Blacksmith in a lane with no work.
+        let mut seen = [false; WorkType::COUNT];
+        for w in WorkType::ALL {
+            let i = w.lane_index();
+            assert!(i < WorkType::COUNT, "{w:?}: index {i} out of range");
+            assert!(!seen[i], "{w:?}: index {i} used twice — ALL has a duplicate");
+            seen[i] = true;
+        }
+        assert!(seen.iter().all(|s| *s), "ALL and lane_index disagree");
+        // Craft specifically: it is the variant all three stale lists missed,
+        // and the one whose absence sent every orphan into a dead lane.
+        assert!(
+            WorkType::ALL.contains(&WorkType::Craft),
+            "Craft must be in ALL — its omission is the defect this exists for"
+        );
+        // Every lane has a distinct label, or the inspector and the
+        // profession census cannot tell two trades apart.
+        let mut labels: Vec<&str> = WorkType::ALL.iter().map(|w| w.label()).collect();
+        labels.sort_unstable();
+        let before = labels.len();
+        labels.dedup();
+        assert_eq!(before, labels.len(), "two lanes share a label");
+        // ★ AND THE CONSUMERS: every lane must route to its own skill and be
+        // settable as a priority, or a lane can exist that nobody can train
+        // or prefer — which is exactly how Blacksmith ended up in a dead one.
+        for w in WorkType::ALL {
+            let mut sk = common::bastion::ColonistSkills::default();
+            sk.grant_xp(w, 500.0);
+            assert!(sk.level_for(w) > 0, "{w:?}: xp must train a skill");
+            let p = common::bastion::WorkPriorities::in_lane(w);
+            assert_eq!(p.get(w), 4, "{w:?}: in_lane must prefer its own trade");
+            assert_eq!(
+                common::bastion::WorkPriorities::childhood().get(w),
+                0,
+                "{w:?}: a child must refuse every lane"
+            );
+        }
     }
 
     /// ★ ROW 52: the lane must be REACHABLE, which is the failure this row

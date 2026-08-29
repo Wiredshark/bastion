@@ -1042,6 +1042,10 @@ impl<'a> System<'a> for Sys {
             colonist.work_priorities = common::bastion::WorkPriorities::childhood();
             colonist.parent = parent_id;
             colonist.born_day = Some(day);
+            // ★ THE GATE'S CLOCK: persistent and monotonic. `day` above is
+            // boot-relative and resets to settings.world.start_time on every
+            // restart, so it can only be a label, never a deadline.
+            colonist.born_tick = Some(birth_epoch);
             let species = *common::comp::humanoid::ALL_SPECIES
                 .choose(&mut rng)
                 .expect("humanoid species catalog must not be empty");

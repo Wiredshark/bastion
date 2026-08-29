@@ -504,6 +504,39 @@ pub enum AffordanceClass {
     Untargeted,
 }
 
+/// ★ COMPILE-TIME COMPLETENESS CHECK for [`WorkType::ALL`].
+///
+/// At MODULE scope deliberately. The first version of this lived as an
+/// associated `const` inside `impl WorkType`, and associated consts are
+/// only evaluated when USED — so it never ran, and reordering `ALL`
+/// compiled clean. A free `const _: ()` is always evaluated. That mistake
+/// is the same shape as the bug this guard exists to catch: a check that
+/// looks present and is inert.
+///
+/// ★ WHY A COMPILE-TIME CHECK AND NOT A TEST. The adversarial review found
+/// THREE hand-written lists of `WorkType`'s variants that had fallen behind
+/// when `Craft` was appended. A unit test cannot catch that class on its
+/// own: enumerating from `ALL` cannot prove `ALL` is complete — my first
+/// attempt at that pin passed happily with `Craft` removed and `COUNT` set
+/// to 7.
+///
+/// HONEST RESIDUAL: `COUNT` is a hand-written number, so this cannot force
+/// a new variant INTO `ALL` by itself. What it guarantees is that `ALL`
+/// agrees with the wildcard-free `lane_index` match over `0..COUNT`, and
+/// that adding a variant is impossible without visiting that impl block —
+/// `lane_index` and `label` both fail to compile until the new variant is
+/// handled, and the author is standing right here when it happens.
+const _: () = {
+    let mut i = 0;
+    while i < WorkType::COUNT {
+        assert!(
+            WorkType::ALL[i].lane_index() == i,
+            "WorkType::ALL must be ordered by lane_index and cover 0..COUNT"
+        );
+        i += 1;
+    }
+};
+
 impl DesignationKind {
     pub fn label(&self) -> &'static str {
         match self {
@@ -834,6 +867,52 @@ pub enum WorkType {
 }
 
 impl WorkType {
+    /// ★ REVIEW FIX (2026-08-29): EVERY LANE, in one place, with the
+    /// compiler enforcing completeness.
+    ///
+    /// The adversarial review found THREE hand-written lists of this enum's
+    /// variants that had silently fallen behind when `Craft` was appended:
+    /// the coming-of-age scarcest-lane scan (so an orphan could never take
+    /// up the lane ROW 52 exists to fill, and the alphabetical tiebreak sent
+    /// every one of them to Build — the lane measured dead at 0 arrivals in
+    /// 400k lines), `WorkDesires::roll` (so no colonist ever rolled a craft
+    /// desire and the setter's Craft arm was dead code), and the inspector's
+    /// skills/desires display.
+    ///
+    /// A hand-written list of an enum's variants is a defect waiting for the
+    /// next variant, and a unit test cannot catch it — a test would need its
+    /// own copy of the same list. `_exhaustive` below is a match with no
+    /// wildcard, so ADDING A VARIANT WITHOUT ADDING IT HERE IS A COMPILE
+    /// ERROR. That is the only guard that cannot itself fall behind.
+    pub const ALL: [WorkType; Self::COUNT] = [
+        WorkType::Mine,
+        WorkType::Chop,
+        WorkType::Build,
+        WorkType::Haul,
+        WorkType::Cook,
+        WorkType::Farm,
+        WorkType::Guard,
+        WorkType::Craft,
+    ];
+
+    pub const COUNT: usize = 8;
+
+    /// The exhaustiveness guard for [`Self::ALL`] — see its doc. Each variant
+    /// maps to its own index, so the pin can prove `ALL` is a bijection onto
+    /// `0..COUNT` and therefore covers every variant exactly once.
+    pub const fn lane_index(self) -> usize {
+        match self {
+            WorkType::Mine => 0,
+            WorkType::Chop => 1,
+            WorkType::Build => 2,
+            WorkType::Haul => 3,
+            WorkType::Cook => 4,
+            WorkType::Farm => 5,
+            WorkType::Guard => 6,
+            WorkType::Craft => 7,
+        }
+    }
+
     pub fn label(&self) -> &'static str {
         match self {
             WorkType::Guard => "guard",
@@ -1960,15 +2039,12 @@ impl WorkDesires {
     /// specify beyond independence.
     pub fn roll(rng: &mut impl rand::Rng) -> Self {
         let mut d = Self::default();
-        let kinds = [
-            WorkType::Mine,
-            WorkType::Chop,
-            WorkType::Build,
-            WorkType::Haul,
-            WorkType::Cook,
-            WorkType::Farm,
-            WorkType::Guard,
-        ];
+        // ★ REVIEW FIX: this was a hand-written list that omitted Craft, so
+        // no colonist ever rolled a craft desire and the setter's Craft arm
+        // was dead code. `WorkType::ALL` is compiler-enforced complete, and
+        // its order preserves the original seven so the draw sequence for
+        // every existing world is unchanged.
+        let kinds = WorkType::ALL;
         let loved = kinds[rng.random_range(0..kinds.len())];
         let disliked = kinds[rng.random_range(0..kinds.len())];
         let set = |d: &mut Self, w: WorkType, v: f32| match w {
@@ -2269,6 +2345,25 @@ pub struct BastionColonist {
     /// year does not age anybody by surprise.
     #[serde(default)]
     pub born_day: Option<i64>,
+    /// ★ ROW 50 FIX (adversarial review, 2026-08-29): the day this colonist
+    /// was born, in a PERSISTENT epoch — `Data.tick`, the rtsim counter that
+    /// survives a restart.
+    ///
+    /// `born_day` above is stamped from `time_of_day`, and the server sets
+    /// `TimeOfDay = settings.world.start_time` at EVERY boot
+    /// (server/src/lib.rs) while rtsim overwrites its own copy from the ECS
+    /// each tick (rtsim/src/lib.rs). Measured on world 109, which was
+    /// restarted on its own save: `game_day` read 0 after both boots, having
+    /// reached ~4 before the restart. So `today - born_day` goes NEGATIVE
+    /// across a restart and no child ever comes of age again.
+    ///
+    /// This is the same defect the settler identity streams had (they were
+    /// keyed on the same boot-relative day index and moved to `Data.tick`);
+    /// the fix was half-applied and `born_day` was left behind. `born_day`
+    /// is KEPT because it is what the witness prints and what a reader
+    /// wants to see — but the GATE reads this field.
+    #[serde(default)]
+    pub born_tick: Option<u64>,
 }
 
 /// bastion (CASE-003 belt): count of per-tick CENTER-SAFETY-NET fires — a
@@ -3098,6 +3193,7 @@ impl BastionColonist {
             // would shift every existing world's population.
             parent: None,
             born_day: None,
+            born_tick: None,
         }
     }
 }
