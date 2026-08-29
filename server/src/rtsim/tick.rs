@@ -814,6 +814,11 @@ impl<'a> System<'a> for Sys {
         }
 
         let chunk_states = rtsim.state.resource::<ChunkStates>();
+        // ROW 38: the world seed, copied out BEFORE the data guard is taken
+        // — the settler drain below seeds its identity streams from
+        // (world_seed, game_day, salt) and must not reach back through
+        // `rtsim` while the data borrow is live.
+        let bastion_world_seed = rtsim.world_seed;
         let data = &mut *rtsim.state.data_mut();
 
         // B7-0/B7-1 (the thought queue): drain what bastion_jobs queued
@@ -862,6 +867,105 @@ impl<'a> System<'a> for Sys {
             if let Some(npc) = data.npcs.get_mut(subj) {
                 npc.sentiments.toward_mut(obj).change_by(change, cap);
             }
+        }
+
+        // ── ROW 38: A SETTLER ARRIVES ──────────────────────────────────
+        // The town's population could only ever fall: the founding count
+        // was a one-shot cap and nothing since could add a soul. The
+        // housing gate (bastion_jobs, beside the households census) decides
+        // WHETHER and WHERE — an empty house while the colony's own drive
+        // reads Expand — and queues the bed cell here. This drain is a DUMB
+        // APPLIER: it makes no choices, exactly like the sentiment drain
+        // above, because the producer holds the housing picture and this
+        // side holds only the mutable rtsim data.
+        //
+        // The record is built like the SPAWN path, never the adoption path:
+        // adoption omits `.personality`, which leaves every axis at MID and
+        // makes trait-carrying impossible (measured: 0 of 348). Identity
+        // and personality draw from SEPARATE salted streams so neither can
+        // shift the other, and both are salted by the bed cell so a
+        // same-day reload cannot mint a twin. The settler lands ON the
+        // vacant bed, where the existing B7-2 assigner houses them on its
+        // next sweep — nothing new decides where they live.
+        let pending_immigrants = std::mem::take(&mut job_board.pending_immigrants);
+        for (cell, day, prof_idx) in pending_immigrants {
+            use common::rtsim::{Profession, Role};
+            use rand::{RngExt as _, prelude::IndexedRandom};
+            // u32 salt (tick_rng's own width): the bed cell folded in so a
+            // same-day reload cannot mint a twin of an existing settler.
+            let cell_salt = (cell.x as u32)
+                .wrapping_mul(0x9E37_79B9)
+                .wrapping_add((cell.y as u32).wrapping_mul(0x85EB_CA6B))
+                .wrapping_add(cell.z as u32);
+            let mut rng = ::rtsim::tick_rng(
+                bastion_world_seed,
+                day as u64,
+                0xBA57_C013u32 ^ cell_salt,
+            );
+            let mut personality_rng = ::rtsim::tick_rng(
+                bastion_world_seed,
+                day as u64,
+                0xBA57_C014u32 ^ cell_salt,
+            );
+            let mut colonist = common::bastion::BastionColonist::generate(&mut rng);
+            let species = *common::comp::humanoid::ALL_SPECIES
+                .choose(&mut rng)
+                .expect("humanoid species catalog must not be empty");
+            let body = common::comp::Body::Humanoid(
+                common::comp::humanoid::Body::random_with(&mut rng, &species),
+            );
+            // A settler arrives WITH A TRADE. An arrival with no lane is
+            // the "colony of 32 employs the same 3 people" failure by
+            // construction — they would not be stuck, they would be
+            // unemployed. Same seeding as adoption: lane priorities plus
+            // the starting XP that makes the lane real.
+            let professions = [
+                Profession::Farmer,
+                Profession::Hunter,
+                Profession::Blacksmith,
+                Profession::Chef,
+            ];
+            let profession = professions[prof_idx % professions.len()];
+            let work = match profession {
+                Profession::Farmer => common::bastion::WorkType::Farm,
+                Profession::Chef => common::bastion::WorkType::Cook,
+                Profession::Blacksmith => common::bastion::WorkType::Build,
+                _ => common::bastion::WorkType::Haul,
+            };
+            colonist.skills.grant_xp(work, common::bastion::ADOPTED_TRADE_XP);
+            colonist.work_priorities = common::bastion::WorkPriorities::in_lane(work);
+            let name = colonist.name.clone();
+            let wpos = cell.map(|e| e as f32) + Vec3::new(0.5, 0.5, 1.0);
+            let home = data
+                .sites
+                .iter()
+                .min_by_key(|(_, site)| {
+                    site.wpos
+                        .map(|e| e as i64)
+                        .distance_squared(wpos.xy().map(|e| e as i64))
+                })
+                .map(|(id, _)| id);
+            let mut npc = ::rtsim::data::npc::Npc::new(
+                rng.random(),
+                wpos,
+                body,
+                Role::Civilised(Some(profession)),
+            )
+            .with_bastion_colonist(colonist);
+            npc.home = home;
+            npc.personality = common::rtsim::Personality::random(&mut personality_rng);
+            // spawn_npc, not create_npc: it registers the id into the
+            // home site's population, so the world's own census counts
+            // the newcomer too.
+            let id = data.spawn_npc(npc);
+            tracing::info!(
+                ?id,
+                name,
+                ?wpos,
+                ?profession,
+                day,
+                "bastion: ★ A SETTLER ARRIVES — a vacant house drew a new colonist"
+            );
         }
 
         // Row 11, second faucet: the cork's footprint, read once (Copy).

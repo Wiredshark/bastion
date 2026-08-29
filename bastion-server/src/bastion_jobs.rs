@@ -1926,14 +1926,20 @@ pub(crate) fn cells_on_chord(a: Vec3<i32>, b: Vec3<i32>) -> Vec<Vec3<i32>> {
 /// a colony that sends everyone to fight has stopped being a colony.
 /// Pure for pins.
 pub(crate) fn threat_scaled_muster_cap(threat_spots: usize, militia: usize) -> usize {
-    if militia == 0 {
-        // The perceiver fallback (militia-less colony): the old cap,
-        // unchanged — identity with pre-row-35 behaviour.
-        return 2;
-    }
-    let ceiling = militia.div_ceil(2).max(1);
-    let floor = 2.min(ceiling);
-    (threat_spots.max(1) * 2).clamp(floor, ceiling)
+    // ★ v2 — A SCALING RULE MUST NEVER CUT BELOW THE CONSTANT IT REPLACED
+    // (adversarial review, 2026-08-28; my own pin asserted the regressed
+    // value as intended). v1 computed `ceiling = div_ceil(2).max(1)`, which
+    // is 1 for a militia of 1 OR 2, and the floor collapsed onto it — so a
+    // town with two guards sent ONE, where the flat pre-row-35 cap sent
+    // two. Non-monotonic too: recruiting a colony's first guard SHRANK its
+    // response (0→2, 1→1, 2→1, 3→2). And the founding path maps both
+    // Hunter and Guard onto WorkType::Guard over six professions, so
+    // militia==2 is the MODAL small town, not a corner. Row 35 exists
+    // because a two-guard intercept was overrun; shipping a one-guard
+    // intercept inverted it. The ceiling now floors at the old constant:
+    // scaling may only ever ADD defenders.
+    let ceiling = militia.div_ceil(2).max(2);
+    (threat_spots.max(1) * 2).clamp(2, ceiling)
 }
 
 /// ROW 35b (split the approach): cry positions from MULTI-VECTOR raids
@@ -2203,6 +2209,69 @@ pub(crate) struct HouseholdView {
 /// a one-bedroll hut holds one). Clamped, never zero — a house that
 /// derived at all has at least one bed.
 pub(crate) fn household_capacity(beds: u32) -> u32 { beds.clamp(1, 6) }
+
+/// ROW 38 (THE POPULATION LOOP): the mandate's own equation — "ONE
+/// COLONIST PER HOUSE, and the population is DETERMINED by housing."
+/// The target is the number of derived households that actually hold a
+/// bed; a region with no bed houses nobody. Re-derived every sweep from
+/// the board's own housing picture — a renewable quantity, never a
+/// ledger that can drift.
+pub(crate) fn immigration_target_pop(households: &[HouseholdView]) -> u32 {
+    households.iter().filter(|h| h.beds > 0).count() as u32
+}
+
+/// ROW 38: why the town did or did not draw a settler today. Every
+/// refusal NAMES ITSELF — the daily witness prints this string whether it
+/// fired or not, because a growth rule that silently never fires and a
+/// growth rule that correctly declines look identical from the outside
+/// (VOID and RED must not wear the same face).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ImmigrationVerdict {
+    pub fired: bool,
+    pub deciding: &'static str,
+    pub target: Option<Vec3<i32>>,
+}
+
+/// ROW 38: the whole growth decision, pure. Gates in refusal order:
+/// disabled → same_day → drive_not_expand → roster_at_target →
+/// no_vacant_house. `drive` carries the colony's own satisfaction ladder
+/// (threats clear, food above par, beds ≥ pop, plus hysteresis) — a
+/// SECOND food threshold here would drift from the first, so the town's
+/// existing verdict is the only one consulted. `vacant_free` MUST arrive
+/// sorted: it is built by walking a HashMap, and an unsorted `[0]` would
+/// settle different houses across two runs of one seed while every count
+/// still matched — the silent divergence the bed assigner warns about.
+pub(crate) fn immigration_verdict(
+    enabled: bool,
+    drive: common::bastion::ColonyDrive,
+    roster: u32,
+    target_pop: u32,
+    vacant_free: &[Vec3<i32>],
+    today: i64,
+    last: Option<i64>,
+) -> ImmigrationVerdict {
+    let no = |d: &'static str| ImmigrationVerdict { fired: false, deciding: d, target: None };
+    if !enabled {
+        return no("disabled");
+    }
+    if last == Some(today) {
+        return no("same_day");
+    }
+    if drive != common::bastion::ColonyDrive::Expand {
+        return no("drive_not_expand");
+    }
+    if roster >= target_pop {
+        return no("roster_at_target");
+    }
+    match vacant_free.first() {
+        None => no("no_vacant_house"),
+        Some(cell) => ImmigrationVerdict {
+            fired: true,
+            deciding: "a house stands empty",
+            target: Some(*cell),
+        },
+    }
+}
 
 /// Derive the household list plus a bed→household index for the assigner.
 /// Deterministic: regions in board push order (stable per world), members
@@ -5389,11 +5458,53 @@ pub const RECREATION_BREAK_SECS: f64 = 120.0;
 /// LINGER — evening social is measured in hours. Schedule-driven evening
 /// lounges (the "schedule, not need" mint below) last this multiple of
 /// the midday need-break; needs, alarms and bedtime still preempt, so a
-/// linger is interruptible comfort, not a freeze. Expected occupancy at
-/// 4×: three-to-four on the benches at any evening moment, and longer
-/// co-located sits feed the ITEM-22 sentiment pairs — the "chatting"
-/// half of the mandate emerges from proximity duration.
-pub const EVENING_LINGER_MULT: f64 = 4.0;
+/// linger is interruptible comfort, not a freeze.
+///
+/// ★ v2 — THE CLOCK, MEASURED (not assumed): 54,000 ticks is ONE GAME DAY
+/// (read off the live log: game_day 1 at tick 33,900, game_day 2 at
+/// 87,900) and the server runs ~30 tps, so a game day is 1,800 seconds of
+/// the `time` clock these durations are added to — ONE GAME HOUR IS 75
+/// SECONDS, and the evening Leisure block (16-21) is 450. The first cut's
+/// 4× (480s) therefore ran 6.4 game hours: LONGER THAN THE WHOLE EVENING,
+/// so every evening held exactly ONE activity per colonist and ended only
+/// when bedtime interrupted it. Ben's design is a life, not a single sit
+/// — "socialize but also go for walks, do activities, go home" — which
+/// needs TURNOVER. At 2× (240s ≈ 3.2 game hours) an evening holds about
+/// two activities, the palette re-rolls between them (see
+/// `evening_activity`'s epoch), and the plaza still holds a crowd:
+/// 24 colonists × ~2 sits × 240s over a 450s evening ≈ 12 present at any
+/// moment, well above the row's bar of 6.
+pub const EVENING_LINGER_MULT: f64 = 2.0;
+
+/// ROW 36d (adversarial review, 2026-08-28 — the defect that cost the most
+/// per day): LEISURE IS TWO WINDOWS, not one. `default_schedule_block`
+/// gives hours 6-7 to a DAWN leisure block and 16-21 to the evening, and
+/// the linger was applied to both — 240s is 3.2 game hours against a
+/// dawn window only 2 hours wide, so every morning lounge overran into
+/// the work block by construction. Worse, the schedule-driven mint passes
+/// `idle_origin = false`, so the holder is filtered out of every claim
+/// pass: WORK CANNOT RECLAIM THEM. With the whole colony released from
+/// bed at 06:00 together, that is the entire town parked until ~09:12,
+/// every day — a silent tax on every throughput number any soak has ever
+/// banked.
+///
+/// A hold may never outlive the block that authorised it. Evening gets
+/// the linger; dawn keeps the bare break; both are clamped to the hours
+/// actually remaining in their own window (75 sim-seconds per game hour,
+/// measured off the live clock). Outside leisure entirely — the midday
+/// need-break — the base duration is returned untouched, so that
+/// population is bit-identical to before the row.
+pub(crate) fn leisure_hold_secs(hour: u32, base: f64, mult: f64) -> f64 {
+    const SECS_PER_GAME_HOUR: f64 = 1800.0 / 24.0;
+    let (end_hour, evening) = match hour {
+        6..=7 => (8u32, false),
+        16..=21 => (22u32, true),
+        _ => return base,
+    };
+    let remaining = f64::from(end_hour - hour) * SECS_PER_GAME_HOUR;
+    let want = if evening { base * mult } else { base };
+    want.min(remaining).max(0.0)
+}
 
 /// ROW 36b (Ben, verbatim intent: "colonists while lounging shouldn't
 /// just sit — they should socialize but also go for walks, do
@@ -5409,10 +5520,17 @@ pub const EVENING_LINGER_MULT: f64 = 4.0;
 /// later): this weight table becomes a function of traits/desires —
 /// the extrovert visits, the conscientious heads home, the restless
 /// strolls.
-pub(crate) fn evening_activity(uid_raw: u64, game_day: u64) -> u8 {
+///
+/// ★ v2 — THE EPOCH IS THE HOUR, NOT THE DAY. Keyed on the day alone a
+/// colonist did ONE thing per evening forever; with the linger now sized
+/// for turnover (see [`EVENING_LINGER_MULT`]) the epoch is
+/// `game_day * 24 + hour`, so the same person sits at 17:00 and walks at
+/// 20:00 — an evening with a shape instead of a single pose. Still no
+/// RNG, still replay-identical for a seed.
+pub(crate) fn evening_activity(uid_raw: u64, epoch: u64) -> u8 {
     let h = uid_raw
         .wrapping_mul(0x9E37_79B9_7F4A_7C15)
-        .wrapping_add(game_day.wrapping_mul(0xBF58_476D_1CE4_E5B9));
+        .wrapping_add(epoch.wrapping_mul(0xBF58_476D_1CE4_E5B9));
     match (h >> 32) % 10 {
         0..=3 => 0,
         4..=6 => 1,
@@ -8171,6 +8289,21 @@ pub struct JobBoard {
     /// ROW 31: the last game-day the tallies were halved and the
     /// professions derived (once daily, at the schedule cadence).
     pub profession_day: i64,
+    /// ROW 38 (the population loop): the last game-day a settler was
+    /// drawn — the once-per-day latch. `Option` so day 0 is a real day
+    /// and not indistinguishable from "already fired". Session state
+    /// (the board is runtime-only), so a mid-day reload can permit one
+    /// extra arrival on the reload day; bounded by the vacant-house
+    /// count, which is the true cap — documented here rather than
+    /// hidden.
+    pub immigration_day: Option<i64>,
+    /// ROW 38: settlers requested this tick — (bed cell, game day,
+    /// profession index), drained by the rtsim tick that alone may take
+    /// `data_mut()`. Same deferred-write contract as
+    /// `pending_sentiments`: this system holds a long-lived rtsim READ
+    /// guard, and a mutable borrow here would panic the cell. The drain
+    /// is a DUMB APPLIER — every choice is made at the producer.
+    pub pending_immigrants: Vec<(Vec3<i32>, i64, usize)>,
     /// ROW 33 (watch coverage): the last eight alarm-cry positions —
     /// the town's own record of where danger arrives; the approach
     /// post derives from their centroid.
@@ -17416,6 +17549,91 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     households.iter().filter(|h| h.members.is_empty() && h.beds > 0).count();
                 let shared = households.iter().filter(|h| h.members.len() > 1).count();
                 let heads: u32 = households.iter().filter(|h| !h.members.is_empty()).count() as u32;
+                // ── ROW 38: THE POPULATION LOOP ────────────────────────
+                // "ONE COLONIST PER HOUSE, and the population is DETERMINED
+                // by housing" is an acceptance criterion the sim could not
+                // meet: population was a one-shot founding cap and nothing
+                // else — the town could only ever SHRINK. Prior art agrees
+                // on the shape (Banished, Song of Syx, Manor Lords): a
+                // house that stands empty while the colony is thriving
+                // draws a settler. Here that reads off machinery the town
+                // already has — `derive_households` above knows which
+                // houses hold beds and nobody, and ColonyDrive::Expand IS
+                // the colony's own "we are satisfied" verdict (threats
+                // clear, food above par, beds ≥ pop, with hysteresis), so
+                // no second opinion is invented. One arrival per game day,
+                // onto the empty house's own bed cell, where the existing
+                // B7-2 assigner houses them on its next sweep: emergent,
+                // not scripted.
+                //
+                // The witness prints EVERY day, fired or not, with the
+                // deciding term — a growth rule that silently never fires
+                // looks exactly like one that correctly declines, and this
+                // program has paid for that confusion more than once.
+                {
+                    let today = (rtsim.rt_state().data().time_of_day.0
+                        / common::resources::DAY)
+                        .floor() as i64;
+                    let target_pop = immigration_target_pop(&households);
+                    // Recomputed here, NOT reused from the assigner's own
+                    // view: the move-out pass above mutates bed owners
+                    // after `derive_households` ran, and a stale view
+                    // would count one vacancy twice. Sorted because the
+                    // source is a HashMap and `[0]` must not depend on
+                    // iteration order.
+                    let mut vacant_free: Vec<Vec3<i32>> = board
+                        .beds
+                        .iter()
+                        .filter(|(pos, slot)| {
+                            slot.owner.is_none()
+                                && bed_house.get(*pos).is_some_and(|i| {
+                                    households
+                                        .get(*i)
+                                        .is_some_and(|h| h.members.is_empty() && h.beds > 0)
+                                })
+                        })
+                        .map(|(pos, _)| *pos)
+                        .collect();
+                    vacant_free.sort_by_key(|c| (c.x, c.y, c.z));
+                    let roster = colonists.count() as u32;
+                    let verdict = immigration_verdict(
+                        std::env::var_os("BASTION_NO_IMMIGRATION").is_none(),
+                        board.colony_drive.0,
+                        roster,
+                        target_pop,
+                        &vacant_free,
+                        today,
+                        board.immigration_day,
+                    );
+                    if let Some(cell) = verdict.target {
+                        board.immigration_day = Some(today);
+                        // profession index rides to the drain so the
+                        // applier makes no choices of its own.
+                        board.pending_immigrants.push((
+                            cell,
+                            today,
+                            roster as usize,
+                        ));
+                        info!(
+                            ?cell,
+                            roster,
+                            target_pop,
+                            day = today,
+                            "bastion: ★ A SETTLER IS SENT FOR — a house stands empty and the town is thriving"
+                        );
+                    }
+                    info!(
+                        fired = verdict.fired,
+                        deciding = verdict.deciding,
+                        roster,
+                        target_pop,
+                        vacant = vacant_free.len(),
+                        houses = households.len(),
+                        drive = ?board.colony_drive.0,
+                        day = today,
+                        "bastion: HOUSING GROWTH — the town's population is what its houses allow"
+                    );
+                }
                 if assigned > 0 || released > 0 {
                     info!(
                         houses = households.len(),
@@ -20876,9 +21094,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .get(uid)
                         .is_some_and(|until| time.0 < *until)
                 {
-                    // ROW 36: evenings LINGER (see EVENING_LINGER_MULT) —
-                    // the midday need-break stays brisk at its own site.
-                    let until = time.0 + RECREATION_BREAK_SECS * EVENING_LINGER_MULT;
+                    // ROW 36 (+36d): evenings LINGER, and a hold may never
+                    // outlive the block that authorised it — Leisure is TWO
+                    // windows and the dawn one is only two hours wide.
+                    let until = time.0
+                        + leisure_hold_secs(
+                            hour_of_day(rtsim.rt_state().data().time_of_day.0),
+                            RECREATION_BREAK_SECS,
+                            EVENING_LINGER_MULT,
+                        );
                     info!(
                         colonist = %uid,
                         "bastion: leisure lounge — evening break (schedule, not need)"
@@ -29138,29 +29362,47 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // ranks ≈ radius 10+), visits pair adjacent
                             // ranks (0↔1, 2↔3 — beside the neighbour's
                             // regular bench), home is the own-bed hearth.
-                            let day = (rtsim.rt_state().data().time_of_day.0
-                                / common::resources::DAY)
-                                .floor() as u64;
-                            let act = evening_activity(uid.0.get(), day);
+                            // v2: the epoch carries the HOUR, so an evening
+                            // holds more than one kind of evening.
+                            let tod = rtsim.rt_state().data().time_of_day.0;
+                            let hour_now = hour_of_day(tod);
+                            let epoch = (tod / common::resources::DAY).floor()
+                                as u64
+                                * 24
+                                + u64::from(hour_now);
+                            // ROW 36d: the palette is an EVENING's shape. At
+                            // dawn (the other Leisure window) or on a midday
+                            // need-break it stays the plain bench — a HOME
+                            // roll at 06:00 would walk a colonist who just
+                            // got out of bed straight back into it.
+                            let act = if (16..=21).contains(&hour_now) {
+                                evening_activity(uid.0.get(), epoch)
+                            } else {
+                                0
+                            };
+                            // ★ ROW 36e (review): the witness must name the
+                            // seat DELIVERED, not the activity DRAWN. A HOME
+                            // roll for a bedless colonist silently becomes a
+                            // bench, and the log said "home" — a census of
+                            // intentions, not of evenings. `act` now falls
+                            // back with the seat, so the label cannot lie.
                             match act {
-                                1 => gathering_spot(anchor, within + 24),
-                                2 => gathering_spot(anchor, within ^ 1),
+                                1 => (gathering_spot(anchor, within + 24), 1u8),
+                                2 => (gathering_spot(anchor, within ^ 1), 2),
                                 3 => board
                                     .beds
                                     .iter()
                                     .find(|(_, s)| s.owner == Some(uid))
-                                    .map(|(p, _)| *p)
+                                    .map(|(p, _)| (*p, 3u8))
                                     .unwrap_or_else(|| {
-                                        gathering_spot(anchor, within)
+                                        (gathering_spot(anchor, within), 0)
                                     }),
-                                _ => gathering_spot(anchor, within),
+                                _ => (gathering_spot(anchor, within), 0),
                             }
                         })
-                        .unwrap_or(feet);
-                    let day_now = (rtsim.rt_state().data().time_of_day.0
-                        / common::resources::DAY)
-                        .floor() as u64;
-                    let act_label = match evening_activity(uid.0.get(), day_now) {
+                        .unwrap_or((feet, 0));
+                    let (spot, act_done) = spot;
+                    let act_label = match act_done {
                         1 => "stroll",
                         2 => "visit",
                         3 => "home",
@@ -34835,20 +35077,38 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // the number meaning. Same cadence as the clock line, so
                 // an evening's occupancy reads straight off the log.
                 {
-                    let lounging = (&active_jobs, &colonists)
-                        .join()
-                        .filter(|(aj, _)| {
-                            board.jobs.get(&aj.job).is_some_and(|j| {
-                                matches!(
-                                    j.kind,
-                                    common::bastion::JobKind::Recreate { .. }
-                                )
-                            })
-                        })
-                        .count();
+                    // ★ v2 (review): SEATED, not merely assigned. v1 counted
+                    // every colonist HOLDING a Recreate job — which includes
+                    // the ones still walking to it, and the HOME-branch
+                    // loungers sitting indoors, neither of whom is in the
+                    // plaza the row is about. The bar was "how full does the
+                    // square look", so the count is Arrived colonists only,
+                    // and `seated_out` separates the ones whose evening is
+                    // at their own hearth from the ones on a bench.
+                    let mut lounging = 0usize;
+                    let mut walking = 0usize;
+                    let mut at_home = 0usize;
+                    for (aj, _, pos) in (&active_jobs, &colonists, &positions).join() {
+                        let Some(job) = board.jobs.get(&aj.job) else { continue };
+                        if !matches!(job.kind, common::bastion::JobKind::Recreate { .. }) {
+                            continue;
+                        }
+                        if aj.state != comp::bastion::ActiveJobState::Arrived {
+                            walking += 1;
+                            continue;
+                        }
+                        let feet = pos.0.map(|e| e.floor() as i32);
+                        if board.beds.contains_key(&feet) {
+                            at_home += 1;
+                        } else {
+                            lounging += 1;
+                        }
+                    }
                     info!(
                         hour,
                         lounging,
+                        walking,
+                        at_home,
                         pop = colonists.count(),
                         "bastion: PLAZA CENSUS — who is lounging right now"
                     );
@@ -39259,14 +39519,155 @@ mod tests {
     /// future retune quietly flattening evenings back to coffee breaks.
     #[test]
     fn evenings_linger_while_midday_breaks_stay_brisk() {
+        // THE MEASURED CLOCK (live log: game_day 1 at tick 33,900, game_day
+        // 2 at 87,900 ⇒ 54,000 ticks/day; ~30 tps ⇒ 1,800s of the `time`
+        // clock per game day). Everything below is arithmetic on that.
+        const SECS_PER_GAME_HOUR: f64 = 1800.0 / 24.0; // 75
+        const EVENING_BLOCK_SECS: f64 = 6.0 * SECS_PER_GAME_HOUR; // 16-21 ⇒ 450
+        let linger = RECREATION_BREAK_SECS * EVENING_LINGER_MULT;
         assert!(
-            EVENING_LINGER_MULT >= 3.0,
-            "under 3x the plaza averages below one simultaneous lounger at pop 24"
+            linger >= 2.0 * SECS_PER_GAME_HOUR,
+            "under two game hours a sit is a coffee break: the plaza empties between visitors"
         );
         assert!(
-            RECREATION_BREAK_SECS * EVENING_LINGER_MULT <= 900.0,
-            "a linger is an evening's sit, not a freeze — needs must get their turn"
+            linger <= 0.75 * EVENING_BLOCK_SECS,
+            "a linger longer than three quarters of the evening leaves no room for a \
+             SECOND activity — the evening collapses back to one pose per colonist, \
+             which is exactly what v1 did at 4x (480s > the 450s evening)"
         );
+        // Occupancy still clears the row's bar: pop 24, each colonist taking
+        // roughly (evening / linger) sits, each lasting `linger`.
+        // ★ THE DEAD PIN (review): v1 computed
+        // `24 * (EVENING/linger) * linger / EVENING`, which is 24.0 for ANY
+        // constants — a witness that cannot fail, blessing whatever sizing
+        // it was handed. The honest model: each colonist takes ONE lounge
+        // per evening window of length `linger`, starts spread across the
+        // evening, so the expected number seated at a random instant is
+        // pop * linger / EVENING — a quantity that MOVES with the constant
+        // it is testing.
+        let expected_present = 24.0 * linger / EVENING_BLOCK_SECS;
+        assert!(
+            expected_present >= 6.0,
+            "the row's bar is >=6 simultaneous; this sizing predicts {expected_present}"
+        );
+        // …and the same formula must REFUSE a sizing that empties the
+        // plaza: the pre-row 120s break predicts 6.4 — barely — while half
+        // of it predicts 3.2, under the bar. Proves the pin has teeth.
+        assert!(
+            24.0 * (RECREATION_BREAK_SECS * 0.5) / EVENING_BLOCK_SECS < 6.0,
+            "the occupancy model must be able to FAIL a too-short sit"
+        );
+        // ★ ROW 36d — A HOLD MAY NEVER OUTLIVE ITS BLOCK. Leisure is TWO
+        // windows (6-7 dawn, 16-21 evening) and the review caught the
+        // linger overrunning the two-hour dawn one into the work day, on a
+        // hold work cannot reclaim. Every hour of both windows is pinned.
+        const H: f64 = 1800.0 / 24.0;
+        for hour in 6..=7u32 {
+            let hold = leisure_hold_secs(hour, RECREATION_BREAK_SECS, EVENING_LINGER_MULT);
+            let remaining = f64::from(8 - hour) * H;
+            assert!(
+                hold <= remaining,
+                "dawn hour {hour}: hold {hold} overruns the {remaining}s left of the block"
+            );
+            assert!(hold <= RECREATION_BREAK_SECS, "dawn gets no evening linger");
+        }
+        for hour in 16..=21u32 {
+            let hold = leisure_hold_secs(hour, RECREATION_BREAK_SECS, EVENING_LINGER_MULT);
+            let remaining = f64::from(22 - hour) * H;
+            assert!(
+                hold <= remaining,
+                "evening hour {hour}: hold {hold} overruns the {remaining}s left"
+            );
+        }
+        assert_eq!(
+            leisure_hold_secs(16, RECREATION_BREAK_SECS, EVENING_LINGER_MULT),
+            RECREATION_BREAK_SECS * EVENING_LINGER_MULT,
+            "early evening still gets the full linger"
+        );
+        // Outside leisure (the midday need-break) is IDENTITY with before.
+        for hour in [0u32, 5, 9, 12, 15, 22, 23] {
+            assert_eq!(
+                leisure_hold_secs(hour, RECREATION_BREAK_SECS, EVENING_LINGER_MULT),
+                RECREATION_BREAK_SECS,
+                "hour {hour} is not a leisure window: the break must be untouched"
+            );
+        }
+    }
+
+    /// ROW 38 (the population loop): the housing equation and every gate,
+    /// both directions. The mandate's own words are the assertion: "ONE
+    /// COLONIST PER HOUSE, and the population is DETERMINED by housing."
+    #[test]
+    fn population_is_determined_by_housing_and_every_refusal_names_itself() {
+        use common::bastion::ColonyDrive as D;
+        let house = |beds: u32, members: Vec<u64>| HouseholdView {
+            min: Vec3::new(0, 0, 0),
+            max: Vec3::new(4, 4, 4),
+            beds,
+            members: members
+                .into_iter()
+                .map(|u| common::uid::Uid(NonZeroU64::new(u).expect("nonzero")))
+                .collect(),
+        };
+        // THE EQUATION: a house with beds is a seat at the table; a region
+        // with none houses nobody.
+        assert_eq!(
+            immigration_target_pop(&[house(2, vec![7]), house(1, vec![]), house(0, vec![])]),
+            2,
+            "target population is houses WITH BEDS, not regions"
+        );
+        assert_eq!(immigration_target_pop(&[]), 0);
+
+        let vacant = vec![Vec3::new(10, 10, 5), Vec3::new(2, 2, 5)];
+        let mut sorted = vacant.clone();
+        sorted.sort_by_key(|c| (c.x, c.y, c.z));
+
+        // POSITIVE: thriving town, empty house, new day → one settler, at
+        // the lowest sorted cell (order-independent).
+        let v = immigration_verdict(true, D::Expand, 3, 4, &sorted, 9, Some(8));
+        assert!(v.fired, "a thriving town with an empty house draws a settler");
+        assert_eq!(v.target, Some(Vec3::new(2, 2, 5)), "deterministic target");
+
+        // EVERY REFUSAL, NAMED — the daily witness prints these, so a
+        // silent no-op and a correct decline can never look alike.
+        assert_eq!(
+            immigration_verdict(false, D::Expand, 3, 4, &sorted, 9, Some(8)).deciding,
+            "disabled"
+        );
+        assert_eq!(
+            immigration_verdict(true, D::Expand, 3, 4, &sorted, 9, Some(9)).deciding,
+            "same_day",
+            "one arrival per game day, latched"
+        );
+        for d in [D::Grow, D::Sustain, D::Defend] {
+            let r = immigration_verdict(true, d, 3, 4, &sorted, 9, Some(8));
+            assert!(!r.fired, "{d:?} must not grow the town");
+            assert_eq!(r.deciding, "drive_not_expand");
+        }
+        assert_eq!(
+            immigration_verdict(true, D::Expand, 4, 4, &sorted, 9, Some(8)).deciding,
+            "roster_at_target",
+            "full houses mean no room — the ruling's own ceiling"
+        );
+        assert_eq!(
+            immigration_verdict(true, D::Expand, 9, 4, &sorted, 9, Some(8)).deciding,
+            "roster_at_target",
+            "over target (a house lost) still refuses, never underflows"
+        );
+        assert_eq!(
+            immigration_verdict(true, D::Expand, 3, 4, &[], 9, Some(8)).deciding,
+            "no_vacant_house"
+        );
+        // FALLBACK IS IDENTITY: disabled refuses every case that would
+        // otherwise fire — asserted, not assumed.
+        for day_last in [None, Some(8)] {
+            assert!(
+                !immigration_verdict(false, D::Expand, 0, 9, &sorted, 9, day_last).fired,
+                "with the feature off, nothing can arrive"
+            );
+        }
+        // Day 0 is a real day, not "already fired".
+        assert!(immigration_verdict(true, D::Expand, 0, 1, &sorted, 0, None).fired);
     }
 
     /// ROW 36b: the evening palette is weighted as designed, deterministic
@@ -39313,13 +39714,34 @@ mod tests {
         );
         assert_eq!(threat_scaled_muster_cap(3, 7), 4, "ceil(7/2)=4");
         assert_eq!(threat_scaled_muster_cap(5, 3), 2, "small militia: ceil(3/2)=2");
-        assert_eq!(threat_scaled_muster_cap(5, 1), 1, "one guard is all there is");
         assert_eq!(
             threat_scaled_muster_cap(3, 0),
             2,
             "militia-less perceiver fallback: identity with the old cap"
         );
         assert_eq!(threat_scaled_muster_cap(0, 8), 2, "no spots still floors at 2");
+        // ★ THE REGRESSION THIS PIN ONCE BLESSED (v1 asserted militia==1 ⇒ 1
+        // and never tested militia==2 — the modal small town). A scaling
+        // rule may only ever ADD defenders: never below the flat cap of 2
+        // it replaced, and never non-monotonic in militia.
+        for militia in 0..=12usize {
+            for spots in 0..=4usize {
+                let cap = threat_scaled_muster_cap(spots, militia);
+                assert!(
+                    cap >= 2,
+                    "militia={militia} spots={spots} gave {cap}: below the pre-row-35 cap"
+                );
+            }
+        }
+        assert_eq!(threat_scaled_muster_cap(1, 2), 2, "two guards still answer as two");
+        assert_eq!(threat_scaled_muster_cap(3, 2), 2, "two guards cannot become one");
+        for m in 0..12usize {
+            assert!(
+                threat_scaled_muster_cap(3, m) <= threat_scaled_muster_cap(3, m + 1),
+                "recruiting a guard must never shrink the response (militia {m}→{})",
+                m + 1
+            );
+        }
     }
 
     /// ROW 35b: cry clusters — tight cries stay ONE post (identity with

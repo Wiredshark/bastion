@@ -1854,6 +1854,13 @@ mod tests {
             ("server", "bastion_path", &["agent"]),
             ("server", "bastion_jobs", &["agent", "bastion_path"]),
             ("server", "bastion_piles", &[]),
+            // MERGE DEBT PAID (2026-08-28): the renderer-integration branch
+            // registered these two dispatcher systems and the manifest was
+            // never taught about them, so the guard has been red since the
+            // merge — exactly the drift it exists to catch, updated here
+            // deliberately (both halves, as its own message demands).
+            ("server", "bastion_renderer_bench", &[]),
+            ("server", "renderer_bench_net", &["bastion_renderer_bench"]),
             ("server", "terrain", &["msg::terrain"]),
             ("server", "waypoint", &[]),
             ("server", "teleporter", &[]),
