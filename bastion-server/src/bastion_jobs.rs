@@ -2236,6 +2236,63 @@ pub(crate) fn immigration_target_pop(households: &[HouseholdView]) -> u32 {
     households.iter().filter(|h| h.beds > 0).count() as u32
 }
 
+/// ROW 50 (CHILDREN): how many game-days a colonist is a child. Chosen
+/// against the sim's own clock, not against human biology: a soak is
+/// 3-10 game days, so a childhood nobody ever sees end is a childhood
+/// that does not exist in this game. Four days means a watcher can
+/// witness the whole arc — born, growing up among the houses, taking a
+/// trade — inside one long session, which is the only scale at which
+/// "the town has children in it" can be judged.
+pub(crate) const CHILDHOOD_DAYS: i64 = 4;
+
+/// ROW 50: the birth decision, pure. Deliberately the immigration
+/// verdict's twin — same refusal-order discipline, same self-naming
+/// terms — because they are the two halves of one question ("where do
+/// new people come from") and the town should answer both the same way.
+/// Gates: enabled → same_day → drive_not_expand → no_family (a household
+/// needs at least two adults sharing it: a family, not a lodger) →
+/// house_full (a household's own bed count caps it, Ben's 1-6 ruling) →
+/// no_room_in_town (the housing equation still binds: a colony already at
+/// its housing target does not add mouths).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct BirthVerdict {
+    pub fired: bool,
+    pub deciding: &'static str,
+}
+
+pub(crate) fn birth_verdict(
+    enabled: bool,
+    drive: common::bastion::ColonyDrive,
+    adults_in_house: u32,
+    house_beds: u32,
+    house_members: u32,
+    roster: u32,
+    target_pop: u32,
+    today: i64,
+    last: Option<i64>,
+) -> BirthVerdict {
+    let no = |d: &'static str| BirthVerdict { fired: false, deciding: d };
+    if !enabled {
+        return no("disabled");
+    }
+    if last == Some(today) {
+        return no("same_day");
+    }
+    if drive != common::bastion::ColonyDrive::Expand {
+        return no("drive_not_expand");
+    }
+    if adults_in_house < 2 {
+        return no("no_family");
+    }
+    if house_members >= household_capacity(house_beds) {
+        return no("house_full");
+    }
+    if roster >= target_pop {
+        return no("no_room_in_town");
+    }
+    BirthVerdict { fired: true, deciding: "a family has room" }
+}
+
 /// ROW 38: why the town did or did not draw a settler today. Every
 /// refusal NAMES ITSELF — the daily witness prints this string whether it
 /// fired or not, because a growth rule that silently never fires and a
@@ -8377,6 +8434,13 @@ pub struct JobBoard {
     /// guard, and a mutable borrow here would panic the cell. The drain
     /// is a DUMB APPLIER — every choice is made at the producer.
     pub pending_immigrants: Vec<(Vec3<i32>, i64, usize)>,
+    /// ROW 50: the last game-day a child was born (the once-per-day latch,
+    /// same shape and same reasoning as `immigration_day`).
+    pub birth_day: Option<i64>,
+    /// ROW 50: births requested this tick — (bed cell of the family home,
+    /// game day, the parent's uid). Drained by the rtsim tick, which alone
+    /// may take `data_mut()`; the producer makes every choice.
+    pub pending_births: Vec<(Vec3<i32>, i64, common::uid::Uid)>,
     /// ROW 33 (watch coverage): the last eight alarm-cry positions —
     /// the town's own record of where danger arrives; the approach
     /// post derives from their centroid.
@@ -29782,7 +29846,44 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     if *n >= EMBED_PERSIST_TICKS {
                         *n = 0;
                         let feet = pos.0.map(|e| e.floor() as i32);
-                        if let Some(d) = eject_dest(&terrain, feet, &HashSet::new()) {
+                        // ★ ROW 49: SEND THEM BACK THE WAY THEY CAME. The
+                        // net's shared `eject_dest` prefers a lateral
+                        // step-out and rises only as needed — but a body
+                        // wedged INSIDE a wall has no lateral escape, so it
+                        // rises, and the measured tail is 128 relocations of
+                        // +2 to +4 blocks in three days: bodies lifted onto
+                        // roofs. That is the rooftop figure in Ben's own
+                        // screenshots, and it is the VISIBLE half of the
+                        // embed class (615 of 620 victims are committed-route
+                        // walkers, so almost every victim HAS a route).
+                        // A colonist's own last waypoint is a cell the router
+                        // already proved walkable and the colonist already
+                        // stood in — a strictly better answer than "up".
+                        // Falls back to the shared ejector when there is no
+                        // route or the waypoint no longer stands, so the
+                        // cave-in path and every non-colonist keep today's
+                        // behaviour exactly.
+                        let back_along_route = board
+                            .path_cache
+                            .get(uid)
+                            .and_then(|(wps, idx, _)| {
+                                let prev = idx.saturating_sub(1);
+                                wps.get(prev).copied()
+                            })
+                            .filter(|c| {
+                                let solid = |p: Vec3<i32>| {
+                                    terrain.get(p).map(|b| b.is_solid()).unwrap_or(false)
+                                };
+                                !solid(*c)
+                                    && !solid(*c + Vec3::unit_z())
+                                    && solid(*c - Vec3::unit_z())
+                                    // and never a bigger climb than the
+                                    // ejector would have made anyway
+                                    && (c.z - feet.z).abs() <= 2
+                            });
+                        if let Some(d) =
+                            back_along_route.or_else(|| eject_dest(&terrain, feet, &HashSet::new()))
+                        {
                             tracing::warn!(
                                 embedded_at = ?pos.0,
                                 relocated_to = ?d,
@@ -29795,6 +29896,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // trunk post-process can never reach.
                                 uid = uid.0.get(),
                                 committed = board.path_cache.contains_key(uid),
+                                // ROW 49: which answer the net used, so the
+                                // rooftop tail can be watched rather than
+                                // assumed gone.
+                                back_along_route = back_along_route.is_some(),
                                 "bastion EMBED WATCH: colonist WEDGED in \
                                  terrain (persisted a full second) — \
                                  relocated; hunt the writer"
