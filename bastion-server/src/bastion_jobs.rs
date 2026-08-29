@@ -5552,14 +5552,24 @@ pub const EVENING_LINGER_MULT: f64 = 2.0;
 /// measured off the live clock). Outside leisure entirely — the midday
 /// need-break — the base duration is returned untouched, so that
 /// population is bit-identical to before the row.
-pub(crate) fn leisure_hold_secs(hour: u32, base: f64, mult: f64) -> f64 {
+pub(crate) fn leisure_hold_secs(tod: f64, base: f64, mult: f64) -> f64 {
     const SECS_PER_GAME_HOUR: f64 = 1800.0 / 24.0;
+    // ★ v2 — EXACT, NOT WHOLE-HOUR (round 56's own census caught the
+    // residual: the evening curve was right, but hour 08 — the first WORK
+    // hour — still read 10.6 colonists seated, the tail of hour-7 lounges.
+    // v1 clamped to whole hours remaining, so a lounge minted at 07:55
+    // still got a full hour. The block boundary is a moment, not a bucket.)
+    let day_secs = tod.rem_euclid(common::resources::DAY);
+    let hour = (day_secs / 3600.0).floor() as u32;
     let (end_hour, evening) = match hour {
         6..=7 => (8u32, false),
         16..=21 => (22u32, true),
         _ => return base,
     };
-    let remaining = f64::from(end_hour - hour) * SECS_PER_GAME_HOUR;
+    // Game-seconds to the block's end, converted to the sim clock the hold
+    // is measured in (a game day is 86,400 game-seconds and 1,800 sim).
+    let remaining =
+        ((f64::from(end_hour) * 3600.0) - day_secs) / (common::resources::DAY / 1800.0);
     let want = if evening { base * mult } else { base };
     want.min(remaining).max(0.0)
 }
@@ -20481,6 +20491,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     ?pos,
                     sow = req.is_some(),
                     ?affordance,
+                    // ★ ROW 41c: THE GROUND AT MINT. The ground-vote fix cut
+                    // moots ~90% but not to zero, and the survivors still
+                    // read below_kind=Grass at WORK time. Only two stories
+                    // fit: the generator minted on grass anyway (the fix has
+                    // a hole) or the ground was Earth at mint and something
+                    // turned it back (a rival writer). Stamping the ground
+                    // HERE, beside the work-time witness, decides it without
+                    // another guess — the same both-clocks discipline a
+                    // staleness claim needs.
+                    ground_at_mint = ?terrain
+                        .get(pos - Vec3::unit_z())
+                        .ok()
+                        .map(|b| b.kind()),
                     "bastion: farm job created"
                 );
                 board.jobs.insert(id, Job {
@@ -21242,7 +21265,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // windows and the dawn one is only two hours wide.
                     let until = time.0
                         + leisure_hold_secs(
-                            hour_of_day(rtsim.rt_state().data().time_of_day.0),
+                            rtsim.rt_state().data().time_of_day.0,
                             RECREATION_BREAK_SECS,
                             EVENING_LINGER_MULT,
                         );
@@ -39819,37 +39842,50 @@ mod tests {
         // windows (6-7 dawn, 16-21 evening) and the review caught the
         // linger overrunning the two-hour dawn one into the work day, on a
         // hold work cannot reclaim. Every hour of both windows is pinned.
-        const H: f64 = 1800.0 / 24.0;
-        for hour in 6..=7u32 {
-            let hold = leisure_hold_secs(hour, RECREATION_BREAK_SECS, EVENING_LINGER_MULT);
-            let remaining = f64::from(8 - hour) * H;
+        // v2: the clamp is EXACT — sampled every six game-minutes across
+        // both leisure windows, a hold may never outlive its own block.
+        // (Round 56's census caught the whole-hour version bleeding 10.6
+        // seated colonists into the first WORK hour.)
+        let tod_of = |h: f64| h * 3600.0;
+        for step in 0..20 {
+            let h = 6.0 + f64::from(step) * 0.1; // 06:00 → 07:54
+            let hold = leisure_hold_secs(tod_of(h), RECREATION_BREAK_SECS, EVENING_LINGER_MULT);
+            let remaining = (8.0 - h) * (1800.0 / 24.0);
             assert!(
-                hold <= remaining,
-                "dawn hour {hour}: hold {hold} overruns the {remaining}s left of the block"
+                hold <= remaining + 1e-6,
+                "dawn {h}: hold {hold} outlives the {remaining}s left of its block"
             );
             assert!(hold <= RECREATION_BREAK_SECS, "dawn gets no evening linger");
         }
-        for hour in 16..=21u32 {
-            let hold = leisure_hold_secs(hour, RECREATION_BREAK_SECS, EVENING_LINGER_MULT);
-            let remaining = f64::from(22 - hour) * H;
+        for step in 0..60 {
+            let h = 16.0 + f64::from(step) * 0.1; // 16:00 → 21:54
+            let hold = leisure_hold_secs(tod_of(h), RECREATION_BREAK_SECS, EVENING_LINGER_MULT);
+            let remaining = (22.0 - h) * (1800.0 / 24.0);
             assert!(
-                hold <= remaining,
-                "evening hour {hour}: hold {hold} overruns the {remaining}s left"
+                hold <= remaining + 1e-6,
+                "evening {h}: hold {hold} outlives the {remaining}s left"
             );
         }
         assert_eq!(
-            leisure_hold_secs(16, RECREATION_BREAK_SECS, EVENING_LINGER_MULT),
+            leisure_hold_secs(tod_of(16.0), RECREATION_BREAK_SECS, EVENING_LINGER_MULT),
             RECREATION_BREAK_SECS * EVENING_LINGER_MULT,
             "early evening still gets the full linger"
         );
         // Outside leisure (the midday need-break) is IDENTITY with before.
-        for hour in [0u32, 5, 9, 12, 15, 22, 23] {
+        for h in [0.0f64, 5.0, 9.5, 12.0, 15.9, 22.0, 23.5] {
             assert_eq!(
-                leisure_hold_secs(hour, RECREATION_BREAK_SECS, EVENING_LINGER_MULT),
+                leisure_hold_secs(tod_of(h), RECREATION_BREAK_SECS, EVENING_LINGER_MULT),
                 RECREATION_BREAK_SECS,
-                "hour {hour} is not a leisure window: the break must be untouched"
+                "hour {h} is not a leisure window: the break must be untouched"
             );
         }
+        // A day-wrapped clock reads the same as its own hour.
+        assert_eq!(
+            leisure_hold_secs(tod_of(17.0) + common::resources::DAY * 3.0,
+                RECREATION_BREAK_SECS, EVENING_LINGER_MULT),
+            leisure_hold_secs(tod_of(17.0), RECREATION_BREAK_SECS, EVENING_LINGER_MULT),
+            "the clamp must read the time of DAY, not the age of the world"
+        );
     }
 
     /// ROW 43 (THE CHEF): the kitchen is a POST with a crew, not a chore
