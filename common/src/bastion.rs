@@ -1983,6 +1983,68 @@ impl WorkPriorities {
     /// harvest nobody else takes) but the lane always outbids it. Guard is
     /// left at the default (3): a profession is a day job, and defending
     /// the town is everyone's business when the drive calls.
+    /// ROW 50: THE ONE PROFESSION→LANE MAP. This existed three times —
+    /// the founding path, the settler drain and now coming of age — and
+    /// the second copy had already drifted: it mapped `Hunter` to Haul
+    /// where the original maps `Hunter | Guard` to Guard, which meant no
+    /// colonist who ARRIVED could ever join the militia, and the town's
+    /// defence froze at its founding count while its population and its
+    /// raid surface both grew. A rule that must agree in three places
+    /// belongs in one place.
+    ///
+    /// `None` = this profession has no bastion lane (there is no Miner
+    /// profession in vanilla — checked, not assumed; mining stays a skill
+    /// the colony teaches).
+    pub fn work_for_profession(p: crate::rtsim::Profession) -> Option<WorkType> {
+        use crate::rtsim::Profession;
+        match p {
+            Profession::Farmer => Some(WorkType::Farm),
+            Profession::Chef => Some(WorkType::Cook),
+            Profession::Blacksmith => Some(WorkType::Build),
+            Profession::Hunter | Profession::Guard => Some(WorkType::Guard),
+            Profession::Merchant => Some(WorkType::Haul),
+            _ => None,
+        }
+    }
+
+    /// ROW 50 (CHILDREN): every lane refused. This IS childhood — the
+    /// claim loop's priority gate already turns "priority 0" into "this
+    /// person does not do this work", so a child is excluded from the
+    /// whole job board through the town's one existing door, and nothing
+    /// else has to learn what a child is. Eating, sleeping and recreation
+    /// are untouched: those are self-jobs, minted by need rather than
+    /// claimed off the board, so a child still lives a life.
+    ///
+    /// Deliberately NOT modelled as a small `Scale`: terrain collision
+    /// forces scale 1.0 for humanoids (common/systems/src/phys/mod.rs)
+    /// while the bastion router's preflight honours Scale, so a child
+    /// body would be promised routes it cannot physically walk — a direct
+    /// breach of the movement leniency contract.
+    pub fn childhood() -> Self {
+        Self {
+            mine: 0,
+            chop: 0,
+            build: 0,
+            haul: 0,
+            cook: 0,
+            farm: 0,
+            guard: 0,
+        }
+    }
+
+    /// ROW 50: whether this colonist refuses every lane — the childhood
+    /// test, read from the same field the exclusion is enforced on so the
+    /// two can never disagree.
+    pub fn is_all_zero(&self) -> bool {
+        self.mine == 0
+            && self.chop == 0
+            && self.build == 0
+            && self.haul == 0
+            && self.cook == 0
+            && self.farm == 0
+            && self.guard == 0
+    }
+
     pub fn in_lane(trade: WorkType) -> Self {
         let mut p = Self {
             mine: 2,
@@ -2123,6 +2185,23 @@ pub struct BastionColonist {
     /// later. serde-default: old saves → `None`.
     #[serde(default)]
     pub owned_bed: Option<Vec3<i32>>,
+    /// ROW 50 (LINEAGE): who this colonist was born to, if they were born
+    /// here rather than founded or arrived. The npc slotmap IS serialized,
+    /// so an id is a durable family fact — unlike sentiments (which decay
+    /// and evict at 128 entries) or the job board (runtime-only). This is
+    /// the anchor Ben's chartered desire-heritage hangs from: "a coward
+    /// could still want to be guard, maybe because his father was one".
+    /// serde-default: everyone alive before this row has no recorded
+    /// parent, which is exactly true.
+    #[serde(default)]
+    pub parent: Option<crate::rtsim::NpcId>,
+    /// ROW 50: the game-day this colonist was born, for those who were.
+    /// Childhood is a DURATION, not an age counter that must tick: the
+    /// coming-of-age check is `today - born_day >= CHILDHOOD_DAYS`, so
+    /// nothing has to be incremented anywhere and a save that sits for a
+    /// year does not age anybody by surprise.
+    #[serde(default)]
+    pub born_day: Option<i64>,
 }
 
 /// bastion (CASE-003 belt): count of per-tick CENTER-SAFETY-NET fires — a
@@ -2943,6 +3022,14 @@ impl BastionColonist {
             // RUN-0: everyone walks until an urgency trigger says
             // otherwise.
             running: false,
+            // ROW 50: nobody is born by `generate` — the founders and the
+            // settlers arrive grown, and the birth drain SETS these two
+            // fields after generating. Deliberately NOT an rng draw: the
+            // founding loop shares one rng across body, species, offset
+            // and seed (server/src/rtsim/mod.rs), so any new draw here
+            // would shift every existing world's population.
+            parent: None,
+            born_day: None,
         }
     }
 }

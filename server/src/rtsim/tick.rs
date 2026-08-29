@@ -883,28 +883,40 @@ impl<'a> System<'a> for Sys {
         // adoption omits `.personality`, which leaves every axis at MID and
         // makes trait-carrying impossible (measured: 0 of 348). Identity
         // and personality draw from SEPARATE salted streams so neither can
-        // shift the other, and both are salted by the bed cell so a
-        // same-day reload cannot mint a twin. The settler lands ON the
-        // vacant bed, where the existing B7-2 assigner houses them on its
-        // next sweep — nothing new decides where they live.
+        // shift the other. The settler lands ON the vacant bed, where the
+        // existing B7-2 assigner houses them on its next sweep — nothing
+        // new decides where they live.
+        //
+        // ROW 50 FIX (review rank 8): the streams are keyed on `data.tick`,
+        // not on the day index. The day index is BOOT-RELATIVE — the server
+        // recomputes it from the session clock — so keying identity on it
+        // meant a house vacated twice across a restart re-minted the DEAD
+        // colonist byte-identically: same name, same face, same backstory,
+        // walking back into the house he died in. `Data.tick` is a
+        // persisted monotonic sim counter (rtsim/src/lib.rs:388), so it
+        // never rewinds and never repeats, and it is a SIM clock — no
+        // wall-clock enters a decision. The cell salt stays: it separates
+        // two settlers minted on the same tick, which is what it was
+        // actually good for.
+        let settler_epoch = data.tick;
         let pending_immigrants = std::mem::take(&mut job_board.pending_immigrants);
         for (cell, day, prof_idx) in pending_immigrants {
             use common::rtsim::{Profession, Role};
             use rand::{RngExt as _, prelude::IndexedRandom};
-            // u32 salt (tick_rng's own width): the bed cell folded in so a
-            // same-day reload cannot mint a twin of an existing settler.
+            // u32 salt (tick_rng's own width): the bed cell, so two settlers
+            // arriving on the same tick are still different people.
             let cell_salt = (cell.x as u32)
                 .wrapping_mul(0x9E37_79B9)
                 .wrapping_add((cell.y as u32).wrapping_mul(0x85EB_CA6B))
                 .wrapping_add(cell.z as u32);
             let mut rng = ::rtsim::tick_rng(
                 bastion_world_seed,
-                day as u64,
+                settler_epoch,
                 0xBA57_C013u32 ^ cell_salt,
             );
             let mut personality_rng = ::rtsim::tick_rng(
                 bastion_world_seed,
-                day as u64,
+                settler_epoch,
                 0xBA57_C014u32 ^ cell_salt,
             );
             let mut colonist = common::bastion::BastionColonist::generate(&mut rng);
@@ -919,19 +931,29 @@ impl<'a> System<'a> for Sys {
             // construction — they would not be stuck, they would be
             // unemployed. Same seeding as adoption: lane priorities plus
             // the starting XP that makes the lane real.
+            //
+            // ROW 50 FIX (review rank 2 — this one was killing colonists):
+            // the map MUST mirror the founding path at server/src/rtsim/
+            // mod.rs:696, which reads `Hunter | Guard => Guard`. The drain
+            // had `_ => Haul`, so every arriving hunter got
+            // `in_lane(Haul)` — and `in_lane` leaves guard at 3 (common/
+            // src/bastion.rs:1986) while the muster, the alarm's run-toward
+            // exemption and the night-watch roster all test guard >= 4.
+            // Nothing anywhere writes work_priorities again, so a settler
+            // was a permanent civilian: the town's defence froze at the
+            // founding count while its population, its buildings and its
+            // raid surface all grew. Guard is in the array too, so the town
+            // can actually draw a soldier.
             let professions = [
                 Profession::Farmer,
                 Profession::Hunter,
                 Profession::Blacksmith,
                 Profession::Chef,
+                Profession::Guard,
             ];
             let profession = professions[prof_idx % professions.len()];
-            let work = match profession {
-                Profession::Farmer => common::bastion::WorkType::Farm,
-                Profession::Chef => common::bastion::WorkType::Cook,
-                Profession::Blacksmith => common::bastion::WorkType::Build,
-                _ => common::bastion::WorkType::Haul,
-            };
+            let work = common::bastion::WorkPriorities::work_for_profession(profession)
+                .unwrap_or(common::bastion::WorkType::Haul);
             colonist.skills.grant_xp(work, common::bastion::ADOPTED_TRADE_XP);
             colonist.work_priorities = common::bastion::WorkPriorities::in_lane(work);
             let name = colonist.name.clone();
@@ -965,6 +987,120 @@ impl<'a> System<'a> for Sys {
                 ?profession,
                 day,
                 "bastion: ★ A SETTLER ARRIVES — a vacant house drew a new colonist"
+            );
+        }
+
+        // ── ROW 50: CHILDREN ARE BORN ───────────────────────────────────
+        // Same producer/drain contract as the settler above: bastion_jobs
+        // decided WHETHER, WHOSE and WHERE while the world was readable;
+        // this side only applies it, because `data_mut()` is legal in this
+        // one place. Sorted before applying so two births queued in one
+        // tick land in a fixed order regardless of how the producer's maps
+        // iterated.
+        let mut pending_births = std::mem::take(&mut job_board.pending_births);
+        pending_births.sort_by_key(|(cell, day, parent)| {
+            (*day, cell.x, cell.y, cell.z, parent.0)
+        });
+        let birth_epoch = data.tick;
+        for (cell, day, parent_uid) in pending_births {
+            use common::rtsim::Role;
+            use rand::{RngExt as _, prelude::IndexedRandom};
+            // The parent, as a durable rtsim id. Resolved through the ECS
+            // because a Uid only means anything for a loaded entity — and
+            // the parent necessarily IS loaded: the producer read them out
+            // of a household this same tick.
+            // `id_maps` moved into `npc_system_data` above; the struct is
+            // only partially moved (its `inventories` field), so the map is
+            // still readable here.
+            let parent_id: Option<NpcId> = npc_system_data
+                .id_maps
+                .uid_entity(parent_uid)
+                .and_then(|e| rtsim_entities.get(e))
+                .copied();
+            let parent_profession = parent_id
+                .and_then(|id| data.npcs.get(id))
+                .and_then(|n| match n.role {
+                    Role::Civilised(p) => p,
+                    _ => None,
+                });
+            let cell_salt = (cell.x as u32)
+                .wrapping_mul(0x9E37_79B9)
+                .wrapping_add((cell.y as u32).wrapping_mul(0x85EB_CA6B))
+                .wrapping_add(cell.z as u32);
+            let mut rng =
+                ::rtsim::tick_rng(bastion_world_seed, birth_epoch, 0xBA57_C015u32 ^ cell_salt);
+            let mut personality_rng =
+                ::rtsim::tick_rng(bastion_world_seed, birth_epoch, 0xBA57_C016u32 ^ cell_salt);
+            let mut colonist = common::bastion::BastionColonist::generate(&mut rng);
+            // ★ CHILDHOOD IS AN EMPTY WORK PROFILE, not a small body. The
+            // claim loop's priority gate already reads "0" as "not this
+            // person's work", so a child is out of the labour force
+            // through the one door the town already has — while eating,
+            // sleeping and the evening palette, which are need-minted
+            // self-jobs, go on as normal. A child is a resident with no
+            // trade, which is exactly what a child is.
+            colonist.work_priorities = common::bastion::WorkPriorities::childhood();
+            colonist.parent = parent_id;
+            colonist.born_day = Some(day);
+            let species = *common::comp::humanoid::ALL_SPECIES
+                .choose(&mut rng)
+                .expect("humanoid species catalog must not be empty");
+            let body = common::comp::Body::Humanoid(
+                common::comp::humanoid::Body::random_with(&mut rng, &species),
+            );
+            let name = colonist.name.clone();
+            let wpos = cell.map(|e| e as f32) + Vec3::new(0.5, 0.5, 1.0);
+            let home = data
+                .sites
+                .iter()
+                .min_by_key(|(_, site)| {
+                    site.wpos
+                        .map(|e| e as i64)
+                        .distance_squared(wpos.xy().map(|e| e as i64))
+                })
+                .map(|(id, _)| id);
+            // ★ HERITAGE (Ben, chartered): the child carries no trade, but
+            // it carries where it grew up. The role holds the parent's
+            // profession as an INCLINATION — coming of age reads it as a
+            // first preference, not as a destiny, so the smith's daughter
+            // is likelier to smith and free not to.
+            let mut npc = ::rtsim::data::npc::Npc::new(
+                rng.random(),
+                wpos,
+                body,
+                Role::Civilised(parent_profession),
+            )
+            .with_bastion_colonist(colonist);
+            npc.home = home;
+            npc.personality = common::rtsim::Personality::random(&mut personality_rng);
+            let id = data.spawn_npc(npc);
+            // ChronicleKind::Birth has existed since the chronicle landed
+            // and has never once been emitted. A town whose records hold
+            // only deaths is not keeping a history, it is keeping a
+            // casualty list.
+            let now = data.time_of_day;
+            let mut actors = vec![Actor::Npc(id)];
+            if let Some(p) = parent_id {
+                actors.push(Actor::Npc(p));
+            }
+            data.chronicle.record(
+                now,
+                ::rtsim::data::ChronicleKind::Birth,
+                actors,
+                home,
+                Some(cell),
+                ::rtsim::data::chronicle::Importance::Notable,
+                ::rtsim::data::chronicle::Scope::Colony,
+                None,
+            );
+            tracing::info!(
+                ?id,
+                name,
+                ?wpos,
+                ?parent_id,
+                ?parent_profession,
+                day,
+                "bastion: ★ A CHILD IS BORN — the town makes its own people now"
             );
         }
 

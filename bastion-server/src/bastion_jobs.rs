@@ -2023,6 +2023,33 @@ pub(crate) fn colonist_schedule_block(
     }
 }
 
+/// ROW 50 (review ranks 9 and 10): the time of day IN THIS COLONIST'S OWN
+/// FRAME. [`colonist_schedule_block`] already answers "which block is this
+/// person in" through their rotation offset, but every downstream consumer
+/// that needed the *hour* went back to the raw global clock — so the
+/// evening palette fired on the night watchman's wake-up and never on his
+/// real evening, and his leisure hold was clamped against a window he is
+/// not in. One frame, one source: shift the clock once, here, and let the
+/// hour-shaped code read it.
+///
+/// Deliberately NOT wrapped to one day: the epoch the evening palette
+/// hashes on is `day * 24 + hour`, so a modulo here would collapse every
+/// day to day 0 and freeze the palette forever. Both consumers
+/// ([`hour_of_day`] and [`leisure_hold_secs`]) take their own
+/// `rem_euclid`, so the running total is what they want.
+pub(crate) fn colonist_effective_tod(
+    night_watch: &HashSet<common::uid::Uid>,
+    uid: Option<&common::uid::Uid>,
+    tod: f64,
+) -> f64 {
+    let offset = if uid.is_some_and(|u| night_watch.contains(u)) {
+        NIGHT_WATCH_OFFSET % 24
+    } else {
+        0
+    };
+    tod - f64::from(offset) * 3600.0
+}
+
 /// ★ THE EMERGENCY BACKOUT (Ben: "a emergency backout if the colonist is
 /// starving to death").
 ///
@@ -2260,6 +2287,20 @@ pub(crate) struct BirthVerdict {
     pub deciding: &'static str,
 }
 
+/// ROW 50: the trade a grown child takes up, decided purely so it can be
+/// pinned. HERITAGE FIRST, then the town's need — Ben's chartered shape
+/// ("a coward could still want to be guard, maybe because his father was
+/// one"): the parent's lane is the inclination, and only when there is no
+/// parent lane to inherit does the child fall to whichever lane the town
+/// is shortest of. Never RNG — a life-defining choice must replay
+/// identically for a seed.
+pub(crate) fn coming_of_age_trade(
+    parent_trade: Option<common::bastion::WorkType>,
+    scarcest_lane: common::bastion::WorkType,
+) -> common::bastion::WorkType {
+    parent_trade.unwrap_or(scarcest_lane)
+}
+
 pub(crate) fn birth_verdict(
     enabled: bool,
     drive: common::bastion::ColonyDrive,
@@ -2426,6 +2467,12 @@ pub(crate) fn bed_claim_cost(base: i64, house_members: Option<u32>) -> i64 {
 /// a hamlet still eats, a city gets a second kitchen hand. Eating and
 /// carrying your own food are untouched: this caps the STOVE, not the
 /// mouth (home cooking for yourself stays everyone's business).
+/// ROW 50: the priority value that means "this is my trade", as written by
+/// `WorkPriorities::in_lane` (common/src/bastion.rs). The kitchen cap uses
+/// it as a FLOOR, not as a filter: at cap, the town stops opening stoves to
+/// generalists but never to the person whose lane this is.
+pub(crate) const COOK_LANE_BAR: u8 = 4;
+
 pub(crate) fn kitchen_crew_cap(roster: usize) -> usize {
     static ENV: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
     ENV.get_or_init(|| {
@@ -2674,6 +2721,12 @@ pub struct ClaimRefusalCensus {
     pub materials: u32,
     pub skill_floor: u32,
     pub priority_zero: u32,
+    /// ROW 50 (review rank 14): a deliberate LANE HOLD — the night
+    /// watchman's Sleep-block door, which is open only to Guard work. A
+    /// healthy state, but a counted one: an uncounted `continue` silently
+    /// broke the conservation identity this census is built on, which is
+    /// what makes every other bucket in it worth reading.
+    pub lane_hold: u32,
     /// Jobs refused because their cell is condemned (proven unreachable).
     pub condemned: u32,
     pub access_dist: u32,
@@ -2691,6 +2744,7 @@ impl ClaimRefusalCensus {
             + self.materials
             + self.skill_floor
             + self.priority_zero
+            + self.lane_hold
             + self.condemned
             + self.access_dist
     }
@@ -2762,11 +2816,18 @@ pub(crate) const STONE_PAR_PER_COLONIST: u32 = 4;
 /// reaches the documented deadlock cases (stone at 60+).
 pub(crate) const QUARRY_SURVEY_RINGS: [i32; 5] = [32, 48, 64, 80, 96];
 
-/// ROW 33 v2: how long the town remembers where danger came from — two
-/// game days on the measured clock (1800 sim-seconds per game day). Long
-/// enough that a raid's approach still shapes tonight's watch, short
-/// enough that a quiet week returns the guard to the plaza.
-pub(crate) const CRY_MEMORY_SECS: f64 = 3600.0;
+/// ROW 33 v2: how long the town remembers where danger came from — TWO
+/// GAME DAYS. Long enough that a raid's approach still shapes tonight's
+/// watch, short enough that a quiet week returns the guard to the plaza.
+///
+/// ★ ROW 50 FIX (review rank 4, same sweep): expressed in game days and
+/// converted at the use site. The constant used to be a bare 3,600
+/// sim-seconds — two days only on a default server. On the project's own
+/// harness (day_length = 2.0, a game day of 120 sim-seconds) it was sixty
+/// days of memory, so the town would still be posting guards against a
+/// raid two months gone. A duration whose meaning is "N game days" must
+/// carry the clock it is measured against.
+pub(crate) const CRY_MEMORY_GAME_DAYS: f64 = 2.0;
 
 /// ROW 36f (review): the palette's seats must stay UNIQUE. `gathering_spot`
 /// guarantees rank→cell injectivity, and the first palette threw that away:
@@ -3254,6 +3315,31 @@ pub fn gathering_spot(anchor: Vec3<i32>, rank: usize) -> Vec3<i32> {
         _ => (-radius, radius - t % side),          // west edge, north→south
     };
     anchor + Vec3::new(dx, dy, 0)
+}
+
+/// ROW 50 (review rank 7): the Chebyshev radius from the anchor at which
+/// [`gathering_spot`] seats the given rank — the square's own edge, as a
+/// number. The plaza census needs it to answer "is this seat ON the
+/// square", and the answer must scale with the colony exactly the way the
+/// seating does: a village of 8 fills a 5-block ring, a city of 400 fills
+/// a 20-block one, and a STROLL seat (rank + [`STROLL_BAND`]) sits far
+/// outside both. Derived from the same arithmetic as the seater, so the
+/// two can never disagree.
+pub fn gathering_ring_radius(rank: usize) -> i32 {
+    if rank < 12 {
+        // The village benches: the widest RING entry is (5, 1).
+        return 5;
+    }
+    let mut r = rank - 12;
+    let mut radius: i32 = 6;
+    loop {
+        let seats = 4 * radius;
+        if (r as i32) < seats {
+            return radius;
+        }
+        r -= seats as usize;
+        radius += 2;
+    }
 }
 
 /// ★ THE PERSONAL-HOLD FAMILY (rulings-fleet regression, 2026-08-23):
@@ -5605,12 +5691,25 @@ pub const EVENING_LINGER_MULT: f64 = 2.0;
 ///
 /// A hold may never outlive the block that authorised it. Evening gets
 /// the linger; dawn keeps the bare break; both are clamped to the hours
-/// actually remaining in their own window (75 sim-seconds per game hour,
-/// measured off the live clock). Outside leisure entirely — the midday
-/// need-break — the base duration is returned untouched, so that
+/// actually remaining in their own window. Outside leisure entirely — the
+/// midday need-break — the base duration is returned untouched, so that
 /// population is bit-identical to before the row.
-pub(crate) fn leisure_hold_secs(tod: f64, base: f64, mult: f64) -> f64 {
-    const SECS_PER_GAME_HOUR: f64 = 1800.0 / 24.0;
+///
+/// ★ ROW 50 FIX (review rank 4): `sim_secs_per_game_day` is a PARAMETER
+/// now. v2 hardcoded 1,800 — correct only for the default server's
+/// `day_length = 30` (the coefficient is `1440 / day_length`, so a game
+/// day costs `DAY / coefficient` sim-seconds). The project's own harness
+/// runs `day_length = 2.0`: 120 sim-seconds per game day, and the literal
+/// was overstating the block's remaining time by 15×, which made the row's
+/// whole invariant — "a hold may never outlive its block" — false on every
+/// leg this project actually runs. A clock constant may not be guessed
+/// from the machine that happened to be measured.
+pub(crate) fn leisure_hold_secs(
+    tod: f64,
+    base: f64,
+    mult: f64,
+    sim_secs_per_game_day: f64,
+) -> f64 {
     // ★ v2 — EXACT, NOT WHOLE-HOUR (round 56's own census caught the
     // residual: the evening curve was right, but hour 08 — the first WORK
     // hour — still read 10.6 colonists seated, the tail of hour-7 lounges.
@@ -5624,11 +5723,22 @@ pub(crate) fn leisure_hold_secs(tod: f64, base: f64, mult: f64) -> f64 {
         _ => return base,
     };
     // Game-seconds to the block's end, converted to the sim clock the hold
-    // is measured in (a game day is 86,400 game-seconds and 1,800 sim).
-    let remaining =
-        ((f64::from(end_hour) * 3600.0) - day_secs) / (common::resources::DAY / 1800.0);
+    // is measured in.
+    let game_secs_per_sim_sec = common::resources::DAY / sim_secs_per_game_day.max(f64::EPSILON);
+    let remaining = ((f64::from(end_hour) * 3600.0) - day_secs) / game_secs_per_sim_sec;
     let want = if evening { base * mult } else { base };
     want.min(remaining).max(0.0)
+}
+
+/// ROW 50 (review rank 4): sim-seconds in one game day, derived from the
+/// server's own day-cycle coefficient. `TimeOfDay` advances by
+/// `dt * coefficient` while `Time` advances by `dt`
+/// (common/state/src/state.rs), so this ratio IS the conversion between
+/// the two clocks — the only honest source for it.
+pub(crate) fn sim_secs_per_game_day(
+    server_constants: &common::shared_server_config::ServerConstants,
+) -> f64 {
+    common::resources::DAY / server_constants.day_cycle_coefficient.max(f64::EPSILON)
 }
 
 /// ROW 36b (Ben, verbatim intent: "colonists while lounging shouldn't
@@ -8422,6 +8532,9 @@ pub struct JobBoard {
     /// count, which is the true cap — documented here rather than
     /// hidden.
     pub immigration_day: Option<i64>,
+    /// ROW 50 (review rank 12): the last game-day the HOUSING GROWTH
+    /// witness printed, so a witness that calls itself daily is daily.
+    pub growth_logged_day: Option<i64>,
     /// ROW 40 (farm churn): per-cell count of MOOT farm completions — the
     /// job arrived and the ground disagreed. Cleared the moment a cell
     /// actually works, halved daily with the other tallies, so a cell that
@@ -12467,6 +12580,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 Read<'a, TradePriceBook>,
                 // ITEM 31: the favor pool (trickle regen lives here).
                 Write<'a, DivineFavor>,
+                // ROW 50 (review rank 4): the day-cycle coefficient, so
+                // every game-clock conversion in this file derives its
+                // sim-seconds-per-game-day instead of hardcoding the
+                // default server's 1,800. The harness runs day_length=2.0
+                // (coefficient 720, a game day of 120 sim-seconds), where
+                // the literal was wrong by a factor of fifteen.
+                ReadExpect<'a, common::shared_server_config::ServerConstants>,
             ),
         ),
     );
@@ -12542,6 +12662,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     mut pending_seed_items,
                     trade_price_book,
                     mut divine_favor,
+                    server_constants,
                 ),
             ),
         ): Self::SystemData,
@@ -17429,9 +17550,34 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // Release beds whose owner no longer exists, FIRST — otherwise a
             // dead colonist's bed is locked forever and the colony slowly
             // loses its housing to its own history.
+            //
+            // ★ ROW 50 FIX (review rank 6): "no longer exists" was read off
+            // the ECS join, which holds only LOADED colonists. A colonist
+            // demoted to Simulated (walked out of a loaded chunk — routine,
+            // not rare) therefore had his bed released out from under him
+            // while he was alive and on his way home. The durable side is
+            // the rtsim record, and `colonist_record` mirrors `owned_bed`
+            // into it every loaded tick (server/src/rtsim/tick.rs), so a
+            // living owner's claim survives his demotion and can be
+            // checked WITHOUT a uid for an unloaded npc. A bed is free only
+            // when nobody alive — loaded or simulated — still claims it.
+            let claimed_beds: std::collections::HashSet<Vec3<i32>> = rtsim
+                .rt_state()
+                .data()
+                .npcs
+                .values()
+                .filter(|n| !n.is_dead())
+                .filter_map(|n| n.bastion_colonist.as_ref().and_then(|c| c.owned_bed))
+                .collect();
             let mut released = 0u32;
-            for slot in board.beds.values_mut() {
-                if slot.owner.is_some_and(|o| !live.contains(&o)) {
+            let mut release_cells: Vec<Vec3<i32>> = Vec::new();
+            for (pos, slot) in board.beds.iter() {
+                if slot.owner.is_some_and(|o| !live.contains(&o)) && !claimed_beds.contains(pos) {
+                    release_cells.push(*pos);
+                }
+            }
+            for pos in release_cells {
+                if let Some(slot) = board.beds.get_mut(&pos) {
                     slot.owner = None;
                     released += 1;
                 }
@@ -17712,6 +17858,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let today = (rtsim.rt_state().data().time_of_day.0
                         / common::resources::DAY)
                         .floor() as i64;
+                    // ★ ROW 50 FIX (review rank 12): the block calls itself
+                    // daily but sits inside a sweep that runs on the
+                    // arbitration cadence — it fired ~3,600 times per game
+                    // day, so the ONE line that carries the row's
+                    // acceptance signal was buried under thousands of
+                    // identical copies of itself, and an 82-bed
+                    // collect-and-sort ran alongside every one of them. The
+                    // deciding term changes only when the day changes or
+                    // when the rule actually fires, and both are visible
+                    // from here. `growth_logged_day` is the sibling of
+                    // `immigration_day` in every respect.
+                    let day_changed = board.growth_logged_day != Some(today);
                     let target_pop = immigration_target_pop(&households);
                     // Recomputed here, NOT reused from the assigner's own
                     // view: the move-out pass above mutates bed owners
@@ -17719,21 +17877,47 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // would count one vacancy twice. Sorted because the
                     // source is a HashMap and `[0]` must not depend on
                     // iteration order.
+                    //
+                    // ★ ROW 50 FIX (review rank 11): the household view is a
+                    // PRE-ASSIGNMENT snapshot — `derive_households` ran
+                    // before this sweep's own assigner moved people in — so
+                    // `h.members.is_empty()` still called a house empty
+                    // that was filled thirty lines ago, and the settler was
+                    // sent to a bed somebody had just taken. `occupancy` is
+                    // the live count the sibling assignment pass mutates as
+                    // it goes; it is the only view that is true HERE.
                     let mut vacant_free: Vec<Vec3<i32>> = board
                         .beds
                         .iter()
                         .filter(|(pos, slot)| {
                             slot.owner.is_none()
                                 && bed_house.get(*pos).is_some_and(|i| {
-                                    households
-                                        .get(*i)
-                                        .is_some_and(|h| h.members.is_empty() && h.beds > 0)
+                                    occupancy.get(*i).is_some_and(|n| *n == 0)
+                                        && households.get(*i).is_some_and(|h| h.beds > 0)
                                 })
                         })
                         .map(|(pos, _)| *pos)
                         .collect();
                     vacant_free.sort_by_key(|c| (c.x, c.y, c.z));
-                    let roster = colonists.count() as u32;
+                    // ★ ROW 50 FIX (review rank 6): COUNT BOTH SIDES OF THE
+                    // EQUATION IN THE SAME FRAME. `target_pop` comes from
+                    // the board's houses (every colonist, wherever they
+                    // are); `roster` came from the ECS join, which holds
+                    // only colonists currently LOADED. A colonist who walks
+                    // out to a far chunk, or whose entity is demoted to
+                    // Simulated, therefore left both a roster hole AND an
+                    // apparently empty house — and the town sent for a
+                    // settler to replace someone who was merely out. The
+                    // persistent rtsim record is the population; the ECS is
+                    // a rendering of part of it. `is_dead` excludes the
+                    // fallen, who are genuinely gone.
+                    let roster = rtsim
+                        .rt_state()
+                        .data()
+                        .npcs
+                        .values()
+                        .filter(|n| n.bastion_colonist.is_some() && !n.is_dead())
+                        .count() as u32;
                     let verdict = immigration_verdict(
                         std::env::var_os("BASTION_NO_IMMIGRATION").is_none(),
                         board.colony_drive.0,
@@ -17760,17 +17944,90 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             "bastion: ★ A SETTLER IS SENT FOR — a house stands empty and the town is thriving"
                         );
                     }
-                    info!(
-                        fired = verdict.fired,
-                        deciding = verdict.deciding,
-                        roster,
-                        target_pop,
-                        vacant = vacant_free.len(),
-                        houses = households.len(),
-                        drive = ?board.colony_drive.0,
-                        day = today,
-                        "bastion: HOUSING GROWTH — the town's population is what its houses allow"
-                    );
+                    // ── ROW 50: CHILDREN ───────────────────────────────
+                    // Ben's horizon, verbatim: "eventually we want a living
+                    // breathing town that can grow, contract, be static
+                    // etc. but we need a lot systems for that ranging from
+                    // professions, children, etc." Immigration answers
+                    // "where do new people come from" with a road; this
+                    // answers it with a family, which is the half that
+                    // makes a town a town rather than a depot.
+                    //
+                    // The prior art agrees on the shape and on the
+                    // constraint: RimWorld and Banished both gate births on
+                    // a SHARED HOME plus room to hold the child, and both
+                    // let population find its own ceiling that way rather
+                    // than scripting a curve. Here the ceiling is already
+                    // built — `target_pop` is the housing equation — so a
+                    // birth competes for the same slot immigration does and
+                    // growth throttles itself with no second governor.
+                    //
+                    // ADULTS, not members: a child cannot be a parent, and
+                    // childhood is exactly "work_priorities all zero" (the
+                    // single gate at the claim loop's priority read), so
+                    // the test is the same fact read from the same field.
+                    let birth_house = {
+                        let child_uids: std::collections::HashSet<common::uid::Uid> =
+                            (&colonists, &uids)
+                                .join()
+                                .filter(|(c, _)| c.0.work_priorities.is_all_zero())
+                                .map(|(_, u)| *u)
+                                .collect();
+                        households
+                            .iter()
+                            .enumerate()
+                            .find(|(i, h)| {
+                                let adults = h
+                                    .members
+                                    .iter()
+                                    .filter(|u| !child_uids.contains(u))
+                                    .count() as u32;
+                                birth_verdict(
+                                    std::env::var_os("BASTION_NO_BIRTHS").is_none(),
+                                    board.colony_drive.0,
+                                    adults,
+                                    h.beds,
+                                    occupancy.get(*i).copied().unwrap_or(0),
+                                    roster,
+                                    target_pop,
+                                    today,
+                                    board.birth_day,
+                                )
+                                .fired
+                            })
+                            .map(|(i, h)| (i, h.members[0], h.min))
+                    };
+                    if let Some((_, parent, house_min)) = birth_house {
+                        board.birth_day = Some(today);
+                        // The child is queued at the family's own house
+                        // corner. Same producer/drain contract as ROW 38:
+                        // every choice is made HERE, where the world is
+                        // readable; the rtsim tick only applies it, because
+                        // `data_mut()` is legal nowhere else.
+                        board.pending_births.push((house_min, today, parent));
+                        info!(
+                            ?house_min,
+                            parent = %parent,
+                            roster,
+                            target_pop,
+                            day = today,
+                            "bastion: ★ A CHILD IS BORN — the town makes its own people now"
+                        );
+                    }
+                    if day_changed || verdict.fired {
+                        board.growth_logged_day = Some(today);
+                        info!(
+                            fired = verdict.fired,
+                            deciding = verdict.deciding,
+                            roster,
+                            target_pop,
+                            vacant = vacant_free.len(),
+                            houses = households.len(),
+                            drive = ?board.colony_drive.0,
+                            day = today,
+                            "bastion: HOUSING GROWTH — the town's population is what its houses allow"
+                        );
+                    }
                 }
                 if assigned > 0 || released > 0 {
                     info!(
@@ -20246,6 +20503,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             let mut new_jobs: Vec<(Vec3<i32>, Option<&'static str>, AffordanceClass)> = Vec::new();
             let mut stage_ups: Vec<(Vec3<i32>, Block, u8)> = Vec::new();
             let mut evict: Vec<Vec3<i32>> = Vec::new();
+            // ★ ROW 50 FIX (review rank 1 — the guard was starving the plot
+            // it protects). ROW 40's churn filter ran AFTER the plot loop,
+            // but every push site debits `open_budget` at push time. A
+            // rested cell therefore spent a slot and was then thrown away,
+            // minting nothing: the plot's whole per-pass budget could burn
+            // on cells that produce no work at all, and the mature wheat
+            // further down the (y,x) scan was never offered for harvest.
+            // Worse, it was self-selecting — a moot cell is the ONE kind of
+            // cell whose state never changes by being worked, so it sits at
+            // the head of the scan forever while successful cells become
+            // occupied and drop out. The test belongs beside
+            // `!occupied.contains(..)`, where a refusal costs nothing.
+            // Snapshotted here (not read through `board` at each site)
+            // because the loop mutably borrows the board to stamp
+            // `farm_tilled_season`.
+            let churning: std::collections::HashSet<(i32, i32, i32)> = board
+                .farm_moot
+                .iter()
+                .filter(|(_, n)| farm_cell_is_churning(Some(n)))
+                .map(|(k, _)| *k)
+                .collect();
+            let cell_free =
+                |pos: Vec3<i32>| !occupied.contains(&pos) && !churning.contains(&(pos.x, pos.y, pos.z));
             for (pi, plot) in active.iter().enumerate() {
                 // The per-plot work QUEUE: this pass may add only what keeps
                 // the plot's open-job count at the cap. `new_jobs` pushes for
@@ -20328,7 +20608,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             Some(SpriteKind::WheatYellow) => {
                                 let g = crop.get_attr::<Growth>().map(|g| g.0).unwrap_or(0);
                                 if g >= FARM_GROWTH_MAX {
-                                    if !occupied.contains(&cpos) && open_budget > 0 {
+                                    if cell_free(cpos) && open_budget > 0 {
                                         open_budget -= 1;
                                         // HARVEST: job.pos = cpos. Declares
                                         // OnTopAlways (pure-refactor scope,
@@ -20439,7 +20719,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             board
                                                 .farm_tilled_season
                                                 .insert(col, season_idx);
-                                            if !occupied.contains(&cpos) && open_budget > 0 {
+                                            if cell_free(cpos) && open_budget > 0 {
                                                 open_budget -= 1;
                                                 new_jobs.push((
                                                     cpos,
@@ -20452,7 +20732,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             // SOW: job.pos = cpos. Declares
                                             // OnTopAlways, same reasoning as
                                             // HARVEST above.
-                                            if !occupied.contains(&cpos) && open_budget > 0 {
+                                            if cell_free(cpos) && open_budget > 0 {
                                                 open_budget -= 1;
                                                 new_jobs.push((
                                                     cpos,
@@ -20465,7 +20745,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             // The once-per-season till, at
                                             // the ground cell like the
                                             // break-ground till below.
-                                            if !occupied.contains(&gpos) && open_budget > 0 {
+                                            if cell_free(gpos) && open_budget > 0 {
                                                 open_budget -= 1;
                                                 new_jobs.push((
                                                     gpos,
@@ -20475,7 +20755,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             }
                                         },
                                     }
-                                } else if !occupied.contains(&gpos) && open_budget > 0 {
+                                } else if cell_free(gpos) && open_budget > 0 {
                                     open_budget -= 1;
                                     // TILL: job.pos = gpos, the raw ground
                                     // cell -- SOLID pre-till, same shape as
@@ -20524,6 +20804,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // never change state by being worked, so re-offering it is
             // guaranteed busywork. Counted, not blacklisted: the count
             // clears on success and halves daily.
+            // The primary refusal now lives in `cell_free` at the push
+            // sites (ROW 50 rank-1 fix). This post-loop pass stays as
+            // belt-and-braces — it costs nothing and it catches any future
+            // push site that forgets the predicate — so `churn_skipped`
+            // should read 0 from here on, and a nonzero value is a report
+            // that a new mint path skipped the gate.
             let churn_skipped = new_jobs
                 .iter()
                 .filter(|(pos, ..)| {
@@ -21323,11 +21609,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // ROW 36 (+36d): evenings LINGER, and a hold may never
                     // outlive the block that authorised it — Leisure is TWO
                     // windows and the dawn one is only two hours wide.
+                    // ROW 50 (review ranks 4 + 10): the colonist's OWN clock
+                    // frame — the same frame the gate three lines above
+                    // used — and the server's real sim-seconds-per-game-day
+                    // instead of the default server's 1,800.
                     let until = time.0
                         + leisure_hold_secs(
-                            rtsim.rt_state().data().time_of_day.0,
+                            colonist_effective_tod(
+                                &board.night_watch,
+                                uids.get(entity),
+                                rtsim.rt_state().data().time_of_day.0,
+                            ),
                             RECREATION_BREAK_SECS,
                             EVENING_LINGER_MULT,
+                            sim_secs_per_game_day(&server_constants),
                         );
                     info!(
                         colonist = %uid,
@@ -28050,10 +28345,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         }
                         // A cell that DID act is not churning: clear its
                         // moot memory so a fixed cell returns to work.
+                        //
+                        // ★ ROW 50 FIX (review rank 5): clear the COLUMN,
+                        // not just the cell. A farm column carries two job
+                        // roles one block apart — the till stands at gpos,
+                        // the sow and the harvest at cpos = gpos + z — so
+                        // keying the release to `job.pos` alone meant the
+                        // till that CURES a column could never release the
+                        // sow cell it had rested. ROW 40 advertised "a cell
+                        // fixed by tilling is offered again"; that sentence
+                        // was false for the only cure the farm has. The
+                        // release now covers the cell and both its column
+                        // neighbours, which is exactly the span the two
+                        // roles occupy.
                         if acted {
-                            board
-                                .farm_moot
-                                .remove(&(job.pos.x, job.pos.y, job.pos.z));
+                            for dz in [-1, 0, 1] {
+                                board
+                                    .farm_moot
+                                    .remove(&(job.pos.x, job.pos.y, job.pos.z + dz));
+                            }
                         }
                         // ROW-COMPLETION-SIGNAL-SPLIT.md, cross-arm
                         // unification: both consumers now route through
@@ -29630,7 +29940,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // regular bench), home is the own-bed hearth.
                             // v2: the epoch carries the HOUR, so an evening
                             // holds more than one kind of evening.
-                            let tod = rtsim.rt_state().data().time_of_day.0;
+                            // ★ ROW 50 FIX (review rank 9): the colonist's
+                            // OWN clock frame. The window below is written
+                            // in default-schedule hours, but a night
+                            // watchman's schedule is rotated 14 hours — so
+                            // read against the global clock the palette
+                            // fired at his WAKE-UP and was guaranteed never
+                            // to fire during his actual evening. The
+                            // schedule already knows how to shift a
+                            // colonist's day; every hour-shaped consumer
+                            // must ask it rather than the wall.
+                            let tod = colonist_effective_tod(
+                                &board.night_watch,
+                                Some(&uid),
+                                rtsim.rt_state().data().time_of_day.0,
+                            );
                             let hour_now = hour_of_day(tod);
                             let epoch = (tod / common::resources::DAY).floor()
                                 as u64
@@ -34509,19 +34833,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // to kill. His day-shift hours never reach here (the door
                 // above closes on his own Sleep/Leisure blocks).
                 // Uncensused by design: a lane hold, not a defect state.
-                // ROW 43: THE STOVE IS A POST. With the kitchen crew full,
-                // a stove job is simply not a candidate for anyone else —
-                // the chef keeps cooking (the commitment window and their
-                // own cook skill re-win it) and the other twenty-four
-                // people go do their own trades, which is the only way a
-                // watcher can name a chef by watching. Uncensused
-                // deliberately: a full post is a healthy state, not a
-                // defect, exactly like the night watch's lane hold.
-                if matches!(job.kind, common::bastion::JobKind::Cook { .. })
-                    && kitchen_crew >= kitchen_cap
-                {
-                    continue;
-                }
+                // ROW 27 lane hold, now COUNTED (review rank 14): a full
+                // post and a lane hold are healthy states, but "healthy"
+                // is not a reason to leave them out of the histogram —
+                // an uncounted `continue` breaks the census's own
+                // conservation invariant, which is the thing that makes
+                // every other bucket trustworthy.
                 if board.night_watch.contains(uid)
                     && matches!(
                         default_schedule_block(hour_of_day(
@@ -34531,6 +34848,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     )
                     && job.work != common::bastion::WorkType::Guard
                 {
+                    census.lane_hold += 1;
                     continue;
                 }
                 // The priority gate below is the ONLY consumer of
@@ -34884,6 +35202,35 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     { census.skill_floor += 1; continue; }
                 }
                 let priority = colonist.0.work_priorities.get(job.work);
+                // ★ ROW 50 FIX (review rank 3): THE STOVE IS A POST — BUT
+                // THE POST BELONGS TO THE COOK. ROW 43 refused a full
+                // kitchen to EVERYONE, ~360 lines above this line, before
+                // any priority was ever read. Since the outer loop is
+                // greedy in Uid order and every colonist has a nonzero cook
+                // priority, the first idle hauler in the colony took stove
+                // #1 on distance alone and every remaining stove was then
+                // refused to the whole town — the Chef included. The row
+                // that exists so "a watcher can name a chef by watching"
+                // locked the chef out of the kitchen and let the ROW 48
+                // tally name the hauler Cook. An immigrant chef, holding
+                // the colony's highest Uid, lost that race every pass
+                // forever.
+                //
+                // The cap now lives in the priority frame, below the read,
+                // with a lane floor: at cap, a colonist who cooks IN LANE
+                // (the in_lane trade value, common/src/bastion.rs) may
+                // still take a stove; a generalist may not. The crew stays
+                // bounded for everyone whose trade is elsewhere, the chef
+                // is never shut out of his own kitchen, and the refusal is
+                // counted in an existing bucket instead of vanishing.
+                let priority = if matches!(job.kind, common::bastion::JobKind::Cook { .. })
+                    && kitchen_crew >= kitchen_cap
+                    && priority < COOK_LANE_BAR
+                {
+                    0
+                } else {
+                    priority
+                };
                 if priority == 0 {
                     { census.priority_zero += 1; continue; }
                 }
@@ -35408,6 +35755,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 materials = census.materials,
                 skill_floor = census.skill_floor,
                 priority_zero = census.priority_zero,
+                lane_hold = census.lane_hold,
                 access_dist = census.access_dist,
                 "bastion: claim refusal census"
             );
@@ -35453,10 +35801,36 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // square look", so the count is Arrived colonists only,
                     // and `seated_out` separates the ones whose evening is
                     // at their own hearth from the ones on a bench.
+                    // ★ ROW 50 FIX (review rank 7): CLASSIFY BY THE SEAT THE
+                    // JOB CARRIES, NOT THE CELL THE BODY IS IN. v2 asked
+                    // "are the colonist's feet on a bed cell" — which is
+                    // true only for the one cell of a whole house, so every
+                    // home-lounger, every tavern regular and every STROLL
+                    // seat 22 blocks out of town counted as PLAZA
+                    // occupancy. That is the single number ROW 36's ">= 6
+                    // on the square" bar is read off, so the row was
+                    // graded on a number that included the people who had
+                    // deliberately gone somewhere else. The job's `pos` IS
+                    // the seat the palette chose; it is exact and immune to
+                    // arrival slack. The three off-square populations are
+                    // now NAMED rather than summed into the square's count.
+                    let plaza_anchor = board.gathering_anchor;
+                    let taverns: Vec<Vec3<i32>> = board
+                        .town_buildings
+                        .iter()
+                        .filter(|(k, ..)| *k == TownBuildingKind::Tavern)
+                        .map(|(_, _, _, a)| *a)
+                        .collect();
+                    // The square's own edge for THIS colony, from the same
+                    // arithmetic that seats it.
+                    let plaza_edge = gathering_ring_radius(colonists.count()) + 1;
+                    let cheb = |a: Vec3<i32>, b: Vec3<i32>| (a.x - b.x).abs().max((a.y - b.y).abs());
                     let mut lounging = 0usize;
                     let mut walking = 0usize;
                     let mut at_home = 0usize;
-                    for (aj, _, pos) in (&active_jobs, &colonists, &positions).join() {
+                    let mut at_venue = 0usize;
+                    let mut strolling = 0usize;
+                    for (aj, _, _) in (&active_jobs, &colonists, &positions).join() {
                         let Some(job) = board.jobs.get(&aj.job) else { continue };
                         if !matches!(job.kind, common::bastion::JobKind::Recreate { .. }) {
                             continue;
@@ -35465,11 +35839,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             walking += 1;
                             continue;
                         }
-                        let feet = pos.0.map(|e| e.floor() as i32);
-                        if board.beds.contains_key(&feet) {
+                        let seat = job.pos;
+                        if board.beds.contains_key(&seat) {
                             at_home += 1;
-                        } else {
+                        } else if plaza_anchor.is_some_and(|a| cheb(seat, a) <= plaza_edge) {
                             lounging += 1;
+                        } else if taverns
+                            .iter()
+                            .any(|t| cheb(seat, *t) <= gathering_ring_radius(colonists.count()) + 1)
+                        {
+                            at_venue += 1;
+                        } else {
+                            strolling += 1;
                         }
                     }
                     info!(
@@ -35477,6 +35858,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         lounging,
                         walking,
                         at_home,
+                        at_venue,
+                        strolling,
+                        plaza_edge,
                         pop = colonists.count(),
                         "bastion: PLAZA CENSUS — who is lounging right now"
                     );
@@ -35509,6 +35893,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // accrues time votes on its own, by simply being held).
                     let mut in_bed = 0usize;
                     let mut lying = 0usize;
+                    let mut downed_in_bed = 0usize;
                     for (aj, _, e) in (&active_jobs, &colonists, &entities).join() {
                         if let Some(u) = uids.get(e)
                             && let Some(j) = board.jobs.get(&aj.job)
@@ -35524,8 +35909,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             continue;
                         }
                         in_bed += 1;
+                        // ★ ROW 50 FIX (review rank 13): CRAWL IS TWO
+                        // THINGS. Vanilla uses the same state for "asleep
+                        // in bed" and "downed and bleeding out", and this
+                        // file already knows the discriminator — the
+                        // travel-steer guard 11,000 lines above tests
+                        // `!has_consumed_death_protection()` for exactly
+                        // this reason. Without it, a night in which someone
+                        // was cut down in their own house read as a night
+                        // in which the ruling held perfectly: the casualty
+                        // was CREDITED as a sleeper. A ruling must never be
+                        // able to be proven by a body.
+                        let protected = healths
+                            .get(e)
+                            .is_some_and(|h| !h.has_consumed_death_protection());
                         if matches!(char_states.get(e), Some(comp::CharacterState::Crawl)) {
-                            lying += 1;
+                            if protected {
+                                lying += 1;
+                            } else {
+                                downed_in_bed += 1;
+                            }
                         }
                     }
                     if in_bed > 0 {
@@ -35533,7 +35936,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             hour,
                             in_bed,
                             lying,
-                            standing = in_bed - lying,
+                            downed_in_bed,
+                            standing = in_bed - lying - downed_in_bed,
                             "bastion: BED CENSUS — are the sleepers lying down"
                         );
                     }
@@ -35628,7 +36032,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         let fresh: Vec<Vec3<i32>> = board
                             .recent_cries
                             .iter()
-                            .filter(|(_, t)| time.0 - *t <= CRY_MEMORY_SECS)
+                            .filter(|(_, t)| {
+                                time.0 - *t
+                                    <= CRY_MEMORY_GAME_DAYS
+                                        * sim_secs_per_game_day(&server_constants)
+                            })
                             .map(|(p, _)| *p)
                             .collect();
                         let clusters = split_cry_clusters(&fresh, 24);
@@ -35749,6 +36157,78 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             profession = ?w,
                             weight = c,
                             "bastion: PROFESSION — the town knows them as"
+                        );
+                    }
+                    // ── ROW 50: COMING OF AGE ──────────────────────────
+                    // The other half of children. A childhood with no end
+                    // is not a life stage, it is a permanent dependent —
+                    // and worse, it would quietly hold a housing slot
+                    // against the growth equation forever. On the same
+                    // daily clock the professions run on: a child whose
+                    // CHILDHOOD_DAYS have passed takes up a trade and
+                    // joins the labour force. Heritage first (the parent's
+                    // lane), then the town's scarcest lane for the
+                    // orphaned and the parentless — see
+                    // `coming_of_age_trade`.
+                    //
+                    // The scarcest lane is read off the professions the
+                    // town has actually named, so a colony short of
+                    // builders raises builders. Sorted before the min so
+                    // a tie resolves identically on every run.
+                    let mut lane_pop: Vec<(common::bastion::WorkType, usize)> = [
+                        common::bastion::WorkType::Farm,
+                        common::bastion::WorkType::Build,
+                        common::bastion::WorkType::Chop,
+                        common::bastion::WorkType::Mine,
+                        common::bastion::WorkType::Cook,
+                        common::bastion::WorkType::Guard,
+                        common::bastion::WorkType::Haul,
+                    ]
+                    .into_iter()
+                    .map(|w| (w, board.professions.values().filter(|p| **p == w).count()))
+                    .collect();
+                    lane_pop.sort_by_key(|(w, n)| (*n, format!("{w:?}")));
+                    let scarcest = lane_pop[0].0;
+                    let grown: Vec<(specs::Entity, common::uid::Uid, common::bastion::WorkType)> =
+                        (&entities, &colonists, &uids)
+                            .join()
+                            .filter(|(_, c, _)| {
+                                c.0.work_priorities.is_all_zero()
+                                    && c.0.born_day.is_some_and(|b| today - b >= CHILDHOOD_DAYS)
+                            })
+                            .map(|(e, c, u)| {
+                                // The parent's lane, read off the parent's
+                                // own persistent rtsim record — which
+                                // exists whether or not the parent is
+                                // loaded, and outlives them, so an orphan
+                                // still inherits.
+                                let parent_trade = c.0.parent.and_then(|p| {
+                                    rtsim.rt_state().data().npcs.get(p).and_then(|n| {
+                                        match n.role {
+                                            common::rtsim::Role::Civilised(Some(pr)) => {
+                                                common::bastion::WorkPriorities::
+                                                    work_for_profession(pr)
+                                            },
+                                            _ => None,
+                                        }
+                                    })
+                                });
+                                (e, *u, coming_of_age_trade(parent_trade, scarcest))
+                            })
+                            .collect();
+                    for (e, u, trade) in grown {
+                        if let Some(mut c) = colonists.get_mut(e) {
+                            c.0.work_priorities =
+                                common::bastion::WorkPriorities::in_lane(trade);
+                            c.0.skills
+                                .grant_xp(trade, common::bastion::ADOPTED_TRADE_XP);
+                        }
+                        board.professions.insert(u, trade);
+                        info!(
+                            colonist = u.0.get(),
+                            profession = ?trade,
+                            day = today,
+                            "bastion: ★ COMES OF AGE — a child of the town takes up a trade"
                         );
                     }
                 }
@@ -40004,45 +40484,352 @@ mod tests {
         // (Round 56's census caught the whole-hour version bleeding 10.6
         // seated colonists into the first WORK hour.)
         let tod_of = |h: f64| h * 3600.0;
-        for step in 0..20 {
-            let h = 6.0 + f64::from(step) * 0.1; // 06:00 → 07:54
-            let hold = leisure_hold_secs(tod_of(h), RECREATION_BREAK_SECS, EVENING_LINGER_MULT);
-            let remaining = (8.0 - h) * (1800.0 / 24.0);
-            assert!(
-                hold <= remaining + 1e-6,
-                "dawn {h}: hold {hold} outlives the {remaining}s left of its block"
-            );
-            assert!(hold <= RECREATION_BREAK_SECS, "dawn gets no evening linger");
+        // ★ ROW 50 (review rank 4): PARAMETERISED OVER THE CLOCK. The old
+        // pin re-asserted the same 1,800 the function hardcoded, so it
+        // agreed with the defect instead of catching it — a pin that shares
+        // its subject's assumption cannot test that assumption. 1,800 is
+        // the default server (day_length 30); 120 is THIS PROJECT'S OWN
+        // HARNESS (day_length 2.0), where the invariant was false by 15x;
+        // 43,200 is a slow-day server. The invariant must hold on all of
+        // them or it is not an invariant.
+        for spd in [1800.0f64, 120.0, 43_200.0] {
+            for step in 0..20 {
+                let h = 6.0 + f64::from(step) * 0.1; // 06:00 → 07:54
+                let hold =
+                    leisure_hold_secs(tod_of(h), RECREATION_BREAK_SECS, EVENING_LINGER_MULT, spd);
+                let remaining = (8.0 - h) * (spd / 24.0);
+                assert!(
+                    hold <= remaining + 1e-6,
+                    "dawn {h} @ {spd}s/day: hold {hold} outlives the {remaining}s left"
+                );
+                assert!(hold <= RECREATION_BREAK_SECS, "dawn gets no evening linger");
+            }
+            for step in 0..60 {
+                let h = 16.0 + f64::from(step) * 0.1; // 16:00 → 21:54
+                let hold =
+                    leisure_hold_secs(tod_of(h), RECREATION_BREAK_SECS, EVENING_LINGER_MULT, spd);
+                let remaining = (22.0 - h) * (spd / 24.0);
+                assert!(
+                    hold <= remaining + 1e-6,
+                    "evening {h} @ {spd}s/day: hold {hold} outlives the {remaining}s left"
+                );
+            }
+            // Outside leisure (the midday need-break) is IDENTITY with
+            // before, on every clock.
+            for h in [0.0f64, 5.0, 9.5, 12.0, 15.9, 22.0, 23.5] {
+                assert_eq!(
+                    leisure_hold_secs(tod_of(h), RECREATION_BREAK_SECS, EVENING_LINGER_MULT, spd),
+                    RECREATION_BREAK_SECS,
+                    "hour {h} is not a leisure window: the break must be untouched"
+                );
+            }
         }
-        for step in 0..60 {
-            let h = 16.0 + f64::from(step) * 0.1; // 16:00 → 21:54
-            let hold = leisure_hold_secs(tod_of(h), RECREATION_BREAK_SECS, EVENING_LINGER_MULT);
-            let remaining = (22.0 - h) * (1800.0 / 24.0);
-            assert!(
-                hold <= remaining + 1e-6,
-                "evening {h}: hold {hold} outlives the {remaining}s left"
-            );
-        }
-        assert_eq!(
-            leisure_hold_secs(tod_of(16.0), RECREATION_BREAK_SECS, EVENING_LINGER_MULT),
-            RECREATION_BREAK_SECS * EVENING_LINGER_MULT,
-            "early evening still gets the full linger"
+        // ★ AND THE PIN MUST BITE: on the harness clock an UNCLAMPED linger
+        // genuinely overruns its block — which is exactly the bug that
+        // shipped. If this ever stops holding, the clamp has become
+        // untestable because the numbers no longer conflict.
+        assert!(
+            RECREATION_BREAK_SECS * EVENING_LINGER_MULT > 6.0 * (120.0 / 24.0),
+            "on the harness clock the whole evening is 30s: the raw linger MUST overrun it"
         );
-        // Outside leisure (the midday need-break) is IDENTITY with before.
-        for h in [0.0f64, 5.0, 9.5, 12.0, 15.9, 22.0, 23.5] {
-            assert_eq!(
-                leisure_hold_secs(tod_of(h), RECREATION_BREAK_SECS, EVENING_LINGER_MULT),
-                RECREATION_BREAK_SECS,
-                "hour {h} is not a leisure window: the break must be untouched"
-            );
-        }
+        assert!(
+            leisure_hold_secs(tod_of(16.0), RECREATION_BREAK_SECS, EVENING_LINGER_MULT, 120.0)
+                < RECREATION_BREAK_SECS * EVENING_LINGER_MULT,
+            "the clamp must actually cut the hold on the harness clock"
+        );
+        assert_eq!(
+            leisure_hold_secs(tod_of(16.0), RECREATION_BREAK_SECS, EVENING_LINGER_MULT, 1800.0),
+            RECREATION_BREAK_SECS * EVENING_LINGER_MULT,
+            "early evening still gets the full linger on the default clock"
+        );
         // A day-wrapped clock reads the same as its own hour.
         assert_eq!(
-            leisure_hold_secs(tod_of(17.0) + common::resources::DAY * 3.0,
-                RECREATION_BREAK_SECS, EVENING_LINGER_MULT),
-            leisure_hold_secs(tod_of(17.0), RECREATION_BREAK_SECS, EVENING_LINGER_MULT),
+            leisure_hold_secs(
+                tod_of(17.0) + common::resources::DAY * 3.0,
+                RECREATION_BREAK_SECS,
+                EVENING_LINGER_MULT,
+                1800.0
+            ),
+            leisure_hold_secs(tod_of(17.0), RECREATION_BREAK_SECS, EVENING_LINGER_MULT, 1800.0),
             "the clamp must read the time of DAY, not the age of the world"
         );
+        // ★ ROW 50 (review rank 10): THE NIGHT WATCHMAN'S OWN CLOCK. His
+        // schedule is rotated 14 hours, so read against the wall clock his
+        // hold was clamped against a window he is not in.
+        // `colonist_effective_tod` is the one shift, and the block it lands
+        // in must AGREE with what `colonist_schedule_block` says he is doing.
+        {
+            let mut watch = HashSet::new();
+            let w = common::uid::Uid(std::num::NonZeroU64::new(7).unwrap());
+            watch.insert(w);
+            for h in 0..24u32 {
+                let eff = colonist_effective_tod(&watch, Some(&w), tod_of(f64::from(h)));
+                assert_eq!(
+                    default_schedule_block(hour_of_day(eff)),
+                    colonist_schedule_block(&watch, Some(&w), h),
+                    "hour {h}: the shifted clock must land in the watchman's OWN block"
+                );
+                assert_eq!(
+                    colonist_effective_tod(&watch, None, tod_of(f64::from(h))),
+                    tod_of(f64::from(h)),
+                    "hour {h}: a colonist off the watch keeps the town clock exactly"
+                );
+            }
+            // The day count must SURVIVE the shift, or the evening palette's
+            // `day * 24 + hour` epoch collapses to day 0 forever and every
+            // colonist does the same thing every evening for all time.
+            let far = tod_of(17.0) + common::resources::DAY * 9.0;
+            assert!(
+                colonist_effective_tod(&watch, Some(&w), far) > common::resources::DAY * 8.0,
+                "the effective clock must not be wrapped to one day"
+            );
+        }
+    }
+
+    /// ROW 50 (review rank 3): THE POST BELONGS TO THE COOK. The kitchen
+    /// cap must bound generalists and never the person whose trade it is.
+    /// Pinned as the predicate the claim loop actually evaluates, in both
+    /// directions — the shipped defect passed a cap-arithmetic pin while
+    /// locking the chef out, so a pin on the cap alone is not enough: it
+    /// has to assert WHO.
+    #[test]
+    fn a_full_kitchen_still_admits_the_chef() {
+        let admits =
+            |cook_priority: u8, crew: usize, cap: usize| !(crew >= cap && cook_priority < COOK_LANE_BAR);
+        let chef = common::bastion::WorkPriorities::in_lane(common::bastion::WorkType::Cook)
+            .get(common::bastion::WorkType::Cook);
+        let hauler = common::bastion::WorkPriorities::in_lane(common::bastion::WorkType::Haul)
+            .get(common::bastion::WorkType::Cook);
+        let generalist =
+            common::bastion::WorkPriorities::default().get(common::bastion::WorkType::Cook);
+        assert!(chef >= COOK_LANE_BAR, "in_lane(Cook) must clear the lane bar");
+        assert!(
+            hauler < COOK_LANE_BAR && generalist < COOK_LANE_BAR,
+            "a hauler and a default colonist must both be BELOW it, or the cap bounds nobody"
+        );
+        for cap in 1..=5usize {
+            assert!(admits(hauler, cap - 1, cap), "under cap a generalist may still cook");
+            assert!(!admits(hauler, cap, cap), "at cap a generalist must be refused");
+            assert!(!admits(generalist, cap + 3, cap), "over cap too");
+            // …and the chef never is. THIS is the assertion the shipped
+            // version would have failed.
+            assert!(admits(chef, cap, cap), "at cap the CHEF must still get a stove");
+            assert!(admits(chef, cap + 9, cap), "even a kitchen full of amateurs");
+        }
+    }
+
+    /// ROW 50 (review rank 1): the churn guard must refuse a rested cell
+    /// WITHOUT spending the plot's mint budget — the shipped order let a
+    /// handful of permanently-moot cells starve a whole plot of harvests.
+    /// Modelled as the two orderings, so the pin fails on the old one.
+    #[test]
+    fn a_rested_farm_cell_costs_the_plot_nothing() {
+        let churning = [true, true, false, false, false, false];
+        // The SHIPPED order: debit, then filter.
+        let mut budget = 3;
+        let mut minted_old = 0;
+        for c in churning {
+            if budget > 0 {
+                budget -= 1;
+                if !c {
+                    minted_old += 1;
+                }
+            }
+        }
+        // The FIXED order: refuse before debiting.
+        let mut budget = 3;
+        let mut minted_new = 0;
+        for c in churning {
+            if !c && budget > 0 {
+                budget -= 1;
+                minted_new += 1;
+            }
+        }
+        assert_eq!(minted_old, 1, "the old order burns two thirds of the budget on nothing");
+        assert_eq!(minted_new, 3, "the fix spends the whole budget on real work");
+        assert!(
+            minted_new > minted_old,
+            "if these ever agree the guard has stopped protecting the plot"
+        );
+    }
+
+    /// ROW 50 (review rank 5): a TILL cures the column its SOW rested. The
+    /// release must be keyed to the column, not to the acting cell, or the
+    /// only cure the farm has can never fire.
+    #[test]
+    fn tilling_a_column_releases_the_sow_cell_above_it() {
+        let gpos = Vec3::new(4, 9, 60);
+        let cpos = gpos + Vec3::unit_z();
+        let mut moot: HashMap<(i32, i32, i32), u32> = HashMap::new();
+        for _ in 0..FARM_MOOT_LIMIT {
+            *moot.entry((cpos.x, cpos.y, cpos.z)).or_insert(0) += 1;
+        }
+        assert!(farm_cell_is_churning(moot.get(&(cpos.x, cpos.y, cpos.z))));
+        // The OLD release: keyed to the acting till's own cell — misses.
+        let mut old = moot.clone();
+        old.remove(&(gpos.x, gpos.y, gpos.z));
+        assert!(
+            farm_cell_is_churning(old.get(&(cpos.x, cpos.y, cpos.z))),
+            "the shipped keying leaves the cured cell rested forever"
+        );
+        // The FIXED release: the column.
+        for dz in [-1, 0, 1] {
+            moot.remove(&(gpos.x, gpos.y, gpos.z + dz));
+        }
+        assert!(
+            !farm_cell_is_churning(moot.get(&(cpos.x, cpos.y, cpos.z))),
+            "a till that cures the column must return the sow cell to work"
+        );
+    }
+
+    /// ROW 50 (review rank 2): EVERY profession maps to the lane the
+    /// founding path gives it, from ONE map. The drifted copy is what
+    /// froze the militia at its founding size while the town grew.
+    #[test]
+    fn a_settler_hunter_joins_the_militia() {
+        use common::bastion::{WorkPriorities, WorkType};
+        use common::rtsim::Profession;
+        for p in [Profession::Hunter, Profession::Guard] {
+            assert_eq!(
+                WorkPriorities::work_for_profession(p),
+                Some(WorkType::Guard),
+                "{p:?} must be militia — the muster, the alarm exemption and the night watch \
+                 all test guard priority, and nothing ever rewrites priorities later"
+            );
+        }
+        // ★ THE CONSEQUENCE, not just the mapping: the lane profile a
+        // settler ends up with must actually clear the bar those three
+        // predicates use. `in_lane` leaves guard at 3 for every OTHER lane,
+        // which is why the mis-mapping was silent.
+        let militia = WorkPriorities::in_lane(WorkType::Guard);
+        assert!(
+            militia.get(WorkType::Guard) >= 4,
+            "an in-lane guard must clear the muster's own threshold"
+        );
+        for other in [WorkType::Farm, WorkType::Cook, WorkType::Build, WorkType::Haul] {
+            assert!(
+                WorkPriorities::in_lane(other).get(WorkType::Guard) < 4,
+                "{other:?} must NOT be militia, or the mapping stops mattering"
+            );
+        }
+    }
+
+    /// ROW 50 (CHILDREN): the birth gate, both directions — every refusal
+    /// reachable and named, and it fires only when a family has room in a
+    /// town that has room.
+    #[test]
+    fn a_town_makes_its_own_people_only_when_it_can_hold_them() {
+        use common::bastion::ColonyDrive as D;
+        let ok = birth_verdict(true, D::Expand, 2, 4, 2, 10, 20, 5, Some(4));
+        assert!(ok.fired, "two adults, beds spare, town under target: a child");
+        for (v, why) in [
+            (birth_verdict(false, D::Expand, 2, 4, 2, 10, 20, 5, Some(4)), "disabled"),
+            (birth_verdict(true, D::Expand, 2, 4, 2, 10, 20, 5, Some(5)), "same_day"),
+            (birth_verdict(true, D::Sustain, 2, 4, 2, 10, 20, 5, Some(4)), "drive_not_expand"),
+            (birth_verdict(true, D::Expand, 1, 4, 1, 10, 20, 5, Some(4)), "no_family"),
+            (birth_verdict(true, D::Expand, 2, 2, 2, 10, 20, 5, Some(4)), "house_full"),
+            (birth_verdict(true, D::Expand, 2, 4, 2, 20, 20, 5, Some(4)), "no_room_in_town"),
+        ] {
+            assert!(!v.fired, "{why}: must refuse");
+            assert_eq!(v.deciding, why, "the refusal must NAME itself");
+        }
+        // ★ THE HOUSING EQUATION BINDS BIRTHS TOO, so growth self-limits
+        // with no second governor: at target, no arithmetic of family size
+        // can produce a child.
+        for adults in 2..=6u32 {
+            for beds in 1..=6u32 {
+                assert!(
+                    !birth_verdict(true, D::Expand, adults, beds, adults, 20, 20, 5, None).fired,
+                    "a full town must not grow from the inside either"
+                );
+            }
+        }
+        // And a solitary lodger never births, however roomy the house.
+        for beds in 1..=6u32 {
+            assert!(!birth_verdict(true, D::Expand, 1, beds, 1, 3, 20, 5, None).fired);
+        }
+    }
+
+    /// ROW 50 (CHILDREN): childhood is an empty work profile, and coming of
+    /// age is heritage-first. Both halves pinned — a childhood with no end
+    /// is a permanent dependent, and an end with no inheritance is not the
+    /// mechanism Ben chartered.
+    #[test]
+    fn a_child_holds_no_trade_until_it_comes_of_age() {
+        use common::bastion::{WorkPriorities, WorkType};
+        let child = WorkPriorities::childhood();
+        assert!(child.is_all_zero(), "childhood must refuse EVERY lane");
+        for w in [
+            WorkType::Farm,
+            WorkType::Cook,
+            WorkType::Build,
+            WorkType::Haul,
+            WorkType::Mine,
+            WorkType::Chop,
+            WorkType::Guard,
+        ] {
+            assert_eq!(child.get(w), 0, "{w:?}: the claim loop's gate is priority == 0");
+            assert!(
+                !WorkPriorities::in_lane(w).is_all_zero(),
+                "{w:?}: an in-lane adult must never test as a child"
+            );
+        }
+        assert!(
+            !WorkPriorities::default().is_all_zero(),
+            "the DEFAULT colonist must never test as a child — every founder would be one"
+        );
+        assert_eq!(
+            coming_of_age_trade(Some(WorkType::Build), WorkType::Farm),
+            WorkType::Build,
+            "the smith's child inclines to the forge"
+        );
+        assert_eq!(
+            coming_of_age_trade(None, WorkType::Mine),
+            WorkType::Mine,
+            "with no parent lane to inherit, the town's scarcest lane takes them"
+        );
+        // Coming of age is a DURATION on the game-day clock, and the
+        // boundary is inclusive: a child born on day B grows up ON day
+        // B + CHILDHOOD_DAYS, never a day early.
+        assert!(CHILDHOOD_DAYS >= 1, "childhood must be a positive span");
+        for born in 0..5i64 {
+            let grown_on = born + CHILDHOOD_DAYS;
+            assert!(grown_on - born >= CHILDHOOD_DAYS, "grows up on the boundary day");
+            assert!(
+                (grown_on - 1) - born < CHILDHOOD_DAYS,
+                "and not one day before it"
+            );
+        }
+    }
+
+    /// ROW 50 (review rank 7): the plaza census must count the SQUARE. The
+    /// ring radius it classifies against has to track the seating, or a
+    /// city's own benches read as "out of town".
+    #[test]
+    fn the_plaza_census_measures_the_square_it_seats() {
+        let anchor = Vec3::new(100, 200, 60);
+        for rank in 0..500usize {
+            let seat = gathering_spot(anchor, rank);
+            let cheb = (seat.x - anchor.x).abs().max((seat.y - anchor.y).abs());
+            assert!(
+                cheb <= gathering_ring_radius(rank),
+                "rank {rank} seats at {cheb} but its ring is {}",
+                gathering_ring_radius(rank)
+            );
+        }
+        // …and a STROLL seat must fall OUTSIDE the square of any plausible
+        // colony, or the census cannot tell a walk from a sit — which is
+        // the whole defect: strollers were counted as plaza occupancy.
+        for pop in [8usize, 24, 96, 200] {
+            for rank in 0..pop {
+                let stroll = gathering_spot(anchor, rank + STROLL_BAND);
+                let cheb = (stroll.x - anchor.x).abs().max((stroll.y - anchor.y).abs());
+                assert!(
+                    cheb > gathering_ring_radius(pop) + 1,
+                    "pop {pop} rank {rank}: a stroll seat at {cheb} is inside the square"
+                );
+            }
+        }
     }
 
     /// ROW 43 (THE CHEF): the kitchen is a POST with a crew, not a chore

@@ -687,16 +687,10 @@ impl RtSim {
             // Their trade becomes their skill. A village that already has a
             // blacksmith should not have to teach him to build.
             if let Role::Civilised(Some(profession)) = npc.role {
-                let work = match profession {
-                    Profession::Farmer => Some(WorkType::Farm),
-                    Profession::Chef => Some(WorkType::Cook),
-                    Profession::Blacksmith => Some(WorkType::Build),
-                    // No Miner profession exists in vanilla — checked, not
-                    // assumed. Mining stays a skill the colony teaches.
-                    Profession::Hunter | Profession::Guard => Some(WorkType::Guard),
-                    Profession::Merchant => Some(WorkType::Haul),
-                    _ => None,
-                };
+                // ROW 50: the ONE map (common::bastion). This arm was the
+                // original; the settler drain's copy of it had already
+                // drifted apart in the one way that mattered.
+                let work = common::bastion::WorkPriorities::work_for_profession(profession);
                 if let Some(w) = work {
                     colonist.skills.grant_xp(w, ADOPTED_TRADE_XP);
                     // ★ AND THE LANE (Ben RULED: "a farmer should farm, a
