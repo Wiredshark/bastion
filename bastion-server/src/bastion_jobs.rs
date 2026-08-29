@@ -2216,6 +2216,22 @@ pub(crate) fn household_capacity(beds: u32) -> u32 { beds.clamp(1, 6) }
 /// bed; a region with no bed houses nobody. Re-derived every sweep from
 /// the board's own housing picture — a renewable quantity, never a
 /// ledger that can drift.
+/// ROW 40: how many moot arrivals a farm cell gets before the generator
+/// stops offering it. Three is a real chance (a transient unloaded chunk
+/// or a mid-flight terrain edit deserves retries) and a hard stop (nobody
+/// walks to the same disagreement a fourth time).
+pub(crate) const FARM_MOOT_LIMIT: u32 = 3;
+
+/// ROW 40: should the farm generator skip this cell? Pure for pins. The
+/// mandate's own words are the bar — "no busywork jobs, no job churn" —
+/// and a cell whose job cannot complete is busywork by definition. NOT a
+/// permanent blacklist: the count clears on any successful work at the
+/// cell and halves daily, so a cell fixed by tilling, a chunk load, or a
+/// season change is offered again.
+pub(crate) fn farm_cell_is_churning(moots: Option<&u32>) -> bool {
+    moots.is_some_and(|n| *n >= FARM_MOOT_LIMIT)
+}
+
 pub(crate) fn immigration_target_pop(households: &[HouseholdView]) -> u32 {
     households.iter().filter(|h| h.beds > 0).count() as u32
 }
@@ -8316,6 +8332,11 @@ pub struct JobBoard {
     /// count, which is the true cap — documented here rather than
     /// hidden.
     pub immigration_day: Option<i64>,
+    /// ROW 40 (farm churn): per-cell count of MOOT farm completions — the
+    /// job arrived and the ground disagreed. Cleared the moment a cell
+    /// actually works, halved daily with the other tallies, so a cell that
+    /// becomes farmable again returns on its own. Runtime-only.
+    pub farm_moot: HashMap<(i32, i32, i32), u32>,
     /// ROW 38: settlers requested this tick — (bed cell, game day,
     /// profession index), drained by the rtsim tick that alone may take
     /// `data_mut()`. Same deferred-write contract as
@@ -20354,6 +20375,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     info!(pos = ?cpos, "bastion: crop MATURE");
                 }
             }
+            // ★ ROW 40: A CHURNING CELL IS NOT OFFERED AGAIN. The mint loop
+            // is where the churn engine's fuel was: the generator re-derives
+            // demand from cell state every cycle (correctly — farm demand is
+            // renewable), but a cell the work tick keeps calling MOOT will
+            // never change state by being worked, so re-offering it is
+            // guaranteed busywork. Counted, not blacklisted: the count
+            // clears on success and halves daily.
+            let churn_skipped = new_jobs
+                .iter()
+                .filter(|(pos, ..)| {
+                    farm_cell_is_churning(board.farm_moot.get(&(pos.x, pos.y, pos.z)))
+                })
+                .count();
+            if churn_skipped > 0 && tick.0 % (ARBITRATION_INTERVAL as u64 * 20) == 3 {
+                info!(
+                    churn_skipped,
+                    tracked_cells = board.farm_moot.len(),
+                    "bastion: FARM CHURN GUARD — cells whose jobs keep arriving moot are not re-offered"
+                );
+            }
+            let new_jobs: Vec<_> = new_jobs
+                .into_iter()
+                .filter(|(pos, ..)| {
+                    !farm_cell_is_churning(board.farm_moot.get(&(pos.x, pos.y, pos.z)))
+                })
+                .collect();
             for (pos, req, affordance) in new_jobs {
                 let id = board.next_id;
                 board.next_id += 1;
@@ -27811,7 +27858,47 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     "bastion: F5 volunteer gleaned from an adopted field"
                                 );
                             },
-                            _ => {}, // foreign/moot — release below
+                            // ★ ROW 40: THE MOOT MUST TESTIFY. This arm
+                            // destroyed the job in silence, and silence is
+                            // what let a churn engine run for a whole soak:
+                            // measured on round 55, cell (2908,7284) minted
+                            // 138 farm jobs and logged 142 arrivals with
+                            // ZERO completions — mint → claim → walk →
+                            // arrive → silent removal → re-mint, forever,
+                            // because the generator's verdict ("sow here")
+                            // and this tick's predicate ("this cell cannot
+                            // be sown") disagreed and neither said so. The
+                            // mandate calls it out by name: no busywork
+                            // jobs, no job churn. The witness prints the
+                            // FULL disagreement — what the job wanted and
+                            // what the world actually has — so the next
+                            // world names the failing condition instead of
+                            // costing another forensic pass.
+                            _ => {
+                                let n = board
+                                    .farm_moot
+                                    .entry((job.pos.x, job.pos.y, job.pos.z))
+                                    .or_insert(0);
+                                *n += 1;
+                                if *n <= 3 || *n % 25 == 0 {
+                                    info!(
+                                        pos = ?job.pos,
+                                        moots = *n,
+                                        wanted_seed = job.required_item.is_some(),
+                                        here_sprite = ?here.and_then(|b| b.get_sprite()),
+                                        here_filled = here.map(|b| b.is_filled()),
+                                        below_kind = ?below.map(|b| b.kind()),
+                                        "bastion: FARM MOOT — the job and the ground disagree"
+                                    );
+                                }
+                            },
+                        }
+                        // A cell that DID act is not churning: clear its
+                        // moot memory so a fixed cell returns to work.
+                        if acted {
+                            board
+                                .farm_moot
+                                .remove(&(job.pos.x, job.pos.y, job.pos.z));
                         }
                         // ROW-COMPLETION-SIGNAL-SPLIT.md, cross-arm
                         // unification: both consumers now route through
@@ -35322,6 +35409,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         *v /= 2;
                         *v > 0
                     });
+                    // ROW 40: the moot memory fades on the same clock — a
+                    // cell blocked by a transient (an unloaded chunk, a
+                    // half-built plot, last season's soil) gets offered
+                    // again tomorrow instead of being condemned forever.
+                    board.farm_moot.retain(|_, v| {
+                        *v /= 2;
+                        *v > 0
+                    });
                     let mut entries: Vec<(common::uid::Uid, common::bastion::WorkType, u32)> =
                         board
                             .lane_counts
@@ -39649,6 +39744,37 @@ mod tests {
                 "hour {hour} is not a leisure window: the break must be untouched"
             );
         }
+    }
+
+    /// ROW 40 (farm churn): the guard offers a cell a real chance and then
+    /// stops — and it must NEVER become a permanent condemnation, because
+    /// a tilled cell, a loaded chunk or a new season all make a moot cell
+    /// workable again.
+    #[test]
+    fn a_churning_farm_cell_is_rested_but_never_condemned() {
+        assert!(!farm_cell_is_churning(None), "an untouched cell is offered");
+        for n in 0..FARM_MOOT_LIMIT {
+            assert!(
+                !farm_cell_is_churning(Some(&n)),
+                "moot {n} is still within the retry window — a transient deserves retries"
+            );
+        }
+        assert!(
+            farm_cell_is_churning(Some(&FARM_MOOT_LIMIT)),
+            "at the limit the cell must stop being offered — this is the churn engine's off switch"
+        );
+        assert!(farm_cell_is_churning(Some(&138)), "the measured churn case");
+        // THE RELEASE VALVES, asserted rather than assumed: halving returns
+        // a cell to service, and a success clears it outright.
+        let mut n = 138u32;
+        let mut days = 0;
+        while farm_cell_is_churning(Some(&n)) {
+            n /= 2;
+            days += 1;
+            assert!(days < 20, "a cell must not stay rested forever");
+        }
+        assert!(days <= 8, "even the worst measured cell returns within a week: {days}");
+        assert!(!farm_cell_is_churning(None), "clearing on success re-offers immediately");
     }
 
     /// ROW 36f (review): NO TWO COLONISTS IN ONE CHAIR. The palette must
