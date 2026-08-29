@@ -5782,15 +5782,82 @@ pub(crate) fn sim_secs_per_game_day(
 /// 20:00 — an evening with a shape instead of a single pose. Still no
 /// RNG, still replay-identical for a seed.
 pub(crate) fn evening_activity(uid_raw: u64, epoch: u64) -> u8 {
+    evening_activity_weighted(uid_raw, epoch, EVENING_WEIGHTS_BASE)
+}
+
+/// ROW 51: the palette's base weights, out of ten — SIT 4, STROLL 3,
+/// VISIT 2, HOME 1. The shape ROW 36b shipped, kept as the personality-
+/// neutral centre so a colonist with no strong traits behaves exactly as
+/// before (identity, not a copy).
+pub(crate) const EVENING_WEIGHTS_BASE: [u8; 4] = [4, 3, 2, 1];
+
+/// ★ ROW 51 (Ben, chartered at ROW 36b and quoted in its own doc: "we can
+/// later feed colonist personalities to determine their chances of
+/// actions"). The evening palette becomes a function of WHO THIS PERSON
+/// IS, not just of which day it is.
+///
+/// Four booleans in, four weights out — pure, so the whole space can be
+/// pinned. Deliberately SHIFTS weight rather than replacing it: an
+/// extrovert is likelier to visit and stroll, never certain to; an
+/// introvert leans home but still turns up on the square. A trait that
+/// forced an outcome would replace one uniform town with another.
+///
+/// The weights are moved between buckets, never added, so the total stays
+/// ten and the draw below needs no renormalisation.
+pub(crate) fn evening_weights(
+    sociable: bool,
+    introverted: bool,
+    adventurous: bool,
+) -> [u8; 4] {
+    let mut w = EVENING_WEIGHTS_BASE;
+    // Sociable/extroverted: two points from sitting alone into VISIT.
+    if sociable {
+        let take = w[0].min(2);
+        w[0] -= take;
+        w[2] += take;
+    }
+    // Introverted: a point each from VISIT and STROLL into HOME. Applied
+    // after `sociable` on purpose — a colonist can satisfy neither, and
+    // vanilla's own thresholds make both at once impossible (one axis).
+    if introverted {
+        let a = w[2].min(1);
+        w[2] -= a;
+        w[3] += a;
+        let b = w[1].min(1);
+        w[1] -= b;
+        w[3] += b;
+    }
+    // Adventurous/open: a point from sitting into the long walk.
+    if adventurous {
+        let take = w[0].min(1);
+        w[0] -= take;
+        w[1] += take;
+    }
+    w
+}
+
+/// ROW 51: the draw itself, over arbitrary weights. Same hash, same
+/// determinism law — no RNG, replay-identical for a seed — but the
+/// bucket boundaries now come from the colonist rather than a constant.
+pub(crate) fn evening_activity_weighted(uid_raw: u64, epoch: u64, w: [u8; 4]) -> u8 {
     let h = uid_raw
         .wrapping_mul(0x9E37_79B9_7F4A_7C15)
         .wrapping_add(epoch.wrapping_mul(0xBF58_476D_1CE4_E5B9));
-    match (h >> 32) % 10 {
-        0..=3 => 0,
-        4..=6 => 1,
-        7..=8 => 2,
-        _ => 3,
+    let total = u64::from(w[0]) + u64::from(w[1]) + u64::from(w[2]) + u64::from(w[3]);
+    // A zeroed table would divide by zero; fall back to the base shape
+    // rather than to a constant activity (fallback = identity, not a copy).
+    if total == 0 {
+        return evening_activity_weighted(uid_raw, epoch, EVENING_WEIGHTS_BASE);
     }
+    let mut roll = (h >> 32) % total;
+    for (i, weight) in w.iter().enumerate() {
+        let weight = u64::from(*weight);
+        if roll < weight {
+            return i as u8;
+        }
+        roll -= weight;
+    }
+    3
 }
 
 /// bastion (ITEM 11): recreation breaks are OFF unless asked for.
@@ -30023,8 +30090,34 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // need-break it stays the plain bench — a HOME
                             // roll at 06:00 would walk a colonist who just
                             // got out of bed straight back into it.
+                            // ★ ROW 51: WHOSE EVENING IS THIS. Ben charted
+                            // this hook at ROW 36b — "we can later feed
+                            // colonist personalities to determine their
+                            // chances of actions" — and it was a constant
+                            // table until the traits behind it were real
+                            // (they were all empty by construction; see the
+                            // settle-branch fix in server/src/rtsim/mod.rs).
+                            // Read from the persistent rtsim record, the same
+                            // source the inspector shows a watcher, so what
+                            // the nameplate says about someone and what they
+                            // do with their evening cannot disagree.
                             let act = if (16..=21).contains(&hour_now) {
-                                evening_activity(uid.0.get(), epoch)
+                                use common::rtsim::PersonalityTrait as PT;
+                                let w = rtsim_entities
+                                    .get(entity)
+                                    .and_then(|re| {
+                                        rtsim.rt_state().data().npcs.get(*re).map(|npc| {
+                                            evening_weights(
+                                                npc.personality.is(PT::Sociable)
+                                                    || npc.personality.is(PT::Extroverted),
+                                                npc.personality.is(PT::Introverted),
+                                                npc.personality.is(PT::Adventurous)
+                                                    || npc.personality.is(PT::Open),
+                                            )
+                                        })
+                                    })
+                                    .unwrap_or(EVENING_WEIGHTS_BASE);
+                                evening_activity_weighted(uid.0.get(), epoch, w)
                             } else {
                                 0
                             };
@@ -40893,6 +40986,77 @@ mod tests {
                 "and not one day before it"
             );
         }
+    }
+
+    /// ROW 51 (Ben chartered): personality SHIFTS the evening, never
+    /// dictates it. Pinned as a distribution over the whole trait space —
+    /// the shipped defect in its sibling row was a constant table nobody
+    /// could tell from a live one, so the assertions are about MOVEMENT
+    /// relative to the neutral centre, not about any single draw.
+    #[test]
+    fn personality_shifts_the_evening_without_dictating_it() {
+        const SIT: usize = 0;
+        const STROLL: usize = 1;
+        const VISIT: usize = 2;
+        const HOME: usize = 3;
+        // Every table keeps the same total, so the draw needs no
+        // renormalisation and no bucket can silently vanish.
+        for (soc, intro, adv) in [
+            (false, false, false), (true, false, false), (false, true, false),
+            (false, false, true), (true, false, true), (false, true, true),
+        ] {
+            let w = evening_weights(soc, intro, adv);
+            assert_eq!(
+                u32::from(w[0]) + u32::from(w[1]) + u32::from(w[2]) + u32::from(w[3]),
+                10,
+                "weights must be MOVED, not added: {soc} {intro} {adv} gave {w:?}"
+            );
+        }
+        // Identity: a colonist with no strong trait behaves EXACTLY as
+        // before this row (fallback = identity, never a copy).
+        assert_eq!(evening_weights(false, false, false), EVENING_WEIGHTS_BASE);
+        for uid in 1..200u64 {
+            for epoch in 0..12u64 {
+                assert_eq!(
+                    evening_activity_weighted(uid, epoch, EVENING_WEIGHTS_BASE),
+                    evening_activity(uid, epoch),
+                    "the neutral table must reproduce the pre-row palette exactly"
+                );
+            }
+        }
+        // The shifts go the way the trait says.
+        let base = EVENING_WEIGHTS_BASE;
+        let socl = evening_weights(true, false, false);
+        assert!(socl[VISIT] > base[VISIT] && socl[SIT] < base[SIT], "sociable visits more");
+        let intro = evening_weights(false, true, false);
+        assert!(intro[HOME] > base[HOME], "the introvert heads home more often");
+        let advn = evening_weights(false, false, true);
+        assert!(advn[STROLL] > base[STROLL] && advn[SIT] < base[SIT], "the restless walk");
+        // ★ AND NOBODY IS DICTATED TO. Every trait profile must still
+        // produce EVERY activity across a population — a trait that
+        // forced an outcome would just replace one uniform town with
+        // another, which is the failure this row exists to avoid.
+        for (soc, intro_f, adv) in [
+            (false, false, false), (true, false, false),
+            (false, true, false), (false, false, true),
+        ] {
+            let w = evening_weights(soc, intro_f, adv);
+            let mut seen = [false; 4];
+            for uid in 1..400u64 {
+                seen[evening_activity_weighted(uid, 3, w) as usize] = true;
+            }
+            assert!(
+                seen.iter().all(|s| *s),
+                "profile {soc} {intro_f} {adv} (weights {w:?}) never produced some activity"
+            );
+        }
+        // A degenerate table falls back to the base SHAPE, not to a
+        // constant activity — and must not divide by zero.
+        let mut seen = [false; 4];
+        for uid in 1..400u64 {
+            seen[evening_activity_weighted(uid, 1, [0, 0, 0, 0]) as usize] = true;
+        }
+        assert!(seen.iter().all(|s| *s), "the zero-table fallback must be the base palette");
     }
 
     /// ROW 50 (review rank 7): the plaza census must count the SQUARE. The

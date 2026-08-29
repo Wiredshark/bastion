@@ -494,6 +494,30 @@ impl RtSim {
 
         let data = self.state.get_data_mut();
         let mut rng = ::rtsim::tick_rng(self.world_seed, seed_tick, 0xBA57_C012);
+        // ★ ROW 51: THE SETTLE BRANCH HAD NO PERSONALITIES — measured, 24 of
+        // 24 colonists with `traits=[]` on every world I have soaked, plus
+        // `consc=true` and `neur=true` at zero. Not a thin roll: each axis
+        // is a sum of three uniforms centred at MID with the trait bands at
+        // 102/153, so ~56% of axes clear a band and a five-axis colonist has
+        // ~98% odds of carrying SOMETHING. 24/24 empty is structural.
+        //
+        // The cause is one missing builder call. `Npc::new` leaves
+        // `personality: Default::default()` — every axis at MID, which is
+        // below every HIGH_THRESHOLD trait and above every LOW_THRESHOLD one,
+        // so a default colonist can NEVER carry a trait. The founding path
+        // was fixed for exactly this in August; the ADOPT-A-TOWN *settle*
+        // branch below was missed — and the settle branch is the path every
+        // play world actually takes (`adopted_existing=0 settled=24` in the
+        // adoption roll on world 108). Roadmap ARC 5 item 21 ("Personalities
+        // visible") has therefore been dead at the source the whole time,
+        // silently, in a field the inspector faithfully reported as empty.
+        //
+        // Its OWN salted stream, never `rng`: drawing inline would shift
+        // every subsequent draw (bodies, species, ids) and silently replace
+        // the colonists every existing baseline was measured on. Same
+        // discipline, and same reason, as the founding path's 0xBA57_C011.
+        let mut personality_rng =
+            ::rtsim::tick_rng(self.world_seed, seed_tick, 0xBA57_C017);
 
         // The site the player chose (or the nearest, when they chose nothing)
         // — the same "nearest site to a position" rule the plot lookup uses,
@@ -663,6 +687,16 @@ impl RtSim {
                 if let Some(f) = faction {
                     npc = npc.with_faction(f);
                 }
+                // ★ ROW 51: the missing line (see the stream's own doc).
+                // `random()`, not `random_good()`: random_good clamps
+                // conscientiousness to [LOW_THRESHOLD, MAX], which would make
+                // ~83% of the colony Conscientious and collapse the very
+                // spread the guard row and the evening palette select from.
+                // Vanilla gives town residents `random()` too
+                // (rtsim/src/rule/architect.rs::role_personality), so this
+                // makes a settled resident indistinguishable from one the
+                // architect would have placed.
+                npc.personality = common::rtsim::Personality::random(&mut personality_rng);
                 residents.push(data.spawn_npc(npc));
             }
         }
