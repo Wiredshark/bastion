@@ -1237,9 +1237,44 @@ pub(crate) fn census_is_slowed(speed: f32, stuck_time: f32) -> bool {
 /// stop banking rest (the proven defect: rest accrued from 6 blocks away,
 /// byte-identical logs), and a body ON the bed must never be evicted by its
 /// own guard.
-pub(crate) fn sleep_displaced(body: Vec3<f32>, bed_pos: Vec3<i32>) -> bool {
-    let bed_c = bed_pos.map(|e| e as f32 + 0.5);
-    body.distance_squared(bed_c) > (ARRIVE_DIST + 0.5) * (ARRIVE_DIST + 0.5)
+pub(crate) const SLEEP_HYSTERESIS: f32 = 0.5;
+
+/// ★ How many times one sleeper may be displaced from one bed before the
+/// town stops trying. Eight is generous — a real interruption (a raid, a
+/// hunger preempt) releases the job through its own path and never reaches
+/// this counter, so anything that gets here eight times is a bed the
+/// colonist genuinely cannot hold.
+pub(crate) const SLEEP_DISPLACE_STRIKE_CAP: u32 = 8;
+
+/// ★ ONE FRAME (adversarial review, 2026-08-29): the retention test IS the
+/// arrival test plus slack, measured from the point ARRIVAL ACTUALLY USED.
+///
+/// It used to measure from the bed CELL CENTRE, `bed + (0.5,0.5,0.5)`,
+/// while arrival measures from `approach_target(bed, stance)` which for the
+/// RestAt stance is `bed + (0.5,0.5,1.0)`. The two anchors sat 0.5 apart in
+/// z, so the hysteresis band the doc above promises was delivered SIDEWAYS
+/// and was ZERO WIDE STRAIGHT UP: a body that had just arrived from above
+/// was already on the release boundary, and the latch flapped
+/// Arrived⇄Traveling.
+///
+/// The consequence was not a cosmetic census wobble. Each flip RELEASES THE
+/// BED and walks the claim back, so the colonist is stood up, re-steered,
+/// re-arrives, is pushed back into Crawl, and is displaced again. Measured
+/// on the 1.9 GB play log: 113,155 RestAt arrivals against ~4,400
+/// "slept — rest restored" completions, a 25× generator/consumer
+/// disagreement — and 40.5 arrivals per rest job on UPPER-STOREY beds
+/// (z=186) against 1.1 on ground-floor beds (z=181), a 37× ratio keyed on
+/// the BED, not the colonist. That is why the bed census showed the same
+/// few uids standing over and over: it is a duty cycle, not a headcount.
+///
+/// Two frames compared as one, for the third time in this project.
+pub(crate) fn sleep_displaced_from(body: Vec3<f32>, target: Vec3<f32>) -> bool {
+    let r = ARRIVE_DIST + SLEEP_HYSTERESIS;
+    body.distance_squared(target) > r * r
+}
+
+pub(crate) fn sleep_displaced(body: Vec3<f32>, bed_pos: Vec3<i32>, stance: Vec3<i32>) -> bool {
+    sleep_displaced_from(body, crate::bastion_actions::approach_target(bed_pos, stance))
 }
 
 /// ★ THE BOARD IS SESSION-STATE; THE RECORD IS TRUTH (805bf30a06).
@@ -8920,6 +8955,20 @@ pub struct JobBoard {
     /// ROW 50 (review rank 12): the last game-day the HOUSING GROWTH
     /// witness printed, so a witness that calls itself daily is daily.
     pub growth_logged_day: Option<i64>,
+    /// ★ THE RELEASE MUST NOT BE FREE (adversarial review, 2026-08-29):
+    /// displacements per (sleeper, rest job) with no completion in between.
+    ///
+    /// The sleep retention latch released the bed and walked the claim back
+    /// with NO counter, NO cap and NO witness, so a body that kept being
+    /// moved off its bed looped forever — measured at 113,155 RestAt
+    /// arrivals against ~4,400 completions on one world. The frame fix
+    /// removes the cause I could prove; this bounds any displacer I could
+    /// not, and makes it say its own name.
+    ///
+    /// Session state, never persisted: a reload starts everyone at zero,
+    /// which is identity — this counter can only ever STOP a loop that
+    /// today runs forever.
+    pub sleep_displace_strikes: HashMap<(common::uid::Uid, JobId), u32>,
     /// ROW 40 (farm churn): per-cell count of MOOT farm completions — the
     /// job arrived and the ground disagreed. Cleared the moment a cell
     /// actually works, halved daily with the other tallies, so a cell that
@@ -27382,12 +27431,45 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // Beyond arrival tolerance + hysteresis, sleep stops
                         // and the claim walks back — Traveling preserves it.
                         {
-                            if sleep_displaced(pos.0, bed_pos) {
+                            if sleep_displaced(pos.0, bed_pos, active.stance) {
                                 if let Some(slot) = board.beds.get_mut(&bed_pos)
                                     && slot.occupant == Some(u)
                                 {
                                     // Not lying in it — do not hold it.
                                     slot.occupant = None;
+                                }
+                                // ★ THE RELEASE MUST NOT BE FREE, and it must
+                                // say its own name. Without this the loop was
+                                // silent and unbounded.
+                                let strikes = board
+                                    .sleep_displace_strikes
+                                    .entry((u, active.job))
+                                    .or_insert(0);
+                                *strikes += 1;
+                                if *strikes >= SLEEP_DISPLACE_STRIKE_CAP {
+                                    let n = *strikes;
+                                    board.sleep_displace_strikes.remove(&(u, active.job));
+                                    tracing::warn!(
+                                        colonist = %u,
+                                        job = active.job,
+                                        ?bed_pos,
+                                        body = ?pos.0,
+                                        dist = pos.0.distance(
+                                            crate::bastion_actions::approach_target(
+                                                bed_pos, active.stance,
+                                            )
+                                        ),
+                                        strikes = n,
+                                        "bastion: ★ SLEEP UNHOLDABLE — this colonist                                          cannot stay in this bed; something keeps moving                                          them off it. Rest job dropped rather than looped."
+                                    );
+                                    // Drop the BOARD job only. The
+                                    // ActiveJob is left for the existing
+                                    // gone-job release path to reap (the
+                                    // release census's "gone" class), which
+                                    // avoids a second mutable borrow of
+                                    // `active_jobs` while `active` is held.
+                                    board.remove_job(active.job);
+                                    continue;
                                 }
                                 active.state = ActiveJobState::Traveling;
                                 active.stuck_time = 0.0;
@@ -41804,6 +41886,64 @@ mod tests {
         );
     }
 
+    /// ★ ONE FRAME PIN (adversarial review, 2026-08-29): the retention band
+    /// must be measured in the ARRIVAL frame, in EVERY direction.
+    ///
+    /// The pre-existing pin probed only `centre + (ARRIVE_DIST+0.4, 0, 0)` —
+    /// a HORIZONTAL offset from the BED CENTRE, which is a point the arrival
+    /// test never used, in the one direction where the frame mismatch does
+    /// no harm. It passed happily while the band was zero wide overhead.
+    /// This loops the whole sphere, so no direction can hide.
+    #[test]
+    fn the_retention_band_is_measured_in_the_arrival_frame() {
+        let bed = Vec3::new(10, 10, 5);
+        let r = ARRIVE_DIST + SLEEP_HYSTERESIS;
+        for stance in [
+            Vec3::unit_z(),
+            Vec3::new(1, 0, 0),
+            Vec3::new(-1, 0, 0),
+            Vec3::new(0, 1, 0),
+            Vec3::new(0, -1, 0),
+        ] {
+            let target = crate::bastion_actions::approach_target(bed, stance);
+            for i in 0..48 {
+                for j in 0..24 {
+                    let theta = i as f32 * std::f32::consts::TAU / 48.0;
+                    let phi = j as f32 * std::f32::consts::PI / 23.0;
+                    let dir = Vec3::new(
+                        phi.sin() * theta.cos(),
+                        phi.sin() * theta.sin(),
+                        phi.cos(),
+                    );
+                    assert!(
+                        !sleep_displaced(target + dir * (r - 0.02), bed, stance),
+                        "stance {stance:?} dir {dir:?}: inside the band must HOLD —                          every flip here releases the bed and restarts the walk"
+                    );
+                    assert!(
+                        sleep_displaced(target + dir * (r + 0.02), bed, stance),
+                        "stance {stance:?} dir {dir:?}: past the band must RELEASE"
+                    );
+                }
+            }
+        }
+        // The band is a real width, not a knife edge: a sleeper who drifts
+        // half a block must NOT be evicted, in any direction.
+        for stance in [Vec3::unit_z(), Vec3::new(1, 0, 0)] {
+            let target = crate::bastion_actions::approach_target(bed, stance);
+            for d in [
+                Vec3::new(0.0, 0.0, 1.0),
+                Vec3::new(0.0, 0.0, -1.0),
+                Vec3::new(1.0, 0.0, 0.0),
+                Vec3::new(0.0, 1.0, 0.0),
+            ] {
+                assert!(
+                    !sleep_displaced(target + d * ARRIVE_DIST, bed, stance),
+                    "a body that just ARRIVED must never be instantly displaced                      ({stance:?} / {d:?}) — that is the flap"
+                );
+            }
+        }
+    }
+
     /// ★ REVIEW FIX PIN (2026-08-29): every lane is covered, and the guard
     /// is the COMPILER, not this test.
     ///
@@ -42850,20 +42990,20 @@ mod tests {
         let bed = Vec3::new(10, 10, 5);
         let centre = bed.map(|e| e as f32 + 0.5);
         // On the bed: never displaced.
-        assert!(!sleep_displaced(centre, bed), "lying on the bed is not displaced");
+        assert!(!sleep_displaced(centre, bed, Vec3::unit_z()), "lying on the bed is not displaced");
         // Inside the hysteresis band (between ARRIVE_DIST and +0.5): still
         // held — this is what keeps physics jitter from flapping the state.
         assert!(
-            !sleep_displaced(centre + Vec3::new(ARRIVE_DIST + 0.4, 0.0, 0.0), bed),
+            !sleep_displaced(centre + Vec3::new(ARRIVE_DIST + 0.4, 0.0, 0.0), bed, Vec3::unit_z()),
             "jitter at the arrival boundary must not evict the sleeper"
         );
         // The proven defect, exactly: banking rest from 6 blocks away.
         assert!(
-            sleep_displaced(centre + Vec3::new(6.0, 0.0, 0.0), bed),
+            sleep_displaced(centre + Vec3::new(6.0, 0.0, 0.0), bed, Vec3::unit_z()),
             "a body 6 blocks from the bed must stop banking rest — this exact              case logged byte-identically to real sleep pre-fix"
         );
         // Displacement is 3D — a body shoved a storey below the bed is off it.
-        assert!(sleep_displaced(centre - Vec3::new(0.0, 0.0, 4.0), bed));
+        assert!(sleep_displaced(centre - Vec3::new(0.0, 0.0, 4.0), bed, Vec3::unit_z()));
     }
 
     #[test]
