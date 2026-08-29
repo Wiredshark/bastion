@@ -18253,6 +18253,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     });
                                     if refused {
                                         conn_refused += 1;
+                                        // ★ ROW 42: NAME THE REFUSAL. World
+                                        // 109 (a town that wanted wood from
+                                        // boot) ran a whole soak with
+                                        // bare_trunks=183, real trunks in
+                                        // the histogram (14 columns of run
+                                        // >=5, best 8) and TIMBER=0 — every
+                                        // candidate died HERE, and the
+                                        // count alone could not say whether
+                                        // the index was right (the tree is
+                                        // genuinely cut off) or wrong (the
+                                        // index is stale/coarse and the
+                                        // colony could walk there fine).
+                                        // The first few refusals now print
+                                        // the seed and the trust inputs, so
+                                        // the next world answers it.
+                                        if conn_refused <= 3 {
+                                            info!(
+                                                ?seed,
+                                                indexed_cells = board.connected_cells.len(),
+                                                prev_cells = board.connectivity_prev_cells,
+                                                "bastion: CHOP CONN REFUSAL — a real trunk the index calls unreachable"
+                                            );
+                                        }
                                     } else {
                                         return Some(seed);
                                     }
