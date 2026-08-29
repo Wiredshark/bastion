@@ -17047,13 +17047,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             );
                         }
                         let id = board.insert_auto_guard_job(post, uid);
-                        // ROW 31 residual: pre-claimed guard work bypasses
-                        // the open-claim tally — the muster votes here so
-                        // the militia's name can be Guard.
-                        *board
-                            .lane_counts
-                            .entry((uid, common::bastion::WorkType::Guard))
-                            .or_insert(0) += 1;
+                        // ROW 48: the vote moved to TIME HELD — a mustered
+                        // guard now earns their name by standing the post,
+                        // not by the single act of being posted.
                         let _ = active_jobs.insert(*ent, comp::bastion::ActiveJob {
                             job: id,
                             state: comp::bastion::ActiveJobState::Traveling,
@@ -35104,10 +35100,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 if let Some(job) = board.jobs.get_mut(&job_id) {
                     job.claimed_by = Some(*uid);
                     job.reservation = job.reservation.or(fetch_rid);
-                    // ROW 31: the profession tally — every open claim votes
-                    // for its lane; the daily halving keeps the window
-                    // rolling and the derivation names the argmax.
-                    *board_lane_bump.entry((*uid, job.work)).or_insert(0) += 1;
+                    // ROW 48 (replacing ROW 31's per-claim vote): the tally
+                    // is TIME HELD, counted at the clock's cadence, not
+                    // jobs claimed. Haul jobs are minted per loose item, so
+                    // counting claims made 65% of the record hauling and
+                    // named 13 of 27 colonists "Haul" while nobody was ever
+                    // a miner or builder. A watcher sees hours, not
+                    // errands. (The deferred bump map stays: the fetch
+                    // pre-claim below still uses it, and an empty drain is
+                    // free.)
                     // ITEM 27 claim-commit witness: the stall (arrive
                     // empty-handed) can only come from one of THESE
                     // branches — print which. carried= names the claim
@@ -35386,9 +35387,31 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // "in bed" and "lying down" can be compared: equal means
                     // the ruling holds; a gap is the exact defect Ben named
                     // (standing next to the furniture).
+                    // ★ ROW 48: A PROFESSION IS WHERE THE DAY WENT. The
+                    // tally counted JOBS CLAIMED, and haul jobs are minted
+                    // per loose item — so 65% of all claims were hauls and
+                    // the town named THIRTEEN of twenty-seven people
+                    // "Haul", while nobody was ever a miner or a builder.
+                    // A watcher does not count someone's errands; they see
+                    // where the hours go. Every colonist holding a job at
+                    // this cadence votes for that job's lane — travelling
+                    // to a haul IS hauling time, standing a night post IS
+                    // guard time — so twenty quick carries can no longer
+                    // outweigh a day at the quarry. This replaces the
+                    // per-claim votes entirely (including the two
+                    // pre-claimed guard sites, whose whole purpose was to
+                    // make a watchman's night visible: a night post now
+                    // accrues time votes on its own, by simply being held).
                     let mut in_bed = 0usize;
                     let mut lying = 0usize;
                     for (aj, _, e) in (&active_jobs, &colonists, &entities).join() {
+                        if let Some(u) = uids.get(e)
+                            && let Some(j) = board.jobs.get(&aj.job)
+                            && !is_personal_hold_job(&j.kind)
+                        {
+                            let w = j.work;
+                            *board.lane_counts.entry((*u, w)).or_insert(0) += 1;
+                        }
                         let holds_rest = board.jobs.get(&aj.job).is_some_and(|j| {
                             matches!(j.kind, common::bastion::JobKind::RestAt { .. })
                         });
@@ -35528,13 +35551,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             nth += 1;
                             let post = stand;
                             let id = board.insert_auto_guard_job(post, u);
-                            // ROW 31 residual: the night post votes Guard —
-                            // a watchman's whole working life was invisible
-                            // to the open-claim tally.
-                            *board
-                                .lane_counts
-                                .entry((u, common::bastion::WorkType::Guard))
-                                .or_insert(0) += 1;
+                            // ROW 48: same — the night itself is the vote.
                             board.night_posts.insert(u, id);
                             let _ = active_jobs.insert(entity, comp::bastion::ActiveJob {
                                 job: id,
