@@ -17795,10 +17795,36 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     .collect();
                 vacant_free.sort_by_key(|p| (p.x, p.y, p.z));
                 let mut moves = 0u32;
+                // ★ ROW 50: A CHILD DOES NOT MOVE OUT. Membership is bed
+                // ownership, so a newborn who takes a bed in its parent's
+                // house becomes the second member of that household — and
+                // this pass, whose whole job is to un-cram houses, would
+                // have packed it off to a vacant house of its own within
+                // two sweeps. The town would have had children, and no
+                // family would ever have lived together.
+                //
+                // The exemption is childhood itself (`work_priorities` all
+                // zero, the same field the labour exclusion reads), so it
+                // ENDS ON ITS OWN: the day a child comes of age and takes
+                // a trade, it becomes eligible to move out and the very
+                // next sweep gives it a house. Leaving home when you grow
+                // up falls out of the two rules already written; nothing
+                // schedules it.
+                // Collected up front, not read through a closure: the loop
+                // below takes `colonists` mutably to rewrite `owned_bed`.
+                let children_here: std::collections::HashSet<common::uid::Uid> =
+                    (&colonists, &uids)
+                        .join()
+                        .filter(|(c, _)| c.0.work_priorities.is_all_zero())
+                        .map(|(_, u)| *u)
+                        .collect();
                 'houses: for h in households.iter().filter(|h| h.members.len() > 1) {
                     for mover in h.members.iter().skip(1) {
                         if moves >= 2 || vacant_free.is_empty() {
                             break 'houses;
+                        }
+                        if children_here.contains(mover) {
+                            continue;
                         }
                         let Some(&ent) = uid_entity.get(mover) else { continue };
                         let Some(old_bed) = colonists.get(ent).and_then(|c| c.0.owned_bed)
@@ -18014,7 +18040,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 )
                                 .fired
                             })
-                            .map(|(i, h)| (i, h.members[0], h.min))
+                            // The parent is the first ADULT in the house,
+                            // not `members[0]`. Uid order usually makes
+                            // those the same person — a child is born
+                            // later and takes a higher uid — but "usually"
+                            // is not a guarantee, and a child recorded as
+                            // its sibling's parent would corrupt lineage
+                            // permanently, in a field nothing ever
+                            // rewrites.
+                            .and_then(|(i, h)| {
+                                h.members
+                                    .iter()
+                                    .find(|u| !child_uids.contains(u))
+                                    .map(|u| (i, *u, h.min))
+                            })
                     };
                     if let Some((_, parent, house_min)) = birth_house {
                         board.birth_day = Some(today);
