@@ -2255,6 +2255,45 @@ pub(crate) const FARM_MOOT_LIMIT: u32 = 3;
 /// permanent blacklist: the count clears on any successful work at the
 /// cell and halves daily, so a cell fixed by tilling, a chunk load, or a
 /// season change is offered again.
+/// ★ PIN-AUDIT FIX (2026-08-29): the per-plot open-job cap, promoted from a
+/// function-local `const` to module scope. It was unreachable from tests, so
+/// the pin that claimed to guard the ROW 50 rank-1 fix had to hand-write its
+/// own `budget = 3` and could not fail. A constant a test cannot name is a
+/// constant no test can pin.
+pub(crate) const FARM_OPEN_JOBS_PER_PLOT: usize = 6;
+
+/// ★ PIN-AUDIT FIX: the farm generator's push predicate, extracted from a
+/// closure so a pin can call the REAL one.
+///
+/// This is the ROW 50 rank-1 fix in function form: a cell that is occupied
+/// or RESTED must be refused HERE, at the push site, before it can debit the
+/// plot's per-pass mint budget. The shipped order debited first and filtered
+/// after, so a handful of permanently-moot cells burned a whole plot's
+/// budget and the mature wheat behind them was never offered for harvest —
+/// a guard starving the thing it protects.
+pub(crate) fn farm_cell_free(
+    occupied: &std::collections::HashSet<Vec3<i32>>,
+    churning: &std::collections::HashSet<(i32, i32, i32)>,
+    pos: Vec3<i32>,
+) -> bool {
+    !occupied.contains(&pos) && !churning.contains(&(pos.x, pos.y, pos.z))
+}
+
+/// ★ PIN-AUDIT FIX: the column the moot memory releases when work SUCCEEDS
+/// at `pos`. Extracted so the pin can assert the KEYS rather than
+/// hand-writing the same `dz` span it is meant to be checking.
+///
+/// A farm column carries two job roles one block apart — the till stands at
+/// gpos, the sow and harvest at cpos = gpos + z — so a release keyed to the
+/// acting cell alone could never free the cell the till actually cured.
+pub(crate) fn farm_moot_release_keys(pos: Vec3<i32>) -> [(i32, i32, i32); 3] {
+    [
+        (pos.x, pos.y, pos.z - 1),
+        (pos.x, pos.y, pos.z),
+        (pos.x, pos.y, pos.z + 1),
+    ]
+}
+
 pub(crate) fn farm_cell_is_churning(moots: Option<&u32>) -> bool {
     moots.is_some_and(|n| *n >= FARM_MOOT_LIMIT)
 }
@@ -2638,6 +2677,34 @@ pub(crate) fn bed_claim_cost(base: i64, house_members: Option<u32>) -> i64 {
 /// it as a FLOOR, not as a filter: at cap, the town stops opening stoves to
 /// generalists but never to the person whose lane this is.
 pub(crate) const COOK_LANE_BAR: u8 = 4;
+
+/// ★ PIN-AUDIT FIX (2026-08-29): the kitchen gate, extracted from an inline
+/// `if` so a pin can call the REAL one. The audit found the production
+/// guard had NO test coverage anywhere in the crate — the pin that claimed
+/// to guard it defined its own `admits` closure and asserted against that
+/// copy, so moving the cap back above the priority read (literally ROW 43's
+/// shipped behaviour, which refused the chef his own stove) left the suite
+/// green.
+///
+/// THE POST BELONGS TO THE COOK: at cap the kitchen refuses a generalist,
+/// but never someone whose trade this is.
+pub(crate) fn kitchen_admits(crew: usize, cap: usize, cook_priority: u8) -> bool {
+    crew < cap || cook_priority >= COOK_LANE_BAR
+}
+
+/// ★ PIN-AUDIT FIX: has this child grown up? Extracted from the daily sweep
+/// so the boundary can be pinned against the REAL rule. The previous pin
+/// defined `grown_on = born + CHILDHOOD_DAYS` and then asserted
+/// `grown_on - born >= CHILDHOOD_DAYS`, an i64 identity for every value —
+/// it could not see CHILDHOOD_DAYS change, could not see `>=` become `>`,
+/// and could not see the rule deleted.
+///
+/// Childhood is a DURATION, not a counter that must tick: nothing is
+/// incremented anywhere, and a save that sits for a year does not age
+/// anybody by surprise.
+pub(crate) fn has_come_of_age(today: i64, born: Option<i64>) -> bool {
+    born.is_some_and(|b| today - b >= CHILDHOOD_DAYS)
+}
 
 pub(crate) fn kitchen_crew_cap(roster: usize) -> usize {
     static ENV: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
@@ -5973,6 +6040,12 @@ pub(crate) fn sim_secs_per_game_day(
 /// `game_day * 24 + hour`, so the same person sits at 17:00 and walks at
 /// 20:00 — an evening with a shape instead of a single pose. Still no
 /// RNG, still replay-identical for a seed.
+/// ★ PIN-AUDIT NOTE (2026-08-29): this is the NEUTRAL-TABLE convenience,
+/// used by the palette-distribution pins. It is NOT the live path — the
+/// production call site builds a personality-weighted table with
+/// `evening_weights` and calls `evening_activity_weighted` directly. A pin
+/// that asserts this function equals its own body is testing nothing, which
+/// is exactly what the identity loop here used to do.
 pub(crate) fn evening_activity(uid_raw: u64, epoch: u64) -> u8 {
     evening_activity_weighted(uid_raw, epoch, EVENING_WEIGHTS_BASE)
 }
@@ -20884,7 +20957,6 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // Per-active-plot open counts, taken UP FRONT (a closure over
             // `board` would hold an immutable borrow across the mutable
             // retire below).
-            const FARM_OPEN_JOBS_PER_PLOT: usize = 6;
             let open_by_plot: Vec<usize> = active
                 .iter()
                 .map(|region| {
@@ -20978,8 +21050,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 .filter(|(_, n)| farm_cell_is_churning(Some(n)))
                 .map(|(k, _)| *k)
                 .collect();
-            let cell_free =
-                |pos: Vec3<i32>| !occupied.contains(&pos) && !churning.contains(&(pos.x, pos.y, pos.z));
+            let cell_free = |pos: Vec3<i32>| farm_cell_free(&occupied, &churning, pos);
             for (pi, plot) in active.iter().enumerate() {
                 // The per-plot work QUEUE: this pass may add only what keeps
                 // the plot's open-job count at the cap. `new_jobs` pushes for
@@ -28813,10 +28884,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // neighbours, which is exactly the span the two
                         // roles occupy.
                         if acted {
-                            for dz in [-1, 0, 1] {
-                                board
-                                    .farm_moot
-                                    .remove(&(job.pos.x, job.pos.y, job.pos.z + dz));
+                            for k in farm_moot_release_keys(job.pos) {
+                                board.farm_moot.remove(&k);
                             }
                         }
                         // ROW-COMPLETION-SIGNAL-SPLIT.md, cross-arm
@@ -35744,8 +35813,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // is never shut out of his own kitchen, and the refusal is
                 // counted in an existing bucket instead of vanishing.
                 let priority = if matches!(job.kind, common::bastion::JobKind::Cook { .. })
-                    && kitchen_crew >= kitchen_cap
-                    && priority < COOK_LANE_BAR
+                    && !kitchen_admits(kitchen_crew, kitchen_cap, priority)
                 {
                     0
                 } else {
@@ -36733,7 +36801,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             .join()
                             .filter(|(_, c, _)| {
                                 c.0.work_priorities.is_all_zero()
-                                    && c.0.born_day.is_some_and(|b| today - b >= CHILDHOOD_DAYS)
+                                    && has_come_of_age(today, c.0.born_day)
                             })
                             .map(|(e, c, u)| {
                                 // The parent's lane, read off the parent's
@@ -41133,8 +41201,6 @@ mod tests {
     /// has to assert WHO.
     #[test]
     fn a_full_kitchen_still_admits_the_chef() {
-        let admits =
-            |cook_priority: u8, crew: usize, cap: usize| !(crew >= cap && cook_priority < COOK_LANE_BAR);
         let chef = common::bastion::WorkPriorities::in_lane(common::bastion::WorkType::Cook)
             .get(common::bastion::WorkType::Cook);
         let hauler = common::bastion::WorkPriorities::in_lane(common::bastion::WorkType::Haul)
@@ -41146,74 +41212,137 @@ mod tests {
             hauler < COOK_LANE_BAR && generalist < COOK_LANE_BAR,
             "a hauler and a default colonist must both be BELOW it, or the cap bounds nobody"
         );
-        for cap in 1..=5usize {
-            assert!(admits(hauler, cap - 1, cap), "under cap a generalist may still cook");
-            assert!(!admits(hauler, cap, cap), "at cap a generalist must be refused");
-            assert!(!admits(generalist, cap + 3, cap), "over cap too");
+        // ★ PIN-AUDIT REWRITE (2026-08-29): this loop used to call a LOCAL
+        // `admits` closure that duplicated the production logic, so the
+        // production guard had no coverage anywhere in the crate — moving
+        // the cap back above the priority read (ROW 43's shipped behaviour,
+        // which refused the chef his own stove) left the suite green. It now
+        // calls the REAL `kitchen_admits`, with the cap from the REAL
+        // `kitchen_crew_cap`.
+        for roster in [8usize, 12, 24, 60, 120] {
+            let cap = kitchen_crew_cap(roster);
+            assert!(
+                kitchen_admits(cap - 1, cap, hauler),
+                "roster {roster}: under cap a generalist may still cook"
+            );
+            assert!(
+                !kitchen_admits(cap, cap, hauler),
+                "roster {roster}: at cap a generalist must be refused"
+            );
+            assert!(
+                !kitchen_admits(cap + 3, cap, generalist),
+                "roster {roster}: over cap too"
+            );
             // …and the chef never is. THIS is the assertion the shipped
-            // version would have failed.
-            assert!(admits(chef, cap, cap), "at cap the CHEF must still get a stove");
-            assert!(admits(chef, cap + 9, cap), "even a kitchen full of amateurs");
+            // version would have failed, and the one the dead closure faked.
+            assert!(
+                kitchen_admits(cap, cap, chef),
+                "roster {roster}: at cap the CHEF must still get a stove"
+            );
+            assert!(
+                kitchen_admits(cap + 9, cap, chef),
+                "roster {roster}: even a kitchen full of amateurs"
+            );
         }
     }
-
-    /// ROW 50 (review rank 1): the churn guard must refuse a rested cell
-    /// WITHOUT spending the plot's mint budget — the shipped order let a
-    /// handful of permanently-moot cells starve a whole plot of harvests.
-    /// Modelled as the two orderings, so the pin fails on the old one.
+    /// ★ PIN-AUDIT REWRITE (2026-08-29). The previous version of this test
+    /// was DEAD: it contained zero production symbols, hand-wrote its own
+    /// `churning: [bool; 6]` and its own `budget = 3` (the real cap was a
+    /// function-local const no test could name), and modelled both orderings
+    /// as inline loops. Its closing assertion const-folded to `3 > 1`. It
+    /// reported safety over the ROW 50 rank-1 fix while guarding nothing.
+    ///
+    /// It now calls the REAL `farm_cell_free` and the REAL
+    /// `FARM_OPEN_JOBS_PER_PLOT`, so deleting the churn term from the
+    /// predicate fails this test.
     #[test]
     fn a_rested_farm_cell_costs_the_plot_nothing() {
-        let churning = [true, true, false, false, false, false];
-        // The SHIPPED order: debit, then filter.
-        let mut budget = 3;
-        let mut minted_old = 0;
-        for c in churning {
-            if budget > 0 {
-                budget -= 1;
-                if !c {
-                    minted_old += 1;
-                }
-            }
-        }
-        // The FIXED order: refuse before debiting.
-        let mut budget = 3;
-        let mut minted_new = 0;
-        for c in churning {
-            if !c && budget > 0 {
-                budget -= 1;
-                minted_new += 1;
-            }
-        }
-        assert_eq!(minted_old, 1, "the old order burns two thirds of the budget on nothing");
-        assert_eq!(minted_new, 3, "the fix spends the whole budget on real work");
+        use std::collections::HashSet;
+        let occupied: HashSet<Vec3<i32>> = HashSet::new();
+        // Two cells the work tick keeps calling moot, then four good ones.
+        let cells: Vec<Vec3<i32>> = (0..6).map(|i| Vec3::new(i, 0, 60)).collect();
+        let churning: HashSet<(i32, i32, i32)> =
+            [(0, 0, 60), (1, 0, 60)].into_iter().collect();
+
+        // THE PROPERTY: the plot's budget is spent only on cells that can
+        // actually produce work. A rested cell must cost the plot nothing.
+        let minted: Vec<Vec3<i32>> = cells
+            .iter()
+            .copied()
+            .filter(|p| farm_cell_free(&occupied, &churning, *p))
+            .take(FARM_OPEN_JOBS_PER_PLOT)
+            .collect();
+        assert_eq!(
+            minted.len(),
+            4,
+            "four free cells remain; the two rested ones must not be minted"
+        );
         assert!(
-            minted_new > minted_old,
-            "if these ever agree the guard has stopped protecting the plot"
+            minted
+                .iter()
+                .all(|p| !churning.contains(&(p.x, p.y, p.z))),
+            "a rested cell was charged to the plot budget — the shipped \
+             debit-then-filter order has come back"
+        );
+
+        // And the predicate refuses for BOTH reasons, independently — pin the
+        // threshold against each degenerate setting.
+        let occ: HashSet<Vec3<i32>> = [Vec3::new(9, 9, 60)].into_iter().collect();
+        let none: HashSet<(i32, i32, i32)> = HashSet::new();
+        assert!(!farm_cell_free(&occ, &none, Vec3::new(9, 9, 60)), "occupied must refuse");
+        assert!(farm_cell_free(&occ, &none, Vec3::new(8, 9, 60)), "a free cell must pass");
+        assert!(
+            !farm_cell_free(&HashSet::new(), &churning, Vec3::new(0, 0, 60)),
+            "rested must refuse even when nothing is occupied"
+        );
+        // The cap is a real, nameable quantity, not a number the test invented.
+        assert!(
+            FARM_OPEN_JOBS_PER_PLOT > 0 && FARM_OPEN_JOBS_PER_PLOT <= 64,
+            "the per-plot cap must be a sane bound; 0 would stop the farm dead"
         );
     }
-
-    /// ROW 50 (review rank 5): a TILL cures the column its SOW rested. The
-    /// release must be keyed to the column, not to the acting cell, or the
-    /// only cure the farm has can never fire.
+    /// ★ PIN-AUDIT REWRITE (2026-08-29). The previous version hand-wrote the
+    /// same `dz` span it was meant to be checking, so reverting the
+    /// production release to a single cell, narrowing it, or widening it
+    /// left the test green. It now asserts the KEYS the production function
+    /// actually returns.
+    ///
+    /// ROW 50 rank-5: a till stands at gpos while the sow it cures lives at
+    /// cpos = gpos + z, so a release keyed to the acting cell alone could
+    /// never free the cell the till had just fixed — and ROW 40 advertised
+    /// exactly that cure.
     #[test]
     fn tilling_a_column_releases_the_sow_cell_above_it() {
         let gpos = Vec3::new(4, 9, 60);
         let cpos = gpos + Vec3::unit_z();
+        let keys = farm_moot_release_keys(gpos);
+
+        // The cell above (the sow) MUST be released by a till acting below.
+        assert!(
+            keys.contains(&(cpos.x, cpos.y, cpos.z)),
+            "a till at gpos must release the sow cell above it"
+        );
+        // And the acting cell itself, and the cell below (harvest releasing
+        // the till it stands on).
+        assert!(keys.contains(&(gpos.x, gpos.y, gpos.z)), "the acting cell");
+        assert!(keys.contains(&(gpos.x, gpos.y, gpos.z - 1)), "the cell below");
+        // Exactly the column — not the neighbourhood. A release that is too
+        // WIDE would clear cells nothing cured, hiding real churn.
+        assert_eq!(keys.len(), 3, "the release must span the column, no more");
+        assert!(
+            keys.iter().all(|k| k.0 == gpos.x && k.1 == gpos.y),
+            "the release must never leave the column"
+        );
+
+        // End to end against the real churn predicate: rest the sow cell,
+        // act a till below it, and the sow must be workable again.
         let mut moot: HashMap<(i32, i32, i32), u32> = HashMap::new();
         for _ in 0..FARM_MOOT_LIMIT {
             *moot.entry((cpos.x, cpos.y, cpos.z)).or_insert(0) += 1;
         }
         assert!(farm_cell_is_churning(moot.get(&(cpos.x, cpos.y, cpos.z))));
-        // The OLD release: keyed to the acting till's own cell — misses.
-        let mut old = moot.clone();
-        old.remove(&(gpos.x, gpos.y, gpos.z));
-        assert!(
-            farm_cell_is_churning(old.get(&(cpos.x, cpos.y, cpos.z))),
-            "the shipped keying leaves the cured cell rested forever"
-        );
-        // The FIXED release: the column.
-        for dz in [-1, 0, 1] {
-            moot.remove(&(gpos.x, gpos.y, gpos.z + dz));
+        for k in farm_moot_release_keys(gpos) {
+            moot.remove(&k);
         }
         assert!(
             !farm_cell_is_churning(moot.get(&(cpos.x, cpos.y, cpos.z))),
@@ -41351,16 +41480,45 @@ mod tests {
             WorkType::Mine,
             "with no parent lane to inherit, the town's scarcest lane takes them"
         );
-        // Coming of age is a DURATION on the game-day clock, and the
-        // boundary is inclusive: a child born on day B grows up ON day
-        // B + CHILDHOOD_DAYS, never a day early.
-        assert!(CHILDHOOD_DAYS >= 1, "childhood must be a positive span");
-        for born in 0..5i64 {
-            let grown_on = born + CHILDHOOD_DAYS;
-            assert!(grown_on - born >= CHILDHOOD_DAYS, "grows up on the boundary day");
+        // ★ PIN-AUDIT REWRITE (2026-08-29): this block used to define
+        // `grown_on = born + CHILDHOOD_DAYS` and then assert
+        // `grown_on - born >= CHILDHOOD_DAYS` — an i64 identity for every
+        // value, with `born` cancelling out. It could not see
+        // CHILDHOOD_DAYS change, could not see `>=` become `>`, and could
+        // not see the rule deleted. It now calls the REAL `has_come_of_age`.
+        //
+        // PIN THE THRESHOLD AGAINST BOTH DEGENERATE SETTINGS: a childhood of
+        // zero means children are born adults; a childhood of a thousand
+        // days is a childhood nobody ever sees end, which is the same thing
+        // as not having children at all.
+        assert!(
+            (1..=30).contains(&CHILDHOOD_DAYS),
+            "a childhood must end, and must be visible inside a soak"
+        );
+        for born in [0i64, 3, 17, 4000] {
             assert!(
-                (grown_on - 1) - born < CHILDHOOD_DAYS,
-                "and not one day before it"
+                !has_come_of_age(born + CHILDHOOD_DAYS - 1, Some(born)),
+                "born {born}: not one day early"
+            );
+            assert!(
+                has_come_of_age(born + CHILDHOOD_DAYS, Some(born)),
+                "born {born}: grows up ON the boundary day"
+            );
+            assert!(
+                has_come_of_age(born + CHILDHOOD_DAYS + 1, Some(born)),
+                "born {born}: and stays grown up"
+            );
+            assert!(
+                !has_come_of_age(born - 1, Some(born)),
+                "born {born}: a clock that ran backwards must not age a child"
+            );
+        }
+        // A colonist with no birthday was never a child — founders and
+        // settlers arrive grown, and must never be swept up by this rule.
+        for today in [0i64, 1, 99, 100_000] {
+            assert!(
+                !has_come_of_age(today, None),
+                "day {today}: a colonist with no born_day must never come of age"
             );
         }
     }
@@ -41391,16 +41549,25 @@ mod tests {
         }
         // Identity: a colonist with no strong trait behaves EXACTLY as
         // before this row (fallback = identity, never a copy).
+        //
+        // ★ PIN-AUDIT (2026-08-29): the assertion below is LOAD-BEARING and
+        // must not be removed — against three classic mutants (making a
+        // trait branch unconditional, appending an unconditional move,
+        // inverting `if introverted`) it is the ONLY assertion in the whole
+        // suite that fires, because every other check compares against the
+        // constant rather than the mutated neutral.
         assert_eq!(evening_weights(false, false, false), EVENING_WEIGHTS_BASE);
-        for uid in 1..200u64 {
-            for epoch in 0..12u64 {
-                assert_eq!(
-                    evening_activity_weighted(uid, epoch, EVENING_WEIGHTS_BASE),
-                    evening_activity(uid, epoch),
-                    "the neutral table must reproduce the pre-row palette exactly"
-                );
-            }
-        }
+        // ★ AND THE GOLDEN VECTOR, spelled out. A 2,400-iteration loop used
+        // to sit here comparing `evening_activity` to its own body (the
+        // function is now a one-line wrapper), which was equal by
+        // construction for any table and any hash. This single line is the
+        // independent witness that loop pretended to be: ROW 36b's palette
+        // is sit 4 / stroll 3 / visit 2 / home 1.
+        assert_eq!(
+            EVENING_WEIGHTS_BASE, [4, 3, 2, 1],
+            "the ROW 36b palette is the neutral centre; changing it silently \
+             re-tunes every colonist's evening"
+        );
         // The shifts go the way the trait says.
         let base = EVENING_WEIGHTS_BASE;
         let socl = evening_weights(true, false, false);
