@@ -2276,11 +2276,30 @@ pub(crate) const CHILDHOOD_DAYS: i64 = 4;
 /// verdict's twin — same refusal-order discipline, same self-naming
 /// terms — because they are the two halves of one question ("where do
 /// new people come from") and the town should answer both the same way.
-/// Gates: enabled → same_day → drive_not_expand → no_family (a household
-/// needs at least two adults sharing it: a family, not a lodger) →
-/// house_full (a household's own bed count caps it, Ben's 1-6 ruling) →
+/// Gates: enabled → same_day → drive_not_expand → no_family → house_full
+/// (a household's own bed count caps it, Ben's 1-6 ruling) →
 /// no_room_in_town (the housing equation still binds: a colony already at
 /// its housing target does not add mouths).
+///
+/// ★ WHY ONE ADULT, NOT TWO — measured before shipping, not assumed. The
+/// first cut required two adults sharing a house, which is the shape all
+/// the prior art has (Banished, RimWorld and The Sims all need a couple).
+/// Both live worlds then read `shared=0` in steady state on EVERY sample:
+/// Ben's own "ONE COLONIST PER HOUSE" ruling is enforced by the move-out
+/// pass, which un-crowds every household down to a single occupant. A
+/// two-adult gate is therefore unreachable BY CONSTRUCTION in this town —
+/// it would have shipped dead, deciding `no_family` forever, and the
+/// silence would have looked exactly like a rule correctly declining.
+///
+/// So v1 is a single parent, and it is honest about being v1. What is
+/// actually missing is COURTSHIP: there is no mechanism by which two
+/// colonists become a couple and share a home, so there are no couples to
+/// require. The successor row is named and its raw material already
+/// exists — the sentiment graph (colonists carry 11-18 mutual sentiments
+/// each) plus ITEM-22's co-located sits are a pairing signal the sim
+/// already produces. When a pair can move in together, this gate tightens
+/// to two and `no_family` starts meaning what it says. `adults == 0` is a
+/// real case even now: a household of children whose parent has died.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct BirthVerdict {
     pub fired: bool,
@@ -2322,7 +2341,7 @@ pub(crate) fn birth_verdict(
     if drive != common::bastion::ColonyDrive::Expand {
         return no("drive_not_expand");
     }
-    if adults_in_house < 2 {
+    if adults_in_house < 1 {
         return no("no_family");
     }
     if house_members >= household_capacity(house_beds) {
@@ -34839,6 +34858,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // an uncounted `continue` breaks the census's own
                 // conservation invariant, which is the thing that makes
                 // every other bucket trustworthy.
+                //
+                // ★ THE WALL CLOCK IS CORRECT HERE, and deliberately so —
+                // this is the one place in the file where it is. The
+                // question is "is the TOWN asleep", because that is
+                // precisely when the watchman is ON DUTY (his Work block
+                // maps onto the town's Sleep, NIGHT_WATCH_OFFSET). Reading
+                // it in HIS frame would invert the gate and send him
+                // hauling crates through his own shift. ROW 50's frame
+                // sweep (review rank 9) checked every other hour consumer
+                // in this file and moved the two that were wrong; this one
+                // is flagged so the next sweep does not "fix" it.
                 if board.night_watch.contains(uid)
                     && matches!(
                         default_schedule_block(hour_of_day(
@@ -40726,7 +40756,7 @@ mod tests {
             (birth_verdict(false, D::Expand, 2, 4, 2, 10, 20, 5, Some(4)), "disabled"),
             (birth_verdict(true, D::Expand, 2, 4, 2, 10, 20, 5, Some(5)), "same_day"),
             (birth_verdict(true, D::Sustain, 2, 4, 2, 10, 20, 5, Some(4)), "drive_not_expand"),
-            (birth_verdict(true, D::Expand, 1, 4, 1, 10, 20, 5, Some(4)), "no_family"),
+            (birth_verdict(true, D::Expand, 0, 4, 1, 10, 20, 5, Some(4)), "no_family"),
             (birth_verdict(true, D::Expand, 2, 2, 2, 10, 20, 5, Some(4)), "house_full"),
             (birth_verdict(true, D::Expand, 2, 4, 2, 20, 20, 5, Some(4)), "no_room_in_town"),
         ] {
@@ -40744,10 +40774,34 @@ mod tests {
                 );
             }
         }
-        // And a solitary lodger never births, however roomy the house.
-        for beds in 1..=6u32 {
-            assert!(!birth_verdict(true, D::Expand, 1, beds, 1, 3, 20, 5, None).fired);
+        // ★ THE GATE MUST BE REACHABLE IN THE TOWN THAT EXISTS. The first
+        // cut required two adults under one roof, and both live worlds read
+        // shared=0 on every sample — Ben's "ONE COLONIST PER HOUSE" ruling
+        // is actively enforced by the move-out pass, so a two-adult gate
+        // was unreachable BY CONSTRUCTION and would have shipped dead,
+        // deciding no_family forever while looking like a rule correctly
+        // declining. This asserts the shape the town actually has: a
+        // single-occupant household with spare beds CAN bear a child.
+        for beds in 2..=6u32 {
+            assert!(
+                birth_verdict(true, D::Expand, 1, beds, 1, 3, 20, 5, None).fired,
+                "beds {beds}: a one-adult household with room must be able to bear a \
+                 child, or the gate is unreachable in a town that keeps one colonist \
+                 per house"
+            );
         }
+        // …and a household with NO adult left (the parent died, only
+        // children remain) still refuses — the refusal has to keep a real
+        // case or the term stops meaning anything.
+        for beds in 1..=6u32 {
+            assert!(!birth_verdict(true, D::Expand, 0, beds, 1, 3, 20, 5, None).fired);
+        }
+        // A one-bed hut is full with its single occupant: capacity binds
+        // before family does.
+        assert_eq!(
+            birth_verdict(true, D::Expand, 1, 1, 1, 3, 20, 5, None).deciding,
+            "house_full"
+        );
     }
 
     /// ROW 50 (CHILDREN): childhood is an empty work profile, and coming of
