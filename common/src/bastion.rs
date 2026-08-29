@@ -818,6 +818,19 @@ pub enum WorkType {
     /// producing, which every throughput measure must be able to see
     /// separately. Appended LAST (wire rule).
     Guard,
+    /// ★ ROW 52: WORKSHOP PRODUCTION — the smith at the forge, turning the
+    /// colony's raw stock into goods. Its own lane, for the same reason
+    /// Guard has one, plus a measured one: across two soaked worlds and
+    /// ~54 profession namings the town named only Haul, Farm, Cook, Guard
+    /// and Mine — **Build never once**. Blacksmith mapped to Build
+    /// (`work_for_profession`), a lane with so little work that no
+    /// colonist ever holds it long enough to be named by it, so every
+    /// smith in the town was renamed Haul or Farm. Ben's criterion is
+    /// "name someone's job from an hour of watching"; the town could not
+    /// name a smith because the town had no smithing. Folding craft into
+    /// Build would repeat that — a watcher cannot tell a forge from a
+    /// wall. Appended LAST (wire rule).
+    Craft,
 }
 
 impl WorkType {
@@ -830,6 +843,7 @@ impl WorkType {
             WorkType::Haul => "haul",
             WorkType::Cook => "cook",
             WorkType::Farm => "farm",
+            WorkType::Craft => "craft",
         }
     }
 }
@@ -1276,6 +1290,15 @@ pub enum JobKind {
         patient: crate::uid::Uid,
         bed: vek::Vec3<i32>,
     },
+    /// ★ ROW 52: WORK AT THE WORKSHOP — the smith at his forge, turning
+    /// the colony's raw stock into goods. Modelled exactly on [`Cook`]
+    /// (the file's own station-work precedent): the job lives AT the
+    /// station, carries the input in `required_item`, and produces its
+    /// output on completion. Tail-appended (wire rule).
+    Craft {
+        /// The workshop building this job is worked at.
+        station: vek::Vec3<i32>,
+    },
     /// bastion (ARC 6 item 29): one priced exchange with a vanilla site.
     /// `job.pos` IS the site (the standard steer walks there); the B6
     /// fetch contract delivers the sold lot (`required_item`) for free;
@@ -1326,6 +1349,9 @@ impl JobKind {
             // ITEM 27: a Cook job works AT a station; the designation was the
             // station's build, already completed.
             JobKind::Cook { .. } => None,
+            // ROW 52: a workshop is a BUILDING the town already owns, not
+            // a painted designation — same answer, same reason, as Cook.
+            JobKind::Craft { .. } => None,
             // ITEM 29: a mission's target is a WORLD SITE, not a painted
             // designation.
             JobKind::TradeMission { .. } => None,
@@ -1651,6 +1677,10 @@ pub fn work_tool_kind(work: WorkType) -> Option<crate::comp::item::tool::ToolKin
         // ITEM 14 v1: no tool requirement. A weapon axis is a separate
         // parameter and inventing one here would be a policy, not a value.
         WorkType::Guard => None,
+        // ROW 52 v1: no tool requirement, same stance and same reason as
+        // Guard above — a smithing-tool axis is a separate parameter and
+        // inventing one here would be a policy, not a value.
+        WorkType::Craft => None,
         WorkType::Mine => Some(ToolKind::Pick),
         WorkType::Chop => Some(ToolKind::Axe),
         WorkType::Build => Some(ToolKind::Hammer),
@@ -1769,6 +1799,10 @@ pub struct ColonistSkills {
     /// saved before row 46 load with an untrained farmer.
     #[serde(default)]
     pub farming: SkillLevel,
+    /// ROW 52: workshop craft. `serde(default)` — records saved before this
+    /// row load with an untrained smith, never a missing field.
+    #[serde(default)]
+    pub crafting: SkillLevel,
 }
 
 impl ColonistSkills {
@@ -1778,6 +1812,7 @@ impl ColonistSkills {
             // ITEM 14: guarding trains MELEE — the skill already exists, so
             // v1 adds no skill field it would have to justify.
             WorkType::Guard => self.melee.add_xp(xp),
+            WorkType::Craft => self.crafting.add_xp(xp),
             WorkType::Mine => self.mining.add_xp(xp),
             WorkType::Chop => self.woodcutting.add_xp(xp),
             WorkType::Build => self.construction.add_xp(xp),
@@ -1798,6 +1833,7 @@ impl ColonistSkills {
             WorkType::Haul => self.hauling.level,
             WorkType::Cook => self.cooking.level,
             WorkType::Farm => self.farming.level,
+            WorkType::Craft => self.crafting.level,
         }
     }
 
@@ -1812,6 +1848,7 @@ impl ColonistSkills {
             WorkType::Haul => &mut self.hauling,
             WorkType::Cook => &mut self.cooking,
             WorkType::Farm => &mut self.farming,
+            WorkType::Craft => &mut self.crafting,
         };
         s.level = level;
     }
@@ -1835,6 +1872,12 @@ pub struct WorkPriorities {
     /// work", which is the kind of default that gets diagnosed as a bug.
     #[serde(default = "default_work_priority")]
     pub guard: u8,
+    /// ROW 52: serde-defaulted to the standard 3, for exactly the reason
+    /// `guard` documents above — a 0 default would make every existing
+    /// colony silently refuse workshop work and read as "nobody crafts",
+    /// which is the kind of default that gets diagnosed as a bug.
+    #[serde(default = "default_work_priority")]
+    pub craft: u8,
 }
 
 fn default_work_priority() -> u8 { 3 }
@@ -1865,6 +1908,11 @@ pub struct WorkDesires {
     pub farm: f32,
     #[serde(default = "default_desire")]
     pub guard: f32,
+    /// ROW 52: workshop craft. `serde(default)` via the struct's own
+    /// default — a record saved before this row wants craft NEUTRAL (1.0),
+    /// never zero, or every existing colonist would refuse the forge.
+    #[serde(default = "default_desire")]
+    pub craft: f32,
 }
 
 fn default_desire() -> f32 { 1.0 }
@@ -1879,6 +1927,7 @@ impl Default for WorkDesires {
             cook: 1.0,
             farm: 1.0,
             guard: 1.0,
+            craft: 1.0,
         }
     }
 }
@@ -1893,6 +1942,7 @@ impl WorkDesires {
             WorkType::Cook => self.cook,
             WorkType::Farm => self.farm,
             WorkType::Guard => self.guard,
+            WorkType::Craft => self.craft,
         }
     }
 
@@ -1915,6 +1965,7 @@ impl WorkDesires {
         let loved = kinds[rng.random_range(0..kinds.len())];
         let disliked = kinds[rng.random_range(0..kinds.len())];
         let set = |d: &mut Self, w: WorkType, v: f32| match w {
+            WorkType::Craft => d.craft = v,
             WorkType::Mine => d.mine = v,
             WorkType::Chop => d.chop = v,
             WorkType::Build => d.build = v,
@@ -1943,6 +1994,7 @@ impl Default for WorkPriorities {
             farm: 3,
             // ITEM 14: normal priority, not 0 — see the field doc.
             guard: 3,
+            craft: 3,
         }
     }
 }
@@ -1952,6 +2004,7 @@ impl WorkPriorities {
     pub fn get(&self, work: WorkType) -> u8 {
         match work {
             WorkType::Guard => self.guard,
+            WorkType::Craft => self.craft,
             WorkType::Mine => self.mine,
             WorkType::Chop => self.chop,
             WorkType::Build => self.build,
@@ -1965,6 +2018,7 @@ impl WorkPriorities {
         let p = priority.min(4);
         match work {
             WorkType::Guard => self.guard = p,
+            WorkType::Craft => self.craft = p,
             WorkType::Mine => self.mine = p,
             WorkType::Chop => self.chop = p,
             WorkType::Build => self.build = p,
@@ -2000,7 +2054,10 @@ impl WorkPriorities {
         match p {
             Profession::Farmer => Some(WorkType::Farm),
             Profession::Chef => Some(WorkType::Cook),
-            Profession::Blacksmith => Some(WorkType::Build),
+            // ROW 52: the smith SMITHS. This said `Build` until the
+            // profession census proved Build is a lane the town never
+            // names, so every blacksmith was renamed Haul or Farm.
+            Profession::Blacksmith => Some(WorkType::Craft),
             Profession::Hunter | Profession::Guard => Some(WorkType::Guard),
             Profession::Merchant => Some(WorkType::Haul),
             _ => None,
@@ -2029,6 +2086,7 @@ impl WorkPriorities {
             cook: 0,
             farm: 0,
             guard: 0,
+            craft: 0,
         }
     }
 
@@ -2043,6 +2101,7 @@ impl WorkPriorities {
             && self.cook == 0
             && self.farm == 0
             && self.guard == 0
+            && self.craft == 0
     }
 
     pub fn in_lane(trade: WorkType) -> Self {
@@ -2054,6 +2113,7 @@ impl WorkPriorities {
             cook: 2,
             farm: 2,
             guard: 3,
+            craft: 2,
         };
         p.set(trade, 4);
         p
@@ -2975,6 +3035,7 @@ impl BastionColonist {
                 cooking: skill(rng),
                 melee: skill(rng),
                 farming: skill(rng),
+                crafting: skill(rng),
                 // B5.8: most settlers start a poor climber (0..=1 — reach
                 // gating makes 3-block scrambles a TRAINED capability).
                 climbing: SkillLevel {

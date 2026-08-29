@@ -1725,6 +1725,8 @@ pub enum JobKindTagV1 {
     /// Appended 2026-08-23 (wire-stable append-only): the alarm's
     /// take-shelter self-job.
     Shelter,
+    /// ROW 52: workshop production. Appended LAST (wire-stable append-only).
+    Craft,
 }
 
 impl From<&crate::bastion::JobKind> for JobKindTagV1 {
@@ -1744,6 +1746,7 @@ impl From<&crate::bastion::JobKind> for JobKindTagV1 {
             J::Despond { .. } => JobKindTagV1::Despond,
             J::Recreate { .. } => JobKindTagV1::Recreate,
             J::Shelter { .. } => JobKindTagV1::Shelter,
+            J::Craft { .. } => JobKindTagV1::Craft,
         }
     }
 }

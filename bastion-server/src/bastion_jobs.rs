@@ -2263,6 +2263,79 @@ pub(crate) fn immigration_target_pop(households: &[HouseholdView]) -> u32 {
     households.iter().filter(|h| h.beds > 0).count() as u32
 }
 
+/// ★ ROW 52 (THE SMITH SMITHS): the colony's standing tool target, per
+/// colonist. Ben's criterion is "name someone's job from an hour of
+/// watching", and the profession census across two soaked worlds named
+/// only Haul, Farm, Cook, Guard and Mine in ~54 namings — **Build never
+/// once**, while Blacksmith's lane WAS Build. The town could not name a
+/// smith because the town had no smithing.
+///
+/// One tool each is the honest target: the founding kit already arms every
+/// colonist with a pickaxe, an axe and a hammer, so "everybody holds a
+/// tool" is the state the colony starts in and the state it should
+/// maintain. It is RENEWABLE without inventing wear, because the
+/// denominator now moves on its own: ROW 38 brings settlers and ROW 50
+/// brings children, so a growing town is permanently a little short of
+/// tools. (Tool WEAR is roadmap item 28 and would make this renewable
+/// from the other side too; this row does not need it and does not fake
+/// it.)
+pub(crate) const TOOL_PAR_PER_COLONIST: u32 = 1;
+
+/// ROW 52: the workshop's input and output. Wood in, tools out.
+///
+/// The input choice is not arbitrary: the wood par's own doc says "the par
+/// sits satisfied until consumption draws it down" — and NOTHING consumes
+/// wood today, so the whole chop → fell → haul → par chain saturates and
+/// goes quiet. The workshop is the missing sink. One row gives the smith a
+/// trade AND gives the woodcutter a reason.
+pub(crate) const CRAFT_OUTPUT_ITEM: &str = "common.items.tool.craftsman_hammer";
+/// How much wood one tool costs. ONE, deliberately: the arrival stage
+/// consumes exactly the one carried `required_item`, and that consume IS
+/// the conservation pair's first half (see the Cook completion's own
+/// note about the 2-raw-per-dish double-charge it had to fix). A 2-for-1
+/// recipe would need a second consume path and its own witness — more
+/// than this row needs, and the kind of thing that ships a conservation
+/// bug. The sink is real either way: every tool costs a log.
+pub(crate) const CRAFT_WOOD_PER_TOOL: u32 = 1;
+
+/// ROW 52: why the workshop did or did not put a smith to work today.
+/// Pure, with self-naming refusals — the same discipline as
+/// [`immigration_verdict`] and [`birth_verdict`], because a generator that
+/// silently never fires looks exactly like one that correctly declines,
+/// and this program has paid for that confusion more than once.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct CraftVerdict {
+    pub fired: bool,
+    pub deciding: &'static str,
+}
+
+pub(crate) fn craft_verdict(
+    enabled: bool,
+    stations: usize,
+    open_here: bool,
+    wood_units: u32,
+    tools_held: u32,
+    roster: u32,
+) -> CraftVerdict {
+    let no = |d: &'static str| CraftVerdict { fired: false, deciding: d };
+    if !enabled {
+        return no("disabled");
+    }
+    if stations == 0 {
+        return no("no_workshop");
+    }
+    if open_here {
+        return no("station_busy");
+    }
+    if wood_units < CRAFT_WOOD_PER_TOOL {
+        return no("no_wood");
+    }
+    if tools_held >= TOOL_PAR_PER_COLONIST * roster {
+        return no("tools_at_par");
+    }
+    CraftVerdict { fired: true, deciding: "the town is short of tools" }
+}
+
 /// ROW 50 (CHILDREN): how many game-days a colonist is a child. Chosen
 /// against the sim's own clock, not against human biology: a soak is
 /// 3-10 game days, so a childhood nobody ever sees end is a childhood
@@ -2541,6 +2614,7 @@ pub(crate) fn job_release_class(kind: &common::bastion::JobKind) -> &'static str
         K::Rescue { .. } => "rescue",
         K::Despond { .. } => "breakdown",
         K::Recreate { .. } => "recreate",
+        K::Craft { .. } => "craft",
         K::Haul { .. } => "haul",
         K::DepositRun { .. } => "deposit",
         K::Designated(_) => "work",
@@ -3092,6 +3166,7 @@ pub(crate) fn colony_terminal_scan(
 pub(crate) fn job_kind_label(kind: &common::bastion::JobKind) -> &'static str {
     match kind {
         common::bastion::JobKind::Cook { .. } => "Cook",
+        common::bastion::JobKind::Craft { .. } => "Craft",
         common::bastion::JobKind::TradeMission { .. } => "TradeMission",
         common::bastion::JobKind::Tend { .. } => "Tend",
         common::bastion::JobKind::Rescue { .. } => "Rescue",
@@ -4023,6 +4098,8 @@ fn job_still_wanted(kind: &common::bastion::JobKind, block: &Block) -> bool {
     match kind {
         // ITEM 27: a Cook job's validity is its station's, not a block's.
         common::bastion::JobKind::Cook { .. } => true,
+        // ROW 52: a Craft job's validity is its workshop's, same as Cook.
+        common::bastion::JobKind::Craft { .. } => true,
         // ITEM 29: a mission's validity is its own (site positions carry no
         // block precondition -- without this arm the moot-check reads the
         // site's arbitrary block and kills the mission instantly).
@@ -19160,6 +19237,106 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 info!(station = ?st, raw = raw_def, "bastion: ITEM 27 cook job created");
             }
         }
+        // ── ★ ROW 52: THE SMITH SMITHS ──────────────────────────────────
+        // The stations already existed and had no consumer: worldgen's own
+        // plot kinds are read at adoption into `town_buildings`, and
+        // `TownBuildingKind::Workshop` has carried the comment "Craft
+        // station (consumer lands with the crafting-chain arc)" ever since.
+        // World 110 registered FIVE workshops and used none of them. This
+        // is that consumer, built on the Cook mint directly above — same
+        // station shape, same required-item carry, same completion story.
+        if tick.0 % ARBITRATION_INTERVAL as u64 == 5 {
+            let workshops: Vec<Vec3<i32>> = board
+                .town_buildings
+                .iter()
+                .filter(|(k, ..)| *k == TownBuildingKind::Workshop)
+                .map(|(_, _, _, a)| *a)
+                .collect();
+            let roster = colonists.count() as u32;
+            let wood_units = stockpile_material_units(
+                CHOP_DROP_ITEM,
+                (&pickup_items, &positions, &uids).join(),
+                &board,
+            );
+            let tools_held = stockpile_material_units(
+                CRAFT_OUTPUT_ITEM,
+                (&pickup_items, &positions, &uids).join(),
+                &board,
+            );
+            // Deterministic order: the board's building list is built once
+            // at adoption, but sorting makes the FIRST station a total
+            // order rather than an insertion accident.
+            let mut stations = workshops.clone();
+            stations.sort_by_key(|c| (c.x, c.y, c.z));
+            let mut last: Option<CraftVerdict> = None;
+            for st in stations {
+                let open_here = board.jobs.values().any(|j| {
+                    matches!(j.kind, common::bastion::JobKind::Craft { station } if station == st)
+                });
+                let verdict = craft_verdict(
+                    std::env::var_os("BASTION_NO_CRAFT").is_none(),
+                    workshops.len(),
+                    open_here,
+                    wood_units,
+                    tools_held,
+                    roster,
+                );
+                let fired = verdict.fired;
+                last = Some(verdict);
+                if !fired {
+                    continue;
+                }
+                let id = board.next_id;
+                board.next_id += 1;
+                board.jobs.insert(id, Job {
+                    player_ordered: false,
+                    kind: common::bastion::JobKind::Craft { station: st },
+                    work: common::bastion::WorkType::Craft,
+                    pos: st,
+                    skill_floor: 0,
+                    claimed_by: None,
+                    suspended_for: None,
+                    unreachable: false,
+                    carve_attempted: false,
+                    progress: 0.0,
+                    needs_materials: false,
+                    required_item: Some(CHOP_DROP_ITEM),
+                    is_access: false,
+                    stuck_strikes: 0,
+                    benched_until_tick: None,
+                    depth: 0,
+                    reservation: None,
+                    // The smith stands AT the forge, on the ground beside
+                    // it — the same stance the pot takes.
+                    affordance: AffordanceClass::Untargeted,
+                });
+                info!(
+                    job = id,
+                    station = ?st,
+                    wood_units,
+                    tools_held,
+                    roster,
+                    "bastion: ★ ROW 52 craft job created — the forge has work"
+                );
+                break;
+            }
+            // The witness fires on the cadence whether or not work was
+            // made: a workshop that never lights up must say WHY, or a
+            // dead generator is indistinguishable from a satisfied one.
+            if tick.0 % (ARBITRATION_INTERVAL as u64 * 40) == 5
+                && let Some(v) = last
+            {
+                info!(
+                    fired = v.fired,
+                    deciding = v.deciding,
+                    workshops = workshops.len(),
+                    wood_units,
+                    tools_held,
+                    tool_par = TOOL_PAR_PER_COLONIST * roster,
+                    "bastion: WORKSHOP — is the forge lit"
+                );
+            }
+        }
         if tick.0 % ARBITRATION_INTERVAL as u64 == 7
             && !board.stockpiles.is_empty()
             && generator_enabled(GeneratorKind::Haul)
@@ -28595,6 +28772,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let still_valid = completed_kind.is_some_and(|k| match job.kind {
                         // ITEM 27: completion validity owned by the cook arm.
                         common::bastion::JobKind::Cook { .. } => true,
+                        // ROW 52: likewise the craft arm.
+                        common::bastion::JobKind::Craft { .. } => true,
                         common::bastion::JobKind::Rescue { .. } => true,
                         // ITEM 29: same — the exchange arm owns validity.
                         common::bastion::JobKind::TradeMission { .. } => true,
@@ -28903,7 +29082,28 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         common::bastion::JobKind::Cook { .. }
                             | common::bastion::JobKind::TradeMission { .. }
                             | common::bastion::JobKind::Tend { .. }
+                            | common::bastion::JobKind::Craft { .. }
                     ) {
+                        // ★ ROW 52: a completed CRAFT job — the wood was
+                        // consumed at arrival (the same conservation pair
+                        // Cook uses, and the same reason this arm does not
+                        // re-consume), and the tool appears at the forge.
+                        if let common::bastion::JobKind::Craft { station } = job.kind {
+                            let mut rng = toss_scatter_rng(tick.0, station, 0x30E_0052);
+                            crate::bastion_actions::emit_drop(
+                                &mut item_drop_emitter,
+                                station,
+                                Item::new_from_asset_expect(CRAFT_OUTPUT_ITEM),
+                                *program_time,
+                                &mut rng,
+                            );
+                            info!(
+                                ?station,
+                                input = ?job.required_item,
+                                product = CRAFT_OUTPUT_ITEM,
+                                "bastion: ★ ROW 52 crafted — wood consumed (at arrival), tool produced"
+                            );
+                        }
                         // ITEM 27: a completed COOK job — consume the carried raw
                         // (the sow `taken` pattern) and produce the vanilla dish
                         // at the station. Conservation is the bar: one consumed,
@@ -41057,6 +41257,102 @@ mod tests {
             seen[evening_activity_weighted(uid, 1, [0, 0, 0, 0]) as usize] = true;
         }
         assert!(seen.iter().all(|s| *s), "the zero-table fallback must be the base palette");
+    }
+
+    /// ★ ROW 52 (THE SMITH SMITHS): the workshop gate, both directions.
+    /// Every refusal reachable and self-naming, and the fire only when the
+    /// town actually wants a tool and has the wood to make one.
+    #[test]
+    fn the_forge_lights_only_when_the_town_is_short_of_tools() {
+        let ok = craft_verdict(true, 5, false, 10, 2, 24);
+        assert!(ok.fired, "5 workshops, wood in stock, 2 tools for 24 people: work");
+        for (v, why) in [
+            (craft_verdict(false, 5, false, 10, 2, 24), "disabled"),
+            (craft_verdict(true, 0, false, 10, 2, 24), "no_workshop"),
+            (craft_verdict(true, 5, true, 10, 2, 24), "station_busy"),
+            (craft_verdict(true, 5, false, 0, 2, 24), "no_wood"),
+            (craft_verdict(true, 5, false, 10, 24, 24), "tools_at_par"),
+        ] {
+            assert!(!v.fired, "{why}: must refuse");
+            assert_eq!(v.deciding, why, "the refusal must NAME itself");
+        }
+        // ★ THE PAR IS RENEWABLE BY GROWTH, and that is the whole reason
+        // this row does not need tool wear: a town at par today is short
+        // tomorrow because ROW 38 brings settlers and ROW 50 brings
+        // children. Pinned as the property, not as one number.
+        for roster in 1..=60u32 {
+            let at_par = TOOL_PAR_PER_COLONIST * roster;
+            assert!(
+                !craft_verdict(true, 3, false, 99, at_par, roster).fired,
+                "roster {roster}: a town holding its par must not make more"
+            );
+            assert!(
+                craft_verdict(true, 3, false, 99, at_par, roster + 1).fired,
+                "roster {roster}: ONE more colonist must reopen the forge"
+            );
+        }
+        // Wood is a real cost: below the recipe there is no work, however
+        // badly the town wants tools.
+        for wood in 0..CRAFT_WOOD_PER_TOOL {
+            assert_eq!(
+                craft_verdict(true, 3, false, wood, 0, 24).deciding,
+                "no_wood",
+                "wood {wood} is under the recipe cost"
+            );
+        }
+        assert!(craft_verdict(true, 3, false, CRAFT_WOOD_PER_TOOL, 0, 24).fired);
+    }
+
+    /// ★ ROW 52: the lane must be REACHABLE, which is the failure this row
+    /// exists to fix. Measured baseline before the row: across two soaked
+    /// worlds and ~54 profession namings the town named only Haul, Farm,
+    /// Cook, Guard and Mine — Build NEVER ONCE — while Blacksmith's lane
+    /// WAS Build. Renaming the lane without giving it work would repeat
+    /// that exactly, so these assert the wiring end to end.
+    #[test]
+    fn a_blacksmith_has_a_lane_with_work_in_it() {
+        use common::bastion::{WorkPriorities, WorkType};
+        use common::rtsim::Profession;
+        assert_eq!(
+            WorkPriorities::work_for_profession(Profession::Blacksmith),
+            Some(WorkType::Craft),
+            "a blacksmith must map to the lane the forge mints into"
+        );
+        // In lane, and ONLY in lane: an in-lane smith outbids the town,
+        // and nobody else is promoted into the forge by accident.
+        let smith = WorkPriorities::in_lane(WorkType::Craft);
+        assert_eq!(smith.get(WorkType::Craft), 4, "the smith prefers the forge");
+        for other in [
+            WorkType::Farm, WorkType::Cook, WorkType::Build,
+            WorkType::Haul, WorkType::Mine, WorkType::Chop, WorkType::Guard,
+        ] {
+            assert!(
+                WorkPriorities::in_lane(other).get(WorkType::Craft) < 4,
+                "{other:?} must not read as in-lane for the forge"
+            );
+            assert!(
+                WorkPriorities::in_lane(other).get(WorkType::Craft) > 0,
+                "{other:?} must still be ABLE to craft — cross-domain work stays possible"
+            );
+        }
+        // The lane routes to its own skill and its own label, or the
+        // profession derivation and the inspector cannot name it.
+        let mut sk = common::bastion::ColonistSkills::default();
+        sk.grant_xp(WorkType::Craft, 500.0);
+        assert!(
+            sk.level_for(WorkType::Craft) > 0,
+            "craft XP must train the craft skill, or a smith never gets good"
+        );
+        for w in [WorkType::Farm, WorkType::Build, WorkType::Haul, WorkType::Cook] {
+            assert_eq!(
+                sk.level_for(w), 0,
+                "{w:?} must NOT be trained by craft work — lanes must stay separable"
+            );
+        }
+        assert_eq!(WorkType::Craft.label(), "craft");
+        // A child still refuses the forge like every other lane.
+        assert_eq!(WorkPriorities::childhood().get(WorkType::Craft), 0);
+        assert!(WorkPriorities::childhood().is_all_zero());
     }
 
     /// ROW 50 (review rank 7): the plaza census must count the SQUARE. The

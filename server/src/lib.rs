@@ -4125,6 +4125,11 @@ impl Server {
                 // harness query and the arbitration gate would disagree about
                 // the same colonist's competence.
                 common::bastion::WorkType::Guard => s.melee,
+                // ROW 52: the workshop lane's own skill, matching
+                // `ColonistSkills::level_for` for the same reason Guard's
+                // arm documents — the harness query and the arbitration
+                // gate must never disagree about a colonist's competence.
+                common::bastion::WorkType::Craft => s.crafting,
             }
         })
     }
