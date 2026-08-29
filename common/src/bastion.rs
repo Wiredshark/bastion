@@ -1298,6 +1298,13 @@ pub enum JobKind {
     Craft {
         /// The workshop building this job is worked at.
         station: vek::Vec3<i32>,
+        /// ROW 52 v2: which tool this job forges — an index into
+        /// `CRAFT_OUTPUTS`. Carried on the JOB so the generator's reason
+        /// for minting it ("the town is short of axes") is the same fact
+        /// the completion acts on. Deriving the product again at
+        /// completion would let the two disagree, which is exactly the
+        /// churn shape this project keeps shipping.
+        output: u8,
     },
     /// bastion (ARC 6 item 29): one priced exchange with a vanilla site.
     /// `job.pos` IS the site (the standard steer walks there); the B6

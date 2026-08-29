@@ -2281,6 +2281,62 @@ pub(crate) fn immigration_target_pop(households: &[HouseholdView]) -> u32 {
 /// it.)
 pub(crate) const TOOL_PAR_PER_COLONIST: u32 = 1;
 
+/// ★ ROW 52 v2 (the row's own first soak disposed it HONESTLY: the forge
+/// worked and the smith was still not nameable). Two measured facts drove
+/// this revision.
+///
+/// ONE: the par was below what the town actually equips. The founding kit
+/// (`bastion_found_colony_tool_kit`, server/src/lib.rs) arms every
+/// colonist with THREE tools — a pickaxe, an axe and a hammer — so a par
+/// of one hammer a head asked the forge for a fraction of the town's real
+/// standing equipment. On world 112 the count read `tools_held=21
+/// tool_par=26` at founding: the forge had almost nothing to do from the
+/// first minute. The par now covers all three, so the demand is the
+/// town's actual kit rather than a third of it.
+///
+/// TWO: the work did not CONCENTRATE. Across 64 crafts on world 111 the
+/// jobs went to five different colonists (2, 2, 1, 1, 1) and the town
+/// named nobody Craft. Cook IS nameable — 5 of 32 on the same world — and
+/// the reason is the kitchen's crew cap plus `COOK_LANE_BAR`: a small
+/// crew, lane-gated, so the same person keeps the post and accumulates
+/// the lane time the ROW 48 tally reads. The forge now borrows that
+/// mechanism exactly. Prior art agrees (DF's labour assignment, RimWorld's
+/// work priorities): a trade is nameable because FEW people do it, not
+/// because a lot of it happens.
+pub(crate) const CRAFT_OUTPUTS: [&str; 3] = [
+    "common.items.tool.craftsman_hammer",
+    "common.items.tool.pickaxe_stone",
+    "common.items.weapons.axe.starter_axe",
+];
+
+/// ROW 52 v2: which tool the town is shortest of, or None when the kit is
+/// complete. Returns the LOWEST index on a tie so the choice is a total
+/// order and never depends on iteration.
+pub(crate) fn tool_shortfall(held: [u32; 3], roster: u32) -> Option<usize> {
+    let want = TOOL_PAR_PER_COLONIST * roster;
+    let mut best: Option<(usize, u32)> = None;
+    for (i, h) in held.iter().enumerate() {
+        if *h >= want {
+            continue;
+        }
+        if best.is_none_or(|(_, b)| *h < b) {
+            best = Some((i, *h));
+        }
+    }
+    best.map(|(i, _)| i)
+}
+
+/// ROW 52 v2: the forge's crew — the same shape and the same reason as
+/// [`kitchen_crew_cap`]. A trade a watcher can NAME is a trade few people
+/// hold.
+pub(crate) fn forge_crew_cap(roster: usize) -> usize {
+    static ENV: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
+    ENV.get_or_init(|| {
+        std::env::var("BASTION_FORGE_CREW").ok().and_then(|v| v.parse().ok())
+    })
+    .unwrap_or_else(|| (roster / 12).max(1))
+}
+
 /// ROW 52: the workshop's input and output. Wood in, tools out.
 ///
 /// The input choice is not arbitrary: the wood par's own doc says "the par
@@ -2288,7 +2344,7 @@ pub(crate) const TOOL_PAR_PER_COLONIST: u32 = 1;
 /// wood today, so the whole chop → fell → haul → par chain saturates and
 /// goes quiet. The workshop is the missing sink. One row gives the smith a
 /// trade AND gives the woodcutter a reason.
-pub(crate) const CRAFT_OUTPUT_ITEM: &str = "common.items.tool.craftsman_hammer";
+pub(crate) const CRAFT_OUTPUT_ITEM: &str = CRAFT_OUTPUTS[0];
 /// How much wood one tool costs. ONE, deliberately: the arrival stage
 /// consumes exactly the one carried `required_item`, and that consume IS
 /// the conservation pair's first half (see the Cook completion's own
@@ -2307,6 +2363,12 @@ pub(crate) const CRAFT_WOOD_PER_TOOL: u32 = 1;
 pub(crate) struct CraftVerdict {
     pub fired: bool,
     pub deciding: &'static str,
+    /// ROW 52 v2: WHICH tool this firing is for — an index into
+    /// [`CRAFT_OUTPUTS`]. The job carries it so the generator's decision
+    /// ("the town is short of axes") and the completion's product cannot
+    /// disagree; a generator and a consumer that disagree is the churn
+    /// shape this project has now shipped three times.
+    pub output: Option<usize>,
 }
 
 pub(crate) fn craft_verdict(
@@ -2314,10 +2376,12 @@ pub(crate) fn craft_verdict(
     stations: usize,
     open_here: bool,
     wood_units: u32,
-    tools_held: u32,
+    held: [u32; 3],
     roster: u32,
+    crew: usize,
+    cap: usize,
 ) -> CraftVerdict {
-    let no = |d: &'static str| CraftVerdict { fired: false, deciding: d };
+    let no = |d: &'static str| CraftVerdict { fired: false, deciding: d, output: None };
     if !enabled {
         return no("disabled");
     }
@@ -2327,13 +2391,23 @@ pub(crate) fn craft_verdict(
     if open_here {
         return no("station_busy");
     }
+    // ROW 52 v2: the crew cap, refused BEFORE the wood check so a full
+    // forge never consumes the budget of a station it will not use — the
+    // guard-must-refuse-before-it-spends law, applied where it belongs.
+    if crew >= cap {
+        return no("crew_full");
+    }
     if wood_units < CRAFT_WOOD_PER_TOOL {
         return no("no_wood");
     }
-    if tools_held >= TOOL_PAR_PER_COLONIST * roster {
+    let Some(output) = tool_shortfall(held, roster) else {
         return no("tools_at_par");
+    };
+    CraftVerdict {
+        fired: true,
+        deciding: "the town is short of tools",
+        output: Some(output),
     }
-    CraftVerdict { fired: true, deciding: "the town is short of tools" }
 }
 
 /// ROW 50 (CHILDREN): how many game-days a colonist is a child. Chosen
@@ -19303,11 +19377,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // the completion drops the tool at the forge, which is not a
             // stockpile, so the stockpile-scoped count could never see the
             // forge's own output and the par could never be satisfied.
-            let tools_held = colony_item_units(
-                CRAFT_OUTPUT_ITEM,
-                (&pickup_items, &positions, &uids).join(),
-                (&inventories).join(),
-            );
+            let mut held = [0u32; 3];
+            for (i, def) in CRAFT_OUTPUTS.iter().enumerate() {
+                held[i] = colony_item_units(
+                    def,
+                    (&pickup_items, &positions, &uids).join(),
+                    (&inventories).join(),
+                );
+            }
+            let tools_held: u32 = held.iter().sum();
+            // ROW 52 v2: the forge's live crew, counted the way the
+            // kitchen counts its own — claims on the board right now, so
+            // a smith who finishes frees the post for the next job.
+            let forge_crew = board
+                .jobs
+                .values()
+                .filter(|j| {
+                    j.claimed_by.is_some()
+                        && matches!(j.kind, common::bastion::JobKind::Craft { .. })
+                })
+                .count();
+            let forge_cap = forge_crew_cap(roster as usize);
             // Deterministic order: the board's building list is built once
             // at adoption, but sorting makes the FIRST station a total
             // order rather than an insertion accident.
@@ -19323,15 +19413,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             let mut fired_at: Option<Vec3<i32>> = None;
             for st in stations {
                 let open_here = board.jobs.values().any(|j| {
-                    matches!(j.kind, common::bastion::JobKind::Craft { station } if station == st)
+                    matches!(j.kind, common::bastion::JobKind::Craft { station, .. } if station == st)
                 });
                 let verdict = craft_verdict(
                     std::env::var_os("BASTION_NO_CRAFT").is_none(),
                     workshops.len(),
                     open_here,
                     wood_units,
-                    tools_held,
+                    held,
                     roster,
+                    forge_crew,
+                    forge_cap,
                 );
                 if !verdict.fired {
                     *refusals.entry(verdict.deciding).or_insert(0) += 1;
@@ -19342,7 +19434,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 board.next_id += 1;
                 board.jobs.insert(id, Job {
                     player_ordered: false,
-                    kind: common::bastion::JobKind::Craft { station: st },
+                    kind: common::bastion::JobKind::Craft {
+                        station: st,
+                        output: verdict.output.unwrap_or(0) as u8,
+                    },
                     work: common::bastion::WorkType::Craft,
                     pos: st,
                     skill_floor: 0,
@@ -19365,8 +19460,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 info!(
                     job = id,
                     station = ?st,
+                    making = CRAFT_OUTPUTS[verdict.output.unwrap_or(0)],
                     wood_units,
-                    tools_held,
+                    ?held,
                     roster,
                     "bastion: ★ ROW 52 craft job created — the forge has work"
                 );
@@ -29144,19 +29240,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // consumed at arrival (the same conservation pair
                         // Cook uses, and the same reason this arm does not
                         // re-consume), and the tool appears at the forge.
-                        if let common::bastion::JobKind::Craft { station } = job.kind {
+                        if let common::bastion::JobKind::Craft { station, output } = job.kind {
+                            // ROW 52 v2: the product is the one the JOB
+                            // carries, not one re-derived here — the
+                            // generator and the completion must never be
+                            // able to disagree about what is being made.
+                            let def = CRAFT_OUTPUTS
+                                [(output as usize).min(CRAFT_OUTPUTS.len() - 1)];
                             let mut rng = toss_scatter_rng(tick.0, station, 0x30E_0052);
                             crate::bastion_actions::emit_drop(
                                 &mut item_drop_emitter,
                                 station,
-                                Item::new_from_asset_expect(CRAFT_OUTPUT_ITEM),
+                                Item::new_from_asset_expect(def),
                                 *program_time,
                                 &mut rng,
                             );
                             info!(
                                 ?station,
                                 input = ?job.required_item,
-                                product = CRAFT_OUTPUT_ITEM,
+                                product = def,
                                 "bastion: ★ ROW 52 crafted — wood consumed (at arrival), tool produced"
                             );
                         }
@@ -41334,101 +41436,139 @@ mod tests {
         assert!(seen.iter().all(|s| *s), "the zero-table fallback must be the base palette");
     }
 
-    /// ★ ROW 52 (THE SMITH SMITHS): the workshop gate, both directions.
-    /// Every refusal reachable and self-naming, and the fire only when the
-    /// town actually wants a tool and has the wood to make one.
+    /// ★ ROW 52 v2: the forge gate, both directions, on the THREE-tool par
+    /// and the crew cap. v1's own soak disposed it honestly: the forge
+    /// worked, made 64 tools on one world, and the town still named nobody
+    /// Craft. Two measured causes, both pinned here.
     #[test]
     fn the_forge_lights_only_when_the_town_is_short_of_tools() {
-        let ok = craft_verdict(true, 5, false, 10, 2, 24);
-        assert!(ok.fired, "5 workshops, wood in stock, 2 tools for 24 people: work");
+        let roster = 26u32;
+        let par = TOOL_PAR_PER_COLONIST * roster;
+        let short = [0u32, 0, 0];
+        let full = [par, par, par];
+        let ok = craft_verdict(true, 5, false, 10, short, roster, 0, 3);
+        assert!(ok.fired, "no tools for twenty-six people: work");
+        assert!(ok.output.is_some(), "a firing must say WHICH tool it is for");
         for (v, why) in [
-            (craft_verdict(false, 5, false, 10, 2, 24), "disabled"),
-            (craft_verdict(true, 0, false, 10, 2, 24), "no_workshop"),
-            (craft_verdict(true, 5, true, 10, 2, 24), "station_busy"),
-            (craft_verdict(true, 5, false, 0, 2, 24), "no_wood"),
-            (craft_verdict(true, 5, false, 10, 24, 24), "tools_at_par"),
+            (craft_verdict(false, 5, false, 10, short, roster, 0, 3), "disabled"),
+            (craft_verdict(true, 0, false, 10, short, roster, 0, 3), "no_workshop"),
+            (craft_verdict(true, 5, true, 10, short, roster, 0, 3), "station_busy"),
+            (craft_verdict(true, 5, false, 10, short, roster, 3, 3), "crew_full"),
+            (craft_verdict(true, 5, false, 0, short, roster, 0, 3), "no_wood"),
+            (craft_verdict(true, 5, false, 10, full, roster, 0, 3), "tools_at_par"),
         ] {
             assert!(!v.fired, "{why}: must refuse");
             assert_eq!(v.deciding, why, "the refusal must NAME itself");
+            assert!(v.output.is_none(), "{why}: a refusal forges nothing");
         }
-        // ★ THE PAR IS RENEWABLE BY GROWTH, and that is the whole reason
-        // this row does not need tool wear: a town at par today is short
-        // tomorrow because ROW 38 brings settlers and ROW 50 brings
-        // children. Pinned as the property, not as one number.
-        for roster in 1..=60u32 {
-            let at_par = TOOL_PAR_PER_COLONIST * roster;
+        // ★ THE CREW CAP REFUSES BEFORE THE WOOD CHECK. A guard that spends
+        // first starves what it protects (this project shipped exactly that
+        // in the farm and had to move the test into the push predicate), so
+        // a full crew must not be able to consume a station's turn.
+        assert_eq!(
+            craft_verdict(true, 5, false, 0, short, roster, 9, 3).deciding,
+            "crew_full",
+            "a full crew must refuse BEFORE the wood check, not after"
+        );
+        // ★ THE PAR IS RENEWABLE BY GROWTH - the reason this row needs no
+        // tool wear. Pinned as the property over every plausible roster.
+        for r in 1..=60u32 {
+            let at = TOOL_PAR_PER_COLONIST * r;
             assert!(
-                !craft_verdict(true, 3, false, 99, at_par, roster).fired,
-                "roster {roster}: a town holding its par must not make more"
+                !craft_verdict(true, 3, false, 99, [at, at, at], r, 0, 9).fired,
+                "roster {r}: a town holding its par must stop"
             );
             assert!(
-                craft_verdict(true, 3, false, 99, at_par, roster + 1).fired,
-                "roster {roster}: ONE more colonist must reopen the forge"
+                craft_verdict(true, 3, false, 99, [at, at, at], r + 1, 0, 9).fired,
+                "roster {r}: ONE more colonist must reopen the forge"
             );
         }
-        // Wood is a real cost: below the recipe there is no work, however
-        // badly the town wants tools.
+        // Wood is a real cost.
         for wood in 0..CRAFT_WOOD_PER_TOOL {
             assert_eq!(
-                craft_verdict(true, 3, false, wood, 0, 24).deciding,
-                "no_wood",
-                "wood {wood} is under the recipe cost"
+                craft_verdict(true, 3, false, wood, short, roster, 0, 9).deciding,
+                "no_wood"
             );
         }
-        assert!(craft_verdict(true, 3, false, CRAFT_WOOD_PER_TOOL, 0, 24).fired);
     }
 
-    /// ★ ROW 52 FIX (caught in the row's FIRST game-hour on world 111):
-    /// the forge's par must be able to SEE the forge's own output. v1 read
-    /// a stockpile-scoped count while the completion drops the tool at the
-    /// workshop, so `tools_held` stayed 0 after three tools were made and
-    /// the par could never be satisfied — the forge would have eaten every
-    /// log in the town. This is the generator/consumer disagreement I have
-    /// a standing law about, shipped one row after writing it down.
-    ///
-    /// Pinned as the PROPERTY that failed: a produced tool must raise the
-    /// number the gate reads, wherever it physically sits.
+    /// ★ ROW 52 v2: the forge makes what the town is SHORTEST of, and the
+    /// choice is a total order. A generator that picks by iteration order
+    /// is a determinism defect; a generator whose choice disagrees with
+    /// what the completion produces is the churn shape.
     #[test]
-    fn the_forge_can_see_its_own_output() {
-        // The gate, in the two readings. `held_stockpiled` is what v1 saw;
-        // `held_anywhere` is what the town actually has.
-        let roster = 26u32;
+    fn the_forge_makes_the_tool_the_town_lacks() {
+        let roster = 10u32;
         let par = TOOL_PAR_PER_COLONIST * roster;
-        // Three tools made and lying at the forge, none in a stockpile.
-        let held_stockpiled = 0u32;
-        let held_anywhere = 3u32;
-        // v1: blind. The forge keeps firing no matter how many it has made.
-        for made in 0..200u32 {
-            let _ = made;
+        // Shortest wins, whichever slot it is in.
+        assert_eq!(tool_shortfall([par, 0, par], roster), Some(1));
+        assert_eq!(tool_shortfall([0, par, par], roster), Some(0));
+        assert_eq!(tool_shortfall([par, par, 0], roster), Some(2));
+        assert_eq!(tool_shortfall([5, 3, 9], roster), Some(1), "3 is the fewest");
+        // A complete kit asks for nothing.
+        assert_eq!(tool_shortfall([par, par, par], roster), None);
+        assert_eq!(tool_shortfall([par + 9, par, par], roster), None);
+        // ★ TIES ARE A TOTAL ORDER, not iteration order: equal shortfalls
+        // must always resolve to the lowest index, on every run.
+        for _ in 0..64 {
+            assert_eq!(tool_shortfall([0, 0, 0], roster), Some(0));
+            assert_eq!(tool_shortfall([par, 2, 2], roster), Some(1));
+        }
+        // ★ AND IT TERMINATES: forging the scarcest each time must reach a
+        // complete kit and stop. Under any starting state.
+        for start in [[0u32, 0, 0], [par, 0, 0], [3, 1, 7], [par, par, par - 1]] {
+            let mut held = start;
+            let mut forged = 0u32;
+            while let Some(i) = tool_shortfall(held, roster) {
+                held[i] += 1;
+                forged += 1;
+                assert!(forged <= 3 * par + 1, "the forge must terminate, not grind");
+            }
             assert!(
-                craft_verdict(true, 5, false, 99, held_stockpiled, roster).fired,
-                "the SHIPPED reading never stops — this is the churn engine"
+                held.iter().all(|h| *h >= par),
+                "termination must mean the kit is COMPLETE, not merely that we gave up"
             );
         }
-        // Fixed: the same tools now count, and at par the forge stops.
-        assert!(
-            craft_verdict(true, 5, false, 99, held_anywhere, roster).fired,
-            "three tools for twenty-six people is still short: keep working"
-        );
-        assert!(
-            !craft_verdict(true, 5, false, 99, par, roster).fired,
-            "a town holding its par must stop, and it can only stop if the              count includes tools that never reached a stockpile"
-        );
-        // ★ AND THE TERMINATION PROPERTY, stated directly: counting from
-        // zero, the forge must reach a state where it refuses. With the
-        // blind reading it never does; with the true one it always does.
-        let mut held = 0u32;
-        let mut fired = 0u32;
-        while craft_verdict(true, 5, false, 99, held, roster).fired && fired < 10_000 {
-            held += 1;
-            fired += 1;
+    }
+
+    /// ★ ROW 52 FIX (caught in the row's FIRST game-hour on world 111, then
+    /// proven in a matched A/B): the forge's par must be able to SEE the
+    /// forge's own output. v1 read a stockpile-scoped count while the
+    /// completion drops the tool at the workshop, so `tools_held` stayed 0
+    /// after tools were made. LIVE EVIDENCE: world 111 (blind par) crafted
+    /// 64 tools and still read tools_held=0; world 112 (fixed), same arm and
+    /// seed, read tools_held=21. The blind version would have eaten every
+    /// log in the town - and its 64 stray items inverted hauling from
+    /// 2,833 to 14,039 arrivals, swamping the whole labour economy.
+    ///
+    /// Pinned as the TERMINATION property, because that is what actually
+    /// failed.
+    #[test]
+    fn the_forge_can_see_its_own_output() {
+        let roster = 26u32;
+        let par = TOOL_PAR_PER_COLONIST * roster;
+        // v1's blind reading: held never rises, so the gate never refuses.
+        for _ in 0..200 {
+            assert!(
+                craft_verdict(true, 5, false, 99, [0, 0, 0], roster, 0, 9).fired,
+                "the SHIPPED reading never stops - this is the churn engine, asserted"
+            );
+        }
+        // The fixed reading counts what the town HOLDS, and terminates.
+        let mut held = [0u32; 3];
+        let mut forged = 0u32;
+        while craft_verdict(true, 5, false, 99, held, roster, 0, 9).fired && forged < 10_000 {
+            let i = tool_shortfall(held, roster).expect("fired implies a shortfall");
+            held[i] += 1;
+            forged += 1;
         }
         assert_eq!(
-            fired, par,
-            "the forge must make exactly par tools and then stop; it made {fired}"
+            forged,
+            3 * par,
+            "the forge must make exactly the town's kit and then stop; it made {forged}"
         );
         assert_eq!(
-            craft_verdict(true, 5, false, 99, held, roster).deciding,
+            craft_verdict(true, 5, false, 99, held, roster, 0, 9).deciding,
             "tools_at_par"
         );
     }
