@@ -3356,9 +3356,25 @@ pub fn stockpile_has_material<'a>(
 /// reporting confidently while disagreeing with the thing that kills you.
 ///
 /// Definition, preserved verbatim from the terminal check: sum
-/// `FOOD_DEFS`-matching pickup items **that lie inside a stockpile region** —
-/// the same population `EatFrom` actually draws from, deliberately NOT "every
-/// item in a pile". Callers pass the join; the RULE lives here.
+/// `FOOD_DEFS`-matching pickup items **that lie inside a stockpile region**.
+/// Callers pass the join; the RULE lives here.
+///
+/// ★ THE DOC HERE WAS FALSE, AND IT COST NINE DAYS (corrected 2026-08-30).
+/// This paragraph used to end "— the same population `EatFrom` actually draws
+/// from, deliberately NOT 'every item in a pile'". It does not, and the project
+/// had already written that down at `haul_cell_occupancy` without coming back
+/// to fix the sentence. `EatFrom` tries the colonist's OWN PACK first
+/// (instantaneous, no travel) and otherwise scans loose `PickupItem`s
+/// world-wide — reachability-gated, never stockpile-gated.
+///
+/// This is the PANTRY number: what the colony has BANKED, which is the right
+/// answer for the dashboard, for wealth, and for the trade par (all of which
+/// ask about stores). It is the WRONG answer for any question about whether
+/// the colony can eat — the famine sentinel was moved off it on 2026-08-21,
+/// and `colony_drive_for` was moved off it on 2026-08-30 after the false
+/// sentence above sent a colony of 46 into Sustain with `food_per_cap=0.0`
+/// while its people carried their dinner. Use [`colony_food_total`] for
+/// "can we eat", this for "what have we stored".
 pub fn colony_food_stock<'a>(
     items: impl IntoIterator<Item = (&'a PickupItem, &'a comp::Pos)>,
     board: &JobBoard,
@@ -3415,6 +3431,65 @@ pub fn colony_food_total<'a>(
             .sum::<u32>();
     }
     total
+}
+
+/// ★ THE COLONY DRIVE'S FOOD TERM — the one producer, and a SELECTION that a
+/// pin can hold down (2026-08-30).
+///
+/// THE DEFECT THIS CLOSES. `colony_drive_for` — the colony's top-level brain,
+/// whose four drives tilt every claim score through `drive_work_factor` — was
+/// consuming [`colony_food_stock`], the PANTRY number. The 2026-08-21 fix that
+/// moved the famine sentinel onto [`colony_food_total`] ("an invariant must
+/// consume the quantity it is actually about") never reached the drive, so the
+/// two disagreed about what "out of food" means for nine days. Measured on a
+/// 2.5-hour session at roster 46: the drive flipped Grow → Sustain → Grow every
+/// ~11 s, logging `food_per_cap=0.0` going in and `3.5` coming out, while 46
+/// colonists carried and ate the food the pantry could not see.
+///
+/// WHY *TOTAL* IS THE RIGHT DOMAIN, and this is checkable rather than a taste
+/// call — it is the domain `EatFrom` ACTUALLY DRAWS FROM. That path tries the
+/// colonist's own pack first (`pack_def`, instantaneous, no travel) and then
+/// scans loose `PickupItem`s **world-wide** (`pick_food`, nearest-first,
+/// reachability-gated but NOT stockpile-gated). `colony_food_stock`'s own doc
+/// still claims it counts "the same population `EatFrom` draws from"; that
+/// claim was already found false and written down at `haul_cell_occupancy`.
+/// Pantry ∪ bags ∪ ground IS the eat domain. Anything narrower asks the drive a
+/// question no eating colonist is answering.
+///
+/// WHY CARRIED FOOD COUNTS **FULLY**, not partially. The tempting discount is
+/// "a bag is not a colony reserve". But Sustain is a LABOUR verdict, not a
+/// storage one: it asks "should the colony spend labour producing more food?"
+/// The bar is 2 units a head — a subsistence bar, not a reserve bar — and at a
+/// subsistence bar the food already in a colonist's hand is the most available
+/// food that exists: zero travel, zero labour, and the eat path prefers it.
+/// Discounting it says "you are holding a meal, therefore go farm."
+///
+/// The one honest argument the other way is DISTRIBUTION: one hoarder with 90
+/// meals and 45 empty-handed colonists reads 2.0/cap while 45 people go hungry.
+/// That is real — and it is not Sustain's to fix, because producing more food
+/// does not redistribute it. It is already handled at the right granularity by
+/// the per-colonist `needs.hunger` arbiter, which mints an `EatFrom` for the
+/// empty-handed regardless of the colony aggregate. Loading it onto the drive
+/// too would double-count the concern while breaking the production signal.
+///
+/// BOTH numbers are taken, and the pantry one is not decoration: it is the
+/// live discriminator the food-wipe investigation asked for ("the food is fine
+/// but IN FLIGHT" vs "the food was destroyed" look identical from one number),
+/// and it is what makes this selection WITNESSED — the transition log prints
+/// `food_held = total − pantry`, so a run shows this fix carrying weight, and a
+/// silent revert to the pantry number shows up as `food_held` going dead.
+pub fn colony_drive_food_per_cap(food_in_pantry: u32, food_total: u32, pop: u32) -> f32 {
+    // The pantry is a SUBSET of the total by construction (stockpiled food is
+    // loose food that happens to lie in a zone). Debug-only: a release build
+    // must never die of a bookkeeping disagreement, and the selection below is
+    // correct either way.
+    debug_assert!(
+        food_total >= food_in_pantry,
+        "food_total ({food_total}) must contain the pantry ({food_in_pantry}) — if this trips, \
+         the two producers have drifted apart and the drive's domain claim is void"
+    );
+    let _ = food_in_pantry;
+    food_total as f32 / pop.max(1) as f32
 }
 
 pub(crate) fn colony_terminal_step(streak: &mut u32, food_stock: u32, threshold: u32) -> bool {
@@ -18418,8 +18493,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // never a second WorkPriorities writer.
         if tick.0 % (ARBITRATION_INTERVAL as u64 * 10) == 29 {
             let pop = (&colonists, &positions).join().count().max(1) as u32;
-            let food = colony_food_stock((&pickup_items, &positions).join(), &board);
-            let food_per_cap = food as f32 / pop as f32;
+            // ★ THE DRIVE READS THE FOOD THE COLONY CAN EAT (2026-08-30).
+            //
+            // This consumed `colony_food_stock` — the PANTRY — for nine days
+            // after the famine sentinel had already been moved off it for
+            // exactly this reason. Both numbers are taken: the total DECIDES
+            // (it is the domain `EatFrom` draws from), the pantry WITNESSES.
+            // The selection itself lives in `colony_drive_food_per_cap` so a
+            // pin can hold it down; see that function for the full argument.
+            let food_pantry = colony_food_stock((&pickup_items, &positions).join(), &board);
+            let food_total = colony_food_total(
+                (&pickup_items).join(),
+                (&colonists, &inventories).join().map(|(_, inv)| inv),
+            );
+            let food_per_cap = colony_drive_food_per_cap(food_pantry, food_total, pop);
+            // THE WITNESS FOR THE FRAME FIX, and it can show itself failing:
+            // this is the ENTIRE difference between the number that shipped and
+            // the number that decides now. A run where `food_held` is always 0
+            // says the change is inert; a silent revert to the pantry number
+            // kills the field outright.
+            let food_held = food_total.saturating_sub(food_pantry);
             let beds = board.beds.len() as u32;
             // Threat: perception-independent — non-colonist AGENTS within
             // 48 of any colonist (the #93 census's pass-3 shape; v1 counts
@@ -18475,11 +18568,36 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // F16: the ladder is a pure function so its ORDER can be pinned —
             // the order is the entire content of the decision, and getting it
             // wrong made a starving colony unable to defend itself.
-            let (want, deciding, value) = colony_drive_for(food_per_cap, threats, beds, pop);
             let (cur, since) = board.colony_drive;
+            let (want, deciding, value) =
+                colony_drive_for(food_per_cap, threats, beds, pop, cur);
+            let dwell_ok =
+                tick.0.saturating_sub(since) >= ARBITRATION_INTERVAL as u64 * 20;
+            // ★ THE DWELL'S REFUSAL ARM HAD NO WITNESS. A suppressed
+            // transition was silent, so a log could not distinguish "the input
+            // is stable" from "the input is crossing constantly and the timer
+            // is eating it" — which is precisely the question the flapping
+            // report needed answered. Decimated 4× off the evaluation cadence
+            // (600 ticks; 600 % 150 == 0, so this is a strict subset of the
+            // firings above and cannot invent a sample) to bound log volume on
+            // a long run.
             if want != cur
-                && tick.0.saturating_sub(since) >= ARBITRATION_INTERVAL as u64 * 20
+                && !dwell_ok
+                && tick.0 % (ARBITRATION_INTERVAL as u64 * 40) == 29
             {
+                info!(
+                    held = ?cur,
+                    wanted = ?want,
+                    deciding,
+                    food_per_cap,
+                    bar = colony_sustain_bar(cur),
+                    food_pantry,
+                    food_held,
+                    ticks_since = tick.0.saturating_sub(since),
+                    "bastion: #107 colony drive DWELL SUPPRESSED a transition"
+                );
+            }
+            if want != cur && dwell_ok {
                 board.colony_drive = (want, tick.0);
                 info!(
                     from = ?cur,
@@ -18487,6 +18605,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     deciding,
                     value,
                     food_per_cap,
+                    // The bar this decision was taken against — the Sustain
+                    // band means the threshold is no longer a constant, so a
+                    // log line that printed only the value would be unreadable.
+                    bar = colony_sustain_bar(cur),
+                    food_pantry,
+                    food_held,
                     threats,
                     beds,
                     pop,
@@ -38637,21 +38761,95 @@ pub fn adopt_target(
 /// REVISIT WHEN F10 LANDS: once starvation can actually kill, "being eaten now
 /// beats being hungry now" stops being obvious, and this order deserves a
 /// genuine ruling rather than the correctness argument above. Banked for Ben.
+/// ★ THE INPUT IS NOW THE **TOTAL** FOOD, AND SUSTAIN HAS A BAND (2026-08-30).
+/// The caller feeds `food_per_cap` from [`colony_drive_food_per_cap`] — food
+/// wherever the colony can eat it, which is the domain `EatFrom` actually draws
+/// from — instead of the pantry-only number that let a colony of 46 read
+/// `food_per_cap=0.0` while its people carried and ate their dinner. The band
+/// on the Sustain arm is [`COLONY_SUSTAIN_ENTER_PER_CAP`] /
+/// [`COLONY_SUSTAIN_EXIT_PER_CAP`]; the argument for it lives on those
+/// constants and inside the body.
 pub fn colony_drive_for(
     food_per_cap: f32,
     threats: u32,
     beds: u32,
     pop: u32,
+    current: common::bastion::ColonyDrive,
 ) -> (common::bastion::ColonyDrive, &'static str, f32) {
     use common::bastion::ColonyDrive as D;
+    // ★ HYSTERESIS ON THE INPUT, not a longer dwell on the output.
+    //
+    // The anti-thrash that shipped is a DWELL TIMER at the call site (commit no
+    // more often than every 300 ticks). A dwell timer does not suppress input
+    // chatter — it SAMPLES it: whenever the timer expires, whichever side of
+    // the bar the input happens to be on wins. Chatter in, square wave out, at
+    // exactly the dwell period. That is the logged shape (~11 s at the ~27 tps
+    // a loaded server runs), and widening the dwell would only lengthen the
+    // square wave, never remove it.
+    //
+    // FALLBACK IS IDENTITY: for every `current` that is not already Sustain the
+    // bar is `COLONY_SUSTAIN_ENTER_PER_CAP` — bit-for-bit the ladder that
+    // shipped. The band exists only in the direction of LEAVING, which is the
+    // only direction that can oscillate.
+    //
+    // The bar comes from `colony_sustain_bar` rather than an `if` here because
+    // the transition log has to PRINT which bar a decision was taken against —
+    // and a witness that recomputed the gate's own threshold beside the gate
+    // would be a second producer of the gate's own question, the exact shape
+    // that let ITEM 27 publish a wrong diagnosis.
+    let food_bar = colony_sustain_bar(current);
     if threats > 0 {
         (D::Defend, "threats", threats as f32)
-    } else if food_per_cap < 2.0 {
+    } else if food_per_cap < food_bar {
         (D::Sustain, "food_per_cap", food_per_cap)
     } else if beds < pop {
         (D::Grow, "beds_short", (pop - beds) as f32)
     } else {
         (D::Expand, "satisfied", 0.0)
+    }
+}
+
+/// ★ THE SUSTAIN BAND (2026-08-30). Enter Sustain below two meals a head;
+/// leave it only above three.
+///
+/// WHY A BAND AND NOT A LONGER DWELL. The drive is a BANG-BANG CONTROLLER whose
+/// own output moves its own input: Sustain tilts labour toward Farm/Cook/Haul
+/// (`drive_work_factor`), food rises, Sustain clears, labour tilts away toward
+/// Build/Chop/Mine, food falls, Sustain returns. A bang-bang loop with no
+/// deadband oscillates around its setpoint BY CONSTRUCTION — this is a property
+/// of the loop, not measurement noise, so it survives the frame fix and cannot
+/// be argued away by cleaning up the input. The existing anti-thrash is a dwell
+/// timer on the OUTPUT, which sets the oscillation's PERIOD (~11 s) without
+/// touching its existence.
+///
+/// The width is DERIVED, not tuned: `food_per_cap` is denominated in meals per
+/// colonist and `EatFrom` consumes exactly one unit, so one meal per head is
+/// this signal's own quantum — the smallest gap that means the colony genuinely
+/// gained something rather than rounded off. Cross-checked against the only
+/// logged exit value from the 46-roster session (`food_per_cap=3.5`): that
+/// colony cleared a 3.0 bar on the same sample it cleared 2.0, so the band
+/// would have released it, not trapped it.
+///
+/// THE COST, STATED. Sustain outranks Grow, so a stickier Sustain is a slower
+/// Grow — a colony held under 3.0/cap builds no beds. That is bounded by two
+/// things: Sustain aligns Haul as well as Farm and Cook (so logistics never
+/// stalls), and the tilt is a 1.5× relief on claim scores, never a veto. If a
+/// live run shows a colony pinned under the exit bar, the number to revisit is
+/// this one — not the dwell.
+pub const COLONY_SUSTAIN_ENTER_PER_CAP: f32 = 2.0;
+/// See [`COLONY_SUSTAIN_ENTER_PER_CAP`]. Sustain's release bar — one meal a
+/// head above the entry bar.
+pub const COLONY_SUSTAIN_EXIT_PER_CAP: f32 = 3.0;
+
+/// THE ONE PRODUCER of the Sustain arm's threshold, given where the drive
+/// currently stands. Both [`colony_drive_for`] (which decides) and the
+/// transition log (which reports what was decided against) read it, so the
+/// witness cannot drift off the gate it is witnessing.
+pub fn colony_sustain_bar(current: common::bastion::ColonyDrive) -> f32 {
+    if current == common::bastion::ColonyDrive::Sustain {
+        COLONY_SUSTAIN_EXIT_PER_CAP
+    } else {
+        COLONY_SUSTAIN_ENTER_PER_CAP
     }
 }
 
@@ -40610,8 +40808,21 @@ mod tests {
     fn threats_outrank_hunger_so_a_starving_colony_can_still_defend() {
         use common::bastion::ColonyDrive as D;
 
+        // ★ HONEST NOTE (2026-08-30): every assertion below pins the ORDER of
+        // the ladder over hand-supplied scalars. NONE of them says anything
+        // about WHICH QUANTITY the caller puts into `food_per_cap` — so when
+        // the drive was moved off the pantry number onto the total, all five
+        // stayed green without being touched. They were never testing the
+        // input, and a reader should not mistake their greenness for coverage
+        // of it. `the_drive_consumes_the_food_the_colony_can_eat_not_the_pantry`
+        // is the pin that guards that, and it is a different pin on purpose.
+        //
+        // `D::Grow` is passed as the incoming drive throughout: these cases are
+        // all about a colony that is NOT already sustaining, which is the
+        // regime the F16 ladder order was written for.
+
         // The exact case that killed half a colony: no food AND under attack.
-        let (drive, deciding, _) = colony_drive_for(0.0, 5, 8, 8);
+        let (drive, deciding, _) = colony_drive_for(0.0, 5, 8, 8, D::Grow);
         assert_eq!(
             drive,
             D::Defend,
@@ -40621,13 +40832,249 @@ mod tests {
         assert_eq!(deciding, "threats");
 
         // Not inverted: hunger alone still drives Sustain.
-        assert_eq!(colony_drive_for(0.0, 0, 8, 8).0, D::Sustain);
+        assert_eq!(colony_drive_for(0.0, 0, 8, 8, D::Grow).0, D::Sustain);
         // And the rest of the ladder is untouched.
-        assert_eq!(colony_drive_for(9.0, 0, 2, 8).0, D::Grow);
-        assert_eq!(colony_drive_for(9.0, 0, 8, 8).0, D::Expand);
+        assert_eq!(colony_drive_for(9.0, 0, 2, 8, D::Grow).0, D::Grow);
+        assert_eq!(colony_drive_for(9.0, 0, 8, 8, D::Grow).0, D::Expand);
         // A single threat is enough, matching the observed sensor behaviour
         // (one passing animal flipped the drive when food was healthy).
-        assert_eq!(colony_drive_for(9.0, 1, 8, 8).0, D::Defend);
+        assert_eq!(colony_drive_for(9.0, 1, 8, 8, D::Grow).0, D::Defend);
+    }
+
+    /// ★ THE FRAME PIN: the drive consumes the food the colony CAN EAT, not the
+    /// food it has BANKED (2026-08-30).
+    ///
+    /// This is the production line the whole change turns on, and it is the one
+    /// the five order pins above cannot see. `colony_drive_food_per_cap` is
+    /// handed BOTH numbers precisely so that the SELECTION is a testable act
+    /// rather than an invisible choice of which helper the call site happens to
+    /// name — a call-site swap inside a 10,000-line `run()` is unreachable from
+    /// a unit test, so the selection was lifted out to where a pin can hold it.
+    ///
+    /// TO BREAK IT: change the last line of `colony_drive_food_per_cap` to
+    /// `food_in_pantry as f32 / pop.max(1) as f32`. Both assertions go red.
+    #[test]
+    fn the_drive_consumes_the_food_the_colony_can_eat_not_the_pantry() {
+        // The measured session: roster 46, an empty pantry, and 161 units of
+        // food in colonists' hands and in flight. The pantry number said
+        // famine; the colony was eating.
+        assert_eq!(
+            colony_drive_food_per_cap(0, 161, 46),
+            161.0 / 46.0,
+            "an empty PANTRY with food in every hand is not a famine — the drive must read the \
+             total, which is the domain EatFrom actually draws from (own pack first, then loose \
+             items world-wide, never stockpile-scoped)"
+        );
+        // And the failure it closes, stated as its own assertion so the pin
+        // names the defect and not merely the cure.
+        assert!(
+            colony_drive_food_per_cap(0, 161, 46) >= COLONY_SUSTAIN_ENTER_PER_CAP,
+            "the exact logged sample (food_per_cap=0.0 at roster 46) must NOT read as short of \
+             food once the right quantity is consumed"
+        );
+        // Degenerate population cannot divide by zero, and the guard is the
+        // identity for every real population.
+        assert_eq!(colony_drive_food_per_cap(0, 8, 0), 8.0);
+        assert_eq!(colony_drive_food_per_cap(4, 4, 2), 2.0);
+    }
+
+    /// ★ FALLBACK IS IDENTITY: for a colony that is not already sustaining, the
+    /// banded ladder is bit-for-bit the ladder that shipped.
+    ///
+    /// Swept rather than sampled — the whole point of an identity claim is that
+    /// it holds everywhere, and a claim checked at three points is a hope. The
+    /// reference implementation below is the pre-change body, transcribed.
+    ///
+    /// TO BREAK IT: change `COLONY_SUSTAIN_ENTER_PER_CAP` to anything but 2.0,
+    /// or make `colony_sustain_bar` return the exit bar unconditionally.
+    #[test]
+    fn outside_sustain_the_banded_ladder_is_the_old_ladder_exactly() {
+        use common::bastion::ColonyDrive as D;
+
+        // The ladder as it stood before the band, verbatim.
+        fn shipped(food_per_cap: f32, threats: u32, beds: u32, pop: u32) -> D {
+            if threats > 0 {
+                D::Defend
+            } else if food_per_cap < 2.0 {
+                D::Sustain
+            } else if beds < pop {
+                D::Grow
+            } else {
+                D::Expand
+            }
+        }
+
+        let mut checked = 0u32;
+        for current in [D::Defend, D::Grow, D::Expand] {
+            // Deliberately dense across the band and both bars, including the
+            // exact boundaries where an off-by-one in the comparison lives.
+            for step in 0..=60u32 {
+                let fpc = step as f32 * 0.1;
+                for threats in [0u32, 1, 5] {
+                    for (beds, pop) in [(0u32, 8u32), (2, 8), (8, 8), (8, 4)] {
+                        assert_eq!(
+                            colony_drive_for(fpc, threats, beds, pop, current).0,
+                            shipped(fpc, threats, beds, pop),
+                            "the band must not exist outside Sustain: current={current:?} \
+                             fpc={fpc} threats={threats} beds={beds} pop={pop}"
+                        );
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(checked, 3 * 61 * 3 * 4, "the sweep must actually have run");
+    }
+
+    /// ★ THE BAND HOLDS, AND IT IS NOT A TRAP — both arms reachable.
+    ///
+    /// A GATE MUST BE REACHABLE: a band whose exit can never be met is a colony
+    /// permanently pinned in Sustain, which outranks Grow and would cap
+    /// population forever. So this pins entry, the hold, AND the release.
+    ///
+    /// TO BREAK IT: set `COLONY_SUSTAIN_EXIT_PER_CAP` equal to
+    /// `COLONY_SUSTAIN_ENTER_PER_CAP` — the hold assertion goes red. Set it to
+    /// `f32::INFINITY` — the release assertion goes red.
+    #[test]
+    fn sustain_is_entered_at_two_meals_a_head_and_released_only_at_three() {
+        use common::bastion::ColonyDrive as D;
+
+        assert!(
+            COLONY_SUSTAIN_EXIT_PER_CAP > COLONY_SUSTAIN_ENTER_PER_CAP,
+            "a band with a non-positive width is not a band"
+        );
+
+        // ENTRY ARM — reachable from every drive the colony can be in.
+        for from in [D::Defend, D::Grow, D::Expand] {
+            assert_eq!(
+                colony_drive_for(1.99, 0, 8, 8, from).0,
+                D::Sustain,
+                "entry must not depend on where the colony came from ({from:?})"
+            );
+            assert_ne!(
+                colony_drive_for(2.0, 0, 8, 8, from).0,
+                D::Sustain,
+                "outside Sustain the bar is still exactly 2.0 ({from:?})"
+            );
+        }
+
+        // HOLD ARM — the band itself. This is the only behaviour that is new,
+        // and under the old ladder every one of these returned Expand.
+        for step in 20..30u32 {
+            let fpc = step as f32 * 0.1;
+            assert_eq!(
+                colony_drive_for(fpc, 0, 8, 8, D::Sustain).0,
+                D::Sustain,
+                "a sustaining colony at {fpc}/cap has not yet gained a whole meal a head and \
+                 must not be released — this is the deadband that stops the limit cycle"
+            );
+        }
+
+        // RELEASE ARM — the band is escapable, on the very value the live
+        // session logged on its way out (3.5).
+        assert_eq!(
+            colony_drive_for(3.0, 0, 8, 8, D::Sustain).0,
+            D::Expand,
+            "at three meals a head Sustain must release, or the band is a trap"
+        );
+        assert_eq!(colony_drive_for(3.5, 0, 8, 8, D::Sustain).0, D::Expand);
+        assert_eq!(
+            colony_drive_for(3.5, 0, 2, 8, D::Sustain).0,
+            D::Grow,
+            "releasing Sustain must hand off to the rest of the ladder, not to Expand blindly"
+        );
+
+        // PRECEDENCE IS UNCHANGED INSIDE THE BAND: a sustaining colony that is
+        // attacked still defends. The band must not resurrect the F16 defect.
+        assert_eq!(
+            colony_drive_for(2.5, 3, 8, 8, D::Sustain).0,
+            D::Defend,
+            "the band sits on the food arm only — threats still outrank it"
+        );
+    }
+
+    /// ★ THE OUTCOME PIN: the drive stops flapping. Counts TRANSITIONS, not
+    /// thresholds.
+    ///
+    /// MEASURE THE OUTCOME, NOT THE RESPONSE — the complaint was never "the bar
+    /// is wrong", it was "the drive changed state every 11 seconds". So this
+    /// runs the closed loop the drive actually is (its output tilts labour,
+    /// which moves its input back across the setpoint) and counts state
+    /// changes. The old ladder turns that sequence into a square wave; the
+    /// banded one settles.
+    ///
+    /// TO BREAK IT: make `colony_sustain_bar` ignore `current` and always
+    /// return `COLONY_SUSTAIN_ENTER_PER_CAP`. `banded` jumps from 1 to 9.
+    #[test]
+    fn the_sustain_band_collapses_the_bang_bang_limit_cycle() {
+        use common::bastion::ColonyDrive as D;
+
+        // A colony hunting its own setpoint: Sustain lifts food over the bar,
+        // the drive releases, labour tilts away, food sags back under it. These
+        // are the samples the drive sees, one per commit window.
+        let samples = [1.8f32, 2.1, 1.9, 2.2, 1.95, 2.3, 1.85, 2.4, 2.05, 2.15];
+
+        let run = |banded: bool| {
+            let mut drive = D::Grow;
+            let mut transitions = 0u32;
+            for fpc in samples {
+                let seen_as = if banded { drive } else { D::Grow };
+                let want = colony_drive_for(fpc, 0, 8, 8, seen_as).0;
+                if want != drive {
+                    drive = want;
+                    transitions += 1;
+                }
+            }
+            transitions
+        };
+
+        // `banded=false` feeds a constant non-Sustain `current`, which by the
+        // identity pin above IS the shipped ladder — so this is a genuine
+        // before/after over the same input, not a strawman.
+        let before = run(false);
+        let after = run(true);
+
+        // Hand-traced: S,E,S,E,S,E,S,E then two samples that stay Expand.
+        assert_eq!(
+            before, 8,
+            "the shipped ladder must reproduce the reported flapping on this sequence — if it \
+             does not, this pin is not testing the defect and the number below means nothing"
+        );
+        assert_eq!(
+            after, 1,
+            "with the band the colony enters Sustain once and stays there until it has genuinely \
+             gained a meal a head — one transition, not eight"
+        );
+    }
+
+    /// The transition log prints the bar a decision was taken against, and it
+    /// must read it from the gate's own producer. A witness that recomputed the
+    /// threshold could drift off the gate silently.
+    ///
+    /// TO BREAK IT: invert the condition inside `colony_sustain_bar`.
+    #[test]
+    fn the_witness_reads_the_same_bar_the_gate_decided_against() {
+        use common::bastion::ColonyDrive as D;
+
+        assert_eq!(colony_sustain_bar(D::Sustain), COLONY_SUSTAIN_EXIT_PER_CAP);
+        for other in [D::Defend, D::Grow, D::Expand] {
+            assert_eq!(colony_sustain_bar(other), COLONY_SUSTAIN_ENTER_PER_CAP);
+        }
+        // The gate and the witness agree by construction: for every drive, the
+        // reported bar is exactly the value at which the Sustain arm flips.
+        for current in [D::Sustain, D::Defend, D::Grow, D::Expand] {
+            let bar = colony_sustain_bar(current);
+            assert_eq!(
+                colony_drive_for(bar - 0.01, 0, 8, 8, current).0,
+                D::Sustain,
+                "just under the reported bar must be Sustain ({current:?})"
+            );
+            assert_ne!(
+                colony_drive_for(bar, 0, 8, 8, current).0,
+                D::Sustain,
+                "at the reported bar must not be Sustain ({current:?})"
+            );
+        }
     }
 
     /// ★ A COUNT CANNOT ANSWER "WHICH ONE DIED" — found by an adversarial play
