@@ -41,12 +41,182 @@ pub(crate) fn execution_mode() -> common_state::ExecutionMode {
     }
 }
 
+/// ★ A PIN THAT REACHES ONE OF FOUR DOORS PINS NOTHING (adversarial review,
+/// ROW 51). `BASTION_PIN_TRAIT` was read at exactly ONE of the four sites that
+/// give a colonist a personality — the founding loop in
+/// [`RtSim::bastion_spawn_colony_seeded`]. The other three (the ADOPT-A-TOWN
+/// *settle* branch, the ROW 38 settler drain and the ROW 50 birth drain) each
+/// called `Personality::random` directly. That is fatal in the specific way an
+/// instrument defect is fatal: the settle branch is the path EVERY play world
+/// takes (`adopted_existing=0 settled=24` on world 108), so an experiment run
+/// with `BASTION_PIN_TRAIT=Conscientious` on a play world got a fully random
+/// colony AND a silent success — the loud-refusal panic below never fired,
+/// because the only code that could raise it was never reached. A pinned run
+/// and an unpinned one were indistinguishable in every log line.
+///
+/// So the pin lives HERE, once, and every colonist-minting site calls it.
+///
+/// SPLIT ON PURPOSE: [`bastion_pin_trait`] does the env read and the loud
+/// refusal; this function is pure, so a test can drive both arms without
+/// `set_var` (unsafe in edition 2024, and process-global besides).
+///
+/// FALLBACK IS IDENTITY, not a copy: with no pin this returns exactly
+/// `Personality::random(rng)` — the same one draw off the same stream the four
+/// call sites already made — so switching a site onto this helper cannot shift
+/// a single existing world's colonists.
+///
+/// ★ WHY `random()` AND NOT `random_good()`, stated correctly this time. The
+/// old comment claimed "vanilla gives town residents `random()` too", citing
+/// `rtsim/src/rule/architect.rs::role_personality`. That citation does not say
+/// what it was claimed to say: `role_personality` is profession-DEPENDENT, and
+/// it hands `random_good` to Guard, Merchant and Captain. Two of the six
+/// professions the settle branch mints are Guard and Merchant, so a third of a
+/// settled village is NOT what the architect would have placed. The real and
+/// sufficient reason to use `random()` everywhere is the measured one:
+/// `random_good` clamps conscientiousness to [LOW_THRESHOLD, MAX], which makes
+/// ~83% of the colony Conscientious and collapses the very trait spread the
+/// guard row and the evening palette select from. That is a deliberate
+/// divergence from vanilla for the colonist band, not parity with it.
+pub(crate) fn bastion_colonist_personality(
+    pin: Option<common::rtsim::PersonalityTrait>,
+    rng: &mut impl rand::RngExt,
+) -> common::rtsim::Personality {
+    match pin {
+        Some(t) => common::rtsim::Personality::pinned(t),
+        None => common::rtsim::Personality::random(rng),
+    }
+}
+
+/// The env half of [`bastion_colonist_personality`]: `BASTION_PIN_TRAIT`
+/// (banked item 4 / #110, 2026-08-19) pins every colonist to ONE named trait
+/// so an instrument aimed at a trait-carrying population has a subject.
+///
+/// ★ An UNRECOGNISED name REFUSES loudly rather than falling back to random. A
+/// silent fallback would produce an unpinned run that is indistinguishable
+/// from a pinned one in every log line — the exact shape of null that costs a
+/// whole fan to diagnose.
+pub(crate) fn bastion_pin_trait() -> Option<common::rtsim::PersonalityTrait> {
+    use common::rtsim::PersonalityTrait as T;
+    let name = std::env::var("BASTION_PIN_TRAIT").ok()?;
+    let t = match name.as_str() {
+        "Open" => T::Open,
+        "Adventurous" => T::Adventurous,
+        "Closed" => T::Closed,
+        "Conscientious" => T::Conscientious,
+        "Busybody" => T::Busybody,
+        "Unconscientious" => T::Unconscientious,
+        "Extroverted" => T::Extroverted,
+        "Introverted" => T::Introverted,
+        "Agreeable" => T::Agreeable,
+        "Sociable" => T::Sociable,
+        "Disagreeable" => T::Disagreeable,
+        "Neurotic" => T::Neurotic,
+        "Seeker" => T::Seeker,
+        "Worried" => T::Worried,
+        "SadLoner" => T::SadLoner,
+        "Stable" => T::Stable,
+        other => panic!(
+            "BASTION_PIN_TRAIT={other:?} is not a PersonalityTrait. Valid:                              Open Adventurous Closed Conscientious Busybody Unconscientious                              Extroverted Introverted Agreeable Sociable Disagreeable Neurotic                              Seeker Worried SadLoner Stable. (NB: \"reckless\" is NOT one of                              them -- the only Reckless in the tree is BuffKind::Reckless, a                              different system.)"
+        ),
+    };
+    info!(trait_ = %name, "bastion: colonist personality PINNED (BASTION_PIN_TRAIT)");
+    Some(t)
+}
+
+/// ★ THE WITNESS ROW 51 SHIPPED WITHOUT. The row's whole claim is "24 of 24
+/// colonists had `traits=[]`, and now they do not", and nothing in the tree
+/// counted trait-carrying colonists — so the regression it repaired was
+/// exactly as invisible after the fix as before it, in a field the inspector
+/// faithfully reported as empty. This is the predicate behind that count.
+///
+/// It must DISCRIMINATE or it is blind: a default `Personality` has every axis
+/// at MID, which is below every HIGH_THRESHOLD trait and above every
+/// LOW_THRESHOLD one, so it carries nothing — that is precisely the bug state
+/// ROW 51 found, and the pinned/random states must read differently from it.
+/// Pinned in the test below against both degenerate answers.
+pub(crate) fn bastion_carries_a_trait(personality: &common::rtsim::Personality) -> bool {
+    use strum::IntoEnumIterator as _;
+    common::rtsim::PersonalityTrait::iter().any(|t| personality.is(t))
+}
+
+/// How many rtsim ticks the demote witness's population census may be reused
+/// before it is recomputed.
+///
+/// ★ THE GATE WAS ON THE WRONG PREDICATE (2026-08-29, second pass). Commit
+/// fdbf72acea gated the all-npc census scan on `is_colonist`, on the
+/// assumption that the expensive branch was rare. It is not rare — it is
+/// UNIVERSAL in the population that reaches it. Every one of the ~38
+/// demotions per second measured on the owner's world was a colonist, so the
+/// gate was true every time and a linear scan of ~8,528 npc records (~7.5 MB)
+/// ran ~38 times a second — roughly 324,000 record touches per second — to
+/// decorate three fields of a log line. A GUARD MUST REFUSE BEFORE IT SPENDS,
+/// and this one was refusing nothing.
+///
+/// The right gate is on the CLOCK, not on the caller: the census answers a
+/// conservation question ("did the colony shrink?"), and a conservation
+/// question does not need re-answering eight times inside one tick. 64 ticks
+/// is ~2 s at the nominal 30 ticks/s, which is far finer than the interval at
+/// which a colonist can plausibly die unnoticed, and it turns the cost from
+/// O(npcs) per EVENT into O(npcs) per AUDIT — an ~490x reduction at the
+/// measured event rate. The line carries `census_age_ticks` so the number
+/// still names its own producer.
+pub(crate) const BASTION_CENSUS_AUDIT_TICKS: u64 = 64;
+
+/// Should the cached colonist census be recomputed at `now`?
+///
+/// Pure so the cost bound can be pinned without standing up an `RtSim` (see
+/// `bastion_demote_witness_pins`). `None` — never computed — always recomputes;
+/// that is the identity case, and it is why the first demotion after boot is
+/// still exact.
+pub(crate) fn bastion_census_needs_recompute(taken_at: Option<u64>, now: u64) -> bool {
+    match taken_at {
+        None => true,
+        Some(t) => now.saturating_sub(t) >= BASTION_CENSUS_AUDIT_TICKS,
+    }
+}
+
+/// A colonist demoted again within this many rtsim ticks of its own last
+/// demotion is RINGING, not travelling: nobody walks out of the loaded island,
+/// back in and out again inside four ticks.
+pub(crate) const BASTION_RING_TICKS: u64 = 4;
+
+/// Is this demotion a ring rather than a departure? O(1), and it is the field
+/// that would have named the oscillation on its FIRST line instead of after
+/// clustering two million of them.
+pub(crate) fn bastion_demote_is_ringing(previous_demote_tick: Option<u64>, now: u64) -> bool {
+    match previous_demote_tick {
+        None => false,
+        Some(t) => now.saturating_sub(t) <= BASTION_RING_TICKS,
+    }
+}
+
+/// The bounded state behind the demote witness in
+/// [`RtSim::hook_rtsim_entity_unload`].
+///
+/// EVERY FIELD IS O(1) TO UPDATE. `demotes` is point-queried by npc id and
+/// never iterated, so its order cannot decide anything; it holds at most one
+/// entry per npc that has ever been demoted (~200 KB at this world's 8,528
+/// npcs) and is deliberately not persisted — a restart's counts start at zero
+/// because a restart's oscillation is a new observation.
+#[derive(Default)]
+pub(crate) struct BastionDemoteWitness {
+    /// npc -> (how many times it has been demoted, the tick of the last one).
+    demotes: std::collections::HashMap<NpcId, (u64, u64)>,
+    /// The cached (loaded, simulated) colonist counts and the `Data.tick` they
+    /// were taken at.
+    census: (u32, u32),
+    census_tick: Option<u64>,
+}
+
 pub struct RtSim {
     file_path: PathBuf,
     world_seed: u32,
     last_saved: Option<Instant>,
     state: RtState,
     save_thread: Option<(Sender<Data>, JoinHandle<()>)>,
+    /// The demote witness's own bounded state -- see
+    /// [`BastionDemoteWitness`] and `hook_rtsim_entity_unload`.
+    bastion_demote_witness: BastionDemoteWitness,
     // `APEX-T4.6` chunk 3b: the staged multi-store epoch commit's own
     // state, separate from the pre-existing rtsim-file save machinery
     // above (which this row does not replace, only supplements).
@@ -314,6 +484,7 @@ impl RtSim {
             save_thread: None,
             save_universe_layout,
             save_epoch_ledger,
+            bastion_demote_witness: BastionDemoteWitness::default(),
         };
 
         rule::start_rules(&mut this.state);
@@ -407,6 +578,25 @@ impl RtSim {
         }
     }
 
+    /// ★ THIS HOOK RUNS LATE, AND ITS SIBLING RUNS EARLY — a window, not a
+    /// symmetry (2026-08-29). `hook_load_chunk` is called from INSIDE the
+    /// dispatcher (`sys::terrain::Sys`, at the moment the chunk is inserted),
+    /// while this one is called from `Server::tick` AFTER the dispatcher has
+    /// finished, over `TerrainChanges::removed_chunks`. So between
+    /// `sys::terrain::Sys` dropping a chunk and this line running, the
+    /// `TerrainGrid` no longer has it and `ChunkStates` still says it is
+    /// loaded — one whole dispatcher pass of disagreement, every time any
+    /// chunk unloads.
+    ///
+    /// That window used to be worth one spurious promotion per chunk unload:
+    /// `rtsim::tick::Sys` promoted npcs off `ChunkStates` alone, and the
+    /// entity-cleanup sweep later in the same `Server::tick` deleted them off
+    /// the `TerrainGrid`. The promote side is fixed (it now reads the
+    /// `TerrainGrid` too, and is ordered after `sys::terrain::Sys` — see
+    /// `tick::bastion_may_promote_npc`), so nothing acts on the stale entry
+    /// any more. The window itself is still here, and any NEW reader of
+    /// `ChunkStates` inside the dispatcher inherits it: `ChunkStates` is a
+    /// per-tick-lagging CACHE of the terrain, not a second copy of it.
     pub fn hook_unload_chunk(&mut self, key: Vec2<i32>, world: &World) {
         if let Some(chunk_state) = self.state.get_resource_mut::<ChunkStates>().0.get_mut(key) {
             *chunk_state = None;
@@ -518,6 +708,9 @@ impl RtSim {
         // discipline, and same reason, as the founding path's 0xBA57_C011.
         let mut personality_rng =
             ::rtsim::tick_rng(self.world_seed, seed_tick, 0xBA57_C017);
+        // Resolved ONCE, above the loop: the env read and its loud refusal are
+        // properties of the RUN, not of colonist #7.
+        let pin_trait = bastion_pin_trait();
 
         // The site the player chose (or the nearest, when they chose nothing)
         // — the same "nearest site to a position" rule the plot lookup uses,
@@ -688,15 +881,11 @@ impl RtSim {
                     npc = npc.with_faction(f);
                 }
                 // ★ ROW 51: the missing line (see the stream's own doc).
-                // `random()`, not `random_good()`: random_good clamps
-                // conscientiousness to [LOW_THRESHOLD, MAX], which would make
-                // ~83% of the colony Conscientious and collapse the very
-                // spread the guard row and the evening palette select from.
-                // Vanilla gives town residents `random()` too
-                // (rtsim/src/rule/architect.rs::role_personality), so this
-                // makes a settled resident indistinguishable from one the
-                // architect would have placed.
-                npc.personality = common::rtsim::Personality::random(&mut personality_rng);
+                // Through the ONE helper, so `BASTION_PIN_TRAIT` reaches the
+                // path every play world actually takes — this branch used to
+                // call `Personality::random` directly and the pin was inert
+                // here, silently, with its own loud refusal unreachable.
+                npc.personality = bastion_colonist_personality(pin_trait, &mut personality_rng);
                 residents.push(data.spawn_npc(npc));
             }
         }
@@ -710,8 +899,17 @@ impl RtSim {
         );
 
         let mut names = Vec::new();
+        // ★ ROW 51'S MISSING WITNESS. The row's finding was a COUNT — 24 of 24
+        // colonists carrying `traits=[]` — and nothing counted it, so the fix
+        // was as unverifiable as the defect. Counted on the loop the adoption
+        // already runs, over people already in hand: free, and it costs
+        // nothing at all on a world that never adopts.
+        let mut trait_carriers = 0usize;
         for id in residents {
             let Some(npc) = data.npcs.npcs.get_mut(id) else { continue };
+            if bastion_carries_a_trait(&npc.personality) {
+                trait_carriers += 1;
+            }
             let mut colonist = common::bastion::BastionColonist::generate(&mut rng);
             // Their OWN name, not a generated one. This is the whole point:
             // the player adopts people they can already see.
@@ -746,6 +944,8 @@ impl RtSim {
             colonists = names.len(),
             adopted_existing,
             settled,
+            trait_carriers,
+            pinned = pin_trait.is_some(),
             ?site_id,
             "bastion: ADOPT-A-TOWN — the village's residents are the colony now"
         );
@@ -772,6 +972,9 @@ impl RtSim {
         // on. A separate stream keeps the pre-fix sequence byte-identical and
         // adds traits orthogonally.
         let mut personality_rng = ::rtsim::tick_rng(self.world_seed, seed_tick, 0xBA57_C011);
+        // Resolved ONCE, above the loop: the env read and its loud refusal are
+        // properties of the RUN, not of colonist #7.
+        let pin_trait = bastion_pin_trait();
         // Home = nearest site, so simulated-mode AI keeps them local.
         let home = data
             .sites
@@ -789,6 +992,9 @@ impl RtSim {
             Profession::Chef,
         ];
         let mut names = Vec::new();
+        // ★ ROW 51'S MISSING WITNESS, founding half — see
+        // `bastion_carries_a_trait`. One line on a loop that already runs.
+        let mut trait_carriers = 0usize;
         for i in 0..count {
             let colonist = common::bastion::BastionColonist::generate(&mut rng);
             names.push(colonist.name.clone());
@@ -817,51 +1023,23 @@ impl RtSim {
             // a personality trait. Measured before this fix: 0 trait-true
             // colonists across 348 driver logs, every fixture. Wild NPCs get
             // `.with_personality(random_good(..))` in rtsim::generate; this is
-            // the only site that can roll the COLONIST band. `random()`, not
-            // `random_good()`: random_good clamps conscientiousness to
-            // [LOW_THRESHOLD, MAX], making ~83% of colonists Conscientious,
-            // which collapses the trait spread the guard row selects from.
-            // ★ BASTION_PIN_TRAIT (banked item 4 / #110, 2026-08-19): pin every
-            // colonist to ONE named personality trait so an instrument aimed at
-            // a trait-carrying population has a subject. #110's gate-1 subject
-            // went extinct at the current tip; the roadmap rider calls for a
-            // trait-pinned re-aim, and nothing in the tree could pin a trait.
-            //
-            // ★ An UNRECOGNISED name REFUSES loudly rather than falling back to
-            // random. A silent fallback would produce an unpinned run that is
-            // indistinguishable from a pinned one in every log line — the exact
-            // shape of null that costs a whole fan to diagnose.
-            npc.personality = match std::env::var("BASTION_PIN_TRAIT") {
-                Ok(name) => {
-                    let t = match name.as_str() {
-                        "Open" => common::rtsim::PersonalityTrait::Open,
-                        "Adventurous" => common::rtsim::PersonalityTrait::Adventurous,
-                        "Closed" => common::rtsim::PersonalityTrait::Closed,
-                        "Conscientious" => common::rtsim::PersonalityTrait::Conscientious,
-                        "Busybody" => common::rtsim::PersonalityTrait::Busybody,
-                        "Unconscientious" => common::rtsim::PersonalityTrait::Unconscientious,
-                        "Extroverted" => common::rtsim::PersonalityTrait::Extroverted,
-                        "Introverted" => common::rtsim::PersonalityTrait::Introverted,
-                        "Agreeable" => common::rtsim::PersonalityTrait::Agreeable,
-                        "Sociable" => common::rtsim::PersonalityTrait::Sociable,
-                        "Disagreeable" => common::rtsim::PersonalityTrait::Disagreeable,
-                        "Neurotic" => common::rtsim::PersonalityTrait::Neurotic,
-                        "Seeker" => common::rtsim::PersonalityTrait::Seeker,
-                        "Worried" => common::rtsim::PersonalityTrait::Worried,
-                        "SadLoner" => common::rtsim::PersonalityTrait::SadLoner,
-                        "Stable" => common::rtsim::PersonalityTrait::Stable,
-                        other => panic!(
-                            "BASTION_PIN_TRAIT={other:?} is not a PersonalityTrait. Valid:                              Open Adventurous Closed Conscientious Busybody Unconscientious                              Extroverted Introverted Agreeable Sociable Disagreeable Neurotic                              Seeker Worried SadLoner Stable. (NB: \"reckless\" is NOT one of                              them -- the only Reckless in the tree is BuffKind::Reckless, a                              different system.)"
-                        ),
-                    };
-                    info!(trait_ = %name, "bastion: colonist personality PINNED (BASTION_PIN_TRAIT)");
-                    common::rtsim::Personality::pinned(t)
-                },
-                Err(_) => common::rtsim::Personality::random(&mut personality_rng),
-            };
+            // the founding site that rolls the COLONIST band. The pin, the
+            // loud refusal and the random-vs-random_good reasoning now live
+            // once, in `bastion_colonist_personality` — this used to be the
+            // ONLY one of four minting sites that honoured BASTION_PIN_TRAIT.
+            npc.personality = bastion_colonist_personality(pin_trait, &mut personality_rng);
+            if bastion_carries_a_trait(&npc.personality) {
+                trait_carriers += 1;
+            }
             data.npcs.create_npc(npc);
         }
-        info!(?names, count, "bastion: spawned starting colony");
+        info!(
+            ?names,
+            count,
+            trait_carriers,
+            pinned = pin_trait.is_some(),
+            "bastion: spawned starting colony"
+        );
         names
     }
 
@@ -1053,8 +1231,6 @@ impl RtSim {
     }
 
     pub fn hook_rtsim_entity_unload(&mut self, entity: RtSimEntity) {
-        let data = self.state.get_data_mut();
-
         // ★ THE COLONY DOES NOT SHRINK -- THE INSTRUMENT DOES (2026-08-21).
         // A verification run read total=8 at ticks 300 and 600, then total=7
         // from tick 900 onward, with downed=0, no COLONIST DIED and no despawn
@@ -1066,62 +1242,102 @@ impl RtSim {
         // at once -- the EXPERIENCE census `total`, `fed`, `rested`, `engaged`,
         // and (the part with teeth) food_per_cap, beds_short and the colony
         // drive, which therefore decide against a denominator that shrinks
-        // whenever somebody goes for a walk.
+        // whenever somebody goes for a walk. So the boundary emit carries the
+        // WHOLE population, counted from rtsim rather than the ECS: a reader
+        // cannot mistake a demotion for a death, because the totals sit beside
+        // it and they conserve.
         //
-        // So the boundary emit now carries the WHOLE population, counted from
-        // rtsim rather than the ECS: a reader can no longer mistake a demotion
-        // for a death, because the totals sit beside it and they conserve.
-        // * COST FIX (adversarial review, 2026-08-29): this scan used to run
-        // unconditionally, above both `if let`s below, over every npc in the
-        // world, on EVERY unload -- including the overwhelming majority that
-        // are not colonists at all -- purely to decorate three fields of a
-        // log line those calls never reach.
+        // ★ COST FIX, SECOND PASS (2026-08-29). The first pass gated that
+        // whole-world scan on `is_colonist` and called it done. It was not:
+        // every one of the ~38 demotions per second on the owner's world IS a
+        // colonist, so the gate was true every time and the scan ran ~38 times
+        // a second over ~8,528 records -- ~324,000 npc-record touches per
+        // second to decorate three fields. The predicate was right about the
+        // shape of the waste and wrong about which axis was rare. See
+        // `BASTION_CENSUS_AUDIT_TICKS`: the census is now recomputed on a
+        // CLOCK, at most once per audit window, and the line carries
+        // `census_age_ticks` so a stale number still names its producer.
         //
-        // Measured on the owner's world: 63,527 demotions across 13,800 ticks
-        // = 4.60 unloads per tick against ~8,528 npcs, i.e. ~39,000
-        // npc-record touches per tick, roughly 4.6 full sweeps of a 7.5 MB
-        // array, for a line that usually does not print.
-        //
-        // The counts still mean exactly what the doc above says, and are
-        // still taken BEFORE the demotion lands. They are simply computed
-        // only when there is a colonist to log them for. A witness may cost
-        // something; it may not cost something on the path where it is silent.
-        let is_colonist = data
-            .npcs
-            .get(entity)
-            .is_some_and(|n| n.bastion_colonist.is_some());
-        let (mut loaded_c, mut simulated_c) = (0u32, 0u32);
-        if is_colonist {
-            for (_, n) in data.npcs.npcs.iter() {
-                if n.bastion_colonist.is_some() {
-                    match n.mode {
-                        SimulationMode::Loaded => loaded_c += 1,
-                        SimulationMode::Simulated => simulated_c += 1,
+        // ★ AND THE WITNESS GOT SHARPER, NOT WEAKER. The census answered "did
+        // anybody die?"; it could not say "is this colonist ringing?" -- that
+        // took clustering two million lines after the fact. `demotes` and
+        // `since_last_demote_ticks` are O(1) and say it on the FIRST line: on
+        // the world that spun, every line would have read `ringing=true` with
+        // `since_last_demote_ticks=2`.
+        let now = self.state.data().tick;
+        let (mut loaded_c, mut simulated_c) = self.bastion_demote_witness.census;
+        let census_taken_at = self.bastion_demote_witness.census_tick;
+        let want_recompute = bastion_census_needs_recompute(census_taken_at, now);
+        let previous = self.bastion_demote_witness.demotes.get(&entity).copied();
+        let demotes = previous.map_or(1, |(n, _)| n + 1);
+        let ringing = bastion_demote_is_ringing(previous.map(|(_, t)| t), now);
+
+        let mut recomputed = false;
+        let mut demoted_a_colonist = false;
+        {
+            let data = self.state.get_data_mut();
+
+            let is_colonist = data
+                .npcs
+                .get(entity)
+                .is_some_and(|n| n.bastion_colonist.is_some());
+            if is_colonist && want_recompute {
+                let (mut l, mut s) = (0u32, 0u32);
+                for (_, n) in data.npcs.npcs.iter() {
+                    if n.bastion_colonist.is_some() {
+                        match n.mode {
+                            SimulationMode::Loaded => l += 1,
+                            SimulationMode::Simulated => s += 1,
+                        }
                     }
                 }
+                loaded_c = l;
+                simulated_c = s;
+                recomputed = true;
+            }
+            let census_age_ticks = if recomputed {
+                0
+            } else {
+                census_taken_at.map_or(0, |t| now.saturating_sub(t))
+            };
+
+            if let Some(npc) = data.npcs.get_mut(entity) {
+                if matches!(npc.mode, SimulationMode::Simulated) {
+                    error!("Unloaded already unloaded entity");
+                }
+                // bastion (B3): the loaded<->simulated boundary, log-verified.
+                if let Some(colonist) = &npc.bastion_colonist {
+                    tracing::info!(
+                        name = colonist.name.as_str(),
+                        // Counted BEFORE this demotion lands, so the line reads
+                        // as the transition it is. `colony_total` is the number
+                        // that must NOT move for a demotion -- if it drops,
+                        // somebody really did die and this is not the reason.
+                        // It is as old as `census_age_ticks` says it is.
+                        colony_total = loaded_c + simulated_c,
+                        loaded_before = loaded_c,
+                        simulated_before = simulated_c,
+                        census_age_ticks,
+                        // The free half, and the half that names an oscillation
+                        // on sight.
+                        demotes,
+                        ringing,
+                        "bastion: colonist demoted to SimulationMode::Simulated"
+                    );
+                    demoted_a_colonist = true;
+                }
+                npc.mode = SimulationMode::Simulated;
             }
         }
 
-        if let Some(npc) = data.npcs.get_mut(entity) {
-            if matches!(npc.mode, SimulationMode::Simulated) {
-                error!("Unloaded already unloaded entity");
-            }
-            // bastion (B3): the loaded↔simulated boundary, log-verified.
-            if let Some(colonist) = &npc.bastion_colonist {
-                tracing::info!(
-                    name = colonist.name.as_str(),
-
-                    // Counted BEFORE this demotion lands, so the line reads as
-                    // the transition it is. `colony_total` is the number that
-                    // must NOT move for a demotion -- if it drops, somebody
-                    // really did die and this is not the reason.
-                    colony_total = loaded_c + simulated_c,
-                    loaded_before = loaded_c,
-                    simulated_before = simulated_c,
-                    "bastion: colonist demoted to SimulationMode::Simulated"
-                );
-            }
-            npc.mode = SimulationMode::Simulated;
+        if recomputed {
+            self.bastion_demote_witness.census = (loaded_c, simulated_c);
+            self.bastion_demote_witness.census_tick = Some(now);
+        }
+        if demoted_a_colonist {
+            self.bastion_demote_witness
+                .demotes
+                .insert(entity, (demotes, now));
         }
     }
 
@@ -1361,8 +1577,210 @@ pub fn add_server_systems(dispatch_builder: &mut DispatcherBuilder) {
     // implicit shred staging (deterministic per build, but an undeclared
     // contract a registration shuffle could silently flip, moving thought
     // delivery by a tick).
+    // ★ AN UNDECLARED EDGE THIS SYSTEM NOW DEPENDS ON (2026-08-29, left
+    // undeclared ON PURPOSE — read before "fixing" it).
+    //
+    // `tick::Sys` gates promotion on `TerrainGrid::get_key_real`, the same grid
+    // the entity-cleanup sweep in `Server::tick` deletes on (see
+    // `tick::bastion_may_promote_npc`). That agreement is exact only while this
+    // system runs AFTER `sys::terrain::Sys`, the one code path that inserts and
+    // removes terrain chunks. Today it does, but by STAGING, not by
+    // declaration: `sys::terrain::Sys` shares this system's `Phase::Create` and
+    // conflicts with it (both hold `WriteExpect<RtSim>`), and it is registered
+    // first — `sys::add_server_systems` at server/src/lib.rs:635 runs before
+    // `rtsim::add_server_systems` at :638.
+    //
+    // Adding `&crate::sys::terrain::Sys::sys_name()` to the list below makes it
+    // explicit, exactly as T0.16 and T0.20 did at the two seams above, and it
+    // introduces no cycle (`terrain::Sys` depends only on `msg::terrain::Sys`,
+    // and nothing in the tree depends on `rtsim::tick::Sys`). It is NOT done
+    // here because the T0.12 phase manifest mirrors this registration from
+    // another module's test, and that manifest's own assert says to update BOTH
+    // deliberately. If the edge is declared, the manifest entry
+    // `("rtsim", "tick", ["phys", "bastion_jobs"])` becomes
+    // `("rtsim", "tick", ["phys", "bastion_jobs", "sys::terrain"])`.
+    //
+    // What is at stake if the staging ever flips: this system would read the
+    // PREVIOUS tick's terrain, so one spurious promotion could survive per
+    // chunk unload — the same defect that produced the 38-transitions-per-second
+    // spin, at a far lower rate.
     dispatch::<tick::Sys>(dispatch_builder, &[
         &common_systems::phys::Sys::sys_name(),
         &crate::bastion_jobs::Sys::<crate::rtsim::RtSim>::sys_name(),
     ]);
+}
+
+#[cfg(test)]
+mod bastion_demote_witness_pins {
+    use super::*;
+
+    /// The owner's world, as measured: ~8,528 rtsim npc records, ~38 colonist
+    /// demotions per second at ~5 server ticks/s.
+    const NPCS: u64 = 8_528;
+    const DEMOTES_PER_TICK: u64 = 8;
+    const TICKS: u64 = 1_000;
+
+    /// ★ THE COST OF THE WITNESS IS BOUNDED BY THE CLOCK, NOT BY THE EVENT
+    /// RATE. This is the pin the cost fix exists for: the shipped code scanned
+    /// every npc record on every demotion, so a defect that RAISED the demotion
+    /// rate also raised the cost of observing it — an instrument that gets more
+    /// expensive exactly when it is most needed.
+    ///
+    /// PLANT-AND-PROVE: make `bastion_census_needs_recompute` return `true`
+    /// unconditionally (which is the shipped behaviour, since its `is_colonist`
+    /// gate was true for every call that reached it) and both assertions fail:
+    /// scans becomes 8,000 instead of 16, and touches equals the shipped total
+    /// exactly.
+    #[test]
+    fn the_witness_cost_is_bounded_by_ticks_not_by_events() {
+        let mut taken_at: Option<u64> = None;
+        let mut scans = 0u64;
+        for now in 0..TICKS {
+            for _ in 0..DEMOTES_PER_TICK {
+                if bastion_census_needs_recompute(taken_at, now) {
+                    scans += 1;
+                    taken_at = Some(now);
+                }
+            }
+        }
+        let ceiling = TICKS / BASTION_CENSUS_AUDIT_TICKS + 1;
+        assert!(
+            scans <= ceiling,
+            "the census ran {scans} times in {TICKS} ticks; the audit clock allows at most \
+             {ceiling}. The cost is following the event rate again."
+        );
+        let touches = scans * NPCS;
+        let shipped = TICKS * DEMOTES_PER_TICK * NPCS;
+        assert!(
+            touches * 100 < shipped,
+            "the witness touched {touches} npc records where the shipped scan touched \
+             {shipped} — the fix must be at least two orders of magnitude cheaper, not a \
+             rounding-down of the same loop"
+        );
+    }
+
+    /// Several demotions inside ONE tick must cost ONE census, not one each.
+    /// That is the exact shape of the live defect: ~8 colonist demotions landed
+    /// in every single tick and every one of them scanned the world.
+    #[test]
+    fn many_demotions_in_one_tick_cost_one_census() {
+        let mut taken_at: Option<u64> = None;
+        let mut scans = 0u64;
+        for _ in 0..500 {
+            if bastion_census_needs_recompute(taken_at, 7) {
+                scans += 1;
+                taken_at = Some(7);
+            }
+        }
+        assert_eq!(scans, 1, "500 demotions in one tick cost {scans} full-world scans");
+    }
+
+    /// VALIDATE THE INSTRUMENT FIRST: the audit must still fire. A cost fix
+    /// that simply stopped recomputing would pass the bound above and report a
+    /// frozen census forever, which is the "blind instrument agrees with you"
+    /// failure.
+    #[test]
+    fn the_census_is_still_recomputed() {
+        assert!(
+            bastion_census_needs_recompute(None, 0),
+            "the very first demotion must produce a real count, not a default"
+        );
+        assert!(bastion_census_needs_recompute(
+            Some(0),
+            BASTION_CENSUS_AUDIT_TICKS
+        ));
+        assert!(!bastion_census_needs_recompute(
+            Some(0),
+            BASTION_CENSUS_AUDIT_TICKS - 1
+        ));
+    }
+
+    /// ★ THE WITNESS MUST STILL SHOW THE MECHANISM FAILING. The census told a
+    /// reader "nobody died"; it never told them "this colonist is ringing" —
+    /// that took clustering two million lines. `ringing` says it per line, for
+    /// free, and it must DISCRIMINATE: a colonist that walks out of the loaded
+    /// island once an hour is not ringing, and one demoted every other tick is.
+    #[test]
+    fn the_ring_witness_discriminates() {
+        // The measured spin: demoted again two ticks after its last demotion.
+        assert!(
+            bastion_demote_is_ringing(Some(100), 102),
+            "a colonist demoted twice within two ticks is the oscillation and must read as one"
+        );
+        // A colonist that genuinely went for a walk.
+        assert!(!bastion_demote_is_ringing(Some(100), 100 + 30 * 60));
+        // First demotion ever — nothing to compare against, so not a ring.
+        assert!(!bastion_demote_is_ringing(None, 0));
+        // The boundary itself, both sides, so the constant cannot drift
+        // unnoticed.
+        assert!(bastion_demote_is_ringing(Some(0), BASTION_RING_TICKS));
+        assert!(!bastion_demote_is_ringing(Some(0), BASTION_RING_TICKS + 1));
+    }
+}
+
+#[cfg(test)]
+mod bastion_personality_pins {
+    use super::*;
+    use common::rtsim::{Personality, PersonalityTrait};
+
+    fn stream() -> impl rand::RngExt { ::rtsim::tick_rng(7, 11, 0xBA57_C011) }
+
+    /// FALLBACK MUST BE IDENTITY, NOT A COPY. Moving three call sites onto the
+    /// shared helper is only safe if the unpinned arm is byte-for-byte the draw
+    /// those sites already made — otherwise the fix silently replaces the
+    /// colonists of every world measured before it. Compared through `Debug`
+    /// because `Personality` derives no `PartialEq`.
+    ///
+    /// PLANT-AND-PROVE: change the `None` arm of `bastion_colonist_personality`
+    /// to `Personality::random_good(rng)` (the plausible wrong fix — it is what
+    /// vanilla hands a Guard) and this fails.
+    #[test]
+    fn the_unpinned_arm_is_exactly_personality_random() {
+        let mut a = stream();
+        let mut b = stream();
+        assert_eq!(
+            format!("{:?}", bastion_colonist_personality(None, &mut a)),
+            format!("{:?}", Personality::random(&mut b)),
+        );
+    }
+
+    /// The pinned arm actually pins, and — the half that matters — it does NOT
+    /// touch the personality stream. A pin that consumed a draw would shift
+    /// every later colonist, so a pinned run and an unpinned run of the same
+    /// seed would not be comparable, which is the only thing a pinned run is
+    /// for.
+    #[test]
+    fn the_pinned_arm_pins_and_spends_nothing() {
+        let mut rng = stream();
+        let pinned = bastion_colonist_personality(Some(PersonalityTrait::Conscientious), &mut rng);
+        assert!(pinned.is(PersonalityTrait::Conscientious));
+        // The stream is untouched, so the very next draw off it equals the
+        // first draw off a fresh copy of the same stream.
+        let mut fresh = stream();
+        assert_eq!(
+            format!("{:?}", Personality::random(&mut rng)),
+            format!("{:?}", Personality::random(&mut fresh)),
+        );
+    }
+
+    /// VALIDATE THE INSTRUMENT FIRST: ROW 51's witness is a COUNT of
+    /// trait-carrying colonists, and a predicate that always answers the same
+    /// thing would agree with any hypothesis. Pinned against BOTH degenerate
+    /// answers — the default personality (every axis at MID, which is the exact
+    /// bug state ROW 51 found: `traits=[]` on 24 of 24) must read false, and a
+    /// pinned one must read true.
+    #[test]
+    fn the_trait_witness_discriminates() {
+        assert!(
+            !bastion_carries_a_trait(&Personality::default()),
+            "a default personality sits at MID on every axis and carries nothing — a witness \
+             that calls it trait-carrying cannot see ROW 51's defect"
+        );
+        for t in <PersonalityTrait as strum::IntoEnumIterator>::iter() {
+            assert!(
+                bastion_carries_a_trait(&Personality::pinned(t)),
+                "a personality pinned to a named trait must read as carrying one"
+            );
+        }
+    }
 }

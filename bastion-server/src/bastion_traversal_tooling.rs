@@ -1002,6 +1002,30 @@ fn profile_guard(
     None
 }
 
+/// The labels a case records once it has passed both fixture-local gates and
+/// actually reached the shipping corridor validator.
+///
+/// This is a named const rather than the inline `vec![…]` it used to be
+/// because the pin in `mod tests` has to compare against the list the fixture
+/// really writes, not against a hand-copy: a copy agrees with any drift. The
+/// assertion it replaced — `predicates.any(|p| p.contains("emergency_") || …)`
+/// — was unconditionally true, because EVERY label in this file (the
+/// `focused_adapter_*` guard labels included) matches one of those prefixes,
+/// so it stayed green even when a case never reached production at all.
+///
+/// The labels themselves are prose. Two of them are bound to code because
+/// this module calls those functions directly and a rename is a build
+/// failure; the other three are reached inside those two calls, and the
+/// source scan in `smoke80_production_geometry_uses_shipping_predicates_and_
+/// falsifiers` is the only thing that can see them disappear.
+pub const SHIPPING_GEOMETRY_PREDICATES: [&str; 5] = [
+    "emergency_validate_constructed_ladder_corridor",
+    "emergency_corridor_standable",
+    "common::path::bastion_full_path",
+    "common_systems::phys::cylinder_sweep_first_collision",
+    "emergency_constructed_ladder_corridor_candidates",
+];
+
 fn run_geometry_case(
     name: &str,
     terrain: &GeometryTerrain,
@@ -1102,13 +1126,10 @@ fn run_geometry_case(
             "blocked_entry_falsifier_failed"
         }
         .into(),
-        predicates: vec![
-            "emergency_validate_constructed_ladder_corridor".into(),
-            "emergency_corridor_standable".into(),
-            "common::path::bastion_full_path".into(),
-            "common_systems::phys::cylinder_sweep_first_collision".into(),
-            "emergency_constructed_ladder_corridor_candidates".into(),
-        ],
+        predicates: SHIPPING_GEOMETRY_PREDICATES
+            .iter()
+            .map(|predicate| (*predicate).to_owned())
+            .collect(),
     }
 }
 
@@ -1717,31 +1738,203 @@ mod tests {
         let b = serde_json::to_vec(&run_smoke80_contract_model()).unwrap();
         assert_eq!(a, b);
         let report: B58TraversalContractModelReport = serde_json::from_slice(&a).unwrap();
-        assert!(report.legacy_divergence_reproduced);
         assert!(report.deterministic);
         assert!(!report.gameplay_mutated);
         assert!(!report.production_geometry_exercised);
-        assert!(report.negative_cases.iter().all(|case| case.rejected));
+
+        // The field observation this contract model exists to freeze: seed21
+        // smoke80 retried the same unreachable body lane every 30 ticks from
+        // tick 10 230 with no mount transaction in flight, six times before
+        // the run was cut. `report.legacy_divergence_reproduced` looks like
+        // the pin for that and is not one — the producer mints the retries at
+        // :603 as `FIRST + attempt * INTERVAL`, then at :805 checks that
+        // consecutive ticks differ by INTERVAL, which reduces to
+        // `(n+1)I - nI == I` and holds for every I including 0, and compares
+        // `reason` against the same literal it wrote six lines above.
+        // Measured: setting the interval to 31 left the whole suite green.
+        // These are the numbers themselves, spelled out, so the two constants
+        // can no longer drift away from the observation they record.
+        assert_eq!(report.retry_interval_ticks, 30);
+        assert_eq!(report.retries.len(), 6);
+        assert_eq!(report.retries.first().unwrap().tick, 10_230);
+        assert_eq!(report.retries.last().unwrap().tick, 10_230 + 5 * 30);
+        assert!(
+            report
+                .retries
+                .iter()
+                .all(|retry| retry.reason == "no_reachable_body_lane"
+                    && !retry.transaction_present),
+            "the reproduced divergence is a retry loop with no transaction in \
+             flight: {:#?}",
+            report.retries
+        );
+
+        // Nothing else reads the happy path's phase ORDER. The producer's
+        // `deterministic` only inspects the final state, so a model that
+        // jumped Approach -> Traversing without ever reserving the link would
+        // still finish Complete with no owner and no reservation, and pass.
+        assert_eq!(report.checkpoint_phases, vec![
+            TraversalPhase::Request,
+            TraversalPhase::Approach,
+            TraversalPhase::Reserved,
+            TraversalPhase::Traversing,
+            TraversalPhase::FrontierWork,
+            TraversalPhase::ConfirmingExit,
+            TraversalPhase::Complete,
+        ]);
+
+        // `.all(rejected)` is vacuously true on an empty vec, and this blanket
+        // is the ONLY coverage nine of these eleven cases have — each one
+        // needs its exact `FixtureReject` variant to be marked rejected. The
+        // roster is what stops a dropped case from passing as silence.
+        let names = report
+            .negative_cases
+            .iter()
+            .map(|case| case.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(names, [
+            "chaser_during_traversal",
+            "orca_during_traversal",
+            "soft_collision_overlap_at_link",
+            "queue_slot_double_claim",
+            "stale_path_after_terrain_revision",
+            "ordinary_path_before_exit_confirmation",
+            "contact_loss_bounded_abort",
+            "stale_target_writer",
+            "interruption_releases_slot",
+            "exit_fallback_aborts_before_resume",
+            "cleanup_retry_does_not_double_complete",
+        ]);
+        assert!(
+            report.negative_cases.iter().all(|case| case.rejected),
+            "{:#?}",
+            report.negative_cases
+        );
     }
 
     #[test]
     fn traversal_link_rejects_competing_writer_and_releases_on_contact_loss() {
-        let report = run_smoke80_contract_model();
+        // Both halves of this name are claims about the SHIPPING link:
+        // `BastionTraversalTask` and the `BastionTraversalMode::allows_writer`
+        // table it hands out. The version this replaced asserted them against
+        // `TraversalTaskModel` instead — the synthetic contract model declared
+        // in this same file, whose call graph closes on locally-declared types
+        // and reaches neither. Measured: dropping the `phase != Abort`
+        // conjunct from `BastionTraversalTask::reservation_matches` left the
+        // whole suite green. Its two assertions were also a strict subset of
+        // the sibling's `negative_cases.all(rejected)`, so it guarded nothing
+        // the suite did not already hold.
+        const PHASES: [BastionTraversalPhase; 12] = [
+            BastionTraversalPhase::LinkApproach,
+            BastionTraversalPhase::QueuedForLink,
+            BastionTraversalPhase::Reserved,
+            BastionTraversalPhase::TraversingEntry,
+            BastionTraversalPhase::TraversingLink,
+            BastionTraversalPhase::TraversingTopExit,
+            BastionTraversalPhase::FrontierWork,
+            BastionTraversalPhase::ConfirmingExitRelease,
+            BastionTraversalPhase::ConfirmingExitTraversal,
+            BastionTraversalPhase::ConfirmingExit,
+            BastionTraversalPhase::Complete,
+            BastionTraversalPhase::Abort,
+        ];
+        const WRITERS: [BastionMovementWriter; 5] = [
+            BastionMovementWriter::AgentChaser,
+            BastionMovementWriter::BastionTraversalTask,
+            BastionMovementWriter::Orca,
+            BastionMovementWriter::GenericGoto,
+            BastionMovementWriter::GenericSoftSteering,
+        ];
+
+        for phase in PHASES {
+            // The expected owner is stated here per phase rather than derived
+            // from `mode()`, so this is an independent statement of the rule
+            // and not a restatement of the table under test. The match is
+            // exhaustive on purpose: a phase cannot be added to
+            // `BastionTraversalPhase` without this test refusing to compile
+            // until someone decides, here, who may write movement during it.
+            //
+            // The LinkApproach row is the one no other test reads.
+            // `stage1_...` sweeps writers in TraversingLink and FrontierWork
+            // only, where the rule is "only the task"; the single mode where
+            // the rule is the opposite had no pin, so `LinkApproach => false`
+            // — an over-refusing guard that turns away the chaser that is
+            // supposed to walk the colonist to the link — had nothing to trip
+            // over. That mutation lives in common/src/comp/bastion.rs and was
+            // NOT run here (this agent does not own that file); the hole was
+            // established by reading every caller of `allows_writer`, which is
+            // this module and nothing else.
+            let expected: Option<BastionMovementWriter> = match phase {
+                BastionTraversalPhase::LinkApproach => Some(BastionMovementWriter::AgentChaser),
+                BastionTraversalPhase::QueuedForLink
+                | BastionTraversalPhase::Reserved
+                | BastionTraversalPhase::TraversingEntry
+                | BastionTraversalPhase::TraversingLink
+                | BastionTraversalPhase::TraversingTopExit
+                | BastionTraversalPhase::FrontierWork
+                | BastionTraversalPhase::ConfirmingExitRelease
+                | BastionTraversalPhase::ConfirmingExitTraversal
+                | BastionTraversalPhase::ConfirmingExit => {
+                    Some(BastionMovementWriter::BastionTraversalTask)
+                },
+                // A finished or aborted link owns nothing and fences nobody
+                // out: no ownership component, so no writer is refused. That
+                // is the release half of this test's name.
+                BastionTraversalPhase::Complete | BastionTraversalPhase::Abort => None,
+            };
+            let mut task = stage1_task();
+            task.phase = phase;
+            let ownership = task.ownership();
+            assert_eq!(
+                ownership.is_some(),
+                expected.is_some(),
+                "{phase:?} disagrees with the release rule"
+            );
+            let Some(mode) = ownership.map(|ownership| ownership.mode) else {
+                continue;
+            };
+            for writer in WRITERS {
+                assert_eq!(
+                    mode.allows_writer(writer),
+                    Some(writer) == expected,
+                    "{phase:?} ({mode:?}) and {writer:?}"
+                );
+            }
+        }
+
+        // Release on contact loss, on the shipping task. `stage1_...` pins
+        // phase/ownership/reason for all eight interruptions already, but it
+        // compares the reason against `interruption.reason()` — the function's
+        // own output — so the string is spelled out here instead, and nothing
+        // anywhere pins `reservation_matches`. That predicate decides which
+        // member holds a link in `traversal_queue_head`
+        // (bastion_jobs.rs:10476), and the R10 fence open-codes the SAME rule
+        // a second time at bastion_jobs.rs:15084 to derive `current_member`.
+        // Only the fence's copy is pinned (`authority_valid_truth_table`);
+        // drop the `phase != Abort` conjunct here and the two frames disagree
+        // — a colonist whose authoritative contact was lost keeps being
+        // elected head of the ladder queue while every write he makes is
+        // fenced off as stale.
+        let member = stage1_uid(2);
+        let mut task = stage1_task();
+        task.reserve(member, 11).unwrap();
+        task.transition(BastionTraversalPhase::TraversingEntry, 12)
+            .unwrap();
+        task.transition(BastionTraversalPhase::TraversingLink, 13)
+            .unwrap();
+        assert!(task.reservation_matches(member));
+        assert!(task.ownership().is_some());
+
+        task.interrupt(BastionTraversalInterruption::ContactLost, 14);
+        assert_eq!(task.phase, BastionTraversalPhase::Abort);
+        assert_eq!(task.abort_reason, Some("authoritative-contact-lost"));
         assert!(
-            report
-                .negative_cases
-                .iter()
-                .find(|case| case.name == "chaser_during_traversal")
-                .unwrap()
-                .rejected
+            task.ownership().is_none(),
+            "an aborted link still named a movement owner"
         );
         assert!(
-            report
-                .negative_cases
-                .iter()
-                .find(|case| case.name == "contact_loss_bounded_abort")
-                .unwrap()
-                .rejected
+            !task.reservation_matches(member),
+            "the reserver still matched a link that was released on contact loss"
         );
     }
 
@@ -1769,14 +1962,116 @@ mod tests {
             .unwrap();
         assert!(!positive.rejected);
         assert_eq!(positive.selected, Some([4, 4, 2]));
-        assert!(report.cases.iter().all(|case| {
-            case.predicates.iter().any(|predicate| {
-                predicate.contains("emergency_")
-                    || predicate.contains("bastion_full_path")
-                    || predicate.contains("cylinder_sweep")
-                    || predicate.contains("focused_adapter")
+
+        // The head-clearance falsifier, named rather than left to the blanket
+        // `deterministic` roll-up above. Its feet cell is clear and its floor
+        // is solid, and only the block at entry+z stops the lane, so the head
+        // clause of `emergency_corridor_standable`
+        // (bastion_jobs.rs:7858-7860) is the sole reason it rejects — and it
+        // rejects on the standability read at :7924, before any capsule sweep
+        // begins, which is why the reported first hit is the entry cell itself
+        // and not the block overhead. Delete that clause and the lane becomes
+        // standable, the sweep runs, and the reported hit moves off [4, 4, 2].
+        let head_clearance = report
+            .cases
+            .iter()
+            .find(|case| case.name == "body_head_clearance_mismatch")
+            .unwrap();
+        assert!(head_clearance.rejected);
+        assert_eq!(head_clearance.selected, None);
+        assert_eq!(
+            head_clearance
+                .first_hit
+                .as_ref()
+                .expect(
+                    "no first hit was recorded: this case never reached the shipping corridor \
+                     validator at all"
+                )
+                .block,
+            [4, 4, 2],
+            "the entry cell must be refused for its head clearance, before any sweep begins"
+        );
+
+        // The roster is fixed at nine. Every `.all(…)` over `cases` in this
+        // test and in the fixture's own `deterministic` roll-up is vacuously
+        // true on an empty vec, so the count is what stops a dropped case from
+        // reading as a pass.
+        assert_eq!(report.cases.len(), 9);
+
+        // WHICH cases actually reached the shipping predicates is this test's
+        // name, and the assertion that used to stand here could not see it:
+        // `predicates.any(|p| p.contains("emergency_") || … || p.contains(
+        // "focused_adapter"))` matches EVERY label this file writes, the
+        // fixture's own guard labels included, so it stayed green even when a
+        // case short-circuited in `profile_guard` and never called production
+        // at all. Six of the nine are rejected by that test-only identity gate
+        // by design — the harness refusing inputs the harness was written to
+        // refuse. Exactly three reach the shipping corridor validator, and
+        // one of those three is a falsifier; if that number ever drops, the
+        // production geometry this fixture attests to stopped being exercised.
+        let reached_production = report
+            .cases
+            .iter()
+            .filter(|case| {
+                case.predicates
+                    .iter()
+                    .map(String::as_str)
+                    .eq(SHIPPING_GEOMETRY_PREDICATES)
             })
-        }));
+            .map(|case| case.name.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(reached_production, [
+            "preserved_solid_entry",
+            "cleared_supported_entry",
+            "body_head_clearance_mismatch",
+        ]);
+
+        // The labels are prose unless something binds them to code. Two are
+        // called by this module directly, so a rename is a build failure; the
+        // other three are reached inside those two calls, and
+        // `emergency_corridor_standable` is private to `bastion_jobs`, so it
+        // cannot even be named from here. This scan is what notices a label
+        // that has stopped pointing at a symbol. It proves existence, not
+        // path-taken — the partition above is what proves path-taken. The
+        // `bastion_full_path` needle keeps its `<` because `_step` and `_ext`
+        // siblings share the prefix and would answer for a deleted original.
+        assert_eq!(SHIPPING_GEOMETRY_PREDICATES.len(), 5);
+        for (label, path, definition) in [
+            (
+                "emergency_validate_constructed_ladder_corridor",
+                "bastion-server/src/bastion_jobs.rs",
+                "fn emergency_validate_constructed_ladder_corridor",
+            ),
+            (
+                "emergency_corridor_standable",
+                "bastion-server/src/bastion_jobs.rs",
+                "fn emergency_corridor_standable",
+            ),
+            (
+                "common::path::bastion_full_path",
+                "common/src/path.rs",
+                "pub fn bastion_full_path<",
+            ),
+            (
+                "common_systems::phys::cylinder_sweep_first_collision",
+                "common/systems/src/phys/collision.rs",
+                "pub fn cylinder_sweep_first_collision",
+            ),
+            (
+                "emergency_constructed_ladder_corridor_candidates",
+                "bastion-server/src/bastion_jobs.rs",
+                "fn emergency_constructed_ladder_corridor_candidates",
+            ),
+        ] {
+            assert!(
+                SHIPPING_GEOMETRY_PREDICATES.contains(&label),
+                "{label} left the recorded predicate list without this scan being updated"
+            );
+            assert!(
+                repo_text(path).contains(definition),
+                "predicate label {label} names no symbol defined in {path}"
+            );
+        }
     }
 
     /// bastion ENGINE-OPT-3 (ledger #160): the authoritative Pickup commit

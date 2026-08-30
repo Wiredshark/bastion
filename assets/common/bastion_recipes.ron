@@ -3,6 +3,13 @@
 // (the thought-table pattern): the generator's raw gate, the fetch's
 // required_item, and the completion's product all read THIS row, so a new
 // chain is a new entry, not new Rust. v1 recipes are single-input.
+//
+// ITEM 29: the retired `RAW_FOOD_DEFS` const (bastion_jobs) also listed the
+// four raw meats -- MEAT_{SMALL,LARGE,BIRD,TOUGH}_RAW_ITEM -- under F23's
+// "a kill feed the KITCHEN rather than just the hand". No meat row was ever
+// carried over to this table, so meat is NOT cookable today. Adding one is a
+// deliberate behaviour change (it gives the hearth an input a failed farm
+// cannot take away); it was not made when the dead const was deleted.
 (
     recipes: [
         (

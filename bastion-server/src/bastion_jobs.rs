@@ -1229,6 +1229,36 @@ pub(crate) fn census_is_slowed(speed: f32, stuck_time: f32) -> bool {
     speed < 0.2 && stuck_time <= CENSUS_WEDGED_SECS
 }
 
+/// ★★ "THE STEER IS ALREADY AT MY FEET" — A 3D QUESTION (frame audit,
+/// 2026-08-29).
+///
+/// This exemption zeroes `stuck_time`, and its intent is narrow and right:
+/// a body whose Goto target IS where it already stands has nothing to walk
+/// to, so the stall clock has no jurisdiction ("a body in its bed has steer
+/// at its feet").
+///
+/// It used to test `t.xy().distance(pos.xy()) < 1.2` — XY ONLY. A colonist
+/// who has fallen through an upper-storey floor is dz = -2.0 with dxy =
+/// 0.72, which is under 1.2, so the exemption fired on EVERY tick: the
+/// colonist was two blocks below the thing he was steering at, unable to
+/// reach it, and the one clock that would have noticed was pinned to zero.
+/// `STUCK_TIMEOUT` never elapsed, `stuck_strikes` never accrued, and the
+/// escalation discard below became unreachable — which is why that loop ran
+/// silent and unbounded. A 2D test on a failure whose whole signature is
+/// vertical; the same defect class as the sleep retention anchor, one arm
+/// over in the same loop.
+///
+/// The z tolerance is deliberately LOOSER than the horizontal one (1.5 vs
+/// 1.2) rather than a plain 3D distance: legitimate steer targets and body
+/// anchors in this file differ by up to a block in z (see `lying_target`
+/// versus the arrival approach anchor), so a strict sphere would start the
+/// stall clock on colonists who really are standing where they were sent.
+/// 1.5 keeps every one-block anchor difference exempt while convicting the
+/// two-block fall this was blind to.
+pub(crate) fn steer_is_at_own_feet(target: Vec3<f32>, body: Vec3<f32>) -> bool {
+    target.xy().distance(body.xy()) < 1.2 && (target.z - body.z).abs() < 1.5
+}
+
 /// ★ SLEEP HOLDS ONLY AT THE BED (805bf30a06): the sleep arm's per-tick
 /// re-verification of the arrival latch. Arrival admits at `ARRIVE_DIST`
 /// (2.5); this releases only past ARRIVE_DIST + 0.5 — the hysteresis band
@@ -1273,8 +1303,55 @@ pub(crate) fn sleep_displaced_from(body: Vec3<f32>, target: Vec3<f32>) -> bool {
     body.distance_squared(target) > r * r
 }
 
-pub(crate) fn sleep_displaced(body: Vec3<f32>, bed_pos: Vec3<i32>, stance: Vec3<i32>) -> bool {
-    sleep_displaced_from(body, crate::bastion_actions::approach_target(bed_pos, stance))
+/// ★ WHERE A SLEEPING BODY ACTUALLY IS — the LYING frame.
+///
+/// A bed is registered at the cell that passed `fits()` in the furnishing
+/// scan: `c` open, `c + z` open, `c - z` filled. That is a FEET cell (the
+/// same predicate `at_target_stance` uses to return `Vec3::zero()`), so a
+/// colonist lying in bed stands at `bed + (0.5, 0.5, 0.0)`.
+pub(crate) fn lying_target(bed_pos: Vec3<i32>) -> Vec3<f32> {
+    crate::bastion_actions::approach_target(bed_pos, Vec3::zero())
+}
+
+/// ★★ TWO FRAMES, NAMED ON PURPOSE (retention-anchor audit, 2026-08-29).
+/// This function measures RETENTION. Arrival is measured elsewhere, in a
+/// different frame, and that is CORRECT — they answer different questions:
+///
+///   ARRIVAL  — "did the walker get close enough to lie down?" — is measured
+///              from `approach_target(bed, active.stance)`. `insert_rest_job`
+///              declares `AffordanceClass::Untargeted`, which resolves to the
+///              on-top stance `(0,0,1)`, so that anchor is `bed +
+///              (0.5,0.5,1.0)`: the cell a walker approaches THROUGH.
+///   RETENTION — "is the body still in its bed?" — must be measured from
+///              where the SLEEPING BODY IS, which is the bed cell itself.
+///
+/// The previous version measured retention from the ARRIVAL anchor. That
+/// commit claimed the change was bit-identical for the dominant population;
+/// it was not. The anchor sits a full block ABOVE the sleeping body, so the
+/// retention ball was centred one block off the thing it retains, and the
+/// error is entirely in +z — the axis every real displacement here moves
+/// along.
+///
+/// MEASURED, on the upper-storey fall this instrument was built to watch
+/// (dz = -1.98, dxy = 0.72 from the bed cell):
+///   from the arrival anchor : sqrt(2.98² + 0.72²) = 3.066 > 3.0 → RELEASED
+///   from the bed cell       : sqrt(1.98² + 0.72²) = 2.107 < 3.0 → HELD
+///   from the pre-fix bed+0.5z: sqrt(2.48² + 0.72²) = 2.582 < 3.0 → HELD
+/// So the release was produced by a 0.066 margin that the anchor offset
+/// created, and BOTH earlier anchors held the same body. A large share of
+/// the 289 "SLEEP UNHOLDABLE" firings is therefore an artefact of the
+/// instrument, not a physics symptom — the strike loop was measuring its own
+/// offset.
+///
+/// The second consequence ran the other way and is why this matters beyond
+/// churn: a colonist standing on the ROOF exactly 3 blocks above their own
+/// bed read as `|3.0 - 1.0| = 2.0 < 3.0` — NOT displaced — so rest kept
+/// banking and the bed census counted them as `lying`. A false "visible bed
+/// use" is precisely the acceptance criterion the census exists to protect.
+/// From the bed cell that same body reads 3.0 and no longer counts as a
+/// comfortable hold.
+pub(crate) fn sleep_displaced(body: Vec3<f32>, bed_pos: Vec3<i32>) -> bool {
+    sleep_displaced_from(body, lying_target(bed_pos))
 }
 
 /// ★ THE BOARD IS SESSION-STATE; THE RECORD IS TRUTH (805bf30a06).
@@ -2403,11 +2480,21 @@ pub(crate) fn tool_shortfall(held: [u32; 3], roster: u32) -> Option<usize> {
 /// ROW 52 v2: the forge's crew — the same shape and the same reason as
 /// [`kitchen_crew_cap`]. A trade a watcher can NAME is a trade few people
 /// hold.
+/// ★ THE ENV PATH MUST NOT ADMIT A CAP OF ZERO (degenerate-setting audit,
+/// 2026-08-29). The derived path already floors at 1; the env override did
+/// not, so `BASTION_FORGE_CREW=0` parsed to `Some(0)` and made the mint
+/// gate's `crew >= cap` read `0 >= 0` — true for every workshop, every
+/// pass, forever. The forge goes permanently dark with no lane-bar escape
+/// and no refusal that names the cause. A cap is a LIMIT on how many smiths
+/// work at once; zero is not a smaller limit, it is a different feature
+/// (a kill switch), and this knob is not it. Pinned by
+/// `the_forge_cap_refuses_its_degenerate_settings`.
 pub(crate) fn forge_crew_cap(roster: usize) -> usize {
     static ENV: std::sync::OnceLock<Option<usize>> = std::sync::OnceLock::new();
     ENV.get_or_init(|| {
         std::env::var("BASTION_FORGE_CREW").ok().and_then(|v| v.parse().ok())
     })
+    .map(|v| v.max(1))
     .unwrap_or_else(|| (roster / 12).max(1))
 }
 
@@ -2773,6 +2860,41 @@ pub(crate) fn ticks_per_game_day(dt_secs: f64, day_cycle_coefficient: f64) -> f6
     } else {
         54_000.0
     }
+}
+
+/// ★★ WHICH LANE A PARENTLESS CHILD IS RAISED INTO.
+///
+/// THE DEFECT THIS REPLACES: the sweep sorted `lane_pop` by
+/// `(practitioners, format!("{w:?}"))` and took `[0]`. The earlier review
+/// fix replaced a stale hand-written variant list with `WorkType::ALL` —
+/// correct, and it made Craft reachable — but it left the ALPHABETICAL
+/// tiebreak, which that same commit text had named as a SECOND cause.
+/// Build, Chop and Craft all sit at 0 practitioners in a young colony, and
+/// "Build" < "Chop" < "Craft", so EVERY orphan still resolved to Build —
+/// the lane the row's own measurements call dead. A tiebreak on the debug
+/// spelling of an enum is not a colony decision; it is whatever the variant
+/// happens to be called.
+///
+/// THE REPLACEMENT: among the lanes that are equally short of people, pick
+/// the one with the most UNCLAIMED work actually standing on the board.
+/// That is live, measured demand — jobs the town minted and nobody is
+/// doing — rather than a property of the name. Alphabetical order survives
+/// only as the LAST key, where it does what it is actually good for:
+/// making the choice deterministic when the colony genuinely has nothing to
+/// say (equal headcount AND equal demand), instead of letting HashMap order
+/// pick a winner.
+///
+/// Takes `(lane, practitioners, open_jobs)` so it is pure and directly
+/// pinnable — see `an_orphan_is_not_raised_into_a_lane_with_no_work`.
+pub(crate) fn scarcest_lane(
+    lanes: &[(common::bastion::WorkType, usize, usize)],
+) -> Option<common::bastion::WorkType> {
+    lanes
+        .iter()
+        .min_by_key(|(w, practitioners, open_jobs)| {
+            (*practitioners, std::cmp::Reverse(*open_jobs), format!("{w:?}"))
+        })
+        .map(|(w, ..)| *w)
 }
 
 pub(crate) fn kitchen_crew_cap(roster: usize) -> usize {
@@ -5250,10 +5372,14 @@ pub const VOLUNTEER_YIELD: u32 = 2;
 /// plant. The founded-colony rule (`WheatYellow` at `FARM_GROWTH_MAX`) is a
 /// separate match arm and is left exactly as it was.
 ///
-/// Worldgen crops sit at `Growth 0` because 0 is the RESERVED "mature look"
-/// stage (see `FARM_STAGE_SECS`' doc) — a village field is RIPE, not unripe,
-/// which is precisely why colonists standing in one and doing nothing looked
-/// so wrong.
+/// Worldgen crops sit at `Growth 15` — `FARM_GROWTH_MAX`, the engine's
+/// `Default for Growth` (see `FARM_STAGE_SECS`' doc for the full trace). A
+/// village field is RIPE, not unripe, which is precisely why colonists
+/// standing in one and doing nothing looked so wrong. This doc previously
+/// claimed Growth 0 and a "reserved mature-look stage"; both were false, and
+/// the `WheatYellow` half of a worldgen wheat field was being paid a full
+/// tended-crop harvest (seed included) as a result — see
+/// `wheat_harvest_yield`.
 ///
 /// SCOPE, deliberately narrow and honest: only crops the game ships a real
 /// item for. `Corn`/`Pumpkin`/`Radish`/`Turnip` have sprites but no plain
@@ -5272,20 +5398,6 @@ pub fn volunteer_crop_item(sprite: common::terrain::SpriteKind) -> Option<&'stat
         _ => None,
     }
 }
-/// bastion (ITEM 27): RAW inputs the cook generator scans — a strict subset
-/// of `FOOD_DEFS`. Kept separate so the pot can never cook its own output
-/// (the dish matching a raw scan would loop curry→curry forever).
-pub const RAW_FOOD_DEFS: &[&str] = &[
-    "common.items.food.mushroom",
-    FARM_WHEAT_ITEM,
-    // F23: meat is the archetypal thing you cook. Adding it here is what makes
-    // a kill feed the KITCHEN rather than just the hand — and it gives the
-    // hearth a second input, so a colony whose farm fails can still eat.
-    MEAT_SMALL_RAW_ITEM,
-    MEAT_LARGE_RAW_ITEM,
-    MEAT_BIRD_RAW_ITEM,
-    MEAT_TOUGH_RAW_ITEM,
-];
 /// bastion (ITEM 27): the cook completion's output item.
 pub const COOKED_DISH_ITEM: &str = "common.items.food.apple_mushroom_curry";
 /// bastion (B7-3): hunger restored per food item eaten.
@@ -5317,14 +5429,70 @@ pub const FARM_WHEAT_ITEM: &str = "common.items.bastion.wheat";
 pub const FARM_WHEAT_YIELD: u32 = 2;
 pub const FARM_SEED_YIELD: u32 = 2;
 /// bastion (FARM): game-seconds per growth stage. Sown wheat carries
-/// Growth 1..=15 (0 is RESERVED — worldgen wheat defaults to attr 0 and
-/// must keep its mature look; the sprite manifest's staged filters start
-/// at 1). 14 stages x 6s = 84 game-seconds sow-to-mature — v1 const
-/// (accelerated per the design; a RON tuning pass rides a later
-/// checkpoint).
+/// Growth 1..=15; the sprite manifest's staged filters start at 1.
+/// 14 stages x 6s = 84 game-seconds sow-to-mature — v1 const (accelerated
+/// per the design; a RON tuning pass rides a later checkpoint).
+///
+/// ★★ CORRECTED (frame audit, 2026-08-29). This doc used to say "0 is
+/// RESERVED — worldgen wheat defaults to attr 0 and must keep its mature
+/// look". That is the exact opposite of what the engine does, and two more
+/// comments in this file repeated it. Traced: worldgen places crops through
+/// `FarmField::terrain_surface_at_inner` -> `Block::try_with_sprite`
+/// (common/src/terrain/block.rs:751) -> `Block::unfilled` (block.rs:200) ->
+/// `SpriteKind::to_initial_bytes` (common/src/terrain/sprite/magic.rs:323),
+/// which applies `.with_attr($attr::default())` for EVERY attribute of the
+/// sprite's category. `WheatYellow`/`WheatGreen` are in `Plant = 3 has
+/// Growth, ...` (sprite/mod.rs:282), and `impl Default for Growth` returns
+/// `Growth(15)` (sprite/mod.rs:594). Nothing in world/, server/src/rtsim/ or
+/// rtsim/ ever writes Growth explicitly — Bastion is the only writer in the
+/// tree — so a worldgen crop is placed at Growth 15, i.e. exactly
+/// `FARM_GROWTH_MAX`. Growth 0 is not reserved; it is UNREACHABLE for a
+/// freshly placed crop, so any arm keyed on it was dead code.
+/// Pinned by `worldgen_wheat_is_placed_mature_not_at_growth_zero`.
 pub const FARM_STAGE_SECS: f64 = 6.0;
 pub const FARM_GROWTH_SOWN: u8 = 1;
 pub const FARM_GROWTH_MAX: u8 = 15;
+
+/// bastion (frame audit, 2026-08-29): what a MATURE `WheatYellow` cell pays
+/// out, split by whether this colony actually grew it.
+///
+/// THE DEFECT THIS CLOSES — a free seed press in every village. Worldgen
+/// wheat fields plant a ~50/50 mix of `WheatGreen` and `WheatYellow`
+/// (`world/src/site/plot/farm_field.rs`, `Self::Wheat`), both at Growth 15
+/// (see `FARM_STAGE_SECS`' doc). `volunteer_crop_item` discriminates on the
+/// SPRITE alone, so the `WheatGreen` half was correctly gleaned at
+/// `VOLUNTEER_YIELD` with no seed — while the `WheatYellow` half fell
+/// through to the founded-colony harvest arm, matched `g >=
+/// FARM_GROWTH_MAX` on its first scan, and paid `FARM_WHEAT_YIELD` PLUS
+/// `FARM_SEED_YIELD` for zero sowing. `VOLUNTEER_YIELD`'s own doc names this
+/// outcome as the thing it exists to prevent: "pretending otherwise would
+/// put a free seed press in every village." Two halves of one worldgen field
+/// were paying different economies, and the richer half was the accident.
+///
+/// THE DISCRIMINATOR, and why it needs no new state: `farm_growth` holds a
+/// stage clock for exactly the cells this colony put through its own growth
+/// machine — inserted on sow completion and on every stage-up, removed on
+/// harvest. A worldgen cell arrives already at `FARM_GROWTH_MAX`, so it
+/// never enters the `FARM_GROWTH_SOWN..FARM_GROWTH_MAX` stage arm and never
+/// gets a clock. Presence of the clock IS "this colony grew it".
+///
+/// THE ECONOMICS, justified rather than deleted: a never-sown mature cell
+/// now pays exactly what the existing gleaning arm pays for the `WheatGreen`
+/// standing beside it — `VOLUNTEER_YIELD` wheat and NO seed. Seed is the
+/// one output that must stay tied to a real farm cycle, because
+/// `FARM_SEED_YIELD` (2) exceeds the 1 seed a sow consumes; handing that
+/// multiplier out for work the colony never did makes the seed stock
+/// unbounded. The crop still LOOKS mature and is still worth harvesting, and
+/// the cleared cell still falls to the sow arm — so an adopted village field
+/// becomes a working colony farm, which is what F5 wanted, instead of a
+/// windfall that also breaks the seed economy.
+pub fn wheat_harvest_yield(colony_sown: bool) -> (u32, u32) {
+    if colony_sown {
+        (FARM_WHEAT_YIELD, FARM_SEED_YIELD)
+    } else {
+        (VOLUNTEER_YIELD, 0)
+    }
+}
 
 /// bastion (#105, DECISIONS-FOR-BEN: FOUNDING SEED STOCK, 2026-08-10): a
 /// colony's founding includes starting seeds -- FARM_SEED_ITEM's only
@@ -21202,14 +21370,39 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // F5: a VOLUNTEER — a crop standing in a
                             // registered farm column that this colony never
                             // sowed (it only ever sows WheatYellow). Ripe by
-                            // construction: worldgen plants at the reserved
-                            // Growth-0 "mature look" stage. One harvest job,
+                            // construction: worldgen plants at Growth 15
+                            // (`Default for Growth`), not at a "reserved
+                            // Growth-0 mature-look stage" as this comment
+                            // used to claim. One harvest job,
                             // same shape as the mature-wheat arm below; it
                             // must be tested BEFORE that arm's growth logic
                             // so a volunteer never falls into the sown
                             // colony's stage machine and gets "advanced".
                             Some(s) if volunteer_crop_item(s).is_some() => {
-                                if !occupied.contains(&cpos) {
+                                // ★★ THE ONE FARM PUSH SITE WITH NEITHER
+                                // GUARD (budget audit, 2026-08-29, found
+                                // independently by two reviewers). This read
+                                // a bare `!occupied.contains(&cpos)` while
+                                // every sibling arm uses `cell_free(cpos) &&
+                                // open_budget > 0` — so it skipped the churn
+                                // filter (a cell the work tick keeps calling
+                                // MOOT was re-offered forever) AND never
+                                // debited the per-plot budget.
+                                //
+                                // The budget is the expensive half. Volunteer
+                                // jobs are ordinary unclaimed Farm jobs inside
+                                // the plot footprint, so `open_by_plot` COUNTS
+                                // them even though minting them paid nothing.
+                                // An adopted village field carries hundreds of
+                                // standing volunteer crops, so `open_budget =
+                                // FARM_OPEN_JOBS_PER_PLOT.saturating_sub(..)`
+                                // pins to 0 on the first pass and that plot
+                                // can never mint another till, sow or harvest
+                                // for the rest of the world's life — the
+                                // guard-spends-before-it-refuses shape from
+                                // ROW 50 rank 1, one arm over.
+                                if cell_free(cpos) && open_budget > 0 {
+                                    open_budget -= 1;
                                     new_jobs.push((cpos, None, AffordanceClass::OnTopAlways));
                                 }
                             },
@@ -23046,6 +23239,52 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .is_some_and(|until| time.0 < *until)
                 {
                     let until = time.0 + RECREATION_BREAK_SECS;
+                    // ★★ THE COOLDOWN THIS ARM'S OWN COMMENTS PROMISE, WHICH
+                    // IT NEVER INSERTED (churn audit, 2026-08-29). Two
+                    // comments in the gate above assert it: "the cooldown
+                    // below keeps it from re-firing every pass" and "the 60s
+                    // cooldown paces them into an alternation of sitting and
+                    // wandering". Neither was true — this was the ONLY
+                    // preempt site in the pass that pushed a `PendingNeed`
+                    // without arming `preempt_cooldown`. Every sibling arms
+                    // it (leisure lounge ~22240, breakdown ~21930, eat
+                    // ~22213, rest ~22890).
+                    //
+                    // The exact reachable churn: a colonist with rest below
+                    // the interrupt in a colony with no free bed takes the
+                    // rest arm's `no_bed_found` path, which `continue
+                    // 'candidates` WITHOUT setting `struck_out` (deliberately
+                    // — "not a dead-end target, there was never one"), so the
+                    // `!serviced && struck_out` cooldown below the candidates
+                    // loop never arms either. Nothing else in the pass arms
+                    // it, so this gate re-opened on EVERY need pass. Each
+                    // firing reaches the drain, mints a FRESH Recreate job
+                    // (new JobId, `claimed_by: Some(uid)`, `total_claims +=
+                    // 1`) and the drain's unconditional `active_jobs.insert`
+                    // discards the previous one — which keeps `claimed_by`
+                    // set forever, because the orphan sweep (~19968) collects
+                    // only DepositRun/RestAt/EatFrom/Despond AND only when
+                    // `claimed_by.is_none()`. Recreate is in neither set.
+                    // Mints ≫ completions, unbounded board growth: the churn
+                    // engine this project has now shipped four times.
+                    board
+                        .preempt_cooldown
+                        .insert(*uid, time.0 + PREEMPT_COOLDOWN_SECS);
+                    // ★ AND THROUGH THE ONE RELEASE SEAM. The drain below
+                    // does `let _ = active_jobs.insert(entity, ..)` on the
+                    // strength of its own comment ("now that the drain has
+                    // cleanly released the old work") — a precondition every
+                    // other preempt site establishes with exactly this guard
+                    // and this arm did not. Without it a held job is silently
+                    // overwritten: claim never cleared, bed occupancy never
+                    // released, reservation never freed, and
+                    // path_cache/detours/travel_stall_watch/progress_watch
+                    // left stale. The seam retires a self-job properly too
+                    // (its `self_job` set at ~30323 includes Recreate), so a
+                    // stale break dies with its claim instead of accumulating.
+                    if active_jobs.contains(entity) {
+                        to_release.push((entity, ReleaseReason::Other, line!()));
+                    }
                     info!(
                         colonist = %uid,
                         recreation = needs.recreation,
@@ -26493,9 +26732,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     },
                                     _ => None,
                                 })
-                                .is_some_and(|t| {
-                                    t.xy().distance(pos.0.xy()) < 1.2
-                                });
+                                .is_some_and(|t| steer_is_at_own_feet(t, pos.0));
                             // ★ v2 (round-18: 675 sat at a lounge seat
                             // when his rest preempt landed; the kinematic
                             // mover issues no movement input so Sit never
@@ -26755,7 +26992,6 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     );
                                 }
                                 board.travel_timeouts += 1;
-                                *board.timeout_counts_by_pos.entry(job.pos).or_insert(0) += 1;
                                 board.last_timeout_pos.insert(job.pos, pos.0);
                                 if let Some(a) = agent.as_deref() {
                                     let snap = a.chaser.diagnostic_snapshot();
@@ -26881,6 +27117,42 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     }
                                     continue;
                                 }
+                                // ★★ A GUARD MUST REFUSE BEFORE IT SPENDS
+                                // (ordering audit, 2026-08-29). This strike
+                                // used to be credited ~90 lines above, right
+                                // after `travel_timeouts += 1` and ABOVE both
+                                // SOFT-0 exits — each of which states three
+                                // times in its own comment that it costs
+                                // nothing: "no unreachable flag, NO STRIKES,
+                                // no carve". Both were charged anyway,
+                                // because both reach their `continue` only
+                                // after the debit had already landed.
+                                //
+                                // The two arms it wrongly charged are the two
+                                // that are explicitly NOT unreachability: the
+                                // GRACE WINDOW (`!soft_granted &&
+                                // blocker_near` — two colonists mutually
+                                // blocking, granted a soft-collision squeeze)
+                                // and the QUEUE RELEASE (`staged_at_anchor` —
+                                // waiting on a single-file vertical link,
+                                // released clean back to the pool).
+                                //
+                                // That is a witness misreporting the pass it
+                                // witnesses, and the ledger it feeds is
+                                // one-way: at 6 strikes the cell is condemned
+                                // permanently ("the town's architecture is
+                                // static"), its beds removed and every job on
+                                // it dropped. Nothing decays it. So a cook
+                                // station beside a doorway accrued six
+                                // unrelated congestion stalls over a long
+                                // world and was struck off the board forever,
+                                // having never once been unreachable.
+                                //
+                                // The debit now sits where the genuine
+                                // carve/unreachable pipeline begins — below
+                                // both refusals, so a grace grant and a queue
+                                // release really do cost nothing.
+                                *board.timeout_counts_by_pos.entry(job.pos).or_insert(0) += 1;
                                 if is_emergency_access
                                     && std::env::var_os("BASTION_EGRESS_DIAG").is_some()
                                 {
@@ -27453,7 +27725,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // Beyond arrival tolerance + hysteresis, sleep stops
                         // and the claim walks back — Traveling preserves it.
                         {
-                            if sleep_displaced(pos.0, bed_pos, active.stance) {
+                            if sleep_displaced(pos.0, bed_pos) {
                                 if let Some(slot) = board.beds.get_mut(&bed_pos)
                                     && slot.occupant == Some(u)
                                 {
@@ -28907,12 +29179,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         >= FARM_GROWTH_MAX =>
                             {
                                 block_change.set(job.pos, Block::empty());
+                                // ★★ DID THIS COLONY ACTUALLY GROW IT? Read
+                                // the stage clock BEFORE the remove below —
+                                // its presence is the only thing separating a
+                                // cell we sowed and matured from a worldgen
+                                // cell that was placed at Growth 15 and has
+                                // been indistinguishable ever since (the two
+                                // are byte-identical blocks). See
+                                // `wheat_harvest_yield` for the full trace and
+                                // the economics.
+                                let colony_sown = board
+                                    .farm_growth
+                                    .contains_key(&(job.pos.x, job.pos.y, job.pos.z));
+                                let (wheat_yield, seed_yield) =
+                                    wheat_harvest_yield(colony_sown);
                                 board.farm_growth.remove(&(job.pos.x, job.pos.y, job.pos.z));
                                 // DET-RNG-008: farm-harvest toss stream keyed
                                 // on the harvested cell (both yield loops draw
                                 // from it in order).
                                 let mut rng = toss_scatter_rng(tick.0, job.pos, 0xFA47_0001);
-                                for _ in 0..FARM_WHEAT_YIELD {
+                                for _ in 0..wheat_yield {
                                     crate::bastion_actions::emit_drop(
                                         &mut item_drop_emitter,
                                         job.pos,
@@ -28921,7 +29207,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         &mut rng,
                                     );
                                 }
-                                for _ in 0..FARM_SEED_YIELD {
+                                for _ in 0..seed_yield {
                                     crate::bastion_actions::emit_drop(
                                         &mut item_drop_emitter,
                                         job.pos,
@@ -28933,6 +29219,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 acted = true;
                                 info!(
                                     pos = ?job.pos,
+                                    colony_sown,
+                                    wheat_yield,
+                                    seed_yield,
                                     "bastion: harvested (cell returns to                                      tilled)"
                                 );
                             },
@@ -34121,11 +34410,46 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // condemned yet 110 teleports — the two-ejects-per-cell
                     // tail was 100 of them). A teleport IS the system's
                     // strongest possible proof: every lesser mechanism
-                    // already failed before the eject fires. One eject
-                    // condemns its destination outright.
+                    // already failed before the eject fires.
+                    //
+                    // ★★ TWO FRAMES COMPARED AS ONE (frame audit, 2026-08-29).
+                    // This used to credit the six strikes to `d` — and its own
+                    // comment said so: "one eject condemns its DESTINATION
+                    // outright". But `d` is the cell `ground_below_dest` /
+                    // `surface_teleport_dest` just PROVED standable and
+                    // reachable; it is where the rescue put the body, not
+                    // where the body was trapped. Every other user of this
+                    // ledger speaks the opposite unit: the producer at ~26758
+                    // keys `entry(job.pos)` — the cell a walker FAILED TO
+                    // REACH — and the field's own doc calls it a "per-job-
+                    // POSITION travel-timeout tally ... a target that keeps
+                    // getting retried and never resolves". Two different
+                    // meanings of "position" met in one map and nothing named
+                    // the mismatch.
+                    //
+                    // The consumer makes the cost permanent: at 6 strikes the
+                    // bed pass removes any bed at the cell and the generic
+                    // pass inserts it into `condemned_cells` — "One-way: the
+                    // town's architecture is static" — dropping every live job
+                    // there and refusing the cell in the claim gauntlet for
+                    // the rest of the server's life. So each SUCCESSFUL rescue
+                    // permanently condemned the safe ground it had just
+                    // delivered to, while the trap that caused the stranding
+                    // took zero strikes and stayed armed for the next
+                    // colonist. `surface_teleport_dest` is a pure function of
+                    // `feet` and terrain, so repeat strandings in one pit
+                    // deliver to the SAME cell — the colony methodically
+                    // condemned its own landing pads. That shape fits the
+                    // day-4 reading (27 cells condemned, 110 teleports)
+                    // better than the tail the comment blamed.
+                    //
+                    // Credit `feet`: the cell the body was actually stuck in,
+                    // which every organic egress tier just failed to get it
+                    // out of. That is a claim about unreachability, which is
+                    // what this ledger stores.
                     *board
                         .timeout_counts_by_pos
-                        .entry(d)
+                        .entry(feet)
                         .or_insert(0) += 6;
                     record_assist_write(
                         tick.0,
@@ -34966,7 +35290,38 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 if let Some(job) = board.jobs.get_mut(&id) {
                     job.claimed_by = None;
                 }
-                if let Some(entity) = id_maps.uid_entity(uid) {
+                // ★★ THE BACKSTOP MUST NOT YANK A COLONIST OFF A DIFFERENT
+                // JOB (leak audit, 2026-08-29). This resolved the LEAKED
+                // job's `claimed_by` uid to an entity and removed that
+                // entity's ActiveJob unconditionally — with no check that the
+                // ActiveJob is the leaked job. But a leaked claim MEANS the
+                // holder is no longer on it: the claim outlived the episode
+                // precisely because the ActiveJob moved on (an overwrite, a
+                // release path that cleared the component but not the claim).
+                // So the one population this fires on is the one where the
+                // two disagree, and the removal landed on the colonist's
+                // CURRENT, healthy job.
+                //
+                // Concretely: uid 240 carries a stale Haul claim; 1860s later
+                // F6 fires while 240 is asleep on a RestAt at their own bed.
+                // The old code cleared the Haul's claim (right) and then tore
+                // the live RestAt off the sleeper (wrong) without the release
+                // seam — so bed occupancy was never released and the RestAt
+                // kept `claimed_by = Some(240)`, which the orphan sweep skips
+                // (it requires `claimed_by.is_none()`). `remove_job`'s
+                // occupancy release then could not match either, and the bed
+                // left the pool permanently. One leak became two leaks plus a
+                // lost bed — a backstop that amplified what it was built to
+                // absorb.
+                //
+                // The seam itself is NOT reachable from here: `to_release` is
+                // drained once, at ~30142, far above this block, so a push
+                // here would be silently dropped. The identity guard is
+                // therefore the whole fix — clear the stale claim always,
+                // touch the ActiveJob only when it really is this job.
+                if let Some(entity) = id_maps.uid_entity(uid)
+                    && active_jobs.get(entity).is_some_and(|aj| aj.job == id)
+                {
                     active_jobs.remove(entity);
                 }
                 board.claim_leak_watch.remove(&id);
@@ -36924,17 +37279,57 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // `has_come_of_age`): `Data.tick` survives a restart,
                     // `time_of_day` does not.
                     let rtsim_now_tick = rtsim.rt_state().data().tick;
+                    // ★★ A PERSISTENT NUMERATOR NEEDS A PERSISTENT
+                    // DENOMINATOR (frame audit, 2026-08-29). This passed
+                    // `dt.0` — `Read<DeltaTime>`, which
+                    // common/src/resources.rs:99 documents as "the time
+                    // since the previous tick", i.e. the MEASURED frame
+                    // delta. It is clamped only by `MAX_GAME_DT = 1/5`
+                    // (common/src/clock.rs:53), so it ranges 0.0333..0.2 —
+                    // a 6x swing — while `rtsim_now_tick` above is a
+                    // persistent monotonic COUNT. Two frames compared as
+                    // one, inside the very function whose doc argues for a
+                    // persistent clock.
+                    //
+                    // The arithmetic: tpgd = DAY / (dt * coeff). At the
+                    // nominal 1/30 that is 86400/1.6 = 54,000 — the figure
+                    // measured off the live log. During ONE hitching frame
+                    // (chunk generation, dt = 0.15) it is 86400/7.2 =
+                    // 12,000, and `elapsed / tpgd >= CHILDHOOD_DAYS` fires
+                    // at 48,000 ticks = 0.89 game days instead of 4. The
+                    // sweep evaluates every child in one pass, so a single
+                    // slow frame graduates the WHOLE cohort, and coming of
+                    // age is irreversible.
+                    //
+                    // `SIM_TPS` is the nominal rate this crate already uses
+                    // to size `ARBITRATION_INTERVAL`; it does not wobble
+                    // with load, so the graduation tick is now a property
+                    // of the save rather than of the frame it was read on.
                     let tpgd = ticks_per_game_day(
-                        f64::from(dt.0),
+                        1.0 / crate::SIM_TPS as f64,
                         server_constants.day_cycle_coefficient,
                     );
-                    let mut lane_pop: Vec<(common::bastion::WorkType, usize)> =
+                    // Practitioners AND live demand per lane. The second
+                    // number is what stops every orphan landing in Build:
+                    // see `scarcest_lane` for the alphabetical-tiebreak
+                    // defect this replaces.
+                    let lane_pop: Vec<(common::bastion::WorkType, usize, usize)> =
                         common::bastion::WorkType::ALL
                     .into_iter()
-                    .map(|w| (w, board.professions.values().filter(|p| **p == w).count()))
+                    .map(|w| {
+                        (
+                            w,
+                            board.professions.values().filter(|p| **p == w).count(),
+                            board
+                                .jobs
+                                .values()
+                                .filter(|j| j.claimed_by.is_none() && j.work == w)
+                                .count(),
+                        )
+                    })
                     .collect();
-                    lane_pop.sort_by_key(|(w, n)| (*n, format!("{w:?}")));
-                    let scarcest = lane_pop[0].0;
+                    let scarcest = scarcest_lane(&lane_pop)
+                        .expect("WorkType::ALL is never empty");
                     let grown: Vec<(specs::Entity, common::uid::Uid, common::bastion::WorkType)> =
                         (&entities, &colonists, &uids)
                             .join()
@@ -39719,6 +40114,284 @@ mod tests {
         );
     }
 
+    /// ★★ WHAT A FRESHLY PLACED WORLDGEN CROP'S GROWTH ACTUALLY IS.
+    ///
+    /// Three comments in this file asserted "worldgen wheat sits at Growth 0"
+    /// and called 0 a RESERVED mature-look stage. All three were false, and
+    /// nothing could have caught it: no test ever asked the engine.
+    ///
+    /// This measures the REAL placement path rather than restating a
+    /// constant. `Block::air` is `Block::unfilled`, which is what
+    /// `try_with_sprite` — the call worldgen's `FarmField` reaches through —
+    /// uses; it fills every attribute of the sprite's category from
+    /// `Default`, and `Default for Growth` is `Growth(15)`.
+    ///
+    /// NON-CIRCULAR BY CONSTRUCTION: the expectation is the LITERAL 15, not
+    /// `Growth::default()` and not `FARM_GROWTH_MAX`. Change
+    /// `impl Default for Growth` in common/src/terrain/sprite/mod.rs:594 and
+    /// this goes red — which is the point, because that file lives outside
+    /// this crate and its default silently sets Bastion's farm economy.
+    #[test]
+    fn worldgen_wheat_is_placed_mature_not_at_growth_zero() {
+        for sprite in [SpriteKind::WheatYellow, SpriteKind::WheatGreen] {
+            let placed = Block::air(sprite);
+            let g = placed
+                .get_attr::<Growth>()
+                .expect("wheat is in the Plant category, which has Growth")
+                .0;
+            assert_eq!(
+                g, 15,
+                "a freshly placed {sprite:?} carries Growth {g}, not 15 — the engine's \
+                 `Default for Growth` moved, and every comment and arm in this file that \
+                 reasons about a worldgen crop's stage is now wrong"
+            );
+            assert_ne!(
+                g, 0,
+                "Growth 0 is UNREACHABLE for a freshly placed crop; any arm keyed on it is \
+                 dead code"
+            );
+            assert!(
+                g >= FARM_GROWTH_MAX,
+                "a worldgen crop is placed already MATURE by this file's own bar, so it \
+                 matches the harvest arm on its very first scan — which is exactly why the \
+                 yield must be discriminated (see wheat_harvest_yield)"
+            );
+        }
+    }
+
+    /// ★★ A VILLAGE WHEAT FIELD IS NOT A FREE SEED PRESS.
+    ///
+    /// Worldgen plants `Self::Wheat` as a ~50/50 mix of `WheatGreen` and
+    /// `WheatYellow` (world/src/site/plot/farm_field.rs). Both arrive at
+    /// Growth 15. `volunteer_crop_item` discriminates on the SPRITE only, so
+    /// the green half was gleaned correctly (VOLUNTEER_YIELD, no seed) while
+    /// the yellow half fell into the founded-colony arm and paid a full
+    /// tended harvest INCLUDING `FARM_SEED_YIELD` — for zero sowing. Since
+    /// seed yield (2) exceeds the 1 seed a sow consumes, that made seed
+    /// unbounded: precisely the "free seed press in every village" that
+    /// `VOLUNTEER_YIELD`'s own doc says must never exist.
+    ///
+    /// Pins BOTH directions, and pins the CALL SITE too — a helper test
+    /// alone could not fail if production stopped passing the discriminator.
+    #[test]
+    fn a_worldgen_wheat_cell_is_not_a_free_seed_press() {
+        // Direction 1: a cell this colony actually sowed and matured keeps
+        // the full tended-crop economy, seed included. The farm cycle must
+        // not be collateral damage of the fix.
+        assert_eq!(
+            wheat_harvest_yield(true),
+            (FARM_WHEAT_YIELD, FARM_SEED_YIELD),
+            "a colony-sown harvest must still pay the full tended yield — otherwise the \
+             conservation invariant (SEED_YIELD > the 1 seed a sow consumes) breaks and the \
+             crop can extinguish"
+        );
+        // Direction 2: a never-sown mature cell pays the gleaning economy.
+        // The seed component is the load-bearing half — stated as the
+        // literal 0, not derived from anything the fix could move.
+        let (wheat, seed) = wheat_harvest_yield(false);
+        assert_eq!(
+            seed, 0,
+            "a worldgen wheat cell paid {seed} seed for work the colony never did — that is \
+             the free seed press VOLUNTEER_YIELD's doc exists to forbid"
+        );
+        assert_eq!(
+            wheat, VOLUNTEER_YIELD,
+            "a never-sown mature WheatYellow must pay exactly what the WheatGreen standing \
+             beside it in the same worldgen field pays; two halves of one field on two \
+             economies is what the defect was"
+        );
+        assert!(
+            seed < FARM_SEED_YIELD,
+            "gleaning must be strictly poorer in seed than farming, or there is no incentive \
+             to run a farm cycle at all"
+        );
+
+        // ── THE CALL SITE, not just the helper. Needles are built at
+        // runtime so this test's own source never satisfies its own counts
+        // (the `concat!`/format! idiom the traversal pins already use).
+        let src = include_str!("bastion_jobs.rs");
+        let discriminated = format!("{}({})", "wheat_harvest_yield", "colony_sown");
+        assert_eq!(
+            src.matches(&discriminated).count(),
+            1,
+            "the harvest arm no longer passes the colony_sown discriminator to \
+             wheat_harvest_yield — pinning the helper alone would still pass while every \
+             worldgen cell silently went back to the full seed yield"
+        );
+        // And the drop loops must be driven by the RETURNED yields. A revert
+        // to the shipped `0..FARM_SEED_YIELD` loop restores the defect while
+        // leaving the helper and its call site untouched.
+        let seed_loop = format!("for _ in 0..{}", "seed_yield");
+        assert_eq!(
+            src.matches(&seed_loop).count(),
+            1,
+            "the seed drop loop is no longer driven by the discriminated yield"
+        );
+        let shipped_seed_loop = format!("for _ in 0..{}", "FARM_SEED_YIELD");
+        assert_eq!(
+            src.matches(&shipped_seed_loop).count(),
+            0,
+            "the harvest arm is emitting FARM_SEED_YIELD directly again — the worldgen \
+             free-seed-press path is back"
+        );
+    }
+
+    /// ★★ THE RECREATION ARM MUST ARM ITS OWN COOLDOWN AND RELEASE THROUGH
+    /// THE SEAM.
+    ///
+    /// The ITEM-11 arm was the ONLY need-preempt site in the pass that
+    /// pushed a `PendingNeed` while arming neither — despite two comments in
+    /// its own gate promising the cooldown ("the cooldown below keeps it
+    /// from re-firing every pass"). Reachable churn: rest below interrupt
+    /// with no free bed takes the rest arm's `no_bed_found` path, which
+    /// `continue`s WITHOUT setting `struck_out`, so the `!serviced &&
+    /// struck_out` cooldown never armed either. The arm then re-fired every
+    /// need pass, minting a fresh Recreate job each time; the previous one
+    /// kept `claimed_by = Some(uid)` and the orphan sweep collects neither
+    /// Recreate nor anything still claimed. Mints ≫ completions, forever.
+    ///
+    /// A behavioural unit test cannot reach this arm (it is inline in a
+    /// specs `run` over a dozen storages), so this pins the STRUCTURE of the
+    /// arm itself: the window between the arm's marker and its push must
+    /// contain both statements. Needles are built at runtime so this test's
+    /// own text cannot satisfy it.
+    #[test]
+    fn the_recreation_arm_arms_its_cooldown_and_releases_through_the_seam() {
+        let src = include_str!("bastion_jobs.rs");
+        let marker = format!("ITEM 11: {}, THE LOWEST-PRIORITY NEED", "RECREATION");
+        let start = src
+            .find(&marker)
+            .expect("the ITEM-11 recreation arm's marker comment moved — re-anchor this pin");
+        let after = &src[start..];
+        let push = format!("{}::Recreate(", "PendingNeed");
+        let end = after
+            .find(&push)
+            .expect("the ITEM-11 arm no longer pushes a Recreate need — re-anchor this pin");
+        let arm = &after[..end];
+        // ★★ CODE ONLY. The first version of this pin searched the raw arm
+        // text and was DEAD: this arm's own doc comment explains the missing
+        // cooldown at length, so the needle matched the PROSE and the pin
+        // stayed green with the defect planted (verified 2026-08-29 —
+        // deleting the insert left it passing). A pin that reads a comment
+        // is pinning the label, not the content. Strip comment lines before
+        // asserting, so only statements can satisfy it.
+        let code: String = arm
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            code.contains(&format!(".insert(*uid, time.0 + {})", "PREEMPT_COOLDOWN_SECS")),
+            "the ITEM-11 recreation arm pushes a Recreate need without arming \
+             preempt_cooldown — it will re-fire on every need pass and mint a fresh Recreate \
+             job each time, exactly the churn engine its own comments claim the cooldown \
+             prevents"
+        );
+        assert!(
+            code.contains(&format!("{}.push(", "to_release")),
+            "the ITEM-11 recreation arm does not release a held job through the seam — the \
+             preempt drain's unconditional active_jobs.insert will silently discard it, \
+             leaking the claim, the bed occupancy and the reservation"
+        );
+    }
+
+    /// ★★ THE F6 CLAIM-LEAK BACKSTOP MUST NOT YANK A COLONIST OFF A
+    /// DIFFERENT JOB.
+    ///
+    /// F6 resolves the LEAKED job's holder to an entity and clears their
+    /// ActiveJob. But "leaked" MEANS the holder moved on, so the population
+    /// it fires on is precisely the one where the ActiveJob is a different,
+    /// healthy job — and the removal bypasses the release seam, so bed
+    /// occupancy and reservations were stranded. One leak became two leaks
+    /// plus a permanently lost bed.
+    #[test]
+    fn the_claim_leak_backstop_only_clears_the_job_that_leaked() {
+        let src = include_str!("bastion_jobs.rs");
+        let guard = format!("aj.job {} id", "==");
+        assert_eq!(
+            src.matches(&guard).count(),
+            1,
+            "the F6 backstop's identity guard is gone: it will remove whatever ActiveJob the \
+             holder currently has, which for a leaked claim is by definition a DIFFERENT job"
+        );
+    }
+
+    /// ★★ THE EJECT'S STRIKES GO TO THE TRAP, NOT THE LANDING PAD.
+    ///
+    /// TWO FRAMES COMPARED AS ONE. `timeout_counts_by_pos` stores "a target
+    /// a walker could not reach" (its producer keys `job.pos`; its own field
+    /// doc says "a target that keeps getting retried and never resolves").
+    /// The fail-safe used to credit six strikes — instant condemnation — to
+    /// `d`, the cell the rescue had just PROVED standable and delivered the
+    /// body to. Since the consumer is one-way (bed removed, cell added to
+    /// `condemned_cells`, every job on it dropped, gauntlet refuses it
+    /// forever), each successful rescue permanently condemned its own
+    /// landing pad while the trap took zero strikes and stayed armed.
+    #[test]
+    fn the_failsafe_eject_condemns_the_trap_not_its_own_landing_pad() {
+        let src = include_str!("bastion_jobs.rs");
+        let destination = format!("{}(d)", ".entry");
+        assert_eq!(
+            src.matches(&destination).count(),
+            0,
+            "the fail-safe is crediting condemnation strikes to the teleport DESTINATION \
+             again — a cell it just proved reachable. Every rescue would condemn the safe \
+             ground it delivered to and leave the trap armed"
+        );
+        let trap = format!("{}(feet)", ".entry");
+        assert_eq!(
+            src.matches(&trap).count(),
+            1,
+            "the fail-safe must credit `feet` — the cell the body was actually stuck in and \
+             that every organic egress tier just failed to get it out of"
+        );
+    }
+
+    /// ★★ A GUARD MUST REFUSE BEFORE IT SPENDS.
+    ///
+    /// The per-cell strike was debited immediately after the travel timeout
+    /// and ABOVE both SOFT-0 exits — the grace window (two colonists
+    /// mutually blocking) and the queue release (waiting on a single-file
+    /// link) — each of which states in its own comment that it costs "no
+    /// strikes". Both were charged anyway, and the ledger they feed is
+    /// one-way: six strikes condemns the cell permanently, with no decay
+    /// anywhere. A cook station beside a doorway could be struck off the
+    /// board forever having never once been unreachable.
+    ///
+    /// This is an ORDERING pin: it fails if the debit moves back above
+    /// either refusal.
+    #[test]
+    fn the_travel_strike_is_debited_below_both_soft0_refusals() {
+        let src = include_str!("bastion_jobs.rs");
+        let debit = format!("{}.entry(job.pos)", "timeout_counts_by_pos");
+        let idx_debit = src
+            .find(&debit)
+            .expect("the per-cell strike debit moved — re-anchor this pin");
+        let grace = format!("active.{} = true", "soft_granted");
+        let idx_grace = src
+            .find(&grace)
+            .expect("the SOFT-0 grace window moved — re-anchor this pin");
+        // The first staged-anchor release AFTER the grace window is the
+        // SOFT-0 one (the needle also occurs in an unrelated later arm).
+        let staged = format!("churn_events.push((entity, pos.0, {}, reach)", "feet");
+        let idx_staged = idx_grace
+            + src[idx_grace..]
+                .find(&staged)
+                .expect("the SOFT-0 queue release moved — re-anchor this pin");
+        assert!(
+            idx_debit > idx_grace,
+            "the strike is debited ABOVE the SOFT-0 grace window, which its own comment says \
+             costs no strikes — a mutual colonist block is being charged toward a permanent \
+             condemnation"
+        );
+        assert!(
+            idx_debit > idx_staged,
+            "the strike is debited ABOVE the SOFT-0 queue release, which its own comment says \
+             costs no strikes — waiting for a single-file link is being charged toward a \
+             permanent condemnation"
+        );
+    }
+
     /// SHAFT FIXTURE (SHAFT-FIXTURE-PREREG.md) G1: the geometry arithmetic,
     /// pinned BEFORE any fixture code exists.
     ///
@@ -41908,62 +42581,336 @@ mod tests {
         );
     }
 
-    /// ★ ONE FRAME PIN (adversarial review, 2026-08-29): the retention band
-    /// must be measured in the ARRIVAL frame, in EVERY direction.
+    /// ★★ RETENTION IS MEASURED FROM THE BED CELL — IN LITERALS.
     ///
-    /// The pre-existing pin probed only `centre + (ARRIVE_DIST+0.4, 0, 0)` —
-    /// a HORIZONTAL offset from the BED CENTRE, which is a point the arrival
-    /// test never used, in the one direction where the frame mismatch does
-    /// no harm. It passed happily while the band was zero wide overhead.
-    /// This loops the whole sphere, so no direction can hide.
+    /// REPLACES A DEAD PIN. The previous version of this test computed
+    /// `r = ARRIVE_DIST + SLEEP_HYSTERESIS` and
+    /// `target = approach_target(bed, stance)` — the two expressions the
+    /// implementation itself evaluates — and then asserted the
+    /// implementation against them. That is the implementation compared with
+    /// itself: setting `SLEEP_HYSTERESIS = 0.0`, the zero-width band the pin
+    /// was written to forbid, moved both sides together and left it GREEN
+    /// (the probe lands at distance² 6.25 against r² 6.25, and `6.25 > 6.25`
+    /// is false). Every number below is a hardcoded literal for that reason.
     #[test]
-    fn the_retention_band_is_measured_in_the_arrival_frame() {
+    fn the_retention_band_is_measured_from_the_bed_cell() {
         let bed = Vec3::new(10, 10, 5);
-        let r = ARRIVE_DIST + SLEEP_HYSTERESIS;
-        for stance in [
-            Vec3::unit_z(),
-            Vec3::new(1, 0, 0),
-            Vec3::new(-1, 0, 0),
-            Vec3::new(0, 1, 0),
-            Vec3::new(0, -1, 0),
+
+        // The band's width, stated as a literal. If either constant moves,
+        // this fails here rather than silently widening every case below.
+        assert_eq!(
+            ARRIVE_DIST + SLEEP_HYSTERESIS,
+            3.0,
+            "the retention radius is no longer 3.0; every literal in this pin was chosen \
+             against that width"
+        );
+        assert!(
+            SLEEP_HYSTERESIS > 0.0,
+            "a zero-width hysteresis band makes arrival and release the same boundary, and \
+             the latch flaps Arrived<->Traveling forever"
+        );
+
+        // THE ANCHOR ITSELF. A bed is registered at a FEET cell, so a body
+        // lying in it is at the cell centre with NO z offset. Literal.
+        assert_eq!(
+            lying_target(bed),
+            Vec3::new(10.5, 10.5, 5.0),
+            "the retention anchor is not the bed cell — if this is (…, 6.0) the anchor is the \
+             ARRIVAL approach target again, a full block above the sleeping body"
+        );
+
+        // ── THE REGRESSION THIS FIX EXISTS FOR ──────────────────────────
+        // The measured upper-storey fall: dz = -1.98, dxy = 0.72 from the
+        // bed cell. Distance from the bed cell is sqrt(1.98² + 0.72²) =
+        // 2.107 — comfortably inside 3.0, so the sleeper HOLDS.
+        let fallen = Vec3::new(10.5 + 0.72, 10.5, 5.0 - 1.98);
+        assert!(
+            !sleep_displaced(fallen, bed),
+            "the measured upper-storey fall (dz=-1.98, dxy=0.72) must HOLD: it is 2.107 from \
+             the bed cell. Measured from the arrival anchor it reads 3.066 and releases on a \
+             0.066 margin — that artefact is what produced the SLEEP UNHOLDABLE strikes"
+        );
+        // And prove the OLD anchor really would have released it, so this
+        // pin fails if anyone re-anchors on the approach target.
+        let arrival_anchor = Vec3::new(10.5, 10.5, 6.0);
+        assert!(
+            fallen.distance(arrival_anchor) > 3.0,
+            "sanity: from the arrival anchor this same body is past the band — that is the \
+             defect being pinned against"
+        );
+
+        // ── THE FALSE "LYING" READING, the other direction ──────────────
+        // A colonist on the roof 3.5 blocks above their own bed must NOT
+        // count as in it; from the arrival anchor they read only 2.5.
+        let on_the_roof = Vec3::new(10.5, 10.5, 5.0 + 3.5);
+        assert!(
+            sleep_displaced(on_the_roof, bed),
+            "a body 3.5 blocks above its bed must be DISPLACED — otherwise rest keeps banking \
+             and the bed census counts a rooftop figure as `lying`, which is a false reading \
+             of the exact acceptance criterion the census protects"
+        );
+        assert!(
+            on_the_roof.distance(arrival_anchor) < 3.0,
+            "sanity: the arrival anchor would have called this rooftop body NOT displaced"
+        );
+
+        // ── ORDINARY HOLDS AND RELEASES, all literal distances ──────────
+        for (body, dist, hold) in [
+            (Vec3::new(10.5, 10.5, 5.0), 0.0, true),   // dead centre
+            (Vec3::new(12.5, 10.5, 5.0), 2.0, true),   // 2.0 aside
+            (Vec3::new(13.4, 10.5, 5.0), 2.9, true),   // just inside
+            (Vec3::new(13.6, 10.5, 5.0), 3.1, false),  // just outside
+            (Vec3::new(10.5, 10.5, 1.0), 4.0, false),  // fell 4 blocks
+            (Vec3::new(16.5, 10.5, 5.0), 6.0, false),  // the 6-block defect
         ] {
-            let target = crate::bastion_actions::approach_target(bed, stance);
-            for i in 0..48 {
-                for j in 0..24 {
-                    let theta = i as f32 * std::f32::consts::TAU / 48.0;
-                    let phi = j as f32 * std::f32::consts::PI / 23.0;
-                    let dir = Vec3::new(
-                        phi.sin() * theta.cos(),
-                        phi.sin() * theta.sin(),
-                        phi.cos(),
-                    );
-                    assert!(
-                        !sleep_displaced(target + dir * (r - 0.02), bed, stance),
-                        "stance {stance:?} dir {dir:?}: inside the band must HOLD —                          every flip here releases the bed and restarts the walk"
-                    );
-                    assert!(
-                        sleep_displaced(target + dir * (r + 0.02), bed, stance),
-                        "stance {stance:?} dir {dir:?}: past the band must RELEASE"
-                    );
-                }
-            }
+            assert_eq!(
+                !sleep_displaced(body, bed),
+                hold,
+                "body at {body:?} is {dist} from the bed cell; expected hold={hold}"
+            );
         }
-        // The band is a real width, not a knife edge: a sleeper who drifts
-        // half a block must NOT be evicted, in any direction.
-        for stance in [Vec3::unit_z(), Vec3::new(1, 0, 0)] {
-            let target = crate::bastion_actions::approach_target(bed, stance);
-            for d in [
-                Vec3::new(0.0, 0.0, 1.0),
-                Vec3::new(0.0, 0.0, -1.0),
-                Vec3::new(1.0, 0.0, 0.0),
-                Vec3::new(0.0, 1.0, 0.0),
-            ] {
-                assert!(
-                    !sleep_displaced(target + d * ARRIVE_DIST, bed, stance),
-                    "a body that just ARRIVED must never be instantly displaced                      ({stance:?} / {d:?}) — that is the flap"
-                );
-            }
-        }
+    }
+
+    /// ★★ THE CHILDHOOD GATE MUST NOT MOVE WITH FRAME RATE.
+    ///
+    /// `has_come_of_age` divides a PERSISTENT tick count by
+    /// `ticks_per_game_day`, which the sweep used to build from
+    /// `Read<DeltaTime>` — the measured frame delta, clamped only by
+    /// `MAX_GAME_DT = 1/5`. A persistent monotonic numerator over a
+    /// wall-clock denominator: the graduation tick moved with load, and
+    /// because the sweep evaluates every child in ONE pass, a single hitching
+    /// frame graduated the whole cohort irreversibly.
+    #[test]
+    fn the_childhood_gate_does_not_move_with_frame_rate() {
+        // The nominal server, stated in literals: 86400 game-seconds per day
+        // over (1/30 * 48) = 1.6 game-seconds per tick = 54,000 ticks.
+        let nominal = ticks_per_game_day(1.0 / 30.0, 48.0);
+        assert_eq!(nominal, 54_000.0, "the measured default-server figure moved");
+
+        // A hitching frame at the MAX_GAME_DT clamp. This is what the sweep
+        // used to hand the gate.
+        let hitching = ticks_per_game_day(0.15, 48.0);
+        assert!(
+            (hitching - 12_000.0).abs() < 1.0,
+            "a hitching frame gives {hitching} ticks per game day against the nominal 54,000 \
+             — a 4.5x error in the denominator of an irreversible gate"
+        );
+
+        // Four game days at the nominal rate — a child who is exactly of age.
+        let four_days = 4 * 54_000;
+        assert_eq!(CHILDHOOD_DAYS, 4, "the literals below assume a 4-day childhood");
+
+        // The defect, stated: at the hitching denominator a child who has
+        // lived only 60,000 ticks — 1.11 game days at the real rate —
+        // reads as five days old and graduates.
+        assert!(
+            has_come_of_age(60_000, Some(0), hitching),
+            "sanity: this is the WRONG reading the wall-clock denominator produced"
+        );
+        assert!(
+            !has_come_of_age(60_000, Some(0), nominal),
+            "1.11 game days is not a childhood — a child must NOT come of age here"
+        );
+        assert!(
+            has_come_of_age(four_days as u64, Some(0), nominal),
+            "a child who has lived four full game days must come of age"
+        );
+
+        // And the call site must feed it the NOMINAL rate, not the frame
+        // delta. Needles built at runtime.
+        let src = include_str!("bastion_jobs.rs");
+        let nominal_call = format!("1.0 / crate::{} as f64", "SIM_TPS");
+        assert_eq!(
+            src.matches(&nominal_call).count(),
+            1,
+            "the childhood sweep no longer derives ticks-per-game-day from the nominal tick \
+             rate — if it is reading dt again, one slow frame graduates the whole cohort"
+        );
+        let frame_delta = format!("ticks_per_game_day(\n                        f64::from({}.0),", "dt");
+        assert_eq!(
+            src.matches(&frame_delta).count(),
+            0,
+            "the childhood sweep is reading the measured frame delta again"
+        );
+    }
+
+    /// ★★ AN ORPHAN IS NOT RAISED INTO A DEAD LANE.
+    ///
+    /// The sweep tie-broke equally-short lanes on `format!("{w:?}")`. Build,
+    /// Chop and Craft all sit at 0 practitioners in a young colony and
+    /// "Build" < "Chop" < "Craft", so every parentless child resolved to
+    /// Build — the lane the row's measurements call dead. The tiebreak is now
+    /// live demand: unclaimed jobs standing on the board.
+    #[test]
+    fn an_orphan_is_not_raised_into_a_lane_with_no_work() {
+        use common::bastion::WorkType as W;
+        // The exact shipped shape: three lanes tied at zero practitioners,
+        // and only one of them has work. Alphabetically Build wins; by
+        // demand, Craft must.
+        let lanes = [(W::Build, 0usize, 0usize), (W::Chop, 0, 0), (W::Craft, 0, 37)];
+        assert_eq!(
+            scarcest_lane(&lanes),
+            Some(W::Craft),
+            "the orphan was raised into a lane with ZERO open jobs while 37 stood unclaimed \
+             elsewhere — that is the alphabetical tiebreak choosing, not the colony"
+        );
+        // Headcount still OUTRANKS demand: a lane nobody works at all is
+        // scarcer than a busy lane with practitioners.
+        let lanes = [(W::Build, 0, 0), (W::Craft, 5, 99)];
+        assert_eq!(
+            scarcest_lane(&lanes),
+            Some(W::Build),
+            "scarcity of PEOPLE is the primary key; demand only breaks ties"
+        );
+        // Fully degenerate input stays deterministic rather than picking by
+        // hash order.
+        let lanes = [(W::Chop, 2, 4), (W::Build, 2, 4)];
+        assert_eq!(scarcest_lane(&lanes), Some(W::Build));
+        assert_eq!(scarcest_lane(&[]), None);
+    }
+
+    /// ★★ THE STALL EXEMPTION IS A 3D TEST.
+    ///
+    /// `steer_at_own_feet` zeroes the stall clock. Tested in XY only, it
+    /// fired for a colonist who had fallen through an upper-storey floor
+    /// (dz = -2.0, dxy = 0.72), so `STUCK_TIMEOUT` never elapsed, strikes
+    /// never accrued, and the escalation discard was unreachable — the
+    /// silent unbounded loop. Literals throughout.
+    #[test]
+    fn the_stall_exemption_sees_a_vertical_displacement() {
+        let body = Vec3::new(10.5, 10.5, 5.0);
+        // THE DEFECT: two blocks below the steer target, 0.72 aside. Under
+        // an XY-only test this reads as "already there".
+        let fallen_through_floor = Vec3::new(10.5 + 0.72, 10.5, 5.0 + 2.0);
+        assert!(
+            !steer_is_at_own_feet(fallen_through_floor, body),
+            "a colonist 2 blocks below his steer target is NOT standing on it — exempting him \
+             pins the stall clock to zero and the escalation can never fire"
+        );
+        assert!(
+            fallen_through_floor.xy().distance(body.xy()) < 1.2,
+            "sanity: XY-only, this is the exemption firing — that is the defect"
+        );
+        // THE INTENT, preserved: a body genuinely at its target is exempt,
+        // including across the one-block anchor differences this file uses.
+        assert!(
+            steer_is_at_own_feet(body, body),
+            "a body exactly on its steer target has nothing to walk to"
+        );
+        assert!(
+            steer_is_at_own_feet(Vec3::new(10.5, 10.5, 6.0), body),
+            "a one-block anchor difference (approach target vs lying target) must stay exempt, \
+             or the stall clock starts on colonists standing where they were sent"
+        );
+        assert!(
+            !steer_is_at_own_feet(Vec3::new(13.0, 10.5, 5.0), body),
+            "2.5 blocks away horizontally is a real walk, not a standstill"
+        );
+    }
+
+    /// ★★ EVERY FARM PUSH PAYS THE BUDGET, AND EVERY DEBIT IS GUARDED.
+    ///
+    /// The volunteer-crop arm was the one farm push site reading a bare
+    /// `!occupied.contains(&cpos)` — no `cell_free` churn filter and no
+    /// `open_budget` debit — while all five siblings used
+    /// `cell_free(..) && open_budget > 0`. Volunteer jobs are ordinary
+    /// unclaimed Farm jobs inside the plot, so `open_by_plot` COUNTS them:
+    /// an adopted village field with hundreds of standing crops drove
+    /// `open_budget` to 0 permanently and that plot could never mint another
+    /// till, sow or harvest. Found independently by two reviewers.
+    ///
+    /// CODE ONLY — an earlier pin in this file was dead because its needle
+    /// matched the surrounding doc comment rather than a statement.
+    #[test]
+    fn every_farm_push_debits_the_plot_budget_behind_a_guard() {
+        let src = include_str!("bastion_jobs.rs");
+        let code: String = src
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let debit = format!("open_budget {} 1;", "-=");
+        let guard_c = format!("cell_free(cpos) && open_budget {} 0", ">");
+        let guard_g = format!("cell_free(gpos) && open_budget {} 0", ">");
+        let debits = code.matches(&debit).count();
+        let guards = code.matches(&guard_c).count() + code.matches(&guard_g).count();
+        assert!(debits > 0, "the farm budget is no longer debited anywhere");
+        assert_eq!(
+            debits, guards,
+            "{debits} farm budget debits against {guards} guards — a push site is spending the \
+             plot's budget without first proving the cell is free, or minting without paying. \
+             A guard placed after its debit starves the plot (ROW 50 rank 1)"
+        );
+        let bare = format!("!occupied.contains(&{})", "cpos");
+        assert_eq!(
+            code.matches(&bare).count(),
+            0,
+            "a farm push site is back to the bare occupancy check: it mints unbudgeted jobs \
+             that `open_by_plot` still counts, which pins that plot's open_budget to 0 forever"
+        );
+    }
+
+    /// ★★ THE FORGE CAP'S DEGENERATE SETTINGS.
+    ///
+    /// `BASTION_FORGE_CREW=0` used to parse straight through to a cap of 0,
+    /// making the mint gate's `crew >= cap` read `0 >= 0` — true always. The
+    /// forge went permanently dark with no refusal naming the cause. The
+    /// derived path had floored at 1 all along; only the override did not.
+    #[test]
+    fn the_forge_cap_refuses_its_degenerate_settings() {
+        // The derived path, at both ends of the roster range.
+        assert_eq!(forge_crew_cap(0), 1, "an empty roster must still admit one smith");
+        assert!(
+            forge_crew_cap(0) >= 1 && forge_crew_cap(240) >= 1,
+            "a cap of 0 makes `crew >= cap` unconditionally true and the forge never lights"
+        );
+        // The floor is applied to the OVERRIDE too, not just the default.
+        // (The env is read once into a OnceLock, so drive the clamp itself.)
+        let clamp = |v: usize| v.max(1);
+        assert_eq!(clamp(0), 1, "BASTION_FORGE_CREW=0 must not survive as a cap of 0");
+        let src = include_str!("bastion_jobs.rs");
+        let floored = format!(".map(|v| v.max({}))", "1");
+        assert_eq!(
+            src.matches(&floored).count(),
+            1,
+            "the forge cap's env override is no longer floored — BASTION_FORGE_CREW=0 would \
+             darken the forge permanently"
+        );
+    }
+
+    /// ★★ THE DISPLACEMENT STRIKE CAP HAD NO PIN AT ALL.
+    ///
+    /// `SLEEP_DISPLACE_STRIKE_CAP` gates how many times one sleeper may be
+    /// pushed off one bed before the town gives that bed up. Nothing
+    /// anywhere asserted its value or its direction, so `CAP = 0` or
+    /// `CAP = 1` — which drop the bed on the FIRST jostle, before any
+    /// retry — would have shipped with the whole suite green. That is the
+    /// degenerate setting the pin has to forbid, not the nominal one.
+    #[test]
+    fn the_sleep_displacement_cap_survives_a_single_jostle() {
+        assert!(
+            SLEEP_DISPLACE_STRIKE_CAP >= 2,
+            "a cap below 2 condemns a bed on the first displacement — one shove from a \
+             passing colonist, one physics tick at a doorway, and the sleeper loses the bed \
+             with no retry. The cap exists to distinguish a bed that CANNOT be held from a \
+             bed that was merely bumped"
+        );
+        assert!(
+            SLEEP_DISPLACE_STRIKE_CAP <= 64,
+            "an effectively unbounded cap means a genuinely unholdable bed is retried forever, \
+             which is the loop the cap was added to stop"
+        );
+        // The comparison must be a >= cap test at exactly one site: a `>`
+        // would silently grant one extra strike, a second site would mean
+        // two different caps in one mechanism.
+        let src = include_str!("bastion_jobs.rs");
+        let needle = format!("{} {} {}", "strikes", ">=", "SLEEP_DISPLACE_STRIKE_CAP");
+        assert_eq!(
+            src.matches(&needle).count(),
+            1,
+            "the strike cap is no longer consulted exactly once with >= — either it is \
+             unenforced or two sites disagree about the bound"
+        );
     }
 
     /// ★ REVIEW FIX PIN (2026-08-29): every lane is covered, and the guard
@@ -43010,22 +43957,24 @@ mod tests {
     #[test]
     fn sleep_stops_banking_when_the_body_leaves_the_bed() {
         let bed = Vec3::new(10, 10, 5);
-        let centre = bed.map(|e| e as f32 + 0.5);
+        // Where the BODY lies: the bed is a feet cell, so no z offset (see
+        // `lying_target`). Written as a literal, not derived.
+        let centre = Vec3::new(10.5, 10.5, 5.0);
         // On the bed: never displaced.
-        assert!(!sleep_displaced(centre, bed, Vec3::unit_z()), "lying on the bed is not displaced");
+        assert!(!sleep_displaced(centre, bed), "lying on the bed is not displaced");
         // Inside the hysteresis band (between ARRIVE_DIST and +0.5): still
         // held — this is what keeps physics jitter from flapping the state.
         assert!(
-            !sleep_displaced(centre + Vec3::new(ARRIVE_DIST + 0.4, 0.0, 0.0), bed, Vec3::unit_z()),
+            !sleep_displaced(centre + Vec3::new(ARRIVE_DIST + 0.4, 0.0, 0.0), bed),
             "jitter at the arrival boundary must not evict the sleeper"
         );
         // The proven defect, exactly: banking rest from 6 blocks away.
         assert!(
-            sleep_displaced(centre + Vec3::new(6.0, 0.0, 0.0), bed, Vec3::unit_z()),
+            sleep_displaced(centre + Vec3::new(6.0, 0.0, 0.0), bed),
             "a body 6 blocks from the bed must stop banking rest — this exact              case logged byte-identically to real sleep pre-fix"
         );
         // Displacement is 3D — a body shoved a storey below the bed is off it.
-        assert!(sleep_displaced(centre - Vec3::new(0.0, 0.0, 4.0), bed, Vec3::unit_z()));
+        assert!(sleep_displaced(centre - Vec3::new(0.0, 0.0, 4.0), bed));
     }
 
     #[test]

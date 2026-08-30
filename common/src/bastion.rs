@@ -255,7 +255,15 @@ impl ZExtent {
 /// key ("what can be built in this zone?"). Zones use it as soft preference,
 /// not iron law (§2). Do NOT re-derive or extend without an architect pass
 /// on frameworks §2 itself.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+///
+/// `strum::EnumIter` is derived for ONE reason: so the schema guard can
+/// enumerate the variants from the ENUM instead of from a list it writes
+/// itself. Measured — the guard used to build its own `[Purpose; 8]` and
+/// compare that array's labels to a literal, which cannot notice a NINTH
+/// kind; appending one left the suite green. Same EXHAUSTIVENESS-ASSERTS
+/// idiom `WorkType::ALL` and [`DesignationKind`] already use. `EnumIter`
+/// is not a serde trait and touches no wire representation.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, strum::EnumIter)]
 pub enum Purpose {
     /// residential → housing
     Housing,
@@ -298,7 +306,9 @@ impl Purpose {
 /// Meeting (the proof zone biasing EXISTING idle behavior); further kinds
 /// land with their owning blocks (Refuse/Gather = ZONE-1, needs-gated
 /// kinds = ZONE-2+).
-#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(
+    Copy, Clone, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize, strum::EnumIter,
+)]
 pub enum ZoneKind {
     // `Default` so `DesignationKind` can derive `strum::EnumIter` (the
     // EXHAUSTIVENESS-ASSERTS iteration; a data variant needs a default to
@@ -2041,12 +2051,31 @@ impl WorkDesires {
         let mut d = Self::default();
         // ★ REVIEW FIX: this was a hand-written list that omitted Craft, so
         // no colonist ever rolled a craft desire and the setter's Craft arm
-        // was dead code. `WorkType::ALL` is compiler-enforced complete, and
-        // its order preserves the original seven so the draw sequence for
-        // every existing world is unchanged.
+        // was dead code. `WorkType::ALL` is compiler-enforced complete, so
+        // the lane can never silently fall out of the roll again.
+        //
+        // ★ CORRECTION (dead-pin audit). The sentence that used to stand
+        // here claimed "its order preserves the original seven so the draw
+        // sequence for every existing world is unchanged". THAT WAS FALSE,
+        // and naming the mistake matters because the comment is what stopped
+        // anyone looking. `ALL`'s ORDER does preserve the original seven; its
+        // LENGTH does not, and the draw was `random_range(0..kinds.len())` —
+        // 0..7 became 0..8. Different index drawn, and under rejection
+        // sampling a different amount of stream eaten. `generate` is handed
+        // the SHARED founding rng (server/src/rtsim/mod.rs:793, whose
+        // species/body/offset draws follow on that same stream), so this
+        // re-rolled every colonist in every world at a given seed. Letting
+        // colonists desire Craft genuinely requires new outcomes — that part
+        // is the feature and cannot be undone — but it must never have been
+        // narrated as "no change", and the NEXT lane must not repeat it.
+        //
+        // Hence FIXED-WIDTH draws reduced modulo the lane count: exactly two
+        // `u32` off the parent stream whatever `COUNT` becomes. (Modulo bias
+        // over 8 of 2^32 is ~1e-9 — far below any behaviour this feeds.)
+        // Pinned by `a_new_work_lane_cannot_shift_the_founding_stream`.
         let kinds = WorkType::ALL;
-        let loved = kinds[rng.random_range(0..kinds.len())];
-        let disliked = kinds[rng.random_range(0..kinds.len())];
+        let loved = kinds[rng.random::<u32>() as usize % kinds.len()];
+        let disliked = kinds[rng.random::<u32>() as usize % kinds.len()];
         let set = |d: &mut Self, w: WorkType, v: f32| match w {
             WorkType::Craft => d.craft = v,
             WorkType::Mine => d.mine = v,
@@ -2973,40 +3002,226 @@ mod tests {
         );
     }
 
+    /// SCHEMA GUARD (B5.6b-2): frameworks §2's zone↔asset purpose list is
+    /// canonical — 8 kinds, these labels. Other docs carry drifted 7/8/9-kind
+    /// copies; if this test needs editing, frameworks §2 must have been
+    /// deliberately changed FIRST (architect pass), not the reverse.
+    ///
+    /// ★ REWRITTEN after the dead-pin audit. The old form built its own
+    /// `[Purpose; 8]` array and compared THAT array's labels to a literal
+    /// list — a list enumerated from itself cannot prove itself complete.
+    /// Measured: appending a NINTH variant (with its `label` arm, the only
+    /// edit the compiler forces) left the whole suite GREEN, so the one word
+    /// in this test's name was the one thing it did not guard. `Purpose` now
+    /// derives `strum::EnumIter` — the same idiom the `WorkType::ALL`
+    /// completeness check and `DesignationKind` already use — so the vector
+    /// comes from the ENUM and the golden literal is the independent witness.
+    /// That makes it two-sided by construction: a ninth kind, a deleted kind,
+    /// a relabel, and a REORDER (which would silently re-encode every saved
+    /// designation) are each red here.
+    ///
+    /// The mapping half was equally thin: it named five kinds out of twelve.
+    /// `Gather`, `Bed`, `GuardPost`, `PatrolPoint`, `Farm`, `CookStation` and
+    /// `Zone` were all unprobed, and most of them landed AFTER this test was
+    /// written with nothing to notice. Measured: reclassifying `Farm` from
+    /// `Some(Production)` to `None` left the suite green. It is now TOTAL
+    /// over `DesignationKind::iter()`.
     #[test]
     fn purpose_enum_is_the_canonical_eight() {
-        // SCHEMA GUARD (B5.6b-2): frameworks §2's zone↔asset purpose list is
-        // canonical — 8 kinds, these labels. Other docs carry drifted 7/8/9-
-        // kind copies; if this test needs editing, frameworks §2 must have
-        // been deliberately changed FIRST (architect pass), not the reverse.
-        let all = [
-            Purpose::Housing,
-            Purpose::Production,
-            Purpose::Commerce,
-            Purpose::Faith,
-            Purpose::Social,
-            Purpose::Defense,
-            Purpose::Storage,
-            Purpose::Farming,
+        use strum::IntoEnumIterator;
+
+        let labels: Vec<&'static str> = Purpose::iter().map(|p| p.label()).collect();
+        assert_eq!(
+            labels,
+            [
+                "Housing",
+                "Production",
+                "Commerce",
+                "Faith",
+                "Social",
+                "Defense",
+                "Storage",
+                "Farming",
+            ],
+            "frameworks §2's canonical EIGHT drifted — §2 gets the architect pass first"
+        );
+
+        // Designation → purpose, TOTAL over the real variant list. `Zone`
+        // carries data, which is why `ZoneKind` derives `Default`: `EnumIter`
+        // instantiates it as `Zone(Meeting)`.
+        let mapped: Vec<String> = DesignationKind::iter()
+            .map(|k| format!("{k:?} => {:?}", k.purpose()))
+            .collect();
+        assert_eq!(
+            mapped,
+            [
+                "Mine => Some(Production)",
+                "Chop => Some(Production)",
+                "Build => None",
+                "Stockpile => Some(Storage)",
+                "Ladder => None",
+                "Zone(Meeting) => Some(Social)",
+                "Gather => Some(Production)",
+                "Bed => Some(Housing)",
+                "GuardPost => None",
+                "PatrolPoint => None",
+                "Farm => Some(Production)",
+                "CookStation => None",
+            ],
+            "a designation kind was added, removed, REORDERED (a wire break) or reclassified"
+        );
+
+        // `EnumIter` can only reach `Zone`'s DEFAULT payload, so the other
+        // zone kinds need naming explicitly or they ride along unchecked —
+        // `FoodStore` is deliberately Production, not Social: the magnet must
+        // not gather colonists to the pantry.
+        let zones: Vec<String> = ZoneKind::iter()
+            .map(|z| format!("{z:?} => {:?}", z.purpose()))
+            .collect();
+        assert_eq!(
+            zones,
+            ["Meeting => Social", "FoodStore => Production"],
+            "a zone kind's locked purpose drifted"
+        );
+    }
+
+
+    /// ★ THE FOUNDING DRAW SEQUENCE, PINNED.
+    ///
+    /// `BastionColonist::generate` does not own its rng — it is handed the
+    /// SHARED founding stream. `server/src/rtsim/mod.rs:768` opens one
+    /// `tick_rng(world_seed, seed_tick, 0xBA57_C010)`, line 793 hands it to
+    /// `generate`, and lines 796-807 then draw the spawn offset, species,
+    /// body and npc seed FROM THAT SAME STREAM. The settle branch does the
+    /// same at :496 / :675-681 / :715. So how many draws `generate` makes is
+    /// load-bearing far outside `generate`: ONE extra draw here re-rolls
+    /// every colonist's body and species in every world at that seed.
+    ///
+    /// This file already states the law — the `parent`/`born_day` fields
+    /// REFUSE to draw for exactly this reason — and the codebase already
+    /// applies the remedy elsewhere (`personality_rng` at :519 and :774 is a
+    /// separately salted stream, "never `rng`: drawing inline would shift
+    /// ..."). It was violated twice in one day anyway, and nothing caught it:
+    /// before this test, NO test in any crate called `generate` or
+    /// `WorkDesires::roll` at all. This is that missing witness.
+    ///
+    /// HONEST ABOUT WHAT IT IS: a characterization pin. The golden values
+    /// were harvested from the code as it stands, so it cannot say the
+    /// current sequence is *right* — only that it has not moved since. That
+    /// is exactly the failure mode in question. `stream_after` is the
+    /// load-bearing line: it is the next value the founding loop itself would
+    /// draw, so it goes red for ANY change in draw COUNT, even one where
+    /// every colonist field happens to still look plausible.
+    #[test]
+    fn founding_draw_sequence_is_pinned_against_silent_shifts() {
+        use rand::{Rng, SeedableRng};
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0xBA57_C010);
+        let c = BastionColonist::generate(&mut rng);
+
+        let skills: Vec<u16> = vec![
+            c.skills.mining.level,
+            c.skills.woodcutting.level,
+            c.skills.construction.level,
+            c.skills.hauling.level,
+            c.skills.cooking.level,
+            c.skills.melee.level,
+            c.skills.farming.level,
+            c.skills.crafting.level,
+            c.skills.climbing.level,
         ];
-        let labels: Vec<_> = all.iter().map(|p| p.label()).collect();
-        assert_eq!(labels, vec![
-            "Housing",
-            "Production",
-            "Commerce",
-            "Faith",
-            "Social",
-            "Defense",
-            "Storage",
-            "Farming",
-        ]);
-        // Designation → purpose mapping: extraction/storage designations
-        // classify; Build carries its asset's own purpose (None here).
-        assert_eq!(DesignationKind::Mine.purpose(), Some(Purpose::Production));
-        assert_eq!(DesignationKind::Chop.purpose(), Some(Purpose::Production));
-        assert_eq!(DesignationKind::Stockpile.purpose(), Some(Purpose::Storage));
-        assert_eq!(DesignationKind::Build.purpose(), None);
-        assert_eq!(DesignationKind::Ladder.purpose(), None);
+        let desires: Vec<f32> = WorkType::ALL.iter().map(|w| c.desires.get(*w)).collect();
+        let values: Vec<i8> = c.values.values().copied().collect();
+        // The stream POSITION after `generate` — what the founding loop's
+        // own species/body/offset draws actually see.
+        let stream_after: u64 = rng.random();
+
+        println!("GOLDEN name={:?}", c.name);
+        println!("GOLDEN backstory={:?}", c.backstory);
+        println!("GOLDEN skills={skills:?}");
+        println!("GOLDEN desires={desires:?}");
+        println!("GOLDEN values={values:?}");
+        println!("GOLDEN stream_after={stream_after}");
+
+        assert_eq!(c.name, "Osric Longstride", "the founding draw sequence SHIFTED");
+        assert_eq!(c.backstory, "disgraced guard", "the founding draw sequence SHIFTED");
+        assert_eq!(skills, vec![0u16, 1, 1, 3, 5, 4, 5, 5, 1], "a skill draw was added, removed or reordered");
+        assert_eq!(desires, vec![1.0f32, 1.0, 1.0, 1.0, 0.5, 1.0, 2.0, 1.0], "WorkDesires::roll's draw changed");
+        assert_eq!(values, vec![-30i8, 37, -47, 38, -23, 10, 4, 33], "the value roll shifted");
+        assert_eq!(
+            stream_after, 1338226546938448487u64,
+            "generate() consumed a different number of draws — every colonist's body, \
+             species and spawn offset in every world at this seed just changed"
+        );
+    }
+
+    /// ★ A NEW WORK LANE MUST NOT BE ABLE TO SHIFT THE FOUNDING STREAM.
+    ///
+    /// The structural half, and the one that outlives the golden values
+    /// above. The defect was never `WorkType::ALL` — `ALL` is the right fix
+    /// for the stale-hand-written-list class and must stay. The defect was
+    /// wiring a LANE-COUNT-DEPENDENT draw (`random_range(0..kinds.len())`)
+    /// into a function that consumes the SHARED stream: appending `Craft`
+    /// moved that range 0..7 → 0..8, which changes both the value drawn and,
+    /// through rejection sampling, how much of the stream it eats.
+    ///
+    /// `roll` now takes two FIXED-WIDTH draws and reduces them modulo the
+    /// lane count, so its parent-stream appetite is exactly two `u32`
+    /// whatever `WorkType::COUNT` becomes. This asserts that directly against
+    /// a hand-rolled two-draw control.
+    ///
+    /// ★ MEASURED LIMIT OF THIS TEST — stated because overclaiming is the
+    /// defect that produced the bug it guards. Restoring the old
+    /// `random_range(0..kinds.len())` form does NOT fail this assert today: at
+    /// the current `COUNT = 8`, a power of two, the uniform sampler needs no
+    /// rejection and happens to eat the same two `u32`. I broke the line and
+    /// confirmed this test stayed GREEN. What catches the restoration right
+    /// now is the golden `desires` / `stream_after` pin above, which does go
+    /// red. This assert earns its place at the count that actually caused the
+    /// incident — a NON-power-of-two lane list (the 0..7 the shift came from)
+    /// needs rejection sampling and fails here — and it is the only assert
+    /// that states the invariant rather than a snapshot, so it survives every
+    /// future re-baselining of the goldens.
+    #[test]
+    fn a_new_work_lane_cannot_shift_the_founding_stream() {
+        use rand::{Rng, SeedableRng};
+        const SEED: u64 = 0x5EED_0F17;
+
+        let mut actual = rand::rngs::StdRng::seed_from_u64(SEED);
+        let _ = WorkDesires::roll(&mut actual);
+
+        let mut control = rand::rngs::StdRng::seed_from_u64(SEED);
+        let _: u32 = control.random();
+        let _: u32 = control.random();
+
+        assert_eq!(
+            actual.random::<u64>(),
+            control.random::<u64>(),
+            "WorkDesires::roll no longer consumes exactly two fixed-width draws — its \
+             appetite has become lane-count dependent again, so the next WorkType added \
+             will silently re-roll every colonist's body and species"
+        );
+
+        // AND the coverage that motivated `WorkType::ALL` in the first place:
+        // every lane must be REACHABLE as a desire. The original defect was a
+        // hand-written list that omitted Craft, leaving `set`'s Craft arm dead
+        // for the life of the feature. A short slice of `ALL` would satisfy
+        // the stream assert above and still re-ship that bug.
+        let mut seen = [false; WorkType::COUNT];
+        for s in 0..4096u64 {
+            let mut r = rand::rngs::StdRng::seed_from_u64(s);
+            let d = WorkDesires::roll(&mut r);
+            for w in WorkType::ALL {
+                if d.get(w) > 1.0 {
+                    seen[w.lane_index()] = true;
+                }
+            }
+        }
+        for w in WorkType::ALL {
+            assert!(
+                seen[w.lane_index()],
+                "no colonist can ever love {w:?} — the desire roll does not cover every lane"
+            );
+        }
     }
 
     #[test]
@@ -3137,13 +3352,23 @@ impl BastionColonist {
                 cooking: skill(rng),
                 melee: skill(rng),
                 farming: skill(rng),
-                crafting: skill(rng),
                 // B5.8: most settlers start a poor climber (0..=1 — reach
                 // gating makes 3-block scrambles a TRAINED capability).
                 climbing: SkillLevel {
                     level: rng.random_range(0..=1),
                     xp: 0.0,
                 },
+                // ★ ROW 52 / dead-pin audit: DRAWN LAST, deliberately out of
+                // declaration order. `generate` shares the founding rng with
+                // the species/body/offset draws that follow it
+                // (server/src/rtsim/mod.rs:793-807), so every draw inserted
+                // here shifts everything downstream of it. `crafting` first
+                // landed BETWEEN `farming` and `climbing`, which moved the
+                // climbing roll and the whole `values` roll as well. Drawn
+                // last it costs the one draw the new skill genuinely needs
+                // and nothing more — the append-only discipline this file
+                // already applies to its wire enums, applied to a draw ORDER.
+                crafting: skill(rng),
             },
             work_priorities: WorkPriorities::default(),
             soft_until: 0.0,

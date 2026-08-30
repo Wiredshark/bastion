@@ -259,6 +259,14 @@ mod tests {
             qeued_zones: Vec::new(),
             epoch,
             adopted_at_tick,
+            // Match the single production construction site, which starts both
+            // generation counters at 0. These two fields were added to
+            // `WeatherJob` without updating this constructor, which made the
+            // whole `veloren-server` test target fail to build (E0063) -- so
+            // every test in the crate, including ones in unrelated modules,
+            // was unreachable rather than merely red.
+            queued_zone_generation: 0,
+            completed_zone_generation: 0,
         }
     }
 

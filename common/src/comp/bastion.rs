@@ -623,8 +623,17 @@ pub fn derive_need_weight(
 /// bastion (AUTON-2, row 50): the preempt-threshold SAFETY FLOOR — even
 /// the hardiest possible colonist keeps a live preempt-to-eat edge above
 /// zero (Opus's hard guard: the stagger WIDENS the recoverable band, it
-/// never disables B7-2's backstop). At hunger decay 0.0004/s a 0.05
-/// threshold still leaves ~2 sim-minutes of margin before empty.
+/// never disables B7-2's backstop).
+///
+/// ★ MARGIN, RE-MEASURED. This doc used to read "at hunger decay
+/// 0.0004/s a 0.05 threshold still leaves ~2 sim-minutes of margin before
+/// empty". That decay was superseded by the AUTON-2 STEP-3 retune to
+/// 0.000889/s and the floor was never revisited, so the true margin today
+/// is 0.05 / 0.000889 = ~56 sim-sec, not ~125 — less than half the
+/// headroom the number was chosen for. Still a live backstop, but the
+/// drift is now ASSERTED rather than narrated, in
+/// `auton2_stagger_interrupt_floor_and_shape`, which goes red if hunger is
+/// retuned faster again or the floor is tuned toward zero.
 pub const INTERRUPT_FLOOR: f32 = 0.05;
 
 /// bastion (AUTON-2, row 50): the TRAIT-STAGGER — one colonist's
@@ -1230,52 +1239,251 @@ mod bastion_b70_tests {
         assert!(idle_max < work_min);
     }
 
-    /// AUTON-2: the trait-stagger pinned. THE OPUS FLOOR ASSERT (unit
-    /// form): the hardiest POSSIBLE colonist (both values +50,
-    /// Conscientious, not Neurotic → h = 1.5) still holds a strictly
-    /// positive threshold at/above the floor — the preempt-to-eat
-    /// backstop survives maximal hardiness. Plus: identity (no traits =
-    /// base exactly), monotonicity (hardier ⇒ never higher), the
-    /// anxious ceiling (< comfort), and recreation's 0.0 stays 0.0 (the
-    /// stagger cannot invent a preempt class).
+    /// AUTON-2: the trait-stagger pinned.
+    ///
+    /// ★ REWRITTEN after the dead-pin audit. The two asserts this test used
+    /// to open with — `floor_case >= INTERRUPT_FLOOR` and `floor_case > 0.0`
+    /// — were strictly DOMINATED by the exact-0.08 assert on the next line,
+    /// and the constant was measured FREE across the whole interval
+    /// [0.0, 0.08] in both directions: `INTERRUPT_FLOOR = 0.0` (the
+    /// preempt-to-eat backstop deleted outright) and `= 0.07` both left the
+    /// suite GREEN.
+    ///
+    /// The reason is structural and worth writing down. At the shipped base
+    /// 0.2 the clamp's LOWER arm cannot engage for ANY roll the generator
+    /// can produce: the hardiest possible colonist (h = 1.5) lands at
+    /// 0.2 × (1 − 0.4 × 1.5) = 0.08, still above the floor. So no input at
+    /// base 0.2 can observe the floor's value at all, and an assert taken
+    /// there reports safety it never checked. The floor bites only under
+    /// base < INTERRUPT_FLOOR / 0.4 = 0.125, which a retune of the
+    /// serde-defaulted, hot-reloadable `interrupt` field can produce at any
+    /// time. It is exercised there now, against a LITERAL 0.05 — comparing
+    /// the clamp's output to the very constant that produced it is the
+    /// circularity that let both mutants through.
+    ///
+    /// Two further holes the rewrite closes:
+    ///
+    /// (a) The only anxious probe sat at h = −1.5, INSIDE the ceiling's
+    /// saturated band (every h ≤ −1.25 clamps to base × 1.5), so any
+    /// STRENGTHENING of the Neurotic or anti-value terms was invisible.
+    /// Measured: tripling the Neurotic penalty from −0.5 to −1.5 left the
+    /// old test green. Each term is now probed ALONE at an unsaturated
+    /// point. That half of the formula had earned the scrutiny — until the
+    /// all-MID personality bug was fixed, `conscientious`/`neurotic`
+    /// contributed exactly zero in every world ever soaked, and no pin here
+    /// would have noticed.
+    ///
+    /// (b) Shape was five hand-picked points. It is now swept over the whole
+    /// rolled input space (Craft/Tradition ∈ [−50, 50] from
+    /// `BastionColonist::generate`, × both traits) against
+    /// a band of plausible `interrupt` retunes including bases BELOW the
+    /// floor, and the lockstep defense is asserted in the CONSUMER's frame —
+    /// `needs.hunger < stagger_interrupt(..)`, the AUTON-2 candidate scan —
+    /// rather than as a property of the numbers.
     #[test]
     fn auton2_stagger_interrupt_floor_and_shape() {
-        use crate::bastion::Value;
+        use crate::bastion::{MoodConfig, Value};
         use std::collections::BTreeMap;
-        let base = 0.2f32;
-        let mut hardiest = BTreeMap::new();
-        hardiest.insert(Value::Craft, 50i8);
-        hardiest.insert(Value::Tradition, 50i8);
-        let floor_case = stagger_interrupt(base, &hardiest, true, false);
-        assert!(floor_case >= INTERRUPT_FLOOR);
-        assert!(floor_case > 0.0);
-        // h = 1.5 → 0.2 × (1 − 0.6) = 0.08 exactly.
-        assert!((floor_case - 0.08).abs() < 1e-6);
+
+        // The base is READ FROM PRODUCTION, not typed here: this is the
+        // compiled tuning `MoodConfig::current()` falls back to, and
+        // `bastion_mood_config_matches_shipped_asset` (common/src/bastion.rs)
+        // pins it equal to assets/common/bastion_mood.ron — so this is the
+        // shipped number, cross-checked in another frame. Every hand-computed
+        // anchor below is only valid at 0.2, so a retune must fail HERE, with
+        // this message, instead of quietly voiding all of them.
+        let cfg = MoodConfig::default();
+        let base = cfg.hunger.interrupt;
+        assert_eq!(
+            (base, cfg.rest.interrupt, cfg.recreation.interrupt),
+            (0.2, 0.2, 0.0),
+            "the preempt tuning moved — every hand-computed value in this test assumes \
+             hunger/rest interrupt 0.2 and recreation 0.0; re-derive them before editing"
+        );
+
+        let none: BTreeMap<Value, i8> = BTreeMap::new();
+        let vals = |craft: Option<i8>, trad: Option<i8>| -> BTreeMap<Value, i8> {
+            let mut m = BTreeMap::new();
+            if let Some(c) = craft {
+                m.insert(Value::Craft, c);
+            }
+            if let Some(t) = trad {
+                m.insert(Value::Tradition, t);
+            }
+            m
+        };
+        let hardiest = vals(Some(50), Some(50));
+        let anti = vals(Some(-50), Some(-50));
+
+        // ── EXACT ANCHORS: every term of eff = base·(1 − 0.4·h). ──
         // Identity: empty values, no traits → base bit-for-bit.
-        let none = BTreeMap::new();
         assert_eq!(stagger_interrupt(base, &none, false, false), base);
-        // Monotone: each hardiness step never RAISES the threshold.
-        let mut mid = BTreeMap::new();
-        mid.insert(Value::Craft, 50i8);
-        let steps = [
-            stagger_interrupt(base, &none, false, true), // anxious
-            stagger_interrupt(base, &none, false, false),
-            stagger_interrupt(base, &mid, false, false),
-            stagger_interrupt(base, &hardiest, false, false),
-            stagger_interrupt(base, &hardiest, true, false),
-        ];
-        for w in steps.windows(2) {
-            assert!(w[1] <= w[0]);
+        // Hardiest possible roll: h = 0.5 + 0.5 + 0.5 → 0.2 × 0.4 = 0.08.
+        assert!((stagger_interrupt(base, &hardiest, true, false) - 0.08).abs() < 1e-6);
+
+        // Each term ALONE, at a point where NEITHER clamp arm engages, so the
+        // magnitude is pinned two-sidedly instead of through a saturated
+        // ceiling. All six are |h| = 0.5 → 0.16 (hardier) or 0.24 (anxious).
+        for (who, got) in [
+            ("Craft +50", stagger_interrupt(base, &vals(Some(50), None), false, false)),
+            ("Tradition +50", stagger_interrupt(base, &vals(None, Some(50)), false, false)),
+            ("Conscientious", stagger_interrupt(base, &none, true, false)),
+        ] {
+            assert!(
+                (got - 0.16).abs() < 1e-6,
+                "{who} alone must be worth exactly +0.5 hardiness (0.2 × 0.8 = 0.16), got {got}"
+            );
         }
-        // The anxious ceiling: h = −1.5 → 0.2×1.6 = 0.32, clamped to
-        // base×1.5 = 0.3 — still under the 0.5 comfort band.
-        let mut anti = BTreeMap::new();
-        anti.insert(Value::Craft, -50i8);
-        anti.insert(Value::Tradition, -50i8);
+        for (who, got) in [
+            ("Craft −50", stagger_interrupt(base, &vals(Some(-50), None), false, false)),
+            ("Tradition −50", stagger_interrupt(base, &vals(None, Some(-50)), false, false)),
+            ("Neurotic", stagger_interrupt(base, &none, false, true)),
+        ] {
+            assert!(
+                (got - 0.24).abs() < 1e-6,
+                "{who} alone must be worth exactly −0.5 hardiness (0.2 × 1.2 = 0.24), got {got}"
+            );
+        }
+
+        // The anxious ceiling: h = −1.5 → 0.2 × 1.6 = 0.32, CLAMPED to
+        // base × 1.5 = 0.3 — under the comfort band, so nobody preempts while
+        // comfortable. This probe is SATURATED (so is every h ≤ −1.25), which
+        // is exactly why the unsaturated singles above exist.
         let anxious = stagger_interrupt(base, &anti, false, true);
         assert!((anxious - 0.3).abs() < 1e-6);
-        assert!(anxious < 0.5);
-        // Recreation's never-preempt base survives every temperament.
+        assert!(anxious < cfg.hunger.comfort);
+
+        // ── THE FLOOR, WHERE IT ACTUALLY ENGAGES. ──
+        // base 0.1 < 0.125, so the hardiest roll's natural 0.1 × 0.4 = 0.04
+        // falls THROUGH the floor and must be lifted to it. The expected
+        // value is the LITERAL 0.05, never `INTERRUPT_FLOOR` itself.
+        assert!(
+            (stagger_interrupt(0.1, &hardiest, true, false) - 0.05).abs() < 1e-6,
+            "a natural 0.04 must be lifted to the 0.05 safety floor"
+        );
+
+        // PIN THE THRESHOLD, both degenerate settings, each against a frame
+        // the constant does not control.
+        //
+        // TOO SMALL — the floor's whole job is buying time to reach food.
+        // NOTE THE DRIFT: this constant's doc was written when hunger decayed
+        // at 0.0004/s, where 0.05 bought ~125 sim-sec ("~2 sim-minutes"). The
+        // AUTON-2 STEP-3 retune moved hunger to 0.000889/s and nobody
+        // revisited the floor, so the real margin today is ~56 sim-sec. That
+        // is still a live backstop; at 0.0 there is none at all and the
+        // hardiest colonist works until the meter reads empty. Asserting the
+        // margin rather than `> 0.0` is what makes this pin non-dominated: it
+        // also goes red if hunger is retuned faster again.
+        let margin_secs = INTERRUPT_FLOOR / cfg.hunger.decay_per_sec;
+        assert!(
+            margin_secs >= 50.0,
+            "the safety floor buys only {margin_secs:.1} sim-sec before empty at the shipped \
+             {}/s hunger decay — the preempt-to-eat backstop has been tuned away",
+            cfg.hunger.decay_per_sec
+        );
+        // TOO LARGE — at or above the hardiest NATURAL threshold (0.08 at the
+        // shipped base) the entire hardy tail clamps to one value and the
+        // spread flattens from the bottom up, which is the lockstep failure
+        // the stagger exists to prevent.
+        assert!(
+            INTERRUPT_FLOOR < 0.08,
+            "the floor has risen into the live threshold band (hardiest natural = 0.08 at \
+             base 0.2) — the hardy tail of the stagger is being flattened"
+        );
+
+        // ── THE SWEEP: the whole rolled input space, not five points. ──
+        // `BastionColonist::generate` rolls every Value uniform in [−50, 50]
+        // and vanilla rolls both traits, so the live hardiness domain is the
+        // full h ∈ [−1.5, 1.5]. Sweep it against a band of plausible
+        // `interrupt` retunes: 0.0 (recreation's never-preempt class), bases
+        // UNDER the floor (where `.min(base)` is the only thing keeping the
+        // clamp well-formed — without it `f32::clamp` panics outright), and
+        // bases over it.
+        let bases = [0.0f32, 0.01, 0.03, 0.05, 0.08, 0.1, 0.125, 0.15, base, 0.3, 0.5];
+        let weights: Vec<i8> = (-50..=50).step_by(10).map(|w| w as i8).collect();
+        for &b in &bases {
+            for &craft in &weights {
+                for &trad in &weights {
+                    for &consc in &[false, true] {
+                        for &neur in &[false, true] {
+                            let m = vals(Some(craft), Some(trad));
+                            let e = stagger_interrupt(b, &m, consc, neur);
+                            let at = format!("base {b} craft {craft} trad {trad} c{consc} n{neur}");
+                            // The backstop, everywhere.
+                            assert!(
+                                e >= INTERRUPT_FLOOR.min(b),
+                                "{at}: threshold {e} fell through the safety floor"
+                            );
+                            assert!(e <= b * 1.5, "{at}: threshold {e} broke the base×1.5 ceiling");
+                            if b > 0.0 {
+                                assert!(e > 0.0, "{at}: a preempting need lost its edge entirely");
+                            } else {
+                                // Recreation's never-preempt class: the
+                                // stagger must not INVENT a preempt class for
+                                // a need tuned to zero.
+                                assert_eq!(e, 0.0, "{at}: the stagger invented a preempt");
+                            }
+                            // Monotone in EVERY input, one step at a time.
+                            // Stated per-input on purpose, so this test never
+                            // re-implements the hardiness sum it is checking.
+                            if craft < 50 {
+                                let up = stagger_interrupt(b, &vals(Some(craft + 10), Some(trad)), consc, neur);
+                                assert!(up <= e, "{at}: valuing Craft MORE raised the threshold");
+                            }
+                            if trad < 50 {
+                                let up = stagger_interrupt(b, &vals(Some(craft), Some(trad + 10)), consc, neur);
+                                assert!(up <= e, "{at}: valuing Tradition MORE raised the threshold");
+                            }
+                            if !consc {
+                                assert!(
+                                    stagger_interrupt(b, &m, true, neur) <= e,
+                                    "{at}: Conscientious RAISED the threshold"
+                                );
+                            }
+                            if !neur {
+                                assert!(
+                                    stagger_interrupt(b, &m, consc, true) >= e,
+                                    "{at}: Neurotic LOWERED the threshold"
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── THE LOCKSTEP DEFENSE, IN THE CONSUMER'S FRAME. ──
+        // Production preempts when `needs.hunger < stagger_interrupt(..)` (the
+        // AUTON-2 candidate scan in bastion_jobs). The stagger exists so a
+        // shortage never yanks the whole crew off the farm on one tick, so the
+        // question that matters is not "do the numbers differ" but "at a
+        // hunger level inside the band, does the roster SPLIT". Verified to go
+        // red for a zeroed 0.4 coefficient, for both trait terms dropped, for
+        // Tradition dropped from the value loop, and for a floor raised into
+        // the band — each of which sends everyone to lunch together.
+        let mut roster: Vec<f32> = Vec::new();
+        for &craft in &weights {
+            for &trad in &weights {
+                for &consc in &[false, true] {
+                    for &neur in &[false, true] {
+                        roster.push(stagger_interrupt(base, &vals(Some(craft), Some(trad)), consc, neur));
+                    }
+                }
+            }
+        }
+        for probe in [0.09f32, 0.12, 0.16, 0.20, 0.25, 0.29] {
+            let preempting = roster.iter().filter(|t| probe < **t).count();
+            assert!(
+                preempting > 0 && preempting < roster.len(),
+                "at hunger {probe} the roster does not split: {preempting} of {} colonists \
+                 preempt — the stagger's spread has collapsed and the crew leaves the field \
+                 in lockstep",
+                roster.len()
+            );
+        }
+
+        // Recreation's never-preempt base survives every temperament (the
+        // named contract; the sweep proves it over the whole space).
         assert_eq!(stagger_interrupt(0.0, &hardiest, true, false), 0.0);
         assert_eq!(stagger_interrupt(0.0, &anti, false, true), 0.0);
     }
