@@ -7956,13 +7956,70 @@ impl Server {
     /// each chunk every 16 ticks and would silently drop ~1 in 16 of them,
     /// which is a fix that mostly works — the worst kind.
     ///
-    /// ★ THE PIN IS PERMANENT, AND THAT IS A DELIBERATE COST. Bed
-    /// registration is durable once made (`JobBoard::beds` is pruned only by
-    /// an explicit CANCEL region, never by an unload), so the pin is not
-    /// needed for correctness after the drain. It is kept because these are
-    /// the colony's OWN houses: a settlement whose far quarter unloads is a
-    /// settlement whose colonists there stop being simulated. The set is
-    /// bounded by the town's own plot list — linear in plot area, not
+    /// ★ THE PIN IS PERMANENT, AND THAT IS A DELIBERATE COST — but not the
+    /// cost this paragraph used to name. It read "`JobBoard::beds` is pruned
+    /// only by an explicit CANCEL region, never by an unload", and that
+    /// sentence was false when it was written. It is also why an
+    /// investigation went to the wrong place: a world whose bed count fell
+    /// 160 → 154 → 152 while population climbed 24 → 79 was searched for a
+    /// CANCEL that never happened, because this comment had already ruled
+    /// out every other remover.
+    ///
+    /// THREE things remove from `JobBoard::beds`, all in
+    /// `bastion_server::bastion_jobs`, and only the first needs a player:
+    ///
+    /// 1. `JobBoard::cancel_region` — the un-paint prune. The only one the
+    ///    old sentence knew about.
+    /// 2. `<Sys as System>::run`, the BED CONDEMNED pass — every
+    ///    `ARBITRATION_INTERVAL` (15) ticks it removes any bed whose cell
+    ///    satisfies `JobBoard::cell_is_convicted`: `CONDEMN_STRIKES` across
+    ///    the reach and eject ledgers, at least one strike being reach
+    ///    evidence. Neither ledger decays.
+    /// 3. `<Sys as System>::run`, the REACHABILITY FLOOD — every
+    ///    `ARBITRATION_INTERVAL * 80` (1,200) ticks `flood_pass` BFSes the
+    ///    LOADED walkable graph out of `JobBoard::gathering_anchor`, and
+    ///    `flood_verdict` removes every registered bed that is loaded,
+    ///    inside `FLOOD_RADIUS` of the anchor, and not within ±1 XY / ±2 z
+    ///    of the survey — also inserting the cell into
+    ///    `JobBoard::condemned_cells`, which the claim gauntlet refuses for
+    ///    the rest of the run.
+    ///
+    /// Bed registration is one-shot per plot, so each of the three is a
+    /// permanent loss, and `beds >= pop` is what gates
+    /// `ColonyDrive::Expand`.
+    ///
+    /// ★ WITH THE FACT CORRECTED, THE PIN'S RISK CHANGES SIGN. The old text
+    /// treated the pin as free after the drain because nothing could take a
+    /// bed back. What is actually true is narrower and points the other way:
+    /// remover 3 is the one that reads loadedness, and its `loaded(p)` guard
+    /// SKIPS an unloaded bed — invisible to the flood is safe from it.
+    /// Pinning a chunk moves its beds out of that exemption and in front of
+    /// the judgement. Whether that helps or hurts turns on something
+    /// `bastion_jobs::adopt_plot_chunk_keys` does not guarantee: it pins the
+    /// plot bboxes and NOTHING between them, so a pinned outlying plot can
+    /// be a loaded island in unloaded ground — loaded enough to be judged,
+    /// with the streets the survey would have walked missing. That is the
+    /// one shape neither of `flood_verdict`'s guards covers (`loaded`
+    /// protects a bed whose whole chunk is gone; `FLOOD_RADIUS` protects one
+    /// the survey had no mandate to reach).
+    ///
+    /// NOT ACTED ON HERE, DELIBERATELY — this is a derivation, not a
+    /// measurement. It needs the anchor column loaded (or `flood_pass` never
+    /// starts) AND a plot outside the loaded disc but inside `FLOOD_RADIUS`.
+    /// The flood already names each victim with `was_bed` and `chebyshev`,
+    /// so the shape reads straight off a log — `was_bed` true at a
+    /// `chebyshev` well inside `radius` — and widening the pin or
+    /// re-guarding the verdict should follow that log rather than this
+    /// paragraph. It is also NOT the 160 → 154 → 152 decay above: that was
+    /// the asymmetry between the survey's bound and the verdict's, and it is
+    /// fixed.
+    ///
+    /// What the correction does NOT disturb: the drain-window role stated in
+    /// the paragraph above is what the pin was added for and still holds,
+    /// and the second reason the old text gave survives intact — these are
+    /// the colony's OWN houses, and a settlement whose far quarter unloads
+    /// is a settlement whose colonists there stop being simulated. The set
+    /// is bounded by the town's own plot list — linear in plot area, not
     /// quadratic in town extent — and its size is witnessed below rather
     /// than assumed.
     ///
