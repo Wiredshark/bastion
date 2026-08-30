@@ -9920,6 +9920,18 @@ pub struct JobBoard {
     /// commutative reduction, so HashMap iteration order never leaks into
     /// the reported value — no determinism surface despite the hash map.
     pub timeout_counts_by_pos: HashMap<Vec3<i32>, u32>,
+    /// ★★ EJECT STRIKES, KEPT APART FROM REACH STRIKES (2026-08-30).
+    ///
+    /// The ULTIMATE FAIL-SAFE's evidence, in its own ledger. It is a
+    /// different claim from `timeout_counts_by_pos`: that map means "a
+    /// walker could not REACH this cell", this one means "a body could not
+    /// LEAVE this cell". They were the same map, and the eject wrote six
+    /// units into a one-unit ledger against a threshold of six — one rescue
+    /// landing on a bed cell condemned the bed outright, permanently,
+    /// first time. See `JobBoard::cell_is_convicted`: this ledger
+    /// corroborates a case that reach evidence has opened, and can never
+    /// open one by itself.
+    pub eject_strikes_by_pos: HashMap<Vec3<i32>, u32>,
     /// ★ CONDEMNED CELLS (day-2 acceptance: 8 bed condemnations didn't
     /// dent 121 teleports — the majority were upper-floor HEARTHS, POTS
     /// and CHESTS minting recurring jobs at cells the town proved
@@ -10927,6 +10939,37 @@ pub fn canonical_cell_drop_order(cells: impl IntoIterator<Item = Vec3<i32>>) -> 
 }
 
 impl JobBoard {
+    /// ★★ THE ONE CONVICTION RULE for the strike ledger.
+    ///
+    /// A cell is condemned when the evidence against it reaches
+    /// `CONDEMN_STRIKES` — **and at least one strike is REACH evidence**, a
+    /// walker that genuinely failed to arrive. Eject strikes corroborate;
+    /// they cannot convict alone, because "a body got wedged here" is a
+    /// statement about the body and the consumer of this verdict acts on
+    /// "no walker can get here".
+    ///
+    /// FALLBACK IS IDENTITY: a cell with `CONDEMN_STRIKES` reach strikes and
+    /// no ejects convicts exactly as it did before — `6 >= 1` and
+    /// `6 + 0 >= 6`.
+    pub fn cell_is_convicted(&self, p: &Vec3<i32>) -> bool {
+        let reach = self.timeout_counts_by_pos.get(p).copied().unwrap_or(0);
+        if reach == 0 {
+            // INDEPENDENT EVIDENCE REQUIRED. This is the line that saves
+            // the bed a single rescue used to destroy.
+            return false;
+        }
+        let eject = self.eject_strikes_by_pos.get(p).copied().unwrap_or(0);
+        reach.saturating_add(eject) >= CONDEMN_STRIKES
+    }
+
+    /// The two ledgers behind a conviction, for the witness line.
+    pub fn cell_strikes(&self, p: &Vec3<i32>) -> (u32, u32) {
+        (
+            self.timeout_counts_by_pos.get(p).copied().unwrap_or(0),
+            self.eject_strikes_by_pos.get(p).copied().unwrap_or(0),
+        )
+    }
+
     /// PRECONDITION accessor for the eat/stack pair (instrument debt). The
     /// monotonic reservation id doubles as "how many reservations were EVER
     /// made" -- zero means the stack path never ran, so b5_stack_reserved_units_max
@@ -13803,6 +13846,320 @@ fn hostile_proximity_diag() -> bool {
     static HOSTILE_PROXIMITY_DIAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *HOSTILE_PROXIMITY_DIAG
         .get_or_init(|| std::env::var_os("BASTION_HOSTILE_PROXIMITY_DIAG").is_some())
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ★★ THE STRIKE LEDGER'S UNIT — one failed episode is one strike, and no
+// single event may spend the whole conviction.
+//
+// The second bed-destroying mechanism in this file, measured firing in the
+// owner's own 2.5-hour session (`play-server.log`: one `BED CONDEMNED`, 47
+// `CELL CONDEMNED`, five ULTIMATE FAIL-SAFE teleports, bed count 20 -> 19
+// and never recovering). The fail-safe eject credited **six** strikes in a
+// single shot against a threshold of **six** — so ONE emergency teleport
+// that happened to land on a bed cell condemned that bed instantly, on the
+// first event, with no repetition and no proof of anything about the bed.
+// The ledger never decays and nothing re-adds a bed on an adopted world,
+// so the loss was permanent.
+//
+// A colonist being teleported out of a stuck state is evidence about the
+// COLONIST. The ledger's consumer acts on a different claim — "no walker
+// can REACH this cell" — and its only other producer speaks in units of one
+// failed travel episode. Charging the bed the entire condemnation budget
+// for one unrelated rescue is a guard convicting a bystander.
+//
+// Two independent corrections, either of which alone would have saved that
+// bed:
+//   * the eject is worth ONE episode, like every other producer, and
+//   * eject evidence lives in its own ledger and CANNOT CONVICT ALONE —
+//     without at least one walker that genuinely failed to reach the cell,
+//     a pile of ejects only says a body got wedged there.
+// Deliberately NOT "raise the threshold to 7", which moves the same defect
+// one teleport further away and leaves the units mismatched.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// How many independent failed episodes it takes to condemn a cell
+/// permanently. The single definition of the threshold; the bed pass and
+/// the generic-cell pass both read it.
+pub const CONDEMN_STRIKES: u32 = 6;
+
+/// What one ULTIMATE FAIL-SAFE eject is worth against that threshold.
+///
+/// One episode, the same unit the travel-timeout producer uses. It was
+/// `CONDEMN_STRIKES` — equal and opposite in a single event.
+pub const EJECT_STRIKE_CREDIT: u32 = 1;
+
+/// PIN THE THRESHOLD AGAINST ITS DEGENERATE SETTING, at compile time: no
+/// single eject, and no PAIR of ejects, may reach a conviction on its own.
+const _: () = assert!(
+    EJECT_STRIKE_CREDIT * 2 <= CONDEMN_STRIKES,
+    "one rescue must never be able to spend a whole condemnation"
+);
+
+// ─────────────────────────────────────────────────────────────────────────
+// ★★ THE REACHABILITY FLOOD'S MANDATE — one definition of "how far", and
+// a survey that is honest about not having finished.
+//
+// THE FRONTIER OF A SEARCH IS NOT ITS CAUSE. The flood used to run a
+// budget-capped BFS and then condemn every furnished cell the BFS had not
+// touched. Two separate ways for that to convict an innocent cell:
+//
+//   1. TRUNCATION. The budget `break` left cells the search never reached
+//      indistinguishable from cells it proved unreachable, and the flood
+//      condemned them wholesale. A search that ran out of budget has
+//      proven nothing about anything it did not visit.
+//
+//   2. ASYMMETRY. The BFS was bounded (Chebyshev XY from the anchor) but
+//      the candidate filter that supplies cells to condemn was NOT. A bed
+//      one block past the search radius was therefore condemned for being
+//      OUTSIDE THE SEARCH, not for being unreachable — and since bed
+//      registration is one-shot per plot on an adopted world, nothing ever
+//      re-adds it. `JobBoard::beds` is monotonically non-increasing for the
+//      life of a run, so every wrong condemnation is permanent, and the
+//      shipped growth gates (births, immigration) need `beds >= pop`.
+//
+// Both bounds now come from ONE number, passed as ONE parameter to both
+// halves, so the search and the judgement cannot drift apart.
+// ─────────────────────────────────────────────────────────────────────────
+
+/// How far the reachability survey may walk from the gathering anchor
+/// (Chebyshev distance in XY). **The single definition of the flood's
+/// mandate**: the BFS may not expand past it, and — the half that was
+/// missing — the flood may not JUDGE past it either.
+///
+/// The closed ball of this radius is explored EXHAUSTIVELY (expansion is
+/// pruned only for cells strictly beyond it), so within the ball
+/// "not in `seen`" really does mean "not connected to the anchor". Outside
+/// it, the survey has no opinion and must not be asked for one.
+pub const FLOOD_RADIUS: i32 = 260;
+
+/// Hard stop on one survey's cell budget, so the flood cannot eat a tick.
+///
+/// ★ THE COST, STATED. Derived from the radius rather than guessed: the
+/// mandate spans `(2R+1)^2 = 271_441` columns, and the measured live town
+/// (`server-110.log`, 12 flood events) surveyed 212_022–212_252 cells —
+/// **0.78 standable cells per column, and 96.5% of the old 220_000 cap**.
+/// The old cap was therefore not a safety valve at all; it was a second,
+/// tighter, invisible bound that was about to start binding before the
+/// radius did, on a town that was still growing. Two cells per column
+/// gives multi-storey buildings real headroom.
+///
+/// What raising it costs: **nothing on any world that completes today** —
+/// the queue drains at ~212k either way, so the cap is not reached and not
+/// paid for. It is only spent on a world that would otherwise have
+/// truncated, where the alternative is a silently destroyed house. The
+/// worst case is a survey of `FLOOD_CAP` cells in one tick, once per
+/// `ARBITRATION_INTERVAL * 80` = 1200 ticks (~45 times per game day at
+/// 54_000 ticks/day) — roughly 2.5x today's spike, at ~16 terrain reads per
+/// cell, plus ~13 MB peak for the visited set. If that spike ever shows up
+/// in a frame-time profile the answer is a RESUMABLE survey across ticks,
+/// not a smaller cap: a smaller cap does not make the survey cheaper, it
+/// makes it dishonest.
+pub const FLOOD_CAP: usize = 2 * ((2 * FLOOD_RADIUS + 1) as usize).pow(2);
+
+/// What one reachability survey actually established.
+pub struct FloodSurvey {
+    /// Every cell proved standable AND connected to the anchor by moves a
+    /// colonist really has.
+    pub seen: HashSet<Vec3<i32>>,
+    /// Cells still queued when the budget ran out. **Non-zero means the
+    /// survey proved nothing about anything it did not reach**, and the
+    /// verdict must condemn nothing.
+    pub frontier_left: usize,
+    /// Did the cell budget stop the search short?
+    pub truncated: bool,
+}
+
+/// The flood's verdict — what it may condemn, and what it deliberately did
+/// not judge. Every field here exists so the log can show the mechanism
+/// FAILING, not just succeeding.
+pub struct FloodVerdict {
+    /// Cells positively proven disconnected within the mandate. Sorted and
+    /// deduped, so the condemned set never depends on hash iteration order.
+    /// **Always empty when the survey truncated.**
+    pub condemn: Vec<Vec3<i32>>,
+    /// Eligible cells withheld because the survey did not finish. This is
+    /// the number of houses the old code would have destroyed on a
+    /// truncated pass.
+    pub withheld: usize,
+    /// Candidates outside the survey's mandate (beyond `radius`). The old
+    /// code condemned every one of these on sight.
+    pub out_of_range: usize,
+}
+
+/// Bounded BFS over the walkable graph, by the ROUTER'S rules.
+///
+/// DETERMINISM BY CONSTRUCTION: no wall clock, no RNG, and no hash
+/// iteration anywhere on the control path — the frontier is a `VecDeque`,
+/// the four directions and three z-offsets are fixed arrays, and `seen` is
+/// touched only by `contains`/`insert`. Visit order, and therefore the
+/// truncated prefix, is a pure function of `(start, anchor, radius, cap,
+/// standable, waist_hurdle)`.
+pub fn flood_survey<S, W>(
+    start: Vec3<i32>,
+    anchor: Vec3<i32>,
+    radius: i32,
+    cap: usize,
+    standable: S,
+    waist_hurdle: W,
+) -> FloodSurvey
+where
+    S: Fn(Vec3<i32>) -> bool,
+    W: Fn(Vec3<i32>) -> bool,
+{
+    let mut seen: HashSet<Vec3<i32>> = HashSet::new();
+    let mut queue: std::collections::VecDeque<Vec3<i32>> = std::collections::VecDeque::new();
+    seen.insert(start);
+    queue.push_back(start);
+    let mut truncated = false;
+    let mut frontier_left = 0usize;
+    while let Some(p) = queue.pop_front() {
+        if seen.len() >= cap {
+            // `p` was popped but never expanded, so it is unexplored too —
+            // count it back into the frontier. This is also what makes the
+            // degenerate `cap == 0` setting report honestly (frontier 1)
+            // instead of looking like a completed survey of one cell.
+            truncated = true;
+            frontier_left = queue.len() + 1;
+            break;
+        }
+        if (p.xy() - anchor.xy()).map(|e| e.abs()).reduce_max() > radius {
+            continue;
+        }
+        for d in [
+            Vec2::new(1, 0),
+            Vec2::new(-1, 0),
+            Vec2::new(0, 1),
+            Vec2::new(0, -1),
+        ] {
+            // Steps: same column ±1 z, colonist-grade.
+            for dz in [0, 1, -1] {
+                let n = p + Vec3::new(d.x, d.y, dz);
+                if !seen.contains(&n) && standable(n) {
+                    seen.insert(n);
+                    queue.push_back(n);
+                }
+            }
+            // Fence-vault hop: over a waist sprite to the far cell — the
+            // router's vault edge, mirrored.
+            let hurdle = p + Vec3::new(d.x, d.y, 0);
+            let land = p + Vec3::new(d.x * 2, d.y * 2, 0);
+            if waist_hurdle(hurdle) && !seen.contains(&land) && standable(land) {
+                seen.insert(land);
+                queue.push_back(land);
+            }
+        }
+    }
+    FloodSurvey {
+        seen,
+        frontier_left,
+        truncated,
+    }
+}
+
+/// Turn a survey into a verdict.
+///
+/// A GUARD MUST NOT STARVE THE THING IT PROTECTS: this does not disable the
+/// flood, it narrows it to what the survey actually established. A colony
+/// whose survey completes within budget, with every candidate inside the
+/// mandate, gets a byte-identical condemned set to the pre-fix code.
+///
+/// `cells` is the candidate list (bed cells and job positions). It is
+/// sorted and deduped here, so the caller may hand over hash-map iteration
+/// order without leaking it into the verdict.
+pub fn flood_verdict<L>(
+    survey: &FloodSurvey,
+    anchor: Vec3<i32>,
+    radius: i32,
+    cells: &[Vec3<i32>],
+    already_condemned: &HashSet<Vec3<i32>>,
+    loaded: L,
+) -> FloodVerdict
+where
+    L: Fn(Vec3<i32>) -> bool,
+{
+    // "Near" = within one cell of a reachable cell (arrival tolerances
+    // admit adjacent stands), so we only condemn when even the
+    // neighbourhood is dry. Unchanged from the pre-fix code.
+    let near_reach = |p: Vec3<i32>| {
+        (-1..=1).any(|dx| {
+            (-1..=1).any(|dy| (-2..=2).any(|dz| survey.seen.contains(&(p + Vec3::new(dx, dy, dz)))))
+        })
+    };
+    let mut out_of_range = 0usize;
+    let mut eligible: Vec<Vec3<i32>> = Vec::new();
+    let mut ranked: Vec<Vec3<i32>> = cells.to_vec();
+    ranked.sort_unstable_by_key(|p| (p.x, p.y, p.z));
+    ranked.dedup();
+    for p in ranked {
+        if already_condemned.contains(&p) || !loaded(p) {
+            continue;
+        }
+        // ★ FAULT 2. The judgement is bounded by the same rule as the
+        // search, from the same parameter. Beyond it the survey never
+        // walked, so "not in `seen`" is a statement about the search, not
+        // about the cell.
+        if (p.xy() - anchor.xy()).map(|e| e.abs()).reduce_max() > radius {
+            out_of_range += 1;
+            continue;
+        }
+        if !near_reach(p) {
+            eligible.push(p);
+        }
+    }
+    if survey.truncated {
+        // ★ FAULT 1. A survey that did not complete must not condemn.
+        //
+        // Rejected alternative: "condemn only what was positively proven
+        // unreachable within budget". There is no such set — a BFS that
+        // stopped early cannot distinguish an unreachable cell from an
+        // unvisited one, which is the entire defect. The only honest
+        // partial verdict is the empty one.
+        return FloodVerdict {
+            condemn: Vec::new(),
+            withheld: eligible.len(),
+            out_of_range,
+        };
+    }
+    FloodVerdict {
+        condemn: eligible,
+        withheld: 0,
+        out_of_range,
+    }
+}
+
+/// One flood pass: survey, then judge, with the search bound and the
+/// judgement bound supplied **from the same constant at the same call**.
+///
+/// This is the production entry point and the only place `FLOOD_RADIUS` and
+/// `FLOOD_CAP` are read. The two halves take the bound as a parameter so a
+/// test can drive the degenerate settings, but nothing in the shipping path
+/// can hand them two different numbers — that asymmetry is exactly what
+/// condemned beds for sitting outside the survey's own search radius.
+pub fn flood_pass<S, W, L>(
+    start: Vec3<i32>,
+    anchor: Vec3<i32>,
+    cells: &[Vec3<i32>],
+    already_condemned: &HashSet<Vec3<i32>>,
+    standable: S,
+    waist_hurdle: W,
+    loaded: L,
+) -> (FloodSurvey, FloodVerdict)
+where
+    S: Fn(Vec3<i32>) -> bool,
+    W: Fn(Vec3<i32>) -> bool,
+    L: Fn(Vec3<i32>) -> bool,
+{
+    let survey = flood_survey(start, anchor, FLOOD_RADIUS, FLOOD_CAP, standable, waist_hurdle);
+    let verdict = flood_verdict(
+        &survey,
+        anchor,
+        FLOOD_RADIUS,
+        cells,
+        already_condemned,
+        loaded,
+    );
+    (survey, verdict)
 }
 
 /// The arbitration + travel + work-execution system.
@@ -18976,49 +19333,73 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // self-healing — no upfront reachability oracle, the town
             // learns its own architecture.
             {
-                let condemned: Vec<Vec3<i32>> = board
+                //
+                // ★★ 2026-08-30: the threshold and the eject's credit were
+                // both the literal `6` and could meet in ONE event. The
+                // conviction rule now lives in `cell_is_convicted` and
+                // requires REACH evidence — see the ledger section above.
+                // Sorted so the condemnation order never depends on hash
+                // iteration.
+                let mut condemned: Vec<Vec3<i32>> = board
                     .beds
                     .keys()
-                    .filter(|p| {
-                        board.timeout_counts_by_pos.get(*p).copied().unwrap_or(0) >= 6
-                    })
+                    .filter(|p| board.cell_is_convicted(p))
                     .copied()
                     .collect();
+                condemned.sort_unstable_by_key(|p| (p.x, p.y, p.z));
                 for p in condemned {
+                    let (reach_strikes, eject_strikes) = board.cell_strikes(&p);
                     board.beds.remove(&p);
                     board.timeout_counts_by_pos.remove(&p);
+                    board.eject_strikes_by_pos.remove(&p);
                     info!(
                         pos = ?p,
+                        reach_strikes,
+                        eject_strikes,
+                        condemn_at = CONDEMN_STRIKES,
                         "bastion: BED CONDEMNED — the town proved it cannot reach this bed (6+ travel timeouts); its sleeper will be rehomed"
                     );
                 }
                 // Generic cells: everything else the strike ledger has
                 // convicted (upper-floor hearths/pots/chests, sealed
                 // courtyards). One-way: the town's architecture is static.
-                let newly: Vec<Vec3<i32>> = board
+                //
+                // Iterating the REACH ledger's keys is exhaustive by
+                // construction: `cell_is_convicted` requires `reach >= 1`,
+                // so a convictable cell always has an entry here. Sorted
+                // for the same reason as above.
+                let mut newly: Vec<Vec3<i32>> = board
                     .timeout_counts_by_pos
-                    .iter()
-                    .filter(|(p, n)| **n >= 6 && !board.condemned_cells.contains(*p))
-                    .map(|(p, _)| *p)
+                    .keys()
+                    .filter(|p| {
+                        board.cell_is_convicted(p) && !board.condemned_cells.contains(*p)
+                    })
+                    .copied()
                     .collect();
+                newly.sort_unstable_by_key(|p| (p.x, p.y, p.z));
                 for p in newly {
+                    let (reach_strikes, eject_strikes) = board.cell_strikes(&p);
                     board.condemned_cells.insert(p);
                     // Day-4's bypass (14 of 114 teleports recurred AFTER
                     // condemnation): jobs claimed before conviction kept
                     // walking. Conviction now releases every live job at
                     // the cell — claimed or not — so nobody finishes a
                     // doomed walk.
-                    let doomed: Vec<JobId> = board
+                    let mut doomed: Vec<JobId> = board
                         .jobs
                         .iter()
                         .filter(|(_, j)| j.pos == p)
                         .map(|(id, _)| *id)
                         .collect();
+                    doomed.sort_unstable();
                     for id in doomed {
                         board.remove_job(id);
                     }
                     info!(
                         pos = ?p,
+                        reach_strikes,
+                        eject_strikes,
+                        condemn_at = CONDEMN_STRIKES,
                         "bastion: CELL CONDEMNED — repeatedly unreachable; live jobs dropped, no walker will be sent again"
                     );
                 }
@@ -19723,89 +20104,98 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 .map(|dz| anchor + Vec3::new(0, 0, dz))
                 .find(|p| standable(*p));
             if let Some(start) = start {
-                let mut seen: HashSet<Vec3<i32>> = HashSet::new();
-                let mut queue: std::collections::VecDeque<Vec3<i32>> =
-                    std::collections::VecDeque::new();
-                seen.insert(start);
-                queue.push_back(start);
-                const FLOOD_CAP: usize = 220_000;
-                while let Some(p) = queue.pop_front() {
-                    if seen.len() >= FLOOD_CAP {
-                        break;
-                    }
-                    if (p.xy() - anchor.xy()).map(|e| e.abs()).reduce_max() > 260 {
-                        continue;
-                    }
-                    for d in [
-                        Vec2::new(1, 0),
-                        Vec2::new(-1, 0),
-                        Vec2::new(0, 1),
-                        Vec2::new(0, -1),
-                    ] {
-                        // Steps: same column ±1 z, colonist-grade.
-                        for dz in [0, 1, -1] {
-                            let n = p + Vec3::new(d.x, d.y, dz);
-                            if !seen.contains(&n) && standable(n) {
-                                seen.insert(n);
-                                queue.push_back(n);
-                            }
-                        }
-                        // Fence-vault hop: over a waist sprite to the far
-                        // cell — the router's vault edge, mirrored.
-                        let hurdle = p + Vec3::new(d.x, d.y, 0);
-                        let land = p + Vec3::new(d.x * 2, d.y * 2, 0);
-                        let hurdle_is_waist = terrain.get(hurdle).is_ok_and(|b| {
-                            b.get_sprite().is_some()
-                                && b.is_solid()
-                                && (0.2..=1.6).contains(&b.solid_height())
-                        });
-                        if hurdle_is_waist && !seen.contains(&land) && standable(land) {
-                            seen.insert(land);
-                            queue.push_back(land);
-                        }
-                    }
-                }
-                // Condemn loaded-but-disconnected furnished/jobbed cells.
-                // "Near" = within one cell of a reachable cell (arrival
-                // tolerances admit adjacent stands), so we only condemn
-                // when even the neighbourhood is dry.
-                let near_reach = |p: Vec3<i32>| {
-                    (-1..=1).any(|dx| {
-                        (-1..=1).any(|dy| {
-                            (-2..=2).any(|dz| seen.contains(&(p + Vec3::new(dx, dy, dz))))
-                        })
+                let waist_hurdle = |p: Vec3<i32>| {
+                    terrain.get(p).is_ok_and(|b| {
+                        b.get_sprite().is_some()
+                            && b.is_solid()
+                            && (0.2..=1.6).contains(&b.solid_height())
                     })
                 };
-                let mut flood_condemned = 0u32;
+                // Candidates: bed cells and job positions. Handed over in
+                // hash-map order and sorted inside the verdict, so the
+                // condemned set never depends on iteration order.
                 let candidates: Vec<Vec3<i32>> = board
                     .beds
                     .keys()
                     .copied()
                     .chain(board.jobs.values().map(|j| j.pos))
-                    .filter(|p| {
-                        !board.condemned_cells.contains(p)
-                            && terrain.get(*p).is_ok()
-                            && !near_reach(*p)
-                    })
                     .collect();
-                for p in candidates {
+                let (survey, verdict) = flood_pass(
+                    start,
+                    anchor,
+                    &candidates,
+                    &board.condemned_cells,
+                    &standable,
+                    &waist_hurdle,
+                    |p| terrain.get(p).is_ok(),
+                );
+                let seen = &survey.seen;
+                // ★ THE MECHANISM MUST BE ABLE TO WITNESS ITSELF FAILING.
+                // The old line printed `surveyed=` and `flood_condemned=`
+                // and nothing else, so a truncated survey and a complete
+                // one were indistinguishable in the log — which is exactly
+                // why this ran for months unnoticed. A truncated pass is
+                // now a WARN of its own, printed even though it condemns
+                // nothing, naming how many houses the old code would have
+                // destroyed here.
+                if survey.truncated {
+                    tracing::warn!(
+                        surveyed = survey.seen.len(),
+                        frontier_left = survey.frontier_left,
+                        cap = FLOOD_CAP,
+                        radius = FLOOD_RADIUS,
+                        withheld = verdict.withheld,
+                        "bastion: REACHABILITY FLOOD TRUNCATED — the survey ran out of cell budget and has proven NOTHING about what it did not reach; condemning nothing this pass (the frontier of a search is not its cause)"
+                    );
+                }
+                let mut flood_condemned = 0u32;
+                for p in verdict.condemn {
                     board.condemned_cells.insert(p);
-                    board.beds.remove(&p);
-                    let doomed: Vec<JobId> = board
+                    let was_bed = board.beds.remove(&p).is_some();
+                    let mut doomed: Vec<JobId> = board
                         .jobs
                         .iter()
                         .filter(|(_, j)| j.pos == p)
                         .map(|(id, _)| *id)
                         .collect();
+                    doomed.sort_unstable();
                     for id in doomed {
                         board.remove_job(id);
                     }
+                    // ★ NAME THE CELL. Reconstructing this defect from
+                    // `server-110.log` stalled exactly here: the flood
+                    // reported a COUNT and nothing else, so there was no way
+                    // to tell a correct condemnation from a bed that merely
+                    // sat outside the search radius — and on that world the
+                    // settlement really does run 399 blocks east of the
+                    // plaza against a 260-block mandate. `chebyshev` beside
+                    // `radius` settles that at a glance for every future
+                    // run, and `was_bed` separates permanent housing loss
+                    // from ordinary job churn. Bounded by the condemned
+                    // count (largest observed: 15).
+                    info!(
+                        pos = ?p,
+                        was_bed,
+                        chebyshev = (p.xy() - anchor.xy()).map(|e| e.abs()).reduce_max(),
+                        radius = FLOOD_RADIUS,
+                        "bastion: FLOOD CONDEMNED — a furnished cell this survey proved disconnected"
+                    );
                     flood_condemned += 1;
                 }
-                if flood_condemned > 0 {
+                // `out_of_range > 0` alone is worth a line: those are the
+                // cells the pre-fix code condemned for sitting outside its
+                // own search radius, and their count is the running size of
+                // FAULT 2 on this world.
+                if flood_condemned > 0 || verdict.out_of_range > 0 {
                     info!(
                         flood_condemned,
                         surveyed = seen.len(),
+                        truncated = survey.truncated,
+                        frontier_left = survey.frontier_left,
+                        cap = FLOOD_CAP,
+                        radius = FLOOD_RADIUS,
+                        out_of_range = verdict.out_of_range,
+                        withheld = verdict.withheld,
                         "bastion: REACHABILITY FLOOD — disconnected furnished cells condemned wholesale (no walker will be sent to prove them)"
                     );
                 }
@@ -35414,12 +35804,59 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     //
                     // Credit `feet`: the cell the body was actually stuck in,
                     // which every organic egress tier just failed to get it
-                    // out of. That is a claim about unreachability, which is
-                    // what this ledger stores.
-                    *board
+                    // out of.
+                    //
+                    // ★★ 2026-08-30 — AND THE UNIT AND THE LEDGER WERE STILL
+                    // WRONG. Fixing the KEY left the MAGNITUDE untouched: the
+                    // credit was `6` and the threshold is `6`, so a single
+                    // eject convicted its cell outright, first event, no
+                    // repetition. Measured in the owner's own 2.5-hour
+                    // session — five ejects, one `BED CONDEMNED`, bed count
+                    // 20 -> 19 and never recovering, with ZERO reachability
+                    // floods on that world. Two corrections, each sufficient:
+                    //
+                    //   * `EJECT_STRIKE_CREDIT` is ONE episode, the same unit
+                    //     the travel-timeout producer writes, so no single
+                    //     event can spend a whole conviction (pinned at
+                    //     compile time beside the constant); and
+                    //   * it lands in `eject_strikes_by_pos`, a SEPARATE
+                    //     ledger. An eject says "this body could not LEAVE
+                    //     here"; the consumer acts on "no walker can REACH
+                    //     here". `JobBoard::cell_is_convicted` therefore
+                    //     requires at least one genuine reach failure before
+                    //     eject evidence counts at all — a rescue can
+                    //     corroborate a case, never open one.
+                    //
+                    // A colonist teleported out of a stuck state is evidence
+                    // about the COLONIST. Charging the bed he was lying in
+                    // the entire condemnation budget is a guard convicting a
+                    // bystander, and on an adopted world nothing ever
+                    // re-adds a bed.
+                    let ejects = {
+                        let e = board
+                            .eject_strikes_by_pos
+                            .entry(feet)
+                            .or_insert(0);
+                        *e = e.saturating_add(EJECT_STRIKE_CREDIT);
+                        *e
+                    };
+                    let reach_strikes = board
                         .timeout_counts_by_pos
-                        .entry(feet)
-                        .or_insert(0) += 6;
+                        .get(&feet)
+                        .copied()
+                        .unwrap_or(0);
+                    // EVERY MECHANISM WITNESSES ITSELF, and this one has to
+                    // be separately attributable from the flood's fix so a
+                    // future soak can tell which change saved a bed.
+                    info!(
+                        ?feet,
+                        eject_strikes = ejects,
+                        reach_strikes,
+                        credit = EJECT_STRIKE_CREDIT,
+                        condemn_at = CONDEMN_STRIKES,
+                        convicted = board.cell_is_convicted(&feet),
+                        "bastion: EJECT STRIKE — one episode charged to the cell the body was stuck in; eject evidence alone cannot condemn (a reach failure is required)"
+                    );
                     record_assist_write(
                         tick.0,
                         *uid,
@@ -41636,6 +42073,388 @@ mod tests {
             1,
             "the fail-safe must credit `feet` — the cell the body was actually stuck in and \
              that every organic egress tier just failed to get it out of"
+        );
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // ★★ THE REACHABILITY FLOOD — a survey that did not finish must not
+    // condemn, and it may only judge what it was allowed to search.
+    // ─────────────────────────────────────────────────────────────────
+
+    /// A corridor of `len` standable cells running east from the anchor,
+    /// plus whatever extra cells the caller names. Nothing else is
+    /// standable, so anything off the corridor is genuinely sealed.
+    fn flood_fixture(len: i32, extra: &[Vec3<i32>]) -> HashSet<Vec3<i32>> {
+        let mut world: HashSet<Vec3<i32>> = (0..len).map(|x| Vec3::new(x, 0, 0)).collect();
+        world.extend(extra.iter().copied());
+        world
+    }
+
+    /// ★★ FALLBACK IS IDENTITY: a survey that completes within budget
+    /// condemns exactly what it condemned before the fix.
+    ///
+    /// This is the control for every other flood pin below. If it ever goes
+    /// red, the fix has changed the behaviour of a healthy colony — which
+    /// was never the point.
+    #[test]
+    fn a_completed_survey_condemns_the_sealed_cell_and_spares_the_reachable_one() {
+        let anchor = Vec3::new(0, 0, 0);
+        let sealed = Vec3::new(5, 10, 0);
+        let world = flood_fixture(20, &[sealed]);
+        let survey = flood_survey(
+            anchor,
+            anchor,
+            FLOOD_RADIUS,
+            FLOOD_CAP,
+            |p| world.contains(&p),
+            |_| false,
+        );
+        assert!(!survey.truncated, "the fixture must fit inside the budget");
+        assert_eq!(survey.frontier_left, 0);
+        assert_eq!(survey.seen.len(), 20, "the whole corridor, and nothing else");
+        let verdict = flood_verdict(
+            &survey,
+            anchor,
+            FLOOD_RADIUS,
+            &[sealed, Vec3::new(3, 0, 0)],
+            &HashSet::new(),
+            |_| true,
+        );
+        assert_eq!(
+            verdict.condemn,
+            vec![sealed],
+            "a completed survey must still condemn the cell it PROVED disconnected — a guard \
+             that refuses everything has stopped protecting the thing it guards"
+        );
+        assert_eq!(verdict.withheld, 0);
+        assert_eq!(verdict.out_of_range, 0);
+    }
+
+    /// ★★ A SURVEY THAT DID NOT COMPLETE MUST NOT CONDEMN.
+    ///
+    /// THE FRONTIER OF A SEARCH IS NOT ITS CAUSE. When the cell budget
+    /// hard-breaks the BFS, every cell it never reached is
+    /// indistinguishable from a cell it proved unreachable — and the flood
+    /// condemned them wholesale. Bed registration is one-shot per plot on
+    /// an adopted world, so each wrong condemnation is permanent, and the
+    /// shipped growth gates need `beds >= pop`.
+    ///
+    /// Note WHAT is withheld here: not just the sealed island, but a cell
+    /// on the town's own main corridor, four steps past where the budget
+    /// ran out. The pre-fix code destroyed both.
+    #[test]
+    fn a_truncated_survey_condemns_nothing_and_says_how_much_it_withheld() {
+        let anchor = Vec3::new(0, 0, 0);
+        let sealed = Vec3::new(5, 10, 0);
+        let on_the_corridor = Vec3::new(19, 0, 0);
+        let world = flood_fixture(20, &[sealed]);
+        let survey = flood_survey(
+            anchor,
+            anchor,
+            FLOOD_RADIUS,
+            4,
+            |p| world.contains(&p),
+            |_| false,
+        );
+        assert!(survey.truncated, "a cap of 4 on a 20-cell corridor must truncate");
+        assert!(survey.frontier_left > 0, "the unexplored frontier must be reported");
+        let verdict = flood_verdict(
+            &survey,
+            anchor,
+            FLOOD_RADIUS,
+            &[sealed, on_the_corridor],
+            &HashSet::new(),
+            |_| true,
+        );
+        assert!(
+            verdict.condemn.is_empty(),
+            "a search that ran out of budget has proven nothing; it condemned {:?}",
+            verdict.condemn
+        );
+        assert_eq!(
+            verdict.withheld, 2,
+            "both cells — including one on the walkable corridor itself — were withheld, and \
+             the count is what makes the near-miss visible in the log"
+        );
+    }
+
+    /// ★★ PIN THE THRESHOLD AGAINST ITS DEGENERATE SETTING, BOTH WAYS.
+    ///
+    /// `FLOOD_CAP = 0`: an over-refusing gate erases its own symptom, so
+    /// the degenerate LOW setting must condemn nothing rather than
+    /// everything — and must report truncation rather than looking like a
+    /// completed one-cell survey.
+    ///
+    /// `FLOOD_CAP = usize::MAX`: the degenerate HIGH setting must still
+    /// condemn, or the guard has been disabled instead of made honest.
+    #[test]
+    fn flood_cap_is_pinned_at_both_degenerate_settings() {
+        let anchor = Vec3::new(0, 0, 0);
+        let sealed = Vec3::new(5, 10, 0);
+        let world = flood_fixture(20, &[sealed]);
+        let standable = |p: Vec3<i32>| world.contains(&p);
+
+        // LOW: zero budget. The start is popped and never expanded.
+        let starved = flood_survey(anchor, anchor, FLOOD_RADIUS, 0, standable, |_| false);
+        assert!(starved.truncated, "a zero budget must never read as a completed survey");
+        assert_eq!(
+            starved.frontier_left, 1,
+            "the popped-but-unexpanded start counts back into the frontier, or `cap == 0` \
+             reports an empty frontier and looks complete"
+        );
+        assert_eq!(starved.seen.len(), 1);
+        let starved_verdict = flood_verdict(
+            &starved,
+            anchor,
+            FLOOD_RADIUS,
+            &[sealed, Vec3::new(3, 0, 0)],
+            &HashSet::new(),
+            |_| true,
+        );
+        assert!(
+            starved_verdict.condemn.is_empty(),
+            "with no budget at all the flood must condemn NOTHING; the pre-fix code condemned \
+             the entire town"
+        );
+        assert_eq!(starved_verdict.withheld, 2);
+
+        // HIGH: unbounded budget. Identical to the healthy case.
+        let complete = flood_survey(anchor, anchor, FLOOD_RADIUS, usize::MAX, standable, |_| false);
+        assert!(!complete.truncated);
+        assert_eq!(complete.seen.len(), 20);
+        let complete_verdict = flood_verdict(
+            &complete,
+            anchor,
+            FLOOD_RADIUS,
+            &[sealed, Vec3::new(3, 0, 0)],
+            &HashSet::new(),
+            |_| true,
+        );
+        assert_eq!(
+            complete_verdict.condemn,
+            vec![sealed],
+            "an unbounded budget must still convict the sealed cell — the flood exists to stop \
+             walkers being sent to prove unreachable cells, and must not be starved"
+        );
+    }
+
+    /// ★★ THE SEARCH AND THE JUDGEMENT SHARE ONE BOUND.
+    ///
+    /// The BFS was bounded at Chebyshev `FLOOD_RADIUS` from the anchor while
+    /// the candidate filter had NO distance bound at all, so a furnished
+    /// cell past the search radius was condemned for being outside the
+    /// search rather than for being unreachable.
+    ///
+    /// Both directions are pinned in one test, deliberately: the cell at
+    /// exactly `FLOOD_RADIUS` must STILL be condemned (a bound that
+    /// over-refuses starves the guard), and the cell one block further must
+    /// not be (that is the defect). Driven through `flood_pass`, the
+    /// production entry point, so the pin covers the real call.
+    #[test]
+    fn the_judgement_is_bounded_by_the_same_radius_as_the_search() {
+        let anchor = Vec3::new(0, 0, 0);
+        let inside_the_mandate = Vec3::new(FLOOD_RADIUS, 7, 0);
+        let past_the_mandate = Vec3::new(FLOOD_RADIUS + 1, 7, 0);
+        // A short corridor: both test cells are sealed off from it, so the
+        // ONLY thing that can separate their fates is the mandate bound.
+        let world = flood_fixture(20, &[]);
+        let (survey, verdict) = flood_pass(
+            anchor,
+            anchor,
+            &[past_the_mandate, inside_the_mandate],
+            &HashSet::new(),
+            |p| world.contains(&p),
+            |_| false,
+            |_| true,
+        );
+        assert!(!survey.truncated, "this fixture must complete, or the pin proves nothing");
+        assert_eq!(
+            verdict.condemn,
+            vec![inside_the_mandate],
+            "the cell at exactly FLOOD_RADIUS is inside the ball the BFS explores \
+             exhaustively, so 'not in seen' really does mean 'not connected' — refusing it \
+             would starve the guard"
+        );
+        assert_eq!(
+            verdict.out_of_range, 1,
+            "the cell one block past the search radius must be counted as OUT OF MANDATE, not \
+             condemned: the survey never walked there, so its absence from `seen` is a fact \
+             about the search"
+        );
+    }
+
+    /// DETERMINISM BY CONSTRUCTION: the truncated prefix is a pure function
+    /// of the BFS's visit order, so pinning WHICH cells survive a biting cap
+    /// pins the visit order itself.
+    ///
+    /// The fixture is a plus: four arms from the anchor. With a cap that
+    /// bites after the first arm's second cell, `(2,0,0)` is in and
+    /// `(-2,0,0)` / `(0,±2,0)` are out — an assertion that only holds for
+    /// the `[+x, -x, +y, -y]` expansion order. Reorder that array, or drive
+    /// the frontier from a hash container, and this goes red.
+    #[test]
+    fn the_surveys_visit_order_is_deterministic() {
+        let anchor = Vec3::new(0, 0, 0);
+        let mut world: HashSet<Vec3<i32>> = HashSet::new();
+        for step in 0..=5 {
+            world.insert(Vec3::new(step, 0, 0));
+            world.insert(Vec3::new(-step, 0, 0));
+            world.insert(Vec3::new(0, step, 0));
+            world.insert(Vec3::new(0, -step, 0));
+        }
+        let run = || flood_survey(anchor, anchor, FLOOD_RADIUS, 6, |p| world.contains(&p), |_| false);
+        let first = run();
+        assert!(first.truncated);
+        assert!(
+            first.seen.contains(&Vec3::new(2, 0, 0)),
+            "the +x arm is expanded first, so its second cell must be inside the truncated \
+             prefix"
+        );
+        for other in [Vec3::new(-2, 0, 0), Vec3::new(0, 2, 0), Vec3::new(0, -2, 0)] {
+            assert!(
+                !first.seen.contains(&other),
+                "{other:?} was reached before the budget bit — the expansion order is not the \
+                 fixed [+x, -x, +y, -y] array any more, so the truncated set is no longer \
+                 reproducible"
+            );
+        }
+        let second = run();
+        assert_eq!(first.seen, second.seen, "two identical inputs, two different surveys");
+    }
+
+    /// The condemned set must not depend on the order the candidates
+    /// arrived in — they come straight off `HashMap` iteration in `run`.
+    #[test]
+    fn the_condemned_set_does_not_depend_on_candidate_order() {
+        let anchor = Vec3::new(0, 0, 0);
+        let a = Vec3::new(9, 40, 0);
+        let b = Vec3::new(4, 40, 0);
+        let c = Vec3::new(9, 40, 3);
+        let world = flood_fixture(20, &[]);
+        let survey = flood_survey(
+            anchor,
+            anchor,
+            FLOOD_RADIUS,
+            FLOOD_CAP,
+            |p| world.contains(&p),
+            |_| false,
+        );
+        let judge = |cells: &[Vec3<i32>]| {
+            flood_verdict(&survey, anchor, FLOOD_RADIUS, cells, &HashSet::new(), |_| true).condemn
+        };
+        let forwards = judge(&[a, b, c]);
+        assert_eq!(forwards.len(), 3, "all three are sealed");
+        assert_eq!(forwards, judge(&[c, a, b]));
+        assert_eq!(forwards, judge(&[b, c, a, b]), "and duplicates collapse");
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // ★★ THE STRIKE LEDGER — one rescue must not spend a whole
+    // condemnation, and eject evidence cannot convict on its own.
+    // ─────────────────────────────────────────────────────────────────
+
+    /// ★★ ONE EJECT MUST NOT CONDEMN A BED.
+    ///
+    /// The fail-safe credited `6` against a threshold of `6`, so a single
+    /// emergency teleport that happened to land on a bed cell condemned
+    /// that bed instantly — first event, no repetition, no proof of
+    /// anything about the bed. Measured in the owner's own session: five
+    /// ejects, one `BED CONDEMNED`, bed count 20 -> 19, never recovering.
+    ///
+    /// Pinned as arithmetic on the two constants (also a compile-time
+    /// assert beside them) AND behaviourally: a full condemnation's worth
+    /// of ejects, with no walker having ever failed to reach the cell,
+    /// convicts nothing.
+    #[test]
+    fn one_eject_cannot_spend_a_whole_condemnation() {
+        assert!(
+            EJECT_STRIKE_CREDIT * 2 <= CONDEMN_STRIKES,
+            "a single eject (or a pair) can reach the condemnation threshold on its own: \
+             credit {EJECT_STRIKE_CREDIT} against threshold {CONDEMN_STRIKES}"
+        );
+        let mut board = JobBoard::default();
+        let bed = Vec3::new(27_440, 18_352, 408);
+        *board.eject_strikes_by_pos.entry(bed).or_insert(0) += EJECT_STRIKE_CREDIT;
+        assert!(
+            !board.cell_is_convicted(&bed),
+            "one rescue convicted the cell the body was lying in"
+        );
+    }
+
+    /// ★★ EJECT EVIDENCE CANNOT CONVICT ALONE — INDEPENDENT EVIDENCE.
+    ///
+    /// A colonist being teleported out of a stuck state is evidence about
+    /// the COLONIST. The consumer of this ledger acts on a different claim,
+    /// "no walker can REACH this cell", and its other producer speaks in
+    /// units of one failed travel episode. Without at least one genuine
+    /// reach failure, a pile of ejects only says a body got wedged there.
+    ///
+    /// Three rows, and the last one is the control: the pre-fix conviction
+    /// (six reach strikes, no ejects) must still convict, or the fix has
+    /// disabled the guard instead of correcting it.
+    #[test]
+    fn eject_strikes_corroborate_a_case_but_cannot_open_one() {
+        let cell = Vec3::new(3, 4, 5);
+
+        let mut ejects_only = JobBoard::default();
+        ejects_only.eject_strikes_by_pos.insert(cell, 99);
+        assert!(
+            !ejects_only.cell_is_convicted(&cell),
+            "99 rescues at one cell still prove nothing about whether a walker can REACH it"
+        );
+
+        let mut corroborated = JobBoard::default();
+        corroborated.timeout_counts_by_pos.insert(cell, 1);
+        corroborated
+            .eject_strikes_by_pos
+            .insert(cell, CONDEMN_STRIKES - 1);
+        assert!(
+            corroborated.cell_is_convicted(&cell),
+            "once a walker really has failed to reach the cell, eject evidence must still \
+             count toward the case — otherwise the eject ledger is decorative"
+        );
+
+        let mut pre_fix_shape = JobBoard::default();
+        pre_fix_shape
+            .timeout_counts_by_pos
+            .insert(cell, CONDEMN_STRIKES);
+        assert!(
+            pre_fix_shape.cell_is_convicted(&cell),
+            "IDENTITY: a cell with a full ledger of genuine travel timeouts and no ejects must \
+             condemn exactly as it always did"
+        );
+    }
+
+    /// The eject's write must land in the EJECT ledger, in eject units.
+    ///
+    /// Fixing the KEY (destination -> feet) left the MAGNITUDE and the
+    /// LEDGER untouched, which is how this survived the last audit of the
+    /// same three lines. Anchored on the feet-keyed entry call — whose
+    /// uniqueness the sibling pin above already guarantees — and reads the
+    /// code either side of it.
+    #[test]
+    fn the_ejects_strike_is_written_in_eject_units_to_the_eject_ledger() {
+        let src = include_str!("bastion_jobs.rs");
+        let needle = format!("{}(feet)", ".entry");
+        let idx = src
+            .find(&needle)
+            .expect("the fail-safe's strike write moved — re-anchor this pin");
+        let before = &src[idx.saturating_sub(120)..idx];
+        assert!(
+            before.contains("eject_strikes_by_pos"),
+            "the eject is writing into the REACH ledger again. Those are different claims — \
+             'a body could not LEAVE here' vs 'a walker could not REACH here' — and merging \
+             them lets one rescue condemn a bed"
+        );
+        assert!(
+            !before.contains("timeout_counts_by_pos"),
+            "the eject is writing into `timeout_counts_by_pos`, the reach ledger"
+        );
+        let after = &src[idx..(idx + 160).min(src.len())];
+        assert!(
+            after.contains("EJECT_STRIKE_CREDIT"),
+            "the eject's credit is a bare literal again; it must be the named constant that \
+             the compile-time assert holds below the condemnation threshold"
         );
     }
 
