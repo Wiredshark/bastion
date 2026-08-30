@@ -10,6 +10,12 @@ use rand::RngExt as _;
 use serde::{Deserialize, Serialize};
 use vek::*;
 
+/// bastion (INSPECTOR-M1): the game clock, pure. Every conversion between
+/// the four clocks this project carries (server tick / rtsim tick /
+/// `TimeOfDay` / `Time`) lives there, once, so an inspector cannot print a
+/// number without saying which clock it came from.
+pub mod game_time;
+
 /// An axis-aligned block region, inclusive on both corners.
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Region {

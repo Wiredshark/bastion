@@ -805,6 +805,21 @@ pub enum BastionInspectTarget {
     /// bastion (ARC 2 item 12): an entity's CHRONICLE — its event-log history
     /// as the player view. Appended last (wire rule).
     Chronicle(crate::uid::Uid),
+    /// bastion (INSPECTOR-M1): a SECTIONED request — one colonist, and
+    /// exactly the sections whose panels are expanded right now.
+    ///
+    /// ★ WHY THIS IS A VARIANT AND NOT A NEW MESSAGE. A new
+    /// `ClientGeneral`/`ServerGeneral` variant must be listed in seven
+    /// places (the definition, a classification match, `command.rs`,
+    /// `envelope.rs`, and three sites in `wire_shape_goldens.rs`) and the
+    /// `UNCOVERED_*` lists are both pinned empty, so it would need its own
+    /// golden too. Appending here rides the existing `BastionInspect`
+    /// pair and leaves every existing golden byte-identical: bincode
+    /// encodes an enum by its ORDINAL, and appending does not move the
+    /// ordinals of `Entity`/`Cell`/`Colony`/`Chronicle`.
+    ///
+    /// APPEND ONLY, NEVER REORDER — the ordinal is part of a hash digest.
+    Sectioned(crate::comp::bastion_inspect::SectionRequestV1),
 }
 
 /// bastion (UI-5, row 62.2): one inspected object's full internal state —
@@ -827,6 +842,14 @@ pub enum BastionInspectKind {
     /// bastion (ARC 2 item 12): the chronicle payload. Appended last (wire
     /// rule as above).
     Chronicle(BastionChronicleInspect),
+    /// bastion (INSPECTOR-M1): the SECTIONED reply — the frames block plus
+    /// one payload per requested section, in registry order.
+    ///
+    /// Appended last, same wire rule and same reason as
+    /// [`BastionInspectTarget::Sectioned`]: the ordinals of the six
+    /// variants above do not move, so the existing `BastionInspectInfo`
+    /// golden (which encodes `payload: None`) is untouched.
+    Sectioned(crate::comp::bastion_inspect::SectionedInspectV1),
 }
 
 /// bastion (ARC 2 item 10): the colony dashboard's payload.

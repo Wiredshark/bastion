@@ -25,6 +25,9 @@ pub mod bastion_entity_event_log;
 pub mod bastion_flat_arena;
 pub mod bastion_flight_recorder;
 pub mod bastion_founding_preset;
+/// bastion (INSPECTOR-M1): the modular inspector's server-side section
+/// providers. New file per section; the registry is wildcard-free.
+pub mod bastion_inspector;
 pub mod bastion_jobs;
 pub mod bastion_mood;
 pub mod bastion_recipes;

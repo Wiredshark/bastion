@@ -2,6 +2,9 @@
 mod animation;
 mod bag;
 pub mod bastion;
+/// bastion (INSPECTOR-M1): the modular colonist inspector's client-side
+/// section views. New file per section; the registry is wildcard-free.
+pub mod bastion_inspector;
 pub mod bastion_minimap;
 mod buffs;
 mod buttons;
@@ -5147,12 +5150,34 @@ impl Hud {
             // client's inspect reply.
             if !self.bastion.inspect_lines.is_empty() {
                 let text = self.bastion.inspect_lines.join("\n");
-                widget::Text::new(&text)
-                    .bottom_left_with_margins_on(ui_widgets.window, 365.0, 10.0)
-                    .font_size(13)
+                // bastion (INSPECTOR-M1): the sectioned panel emits many
+                // more rows than the old flat block -- a full lane table
+                // is 16 rows on its own -- so a long panel anchors to the
+                // TOP of the window and drops a point of font size.
+                // Anchored bottom-left at 13px it ran off the top of the
+                // screen, and the rows that vanished were the FIRST ones:
+                // name, trade, age.
+                //
+                // Deliberately still a plain `Text` block. This row's
+                // scope is the DATA MODEL (a section registry, rows that
+                // name their producer, a two-clock header); a scrollable,
+                // collapsible conrod panel is the next row's work, and
+                // building it before the model settled would have meant
+                // building it twice.
+                let long = self.bastion.inspect_lines.len() > 22;
+                let widget = widget::Text::new(&text)
+                    .font_size(if long { 11 } else { 13 })
                     .font_id(self.fonts.cyri.conrod_id)
-                    .color(label_color)
-                    .set(self.ids.bastion_inspect_text, ui_widgets);
+                    .color(label_color);
+                if long {
+                    widget
+                        .top_left_with_margins_on(ui_widgets.window, 60.0, 10.0)
+                        .set(self.ids.bastion_inspect_text, ui_widgets);
+                } else {
+                    widget
+                        .bottom_left_with_margins_on(ui_widgets.window, 365.0, 10.0)
+                        .set(self.ids.bastion_inspect_text, ui_widgets);
+                }
             }
 
             // --- B5.6b-1: world-anchored zone labels ("Mine 1") at centroids.

@@ -897,6 +897,12 @@ impl<'a> System<'a> for Sys {
             // same `insp_` convention as its siblings rather than reached for
             // across the borrow.
             ReadStorage<'a, Health>,
+            // bastion (INSPECTOR-M1): the retained route lives on
+            // `Agent::chaser`. Taken as a SHARED storage on purpose -- the
+            // Path provider receives `&Chaser`, and every route-mutating
+            // entry point needs `&mut self`, so the inspector physically
+            // cannot trigger a path search.
+            ReadStorage<'a, common::comp::Agent>,
         ),
     );
 
@@ -950,6 +956,7 @@ impl<'a> System<'a> for Sys {
                 insp_tick,
                 insp_active_jobs,
                 insp_healths,
+                insp_agents,
             ),
         ): Self::SystemData,
     ) {
@@ -1745,7 +1752,7 @@ impl<'a> System<'a> for Sys {
                                             // claim gate and work rate read.
                                             skills: {
                                                 use common::bastion::WorkType as W;
-                                                [W::Mine, W::Chop, W::Build, W::Haul, W::Cook, W::Farm, W::Guard]
+                                                W::ALL
                                                     .into_iter()
                                                     .map(|w| {
                                                         (
@@ -1758,7 +1765,7 @@ impl<'a> System<'a> for Sys {
                                             traits: trait_list,
                                             desires: {
                                                 use common::bastion::WorkType as W;
-                                                [W::Mine, W::Chop, W::Build, W::Haul, W::Cook, W::Farm, W::Guard]
+                                                W::ALL
                                                     .into_iter()
                                                     .map(|w| {
                                                         (
@@ -1987,6 +1994,89 @@ impl<'a> System<'a> for Sys {
                                             events,
                                         },
                                     ))
+                                },
+                                // bastion (INSPECTOR-M1): the MODULAR
+                                // inspector. Rides this existing pair
+                                // rather than a new wire message (see
+                                // `BastionInspectTarget::Sectioned`), and
+                                // answers only the sections whose panels
+                                // the client has expanded.
+                                BastionInspectTarget::Sectioned(req) => {
+                                    use bastion_server::bastion_inspector as bi;
+
+                                    // ★ THE SERVER'S OWN FLOOR. The panel
+                                    // throttles itself, but a rate limit
+                                    // that lives only in the requester is
+                                    // not a rate limit. Checked BEFORE any
+                                    // assembly work -- a guard must refuse
+                                    // before it spends.
+                                    let admitted = bi::admit_request(
+                                        u64::from(requester.id()),
+                                        time.0,
+                                    );
+                                    if !admitted {
+                                        continue;
+                                    }
+
+                                    let subject = req.subject;
+                                    let ent = id_maps.uid_entity(subject);
+                                    // The roster record. Read from the ECS
+                                    // mirror while loaded; see the Identity
+                                    // provider's own doc for why an
+                                    // UNLOADED subject cannot be looked up
+                                    // by `Uid` today.
+                                    let record =
+                                        ent.and_then(|e| insp_colonists.get(e)).map(|c| &c.0);
+                                    let parent_name = record
+                                        .and_then(|r| r.parent)
+                                        .and_then(|pid| {
+                                            let data = rtsim.state().data();
+                                            data.npcs.get(pid).and_then(|npc| {
+                                                npc.bastion_colonist
+                                                    .as_ref()
+                                                    .map(|c| c.name.clone())
+                                            })
+                                        });
+                                    let loaded = ent.map(|e| bi::LoadedCtx {
+                                        pos: positions.get(e).map(|p| p.0),
+                                        // `None` here means NO Health
+                                        // component -- not zero health.
+                                        health: insp_healths
+                                            .get(e)
+                                            .map(|h| h.fraction()),
+                                        arbiter: insp_arbiters.get(e),
+                                        active_job: insp_active_jobs.get(e),
+                                        chaser: insp_agents
+                                            .get(e)
+                                            .map(|a| &a.chaser),
+                                    });
+                                    // TWO CLOCKS, BOTH NAMED, plus the
+                                    // ticks-per-game-day the client cannot
+                                    // derive (it has the coefficient but
+                                    // never `dt`).
+                                    let (rtsim_tick, tod) = {
+                                        let data = rtsim.state().data();
+                                        (data.tick, data.time_of_day.0)
+                                    };
+                                    let frames = bi::frames(
+                                        insp_tick.0,
+                                        rtsim_tick,
+                                        tod,
+                                        f64::from(dt.0),
+                                        settings.day_cycle_coefficient(),
+                                        bi::schedule_offset_hours(&job_board, subject),
+                                    );
+                                    let ctx = bi::InspectCtx {
+                                        subject,
+                                        frames,
+                                        record,
+                                        parent_name,
+                                        board: &job_board,
+                                        loaded,
+                                    };
+                                    Some(BastionInspectKind::Sectioned(bi::assemble(
+                                        &ctx, &req,
+                                    )))
                                 },
                             };
                             let _ =

@@ -1,3 +1,4 @@
+pub mod inspect_sub;
 pub mod interactable;
 pub mod settings_change;
 mod target;
@@ -149,6 +150,16 @@ pub struct SessionState {
     /// bastion (B2a/B3): the current selection (mirrors the
     /// `BastionSelected` ECS markers; multiple via box-select).
     bastion_selected: Vec<specs::Entity>,
+    /// bastion (INSPECTOR-M1): the modular inspector's subscription +
+    /// panel state.
+    ///
+    /// ★ KEYED ON `Uid`, NOT ON `specs::Entity`. `bastion_selected` below
+    /// is still entity-keyed because the markers and rings it drives need
+    /// entities; but selection expressed as an ENTITY silently vanished
+    /// when a colonist unloaded, blanking the panel with no explanation.
+    /// The inspector's own notion of "who is selected" is the `Uid` this
+    /// holds, re-resolved to an entity every frame.
+    bastion_inspect_sub: inspect_sub::InspectSubState,
     /// bastion (B3): overhead marker shapes for loaded colonists.
     bastion_colonist_markers: HashMap<specs::Entity, DebugShapeId>,
     /// bastion (UI-4.1): world-space highlight rings under the SELECTED
@@ -310,6 +321,7 @@ impl SessionState {
             bastion_paint: None,
             bastion_boxsel: None,
             bastion_selected: Vec::new(),
+            bastion_inspect_sub: inspect_sub::InspectSubState::default(),
             bastion_colonist_markers: HashMap::new(),
             bastion_selection_rings: HashMap::new(),
             bastion_designation_synced: 0,
@@ -1172,6 +1184,49 @@ impl SessionState {
     /// READ-ONLY end to end — the panel writes no sim state.
     fn bastion_sync_inspector(&mut self) {
         use common::comp::bastion::{BastionInspectKind as Kind, BastionInspectTarget as Tgt};
+
+        // ---------------------------------------------------------------
+        // bastion (INSPECTOR-M1): the MODULAR panel owns the
+        // single-colonist case. Every other target (a clicked cell, the
+        // colony dashboard, the chronicle) still runs the original pump
+        // below, unchanged -- FALLBACK IS IDENTITY.
+        // ---------------------------------------------------------------
+        //
+        // ★ SELECTION IS KEYED ON `Uid`. `bastion_selected` stays
+        // entity-keyed because the overhead markers and selection rings it
+        // drives need entities, but the INSPECTOR's notion of "who is
+        // selected" is a `Uid`, re-resolved every frame. When the entity
+        // has unloaded the resolve fails and the previous `Uid` is KEPT --
+        // which is the whole point. Before this, an unloading colonist
+        // silently blanked the panel, which reads exactly like death.
+        let selected_uid = if self.bastion_selected.len() == 1 {
+            let live = {
+                let client = self.client.borrow();
+                client
+                    .state()
+                    .ecs()
+                    .read_storage::<common::uid::Uid>()
+                    .get(self.bastion_selected[0])
+                    .copied()
+            };
+            live.or_else(|| self.bastion_inspect_sub.subject())
+        } else {
+            // Nothing selected, or a multi-select: no subject, and
+            // therefore ZERO bytes.
+            None
+        };
+        self.bastion_inspect_sub.set_subject(selected_uid);
+        if selected_uid.is_some() {
+            self.bastion_sync_inspector_sectioned();
+            return;
+        }
+        // Deselected: drop the route overlay before falling through to the
+        // legacy pump, or the last colonist's line would hang in the world.
+        let stale = self.bastion_inspect_sub.take_path_shapes();
+        for id in stale {
+            self.scene.debug.remove_shape(id);
+        }
+
         // Prefer a single selected colonist (the UI-4 path); else a clicked
         // world cell (UI-5 — a job / stockpile / farm / fell-set). Multi-select,
         // or nothing at all, clears the panel.
@@ -1381,6 +1436,18 @@ impl SessionState {
                             if c.truncated { " (truncated)" } else { "" },
                         ),
                     ],
+                    // bastion (INSPECTOR-M1): the sectioned payload belongs to
+                    // the OTHER pump (`bastion_sync_inspector_sectioned`), which
+                    // renders it through the section registry. The two are
+                    // disjoint BY TARGET -- this legacy path only ever sets
+                    // `Tgt::{Entity,Cell,Colony,Chronicle}`, so the guard
+                    // `*t == target` above cannot admit a `Sectioned` reply and
+                    // this arm is unreachable in practice. It exists because the
+                    // match must be exhaustive, and it returns EMPTY rather than
+                    // a placeholder string so that if the two pumps ever do
+                    // overlap, the legacy block goes silent instead of drawing a
+                    // second, staler copy of the same data over the panel.
+                    Kind::Sectioned(_) => Vec::new(),
                 },
                 // Reply pending, stale, or an empty target (payload: None) —
                 // show nothing, never crash.
@@ -1388,6 +1455,99 @@ impl SessionState {
             }
         };
         self.hud.bastion_set_inspect(lines);
+    }
+
+    /// bastion (INSPECTOR-M1): the modular inspector's per-frame pump.
+    ///
+    /// Ask (only what is expanded, only what is due, at most one request in
+    /// flight), take a matching reply, render, draw the route. Every one of
+    /// those rules lives in
+    /// `common::comp::bastion_inspect::subscription`, where it is pinned
+    /// without a renderer; this function is the plumbing around it.
+    fn bastion_sync_inspector_sectioned(&mut self) {
+        use common::comp::bastion::{BastionInspectKind as Kind, BastionInspectTarget as Tgt};
+
+        // 1. ASK. `poll` returns `None` unless an expanded section is
+        //    actually due and nothing is outstanding.
+        if let Some(req) = self.bastion_inspect_sub.poll() {
+            self.client.borrow_mut().bastion_inspect_request(Tgt::Sectioned(req));
+        }
+
+        // 2. TAKE THE REPLY. The client caches the latest inspector reply
+        //    of any kind; only a `Sectioned` one is ours, and `accept`
+        //    drops it unless the seq AND subject match the outstanding
+        //    request. Re-offering the same cached reply every frame is
+        //    harmless: the second offer finds no request in flight and is
+        //    rejected.
+        let reply = {
+            let client = self.client.borrow();
+            match client.bastion_inspect() {
+                Some((Tgt::Sectioned(_), Some(Kind::Sectioned(r)))) => Some(r.clone()),
+                _ => None,
+            }
+        };
+        if let Some(r) = reply {
+            self.bastion_inspect_sub.accept(r);
+        }
+
+        // 3. RENDER. Bound to a local first so the immutable borrow of the
+        //    subscription ends before the HUD is touched.
+        let lines = self.bastion_inspect_sub.lines();
+        self.hud.bastion_set_inspect(lines);
+
+        // 4. DRAW THE ROUTE.
+        self.bastion_sync_inspector_path();
+    }
+
+    /// bastion (INSPECTOR-M1): the route overlay — the walked prefix dim,
+    /// the remaining suffix bright.
+    ///
+    /// The same add/reuse/stale-sweep shape as
+    /// `bastion_sync_colonist_markers`, but keyed on the route's NODE HASH
+    /// rather than on entities: the geometry is rebuilt only when the node
+    /// list actually changes, so a colonist walking a stable route costs
+    /// nothing per frame.
+    ///
+    /// ★ THE WALKED PREFIX IS DIMMED, NOT HIDDEN. Where a colonist HAS
+    /// been is what makes an oscillation visible, and an oscillator is
+    /// invisible in the remaining suffix alone — this project has already
+    /// lost time to a displacement test that an oscillating walker passed.
+    fn bastion_sync_inspector_path(&mut self) {
+        use crate::hud::bastion_inspector::path as pv;
+        use crate::session::inspect_sub::PathDraw;
+
+        match self.bastion_inspect_sub.path_draw() {
+            PathDraw::Unchanged => {},
+            PathDraw::Clear => {
+                let stale = self.bastion_inspect_sub.take_path_shapes();
+                for id in stale {
+                    self.scene.debug.remove_shape(id);
+                }
+            },
+            PathDraw::Rebuild(segments, hash) => {
+                let mut shapes = Vec::with_capacity(segments.len());
+                for seg in segments {
+                    let id = self
+                        .scene
+                        .debug
+                        .add_shape(crate::scene::DebugShape::Line([seg.from, seg.to], 0.12));
+                    self.scene.debug.set_context(
+                        id,
+                        [0.0; 4],
+                        if seg.walked { pv::WALKED_COLOR } else { pv::REMAINING_COLOR },
+                        [0.0, 0.0, 0.0, 1.0],
+                    );
+                    shapes.push(id);
+                }
+                // Swap FIRST, then delete what came back: the old shapes
+                // must not be removed before the new ones exist, or the
+                // line blinks out for a frame on every re-plan.
+                let old = self.bastion_inspect_sub.swap_path_shapes(shapes, hash);
+                for id in old {
+                    self.scene.debug.remove_shape(id);
+                }
+            },
+        }
     }
 
     /// bastion (B2a/B5.5): keep the designation overlay in sync with the

@@ -5,6 +5,9 @@ pub mod anchor;
 pub mod arcing;
 pub mod aura;
 pub mod bastion;
+/// bastion (INSPECTOR-M1): the modular colonist inspector's shared
+/// protocol -- section ids, payloads and the provenance-carrying row type.
+pub mod bastion_inspect;
 pub mod beam;
 pub mod body;
 pub mod buff;
