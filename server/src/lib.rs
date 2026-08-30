@@ -7634,6 +7634,13 @@ impl Server {
                                 &plots,
                                 sp.z.floor() as i32,
                             );
+                            // ★ AND STREAM WHAT THE QUEUE WILL WAIT ON.
+                            // Queueing alone left ~15 plots deferred forever:
+                            // a `Presence` keeps chunks, only a CLIENT asks
+                            // for new ones, so the drain's gate was
+                            // unreachable by construction for every plot
+                            // outside the colony presence's initial square.
+                            self.bastion_adopt_stream_plot_chunks(&plots);
                         } else {
                             use bastion_server::bastion_founding_preset as preset;
                             let origin_xy = preset::origin_xy(sp);
@@ -7906,6 +7913,118 @@ impl Server {
         // identically here.
         Self::bastion_seed_food(ecs, Vec3::new(town_origin.x, town_origin.y, hint_z));
         Self::bastion_seed_materials(ecs, Vec3::new(town_origin.x, town_origin.y, hint_z));
+    }
+
+    /// ★★ ADOPT-A-TOWN: STREAM THE PLOTS THE QUEUE WILL WAIT ON (2026-08-30).
+    ///
+    /// `bastion_adopt_place` above QUEUES every adopted plot and the bastion
+    /// tick drains each one once both its corner columns read `Ok` from
+    /// `TerrainGrid`. Measured on the 85-house town of `SiteId(1v1)`
+    /// (`bastion-test-evidence/play/server-110.log`, `server-114.log`): 80 of
+    /// the 85 mapped house plots registered and FIVE never did, and the
+    /// witness printed `ADOPT-A-TOWN surface queue WAITING waiting=15
+    /// min_xy=Vec2 { x: 3218, y: 7276 } hint_z=182 min_loaded=false
+    /// max_loaded=false` — byte-identical, timestamps aside, for 6,975
+    /// firings across 8.5 hours of wall clock. Not one value ever changed.
+    ///
+    /// **IT IS A GATE UNREACHABLE BY CONSTRUCTION, not a slow one.** See
+    /// `bastion_jobs::adopt_plot_chunk_keys` for the full derivation; the
+    /// short form is that `Chonk::get` returns `Ok` for any z in a LOADED
+    /// chunk, so the queue's probe is a chunk-loaded test, and the only two
+    /// things in this server that ever CAUSE a chunk to generate are
+    /// `create_colony_presence`'s one-shot square at founding and a connected
+    /// CLIENT's `TerrainChunkRequest`. A `Presence` keeps chunks; it never
+    /// asks for new ones. `view_distance_chunk_keys` is a DISC: the default
+    /// `BASTION_COLONY_PRESENCE_VD=1` reaches ~113 blocks and the `mega`
+    /// preset's 7 reaches ~305, while a village's plots span more. So every
+    /// adopted plot outside that disc waits forever unless a player walks
+    /// onto it, and its beds are missing from the housing model for the whole
+    /// run.
+    ///
+    /// ★ WHAT THIS DOES **NOT** EXPLAIN, stated so the next reader does not
+    /// force the story: the `beds=20 pop=46` town (`play-server.log`,
+    /// `SiteId(18v1)`) logged ZERO waiting lines — its queue drained
+    /// completely. That gap is a different defect: `settle_plan` applies the
+    /// housing cap only to SETTLED colonists, so all 46 of the village's own
+    /// residents were adopted against 10 houses. Two symptoms, two causes.
+    ///
+    /// The repair asks for exactly the chunks the queue needs, through the
+    /// SAME `ChunkGenerator` call the colony presence already makes
+    /// (asynchronous, slow-job backed — no founding-tick stall), and pins
+    /// them in `BastionForceLoaded` so the unload sweep cannot take one back
+    /// between its arrival and the drain. Without the pin the sweep considers
+    /// each chunk every 16 ticks and would silently drop ~1 in 16 of them,
+    /// which is a fix that mostly works — the worst kind.
+    ///
+    /// ★ THE PIN IS PERMANENT, AND THAT IS A DELIBERATE COST. Bed
+    /// registration is durable once made (`JobBoard::beds` is pruned only by
+    /// an explicit CANCEL region, never by an unload), so the pin is not
+    /// needed for correctness after the drain. It is kept because these are
+    /// the colony's OWN houses: a settlement whose far quarter unloads is a
+    /// settlement whose colonists there stop being simulated. The set is
+    /// bounded by the town's own plot list — linear in plot area, not
+    /// quadratic in town extent — and its size is witnessed below rather
+    /// than assumed.
+    ///
+    /// ★ MODE B IS UNTOUCHED. This runs only on the adoption branch; a
+    /// founded colony never enqueues a plot, never reaches this call, and its
+    /// chunk set is byte-identical to today's.
+    fn bastion_adopt_stream_plot_chunks(
+        &mut self,
+        plots: &[(common::bastion::DesignationKind, Vec2<i32>, Vec2<i32>)],
+    ) {
+        // Internal cfg split, matching `bastion_found_colony_presence`: the
+        // caller is not itself gated, so the METHOD must exist in both builds.
+        #[cfg(not(feature = "worldgen"))]
+        let _ = plots;
+        #[cfg(feature = "worldgen")]
+        {
+            use std::sync::Arc;
+            let bboxes: Vec<(Vec2<i32>, Vec2<i32>)> =
+                plots.iter().map(|(_, min, max)| (*min, *max)).collect();
+            let keys = bastion_server::bastion_jobs::adopt_plot_chunk_keys(&bboxes);
+            let mut already_loaded = 0usize;
+            {
+                let ecs = self.state.ecs();
+                let terrain = ecs.read_resource::<common::terrain::TerrainGrid>();
+                let slow_jobs = ecs.write_resource::<SlowJobPool>();
+                let rtsim = ecs.read_resource::<rtsim::RtSim>();
+                let mut chunk_generator = ecs.write_resource::<ChunkGenerator>();
+                let mut pinned = ecs.write_resource::<bastion_jobs::BastionForceLoaded>();
+                let time = (
+                    *ecs.read_resource::<TimeOfDay>(),
+                    (*ecs.read_resource::<Calendar>()).clone(),
+                );
+                for key in keys.iter().copied() {
+                    pinned.0.insert(key);
+                    if terrain.get_key_arc(key).is_some() {
+                        already_loaded += 1;
+                        continue;
+                    }
+                    // `None` for the requesting entity, exactly as
+                    // `create_colony_presence` does: nobody is waiting to be
+                    // sent this chunk, the colony just needs it to exist.
+                    chunk_generator.generate_chunk(
+                        None,
+                        key,
+                        &slow_jobs,
+                        Arc::clone(&self.world),
+                        &rtsim,
+                        self.index.clone(),
+                        time.clone(),
+                    );
+                }
+            }
+            tracing::info!(
+                plots = plots.len(),
+                chunks = keys.len(),
+                already_loaded,
+                requested = keys.len() - already_loaded,
+                "bastion: ADOPT-A-TOWN plot chunks REQUESTED and pinned — the surface \
+                 queue's gate was previously unreachable for any plot outside the colony \
+                 presence's initial square"
+            );
+        }
     }
 
     /// ★ The adoption scorer's ORDER, pure so both policies are pinned.

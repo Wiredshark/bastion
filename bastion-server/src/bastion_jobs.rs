@@ -6447,6 +6447,209 @@ pub fn column_surface_z(terrain: &TerrainGrid, x: i32, y: i32, hint_z: i32) -> O
         })
 }
 
+/// ★★ ADOPT-A-TOWN: THE CHUNKS THE SURFACE QUEUE IS ACTUALLY WAITING ON
+/// (2026-08-30, found by reading the producer of a witness that had been
+/// reporting faithfully and unread for 6,975 firings across 8.5 hours
+/// (`bastion-test-evidence/play/server-110.log`; 2,530 more in `server-114`):
+/// `ADOPT-A-TOWN surface queue WAITING waiting=15 min_loaded=false
+/// max_loaded=false`, identical from boot to log end).
+///
+/// **THE QUEUE'S GATE IS NOT A Z TEST.** The drain defers a plot until both
+/// `terrain.get(Vec3::new(corner.x, corner.y, hint_z))` calls return `Ok` —
+/// and `impl ReadVol for Chonk` (`common/src/terrain/chonk.rs`) returns
+/// `Ok(&self.below)` below `get_min_z()` and `Ok(&self.above)` above
+/// `get_max_z()`. Once a chunk is loaded, EVERY z in its column reads `Ok`.
+/// So `hint_z` cannot influence readiness at all: the probe is a
+/// CHUNK-LOADED test wearing a coordinate. Resolving plot z from world data
+/// (`get_alt_approx`, as the adoption re-anchor already does) would
+/// therefore change nothing about whether the queue ever drains.
+///
+/// **AND NOTHING IN A COLONY EVER LOADS THOSE CHUNKS.**
+/// `create_colony_presence` (`server/src/state_ext.rs`) walks
+/// `view_distance_chunk_keys` and calls `generate_chunk` ONCE, at creation;
+/// afterwards a `Presence` only KEEPS chunks resident (the unload sweep's
+/// filter in `server/src/sys/terrain.rs`). The only other producer of chunk
+/// generation is `sys::terrain::Sys` draining `Vec<ChunkRequest>`, and the
+/// only writer of that queue is `sys/msg/terrain.rs` handling a CLIENT's
+/// `ClientGeneral::TerrainChunkRequest`. A plot outside the colony
+/// presence's initial square is therefore **unreachable by construction**
+/// for a headless colony, and reachable only by accident — a player walking
+/// onto it — for a played one.
+///
+/// This function is the repair: the set of chunk keys that must be streamed
+/// for a plot list to be registerable at all.
+///
+/// ★ LINEAR IN THE PLOTS' OWN AREA, and that is the whole argument for this
+/// shape over the obvious alternative. Sizing the colony presence's view
+/// distance to reach the farthest plot is QUADRATIC in the town's extent —
+/// a town 8 chunks across costs 289 chunks as a square against ~60 as a
+/// cover — and one stray worldgen plot would turn a radius into a hang.
+///
+/// ★ EVERY CHUNK THE AABB TOUCHES, not just the two corners the queue
+/// probes. A plot spanning three chunks on an axis has a middle chunk
+/// neither corner names, and `adopt_furniture_surface` SKIPS (never defers)
+/// an unloaded column — so a hole in the middle silently under-registers
+/// that house's beds while both corner probes read `true`.
+///
+/// Sorted and deduped: the request order is a total order and can never
+/// depend on iteration.
+pub fn adopt_plot_chunk_keys(bboxes: &[(Vec2<i32>, Vec2<i32>)]) -> Vec<Vec2<i32>> {
+    use common::terrain::CoordinateConversions;
+    let mut keys = Vec::new();
+    for (a, b) in bboxes {
+        // Normalised here rather than trusted: the queue stores whatever the
+        // plot mapper produced, and a min/max the wrong way round would
+        // silently cover NOTHING (`for cx in 5..=3` is an empty range).
+        let min = Vec2::partial_min(*a, *b).wpos_to_cpos();
+        let max = Vec2::partial_max(*a, *b).wpos_to_cpos();
+        for cy in min.y..=max.y {
+            for cx in min.x..=max.x {
+                keys.push(Vec2::new(cx, cy));
+            }
+        }
+    }
+    keys.sort_unstable_by_key(|k| (k.x, k.y));
+    keys.dedup();
+    keys
+}
+
+/// ADOPT-A-TOWN: how long the surface queue may sit without placing a single
+/// plot before its witness stops describing and starts COMPLAINING.
+///
+/// 1,800 ticks = 60 sim-seconds at `SIM_TPS`, and 1,800/54,000 of a game day
+/// ≈ 48 game minutes. Long enough that an ordinary cause — a chunk still in
+/// the slow-job queue, a player walking over — has had every chance; short
+/// enough that a soak names the defect in its first minute instead of its
+/// 6,975th identical log line.
+pub const ADOPT_QUEUE_STALL_TICKS: u64 = crate::SIM_TPS * 60;
+
+/// What the adopted-plot surface queue's witness should do this cadence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AdoptQueueWitness {
+    /// Say nothing: either there is nothing waiting, or the escalation has
+    /// already been made and repeating it is what this whole change exists
+    /// to stop.
+    Quiet,
+    /// Waiting, but not yet long enough for waiting to be a defect.
+    Waiting,
+    /// Waiting past every ordinary explanation. Say so LOUDLY, and once.
+    Escalate,
+}
+
+/// ★ A PERMANENTLY-STALLED QUEUE MUST ESCALATE, NOT REPEAT (2026-08-30).
+///
+/// The shipped witness printed `waiting=15 min_loaded=false max_loaded=false`
+/// every 300 ticks from boot to log end — 6,975 identical lines over 8.5
+/// hours of wall clock in `bastion-test-evidence/play/server-110.log`, not
+/// one field ever changing. It was
+/// not wrong and it was not silent; it was INDISTINGUISHABLE FROM WEATHER.
+/// A number that never changes for the entire life of a run is a diagnosis,
+/// and the instrument should be the thing that says so.
+///
+/// Pure so all three arms can be pinned, and all three are reachable in the
+/// live population: `Quiet` on every founded colony (the queue is empty —
+/// mode B never enqueues), `Waiting` on any plot whose chunk streams within
+/// the window, `Escalate` on exactly the measured 15.
+pub fn adopt_queue_witness(
+    waiting: usize,
+    ticks_since_progress: u64,
+    already_escalated: bool,
+) -> AdoptQueueWitness {
+    if waiting == 0 {
+        AdoptQueueWitness::Quiet
+    } else if ticks_since_progress < ADOPT_QUEUE_STALL_TICKS {
+        AdoptQueueWitness::Waiting
+    } else if already_escalated {
+        AdoptQueueWitness::Quiet
+    } else {
+        AdoptQueueWitness::Escalate
+    }
+}
+
+/// ★ THE RE-ARM, extracted so it can actually FAIL.
+///
+/// The first version of this row pinned the re-arm with three calls to
+/// [`adopt_queue_witness`] alone — and that pin passed under every defect I
+/// planted, including the shipped "escalate forever" one, because the pure
+/// witness is memoryless and the re-arm lives in the DRAIN's bookkeeping. A
+/// pin that cannot fail is not a pin (**A PIN CANNOT BLESS ITS OWN CHANGE**),
+/// so the bookkeeping is a function too.
+///
+/// Given the board's previous `(progress_tick, stall_reported)` and how many
+/// plots this pass drained, returns what the board should hold next:
+///
+/// - **drained > 0** — the queue MOVED: restart the stall clock at `tick` and
+///   RE-ARM the escalation, so a queue that stalls, drains and stalls again is
+///   heard the second time. Clearing the clock without clearing the latch is
+///   the defect this exists to catch.
+/// - **drained == 0** — self-initialising: the first drain that sees a
+///   non-empty queue starts its own clock, so no tick has to be plumbed
+///   across the crate boundary to the enqueue site.
+pub fn adopt_queue_progress(
+    prev: (Option<u64>, bool),
+    drained: usize,
+    tick: u64,
+) -> (Option<u64>, bool) {
+    if drained > 0 {
+        (Some(tick), false)
+    } else {
+        (Some(prev.0.unwrap_or(tick)), prev.1)
+    }
+}
+
+/// ★★ A HALF-APPLIED FIX HIDING BEHIND ITS SIBLING (2026-08-30, found in
+/// `userdata-play-ben/voxygen/logs/2026-08-30_voxygen.log`).
+///
+/// Ben ruled on 2026-08-23, with a screenshot of a cliff/desert town, that
+/// "beds/houses only apply to the human settlements" is wrong — every
+/// culture's homes must count. That fix landed on the PLOT MAPPER
+/// (`Server::bastion_adoptable_town_plots`'s `map_kind`, which now maps
+/// `CoastalHouse`, `DesertCityMultiPlot`, `CliffTower`, `SavannahHut`,
+/// `TerracottaHouse`, `MyrmidonHouse` and `Building` to `Bed`) and NEVER
+/// REACHED THE FURNITURE SCAN, which still knew only two head sprites.
+///
+/// So an adopted coastal, desert or savannah town maps its houses, drains
+/// its queue, registers its household regions — and finds ZERO beds. That is
+/// not a hypothesis: `SiteId(7v1)`, adopted 2026-08-30 03:15, logged
+/// `adopted_existing=44 settled=0 houses=11`, then ELEVEN consecutive
+/// `ADOPT-IN-PLACE house registered ... adopted_beds=0 adopted_pots=0
+/// adopted_chests=0` lines, and every colony-drive transition for the whole
+/// run reads `beds=0` — against `pop=44`, decaying to 41 as people died.
+///
+/// Cross-checked against the producers, one plot kind at a time
+/// (`world/src/site/plot/*.rs`): `House` → `bed_wood_woodland`,
+/// `CliffTower` → `bed_cliff`, `CoastalHouse` → `bed_coastal`,
+/// `DesertCityMultiPlot` → `bed_desert`, `SavannahHut` → `bed_savannah`.
+/// Three of those five were unmatchable. (`TerracottaHouse` and
+/// `MyrmidonHouse` place NO bed sprite at all — they are unhousable at the
+/// worldgen source, which is a separate finding and not fixable here.)
+///
+/// ★ HEADS ONLY, deliberately. `PainterSpriteExt::bed` builds a 3x2 tileable
+/// with Head on one side's corners, Middle on the sides and Tail on the
+/// other — so matching Middle/Tail as well would triple every count. What
+/// heads-only DOES still carry is a x2: `with_corner_sprite_side` sets BOTH
+/// corners of the head side, so one physical bed registers as TWO slots.
+/// That factor is measured (`adopted_beds=2` on all 80 houses of
+/// `server-110.log`, `beds=160`) and deliberately LEFT ALONE here — halving
+/// it would rebase every banked adopted-world baseline in one commit, which
+/// is a change that deserves its own row and its own delta enumeration.
+pub fn is_adoptable_bed_sprite(sprite: Option<SpriteKind>) -> bool {
+    matches!(
+        sprite,
+        Some(
+            SpriteKind::Bedroll
+                | SpriteKind::BedrollSnow
+                | SpriteKind::BedrollPirate
+                | SpriteKind::BedMesa
+                | SpriteKind::BedWoodWoodlandHead
+                | SpriteKind::BedCliffHead
+                | SpriteKind::BedCoastalHead
+                | SpriteKind::BedDesertHead
+                | SpriteKind::BedSavannahHead
+        )
+    )
+}
+
 /// ★ WHERE A DELIVERY ACTUALLY LANDS. Three sites used to aim deposits at
 /// `(center_xy, r.max.z)` — "the painted top". The goal snapper
 /// (`get_walkable_z`, ±16 in the column) then snapped that cell to the
@@ -9227,6 +9430,18 @@ pub struct JobBoard {
     /// the whole colony sat idle refusing them: not_candidate=8,
     /// unreachable_job=8, eligible=0 for 12,000 ticks).
     pub pending_adopt_surface: Vec<(vek::Vec2<i32>, vek::Vec2<i32>, i32, DesignationKind)>,
+    /// The tick at which [`Self::pending_adopt_surface`] last MOVED — either
+    /// the first tick the drain saw a non-empty queue, or the last tick it
+    /// placed something. `None` until the queue exists at all, so a founded
+    /// colony (which never enqueues) can never be described as stalled.
+    ///
+    /// Tick-derived, never wall clock: this feeds a log ladder that must read
+    /// identically on two runs of one seed.
+    pub adopt_surface_progress_tick: Option<u64>,
+    /// Whether the stall escalation has already been made for the CURRENT
+    /// stall. Cleared on any placement, so a queue that stalls, drains and
+    /// stalls again escalates again — a latch, not a mute.
+    pub adopt_surface_stall_reported: bool,
     /// bastion (ITEM 27): registered cooking stations — completion of a
     /// CookStation designation pushes here (the Bed registration pattern).
     pub cook_stations: Vec<vek::Vec3<i32>>,
@@ -11223,17 +11438,7 @@ impl JobBoard {
                     // skipped, not deferred (known one-shot-scan limitation).
                     let Ok(block) = terrain.get(pos) else { continue };
                     let sprite = block.get_sprite();
-                    let is_bed = matches!(
-                        sprite,
-                        Some(
-                            S::Bedroll
-                                | S::BedrollSnow
-                                | S::BedrollPirate
-                                | S::BedMesa
-                                | S::BedWoodWoodlandHead
-                                | S::BedCliffHead
-                        )
-                    );
+                    let is_bed = is_adoptable_bed_sprite(sprite);
                     if is_bed && !self.beds.contains_key(&pos) {
                         self.beds.insert(pos, common::bastion::BedSlot {
                             kind: common::bastion::BedKind::Frame,
@@ -13854,6 +14059,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let pending = std::mem::take(&mut board.pending_adopt_surface);
                 let mut still_waiting = Vec::new();
                 let mut placed = 0usize;
+                // ★ PLOTS DRAINED, NOT JOBS CREATED — and they are not the
+                // same number. `adopt_beds_surface` returns `Vec::new()` by
+                // construction (an adopted house mints no build jobs), so a
+                // town of nothing but houses drains its whole queue while
+                // `placed` stays 0. The progress clock below must count the
+                // QUEUE MOVING, or a queue that is steadily registering
+                // houses would be reported as stalled.
+                let mut drained = 0usize;
                 for (min_xy, max_xy, hint_z, kind) in pending {
                     let ready = terrain
                         .get(vek::Vec3::new(min_xy.x, min_xy.y, hint_z))
@@ -13889,37 +14102,93 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             )
                         };
                         placed += created.len();
+                        drained += 1;
                     } else {
                         still_waiting.push((min_xy, max_xy, hint_z, kind));
                     }
                 }
-                if placed > 0 {
+                // The stall clock and the escalation latch, through the ONE
+                // pinned function — the drain must not carry a second copy of
+                // the re-arm rule beside the pin that claims to guard it.
+                let (next_progress, next_reported) = adopt_queue_progress(
+                    (
+                        board.adopt_surface_progress_tick,
+                        board.adopt_surface_stall_reported,
+                    ),
+                    drained,
+                    tick.0,
+                );
+                board.adopt_surface_progress_tick = next_progress;
+                board.adopt_surface_stall_reported = next_reported;
+                if drained > 0 {
                     info!(
+                        drained,
                         placed,
                         still_waiting = still_waiting.len(),
-                        "bastion: ADOPT-A-TOWN surface designations placed as terrain loaded"
+                        "bastion: ADOPT-A-TOWN surface designations placed as terrain loaded \
+                         (drained = plots registered; placed = jobs minted, which is ZERO for \
+                         an adopted house by design)"
                     );
-                } else if tick.0 % 300 == 0
-                    && let Some((min_xy, max_xy, hint_z, _)) = still_waiting.first()
-                {
-                    // ★ The WAITING witness. The first run of this drain was
-                    // silent while nothing drained, making "corners never
-                    // loaded" and "the block never ran" indistinguishable —
-                    // the exact null this program keeps paying for. Sample the
-                    // first waiter's corner reads so the blocker is visible.
-                    info!(
-                        waiting = still_waiting.len(),
-                        ?min_xy,
-                        ?max_xy,
-                        hint_z,
-                        min_loaded = terrain
-                            .get(vek::Vec3::new(min_xy.x, min_xy.y, *hint_z))
-                            .is_ok(),
-                        max_loaded = terrain
-                            .get(vek::Vec3::new(max_xy.x, max_xy.y, *hint_z))
-                            .is_ok(),
-                        "bastion: ADOPT-A-TOWN surface queue WAITING"
-                    );
+                }
+                let since = next_progress.unwrap_or(tick.0);
+                if drained == 0 && tick.0 % 300 == 0 {
+                    match adopt_queue_witness(
+                        still_waiting.len(),
+                        tick.0.saturating_sub(since),
+                        board.adopt_surface_stall_reported,
+                    ) {
+                        AdoptQueueWitness::Quiet => {},
+                        AdoptQueueWitness::Waiting => {
+                            // ★ The WAITING witness. The first run of this
+                            // drain was silent while nothing drained, making
+                            // "corners never loaded" and "the block never ran"
+                            // indistinguishable — the exact null this program
+                            // keeps paying for. Sample the first waiter's
+                            // corner reads so the blocker is visible.
+                            if let Some((min_xy, max_xy, hint_z, _)) = still_waiting.first() {
+                                info!(
+                                    waiting = still_waiting.len(),
+                                    ?min_xy,
+                                    ?max_xy,
+                                    hint_z,
+                                    min_loaded = terrain
+                                        .get(vek::Vec3::new(min_xy.x, min_xy.y, *hint_z))
+                                        .is_ok(),
+                                    max_loaded = terrain
+                                        .get(vek::Vec3::new(max_xy.x, max_xy.y, *hint_z))
+                                        .is_ok(),
+                                    "bastion: ADOPT-A-TOWN surface queue WAITING"
+                                );
+                            }
+                        },
+                        AdoptQueueWitness::Escalate => {
+                            board.adopt_surface_stall_reported = true;
+                            // The BLOCKING SET, not the first waiter: a count
+                            // of distinct chunk keys says whether this is one
+                            // unlucky corner or a whole quarter of the town
+                            // that nothing will ever stream.
+                            let blocked = adopt_plot_chunk_keys(
+                                &still_waiting
+                                    .iter()
+                                    .map(|(mn, mx, _, _)| (*mn, *mx))
+                                    .collect::<Vec<_>>(),
+                            );
+                            tracing::warn!(
+                                waiting = still_waiting.len(),
+                                ticks_stalled = tick.0.saturating_sub(since),
+                                blocked_chunks = blocked.len(),
+                                first_blocked_chunk = ?blocked.first(),
+                                "bastion: ADOPT-A-TOWN surface queue STALLED — these plots have \
+                                 not registered, so their beds are MISSING FROM THE HOUSING \
+                                 MODEL and the colony can stand above its own housing ceiling. \
+                                 Founding requests and pins every plot's chunks \
+                                 (`bastion_adopt_stream_plot_chunks`), so a stall here means \
+                                 that request did not reach these chunks — chunk generation \
+                                 failed or was cancelled, or a plot arrived after the request. \
+                                 Said ONCE per stall, not once per cadence."
+                            );
+                        },
+                    }
                 }
                 board.pending_adopt_surface = still_waiting;
             }
@@ -45589,5 +45858,260 @@ mod tests {
         assert_eq!(cells.len(), 8); // z 8..=15
         // A non-tree seed yields nothing.
         assert!(tree_fell_set(is_tree, Vec3::new(9, 9, 9), 4096, 40, 16).is_empty());
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // ADOPT-A-TOWN: the unreachable housing gate (2026-08-30)
+    // ────────────────────────────────────────────────────────────────────
+
+    /// ★ THE COVER MUST INCLUDE THE CHUNKS NEITHER CORNER NAMES.
+    ///
+    /// The shipped queue probes only `min_xy` and `max_xy`. A plot spanning
+    /// three chunks on an axis has a MIDDLE chunk that neither corner names —
+    /// and `adopt_furniture_surface` SKIPS (never defers) an unloaded column,
+    /// so a hole in the middle silently under-registers that house's beds
+    /// while both corner probes read `true`. Chunks are 32 blocks.
+    ///
+    /// FALSIFIER: replacing the interior double loop with "push the two
+    /// corner keys" makes this assertion fail on the 3-chunk case below.
+    #[test]
+    fn adopt_plot_chunk_keys_covers_the_interior_not_just_the_corners() {
+        // 65 blocks wide starting at 0 => chunks 0, 1, 2 on x.
+        let got = adopt_plot_chunk_keys(&[(Vec2::new(0, 0), Vec2::new(65, 0))]);
+        assert_eq!(
+            got,
+            vec![Vec2::new(0, 0), Vec2::new(1, 0), Vec2::new(2, 0)],
+            "the middle chunk is named by NEITHER corner and is exactly where a house's beds go \
+             missing"
+        );
+        // A plot straddling a corner in both axes yields all four.
+        let got = adopt_plot_chunk_keys(&[(Vec2::new(30, 30), Vec2::new(34, 34))]);
+        assert_eq!(got, vec![
+            Vec2::new(0, 0),
+            Vec2::new(0, 1),
+            Vec2::new(1, 0),
+            Vec2::new(1, 1)
+        ]);
+    }
+
+    /// The output is a TOTAL ORDER and carries no duplicates: two plots in
+    /// one chunk must request it once, and two runs of one seed must request
+    /// in the same order.
+    ///
+    /// FALSIFIER: dropping `sort_unstable_by_key`/`dedup` fails both halves.
+    #[test]
+    fn adopt_plot_chunk_keys_is_sorted_and_deduped() {
+        let got = adopt_plot_chunk_keys(&[
+            (Vec2::new(200, 200), Vec2::new(201, 201)), // chunk (6, 6)
+            (Vec2::new(10, 10), Vec2::new(11, 11)),     // chunk (0, 0)
+            (Vec2::new(205, 205), Vec2::new(206, 206)), // chunk (6, 6) AGAIN
+        ]);
+        assert_eq!(got, vec![Vec2::new(0, 0), Vec2::new(6, 6)]);
+        let mut sorted = got.clone();
+        sorted.sort_unstable_by_key(|k| (k.x, k.y));
+        assert_eq!(got, sorted, "request order must not depend on iteration");
+    }
+
+    /// NEGATIVE COORDINATES AND A REVERSED BBOX. `wpos_to_cpos` is
+    /// `div_euclid`, so -1 belongs to chunk -1, not chunk 0; and a min/max
+    /// stored the wrong way round must still cover its ground rather than
+    /// silently yielding an empty range (`for cx in 5..=3` runs zero times).
+    ///
+    /// FALSIFIER: dropping the `partial_min`/`partial_max` normalisation
+    /// empties the reversed case.
+    #[test]
+    fn adopt_plot_chunk_keys_handles_negatives_and_reversed_bboxes() {
+        assert_eq!(
+            adopt_plot_chunk_keys(&[(Vec2::new(-1, -1), Vec2::new(-1, -1))]),
+            vec![Vec2::new(-1, -1)]
+        );
+        let forward = adopt_plot_chunk_keys(&[(Vec2::new(0, 0), Vec2::new(40, 40))]);
+        let reversed = adopt_plot_chunk_keys(&[(Vec2::new(40, 40), Vec2::new(0, 0))]);
+        assert_eq!(forward, reversed);
+        assert_eq!(forward.len(), 4);
+    }
+
+    /// ★ FALLBACK MUST BE IDENTITY. A FOUNDED (mode B) colony never enqueues
+    /// an adopted plot: `bastion_adopt_place` is the only writer of
+    /// `pending_adopt_surface` and it runs only on the adoption branch. So
+    /// the whole new mechanism must be inert for it — no chunks requested,
+    /// no stall clock started, and a witness that says NOTHING.
+    ///
+    /// FALSIFIER: making `adopt_queue_witness` escalate on `waiting == 0`
+    /// (the classic "fires on every colony" defect) fails the loop below;
+    /// making `adopt_plot_chunk_keys` emit a key for an empty list fails the
+    /// first assertion.
+    #[test]
+    fn a_founded_colony_is_untouched_by_the_adoption_repair() {
+        assert!(adopt_plot_chunk_keys(&[]).is_empty());
+        let board = JobBoard::default();
+        assert!(board.pending_adopt_surface.is_empty());
+        assert_eq!(board.adopt_surface_progress_tick, None);
+        assert!(!board.adopt_surface_stall_reported);
+        // Nothing waiting => nothing said, at ANY age, escalated or not.
+        for age in [0, ADOPT_QUEUE_STALL_TICKS, ADOPT_QUEUE_STALL_TICKS * 100] {
+            for reported in [false, true] {
+                assert_eq!(
+                    adopt_queue_witness(0, age, reported),
+                    AdoptQueueWitness::Quiet
+                );
+            }
+        }
+    }
+
+    /// ★ EVERY ARM OF THE LADDER, AND EVERY ARM REACHABLE.
+    ///
+    /// - `Waiting` is the ordinary case a played world produces: a plot whose
+    ///   chunk streams in because the player walked over it.
+    /// - `Escalate` is the measured case: `waiting=15`, never moving.
+    /// - `Quiet`-after-escalation is the whole point of the change — the
+    ///   shipped witness printed the SAME line 6,975 times, which is a
+    ///   number that never changes for the life of a run and therefore reads
+    ///   as weather rather than as a diagnosis.
+    ///
+    /// FALSIFIERS: `<` -> `<=` at the boundary flips the boundary assertion;
+    /// ignoring `already_escalated` turns the repeat assertion red (that is
+    /// the ORIGINAL defect — escalate forever); escalating before the
+    /// threshold turns the `Waiting` assertions red.
+    #[test]
+    fn the_adopt_queue_witness_escalates_once_and_then_stops() {
+        // Not yet a defect: still inside the window.
+        assert_eq!(adopt_queue_witness(15, 0, false), AdoptQueueWitness::Waiting);
+        assert_eq!(
+            adopt_queue_witness(15, ADOPT_QUEUE_STALL_TICKS - 1, false),
+            AdoptQueueWitness::Waiting,
+            "the last tick INSIDE the window is still ordinary waiting"
+        );
+        // The boundary is inclusive on the stall side.
+        assert_eq!(
+            adopt_queue_witness(15, ADOPT_QUEUE_STALL_TICKS, false),
+            AdoptQueueWitness::Escalate
+        );
+        // ...and it is said ONCE, not once per cadence.
+        assert_eq!(
+            adopt_queue_witness(15, ADOPT_QUEUE_STALL_TICKS * 1_700, true),
+            AdoptQueueWitness::Quiet,
+            "a stalled queue must ESCALATE, not repeat"
+        );
+    }
+
+    /// The latch is a LATCH, not a mute: a queue that stalls, drains and
+    /// stalls again must be heard the SECOND time.
+    ///
+    /// ★ THIS PIN'S FIRST VERSION COULD NOT FAIL. It called
+    /// `adopt_queue_witness` three times and asserted Escalate / Waiting /
+    /// Escalate — and passed under every planted defect, including the
+    /// shipped "escalate forever", because the witness is memoryless and the
+    /// re-arm lives in the drain's bookkeeping. It now drives the REAL state
+    /// machine (`adopt_queue_progress`, which the drain itself calls) across a
+    /// full stall → drain → stall cycle.
+    ///
+    /// FALSIFIER: returning `(Some(tick), prev.1)` from `adopt_queue_progress`
+    /// — clearing the clock but not the latch — makes the second escalation
+    /// `Quiet` and this test red.
+    #[test]
+    fn a_drained_then_restalled_queue_escalates_again() {
+        // Boot: the queue exists, nothing has drained. The clock self-starts.
+        let mut state = adopt_queue_progress((None, false), 0, 100);
+        assert_eq!(state, (Some(100), false));
+        // It sits. At the stall threshold the witness escalates ONCE.
+        let age = |now: u64, s: (Option<u64>, bool)| now - s.0.expect("clock started");
+        let now = 100 + ADOPT_QUEUE_STALL_TICKS;
+        assert_eq!(
+            adopt_queue_witness(15, age(now, state), state.1),
+            AdoptQueueWitness::Escalate
+        );
+        state.1 = true; // the drain latches it
+        assert_eq!(
+            adopt_queue_witness(15, age(now + 300, state), state.1),
+            AdoptQueueWitness::Quiet,
+            "and does not repeat"
+        );
+        // A chunk finally arrives and one plot drains: clock restarts, latch
+        // RE-ARMS.
+        state = adopt_queue_progress(state, 1, now + 600);
+        assert_eq!(state, (Some(now + 600), false), "the latch must re-arm");
+        // The remaining plots stall again -> the town is told again.
+        let later = now + 600 + ADOPT_QUEUE_STALL_TICKS;
+        assert_eq!(
+            adopt_queue_witness(9, age(later, state), state.1),
+            AdoptQueueWitness::Escalate,
+            "a second stall must be heard; a latch is not a mute"
+        );
+    }
+
+    /// ★ EVERY CULTURE'S BED, BECAUSE EVERY CULTURE'S HOUSE IS MAPPED.
+    ///
+    /// The plot mapper sends `CoastalHouse`, `DesertCityMultiPlot` and
+    /// `SavannahHut` to `DesignationKind::Bed`; their generators place
+    /// `bed_coastal`, `bed_desert` and `bed_savannah`. The scan matched none
+    /// of the three, so those towns registered houses with ZERO beds —
+    /// measured as `adopted_beds=0` on all 11 houses of `SiteId(7v1)` with
+    /// `beds=0 pop=44` for the entire run.
+    ///
+    /// FALSIFIER: dropping any one of the three new heads turns the
+    /// corresponding assertion red; adding Middle/Tail turns the
+    /// heads-only assertion red (that defect would TRIPLE every bed count).
+    #[test]
+    fn every_mapped_culture_has_a_bed_the_scan_can_see() {
+        use common::terrain::SpriteKind as S;
+        // One head per residential plot kind the mapper sends to Bed.
+        for head in [
+            S::BedWoodWoodlandHead, // House
+            S::BedCliffHead,        // CliffTower
+            S::BedCoastalHead,      // CoastalHouse
+            S::BedDesertHead,       // DesertCityMultiPlot
+            S::BedSavannahHead,     // SavannahHut
+        ] {
+            assert!(
+                is_adoptable_bed_sprite(Some(head)),
+                "{head:?} is placed by a plot kind the mapper calls a HOUSE, so a town of \
+                 that culture registers homes with no beds"
+            );
+        }
+        // Bedrolls and the single-block mesa bed still count.
+        for roll in [S::Bedroll, S::BedrollSnow, S::BedrollPirate, S::BedMesa] {
+            assert!(is_adoptable_bed_sprite(Some(roll)));
+        }
+        // ...and HEADS ONLY: a bed is a 3x2 tileable, so counting Middle and
+        // Tail would treble every registration.
+        for other in [
+            S::BedWoodWoodlandMiddle,
+            S::BedWoodWoodlandTail,
+            S::BedCoastalMiddle,
+            S::BedCoastalTail,
+            S::BedDesertMiddle,
+            S::BedDesertTail,
+            S::BedSavannahMiddle,
+            S::BedSavannahTail,
+            S::BedCliffMiddle,
+            S::BedCliffTail,
+        ] {
+            assert!(
+                !is_adoptable_bed_sprite(Some(other)),
+                "{other:?} is part of a bed already counted by its head"
+            );
+        }
+        // An empty column is not a bed.
+        assert!(!is_adoptable_bed_sprite(None));
+        assert!(!is_adoptable_bed_sprite(Some(S::Crate)));
+    }
+
+    /// The stall threshold must be expressed in the SIMULATION's unit, and
+    /// pinned against both degenerate settings: zero (every queue is
+    /// instantly "stalled", so the escalation carries no information) and
+    /// longer than a game day (an all-day soak would never reach it).
+    ///
+    /// 54,000 ticks = one game day; `SIM_TPS` = 30.
+    #[test]
+    fn the_stall_threshold_is_neither_degenerate_setting() {
+        assert!(ADOPT_QUEUE_STALL_TICKS > 0);
+        assert!(
+            ADOPT_QUEUE_STALL_TICKS < 54_000,
+            "a threshold past one game day could never fire in a day-long soak"
+        );
+        // At least one witness cadence, so the escalation cannot fall between
+        // two `% 300` firings.
+        assert!(ADOPT_QUEUE_STALL_TICKS >= 300);
     }
 }
