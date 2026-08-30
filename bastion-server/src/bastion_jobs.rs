@@ -5569,6 +5569,291 @@ pub fn wheat_harvest_yield(colony_sown: bool) -> (u32, u32) {
     }
 }
 
+// ══════════════════════════════════════════════════════════════════════
+// ROW 53 — GROW WHAT THE VILLAGE GREW
+// ══════════════════════════════════════════════════════════════════════
+//
+// Ben direct (2026-08-30): "i think we should have colonist able to grow a
+// variety of food there's a bunch of crops already present in the pre built
+// farms like tomatos, carrots etc".
+//
+// ★★ THE COLONY WAS DESTROYING THE VARIETY WORLDGEN ALREADY PLACES.
+// `FarmField::generate` (world/src/site/plot/farm_field.rs) picks ONE crop
+// per field, uniformly from the 11 non-cactus `Crop` variants, so a village
+// arrives with several fields of several DIFFERENT crops, 40-380 sprites
+// each — variety visible from the air before a colonist touches anything.
+// Bastion's farm lane sowed exactly one sprite, `WheatYellow`. Combined
+// with F5's gleaning that produced a one-way ratchet: `volunteer_crop_item`
+// gleans a Tomato/Carrot/Lettuce cell, the glean completion clears it to
+// `Block::empty()`, the generator's empty arm then reads unplanted
+// farmland, and the sow completion plants WHEAT there. A gleaned tomato
+// cell became a wheat cell, permanently, one cell at a time. (Corn,
+// Pumpkin, Radish, Turnip, Flax and Sunflower have no vanilla food item, so
+// they fall through the `Some(_)` do-nothing arm and stay inert scenery —
+// out of scope here, and honestly so: see `volunteer_crop_item`'s doc.)
+
+/// The crops this colony can SOW, in `SpriteKind` DISCRIMINANT order.
+///
+/// v1 is exactly the produce the rest of the file already carries end to
+/// end: `WheatYellow` (the shipped crop) plus the three `volunteer_crop_item`
+/// already maps to real vanilla food items and `FOOD_DEFS` already
+/// recognises. Nothing here needs a new item, a new sprite or a new food
+/// entry — the whole row is a routing change. (`WheatGreen` is deliberately
+/// ABSENT: it is worldgen's unripe-wheat sprite, gleaned as wheat, and the
+/// colony has never sown it. Adding it would give wheat two roster slots and
+/// split its own vote.)
+///
+/// THE ORDER IS LOAD-BEARING. `gen_discriminant` is `category << 16 | id`
+/// (common/src/terrain/sprite/magic.rs), and in the `Plant` category
+/// WheatYellow = 0x42 < Lettuce = 0x46 < Carrot = 0x48 < Tomato = 0x49.
+/// [`CropCensus::plan`] breaks a tie by taking the LOWEST index, so wheat —
+/// the shipped crop — wins every tie and the identity fallback is preserved
+/// even in a dead heat. Pinned by
+/// `the_crop_roster_is_ordered_by_sprite_discriminant`.
+pub const FARM_CROP_ROSTER: [SpriteKind; 4] = [
+    SpriteKind::WheatYellow,
+    SpriteKind::Lettuce,
+    SpriteKind::Carrot,
+    SpriteKind::Tomato,
+];
+
+/// ★ THE IDENTITY FALLBACK. An empty plot, and a plot carrying nothing but
+/// unrostered sprites, plans THIS — which is exactly and only what the farm
+/// lane did before this row. Every "no evidence" path in [`CropCensus::plan`]
+/// lands here, so the shipped behaviour is the floor, never a special case.
+pub const FARM_CROP_FALLBACK: SpriteKind = SpriteKind::WheatYellow;
+
+/// The harvest item for a roster crop — the ONE place a SOWN crop becomes an
+/// item, mirroring `volunteer_crop_item`'s role for a GLEANED one.
+///
+/// SEEDS ARE NOT PER-CROP and must not become so: `FARM_SEED_ITEM` stays the
+/// single sow input for every crop. The founding stock ships wheat seeds
+/// only (`FOUNDING_SEED_STOCK`) and `VOLUNTEER_YIELD` deliberately yields no
+/// seed, so a per-crop seed would mint sow jobs for an item the colony can
+/// never obtain — a generator minting work nothing can complete, which is
+/// the churn shape this file has already paid for twice.
+pub fn farm_crop_item(sprite: SpriteKind) -> Option<&'static str> {
+    use common::terrain::SpriteKind as S;
+    match sprite {
+        S::WheatYellow => Some(FARM_WHEAT_ITEM),
+        S::Lettuce => Some(VOLUNTEER_LETTUCE_ITEM),
+        S::Carrot => Some(VOLUNTEER_CARROT_ITEM),
+        S::Tomato => Some(VOLUNTEER_TOMATO_ITEM),
+        _ => None,
+    }
+}
+
+pub(crate) fn crop_roster_index(sprite: SpriteKind) -> Option<usize> {
+    FARM_CROP_ROSTER.iter().position(|s| *s == sprite)
+}
+
+/// ★★ THE LOAD-BEARING PART: THE DISCRIMINATOR MOVES FROM SPRITE TO
+/// PROVENANCE.
+///
+/// Before this row, "is this a volunteer?" was answered by the SPRITE alone,
+/// and that answer was correct only because of an accident:
+/// `volunteer_crop_item` maps `WheatGreen | Tomato | Carrot | Lettuce`, the
+/// colony sowed only `WheatYellow`, so no sprite could be both. The moment
+/// the colony sows a Carrot that accident ends — a freshly sown
+/// `Carrot@Growth(1)` matches `volunteer_crop_item`, is gleaned immediately,
+/// re-sown by the empty arm, gleaned again: INFINITE CHURN, the farm eating
+/// itself, on the very cells this row exists to plant. Carrot, Tomato and
+/// Lettuce are ALREADY in that map, so the trap arms itself the instant
+/// sowing generalises. It has to be disarmed in the same change.
+///
+/// The provenance the file already trusts is the GROWTH CLOCK.
+/// `wheat_harvest_yield`'s doc traces it: `farm_growth` is inserted on sow
+/// completion and on every stage-up and removed at harvest, while a worldgen
+/// crop is placed at `Growth(15)` = `FARM_GROWTH_MAX` and so never enters the
+/// stage arm and never gets a clock. Presence of the clock IS "this colony
+/// grew it", and it is available at BOTH sites that need it (the generator
+/// pass and the work-tick completion).
+///
+/// ⚠ WHY GROWTH ITSELF CANNOT BE THE TEST, contrary to the obvious reading.
+/// `Growth == 0` is UNREACHABLE for a freshly placed crop and `Growth >=
+/// FARM_GROWTH_SOWN` is true of a worldgen crop too — both facts measured and
+/// pinned by `worldgen_wheat_is_placed_mature_not_at_growth_zero` against the
+/// engine's own `impl Default for Growth`. A Growth-keyed discriminator would
+/// be dead code in one direction and wrong in the other. Growth still decides
+/// WHAT to do with a colony cell (stage it, or harvest it at MAX); the clock
+/// decides WHOSE it is.
+///
+/// THE WHEAT EXCEPTION, and why it keeps this bit-identical: for
+/// `WheatYellow` the sprite alone already settles it —
+/// `volunteer_crop_item(WheatYellow)` is `None`, which is precisely what
+/// `the_colonys_own_crop_is_never_a_volunteer` has pinned since F5. So an
+/// unclocked worldgen `WheatYellow` still routes to the colony arm, still
+/// mints a harvest job, and the completion still discriminates its YIELD by
+/// the clock exactly as `wheat_harvest_yield` says. Wheat's every path is
+/// unchanged; only clocked non-wheat roster crops — a state that cannot
+/// exist until this row starts sowing them — takes a new route.
+pub(crate) fn crop_is_colony_managed(sprite: SpriteKind, has_growth_clock: bool) -> bool {
+    crop_roster_index(sprite).is_some()
+        && (volunteer_crop_item(sprite).is_none() || has_growth_clock)
+}
+
+/// What a plot is actually planted with, counted per roster crop and split
+/// by provenance. Fixed-size arrays indexed by roster position: no HashMap,
+/// no iteration order, nothing for DETERMINISM BY CONSTRUCTION to worry
+/// about.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct CropCensus {
+    /// Cells carrying this colony's growth clock — what IT planted here.
+    pub colony: [u32; FARM_CROP_ROSTER.len()],
+    /// Roster cells with no clock — what the VILLAGE grew here.
+    pub worldgen: [u32; FARM_CROP_ROSTER.len()],
+}
+
+/// Which tier of [`CropCensus::plan`] answered — the witness's `source`.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum CropPlanSource {
+    /// Tier 1: the modal crop this colony itself last planted here.
+    Colony,
+    /// Tier 2: the modal crop the village grew here.
+    Worldgen,
+    /// Tier 3: no evidence either way — [`FARM_CROP_FALLBACK`], today's
+    /// behaviour exactly.
+    Fallback,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct CropPlan {
+    pub crop: SpriteKind,
+    pub source: CropPlanSource,
+    pub census: CropCensus,
+}
+
+impl CropPlan {
+    /// The plan for a cell in no registered plot — the identity.
+    pub(crate) fn fallback() -> Self {
+        CropCensus::default().plan()
+    }
+}
+
+impl CropCensus {
+    /// ★ THE CENSUS ASKS "WHO PLANTED THIS?", WHICH ONLY THE CLOCK ANSWERS —
+    /// deliberately NOT [`crop_is_colony_managed`], whose wheat exception
+    /// answers the different question "which arm handles this cell?". Using
+    /// the routing test here would be a real defect: one stray unclocked
+    /// `WheatYellow` standing in an adopted village TOMATO field would count
+    /// as colony wheat, win tier 1 outright, and out-vote three hundred
+    /// tomatoes. Two questions, two tests, both pinned.
+    pub(crate) fn observe(&mut self, sprite: SpriteKind, has_growth_clock: bool) {
+        if let Some(i) = crop_roster_index(sprite) {
+            if has_growth_clock {
+                self.colony[i] += 1;
+            } else {
+                self.worldgen[i] += 1;
+            }
+        }
+    }
+
+    /// The modal roster index, ties broken by the LOWEST index — i.e. by
+    /// `SpriteKind` discriminant, since `FARM_CROP_ROSTER` is kept in
+    /// discriminant order. Strictly-greater replacement is what makes the
+    /// tie-break the lowest index rather than the last one seen.
+    fn modal(counts: &[u32; FARM_CROP_ROSTER.len()]) -> Option<usize> {
+        let mut best: Option<usize> = None;
+        for (i, n) in counts.iter().enumerate() {
+            if *n == 0 {
+                continue;
+            }
+            if best.is_none_or(|b| *n > counts[b]) {
+                best = Some(i);
+            }
+        }
+        best
+    }
+
+    /// ★★ ANTI-CHURN IS THE ACCEPTANCE CRITERION, AND IT IS STRUCTURAL, NOT
+    /// TUNED. The plan is a STRICT FIXED POINT under its own output: sowing
+    /// crop C on an empty cell adds one to `colony[C]` and nothing else, so
+    ///   - tier 1 leader C stays leader (its count strictly rose);
+    ///   - a tier-2 answer C promotes to tier 1 with `colony[C] = 1 > 0`, the
+    ///     only non-zero entry, so C again;
+    ///   - the tier-3 fallback promotes to tier 1 on `FARM_CROP_FALLBACK`.
+    /// In every tier the plan's own output re-elects it, and a tie broken to
+    /// index i is broken the same way next time because sowing i made it a
+    /// STRICT winner. There is no ratio at which this oscillates, which is
+    /// why the pin sweeps every mix rather than a single 50/50 case.
+    ///
+    /// NOT STORED, ANYWHERE. Re-derived from terrain + the growth clock every
+    /// time it is needed. A stored plan is a second source of truth that can
+    /// disagree with the field it names; this one cannot go stale because it
+    /// has no state to go stale.
+    pub(crate) fn plan(&self) -> CropPlan {
+        if let Some(i) = Self::modal(&self.colony) {
+            CropPlan {
+                crop: FARM_CROP_ROSTER[i],
+                source: CropPlanSource::Colony,
+                census: *self,
+            }
+        } else if let Some(i) = Self::modal(&self.worldgen) {
+            CropPlan {
+                crop: FARM_CROP_ROSTER[i],
+                source: CropPlanSource::Worldgen,
+                census: *self,
+            }
+        } else {
+            CropPlan {
+                crop: FARM_CROP_FALLBACK,
+                source: CropPlanSource::Fallback,
+                census: *self,
+            }
+        }
+    }
+
+    /// Compact witness text — roster order, both provenances, one line.
+    pub(crate) fn line(&self) -> String {
+        FARM_CROP_ROSTER
+            .iter()
+            .enumerate()
+            .map(|(i, s)| format!("{s:?}={}/{}", self.colony[i], self.worldgen[i]))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+}
+
+/// ★ THE PLAN, EVALUATED FRESH. Walks the plot in the farm pass's own scan
+/// order and censuses every crop cell, then answers. Pure in everything that
+/// matters: no wall clock, no RNG, no HashMap — `BTreeMap` lookups and a
+/// fixed-size array argmax, so the same field always yields the same answer
+/// on the same terrain.
+///
+/// COST: one extra walk of the plot per farm pass (the witness) plus one per
+/// sow completion (the decision). The farm pass is already O(Σ plot area) at
+/// the arbitration cadence and sow completions are bounded by the colonist
+/// count, so this is a constant-factor addition to a bound that already
+/// holds — not a new class of scan.
+///
+/// A column absent from `column_z`, or reading unloaded, is skipped exactly
+/// as the farm pass skips it: an unseen cell casts no vote rather than
+/// voting for nothing.
+pub(crate) fn plot_crop_plan(
+    plot: &Region,
+    terrain: &TerrainGrid,
+    column_z: &std::collections::BTreeMap<(i32, i32), i32>,
+    growth: &std::collections::BTreeMap<(i32, i32, i32), f64>,
+) -> CropPlan {
+    let mut census = CropCensus::default();
+    for y in plot.min.y..=plot.max.y {
+        for x in plot.min.x..=plot.max.x {
+            let Some(&gz) = column_z.get(&(x, y)) else {
+                continue;
+            };
+            let cpos = Vec3::new(x, y, gz + 1);
+            let Ok(crop) = terrain.get(cpos) else {
+                continue;
+            };
+            let Some(sprite) = crop.get_sprite() else {
+                continue;
+            };
+            census.observe(sprite, growth.contains_key(&(cpos.x, cpos.y, cpos.z)));
+        }
+    }
+    census.plan()
+}
+
 /// bastion (#105, DECISIONS-FOR-BEN: FOUNDING SEED STOCK, 2026-08-10): a
 /// colony's founding includes starting seeds -- FARM_SEED_ITEM's only
 /// other producer is a successful HARVEST, and a fresh colony with no
@@ -10585,6 +10870,15 @@ pub struct JobBoard {
     /// ordering, never hash-iteration order (the PATH-0 discipline).
     /// Evicted at harvest and by the pass when the sprite vanishes.
     farm_growth: std::collections::BTreeMap<(i32, i32, i32), f64>,
+    /// ★ ROW 53 — WITNESS ONLY, NEVER AN INPUT. The last crop plan LOGGED
+    /// for a plot (keyed by its `min` corner), so the farm pass can say
+    /// whether the plan CHANGED. Nothing reads it to decide anything:
+    /// [`plot_crop_plan`] is a free function that never sees this map, so
+    /// "the plan is never stored" is enforced by the signature, not by
+    /// discipline. A plan that flips twice shows up here as two lines, which
+    /// is the whole point — a churn failure has to be visible in the log
+    /// before anyone can argue about it.
+    farm_plan_witness: std::collections::BTreeMap<(i32, i32, i32), SpriteKind>,
     /// ★ SEASONAL TILLING (Ben RULED 2026-08-23): column → the
     /// [`farm_season_index`] it was last tilled in (or granted first-sight
     /// grace for). BTreeMap, the PATH-0 discipline. Pruned with the farm in
@@ -12527,6 +12821,10 @@ impl JobBoard {
         // The seasonal-till stamps die with their columns — a repainted
         // plot must not inherit last tenant's tilling calendar.
         self.farm_tilled_season.retain(|&(x, y), _| covered(x, y));
+        // ROW 53: the plan witness follows its plot. Witness-only state, so a
+        // survivor is harmless (one extra "changed" line); dropping it keeps
+        // a repainted plot from inheriting the last tenant's plan in the log.
+        self.farm_plan_witness.retain(|&(x, y, _), _| covered(x, y));
         let growth_before = self.farm_growth.len();
         self.farm_growth.retain(|&(x, y, z), _| {
             covered(x, y) && !region.contains_point(Vec3::new(x, y, z))
@@ -22668,6 +22966,42 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // must not blow past the cap inside one pass).
                 let mut open_budget =
                     FARM_OPEN_JOBS_PER_PLOT.saturating_sub(open_by_plot[pi]);
+                // ★ ROW 53 — EVERY MECHANISM WITNESSES ITSELF. The plan this
+                // plot would sow, re-derived from scratch, with the census it
+                // read, which TIER answered, the season, and whether it moved
+                // since the last pass. A plan that flips back and forth is
+                // THE churn failure this row had to design against, so the
+                // witness has to be able to show it: two lines, same plot,
+                // alternating crops. Logged on change (and on first sight);
+                // BASTION_FARM_PLAN_DIAG logs every pass, the same env-gate
+                // idiom as BASTION_FETCH_DIAG — at 32 active plots × 2 Hz an
+                // unconditional line would be 64/s of noise in steady state.
+                //
+                // Computed BEFORE the cell loop below, which mutates
+                // `farm_column_z`: the plan takes an immutable borrow of two
+                // board fields and returns an owned value, so the borrow is
+                // over before the loop starts.
+                let plan = plot_crop_plan(
+                    plot,
+                    &terrain,
+                    &board.farm_column_z,
+                    &board.farm_growth,
+                );
+                let plan_key = (plot.min.x, plot.min.y, plot.min.z);
+                let plan_changed =
+                    board.farm_plan_witness.get(&plan_key) != Some(&plan.crop);
+                if plan_changed || std::env::var_os("BASTION_FARM_PLAN_DIAG").is_some() {
+                    info!(
+                        plot = ?plot.min,
+                        crop = ?plan.crop,
+                        source = ?plan.source,
+                        census = %plan.census.line(),
+                        season = ?farm_season(rtsim.rt_state().data().time_of_day.0),
+                        changed = plan_changed,
+                        "bastion: ROW 53 crop plan"
+                    );
+                }
+                board.farm_plan_witness.insert(plan_key, plan.crop);
                 for y in plot.min.y..=plot.max.y {
                     for x in plot.min.x..=plot.max.x {
                         // FARM-PAINT: the resolved-at-registration surface
@@ -22725,47 +23059,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // Plain air reads Some(SpriteKind::Empty) — the
                         // vanilla encoding (run-1 find: a None-only arm
                         // silently skipped every empty field cell).
+                        let has_clock = board
+                            .farm_growth
+                            .contains_key(&(cpos.x, cpos.y, cpos.z));
                         match crop.get_sprite() {
-                            // F5: a VOLUNTEER — a crop standing in a
-                            // registered farm column that this colony never
-                            // sowed (it only ever sows WheatYellow). Ripe by
-                            // construction: worldgen plants at Growth 15
-                            // (`Default for Growth`), not at a "reserved
-                            // Growth-0 mature-look stage" as this comment
-                            // used to claim. One harvest job,
-                            // same shape as the mature-wheat arm below; it
-                            // must be tested BEFORE that arm's growth logic
-                            // so a volunteer never falls into the sown
-                            // colony's stage machine and gets "advanced".
-                            Some(s) if volunteer_crop_item(s).is_some() => {
-                                // ★★ THE ONE FARM PUSH SITE WITH NEITHER
-                                // GUARD (budget audit, 2026-08-29, found
-                                // independently by two reviewers). This read
-                                // a bare `!occupied.contains(&cpos)` while
-                                // every sibling arm uses `cell_free(cpos) &&
-                                // open_budget > 0` — so it skipped the churn
-                                // filter (a cell the work tick keeps calling
-                                // MOOT was re-offered forever) AND never
-                                // debited the per-plot budget.
-                                //
-                                // The budget is the expensive half. Volunteer
-                                // jobs are ordinary unclaimed Farm jobs inside
-                                // the plot footprint, so `open_by_plot` COUNTS
-                                // them even though minting them paid nothing.
-                                // An adopted village field carries hundreds of
-                                // standing volunteer crops, so `open_budget =
-                                // FARM_OPEN_JOBS_PER_PLOT.saturating_sub(..)`
-                                // pins to 0 on the first pass and that plot
-                                // can never mint another till, sow or harvest
-                                // for the rest of the world's life — the
-                                // guard-spends-before-it-refuses shape from
-                                // ROW 50 rank 1, one arm over.
-                                if cell_free(cpos) && open_budget > 0 {
-                                    open_budget -= 1;
-                                    new_jobs.push((cpos, None, AffordanceClass::OnTopAlways));
-                                }
-                            },
-                            Some(SpriteKind::WheatYellow) => {
+                            // ★ ROW 53: THE COLONY'S OWN CROP — whichever
+                            // roster crop it sowed here, not just wheat.
+                            // Tested FIRST, and keyed on the growth clock
+                            // rather than the sprite (see
+                            // `crop_is_colony_managed`): a freshly sown
+                            // Carrot@Growth(1) is already in
+                            // `volunteer_crop_item`, so a sprite-keyed
+                            // volunteer arm above this one would glean the
+                            // colony's own seedling the pass after it was
+                            // planted, forever.
+                            //
+                            // BIT-IDENTICAL FOR WHEAT, which is the bar this
+                            // reorder has to clear. The volunteer map does
+                            // not contain `WheatYellow`, so the arm that used
+                            // to sit here never matched a wheat cell and
+                            // ordering cannot change what wheat does; and
+                            // `crop_is_colony_managed` never matches an
+                            // unclocked non-wheat crop, so a worldgen Tomato
+                            // still falls to the volunteer arm below. The
+                            // only cells this arm newly claims are clocked
+                            // non-wheat roster crops — a state that could not
+                            // exist before this row started sowing them.
+                            Some(s) if crop_is_colony_managed(s, has_clock) => {
                                 let g = crop.get_attr::<Growth>().map(|g| g.0).unwrap_or(0);
                                 if g >= FARM_GROWTH_MAX {
                                     if cell_free(cpos) && open_budget > 0 {
@@ -22806,10 +23126,52 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         board.farm_growth.entry(ck).or_insert(time.0);
                                     }
                                 }
-                                // Growth 0 on a farm cell = a worldgen
-                                // volunteer — left alone (the reserved
-                                // stage; harvesting volunteers is a
-                                // later nicety).
+                            },
+                            // F5: a VOLUNTEER — a crop standing in a
+                            // registered farm column that this colony never
+                            // planted. Ripe by construction: worldgen plants
+                            // at Growth 15 (`Default for Growth`), pinned by
+                            // `worldgen_wheat_is_placed_mature_not_at_growth_zero`.
+                            // One harvest job, same shape as the colony arm's
+                            // mature branch.
+                            //
+                            // ★ ROW 53: `!has_clock` IS THE ARM'S OWN
+                            // REFUSAL, not a redundant echo of the arm above.
+                            // The arm order makes it unreachable for a clocked
+                            // cell TODAY; stated explicitly it survives a
+                            // future reorder, and it is the same refusal the
+                            // work-tick glean arm carries, where ordering does
+                            // NOT protect it (there the harvest arm sits above
+                            // but only matches Growth >= MAX, so a clocked
+                            // Carrot at stage 3 would fall straight through to
+                            // gleaning). One rule, stated at both sites.
+                            Some(s) if volunteer_crop_item(s).is_some() && !has_clock => {
+                                // ★★ THE ONE FARM PUSH SITE WITH NEITHER
+                                // GUARD (budget audit, 2026-08-29, found
+                                // independently by two reviewers). This read
+                                // a bare `!occupied.contains(&cpos)` while
+                                // every sibling arm uses `cell_free(cpos) &&
+                                // open_budget > 0` — so it skipped the churn
+                                // filter (a cell the work tick keeps calling
+                                // MOOT was re-offered forever) AND never
+                                // debited the per-plot budget.
+                                //
+                                // The budget is the expensive half. Volunteer
+                                // jobs are ordinary unclaimed Farm jobs inside
+                                // the plot footprint, so `open_by_plot` COUNTS
+                                // them even though minting them paid nothing.
+                                // An adopted village field carries hundreds of
+                                // standing volunteer crops, so `open_budget =
+                                // FARM_OPEN_JOBS_PER_PLOT.saturating_sub(..)`
+                                // pins to 0 on the first pass and that plot
+                                // can never mint another till, sow or harvest
+                                // for the rest of the world's life — the
+                                // guard-spends-before-it-refuses shape from
+                                // ROW 50 rank 1, one arm over.
+                                if cell_free(cpos) && open_budget > 0 {
+                                    open_budget -= 1;
+                                    new_jobs.push((cpos, None, AffordanceClass::OnTopAlways));
+                                }
                             },
                             None | Some(SpriteKind::Empty) => {
                                 // ★ SOIL SOWS FOREVER (Ben, 2026-08-23: "let
@@ -30520,22 +30882,89 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
                                     continue;
                                 }
-                                if let Ok(nb) = Block::air(SpriteKind::WheatYellow)
-                                    .with_attr(Growth(FARM_GROWTH_SOWN))
+                                // ★ ROW 53: WHAT to sow, decided HERE and
+                                // nowhere else. Re-derived fresh from the
+                                // plot's own terrain at the moment of
+                                // planting — the plan has no stored copy that
+                                // could disagree with the field it names, and
+                                // "the plan is a strict fixed point" makes
+                                // deciding late safe by construction: sowing
+                                // the modal crop can only raise its own
+                                // count, so a later cell in the same plot
+                                // gets the same answer.
+                                //
+                                // A cell in no registered plot falls back to
+                                // `CropPlan::fallback()` = WheatYellow, which
+                                // is what this line planted unconditionally
+                                // before this row — FALLBACK IS IDENTITY.
+                                //
+                                // The seed is `FARM_SEED_ITEM` for every
+                                // crop and stays that way; see
+                                // `farm_crop_item`'s doc for why per-crop
+                                // seeds would mint uncompletable work.
+                                let sow_at = job.pos;
+                                let plan = board
+                                    .farms
+                                    .iter()
+                                    .find(|(_, r)| {
+                                        sow_at.x >= r.min.x
+                                            && sow_at.x <= r.max.x
+                                            && sow_at.y >= r.min.y
+                                            && sow_at.y <= r.max.y
+                                    })
+                                    .map(|(_, r)| {
+                                        plot_crop_plan(
+                                            r,
+                                            &terrain,
+                                            &board.farm_column_z,
+                                            &board.farm_growth,
+                                        )
+                                    })
+                                    .unwrap_or_else(CropPlan::fallback);
+                                if let Ok(nb) =
+                                    Block::air(plan.crop).with_attr(Growth(FARM_GROWTH_SOWN))
                                 {
                                     block_change.set(job.pos, nb);
                                     board
                                         .farm_growth
                                         .insert((job.pos.x, job.pos.y, job.pos.z), time.0);
                                     acted = true;
-                                    info!(pos = ?job.pos, "bastion: sown");
+                                    // Treatment beside outcome, per subject:
+                                    // the crop actually planted and the tier
+                                    // that chose it, on the same line as the
+                                    // cell. This is the ground truth the
+                                    // per-plot plan line is only a forecast
+                                    // of.
+                                    info!(
+                                        pos = ?job.pos,
+                                        crop = ?plan.crop,
+                                        source = ?plan.source,
+                                        census = %plan.census.line(),
+                                        "bastion: sown"
+                                    );
                                 }
                             },
                             // HARVEST: the mature crop cell.
+                            //
+                            // ★ ROW 53: any MATURE roster crop this colony
+                            // manages, not `WheatYellow` alone — the mirror
+                            // of the generator arm that minted this job.
+                            // Identical for wheat (`crop_is_colony_managed`
+                            // matches every `WheatYellow`, clocked or not,
+                            // because the volunteer map cannot contain it);
+                            // an unclocked worldgen Tomato still fails here
+                            // and falls to the gleaning arm below, exactly as
+                            // F5 shipped it.
                             Some(c)
-                                if c.get_sprite() == Some(SpriteKind::WheatYellow)
-                                    && c.get_attr::<Growth>().map(|g| g.0).unwrap_or(0)
-                                        >= FARM_GROWTH_MAX =>
+                                if c.get_sprite().is_some_and(|s| {
+                                    crop_is_colony_managed(
+                                        s,
+                                        board.farm_growth.contains_key(&(
+                                            job.pos.x, job.pos.y, job.pos.z,
+                                        )),
+                                    )
+                                }) && c.get_attr::<Growth>().map(|g| g.0).unwrap_or(0)
+                                    >= FARM_GROWTH_MAX =>
                             {
                                 block_change.set(job.pos, Block::empty());
                                 // ★★ DID THIS COLONY ACTUALLY GROW IT? Read
@@ -30557,11 +30986,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // on the harvested cell (both yield loops draw
                                 // from it in order).
                                 let mut rng = toss_scatter_rng(tick.0, job.pos, 0xFA47_0001);
+                                // ★ ROW 53: the crop's OWN item — a tended
+                                // tomato pays tomatoes, exactly as a gleaned
+                                // one does. `farm_crop_item` returns
+                                // FARM_WHEAT_ITEM for WheatYellow, so the
+                                // shipped crop is byte-for-byte unchanged;
+                                // the `unwrap_or` is unreachable (the arm
+                                // guard already required a roster sprite) and
+                                // is the identity if it ever is not.
+                                let crop_item = c
+                                    .get_sprite()
+                                    .and_then(farm_crop_item)
+                                    .unwrap_or(FARM_WHEAT_ITEM);
                                 for _ in 0..wheat_yield {
                                     crate::bastion_actions::emit_drop(
                                         &mut item_drop_emitter,
                                         job.pos,
-                                        Item::new_from_asset_expect(FARM_WHEAT_ITEM),
+                                        Item::new_from_asset_expect(crop_item),
                                         *program_time,
                                         &mut rng,
                                     );
@@ -30578,6 +31019,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 acted = true;
                                 info!(
                                     pos = ?job.pos,
+                                    crop = ?c.get_sprite(),
+                                    item = crop_item,
                                     colony_sown,
                                     wheat_yield,
                                     seed_yield,
@@ -30592,7 +31035,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // village field becomes a working colony farm
                             // instead of a one-time windfall that never
                             // regrows.
-                            Some(c) if c.get_sprite().and_then(volunteer_crop_item).is_some() => {
+                            //
+                            // ★★ ROW 53 — THE LOAD-BEARING REFUSAL. The
+                            // growth-clock term is what stops this arm eating
+                            // the colony's own seedlings now that the colony
+                            // sows Carrot, Tomato and Lettuce. It is NOT
+                            // protected by arm order here: the harvest arm
+                            // above only matches `Growth >= FARM_GROWTH_MAX`,
+                            // so a colony-sown Carrot at stage 3 would fall
+                            // straight through to this arm, be gleaned for
+                            // VOLUNTEER_YIELD, cleared to empty, re-sown by
+                            // the generator's empty arm and gleaned again —
+                            // mint → claim → walk → glean → re-mint, forever,
+                            // on every cell this row plants. Sprite-keyed,
+                            // this arm was correct only by the accident that
+                            // the colony sowed a sprite the volunteer map
+                            // happens not to contain; provenance-keyed, it is
+                            // correct because the colony's crop carries the
+                            // colony's clock. See `crop_is_colony_managed`.
+                            Some(c)
+                                if c.get_sprite().and_then(volunteer_crop_item).is_some()
+                                    && !board.farm_growth.contains_key(&(
+                                        job.pos.x, job.pos.y, job.pos.z,
+                                    )) =>
+                            {
                                 let def = c
                                     .get_sprite()
                                     .and_then(volunteer_crop_item)
@@ -41829,19 +42295,12 @@ mod tests {
         );
     }
 
-    /// F5: the founded-colony rule must be UNTOUCHED. `WheatYellow` is what
-    /// this colony sows itself, and it is the discriminator the whole
-    /// volunteer arm rests on — if it ever became a volunteer, the colony
-    /// would glean its own seed crop at Growth 0 the instant it sowed it,
-    /// destroying the farm cycle rather than extending it.
-    #[test]
-    fn the_colonys_own_crop_is_never_a_volunteer() {
-        assert!(
-            volunteer_crop_item(common::terrain::SpriteKind::WheatYellow).is_none(),
-            "WheatYellow is what the colony SOWS — treating it as a volunteer would make every \
-             freshly sown cell instantly harvestable and the farm cycle would eat itself"
-        );
-    }
+    // F5's `the_colonys_own_crop_is_never_a_volunteer` used to live HERE and
+    // asserted one fact: `volunteer_crop_item(WheatYellow).is_none()`. That
+    // was sufficient only while the colony sowed exactly one sprite. ROW 53
+    // generalised it from the sprite to the PROVENANCE and moved it down
+    // beside the rest of the roster pins; the original assertion is kept
+    // verbatim as that test's first line.
 
     /// ★★ WHAT A FRESHLY PLACED WORLDGEN CROP'S GROWTH ACTUALLY IS.
     ///
@@ -41962,6 +42421,566 @@ mod tests {
             0,
             "the harvest arm is emitting FARM_SEED_YIELD directly again — the worldgen \
              free-seed-press path is back"
+        );
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // ROW 53 — GROW WHAT THE VILLAGE GREW
+    // ══════════════════════════════════════════════════════════════════
+
+    /// Production source with every comment line removed. Two pins in this
+    /// file have already been found DEAD because their needle matched the
+    /// PROSE of the very arm they were meant to guard (see
+    /// `the_recreation_arm_arms_its_cooldown_and_releases_through_the_seam`),
+    /// and this row adds several hundred lines of doc comment that name the
+    /// exact identifiers below. Strip comments first, so only STATEMENTS can
+    /// satisfy a source pin.
+    fn strip_comments(src: &str) -> String {
+        src.lines()
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn production_code() -> String { strip_comments(include_str!("bastion_jobs.rs")) }
+
+    /// The STATEMENTS of one inline arm. The window is located in the RAW
+    /// source (its anchors are comments and log strings, which is all an
+    /// inline arm has to be addressed by) and only then stripped — so an arm
+    /// can never satisfy its own pin with its own prose.
+    fn arm_code(start_marker: &str, end_marker: &str) -> String {
+        let src = include_str!("bastion_jobs.rs");
+        let start = src.find(start_marker).unwrap_or_else(|| {
+            panic!("arm marker {start_marker:?} moved — re-anchor this pin")
+        });
+        let end = src[start..].find(end_marker).unwrap_or_else(|| {
+            panic!("arm end marker {end_marker:?} moved — re-anchor this pin")
+        });
+        strip_comments(&src[start..start + end])
+    }
+
+    /// ★ THE TIE-BREAK IS THE SPRITE DISCRIMINANT, AND THE ROSTER'S ORDER IS
+    /// WHAT MAKES THAT TRUE.
+    ///
+    /// `CropCensus::modal` breaks a tie by taking the lowest ROSTER INDEX. If
+    /// the roster is ever reordered (or a crop inserted in the wrong place),
+    /// the tie-break silently becomes "whatever order somebody typed" — a
+    /// deterministic but arbitrary rule, and one that could stop wheat
+    /// winning ties and so stop the fallback being the identity.
+    ///
+    /// Guards: `FARM_CROP_ROSTER`'s declaration order.
+    #[test]
+    fn the_crop_roster_is_ordered_by_sprite_discriminant() {
+        let d: Vec<u32> = FARM_CROP_ROSTER.iter().map(|s| *s as u32).collect();
+        for w in d.windows(2) {
+            assert!(
+                w[0] < w[1],
+                "FARM_CROP_ROSTER is not in ascending SpriteKind-discriminant order ({:?}) — \
+                 CropCensus::modal's lowest-index tie-break is documented as a discriminant \
+                 tie-break and would now be neither",
+                d
+            );
+        }
+        // Wheat must be FIRST, and that is a stronger claim than "sorted":
+        // it is what makes a dead heat resolve to the shipped crop, so the
+        // identity fallback survives even a tie.
+        assert_eq!(
+            FARM_CROP_ROSTER[0],
+            FARM_CROP_FALLBACK,
+            "the fallback crop must also win every tie, or a 50/50 plot could plan away from \
+             the shipped behaviour on a coin-flip the design says it never takes"
+        );
+        // The tie-break as a BEHAVIOUR, not as a property of the const: a
+        // dead heat must resolve to the lowest discriminant. `modal`'s
+        // strictly-greater replacement is the only thing making that true —
+        // relax it to `>=` and the tie goes to the LAST roster entry
+        // instead, i.e. a tied plot would plan Tomato over wheat and the
+        // identity would stop holding exactly where it matters most.
+        for provenance in 0..2 {
+            let mut tied = CropCensus::default();
+            for i in 0..FARM_CROP_ROSTER.len() {
+                if provenance == 0 {
+                    tied.colony[i] = 7;
+                } else {
+                    tied.worldgen[i] = 7;
+                }
+            }
+            assert_eq!(
+                tied.plan().crop,
+                FARM_CROP_ROSTER[0],
+                "a perfectly tied plot ({}) planned {:?} instead of the lowest-discriminant \
+                 roster crop — the tie-break is not the documented one",
+                tied.line(),
+                tied.plan().crop
+            );
+        }
+    }
+
+    /// ★ A JOIN IS A FILTER, ONE LANE OVER. Every crop the colony can SOW
+    /// must (a) have a harvest item, (b) have that item recognised by the
+    /// food scan, and (c) actually be placeable with a `Growth` attribute.
+    ///
+    /// (c) is the non-obvious one and it is a hard engine constraint: only
+    /// sprites in the `Plant` category carry `Growth`
+    /// (common/src/terrain/sprite/mod.rs). Sowing a roster crop that is not a
+    /// Plant would make `Block::air(crop).with_attr(Growth(..))` return
+    /// `Err`, the sow completion's `if let Ok` would silently do nothing,
+    /// `acted` would stay false — and the job would sit at full progress
+    /// being retried forever. A generator minting work nothing can complete,
+    /// arrived at by adding one line to a const array.
+    ///
+    /// Guards: `FARM_CROP_ROSTER`, `farm_crop_item`, `FOOD_DEFS`.
+    #[test]
+    fn every_roster_crop_can_be_sown_harvested_and_eaten() {
+        for crop in FARM_CROP_ROSTER {
+            let def = farm_crop_item(crop).unwrap_or_else(|| {
+                panic!(
+                    "{crop:?} is in FARM_CROP_ROSTER but farm_crop_item has no item for it — the \
+                     harvest arm would drop nothing and the crop would be a work sink"
+                )
+            });
+            assert!(
+                FOOD_DEFS.contains(&def),
+                "{crop:?} harvests to {def}, which the colony's food scan cannot see — the \
+                 colony would farm produce it can neither count, stock nor eat"
+            );
+            assert!(
+                Block::air(crop).with_attr(Growth(FARM_GROWTH_SOWN)).is_ok(),
+                "{crop:?} cannot carry a Growth attribute, so the sow completion's `if let Ok` \
+                 would place nothing, never set `acted`, and retry the job forever"
+            );
+            // And it must survive the full stage clock to MAX, or it can be
+            // sown and never harvested.
+            assert!(
+                Block::air(crop).with_attr(Growth(FARM_GROWTH_MAX)).is_ok(),
+                "{crop:?} cannot reach FARM_GROWTH_MAX — it would be sown and never mature"
+            );
+        }
+
+        // ★ A FALSIFIER NEEDS ITS OWN CONTROL. The Growth checks above guard
+        // a FUTURE roster edit, so today they pass on every entry and could
+        // just as easily be passing because `with_attr` never returns `Err`.
+        // The control proves the check can fail at all: a Furniture sprite is
+        // outside the `Plant` category and has no Growth attribute, so adding
+        // one to the roster is exactly the mistake those assertions catch.
+        assert!(
+            Block::air(SpriteKind::Bedroll)
+                .with_attr(Growth(FARM_GROWTH_SOWN))
+                .is_err(),
+            "a non-Plant sprite accepted a Growth attribute — the roster's Growth checks are \
+             blind and would wave through a crop the sow completion could never place"
+        );
+    }
+
+    /// ★★ THE PLAN IS A STRICT FIXED POINT — THE ACCEPTANCE CRITERION.
+    ///
+    /// Anti-churn is not a tuning question here, it is the whole design: the
+    /// plan must be re-elected by its own output, or a plot oscillates
+    /// between two crops and every cell is planted, gleaned and replanted
+    /// forever. Feeds the plan's own answer back as ONE more colony-sown cell
+    /// and asserts the same crop comes out — for every roster crop, at EVERY
+    /// mix ratio in a full 4-crop sweep of both provenances, not the single
+    /// 50/50 case that would pass by luck.
+    ///
+    /// Also asserts CONVERGENCE, not just one step: ten successive feedbacks
+    /// must never move the answer, so a two-cycle oscillation cannot hide
+    /// behind a one-step test.
+    ///
+    /// Guards: `CropCensus::plan` and `CropCensus::modal`.
+    #[test]
+    fn the_crop_plan_is_a_strict_fixed_point_at_every_mix() {
+        let n = FARM_CROP_ROSTER.len();
+        let mut cases = 0u32;
+        // Full sweep: each roster slot 0..=2 in BOTH provenances. 3^4 × 3^4 =
+        // 6561 mixes, every ratio the four-crop space can express at that
+        // resolution — including all the ties, which are the interesting half.
+        let lim = 3u32;
+        for c in 0..lim.pow(n as u32) {
+            for w in 0..lim.pow(n as u32) {
+                let mut census = CropCensus::default();
+                for i in 0..n {
+                    census.colony[i] = (c / lim.pow(i as u32)) % lim;
+                    census.worldgen[i] = (w / lim.pow(i as u32)) % lim;
+                }
+                let first = census.plan();
+                let mut fed = census;
+                for step in 1..=10 {
+                    // Sowing the plan plants exactly one colony cell of it.
+                    let idx = crop_roster_index(fed.plan().crop)
+                        .expect("the plan must always name a roster crop");
+                    fed.colony[idx] += 1;
+                    let again = fed.plan();
+                    assert_eq!(
+                        again.crop, first.crop,
+                        "plot planned {:?} (source {:?}, census {}), sowing it {step} time(s) \
+                         re-planned {:?} — the plan is not a fixed point under its own output \
+                         and this plot will churn: plant, glean, replant, forever",
+                        first.crop,
+                        first.source,
+                        census.line(),
+                        again.crop
+                    );
+                    // Once any colony cell exists the answer is the colony
+                    // tier by construction; say so, so a silent tier flip
+                    // cannot pass as a stable crop.
+                    assert_eq!(
+                        again.source,
+                        CropPlanSource::Colony,
+                        "after sowing, the plan must be answered by the colony tier — census {}",
+                        fed.line()
+                    );
+                }
+                cases += 1;
+            }
+        }
+        assert_eq!(
+            cases,
+            lim.pow(n as u32) * lim.pow(n as u32),
+            "the mix sweep did not run the space it claims to cover"
+        );
+    }
+
+    /// ★ FALLBACK IS IDENTITY. An empty plot, and a plot of nothing but
+    /// unrostered sprites, must plan `WheatYellow` and behave exactly as the
+    /// farm lane did before this row. This is the promise that makes the
+    /// change safe to ship: every field the colony already farms keeps
+    /// farming the same thing.
+    ///
+    /// Guards: `CropCensus::plan`'s tier-3 arm and `FARM_CROP_FALLBACK`.
+    #[test]
+    fn an_empty_or_unrostered_plot_plans_exactly_todays_crop() {
+        let empty = CropCensus::default().plan();
+        assert_eq!(
+            empty.crop,
+            SpriteKind::WheatYellow,
+            "an empty plot must plan the shipped crop — anything else changes behaviour on \
+             every fresh field in the world"
+        );
+        assert_eq!(empty.source, CropPlanSource::Fallback);
+
+        // A whole plot of crops the colony has no item for: worldgen's Corn,
+        // Pumpkin, Radish, Turnip, Flax and Sunflower fields. They must cast
+        // NO vote at all, in either provenance — counting them would make the
+        // plan name a crop `farm_crop_item` cannot harvest.
+        let mut foreign = CropCensus::default();
+        for s in [
+            SpriteKind::Corn,
+            SpriteKind::Pumpkin,
+            SpriteKind::Radish,
+            SpriteKind::Turnip,
+            SpriteKind::Flax,
+            SpriteKind::Sunflower,
+            SpriteKind::WheatGreen,
+        ] {
+            for clock in [false, true] {
+                foreign.observe(s, clock);
+            }
+        }
+        assert_eq!(
+            foreign,
+            CropCensus::default(),
+            "an unrostered sprite voted in the census — the plan could name a crop with no \
+             item, and the sow completion would place a block the harvest arm cannot read"
+        );
+        let plan = foreign.plan();
+        assert_eq!(plan.crop, SpriteKind::WheatYellow);
+        assert_eq!(plan.source, CropPlanSource::Fallback);
+    }
+
+    /// ★★ THE COLONY'S OWN CROP IS NEVER A VOLUNTEER — GENERALISED FROM
+    /// WHEAT TO THE WHOLE ROSTER.
+    ///
+    /// The F5-era version of this pin asserted one fact:
+    /// `volunteer_crop_item(WheatYellow).is_none()`. That was sufficient only
+    /// because the colony sowed exactly one sprite. Carrot, Tomato and
+    /// Lettuce are ALREADY in the volunteer map, so the instant sowing
+    /// generalises, a freshly sown `Carrot@Growth(1)` matches "is this a
+    /// volunteer?" and the glean arm harvests the colony's own seedling —
+    /// then the empty arm re-sows it, then it is gleaned again. Infinite
+    /// churn, on every cell this row exists to plant.
+    ///
+    /// Pins the DISCRIMINATOR, not the old accident: at `has_growth_clock =
+    /// true` no roster crop may reach the glean arm, and at `false` the
+    /// worldgen behaviour F5 shipped must be untouched.
+    ///
+    /// Guards: `crop_is_colony_managed`, and through it both the generator's
+    /// volunteer arm and the work tick's glean arm.
+    #[test]
+    fn the_colonys_own_crop_is_never_a_volunteer() {
+        // The original F5 assertion, kept verbatim in spirit: wheat is what
+        // the colony sows and the volunteer map must never contain it.
+        assert!(
+            volunteer_crop_item(common::terrain::SpriteKind::WheatYellow).is_none(),
+            "WheatYellow is what the colony SOWS — treating it as a volunteer would make every \
+             freshly sown cell instantly harvestable and the farm cycle would eat itself"
+        );
+
+        // The generalisation. `glean` is the predicate BOTH production arms
+        // carry, rebuilt here rather than imported so this test states the
+        // rule instead of restating a call.
+        let glean = |s: SpriteKind, clock: bool| volunteer_crop_item(s).is_some() && !clock;
+
+        for crop in FARM_CROP_ROSTER {
+            // A cell carrying the colony's growth clock is the colony's,
+            // whatever its sprite. This is the assertion that goes red the
+            // moment the clock term is dropped from either arm.
+            assert!(
+                crop_is_colony_managed(crop, true),
+                "a colony-sown {crop:?} is not recognised as the colony's own — the generator \
+                 would offer it as a volunteer harvest"
+            );
+            assert!(
+                !glean(crop, true),
+                "a colony-sown {crop:?} still matches the gleaning predicate — it would be \
+                 gleaned at Growth 1, cleared, re-sown and gleaned again: the farm eating \
+                 itself, one cell at a time"
+            );
+        }
+
+        // ── THE OTHER DIRECTION, which is where an over-refusing guard would
+        // erase its own symptom: F5's adopted-village gleaning must still
+        // work. A worldgen Tomato/Carrot/Lettuce carries no clock and MUST
+        // still be gleaned, or this row would quietly delete the feature it
+        // is built on top of.
+        for crop in [SpriteKind::Tomato, SpriteKind::Carrot, SpriteKind::Lettuce] {
+            assert!(
+                glean(crop, false),
+                "a worldgen {crop:?} is no longer gleaned — F5's whole point (a colony that \
+                 works the village's existing fields) is gone"
+            );
+            assert!(
+                !crop_is_colony_managed(crop, false),
+                "an unclocked {crop:?} is being treated as the colony's own crop — it would be \
+                 routed to the tended-harvest arm and paid FARM_SEED_YIELD for work the colony \
+                 never did, the free seed press again"
+            );
+        }
+
+        // Wheat is the exception, and it must STAY the exception or this
+        // change is not bit-identical for the shipped crop: an unclocked
+        // worldgen WheatYellow still routes to the colony arm (its YIELD is
+        // discriminated later, by `wheat_harvest_yield`).
+        assert!(
+            crop_is_colony_managed(SpriteKind::WheatYellow, false),
+            "an unclocked worldgen WheatYellow no longer routes to the colony arm — the shipped \
+             wheat path has changed, which this row promised it would not"
+        );
+        assert!(
+            !glean(SpriteKind::WheatYellow, false),
+            "WheatYellow reached the gleaning predicate"
+        );
+
+        // WheatGreen is deliberately NOT on the roster: it is worldgen's
+        // unripe wheat, gleaned as wheat, never sown. If it ever joins the
+        // roster, wheat gets two slots and splits its own vote.
+        assert!(
+            crop_roster_index(SpriteKind::WheatGreen).is_none(),
+            "WheatGreen joined the sowing roster — wheat now has two roster slots and would \
+             split its own census vote against itself"
+        );
+    }
+
+    /// ★★ THE CENSUS ASKS A DIFFERENT QUESTION FROM THE ARM ROUTER, AND
+    /// MUST KEEP ASKING IT.
+    ///
+    /// `crop_is_colony_managed` has a WHEAT EXCEPTION (an unclocked
+    /// `WheatYellow` is still the colony's, because the volunteer map cannot
+    /// contain it). That exception is right for routing and WRONG for
+    /// counting: it would make one stray unclocked wheat sprite standing in
+    /// an adopted village TOMATO field count as colony wheat, win tier 1
+    /// outright, and out-vote three hundred tomatoes — the colony would
+    /// re-wheat the tomato field, which is the exact defect this row exists
+    /// to fix.
+    ///
+    /// This is the kind of pair that drifts: two nearly-identical booleans,
+    /// one line apart in the reader's mind. Pinned by consequence, not by
+    /// restating the implementation.
+    ///
+    /// Guards: `CropCensus::observe`'s use of the raw clock.
+    #[test]
+    fn one_stray_wheat_sprite_cannot_outvote_a_village_tomato_field() {
+        let mut census = CropCensus::default();
+        for _ in 0..300 {
+            census.observe(SpriteKind::Tomato, false);
+        }
+        census.observe(SpriteKind::WheatYellow, false);
+        let plan = census.plan();
+        assert_eq!(
+            plan.crop,
+            SpriteKind::Tomato,
+            "one unclocked wheat sprite out-voted 300 worldgen tomatoes (census {}) — the \
+             census is using the ARM router's wheat exception instead of the raw growth clock",
+            census.line()
+        );
+        assert_eq!(
+            plan.source,
+            CropPlanSource::Worldgen,
+            "a field nobody has sown must be answered by the worldgen tier"
+        );
+
+        // And the tier ORDER: one cell the colony actually sowed outranks the
+        // whole village field, because tier 1 is "what the colony last
+        // planted here" and that is the colony's own standing decision.
+        let mut sown = census;
+        sown.observe(SpriteKind::Carrot, true);
+        let plan = sown.plan();
+        assert_eq!(plan.crop, SpriteKind::Carrot);
+        assert_eq!(plan.source, CropPlanSource::Colony);
+    }
+
+    /// ★ AN ADOPTED VILLAGE FIELD IS PLANNED BY WHAT THE VILLAGE GREW —
+    /// including the wheat case, which must land on the identity.
+    ///
+    /// Guards: `CropCensus::plan`'s tier-2 arm.
+    #[test]
+    fn a_village_field_plans_the_crop_the_village_grew() {
+        for (crop, expect) in [
+            (SpriteKind::Tomato, SpriteKind::Tomato),
+            (SpriteKind::Carrot, SpriteKind::Carrot),
+            (SpriteKind::Lettuce, SpriteKind::Lettuce),
+            // A worldgen WHEAT field: WheatGreen casts no vote (off-roster),
+            // the WheatYellow half does, and the answer is the identity.
+            (SpriteKind::WheatYellow, SpriteKind::WheatYellow),
+        ] {
+            let mut census = CropCensus::default();
+            for _ in 0..40 {
+                census.observe(crop, false);
+                census.observe(SpriteKind::WheatGreen, false);
+            }
+            let plan = census.plan();
+            assert_eq!(
+                plan.crop, expect,
+                "a village {crop:?} field planned {:?} — the colony would replace the \
+                 village's own crop one cell at a time, which is the defect this row closes",
+                plan.crop
+            );
+            assert_eq!(plan.source, CropPlanSource::Worldgen);
+        }
+    }
+
+    // ── THE PRODUCTION SITES, PINNED AT THE CALL SITE.
+    //
+    // Every arm this row touches is inline in a specs `run` over a dozen
+    // storages and cannot be reached by a unit test. The pure helpers above
+    // would all stay green if production simply stopped calling them — which
+    // is precisely how the shipped code came to sow wheat everywhere in the
+    // first place. Needles are built at runtime and matched against
+    // COMMENT-STRIPPED source, because this row's own doc comments name every
+    // one of these identifiers and a prose match would make the pin dead.
+    //
+    // ONE TEST PER SITE, deliberately: a single test covering all three stops
+    // at its first failed assertion, so breaking two sites at once would show
+    // only one of them — and a falsification round that cannot see its own
+    // second break is a falsification round that proves less than it claims.
+
+    /// Guards: the SOW completion — what actually goes in the ground.
+    #[test]
+    fn the_sow_completion_plants_the_freshly_derived_plan() {
+        let src = production_code();
+
+        // 1. THE SOW COMPLETION plants the plan, and no literal crop.
+        let planted = format!("Block::air({}.crop)", "plan");
+        assert_eq!(
+            src.matches(&planted).count(),
+            1,
+            "the sow completion no longer places the planned crop — every roster crop this \
+             colony ever plans would still come out of the ground as wheat"
+        );
+        let literal = format!("Block::air({}::WheatYellow)", "SpriteKind");
+        assert_eq!(
+            src.matches(&literal).count(),
+            0,
+            "the sow completion is back to planting a hard-coded WheatYellow — the whole row \
+             is inert and the tomato-to-wheat ratchet is running again"
+        );
+        // And the plan is DERIVED at the site, never read from stored state.
+        let derived = format!("{}(", "plot_crop_plan");
+        assert!(
+            src.matches(&derived).count() >= 3,
+            "plot_crop_plan appears fewer than 3 times in production (its definition, the \
+             per-plot witness and the sow completion) — either the witness or the decision \
+             has stopped re-deriving the plan and is reading something else"
+        );
+        assert_eq!(
+            src.matches(&format!("{}.insert(", "farm_plan_witness")).count(),
+            1,
+            "farm_plan_witness has grown a second writer — it is a LOG-ONLY record of what was \
+             last printed, and anything that writes it from a second place is on its way to \
+             becoming a stored plan, i.e. a second source of truth that can disagree with the \
+             field it names"
+        );
+    }
+
+    /// Guards: the HARVEST completion — what a tended crop pays out.
+    #[test]
+    fn the_harvest_completion_pays_the_harvested_crops_own_item() {
+        let src = production_code();
+        assert_eq!(
+            src.matches(&format!("{}({})", "wheat_harvest_yield", "colony_sown"))
+                .count(),
+            1,
+            "the harvest arm no longer discriminates its yield by provenance"
+        );
+        assert_eq!(
+            src.matches(&format!("and_then({})", "farm_crop_item")).count(),
+            1,
+            "the harvest arm no longer drops the harvested crop's OWN item — a tended tomato \
+             would pay out wheat, and the colony's food scan would see a crop it never grew \
+             while the tomatoes it did grow vanished"
+        );
+    }
+
+    /// Guards: the GLEAN arm — the churn trap this whole row had to disarm.
+    ///
+    /// Scans the window from the arm's own marker to its log line, so this
+    /// cannot be satisfied by the harvest arm's identical-looking read one
+    /// arm above.
+    #[test]
+    fn the_glean_arm_refuses_the_colonys_own_clock() {
+        let arm = arm_code(
+            &format!("{}: GLEANING an adopted village field", "F5"),
+            "volunteer gleaned from an adopted field",
+        );
+        assert!(
+            arm.contains(&format!("!{}.farm_growth.contains_key", "board")),
+            "the gleaning arm has lost its growth-clock refusal — a colony-sown Carrot at \
+             stage 3 falls straight through the harvest arm (which needs Growth >= MAX) into \
+             this one, is gleaned, cleared, re-sown and gleaned again: infinite churn on every \
+             cell this row plants"
+        );
+    }
+
+    /// ★ A GUARD MUST REFUSE BEFORE IT SPENDS — the volunteer push.
+    ///
+    /// This arm was, for one release, the ONLY farm push site reading a bare
+    /// `!occupied.contains(&cpos)` with neither the churn filter nor an
+    /// `open_budget` debit, while `open_by_plot` counted its output anyway.
+    /// An adopted village field carries hundreds of standing volunteer crops,
+    /// so the plot's budget pinned to 0 on the first pass and it could never
+    /// mint another till, sow or harvest for the rest of the world's life.
+    /// The fix landed before this row; nothing pinned it, and this row moves
+    /// the arm, which is exactly when an unpinned fix gets lost.
+    ///
+    /// Guards: the generator's volunteer arm.
+    #[test]
+    fn the_volunteer_push_refuses_before_it_spends() {
+        let arm = arm_code(
+            &format!("{}: a VOLUNTEER", "F5"),
+            "None | Some(SpriteKind::Empty)",
+        );
+        assert!(
+            arm.contains(&format!("{}(cpos) && open_budget > 0", "cell_free")),
+            "the volunteer push is not gated on cell_free AND open_budget — it will re-offer \
+             churning cells forever and drive its plot's budget to 0 permanently, so that plot \
+             can never mint another till, sow or harvest"
+        );
+        assert!(
+            arm.contains("open_budget -= 1"),
+            "the volunteer push does not debit the per-plot budget it is counted against"
+        );
+        assert!(
+            arm.contains(&format!("!{}", "has_clock")),
+            "the volunteer arm no longer refuses a cell carrying the colony's growth clock"
         );
     }
 
