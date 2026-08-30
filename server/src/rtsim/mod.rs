@@ -1071,12 +1071,33 @@ impl RtSim {
         // So the boundary emit now carries the WHOLE population, counted from
         // rtsim rather than the ECS: a reader can no longer mistake a demotion
         // for a death, because the totals sit beside it and they conserve.
+        // * COST FIX (adversarial review, 2026-08-29): this scan used to run
+        // unconditionally, above both `if let`s below, over every npc in the
+        // world, on EVERY unload -- including the overwhelming majority that
+        // are not colonists at all -- purely to decorate three fields of a
+        // log line those calls never reach.
+        //
+        // Measured on the owner's world: 63,527 demotions across 13,800 ticks
+        // = 4.60 unloads per tick against ~8,528 npcs, i.e. ~39,000
+        // npc-record touches per tick, roughly 4.6 full sweeps of a 7.5 MB
+        // array, for a line that usually does not print.
+        //
+        // The counts still mean exactly what the doc above says, and are
+        // still taken BEFORE the demotion lands. They are simply computed
+        // only when there is a colonist to log them for. A witness may cost
+        // something; it may not cost something on the path where it is silent.
+        let is_colonist = data
+            .npcs
+            .get(entity)
+            .is_some_and(|n| n.bastion_colonist.is_some());
         let (mut loaded_c, mut simulated_c) = (0u32, 0u32);
-        for (_, n) in data.npcs.npcs.iter() {
-            if n.bastion_colonist.is_some() {
-                match n.mode {
-                    SimulationMode::Loaded => loaded_c += 1,
-                    SimulationMode::Simulated => simulated_c += 1,
+        if is_colonist {
+            for (_, n) in data.npcs.npcs.iter() {
+                if n.bastion_colonist.is_some() {
+                    match n.mode {
+                        SimulationMode::Loaded => loaded_c += 1,
+                        SimulationMode::Simulated => simulated_c += 1,
+                    }
                 }
             }
         }
