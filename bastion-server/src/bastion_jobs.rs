@@ -9678,6 +9678,21 @@ pub struct JobBoard {
     /// risk). Read by the inspector + the harness probe; never read by sim
     /// logic outside the gate pass that writes it.
     pub access_material_missing: Option<&'static str>,
+    /// ★ THE TREELINE (2026-08-30): how much stone the town still OWES —
+    /// the mine generator's own `demand` (unsupplied stone-billing jobs,
+    /// floored at `PAR_STOCK_STONE`, plus every unfilled build-plan cell),
+    /// published so the trade lane can tell surplus stone from stone a plan
+    /// is already counting on.
+    ///
+    /// ONE PRODUCER. The trade lane could recompute this, and would then be
+    /// a second producer of a number that decides whether the town sells
+    /// its building material — the two would agree the day they were
+    /// written and drift silently afterwards (`colony_food_stock`'s lesson,
+    /// paid for once already). Written at the mine generator's cadence
+    /// (`tick % ARBITRATION_INTERVAL == 2`) and read two ticks later at
+    /// `== 4`, so it is at most one arbitration stale; staleness can only
+    /// make the trade lane MORE conservative on the tick a plan lands.
+    pub stone_owed: usize,
     /// bastion (LEG-C amnesty fix): per-job amnesty bookkeeping —
     /// `(consecutive fruitless strikes, face-neighbor solidity fingerprint
     /// at last sweep)`. Entries live only while a job is unreachable
@@ -13018,6 +13033,467 @@ fn favor_zero_pin() -> bool {
 /// bastion (ITEM 29): mint a mission when colony food drops below this.
 /// A PAR, not a balance tweak — the par-stock pull the charter names.
 pub const TRADE_FOOD_PAR: u32 = 16;
+
+/// ★★ THE TREELINE (2026-08-30, found in the owner's own 2.5-hour play
+/// session on a REAL worldgen mountain village at z≈900–1040 — every prior
+/// test world was flat and food-seeded, so this failure was structurally
+/// invisible): the trade lane's sell-side gate was
+/// `stockpile_has_material(CHOP_DROP_ITEM, ..)` — WOOD, specifically — and
+/// trade is the colony's ONLY food import.
+///
+/// Above the treeline there are no trees. Measured, in one session's log:
+/// wood `stock=0 par=172 wanted=true` with `bare_trunks=0 best_run=0` over
+/// 3,072 scanned columns; `trade missions minted: 0` for the whole session;
+/// `food_stock: 0` for a roster of 46; `fed=1 of 46`; and 1,748 failed
+/// `EatFrom`s, which is not a pathing bug but 46 people contending over
+/// scraps. Nobody died, because the famine sentinel is LOG-ONLY by design
+/// (`colony_terminal_step`'s call site says so in as many words), so the
+/// colony sat in permanent subsistence: it could neither recover nor
+/// collapse, and nothing told the player why.
+///
+/// That is A PERMANENT SIGNAL BLOCKING ITS OWN CURE — the only food path
+/// gated on a resource the location cannot produce.
+///
+/// The fix is NOT to delete the gate. A trade lane that needs nothing to
+/// trade is a free food faucet, a worse defect than the one being fixed.
+/// The lane now offers any good the town holds in genuine SURPLUS, and a
+/// surplus is measured against the par THAT GOOD'S OWN CONSUMER reads — so
+/// a sale can never take a unit some other lane is still asking for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TradeCandidate {
+    /// The item def offered for sale.
+    pub def: &'static str,
+    /// How much of it the colony holds, read by the SAME producer this
+    /// good's own consumer reads: `colony_item_units` for tools (the
+    /// forge's own par read) and for stone (the mine generator's own
+    /// supply read, bags included), `stockpile_material_units` for wood.
+    /// Two producers of "how much do we have" is how a surplus definition
+    /// drifts away from the demand it is supposed to respect.
+    pub units: u32,
+    /// The par that consumer compares `units` against.
+    pub par: u32,
+    /// Is at least one UNRESERVED unit of this def sitting in a stockpile
+    /// right now? The claim gate only ever reserves from a stockpile, so a
+    /// good that fails this can be minted against but never fetched — a
+    /// mission that can never complete, blocking a lane that runs
+    /// one-at-a-time forever. A GUARD MUST REFUSE BEFORE IT SPENDS: this
+    /// is asked at mint time, before any job id is taken.
+    pub stockpiled: bool,
+    /// Does a live, unsupplied job still bill this good?
+    pub billed: bool,
+    /// WOOD ONLY. Wood keeps its pre-2026-08-30 any-stocked-unit gate, so a
+    /// colony that HAS wood behaves EXACTLY as it did before this row — the
+    /// fallback is IDENTITY, not a re-tuning. Every good this row ADDS is
+    /// strict-surplus.
+    pub par_exempt: bool,
+}
+
+/// Why this good is not the one being sold, or `None` if it is offerable.
+///
+/// Self-naming refusals — the discipline `craft_verdict` and
+/// `immigration_verdict` already use. A lane that silently never fires
+/// looks exactly like one that correctly declines, and this program has
+/// paid for that confusion more than once; most recently for a whole
+/// 2.5-hour session.
+pub(crate) fn trade_good_refusal(c: &TradeCandidate) -> Option<&'static str> {
+    if !c.stockpiled {
+        return Some("not_stockpiled");
+    }
+    if c.par_exempt {
+        return None;
+    }
+    if c.billed {
+        return Some("billed");
+    }
+    // STRICTLY above par. Selling one unit must leave the colony AT par and
+    // never below it, so a sale can never re-open the very demand that would
+    // make the town replace what it just sold.
+    if c.units <= c.par {
+        return Some("at_par");
+    }
+    None
+}
+
+/// The good this town sells today, or `None` (every refusal is named by
+/// [`trade_good_refusal`], which the witness prints).
+///
+/// DETERMINISM BY CONSTRUCTION: the answer is the FIRST offerable good in
+/// the caller's fixed slice order (see [`trade_candidates`]) — never a map
+/// iteration, never a wall clock, never RNG.
+pub(crate) fn trade_offer(cands: &[TradeCandidate]) -> Option<&'static str> {
+    cands
+        .iter()
+        .find(|c| trade_good_refusal(c).is_none())
+        .map(|c| c.def)
+}
+
+/// The lane's offer list, in the ONE order it sells in: wood, then the
+/// forge's outputs in `CRAFT_OUTPUTS` index order, then stone.
+///
+/// Wood leads so that a colony which has wood sells wood — bit-for-bit
+/// today's behaviour. Pure (every reading is passed in) so the ORDER is
+/// pinned by a test without a world, and a fixed-size array so the list
+/// cannot be built by anything that has an iteration order of its own.
+///
+/// `billed` for the forge's outputs is `false`, and that is a CLAIM rather
+/// than an oversight: nothing in this file consumes a tool. After this row
+/// a tool def can appear on a `Haul` job's `required_item`, but a haul
+/// DELIVERS the tool into the very stockpile a sale draws from, and the
+/// haul's generation-time reservation already makes that unit unsellable
+/// (`stockpile_has_material` is unit-aware) — so an in-flight tool is
+/// excluded by `stockpiled`, which is the honest gate for it.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn trade_candidates(
+    wood_stockpiled: bool,
+    wood_units: u32,
+    wood_par: u32,
+    tools_stockpiled: [bool; 3],
+    tools_held: [u32; 3],
+    tool_par: u32,
+    stone_stockpiled: bool,
+    stone_units: u32,
+    stone_par: u32,
+    stone_billed: bool,
+) -> [TradeCandidate; 5] {
+    let tool = |i: usize| TradeCandidate {
+        def: CRAFT_OUTPUTS[i],
+        units: tools_held[i],
+        par: tool_par,
+        stockpiled: tools_stockpiled[i],
+        billed: false,
+        par_exempt: false,
+    };
+    [
+        TradeCandidate {
+            def: CHOP_DROP_ITEM,
+            units: wood_units,
+            par: wood_par,
+            stockpiled: wood_stockpiled,
+            billed: false,
+            par_exempt: true,
+        },
+        tool(0),
+        tool(1),
+        tool(2),
+        TradeCandidate {
+            def: BUILD_MATERIAL_ITEM,
+            units: stone_units,
+            par: stone_par,
+            stockpiled: stone_stockpiled,
+            billed: stone_billed,
+            par_exempt: false,
+        },
+    ]
+}
+
+/// Which loose drops the HAUL generator admits as colony stock, and the
+/// `&'static` def it files them under.
+///
+/// EXTRACTED (2026-08-30) from the generator's own `match`, unchanged
+/// except for the new `CRAFT_OUTPUTS` arm. It is a function now because the
+/// trade lane can only sell what a stockpile holds, and the only thing that
+/// puts a loose drop into a stockpile is this decision — so "every def the
+/// trade lane can offer is a def this admits" is an invariant BETWEEN two
+/// lanes, and an invariant nothing can execute is a comment. Inline in a
+/// match arm it was unreachable from any test: a pin for it could only have
+/// restated the constants, i.e. a pin that cannot go red.
+pub(crate) fn haul_admitted_def(def: Option<&str>) -> Option<&'static str> {
+    match def {
+        Some(d) if d == MINE_DROP_ITEM => Some(MINE_DROP_ITEM),
+        Some(d) if d == CHOP_DROP_ITEM => Some(CHOP_DROP_ITEM),
+        // FARM (row 46): harvest outputs are colony
+        // stock — hauling them to the stockpile is what
+        // closes the harvest->haul->fetch->re-sow cycle.
+        Some(d) if d == FARM_SEED_ITEM => Some(FARM_SEED_ITEM),
+        Some(d) if d == FARM_WHEAT_ITEM => Some(FARM_WHEAT_ITEM),
+        // ★ COOKED FOOD IS COLONY STOCK TOO (2026-08-21,
+        // found by a 141-game-day play session): 976 dishes
+        // were cooked and 39 were eaten, because a dish is
+        // dropped AT the station and no haul kind matched it —
+        // three curries lay untouched at one station for
+        // 114,000 ticks while the pantry read zero edible
+        // food and the colony's own death sentinel fired.
+        // Anything a colonist can EAT belongs in the pantry;
+        // the eat scan looks there first.
+        Some(d) if FOOD_DEFS.contains(&d) => FOOD_DEFS.iter().find(|f| **f == d).copied(),
+        // ★ THE TREELINE (2026-08-30): FINISHED TOOLS ARE COLONY STOCK TOO
+        // — the same defect the cooked-food arm above was added to fix, one
+        // lane over. The craft completion drops the tool AT the forge, which
+        // is not a stockpile and had no haul kind matching it, so every tool
+        // the smith ever made lay on the workshop floor forever. That was
+        // merely untidy while nothing consumed a tool; it stops being untidy
+        // the moment the trade lane can SELL one, because the claim gate
+        // reserves only from stockpiles — a surplus that never reaches the
+        // pantry is a surplus the lane cannot spend, and the fix would have
+        // minted missions nothing could fetch. GENERATOR AND CONSUMER MUST
+        // AGREE.
+        Some(d) if CRAFT_OUTPUTS.contains(&d) => {
+            CRAFT_OUTPUTS.iter().find(|t| **t == d).copied()
+        },
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod treeline_trade_tests {
+    use super::*;
+
+    /// The mountain colony of 2026-08-30, in numbers: roster 43, no trees
+    /// ever, so no wood; tools balanced by `tool_shortfall` and every def
+    /// below its own par; stone genuinely piled up.
+    const ROSTER: u32 = 43;
+    const WOOD_PAR: u32 = WOOD_PAR_PER_COLONIST * ROSTER; // 172
+    const TOOL_PAR: u32 = TOOL_PAR_PER_COLONIST * ROSTER; // 43
+    const STONE_PAR: u32 = STONE_PAR_PER_COLONIST * ROSTER; // 172
+
+    /// The treeless town, with every knob at the measured session's value
+    /// unless a test moves one.
+    fn treeless(
+        tools_stockpiled: [bool; 3],
+        tools_held: [u32; 3],
+        stone_stockpiled: bool,
+        stone_units: u32,
+        stone_billed: bool,
+    ) -> [TradeCandidate; 5] {
+        trade_candidates(
+            false, // no wood in the stockpile, ever
+            0,
+            WOOD_PAR,
+            tools_stockpiled,
+            tools_held,
+            TOOL_PAR,
+            stone_stockpiled,
+            stone_units,
+            STONE_PAR,
+            stone_billed,
+        )
+    }
+
+    /// ★ FALLBACK IS IDENTITY. A colony that HAS wood sells wood, on the
+    /// same any-stocked-unit test it used before this row — ONE log, with
+    /// the par at 172 and the colony 171 short of it, still trades.
+    ///
+    /// This is the pin that must go red if anyone ever "tidies" wood into
+    /// the strict-surplus rule the new goods use: doing that would silently
+    /// switch off the food import for every colony this project has ever
+    /// run, all of which sit below their wood par most of the time.
+    #[test]
+    fn a_colony_with_wood_behaves_exactly_as_before() {
+        let cands = trade_candidates(
+            true, // one stocked log
+            1,
+            WOOD_PAR,
+            [false; 3],
+            [0; 3],
+            TOOL_PAR,
+            false,
+            0,
+            STONE_PAR,
+            false,
+        );
+        assert_eq!(trade_offer(&cands), Some(CHOP_DROP_ITEM));
+        assert_eq!(trade_good_refusal(&cands[0]), None);
+    }
+
+    /// Wood LEADS. A town with both wood and a stone surplus sells the
+    /// wood, so the pre-existing lane is untouched wherever it was alive.
+    #[test]
+    fn wood_outranks_every_good_this_row_adds() {
+        let cands = trade_candidates(
+            true,
+            1,
+            WOOD_PAR,
+            [true; 3],
+            [TOOL_PAR + 50; 3],
+            TOOL_PAR,
+            true,
+            STONE_PAR + 84,
+            STONE_PAR,
+            false,
+        );
+        assert_eq!(trade_offer(&cands), Some(CHOP_DROP_ITEM));
+    }
+
+    /// ★ THE BUG. No wood, tools balanced below par, no stone: the lane
+    /// offers NOTHING — and says why, per good, which is the half that was
+    /// missing for a whole session.
+    #[test]
+    fn the_treeline_colony_offers_nothing_and_names_every_reason() {
+        let cands = treeless([false; 3], [27, 26, 26], false, 0, false);
+        assert_eq!(trade_offer(&cands), None);
+        for c in &cands {
+            assert!(
+                trade_good_refusal(c).is_some(),
+                "{} must name a refusal",
+                c.def
+            );
+        }
+        assert_eq!(trade_good_refusal(&cands[0]), Some("not_stockpiled"));
+    }
+
+    /// ★ THE FIX. Same treeless town, but the quarry has run: stone
+    /// strictly above the par its own consumer reads, in the stockpile,
+    /// with nothing billing it. The lane opens, and it sells STONE.
+    #[test]
+    fn surplus_stone_opens_the_lane_for_a_treeless_town() {
+        let cands = treeless([false; 3], [27, 26, 26], true, STONE_PAR + 84, false);
+        assert_eq!(trade_offer(&cands), Some(BUILD_MATERIAL_ITEM));
+    }
+
+    /// ★ NOT A FOOD FAUCET. Exactly at par is NOT surplus, and one below is
+    /// not either. Strictly above is the whole rule: selling one unit must
+    /// leave the town AT par, never under it, so a sale can never re-open
+    /// the demand that makes the town replace what it just sold.
+    #[test]
+    fn stone_at_or_below_par_is_refused_and_one_above_is_not() {
+        for units in [0, STONE_PAR - 1, STONE_PAR] {
+            let cands = treeless([false; 3], [0; 3], true, units, false);
+            assert_eq!(
+                trade_good_refusal(&cands[4]),
+                Some("at_par"),
+                "{units} stone against par {STONE_PAR} is not a surplus"
+            );
+            assert_eq!(trade_offer(&cands), None);
+        }
+        let cands = treeless([false; 3], [0; 3], true, STONE_PAR + 1, false);
+        assert_eq!(trade_offer(&cands), Some(BUILD_MATERIAL_ITEM));
+    }
+
+    /// A good the town is still USING is not surplus, however much of it
+    /// there is: a live unsupplied stone-billing job vetoes the sale.
+    #[test]
+    fn stone_a_build_is_waiting_on_is_never_sold() {
+        let cands = treeless([false; 3], [0; 3], true, STONE_PAR + 1_000, true);
+        assert_eq!(trade_good_refusal(&cands[4]), Some("billed"));
+        assert_eq!(trade_offer(&cands), None);
+    }
+
+    /// ★ A GUARD MUST REFUSE BEFORE IT SPENDS. A good that is not in a
+    /// stockpile can be counted but never RESERVED — the claim gate draws
+    /// from stockpiles and nowhere else. Minting against it would produce a
+    /// mission no colonist could ever fetch for, and the lane runs
+    /// one-at-a-time, so that mission would wedge the food import forever.
+    /// Huge surplus, zero stockpiled, still refused.
+    #[test]
+    fn an_unstockpiled_surplus_is_never_minted_against() {
+        let cands = treeless([false; 3], [TOOL_PAR + 500; 3], false, STONE_PAR + 500, false);
+        assert_eq!(trade_offer(&cands), None);
+        assert_eq!(trade_good_refusal(&cands[1]), Some("not_stockpiled"));
+        assert_eq!(trade_good_refusal(&cands[4]), Some("not_stockpiled"));
+    }
+
+    /// ★★ TWO FRAMES COMPARED AS ONE — the refutation this row was almost
+    /// built on. The WORKSHOP witness prints `tools_held` as the SUM over
+    /// all THREE `CRAFT_OUTPUTS` beside `tool_par`, which is the PER-DEF
+    /// par, so its measured `tools_held=79 tool_par=43` reads like a
+    /// 36-tool surplus and is nothing of the kind: `tool_shortfall` always
+    /// crafts the scarcest tool, so 79 tools on a roster of 43 is roughly
+    /// [27, 26, 26] and EVERY def is below its own par of 43.
+    ///
+    /// A surplus rule written against the summed number would sell tools a
+    /// town of 43 people is still short of. This pin holds the frames apart.
+    #[test]
+    fn seventy_nine_tools_against_a_per_def_par_of_forty_three_is_no_surplus() {
+        let held = [27u32, 26, 26];
+        assert_eq!(held.iter().sum::<u32>(), 79);
+        assert!(79 > TOOL_PAR, "the summed frame really does look like a surplus");
+        let cands = treeless([true; 3], held, false, 0, false);
+        assert_eq!(trade_offer(&cands), None);
+        for i in 1..=3 {
+            assert_eq!(trade_good_refusal(&cands[i]), Some("at_par"));
+        }
+        // ...and the forge agrees: it still wants to make more of them.
+        assert!(tool_shortfall(held, ROSTER).is_some());
+    }
+
+    /// A tool def that IS genuinely over its own par, stockpiled, opens the
+    /// lane — the forge's overproduction finally has somewhere to go.
+    /// Pinned beside the forge's own verdict so the two cannot disagree:
+    /// once a def is sellable, `tool_shortfall` must no longer name it.
+    #[test]
+    fn a_tool_strictly_over_its_own_par_is_sold() {
+        let held = [TOOL_PAR + 1, TOOL_PAR, TOOL_PAR];
+        let cands = treeless([true, true, true], held, false, 0, false);
+        assert_eq!(trade_offer(&cands), Some(CRAFT_OUTPUTS[0]));
+        assert_eq!(
+            tool_shortfall(held, ROSTER),
+            None,
+            "a def the lane will sell must be one the forge has stopped wanting"
+        );
+        // And after the sale the town is AT par, not below it — so the
+        // forge still does not want one, and the lane will not sell again.
+        let after = [TOOL_PAR, TOOL_PAR, TOOL_PAR];
+        assert_eq!(tool_shortfall(after, ROSTER), None);
+        let cands_after = treeless([true; 3], after, false, 0, false);
+        assert_eq!(trade_offer(&cands_after), None);
+    }
+
+    /// ★★ GENERATOR AND CONSUMER MUST AGREE. Every def the lane can offer
+    /// has to be one the HAUL generator admits, or the sale is unreachable
+    /// by construction: the claim gate reserves only from a stockpile, and
+    /// the only thing that puts a loose drop into a stockpile is a haul job.
+    ///
+    /// This is the pin for the half of the fix that lives in the haul arm.
+    /// Wood and stone were already admitted (stone because
+    /// `BUILD_MATERIAL_ITEM` and `MINE_DROP_ITEM` are the same def — assert
+    /// that, because splitting them would silently make stone unsellable);
+    /// the forge's outputs were NOT, which is why 79 tools lay on a
+    /// workshop floor. If anyone adds a fourth `CRAFT_OUTPUTS` entry without
+    /// touching the haul arm, that arm's `CRAFT_OUTPUTS.contains(&d)` still
+    /// covers it — the two sites read the SAME constant, which is the point.
+    #[test]
+    fn every_sellable_def_is_one_the_haul_lane_delivers() {
+        assert_eq!(
+            BUILD_MATERIAL_ITEM, MINE_DROP_ITEM,
+            "stone is sellable only because the haul arm admits MINE_DROP_ITEM"
+        );
+        // Asked of the LIVE decision, not of a restatement of it: delete
+        // the haul arm's `CRAFT_OUTPUTS` branch and this goes red.
+        let cands = treeless([true; 3], [0; 3], true, 0, false);
+        for c in &cands {
+            assert_eq!(
+                haul_admitted_def(Some(c.def)),
+                Some(c.def),
+                "{} is offerable but the haul generator does not admit it, so no \
+                 stockpile can ever hold one and no mission for it can be fetched",
+                c.def
+            );
+        }
+        // The other half of the same claim: this must be a FILTER, not a
+        // rubber stamp. A def nothing produces is still refused.
+        assert_eq!(haul_admitted_def(Some("common.items.armor.misc.head.hood")), None);
+        assert_eq!(haul_admitted_def(None), None);
+    }
+
+    /// ★ DETERMINISM BY CONSTRUCTION. The offer list is a fixed-size array
+    /// in one written order — wood, the three `CRAFT_OUTPUTS` in index
+    /// order, then stone. Nothing here iterates a map, so no HashMap seed
+    /// can ever decide which good a town sells.
+    #[test]
+    fn the_offer_order_is_fixed_and_map_free() {
+        let cands = treeless([true; 3], [0; 3], true, 0, false);
+        let defs: Vec<&str> = cands.iter().map(|c| c.def).collect();
+        assert_eq!(defs, vec![
+            CHOP_DROP_ITEM,
+            CRAFT_OUTPUTS[0],
+            CRAFT_OUTPUTS[1],
+            CRAFT_OUTPUTS[2],
+            BUILD_MATERIAL_ITEM,
+        ]);
+        // Same inputs, same answer, every time — including when several
+        // goods are simultaneously offerable (the tie the order settles).
+        let many = treeless(
+            [true; 3],
+            [TOOL_PAR + 9; 3],
+            true,
+            STONE_PAR + 9,
+            false,
+        );
+        for _ in 0..64 {
+            assert_eq!(trade_offer(&many), Some(CRAFT_OUTPUTS[0]));
+        }
+    }
+}
 
 fn mine_readback_diag() -> bool {
     static MINE_READBACK_DIAG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
@@ -17195,6 +17671,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // demand — the buffer the town keeps regardless of live
             // construction, so the dig loop stays renewable like the farm
             // and the grove. Seeded fixtures sit above par, honestly quiet.
+            // ★ THE TREELINE (2026-08-30): publish the demand the mine
+            // generator just computed, so the trade lane reads the par its
+            // OWN consumer reads rather than a second copy of it. See
+            // `JobBoard::stone_owed`.
+            board.stone_owed = demand;
             let stone_par =
                 STONE_PAR_PER_COLONIST as usize * colonists.count();
             if generator_enabled(GeneratorKind::Mine) && demand + stone_par > 0 {
@@ -19431,47 +19912,150 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // delivers the sold log; the completion drops the bought food at
         // the site and the standard haul pipeline carries it home.
         if tick.0 % ARBITRATION_INTERVAL as u64 == 4 {
+            let mission_live = board
+                .jobs
+                .values()
+                .any(|j| matches!(j.kind, common::bastion::JobKind::TradeMission { .. }));
+            let food_stock =
+                colony_food_stock((&pickup_items, &positions).join(), &board);
+            // ★ A GUARD MUST REFUSE BEFORE IT SPENDS — and a SCAN is spend.
+            // Building the offer list below is ten passes over the loose
+            // items and four over every inventory. The lane is idle almost
+            // all of the time (a mission is already running, or food is
+            // above par), and this work's own base commit is titled "the
+            // unload witness scanned every npc in the world to decorate a
+            // log line it usually never printed". So the build is a CLOSURE
+            // and `.then` decides whether to pay for it.
+            let witness_tick = tick.0 % (ARBITRATION_INTERVAL as u64 * 40) == 4;
+            let wants_mission = !mission_live
+                && !trade_price_book.0.is_empty()
+                && food_stock < TRADE_FOOD_PAR;
+            let build_candidates = || {
+                let roster = colonists.count() as u32;
+                // ★ THE TREELINE (2026-08-30): ONE reading, consumed by BOTH the
+                // decision and the witness. The old witness recomputed its own
+                // `wood` beside the gate's — a second producer of the gate's own
+                // question, which is exactly the shape that let ITEM 27 publish
+                // a wrong diagnosis. THE INSTRUMENT MUST ASK THE GATE'S OWN
+                // QUESTION, so now it is literally the same value.
+                let mut tools_held = [0u32; 3];
+                let mut tools_stockpiled = [false; 3];
+                for (i, def) in CRAFT_OUTPUTS.iter().enumerate() {
+                    // Same producer the FORGE's par reads (`colony_item_units`)
+                    // — a tool the town holds anywhere is a tool it has.
+                    tools_held[i] = colony_item_units(
+                        def,
+                        (&pickup_items, &positions, &uids).join(),
+                        (&inventories).join(),
+                    );
+                    // ...but only a STOCKPILED, unreserved unit is sellable:
+                    // the claim gate reserves from stockpiles and nowhere else.
+                    tools_stockpiled[i] = stockpile_has_material(
+                        def,
+                        (&pickup_items, &positions, &uids).join(),
+                        &board,
+                    );
+                }
+                trade_candidates(
+                    // WOOD: unchanged from before this row — the boolean
+                    // any-stocked-unit gate. FALLBACK IS IDENTITY.
+                    stockpile_has_material(
+                        CHOP_DROP_ITEM,
+                        (&pickup_items, &positions, &uids).join(),
+                        &board,
+                    ),
+                    stockpile_material_units(
+                        CHOP_DROP_ITEM,
+                        (&pickup_items, &positions, &uids).join(),
+                        &board,
+                    ),
+                    WOOD_PAR_PER_COLONIST * roster,
+                    tools_stockpiled,
+                    tools_held,
+                    // The par `tool_shortfall` itself compares against, PER
+                    // DEF. (The WORKSHOP witness prints `tools_held` as the SUM
+                    // over all three defs beside this same per-def par — two
+                    // frames in one line, and reading them as one is how "79
+                    // tools against a par of 43" gets mistaken for a surplus.)
+                    TOOL_PAR_PER_COLONIST * roster,
+                    stockpile_has_material(
+                        BUILD_MATERIAL_ITEM,
+                        (&pickup_items, &positions, &uids).join(),
+                        &board,
+                    ),
+                    // Same population the mine generator's own `supply` reads:
+                    // loose piles plus colonists' bags.
+                    colony_item_units(
+                        BUILD_MATERIAL_ITEM,
+                        (&pickup_items, &positions, &uids).join(),
+                        (&inventories).join(),
+                    ),
+                    // ...against the par that generator compares it to: the
+                    // standing per-capita floor PLUS what the plans still owe.
+                    STONE_PAR_PER_COLONIST * roster + board.stone_owed as u32,
+                    board.jobs.values().any(job_bills_stone_unclaimed),
+                )
+            };
+            let cands = (witness_tick || wants_mission).then(build_candidates);
+            let offer = cands.as_ref().and_then(|c| trade_offer(c));
             // Gate witness (throttled): tradefed had book=194 sites, food 8
             // < par 16, wood delivered IN-zone and fetchable — and minted=0.
             // One of the four conditions is lying; print all four so the
             // false one names itself.
-            if tick.0 % (ARBITRATION_INTERVAL as u64 * 40) == 4 {
-                let mission_live = board
-                    .jobs
-                    .values()
-                    .any(|j| matches!(j.kind, common::bastion::JobKind::TradeMission { .. }));
-                let fs = colony_food_stock((&pickup_items, &positions).join(), &board);
-                let wood = stockpile_has_material(
-                    CHOP_DROP_ITEM,
-                    (&pickup_items, &positions, &uids).join(),
-                    &board,
-                );
+            //
+            // ★ 2026-08-30: and now every GOOD names itself too. The old
+            // line printed `wood_stocked=false` and stopped, which is a
+            // true fact that explains nothing — a whole session ran on it
+            // without anyone learning the colony had no food path at all.
+            if witness_tick && let Some(cands) = &cands {
+                let refused = cands
+                    .iter()
+                    .map(|c| {
+                        format!(
+                            "{}={}({}/{})",
+                            c.def,
+                            trade_good_refusal(c).unwrap_or("OFFERABLE"),
+                            c.units,
+                            c.par,
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
                 info!(
                     book = trade_price_book.0.len(),
                     mission_live,
-                    food_stock = fs,
+                    food_stock,
                     par = TRADE_FOOD_PAR,
-                    wood_stocked = wood,
+                    offer = ?offer,
+                    stone_owed = board.stone_owed,
+                    %refused,
                     "bastion: ITEM 29 mint-gate witness"
                 );
+                // ★★ THE SIGNAL THE PLAYER NEVER GOT. Below the food par,
+                // no mission running, and NOTHING the town can sell: the
+                // lane is dead and the colony has no food path whatsoever.
+                // A refusal that prints nothing is how this hid for 2.5
+                // hours, and an `info!` among thousands of `info!`s is only
+                // marginally better — this one is a WARN and says what it
+                // means. It clears by itself the moment any good becomes
+                // offerable, so it can never outlive its own cause.
+                if food_stock < TRADE_FOOD_PAR && !mission_live && offer.is_none() {
+                    let blocker = if trade_price_book.0.is_empty() {
+                        "no_priced_site"
+                    } else {
+                        "nothing_to_sell"
+                    };
+                    tracing::warn!(
+                        food_stock,
+                        par = TRADE_FOOD_PAR,
+                        book = trade_price_book.0.len(),
+                        blocker,
+                        %refused,
+                        "bastion: ★ TRADE LANE DEAD — below the food par and holding nothing sellable; the colony has NO food path"
+                    );
+                }
             }
-        }
-        if tick.0 % ARBITRATION_INTERVAL as u64 == 4
-            && !trade_price_book.0.is_empty()
-            && !board
-                .jobs
-                .values()
-                .any(|j| matches!(j.kind, common::bastion::JobKind::TradeMission { .. }))
-        {
-            let food_stock =
-                colony_food_stock((&pickup_items, &positions).join(), &board);
-            if food_stock < TRADE_FOOD_PAR
-                && stockpile_has_material(
-                    CHOP_DROP_ITEM,
-                    (&pickup_items, &positions, &uids).join(),
-                    &board,
-                )
-            {
+            if wants_mission && let Some(sell_def) = offer {
                 // Nearest site by colony center (deterministic: stable
                 // book order breaks ties by index).
                 let center = board
@@ -19500,7 +20084,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         suspended_for: None,
                         unreachable: false,
                         progress: 0.0,
-                        required_item: Some(CHOP_DROP_ITEM),
+                        // ★ THE TREELINE (2026-08-30): the good the OFFER
+                        // chose, not wood by construction. Every consumer
+                        // downstream is already def-agnostic — the claim
+                        // gate reserves `required_item` from a stockpile,
+                        // the fetch leg steers at the reserved item, the
+                        // arrival stage consumes exactly one unit of
+                        // `required_item`, and the exchange arm produces
+                        // food from the mint-frozen ratio without ever
+                        // reading what was sold. GENERATOR AND CONSUMER
+                        // AGREE because the generator is the only thing
+                        // that changed.
+                        required_item: Some(sell_def),
                         needs_materials: false,
                         carve_attempted: false,
                         is_access: false,
@@ -19515,7 +20110,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         ?site,
                         ratio,
                         food_stock,
-                        "bastion: ITEM 29 trade mission minted (food below par, wood to sell)"
+                        sell = sell_def,
+                        "bastion: ITEM 29 trade mission minted (food below par, a surplus good to sell)"
                     );
                 }
             }
@@ -19845,29 +20441,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let mut seen_pickups = 0u32;
                 for (pickup, ipos, iuid) in (&pickup_items, &positions, &uids).join() {
                     seen_pickups += 1;
-                    let matched = match pickup.item().item_definition_id().itemdef_id() {
-                        Some(d) if d == MINE_DROP_ITEM => Some(MINE_DROP_ITEM),
-                        Some(d) if d == CHOP_DROP_ITEM => Some(CHOP_DROP_ITEM),
-                        // FARM (row 46): harvest outputs are colony
-                        // stock — hauling them to the stockpile is what
-                        // closes the harvest->haul->fetch->re-sow cycle.
-                        Some(d) if d == FARM_SEED_ITEM => Some(FARM_SEED_ITEM),
-                        Some(d) if d == FARM_WHEAT_ITEM => Some(FARM_WHEAT_ITEM),
-                        // ★ COOKED FOOD IS COLONY STOCK TOO (2026-08-21,
-                        // found by a 141-game-day play session): 976 dishes
-                        // were cooked and 39 were eaten, because a dish is
-                        // dropped AT the station and no haul kind matched it —
-                        // three curries lay untouched at one station for
-                        // 114,000 ticks while the pantry read zero edible
-                        // food and the colony's own death sentinel fired.
-                        // Anything a colonist can EAT belongs in the pantry;
-                        // the eat scan looks there first.
-                        Some(d) if FOOD_DEFS.contains(&d) => FOOD_DEFS
-                            .iter()
-                            .find(|f| **f == d)
-                            .copied(),
-                        _ => None,
-                    };
+                    let matched = haul_admitted_def(
+                        pickup.item().item_definition_id().itemdef_id(),
+                    );
                     let Some(static_def) = matched else { continue };
                     let cell = ipos.0.map(|e| e.floor() as i32);
                     // ★ THE DEADLOCK WITNESS (SEED-DEADLOCK.md).
