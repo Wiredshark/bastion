@@ -2399,6 +2399,55 @@ pub struct BastionColonist {
     /// wants to see — but the GATE reads this field.
     #[serde(default)]
     pub born_tick: Option<u64>,
+    /// ★ ROW 53 (COURTSHIP): who this colonist is married to. Set ONCE, at
+    /// the union, and never re-read by the rule that created it — see
+    /// `courtship_verdict`'s doc block for why re-evaluating a bond would
+    /// silently divorce couples as their sentiments decay.
+    ///
+    /// An `NpcId`, not a `Uid`: the npc slotmap is serialized, so this is a
+    /// durable fact that survives a restart and outlives the partner's
+    /// entity; a `Uid` is reassigned on every promotion. Same reasoning,
+    /// and the same shape, as [`Self::parent`].
+    ///
+    /// ★ WRITTEN THROUGH THE ECS COMP, NEVER HERE (THE MIRROR CLOBBER):
+    /// `colonist_record` (server/src/rtsim/tick.rs) clones the live
+    /// `comp::Colonist` wholesale into `npc.bastion_colonist` every loaded
+    /// tick, so a partner written onto the rtsim record of a LOADED
+    /// colonist is overwritten before anybody reads it. The courtship pass
+    /// writes `colonists.get_mut(entity)`, the way the bed assigner writes
+    /// `owned_bed`, and the mirror carries it here.
+    ///
+    /// serde-default: everybody alive before this row is single, which is
+    /// exactly true.
+    #[serde(default)]
+    pub partner: Option<crate::rtsim::NpcId>,
+    /// ROW 53: the intended, and the `Data.tick` the courtship began — the
+    /// state between "the town matched them" and "they share a house".
+    /// `Some` for `COURTSHIP_DAYS` game days, then the union seals it and
+    /// this clears. It is what the evening palette's COURT bucket reads, so
+    /// the courtship is VISIBLE on the plaza before it is a household fact.
+    ///
+    /// The tick is persistent and monotonic (`Data.tick`), never
+    /// `time_of_day` — which the server resets to `world.start_time` at
+    /// every boot, the defect that froze `born_day` and never aged a child
+    /// again across a restart.
+    #[serde(default)]
+    pub courting: Option<(crate::rtsim::NpcId, u64)>,
+    /// ★ ROW 53: the SECOND parent, pulled forward from the kin bar.
+    ///
+    /// [`Self::parent`] records one parent because ROW 50 had only one to
+    /// record — there were no couples. With couples there are two, and the
+    /// half that is not written is not merely missing: half-siblings
+    /// through the unrecorded parent are UNDETECTABLE, so the courtship
+    /// kin test would happily marry them. Births work and childhood is four
+    /// game days, so those siblings become adults inside one long session.
+    ///
+    /// It is added now rather than "when the kin bar lands" for one
+    /// measured reason: a `#[serde(default)]` field added later is free,
+    /// but RE-DERIVING the lineage of colonists already born is not
+    /// possible at all — nothing anywhere records who the other parent was.
+    #[serde(default)]
+    pub parent_b: Option<crate::rtsim::NpcId>,
 }
 
 /// bastion (CASE-003 belt): count of per-tick CENTER-SAFETY-NET fires — a
@@ -3425,6 +3474,16 @@ impl BastionColonist {
             parent: None,
             born_day: None,
             born_tick: None,
+            // ROW 53: nobody is generated married. Founders and settlers
+            // arrive single and the town pairs them; a child's second
+            // parent is stamped by the birth drain, which is the only
+            // place that knows it. Deliberately NOT an rng draw, for the
+            // same reason `parent` is not: any new draw here would shift
+            // every existing world's population (the founding loop shares
+            // one rng across body, species, offset and seed).
+            partner: None,
+            courting: None,
+            parent_b: None,
         }
     }
 }

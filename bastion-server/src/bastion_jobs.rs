@@ -2349,6 +2349,38 @@ pub(crate) struct HouseholdView {
 /// derived at all has at least one bed.
 pub(crate) fn household_capacity(beds: u32) -> u32 { beds.clamp(1, 6) }
 
+/// ★★ ROW 53: THE COT. How many people a house HOLDS, once a couple lives
+/// in it — capacity plus one per couple.
+///
+/// THE MEASUREMENT THAT FORCED THIS, and the defect it prevents from
+/// repeating: **every adopted house has exactly TWO beds** (measured:
+/// `adopted_beds=2` on all 80 houses of one logged town, `beds=160`). So
+/// `household_capacity(2) == 2`, and a cohabiting couple is two bed-owning
+/// members in a capacity-2 house — `family_size >= capacity` fires, and the
+/// birth gate refuses `house_full` FOREVER.
+///
+/// That is exactly the shape [`birth_verdict`]'s own doc block confesses to
+/// having caught once already: a two-adult gate that "would have shipped
+/// dead, deciding `no_family` forever, and the silence would have looked
+/// exactly like a rule correctly declining". Tightening the adult gate to
+/// two WITHOUT this would have shipped the same unreachable gate a second
+/// time — same silence, different cause.
+///
+/// `couples == 0` is the IDENTITY: `household_room(b, 0) ==
+/// household_capacity(b)` for every `b`, so a town with no couples in it —
+/// including a town with `BASTION_NO_COURTSHIP` set — behaves exactly as
+/// before, byte for byte.
+///
+/// It is a COT, not a bigger house: a 2-bed house plus a couple holds 3, so
+/// `2 >= 3` is false and the birth fires; with the infant it holds 3 of 3
+/// and refuses, until that child comes of age at [`CHILDHOOD_DAYS`], takes
+/// a trade, loses the move-out pass's childhood exemption, and is given a
+/// house of its own — freeing the cot. The whole cycle falls out of
+/// machinery that was already written.
+pub(crate) fn household_room(beds: u32, couples: u32) -> u32 {
+    household_capacity(beds).saturating_add(couples)
+}
+
 /// ROW 38 (THE POPULATION LOOP): the mandate's own equation — "ONE
 /// COLONIST PER HOUSE, and the population is DETERMINED by housing."
 /// The target is the number of derived households that actually hold a
@@ -2628,12 +2660,31 @@ pub(crate) fn coming_of_age_trade(
     parent_trade.unwrap_or(scarcest_lane)
 }
 
+/// ★ ROW 53: how many adults a household must hold before it can bear a
+/// child. THE SUCCESSOR ROW NAMED IN [`BirthVerdict`]'s doc has landed, so
+/// the gate tightens to two and `no_family` starts meaning what it says.
+///
+/// It is a FUNCTION OF COURTSHIP, not a constant, and that is the whole
+/// point: with courtship off there are no couples, so a two-adult gate is
+/// unreachable by construction and would ship dead — the exact defect ROW
+/// 50 measured before shipping one adult. Off ⇒ 1 (identity with what
+/// shipped); on ⇒ 2 (a family).
+pub(crate) fn adults_required_for_birth(courtship: bool) -> u32 {
+    if courtship { 2 } else { 1 }
+}
+
 pub(crate) fn birth_verdict(
     enabled: bool,
     drive: common::bastion::ColonyDrive,
     adults_in_house: u32,
+    adults_required: u32,
     house_beds: u32,
-    house_members: u32,
+    // ROW 53: the FAMILY, not the bed count — bed-owning members PLUS the
+    // bedless children of members. A newborn owns no bed until the next
+    // assigner sweep, so counting owners alone let one house bear a second
+    // child against the same free bed the first was still waiting for.
+    family_size: u32,
+    couples: u32,
     roster: u32,
     target_pop: u32,
     today: i64,
@@ -2649,16 +2700,463 @@ pub(crate) fn birth_verdict(
     if drive != common::bastion::ColonyDrive::Expand {
         return no("drive_not_expand");
     }
-    if adults_in_house < 1 {
+    if adults_in_house < adults_required {
         return no("no_family");
     }
-    if house_members >= household_capacity(house_beds) {
+    if family_size >= household_room(house_beds, couples) {
         return no("house_full");
     }
     if roster >= target_pop {
         return no("no_room_in_town");
     }
     BirthVerdict { fired: true, deciding: "a family has room" }
+}
+
+// ── ROW 53: COURTSHIP AND PAIRING ────────────────────────────────────────
+//
+// ★ THE ROW [`BirthVerdict`] NAMED ITSELF. Its doc block is a written
+// confession: the two-adult birth gate "would have shipped dead, deciding
+// `no_family` forever", because nothing in this town could make two adults
+// share a home, and it names its own successor — "What is actually missing
+// is COURTSHIP". This is that successor.
+//
+// ★ THE SIGNAL IS EVIDENCED, NOT ROLLED. The dominant term is the MINIMUM
+// of the two colonists' sentiments toward each other, and those sentiments
+// come from the sim's own ITEM-22 co-work observation stream: two colonists
+// both holding jobs, within 16 blocks, sampled on a tick cadence. So the
+// town marries people who have actually spent time together. `min`, not
+// `sum`: one-sided infatuation must not marry anybody.
+//
+// ★ DO NOT GATE COURTSHIP ON `ColonyDrive`. It is the cheap refusal and it
+// is the wrong one: `drive_not_expand` already dominates the birth and
+// immigration witnesses, so a drive gate here would refuse in exactly the
+// towns where the row most needs to be observed, and the fire arm's
+// reachability would be bought away for a refusal that says nothing new.
+// Marriage is not a growth policy — people pair in a hard winter too. The
+// growth policy is carried by the BIRTH gate, which is downstream of this
+// one and already reads the drive. A future reader "fixing" this by adding
+// a drive check would re-create the unreachable-gate defect this row exists
+// to undo.
+//
+// ★ AFFINITY IS CONSULTED EXACTLY ONCE, AT THE UNION. Nothing re-reads it
+// afterwards. Sentiments DECAY (rtsim/src/data/sentiment.rs), so any rule
+// that re-evaluated a formed bond would divorce couples silently, with no
+// witness, as a side effect of a decay timer. Divorce, if the game ever
+// wants it, is its own row with its own gate and its own witness.
+
+/// ROW 53: how many game days a matched pair courts before the union — the
+/// window in which the couple is VISIBLE on the plaza (the COURT bucket of
+/// the evening palette) and not yet a household fact. Two days, against the
+/// sim's own clock: a soak is 3-10 game days, so a courtship nobody ever
+/// sees end is a courtship that does not exist in this game — the same
+/// scale argument [`CHILDHOOD_DAYS`] was chosen on.
+pub(crate) const COURTSHIP_DAYS: i64 = 2;
+
+/// ROW 53: how many courtships the town may begin in one game day. ONE, the
+/// sibling of the immigration and birth latches — a town that paired its
+/// whole roster in an afternoon is a wedding queue, not a town.
+///
+/// It exists as a named constant rather than a `first()` because the
+/// matching below is a full greedy maximal matching: the cap is a knob a
+/// later row can raise without touching the order-independence argument.
+pub(crate) const COURTSHIP_PER_DAY: usize = 1;
+
+/// ROW 53: the mutual-sentiment bar a pair must clear before the town will
+/// match them. [`Sentiment::POSITIVE`](::rtsim::data::sentiment::Sentiment)
+/// — "minor positive sentiment", vanilla's own name for *these two like
+/// each other a little*, so the threshold is borrowed rather than invented.
+///
+/// REACHABILITY, checked before shipping and not after: the ITEM-22 co-work
+/// producer pushes `COWORK_DELTA = 0.01` in BOTH directions per sample and
+/// saturates at `COWORK_CAP = 0.4`, sampling every `ARBITRATION_INTERVAL *
+/// 5` ticks. Ten shared work windows clear this bar and forty saturate, so
+/// the fire arm is reachable in any town whose colonists work near each
+/// other — and unreachable in a town whose colonists never do, which is the
+/// correct answer there.
+pub(crate) const COURTSHIP_SENTIMENT_BAR: f32 = 0.1;
+
+/// ROW 53: how much a shared personality axis is worth in the affinity
+/// score. Five axes, so the whole personality term spans ±0.10 — real
+/// enough to break ties between equally-acquainted pairs, small enough that
+/// it can never outvote the sentiment evidence (which spans 0.1..0.4 above
+/// the bar).
+pub(crate) const COURTSHIP_COMPAT_WEIGHT: f32 = 0.02;
+
+/// ROW 53: the price, per block of Chebyshev distance between the two
+/// colonists' own beds, of courting somebody who lives across town. You
+/// court whom you live near — the same intuition the bed assigner's
+/// nearest-bed fix was built on, and the same unit (blocks), so a 50-block
+/// gap costs 0.1 and a next-door neighbour costs nothing.
+pub(crate) const COURTSHIP_PROXIMITY_K: f32 = 0.002;
+
+/// ROW 53: the ceiling on the daily spark. Bounded WELL below the sentiment
+/// term on purpose: chance may separate two equally-plausible pairs, and
+/// may never manufacture a couple out of two strangers.
+pub(crate) const COURTSHIP_SPARK: f32 = 0.01;
+
+/// ROW 53: the courtship domain salt. C010-C017 are taken (see
+/// server/src/rtsim/mod.rs and server/src/rtsim/tick.rs); C018 is the next
+/// free one.
+pub(crate) const COURTSHIP_SPARK_SALT: u64 = 0xBA57_C018;
+
+/// ROW 53: is courtship on? `BASTION_NO_COURTSHIP` is the identity switch —
+/// with it set the candidate list is empty, no `partner` is ever written,
+/// `couples` is 0 everywhere (so `household_room == household_capacity`),
+/// the palette's fifth weight stays 0, and the birth gate's adult
+/// requirement reverts to 1. Byte-identical to the shipped town.
+pub(crate) fn courtship_enabled() -> bool {
+    std::env::var_os("BASTION_NO_COURTSHIP").is_none()
+}
+
+/// ROW 53: the five personality AXES, as a mask, hi first then lo.
+///
+/// Deliberately a `[bool; 10]` rather than a `&Personality`: vanilla's
+/// `Personality` keeps its five values PRIVATE (common/src/rtsim.rs) and
+/// exposes only `is(PersonalityTrait)`, so a scoring function that reached
+/// for the fields could not exist and one that took the whole struct could
+/// not be pinned without constructing rtsim state. The mask is the honest
+/// seam: the caller reads the traits through the public accessor, the
+/// scorer is pure over ten bools and its entire input space is testable.
+///
+/// The pairs are the axes vanilla itself is built from — a colonist cannot
+/// be both `Open` and `Closed`, so `hi && lo` never occurs on one mask.
+pub(crate) const PERSONALITY_AXES: usize = 5;
+pub(crate) const PERSONALITY_MASK: usize = PERSONALITY_AXES * 2;
+
+/// ROW 53: shared strong traits MINUS opposed ones, over the five axes.
+/// Symmetric in its arguments by inspection (every term is), which is half
+/// of why [`pair_affinity`] can promise symmetry as a theorem.
+pub(crate) fn personality_compat(a: [bool; PERSONALITY_MASK], b: [bool; PERSONALITY_MASK]) -> i32 {
+    let mut score = 0i32;
+    for axis in 0..PERSONALITY_AXES {
+        let (hi, lo) = (axis * 2, axis * 2 + 1);
+        if (a[hi] && b[hi]) || (a[lo] && b[lo]) {
+            score += 1;
+        }
+        if (a[hi] && b[lo]) || (a[lo] && b[hi]) {
+            score -= 1;
+        }
+    }
+    score
+}
+
+/// ROW 53: read a colonist's five personality axes through vanilla's ONLY
+/// public accessor. The order is fixed here and nowhere else, and
+/// [`personality_compat`] is the only consumer.
+pub(crate) fn personality_mask(p: &common::rtsim::Personality) -> [bool; PERSONALITY_MASK] {
+    use common::rtsim::PersonalityTrait as PT;
+    [
+        p.is(PT::Open),
+        p.is(PT::Closed),
+        p.is(PT::Conscientious),
+        p.is(PT::Unconscientious),
+        p.is(PT::Extroverted),
+        p.is(PT::Introverted),
+        p.is(PT::Agreeable),
+        p.is(PT::Disagreeable),
+        p.is(PT::Stable),
+        p.is(PT::Neurotic),
+    ]
+}
+
+/// ROW 53: a free bed in the house that `host_bed` belongs to, nearest to
+/// `mover_bed` — where a junior partner would sleep if they moved in.
+///
+/// Deterministic twice over: the candidate list is position-sorted before
+/// the pick (the source is a HashMap, and an unsorted `[0]` would settle
+/// different beds on two runs of one seed while every count still matched),
+/// and the pick is `min_by_key` on the bed assigner's OWN integer cost, so
+/// two equidistant beds resolve to the (x,y,z)-lowest. Returns `None` when
+/// the host bed is not in a derived house or the house is full.
+pub(crate) fn free_bed_in_house(
+    beds: &HashMap<Vec3<i32>, common::bastion::BedSlot>,
+    bed_house: &HashMap<Vec3<i32>, usize>,
+    host_bed: Vec3<i32>,
+    mover_bed: Vec3<i32>,
+) -> Option<Vec3<i32>> {
+    let idx = bed_house.get(&host_bed).copied()?;
+    let mut free: Vec<Vec3<i32>> = beds
+        .iter()
+        .filter(|(p, s)| s.owner.is_none() && bed_house.get(*p) == Some(&idx))
+        .map(|(p, _)| *p)
+        .collect();
+    free.sort_by_key(|p| (p.x, p.y, p.z));
+    free.into_iter().min_by_key(|p| bed_assignment_cost(*p, mover_bed))
+}
+
+/// ROW 53: the day's spark for one pair, in `0.0..COURTSHIP_SPARK`.
+///
+/// A HASH, not an RNG: the determinism law forbids a wall clock and forbids
+/// a stream whose position depends on how many pairs were enumerated before
+/// it. Keyed on the uid-CANONICALISED pair and the game day, so it is
+/// symmetric by construction and re-rolls once a day rather than once a
+/// tick. `lo` and `hi` must already be ordered — [`pair_affinity`] does
+/// that, once, for every caller.
+pub(crate) fn pair_spark(lo: u64, hi: u64, day: i64) -> f32 {
+    let mut h = COURTSHIP_SPARK_SALT
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        .wrapping_add(lo.wrapping_mul(0xBF58_476D_1CE4_E5B9))
+        .wrapping_add(hi.wrapping_mul(0x94D0_49BB_1331_11EB))
+        .wrapping_add((day as u64).wrapping_mul(0xD6E8_FEB8_6659_FD93));
+    h = (h ^ (h >> 31)).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    h ^= h >> 29;
+    // 24 bits of the high word — an exact power-of-two divisor, so the
+    // quotient is representable in f32 with no rounding surprise.
+    ((h >> 40) as f32 / 16_777_216.0) * COURTSHIP_SPARK
+}
+
+/// ROW 53: how well these two would suit each other. Higher is better.
+///
+/// ★ THE CANONICALISATION IS INSIDE THE FUNCTION, so symmetry is a THEOREM
+/// rather than a discipline the callers have to keep: `pair_affinity(a, b)`
+/// and `pair_affinity(b, a)` are the same expression evaluated on the same
+/// operands, not two expressions that happen to agree. Every term below is
+/// then symmetric by construction — `min`, a symmetric compat count, a
+/// distance, and a spark keyed on the canonical pair.
+///
+/// Terms, in order of authority:
+///   * `min(sentiment(lo→hi), sentiment(hi→lo))` — DOMINANT, and `min`
+///     rather than `sum` because a sum lets one colonist's infatuation
+///     marry somebody who does not care. Sourced from the sim's own co-work
+///     observation stream, so the relationship is EVIDENCED.
+///   * personality compatibility, ±0.10 across the five axes.
+///   * `-k * chebyshev(bed_lo, bed_hi)` — you court whom you live near.
+///   * the day's spark, bounded an order of magnitude below the evidence.
+pub(crate) fn pair_affinity(
+    uid_a: u64,
+    uid_b: u64,
+    sentiment_a_to_b: f32,
+    sentiment_b_to_a: f32,
+    mask_a: [bool; PERSONALITY_MASK],
+    mask_b: [bool; PERSONALITY_MASK],
+    bed_a: Vec3<i32>,
+    bed_b: Vec3<i32>,
+    day: i64,
+) -> f32 {
+    // Canonicalise ONCE, here, on uid — the only total order both sides
+    // agree on.
+    let ((lo, hi), (s_lo, s_hi), (m_lo, m_hi), (b_lo, b_hi)) = if uid_a <= uid_b {
+        (
+            (uid_a, uid_b),
+            (sentiment_a_to_b, sentiment_b_to_a),
+            (mask_a, mask_b),
+            (bed_a, bed_b),
+        )
+    } else {
+        (
+            (uid_b, uid_a),
+            (sentiment_b_to_a, sentiment_a_to_b),
+            (mask_b, mask_a),
+            (bed_b, bed_a),
+        )
+    };
+    let mutual = s_lo.min(s_hi);
+    let compat = personality_compat(m_lo, m_hi) as f32 * COURTSHIP_COMPAT_WEIGHT;
+    let d = b_lo - b_hi;
+    let chebyshev = d.x.abs().max(d.y.abs()).max(d.z.abs()) as f32;
+    mutual + compat - COURTSHIP_PROXIMITY_K * chebyshev + pair_spark(lo, hi, day)
+}
+
+/// ROW 53: the total order the matching sorts on — best score first, then
+/// the canonical uid pair.
+///
+/// Scores are `f32` and floats have no `Ord`; a `partial_cmp` sort with a
+/// NaN in it is a silently unspecified permutation, which is precisely the
+/// determinism failure this file keeps paying for. Millionths of a point is
+/// far finer than any term above can resolve, and the uid pair is unique,
+/// so ties are IMPOSSIBLE and the order is total: the greedy match below is
+/// then order-independent over the input SET, as a theorem rather than as a
+/// property of how specs happened to join.
+pub(crate) fn pair_sort_key(score: f32, lo: u64, hi: u64) -> (i64, u64, u64) {
+    // A NaN is not a score; it sorts LAST rather than anywhere. Written as
+    // the already-negated key so the sort never has to negate `i64::MIN`,
+    // which is not representable and would wrap a NaN into FIRST place.
+    if score.is_nan() {
+        return (i64::MAX, lo, hi);
+    }
+    let millionths = (score.clamp(-1.0e9, 1.0e9) * 1_000_000.0) as i64;
+    (-millionths, lo, hi)
+}
+
+/// ROW 53: are these two too closely related to marry? Parent/child either
+/// way, or any shared parent (a half-sibling through the unrecorded second
+/// parent is exactly what [`common::bastion::BastionColonist::parent_b`]
+/// exists to make visible).
+///
+/// Pure over ids so the whole relation can be pinned, and SYMMETRIC by
+/// construction: every clause is written twice, once each way.
+pub(crate) fn is_kin(
+    a: common::rtsim::NpcId,
+    a_parents: [Option<common::rtsim::NpcId>; 2],
+    b: common::rtsim::NpcId,
+    b_parents: [Option<common::rtsim::NpcId>; 2],
+) -> bool {
+    if a == b {
+        return true;
+    }
+    if b_parents.iter().flatten().any(|p| *p == a) {
+        return true;
+    }
+    if a_parents.iter().flatten().any(|p| *p == b) {
+        return true;
+    }
+    a_parents
+        .iter()
+        .flatten()
+        .any(|pa| b_parents.iter().flatten().any(|pb| pa == pb))
+}
+
+/// ROW 53: why the town did or did not begin a courtship today. Same
+/// self-naming-refusal discipline as [`immigration_verdict`] and
+/// [`birth_verdict`], and for the same reason: a pairing rule that silently
+/// never fires and one that correctly declines look identical from outside.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct CourtshipVerdict {
+    pub fired: bool,
+    pub deciding: &'static str,
+}
+
+/// ROW 53: the whole decision, pure. Refusal order:
+/// disabled → same_day → no_candidates → all_kin → no_mutual_interest →
+/// no_home, then fire.
+///
+/// `no_home` IS CHECKED AT THE MATCH, not only at the union: a courtship
+/// that provably cannot end in a shared home should not begin, and the pair
+/// costs nothing by waiting a day. The union pass downstream checks it
+/// again against the live bed table — the bed can be claimed by the
+/// assigner during the two courting days — and on that second refusal the
+/// pair STAYS COURTING and retries, rather than being quietly unmatched.
+///
+/// Note what is NOT here: `ColonyDrive`. See this row's header block.
+pub(crate) fn courtship_verdict(
+    enabled: bool,
+    today: i64,
+    last: Option<i64>,
+    candidates: usize,
+    non_kin_pairs: usize,
+    interested_pairs: usize,
+    best_has_home: bool,
+) -> CourtshipVerdict {
+    let no = |d: &'static str| CourtshipVerdict { fired: false, deciding: d };
+    if !enabled {
+        return no("disabled");
+    }
+    if last == Some(today) {
+        return no("same_day");
+    }
+    if candidates < 2 {
+        return no("no_candidates");
+    }
+    if non_kin_pairs == 0 {
+        return no("all_kin");
+    }
+    if interested_pairs == 0 {
+        return no("no_mutual_interest");
+    }
+    if !best_has_home {
+        return no("no_home");
+    }
+    CourtshipVerdict { fired: true, deciding: "two of them have been keeping company" }
+}
+
+/// ROW 53: has this courtship run its [`COURTSHIP_DAYS`]? The childhood
+/// gate's exact shape and clock — `Data.tick`, which survives a restart,
+/// against a derived `ticks_per_game_day`, never `time_of_day` (the server
+/// resets that to `world.start_time` at every boot) and never the wall.
+pub(crate) fn courtship_is_ripe(
+    now_tick: u64,
+    began_tick: u64,
+    ticks_per_game_day: f64,
+) -> bool {
+    let Some(elapsed) = now_tick.checked_sub(began_tick) else {
+        // A tick counter that ran backwards means a rolled-back save;
+        // refuse rather than underflow, exactly as `has_come_of_age` does.
+        //
+        // ★ FALSIFICATION NOTE: `checked_sub` → `saturating_sub` is NOT
+        // observable here — both answer "not ripe" — so this line is pinned
+        // only against the NAIVE subtraction, which wraps a backwards clock
+        // into a colossal `elapsed` and seals every courtship in the town at
+        // once. That mutation does turn the pin red.
+        return false;
+    };
+    let per_day = if ticks_per_game_day.is_finite() && ticks_per_game_day > 0.0 {
+        ticks_per_game_day
+    } else {
+        54_000.0
+    };
+    (elapsed as f64) / per_day >= COURTSHIP_DAYS as f64
+}
+
+/// ROW 53: one household member, as the family test sees them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct KinMember {
+    pub uid: u64,
+    pub partner: Option<u64>,
+    pub parents: [Option<u64>; 2],
+}
+
+/// ★★ ROW 53: IS THIS SHARED HOUSE A FAMILY, OR A CROWD?
+///
+/// `shared` (households with more than one member) has conflated two
+/// completely different things since children shipped: a FAMILY living
+/// together, and the founding claim race cramming strangers into whichever
+/// house registered first. The standing criterion `shared == 0` therefore
+/// cannot survive courtship — it would read a working feature as a
+/// regression the day the first couple moves in.
+///
+/// So the number is SPLIT rather than abandoned: `shared = families +
+/// crowded`, and the criterion moves to `crowded == 0`. Before courtship
+/// exists there are no partners and no co-resident children of members, so
+/// `families == 0` and `crowded == shared` — numerically identical, which
+/// is what makes the move safe to land in the same commit.
+///
+/// A household is a family when every member past the head is either the
+/// head's partner or the child of some member. Members arrive uid-sorted
+/// (`derive_households`), so `members[0]` is the head.
+pub(crate) fn household_is_family(members: &[KinMember]) -> bool {
+    let Some(head) = members.first() else {
+        return true;
+    };
+    members.iter().skip(1).all(|m| {
+        m.partner == Some(head.uid)
+            || head.partner == Some(m.uid)
+            || m.parents
+                .iter()
+                .flatten()
+                .any(|p| members.iter().any(|o| o.uid == *p))
+    })
+}
+
+/// ★★ ROW 53: DOES THE MOVE-OUT PASS LEAVE THIS MEMBER ALONE?
+///
+/// Extracted from the sweep so a pin can call the REAL predicate — the same
+/// discipline as `farm_cell_free`, and for the same reason: a rule that
+/// lives only inside a loop is a rule no test can fail.
+///
+/// The pass exists to un-cram houses the founding claim race stuffed with
+/// strangers. A spouse is not a stranger, and membership is BED OWNERSHIP —
+/// so the instant the junior partner claims a bed in the senior's house
+/// they become that household's second member and the pass would evict them
+/// within two sweeps. The town would produce couples that dissolve daily,
+/// and the household census would read exactly as it does today: the
+/// feature would look like it had never landed. THIS MUST SHIP IN THE SAME
+/// COMMIT AS THE UNION.
+pub(crate) fn move_out_exempt_partner(mover: &KinMember, members: &[u64]) -> bool {
+    mover.partner.is_some_and(|p| members.contains(&p))
+}
+
+/// ROW 53: how many couples live in this household — pairs of members who
+/// are married to each other. Counted once per pair (only from the lower
+/// uid), so it is a count of COUPLES and not of married people; that is the
+/// number [`household_room`] adds a cot for.
+pub(crate) fn household_couples(members: &[KinMember]) -> u32 {
+    members
+        .iter()
+        .filter(|m| {
+            m.partner
+                .is_some_and(|p| p > m.uid && members.iter().any(|o| o.uid == p))
+        })
+        .count() as u32
 }
 
 /// ROW 38: why the town did or did not draw a settler today. Every
@@ -6651,7 +7149,22 @@ pub(crate) fn evening_activity(uid_raw: u64, epoch: u64) -> u8 {
 /// VISIT 2, HOME 1. The shape ROW 36b shipped, kept as the personality-
 /// neutral centre so a colonist with no strong traits behaves exactly as
 /// before (identity, not a copy).
-pub(crate) const EVENING_WEIGHTS_BASE: [u8; 4] = [4, 3, 2, 1];
+///
+/// ★ ROW 53: a FIFTH bucket, COURT, APPENDED at index 4 with weight ZERO.
+/// Appended, not inserted, so every existing index keeps its meaning; zero,
+/// so the total stays TEN and the draw's `h % total` sees the same divisor
+/// it always did. Both halves are needed for identity and only the pair of
+/// them is sufficient — a nonzero fifth weight would shift every colonist's
+/// evening in the whole town, and an inserted bucket would renumber SIT's
+/// neighbours. Pinned against a hand-written copy of the shipped four-bucket
+/// draw in `the_fifth_bucket_changes_nobody_who_is_not_courting`.
+pub(crate) const EVENING_WEIGHTS_BASE: [u8; 5] = [4, 3, 2, 1, 0];
+
+/// ROW 53: how many of the ten points a courting colonist spends on their
+/// intended. Three: enough that a watcher sees the pair together across an
+/// evening (the row's acceptance is visual), not so much that courtship
+/// replaces the rest of a life.
+pub(crate) const COURT_WEIGHT: u8 = 3;
 
 /// ★ ROW 51 (Ben, chartered at ROW 36b and quoted in its own doc: "we can
 /// later feed colonist personalities to determine their chances of
@@ -6670,7 +7183,8 @@ pub(crate) fn evening_weights(
     sociable: bool,
     introverted: bool,
     adventurous: bool,
-) -> [u8; 4] {
+    courting: bool,
+) -> [u8; 5] {
     let mut w = EVENING_WEIGHTS_BASE;
     // Sociable/extroverted: two points from sitting alone into VISIT.
     if sociable {
@@ -6695,17 +7209,36 @@ pub(crate) fn evening_weights(
         w[0] -= take;
         w[1] += take;
     }
+    // ★ ROW 53: COURTING. Applied LAST and drawing from the other buckets
+    // in a fixed order, so it lands whatever the personality above did with
+    // them — an introvert whose SIT is down to 2 still courts. Weight is
+    // MOVED, never added: the total stays ten, so the draw needs no
+    // renormalisation and a non-courting colonist's divisor is untouched.
+    if courting {
+        let mut owed = COURT_WEIGHT;
+        for i in [0usize, 1, 2, 3] {
+            if owed == 0 {
+                break;
+            }
+            let take = w[i].min(owed);
+            w[i] -= take;
+            w[4] += take;
+            owed -= take;
+        }
+    }
     w
 }
 
 /// ROW 51: the draw itself, over arbitrary weights. Same hash, same
 /// determinism law — no RNG, replay-identical for a seed — but the
 /// bucket boundaries now come from the colonist rather than a constant.
-pub(crate) fn evening_activity_weighted(uid_raw: u64, epoch: u64, w: [u8; 4]) -> u8 {
+/// ROW 53: five buckets, the fifth appended; see [`EVENING_WEIGHTS_BASE`]
+/// for why appending a ZERO keeps every existing draw byte-identical.
+pub(crate) fn evening_activity_weighted(uid_raw: u64, epoch: u64, w: [u8; 5]) -> u8 {
     let h = uid_raw
         .wrapping_mul(0x9E37_79B9_7F4A_7C15)
         .wrapping_add(epoch.wrapping_mul(0xBF58_476D_1CE4_E5B9));
-    let total = u64::from(w[0]) + u64::from(w[1]) + u64::from(w[2]) + u64::from(w[3]);
+    let total: u64 = w.iter().map(|x| u64::from(*x)).sum();
     // A zeroed table would divide by zero; fall back to the base shape
     // rather than to a constant activity (fallback = identity, not a copy).
     if total == 0 {
@@ -6720,6 +7253,81 @@ pub(crate) fn evening_activity_weighted(uid_raw: u64, epoch: u64, w: [u8; 4]) ->
         roll -= weight;
     }
     3
+}
+
+/// ROW 53: the eight cells immediately around a bench. Named once, here,
+/// because THREE consumers now share it (VISIT's seat, COURT's seat, and
+/// the seat-collision pin) and a fourth hand-written copy is exactly how
+/// this palette earned its collision history.
+pub(crate) const BENCH_AROUND: [(i32, i32); 8] = [
+    (1, 0),
+    (0, 1),
+    (-1, 0),
+    (0, -1),
+    (1, 1),
+    (-1, 1),
+    (1, -1),
+    (-1, -1),
+];
+
+/// ★ ROW 53: where the junior of a courting pair sits — one of the eight
+/// cells AROUND the senior's own bench. VISIT's shape, aimed at a NAMED
+/// person instead of at `rank ^ 1`.
+///
+/// ★ AND IT REFUSES TO SIT IN ANYBODY'S CHAIR, WHICH VISIT DOES NOT. The
+/// gathering ring's benches are only TWO cells apart (see
+/// [`gathering_spot`]'s `RING`), so the eight-cell neighbourhood of one
+/// bench routinely CONTAINS another bench — measured, `gathering_spot(22) +
+/// (-1,-1) == gathering_spot(8)` EXACTLY. A blind `AROUND[rank % 8]` (which
+/// is precisely what VISIT does) therefore seats a colonist in a
+/// neighbour's chair for about a quarter of all ranks: the ROW 36f defect,
+/// alive in the shipped VISIT arm and re-shipped here if this were copied
+/// literally.
+///
+/// So the offset is CHOSEN, not indexed. The occupied set is everything the
+/// palette can put on the ground near the plaza — every bench and every
+/// VISIT seat of the colony's `ranks` ranks — and the seats are then dealt
+/// out in rank order, each senior taking the first of its own eight that is
+/// still free, rotating from its own rank so different couples spread to
+/// different sides of their benches.
+///
+/// ★ THE DEAL IS OVER RANKS, NOT OVER COUPLES, deliberately: a seat that
+/// depended on WHICH ranks happen to be courting today would move whenever
+/// a neighbour got engaged. It is a pure function of `(anchor,
+/// senior_within, ranks)` and is stable for the life of a colony size.
+///
+/// Verified exhaustively (see `every_evening_seat_is_its_own_cell`) for
+/// colonies of 8..120: no court seat is ever a bench, a VISIT seat, a
+/// STROLL seat, or another court seat, and every one is Chebyshev-1 from
+/// its own senior's bench. The exhaustion fallback has never been reached
+/// at any of those sizes; it exists so the loop terminates, and it returns
+/// what an unguarded version would have returned — identity, not a second
+/// behaviour.
+pub fn court_seat(anchor: Vec3<i32>, senior_within: usize, ranks: usize) -> Vec3<i32> {
+    let mut taken: HashSet<Vec3<i32>> = HashSet::new();
+    for r in 0..ranks {
+        taken.insert(gathering_spot(anchor, r));
+        let bench = gathering_spot(anchor, r ^ 1);
+        let (dx, dy) = BENCH_AROUND[r % BENCH_AROUND.len()];
+        taken.insert(bench + Vec3::new(dx, dy, 0));
+    }
+    let deal = |s: usize, taken: &HashSet<Vec3<i32>>| -> Vec3<i32> {
+        let bench = gathering_spot(anchor, s);
+        for i in 0..BENCH_AROUND.len() {
+            let (dx, dy) = BENCH_AROUND[(s + i) % BENCH_AROUND.len()];
+            let c = bench + Vec3::new(dx, dy, 0);
+            if !taken.contains(&c) {
+                return c;
+            }
+        }
+        let (dx, dy) = BENCH_AROUND[s % BENCH_AROUND.len()];
+        bench + Vec3::new(dx, dy, 0)
+    };
+    for s in 0..senior_within {
+        let c = deal(s, &taken);
+        taken.insert(c);
+    }
+    deal(senior_within, &taken)
 }
 
 /// bastion (ITEM 11): recreation breaks are OFF unless asked for.
@@ -9719,6 +10327,19 @@ pub struct JobBoard {
     /// game day, the parent's uid). Drained by the rtsim tick, which alone
     /// may take `data_mut()`; the producer makes every choice.
     pub pending_births: Vec<(Vec3<i32>, i64, common::uid::Uid)>,
+    /// ROW 53: the last game-day a courtship BEGAN — the once-per-day
+    /// latch, sibling of `birth_day` and `immigration_day` in every
+    /// respect. The union that follows it is not latched: it happens
+    /// exactly `COURTSHIP_DAYS` after its own beginning, so its cadence is
+    /// already one-per-day by construction.
+    pub courtship_day: Option<i64>,
+    /// ROW 53: the last game-day the courtship witness printed. The daily
+    /// block sits inside a sweep that runs on the arbitration cadence
+    /// (~3,600 times a game day), and the ROW 50 fix that hoisted the
+    /// growth witness onto `growth_logged_day` exists because the ONE line
+    /// carrying a row's acceptance signal must not be buried under
+    /// thousands of copies of itself.
+    pub courtship_logged_day: Option<i64>,
     /// ROW 33 (watch coverage): the last eight alarm-cry positions —
     /// the town's own record of where danger arrives; the approach
     /// post derives from their centroid.
@@ -19898,6 +20519,85 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     "bastion: B7-2 beds assigned to their sleepers"
                 );
             }
+            // ── ROW 53: THE TOWN'S KIN AND MARRIAGE INDEX ─────────────
+            // Built ONCE per sweep, from the ECS comps — which is the
+            // authority, not the rtsim mirror (`colonist_record` clones the
+            // comp into `npc.bastion_colonist` every loaded tick, so the
+            // record is a copy of this and reading it instead would be two
+            // frames compared as one).
+            //
+            // Three consumers share it and none may re-derive its own copy:
+            // the move-out pass's PARTNER EXEMPTION, the household census's
+            // families/crowded split, and the birth gate's family size and
+            // couple count.
+            //
+            // `partner` and the parents are `NpcId`s (durable); households,
+            // beds and the move-out pass all speak `Uid` (per-promotion).
+            // The translation happens HERE, once, rather than at three call
+            // sites that could each get it subtly different.
+            //
+            // ★ A KNOWN FRAME LIMIT, stated rather than hidden: NpcId → Uid
+            // is only knowable through the ECS, because a Uid is assigned at
+            // promotion and means nothing for an unloaded npc — there is no
+            // persistent side to read. Household MEMBERSHIP is persistent
+            // (bed ownership), so a household can hold a member the ECS
+            // cannot resolve, and that member's marriage will read as absent
+            // until they load. Every consequence is CONSERVATIVE and
+            // self-correcting: the house reads `crowded` rather than
+            // `families`, and its couple earns no cot, so the birth gate
+            // refuses `house_full` for as long as half a couple is out of
+            // the world. It cannot produce a wrong marriage, only a
+            // temporarily invisible one.
+            let (kin_by_uid, bedless_kids_by_parent) = {
+                let mut npc_uid: HashMap<common::rtsim::NpcId, common::uid::Uid> = HashMap::new();
+                for (_, u, re) in (&colonists, &uids, &rtsim_entities).join() {
+                    npc_uid.insert(*re, *u);
+                }
+                let mut kin: HashMap<common::uid::Uid, KinMember> = HashMap::new();
+                // A child with no bed of its own is not a household MEMBER
+                // (membership is bed ownership) but it IS a mouth in the
+                // house, and the birth gate must count it or a family bears
+                // a second child against the bed the first is still waiting
+                // for. Attributed to ONE parent — the first that resolves —
+                // so a child of two co-resident parents is counted once.
+                let mut bedless: HashMap<common::uid::Uid, u32> = HashMap::new();
+                for (c, u, _) in (&colonists, &uids, &rtsim_entities).join() {
+                    let parents = [
+                        c.0.parent.and_then(|p| npc_uid.get(&p).map(|u| u.0.get())),
+                        c.0.parent_b.and_then(|p| npc_uid.get(&p).map(|u| u.0.get())),
+                    ];
+                    kin.insert(*u, KinMember {
+                        uid: u.0.get(),
+                        partner: c.0.partner.and_then(|p| npc_uid.get(&p).map(|u| u.0.get())),
+                        parents,
+                    });
+                    if c.0.owned_bed.is_none() && c.0.work_priorities.is_all_zero() {
+                        if let Some(p) = c
+                            .0
+                            .parent
+                            .and_then(|p| npc_uid.get(&p).copied())
+                            .or_else(|| c.0.parent_b.and_then(|p| npc_uid.get(&p).copied()))
+                        {
+                            *bedless.entry(p).or_insert(0) += 1;
+                        }
+                    }
+                }
+                (kin, bedless)
+            };
+            // ROW 53: the household's members, as the kin tests see them.
+            // `derive_households` uid-sorts `members`, so `[0]` is the head.
+            let kin_members = |members: &[common::uid::Uid]| -> Vec<KinMember> {
+                members
+                    .iter()
+                    .map(|u| {
+                        kin_by_uid.get(u).copied().unwrap_or(KinMember {
+                            uid: u.0.get(),
+                            partner: None,
+                            parents: [None, None],
+                        })
+                    })
+                    .collect()
+            };
             // ★ MOVE-OUT v1.1 (measured 7 minutes into the city-pass soak:
             // shared=15 of occupied=28 — the founding claim wave races
             // terrain loading, so the first-registered houses get crammed
@@ -19955,11 +20655,41 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .map(|(_, u)| *u)
                         .collect();
                 'houses: for h in households.iter().filter(|h| h.members.len() > 1) {
+                    // ROW 53: this household's members as raw uids, built
+                    // once per house for the partner exemption below.
+                    let member_uids: Vec<u64> =
+                        h.members.iter().map(|u| u.0.get()).collect();
                     for mover in h.members.iter().skip(1) {
                         if moves >= 2 || vacant_free.is_empty() {
                             break 'houses;
                         }
                         if children_here.contains(mover) {
+                            continue;
+                        }
+                        // ★★ ROW 53: A SPOUSE DOES NOT MOVE OUT — and this
+                        // exemption MUST land in the same commit as the
+                        // union that creates spouses. Membership is bed
+                        // ownership, so the moment the junior partner
+                        // claims a bed in the senior's house they become
+                        // that household's second member, and this pass —
+                        // whose whole job is to un-cram houses — would
+                        // evict them within two sweeps. The town would
+                        // produce couples that dissolve daily, and the
+                        // household census would read exactly as it does
+                        // today, which is to say the feature would look
+                        // like it had never landed.
+                        //
+                        // Same shape as the childhood exemption above and
+                        // for the same reason: the rule that un-crowds
+                        // strangers must not un-crowd a family. Unlike
+                        // childhood, this one does NOT end on its own —
+                        // marriage is permanent in this row (see the
+                        // AFFINITY-CONSULTED-ONCE note on
+                        // `courtship_verdict`).
+                        if kin_by_uid
+                            .get(mover)
+                            .is_some_and(|k| move_out_exempt_partner(k, &member_uids))
+                        {
                             continue;
                         }
                         let Some(&ent) = uid_entity.get(mover) else { continue };
@@ -20013,6 +20743,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let vacant =
                     households.iter().filter(|h| h.members.is_empty() && h.beds > 0).count();
                 let shared = households.iter().filter(|h| h.members.len() > 1).count();
+                // ★★ ROW 53: SPLIT THE NUMBER THAT WOULD FALSELY REGRESS.
+                // `shared` has conflated a FAMILY with the founding claim
+                // race cramming strangers into the first-registered house
+                // ever since children shipped, and the standing criterion
+                // `shared == 0` would read the first couple moving in as a
+                // regression. `shared = families + crowded`; the criterion
+                // moves to `crowded == 0`, which is NUMERICALLY IDENTICAL
+                // before courtship exists (no partners and no co-resident
+                // children of members ⇒ `families == 0`).
+                let families = households
+                    .iter()
+                    .filter(|h| h.members.len() > 1 && household_is_family(&kin_members(&h.members)))
+                    .count();
+                let crowded = shared - families;
                 let heads: u32 = households.iter().filter(|h| !h.members.is_empty()).count() as u32;
                 // ── ROW 38: THE POPULATION LOOP ────────────────────────
                 // "ONE COLONIST PER HOUSE, and the population is DETERMINED
@@ -20147,50 +20891,118 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // childhood is exactly "work_priorities all zero" (the
                     // single gate at the claim loop's priority read), so
                     // the test is the same fact read from the same field.
-                    let birth_house = {
+                    //
+                    // ★ ROW 53: the gate the ROW 50 doc block promised —
+                    // "when a pair can move in together, this gate tightens
+                    // to two and `no_family` starts meaning what it says".
+                    // It tightens only while courtship is ON, because a
+                    // two-adult gate in a town with no courtship is
+                    // unreachable BY CONSTRUCTION, which is the exact
+                    // defect that doc block was written about.
+                    let (birth_house, birth_deciding) = {
                         let child_uids: std::collections::HashSet<common::uid::Uid> =
                             (&colonists, &uids)
                                 .join()
                                 .filter(|(c, _)| c.0.work_priorities.is_all_zero())
                                 .map(|(_, u)| *u)
                                 .collect();
-                        households
-                            .iter()
-                            .enumerate()
-                            .find(|(i, h)| {
-                                let adults = h
-                                    .members
+                        let adults_required =
+                            adults_required_for_birth(courtship_enabled());
+                        // ★ THE REFUSAL MUST BE OBSERVABLE. `birth_verdict`
+                        // had SIX self-naming refusal arms and a witness
+                        // that fired only on success, so not one of them
+                        // had ever been read off a live run — `no_family`
+                        // was diagnosed by INFERENCE from a household
+                        // census, which is how a gate ships dead. The
+                        // sibling housing-growth witness has printed
+                        // `deciding` either way since ROW 38; this now
+                        // matches it. The reported term is the FURTHEST the
+                        // town got: households are scanned in derive order
+                        // and the arm that a house failed on is kept only
+                        // if no later house got further, so the witness
+                        // names the real blocker rather than whatever the
+                        // first house happened to say.
+                        const BIRTH_ARMS: [&str; 7] = [
+                            "disabled",
+                            "same_day",
+                            "drive_not_expand",
+                            "no_family",
+                            "house_full",
+                            "no_room_in_town",
+                            "a family has room",
+                        ];
+                        let arm_rank = |d: &str| {
+                            BIRTH_ARMS.iter().position(|a| *a == d).unwrap_or(0)
+                        };
+                        let mut best_deciding = "no_household";
+                        let mut best_rank = 0usize;
+                        let mut chosen: Option<(usize, common::uid::Uid, Vec3<i32>)> = None;
+                        for (i, h) in households.iter().enumerate() {
+                            let adults = h
+                                .members
+                                .iter()
+                                .filter(|u| !child_uids.contains(u))
+                                .count() as u32;
+                            let km = kin_members(&h.members);
+                            // The FAMILY, not the bed count: owners plus
+                            // the bedless children of owners.
+                            let family_size = occupancy.get(i).copied().unwrap_or(0)
+                                + h.members
                                     .iter()
-                                    .filter(|u| !child_uids.contains(u))
-                                    .count() as u32;
-                                birth_verdict(
-                                    std::env::var_os("BASTION_NO_BIRTHS").is_none(),
-                                    board.colony_drive.0,
-                                    adults,
-                                    h.beds,
-                                    occupancy.get(*i).copied().unwrap_or(0),
-                                    roster,
-                                    target_pop,
-                                    today,
-                                    board.birth_day,
-                                )
-                                .fired
-                            })
-                            // The parent is the first ADULT in the house,
-                            // not `members[0]`. Uid order usually makes
-                            // those the same person — a child is born
-                            // later and takes a higher uid — but "usually"
-                            // is not a guarantee, and a child recorded as
-                            // its sibling's parent would corrupt lineage
-                            // permanently, in a field nothing ever
-                            // rewrites.
-                            .and_then(|(i, h)| {
-                                h.members
-                                    .iter()
-                                    .find(|u| !child_uids.contains(u))
-                                    .map(|u| (i, *u, h.min))
-                            })
+                                    .map(|u| {
+                                        bedless_kids_by_parent.get(u).copied().unwrap_or(0)
+                                    })
+                                    .sum::<u32>();
+                            let v = birth_verdict(
+                                std::env::var_os("BASTION_NO_BIRTHS").is_none(),
+                                board.colony_drive.0,
+                                adults,
+                                adults_required,
+                                h.beds,
+                                family_size,
+                                household_couples(&km),
+                                roster,
+                                target_pop,
+                                today,
+                                board.birth_day,
+                            );
+                            let r = arm_rank(v.deciding);
+                            if r >= best_rank {
+                                best_rank = r;
+                                best_deciding = v.deciding;
+                            }
+                            if v.fired {
+                                // The parent is the first ADULT in the
+                                // house, not `members[0]`. Uid order
+                                // usually makes those the same person — a
+                                // child is born later and takes a higher
+                                // uid — but "usually" is not a guarantee,
+                                // and a child recorded as its sibling's
+                                // parent would corrupt lineage permanently,
+                                // in a field nothing ever rewrites.
+                                if let Some(u) =
+                                    h.members.iter().find(|u| !child_uids.contains(u))
+                                {
+                                    chosen = Some((i, *u, h.min));
+                                    break;
+                                }
+                            }
+                        }
+                        (chosen, best_deciding)
                     };
+                    if day_changed {
+                        info!(
+                            fired = birth_house.is_some(),
+                            deciding = birth_deciding,
+                            houses = households.len(),
+                            adults_required = adults_required_for_birth(courtship_enabled()),
+                            roster,
+                            target_pop,
+                            drive = ?board.colony_drive.0,
+                            day = today,
+                            "bastion: BIRTHS — whether the town made anybody today, and what stopped it"
+                        );
+                    }
                     if let Some((_, parent, house_min)) = birth_house {
                         board.birth_day = Some(today);
                         // The child is queued at the family's own house
@@ -20222,6 +21034,400 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             "bastion: HOUSING GROWTH — the town's population is what its houses allow"
                         );
                     }
+                    // ── ROW 53: THE COURTING DAY ───────────────────────
+                    // Beside immigration and births, on the same daily
+                    // clock and downstream of the same `derive_households`
+                    // — the three of them are one question ("who lives with
+                    // whom, and where do new people come from") and the
+                    // town should answer all three in one place.
+                    //
+                    // LAST in the block, deliberately: a union rewrites bed
+                    // ownership, which would make `households`/`occupancy`
+                    // stale for anything below it. The birth gate sees the
+                    // new arrangement on the next sweep, which is the same
+                    // one-sweep latency every other consumer of this view
+                    // already has.
+                    'courtship: {
+                        let courtship_on = courtship_enabled();
+                        let now_tick = rtsim.rt_state().data().tick;
+                        // The SAME derived clock the childhood gate uses:
+                        // a persistent numerator (`Data.tick`) needs a
+                        // persistent denominator, so the nominal SIM_TPS
+                        // and not the measured frame delta.
+                        let tpgd = ticks_per_game_day(
+                            1.0 / crate::SIM_TPS as f64,
+                            server_constants.day_cycle_coefficient,
+                        );
+
+                        // ── (a) THE UNION: a courtship that has run its
+                        // days comes home. Collected uid-sorted and paired
+                        // only from the LOWER uid, so each couple is
+                        // considered exactly once and never in an order
+                        // specs chose.
+                        let mut courting_now: Vec<(
+                            u64,
+                            specs::Entity,
+                            common::rtsim::NpcId,
+                            common::rtsim::NpcId,
+                            u64,
+                        )> = (&entities, &colonists, &uids, &rtsim_entities)
+                            .join()
+                            .filter_map(|(e, c, u, re)| {
+                                c.0.courting.map(|(p, t)| (u.0.get(), e, *re, p, t))
+                            })
+                            .collect();
+                        courting_now.sort_by_key(|x| x.0);
+                        // A pair whose other half is unloaded simply does
+                        // not ripen this sweep: both sides are written
+                        // together and must be moved together, and the
+                        // courtship is durable state, so waiting costs
+                        // nothing and guessing would cost a household.
+                        let mut ripe: Vec<(usize, usize)> = Vec::new();
+                        // Carried out to the once-a-day witness rather than
+                        // logged here: this pass runs on the arbitration
+                        // cadence (~3,600 times a game day), and a stalled
+                        // couple would print that many identical lines.
+                        let mut stalled: Option<(u64, u64)> = None;
+                        for i in 0..courting_now.len() {
+                            for j in (i + 1)..courting_now.len() {
+                                let (a, b) = (&courting_now[i], &courting_now[j]);
+                                // Both sides must name each other: a
+                                // one-sided `courting` is a half-applied
+                                // write, and sealing on it would marry
+                                // somebody who never agreed.
+                                if a.3 != b.2 || b.3 != a.2 {
+                                    continue;
+                                }
+                                if courtship_is_ripe(now_tick, a.4.max(b.4), tpgd) {
+                                    ripe.push((i, j));
+                                }
+                            }
+                        }
+                        for (i, j) in ripe {
+                            // Senior = lower uid (courting_now is
+                            // uid-sorted, so `i` is the senior).
+                            let (senior, junior) = (&courting_now[i], &courting_now[j]);
+                            let senior_bed =
+                                colonists.get(senior.1).and_then(|c| c.0.owned_bed);
+                            let junior_bed =
+                                colonists.get(junior.1).and_then(|c| c.0.owned_bed);
+                            let (Some(sb), Some(jb)) = (senior_bed, junior_bed) else {
+                                continue;
+                            };
+                            // ★ THE JUNIOR MOVES IN. The move-out pass's
+                            // write shape, inverted: there a sharer leaves
+                            // a crowded house for an empty one, here a
+                            // partner leaves their own house for a shared
+                            // one. Both sides of ownership are written
+                            // together — `BedSlot.owner` (what the sleep
+                            // COMPLETION reads) and `Colonist.owned_bed`
+                            // (what the sleep TARGETING reads) — because
+                            // writing only one is the bug class this file's
+                            // bed assigner has a whole doc block about.
+                            let (mover, host, target) = match free_bed_in_house(
+                                &board.beds, &bed_house, sb, jb,
+                            ) {
+                                Some(t) => (junior, senior, Some(t)),
+                                // Else the reverse: the senior moves in
+                                // with the junior. A refusal that only ever
+                                // tried one direction would refuse half the
+                                // couples the town could actually house.
+                                None => match free_bed_in_house(
+                                    &board.beds, &bed_house, jb, sb,
+                                ) {
+                                    Some(t) => (senior, junior, Some(t)),
+                                    None => (junior, senior, None),
+                                },
+                            };
+                            let Some(new_bed) = target else {
+                                // ★ AND THEY STAY COURTING. The bed the
+                                // match reserved in principle can be
+                                // claimed by the assigner during the two
+                                // courting days; the couple is not
+                                // unmatched for it — they wait and this
+                                // pass retries tomorrow. A refusal that
+                                // dissolved the courtship would make the
+                                // town produce couples that evaporate.
+                                stalled = Some((senior.0, junior.0));
+                                continue;
+                            };
+                            let old_bed =
+                                colonists.get(mover.1).and_then(|c| c.0.owned_bed);
+                            if let Some(old) = old_bed {
+                                if let Some(slot) = board.beds.get_mut(&old) {
+                                    slot.owner = None;
+                                }
+                                // Both sides of the move, in the same view
+                                // the assigner above mutates as it goes: the
+                                // vacated house loses an occupant as the
+                                // shared one gains it, or a later reader
+                                // sees one person living in two places.
+                                if let Some(&oi) = bed_house.get(&old) {
+                                    if let Some(n) = occupancy.get_mut(oi) {
+                                        *n = n.saturating_sub(1);
+                                    }
+                                }
+                            }
+                            let mover_uid = uids.get(mover.1).copied();
+                            if let (Some(slot), Some(mu)) =
+                                (board.beds.get_mut(&new_bed), mover_uid)
+                            {
+                                slot.owner = Some(mu);
+                            }
+                            if let Some(&hi) = bed_house.get(&new_bed) {
+                                if let Some(n) = occupancy.get_mut(hi) {
+                                    *n += 1;
+                                }
+                            }
+                            // ★★ WRITTEN THROUGH THE ECS COMP, NOT THE
+                            // RTSIM RECORD. `colonist_record` clones this
+                            // comp into `npc.bastion_colonist` every loaded
+                            // tick, so a partner written on the record
+                            // would be overwritten before anybody read it —
+                            // invisible in a fixture and fatal in a soak.
+                            if let Some(mut c) = colonists.get_mut(mover.1) {
+                                c.0.owned_bed = Some(new_bed);
+                            }
+                            for (side, other) in [(senior, junior), (junior, senior)] {
+                                if let Some(mut c) = colonists.get_mut(side.1) {
+                                    c.0.partner = Some(other.2);
+                                    c.0.courting = None;
+                                }
+                            }
+                            info!(
+                                senior = senior.0,
+                                junior = junior.0,
+                                mover = mover.0,
+                                host = host.0,
+                                ?new_bed,
+                                day = today,
+                                "bastion: ★ A COUPLE MOVES IN — the town has households, not \
+                                 just residents"
+                            );
+                        }
+
+                        // ── (b) THE MATCH.
+                        //
+                        // ★ THE ENUMERATION RUNS AT MOST ONCE PER GAME DAY.
+                        // This block sits inside a sweep that runs on the
+                        // arbitration cadence, and the match is O(n²) pairs
+                        // × a sentiment lookup each — running it 3,600 times
+                        // a game day would put the courtship row on the
+                        // tick-cost ring for no gain, since the answer
+                        // cannot change until tomorrow.
+                        //
+                        // The `same_day` short-circuit is kept LIVE rather
+                        // than folded into the day gate: after a firing it
+                        // is what the real function really returns on the
+                        // real inputs, every sweep, so the arm is reachable
+                        // in the live population and not merely in a pin.
+                        let decided_today = board.courtship_day == Some(today);
+                        let first_pass_today = board.courtship_logged_day != Some(today);
+                        if !decided_today && !first_pass_today {
+                            // Today's answer is already decided and already
+                            // witnessed. The union pass above still runs on
+                            // every sweep — a bed freed in the meantime must
+                            // be picked up the same day — but nothing below
+                            // can change until the day does.
+                            break 'courtship;
+                        }
+                        struct Cand {
+                            uid: u64,
+                            ent: specs::Entity,
+                            npc: common::rtsim::NpcId,
+                            bed: Vec3<i32>,
+                            mask: [bool; PERSONALITY_MASK],
+                            parents: [Option<common::rtsim::NpcId>; 2],
+                        }
+                        let rt = rtsim.rt_state();
+                        let data = rt.data();
+                        let mut cands: Vec<Cand> = Vec::new();
+                        if courtship_on && !decided_today {
+                            for (e, c, u, re) in
+                                (&entities, &colonists, &uids, &rtsim_entities).join()
+                            {
+                                // Adult (childhood IS an all-zero work
+                                // profile — the same field, read the same
+                                // way, as the labour and move-out gates),
+                                // unattached, and with a bed of their own:
+                                // a colonist with nowhere to bring anybody
+                                // cannot be half of a household.
+                                if c.0.work_priorities.is_all_zero()
+                                    || c.0.partner.is_some()
+                                    || c.0.courting.is_some()
+                                {
+                                    continue;
+                                }
+                                let Some(bed) = c.0.owned_bed else { continue };
+                                let Some(npc) = data.npcs.get(*re) else { continue };
+                                if npc.is_dead() {
+                                    continue;
+                                }
+                                cands.push(Cand {
+                                    uid: u.0.get(),
+                                    ent: e,
+                                    npc: *re,
+                                    bed,
+                                    mask: personality_mask(&npc.personality),
+                                    parents: [c.0.parent, c.0.parent_b],
+                                });
+                            }
+                        }
+                        // ★ Sort by uid: pair enumeration (and therefore
+                        // witness order) must not inherit specs'
+                        // unspecified join order. The co-work sentiment
+                        // producer above carries this comment verbatim, and
+                        // for the same reason — but here the stake is
+                        // higher: iteration order would be CHOOSING A
+                        // SPOUSE. This list is built from a specs join and
+                        // never from `board.beds` or any other HashMap.
+                        cands.sort_by_key(|c| c.uid);
+
+                        let sentiment_between = |from: common::rtsim::NpcId,
+                                                 to: common::rtsim::NpcId|
+                         -> f32 {
+                            data.npcs
+                                .get(from)
+                                .and_then(|n| {
+                                    n.sentiments
+                                        .iter_held()
+                                        .find(|(t, _)| {
+                                            *t == ::rtsim::data::sentiment::Target::Npc(to)
+                                        })
+                                        .map(|(_, v)| v)
+                                })
+                                .unwrap_or(0.0)
+                        };
+
+                        let mut non_kin_pairs = 0usize;
+                        // (sort key, i, j, score)
+                        let mut interested: Vec<((i64, u64, u64), usize, usize, f32)> =
+                            Vec::new();
+                        for i in 0..cands.len() {
+                            for j in (i + 1)..cands.len() {
+                                let (a, b) = (&cands[i], &cands[j]);
+                                if is_kin(a.npc, a.parents, b.npc, b.parents) {
+                                    continue;
+                                }
+                                non_kin_pairs += 1;
+                                let s_ab = sentiment_between(a.npc, b.npc);
+                                let s_ba = sentiment_between(b.npc, a.npc);
+                                // ★ THE EVIDENCE GATE. The affinity below
+                                // RANKS; this ADMITS. `min`, never a sum:
+                                // one-sided infatuation must not marry
+                                // anybody, and without this the ±0.10
+                                // personality term could by itself
+                                // manufacture a couple out of two people
+                                // who have never met.
+                                if s_ab.min(s_ba) < COURTSHIP_SENTIMENT_BAR {
+                                    continue;
+                                }
+                                let score = pair_affinity(
+                                    a.uid, b.uid, s_ab, s_ba, a.mask, b.mask, a.bed,
+                                    b.bed, today,
+                                );
+                                let (lo, hi) = (a.uid.min(b.uid), a.uid.max(b.uid));
+                                interested.push((
+                                    pair_sort_key(score, lo, hi),
+                                    i,
+                                    j,
+                                    score,
+                                ));
+                            }
+                        }
+                        // A TOTAL order (score, then the canonical uid
+                        // pair, which is unique), so ties are impossible
+                        // and the greedy match below is order-independent
+                        // over the input SET as a theorem.
+                        interested.sort_by_key(|(k, ..)| *k);
+                        let mut taken = vec![false; cands.len()];
+                        let mut unions: Vec<(usize, usize, f32)> = Vec::new();
+                        for (_, i, j, score) in &interested {
+                            if taken[*i] || taken[*j] {
+                                continue;
+                            }
+                            taken[*i] = true;
+                            taken[*j] = true;
+                            unions.push((*i, *j, *score));
+                            if unions.len() >= COURTSHIP_PER_DAY {
+                                break;
+                            }
+                        }
+                        // Would the winning pair have anywhere to live? A
+                        // courtship that provably cannot end in a shared
+                        // home should not begin.
+                        let best_home = unions.first().and_then(|(i, j, _)| {
+                            let (a, b) = (&cands[*i], &cands[*j]);
+                            free_bed_in_house(&board.beds, &bed_house, a.bed, b.bed)
+                                .or_else(|| {
+                                    free_bed_in_house(
+                                        &board.beds,
+                                        &bed_house,
+                                        b.bed,
+                                        a.bed,
+                                    )
+                                })
+                        });
+                        let cverdict = courtship_verdict(
+                            courtship_on,
+                            today,
+                            board.courtship_day,
+                            cands.len(),
+                            non_kin_pairs,
+                            interested.len(),
+                            best_home.is_some(),
+                        );
+                        let best_score = interested.first().map(|(_, _, _, s)| *s);
+                        let mut began: Option<(u64, u64)> = None;
+                        if cverdict.fired {
+                            if let Some((i, j, _)) = unions.first() {
+                                let (a_uid, b_uid) = (cands[*i].uid, cands[*j].uid);
+                                let (a_npc, b_npc) = (cands[*i].npc, cands[*j].npc);
+                                let (a_ent, b_ent) = (cands[*i].ent, cands[*j].ent);
+                                // Through the ECS comp on BOTH sides, in
+                                // one place, with the same begin-tick, so
+                                // the ripeness test above can never see a
+                                // half-written courtship.
+                                if let Some(mut c) = colonists.get_mut(a_ent) {
+                                    c.0.courting = Some((b_npc, now_tick));
+                                }
+                                if let Some(mut c) = colonists.get_mut(b_ent) {
+                                    c.0.courting = Some((a_npc, now_tick));
+                                }
+                                board.courtship_day = Some(today);
+                                began = Some((a_uid.min(b_uid), a_uid.max(b_uid)));
+                            }
+                        }
+                        // ★ THE WITNESS PRINTS EVERY DAY, FIRED OR NOT.
+                        // `birth_verdict` shipped six self-naming refusal
+                        // arms behind a success-only witness and not one of
+                        // them was ever read off a live run — `no_family`
+                        // had to be diagnosed by inference from a census.
+                        // This row does not repeat that.
+                        if first_pass_today || cverdict.fired {
+                            board.courtship_logged_day = Some(today);
+                            info!(
+                                fired = cverdict.fired,
+                                deciding = cverdict.deciding,
+                                candidates = cands.len(),
+                                non_kin_pairs,
+                                interested = interested.len(),
+                                best_score,
+                                courting = courting_now.len(),
+                                senior = began.map(|(s, _)| s),
+                                junior = began.map(|(_, j)| j),
+                                // The union half's own refusal, carried here
+                                // so it prints once a day rather than on
+                                // every sweep: a ripe pair with no free bed
+                                // in either house STAYS courting and retries.
+                                stalled_senior = stalled.map(|(s, _)| s),
+                                stalled_junior = stalled.map(|(_, j)| j),
+                                day = today,
+                                "bastion: COURTSHIP — whether two of them started keeping \
+                                 company today, and what stopped it"
+                            );
+                        }
+                    }
                 }
                 if assigned > 0 || released > 0 {
                     info!(
@@ -20229,8 +21435,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         occupied,
                         vacant,
                         shared,
+                        families,
+                        crowded,
                         heads,
-                        "bastion: HOUSEHOLDS — the town's living arrangement (head = lowest uid; capacity = real beds, 1-6)"
+                        "bastion: HOUSEHOLDS — the town's living arrangement (head = lowest uid; capacity = real beds, 1-6; shared = families + crowded, and the standing criterion is crowded == 0)"
                     );
                 }
             }
@@ -32780,6 +33988,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // source the inspector shows a watcher, so what
                             // the nameplate says about someone and what they
                             // do with their evening cannot disagree.
+                            // ★ ROW 53: the COURT bucket's weight is nonzero
+                            // ONLY while this colonist is actually courting
+                            // somebody — read off the live ECS comp, which
+                            // is where the courtship pass writes (the rtsim
+                            // record is a per-tick mirror of it and would be
+                            // a second frame). A colonist who is not
+                            // courting gets `courting = false`, weight 0,
+                            // total 10, and a byte-identical evening.
+                            let courting_with = colonists
+                                .get(entity)
+                                .and_then(|c| c.0.courting.map(|(p, _)| p));
                             let act = if (16..=21).contains(&hour_now) {
                                 use common::rtsim::PersonalityTrait as PT;
                                 let w = rtsim_entities
@@ -32792,10 +34011,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 npc.personality.is(PT::Introverted),
                                                 npc.personality.is(PT::Adventurous)
                                                     || npc.personality.is(PT::Open),
+                                                courting_with.is_some(),
                                             )
                                         })
                                     })
-                                    .unwrap_or(EVENING_WEIGHTS_BASE);
+                                    .unwrap_or_else(|| {
+                                        evening_weights(
+                                            false,
+                                            false,
+                                            false,
+                                            courting_with.is_some(),
+                                        )
+                                    });
                                 evening_activity_weighted(uid.0.get(), epoch, w)
                             } else {
                                 0
@@ -32817,18 +34044,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // on it; the visitor's own rank picks which
                                 // of the eight surrounding cells.
                                 2 => {
-                                    const AROUND: [(i32, i32); 8] = [
-                                        (1, 0),
-                                        (0, 1),
-                                        (-1, 0),
-                                        (0, -1),
-                                        (1, 1),
-                                        (-1, 1),
-                                        (1, -1),
-                                        (-1, -1),
-                                    ];
                                     let bench = gathering_spot(anchor, within ^ 1);
-                                    let (dx, dy) = AROUND[within % 8];
+                                    let (dx, dy) = BENCH_AROUND[within % 8];
                                     (bench + Vec3::new(dx, dy, 0), 2)
                                 },
                                 3 => board
@@ -32839,6 +34056,71 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     .unwrap_or_else(|| {
                                         (gathering_spot(anchor, within), 0)
                                     }),
+                                // ★ ROW 53: COURT — the pair keeps company.
+                                // The SENIOR (lower uid) waits at their own
+                                // regular bench and the JUNIOR takes a cell
+                                // beside it, at the senior's venue: one
+                                // named person, not a rank arithmetic
+                                // partner, which is the whole difference
+                                // between VISIT and this.
+                                //
+                                // The intended's rank is resolved through
+                                // the ECS join because `courting` holds an
+                                // NpcId (durable) while `rank` is indexed by
+                                // Uid; the scan is O(colony) and runs only
+                                // for a colonist who is actually courting —
+                                // at most a handful in the whole town, one
+                                // new pair per game day.
+                                4 => {
+                                    let intended = courting_with.and_then(|p| {
+                                        (&colonists, &uids, &rtsim_entities)
+                                            .join()
+                                            .find(|(_, _, re)| **re == p)
+                                            .map(|(_, u, _)| u.0.get())
+                                    });
+                                    match intended {
+                                        // The junior sits beside the senior.
+                                        Some(other) if other < uid.0.get() => {
+                                            let senior_rank = all
+                                                .iter()
+                                                .position(|&u| u == other)
+                                                .unwrap_or(0);
+                                            let (s_venue, s_within) = venue_and_rank(
+                                                senior_rank,
+                                                1 + taverns.len(),
+                                            );
+                                            let s_anchor = if s_venue == 0 {
+                                                board
+                                                    .gathering_anchor
+                                                    .or_else(|| {
+                                                        board
+                                                            .stockpiles
+                                                            .first()
+                                                            .map(|(_, r)| (r.min + r.max) / 2)
+                                                    })
+                                                    .unwrap_or(anchor)
+                                            } else {
+                                                taverns[s_venue - 1]
+                                            };
+                                            (
+                                                court_seat(s_anchor, s_within, all.len()),
+                                                4u8,
+                                            )
+                                        },
+                                        // The senior keeps their own bench —
+                                        // and, per ROW 36e, the label still
+                                        // names the seat DELIVERED: it is
+                                        // their regular chair, and the
+                                        // activity that put them in it is
+                                        // courting.
+                                        Some(_) => (gathering_spot(anchor, within), 4),
+                                        // The intended is unloaded: no named
+                                        // person to sit beside, so the seat
+                                        // falls back to the bench AND so
+                                        // does the label.
+                                        None => (gathering_spot(anchor, within), 0),
+                                    }
+                                },
                                 _ => (gathering_spot(anchor, within), 0),
                             }
                         })
@@ -32848,6 +34130,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         1 => "stroll",
                         2 => "visit",
                         3 => "home",
+                        4 => "court",
                         _ => "sit",
                     };
                     let rid = board.insert_recreate_job(spot, uid, until);
@@ -45334,15 +46617,23 @@ mod tests {
     #[test]
     fn a_town_makes_its_own_people_only_when_it_can_hold_them() {
         use common::bastion::ColonyDrive as D;
-        let ok = birth_verdict(true, D::Expand, 2, 4, 2, 10, 20, 5, Some(4));
+        // ROW 53 shape: (enabled, drive, adults, adults_required, beds,
+        // family_size, couples, roster, target, today, last).
+        let ok = birth_verdict(true, D::Expand, 2, 1, 4, 2, 0, 10, 20, 5, Some(4));
         assert!(ok.fired, "two adults, beds spare, town under target: a child");
         for (v, why) in [
-            (birth_verdict(false, D::Expand, 2, 4, 2, 10, 20, 5, Some(4)), "disabled"),
-            (birth_verdict(true, D::Expand, 2, 4, 2, 10, 20, 5, Some(5)), "same_day"),
-            (birth_verdict(true, D::Sustain, 2, 4, 2, 10, 20, 5, Some(4)), "drive_not_expand"),
-            (birth_verdict(true, D::Expand, 0, 4, 1, 10, 20, 5, Some(4)), "no_family"),
-            (birth_verdict(true, D::Expand, 2, 2, 2, 10, 20, 5, Some(4)), "house_full"),
-            (birth_verdict(true, D::Expand, 2, 4, 2, 20, 20, 5, Some(4)), "no_room_in_town"),
+            (birth_verdict(false, D::Expand, 2, 1, 4, 2, 0, 10, 20, 5, Some(4)), "disabled"),
+            (birth_verdict(true, D::Expand, 2, 1, 4, 2, 0, 10, 20, 5, Some(5)), "same_day"),
+            (
+                birth_verdict(true, D::Sustain, 2, 1, 4, 2, 0, 10, 20, 5, Some(4)),
+                "drive_not_expand",
+            ),
+            (birth_verdict(true, D::Expand, 0, 1, 4, 1, 0, 10, 20, 5, Some(4)), "no_family"),
+            (birth_verdict(true, D::Expand, 2, 1, 2, 2, 0, 10, 20, 5, Some(4)), "house_full"),
+            (
+                birth_verdict(true, D::Expand, 2, 1, 4, 2, 0, 20, 20, 5, Some(4)),
+                "no_room_in_town",
+            ),
         ] {
             assert!(!v.fired, "{why}: must refuse");
             assert_eq!(v.deciding, why, "the refusal must NAME itself");
@@ -45353,7 +46644,10 @@ mod tests {
         for adults in 2..=6u32 {
             for beds in 1..=6u32 {
                 assert!(
-                    !birth_verdict(true, D::Expand, adults, beds, adults, 20, 20, 5, None).fired,
+                    !birth_verdict(
+                        true, D::Expand, adults, 1, beds, adults, 0, 20, 20, 5, None
+                    )
+                    .fired,
                     "a full town must not grow from the inside either"
                 );
             }
@@ -45366,9 +46660,11 @@ mod tests {
         // deciding no_family forever while looking like a rule correctly
         // declining. This asserts the shape the town actually has: a
         // single-occupant household with spare beds CAN bear a child.
+        // (ROW 53 keeps it as the COURTSHIP-OFF shape — see
+        // `adults_required_for_birth`.)
         for beds in 2..=6u32 {
             assert!(
-                birth_verdict(true, D::Expand, 1, beds, 1, 3, 20, 5, None).fired,
+                birth_verdict(true, D::Expand, 1, 1, beds, 1, 0, 3, 20, 5, None).fired,
                 "beds {beds}: a one-adult household with room must be able to bear a \
                  child, or the gate is unreachable in a town that keeps one colonist \
                  per house"
@@ -45378,14 +46674,526 @@ mod tests {
         // children remain) still refuses — the refusal has to keep a real
         // case or the term stops meaning anything.
         for beds in 1..=6u32 {
-            assert!(!birth_verdict(true, D::Expand, 0, beds, 1, 3, 20, 5, None).fired);
+            assert!(!birth_verdict(true, D::Expand, 0, 1, beds, 1, 0, 3, 20, 5, None).fired);
         }
         // A one-bed hut is full with its single occupant: capacity binds
         // before family does.
         assert_eq!(
-            birth_verdict(true, D::Expand, 1, 1, 1, 3, 20, 5, None).deciding,
+            birth_verdict(true, D::Expand, 1, 1, 1, 1, 0, 3, 20, 5, None).deciding,
             "house_full"
         );
+    }
+
+    /// ★★ ROW 53: THE GATE THAT WOULD HAVE SHIPPED DEAD FOR THE SECOND
+    /// TIME. Every adopted house has exactly TWO beds (measured:
+    /// `adopted_beds=2` on all 80 houses of one logged town), so
+    /// `household_capacity(2) == 2` and a cohabiting couple ALREADY FILLS
+    /// IT. Restoring the two-adult birth gate without the cot would refuse
+    /// `house_full` forever — the same silence as the `no_family` defect,
+    /// from a different cause, and just as invisible.
+    ///
+    /// This is the pin that would have caught it, written against the
+    /// measured 2-bed house and nothing else.
+    #[test]
+    fn a_two_bed_house_holds_a_couple_and_their_first_child() {
+        use common::bastion::ColonyDrive as D;
+        const BEDS: u32 = 2; // the measured adopted house
+        // The identity first: no couples ⇒ room IS capacity, everywhere.
+        for beds in 0..=9u32 {
+            assert_eq!(
+                household_room(beds, 0),
+                household_capacity(beds),
+                "beds {beds}: with no couple the cot must not exist"
+            );
+        }
+        // WITHOUT the cot — capacity alone — a couple fills the house and
+        // the gate is unreachable. Stated as the counterfactual so the pin
+        // fails loudly if `household_room` is ever reduced to capacity.
+        assert!(
+            2 >= household_capacity(BEDS),
+            "the premise: a couple already fills a 2-bed house by capacity"
+        );
+        // WITH the cot the couple can bear their first child…
+        let couple = birth_verdict(true, D::Expand, 2, 2, BEDS, 2, 1, 10, 20, 5, None);
+        assert!(couple.fired, "a couple in a 2-bed house must be able to bear a child");
+        // …and exactly one: with the infant the family is 3 of 3.
+        let with_infant = birth_verdict(true, D::Expand, 2, 2, BEDS, 3, 1, 10, 20, 5, None);
+        assert!(!with_infant.fired);
+        assert_eq!(with_infant.deciding, "house_full");
+        // The bedless infant MUST be counted, or the same house bears a
+        // second child against the bed the first is still waiting for.
+        let owners_only = birth_verdict(true, D::Expand, 2, 2, BEDS, 2, 1, 10, 20, 5, None);
+        assert!(
+            owners_only.fired && !with_infant.fired,
+            "family_size must count bedless children, not just bed owners"
+        );
+        // And a SINGLE adult in a 2-bed house refuses `no_family` once
+        // courtship is on — which is the whole point of the tightening.
+        assert_eq!(
+            birth_verdict(true, D::Expand, 1, 2, BEDS, 1, 0, 10, 20, 5, None).deciding,
+            "no_family"
+        );
+        // ★★ AND THE BIRTH LADDER'S ORDER, WHICH THE SHIPPED ROW 50 PIN
+        // CANNOT SEE. Every case in that pin violates exactly ONE gate, so
+        // reordering the whole ladder leaves all six answers unchanged —
+        // the same blind spot a deliberate inversion found in the courtship
+        // pin. These inputs violate several arms at once and assert the
+        // EARLIEST one answers.
+        for (v, why) in [
+            (
+                birth_verdict(false, D::Sustain, 0, 2, 1, 9, 0, 99, 1, 5, Some(5)),
+                "disabled",
+            ),
+            (
+                birth_verdict(true, D::Sustain, 0, 2, 1, 9, 0, 99, 1, 5, Some(5)),
+                "same_day",
+            ),
+            (
+                birth_verdict(true, D::Sustain, 0, 2, 1, 9, 0, 99, 1, 5, None),
+                "drive_not_expand",
+            ),
+            (birth_verdict(true, D::Expand, 0, 2, 1, 9, 0, 99, 1, 5, None), "no_family"),
+            (birth_verdict(true, D::Expand, 2, 2, 1, 9, 0, 99, 1, 5, None), "house_full"),
+            (
+                birth_verdict(true, D::Expand, 2, 2, 4, 1, 0, 99, 1, 5, None),
+                "no_room_in_town",
+            ),
+        ] {
+            assert!(!v.fired);
+            assert_eq!(
+                v.deciding, why,
+                "the birth ladder must answer with its EARLIEST failing gate"
+            );
+        }
+        // The requirement itself is a function of courtship, so the
+        // fallback reverts it exactly.
+        assert_eq!(adults_required_for_birth(true), 2);
+        assert_eq!(adults_required_for_birth(false), 1);
+        assert!(
+            birth_verdict(
+                true,
+                D::Expand,
+                1,
+                adults_required_for_birth(false),
+                BEDS,
+                1,
+                0,
+                10,
+                20,
+                5,
+                None
+            )
+            .fired,
+            "BASTION_NO_COURTSHIP must restore the one-adult gate exactly"
+        );
+    }
+
+    /// ROW 53: the courtship gate, both directions — every refusal
+    /// reachable and NAMED, in the order it is written, and the fire arm
+    /// reachable from the shape a real town has.
+    #[test]
+    fn the_town_pairs_people_and_every_refusal_names_itself() {
+        let ok = courtship_verdict(true, 5, Some(4), 6, 12, 3, true);
+        assert!(ok.fired);
+        for (v, why) in [
+            (courtship_verdict(false, 5, Some(4), 6, 12, 3, true), "disabled"),
+            (courtship_verdict(true, 5, Some(5), 6, 12, 3, true), "same_day"),
+            (courtship_verdict(true, 5, Some(4), 1, 0, 0, true), "no_candidates"),
+            (courtship_verdict(true, 5, Some(4), 6, 0, 0, true), "all_kin"),
+            (courtship_verdict(true, 5, Some(4), 6, 12, 0, true), "no_mutual_interest"),
+            (courtship_verdict(true, 5, Some(4), 6, 12, 3, false), "no_home"),
+        ] {
+            assert!(!v.fired, "{why}: must refuse");
+            assert_eq!(v.deciding, why, "the refusal must NAME itself");
+        }
+        // Day 0 is a real day, not "already fired" — the same corner the
+        // immigration latch has a pin for.
+        assert!(courtship_verdict(true, 0, None, 2, 1, 1, true).fired);
+        // ★★ AND THE ORDER IS THE POINT — PINNED WHERE IT CAN ACTUALLY BE
+        // SEEN. This assertion exists because the first version of this pin
+        // COULD NOT SEE arm order at all: every case above violates exactly
+        // ONE gate, so reordering the whole ladder left all six answers
+        // unchanged and the pin stayed green through a deliberate
+        // inversion. A refusal ladder is only pinned by inputs that violate
+        // SEVERAL arms at once and assert the EARLIER one wins.
+        //
+        // (The shipped ROW 50 birth pin has the same blind spot; see the
+        // matching block in `a_two_bed_house_holds_a_couple_and_their_first_child`.)
+        for (v, why) in [
+            // Everything is wrong at once: the earliest arm must speak.
+            (courtship_verdict(false, 5, Some(5), 0, 0, 0, false), "disabled"),
+            (courtship_verdict(true, 5, Some(5), 0, 0, 0, false), "same_day"),
+            (courtship_verdict(true, 5, None, 0, 0, 0, false), "no_candidates"),
+            (courtship_verdict(true, 5, None, 9, 0, 0, false), "all_kin"),
+            (courtship_verdict(true, 5, None, 9, 9, 0, false), "no_mutual_interest"),
+            (courtship_verdict(true, 5, None, 9, 9, 9, false), "no_home"),
+        ] {
+            assert!(!v.fired);
+            assert_eq!(
+                v.deciding, why,
+                "the refusal ladder must answer with its EARLIEST failing gate"
+            );
+        }
+        // ★ NOT GATED ON ColonyDrive: there is no drive parameter to pass,
+        // which is the strongest form this assertion can take. See the ROW
+        // 53 header block for why adding one would be a regression.
+    }
+
+    /// ★★ ROW 53: AFFINITY IS SYMMETRIC AS A THEOREM, NOT AS A DISCIPLINE.
+    /// The canonicalisation lives INSIDE `pair_affinity`, so swapping the
+    /// arguments evaluates the same expression on the same operands. Swept
+    /// over a grid rather than sampled, because an asymmetric score would
+    /// make the matching depend on enumeration order — the exact failure
+    /// the uid sort exists to prevent, arriving by another door.
+    #[test]
+    fn affinity_is_symmetric_and_the_evidence_dominates() {
+        let m1 = [true, false, false, true, true, false, false, false, true, false];
+        let m2 = [false, true, false, true, true, false, true, false, false, true];
+        for (ua, ub) in [(3u64, 9u64), (9, 3), (1, 1_000_000), (7, 8)] {
+            for (sab, sba) in [(0.0f32, 0.0f32), (0.4, 0.1), (0.1, 0.4), (-0.5, 0.9)] {
+                for day in [0i64, 1, 77] {
+                    let a = pair_affinity(
+                        ua,
+                        ub,
+                        sab,
+                        sba,
+                        m1,
+                        m2,
+                        Vec3::new(10, 20, 30),
+                        Vec3::new(14, 25, 30),
+                        day,
+                    );
+                    let b = pair_affinity(
+                        ub,
+                        ua,
+                        sba,
+                        sab,
+                        m2,
+                        m1,
+                        Vec3::new(14, 25, 30),
+                        Vec3::new(10, 20, 30),
+                        day,
+                    );
+                    assert_eq!(
+                        a.to_bits(),
+                        b.to_bits(),
+                        "pair_affinity({ua},{ub}) != pair_affinity({ub},{ua}) — bitwise"
+                    );
+                }
+            }
+        }
+        // ★ ONE-SIDED INFATUATION MUST NOT MARRY ANYBODY: `min`, not `sum`.
+        // A sum would rank the lopsided pair ABOVE the mutual one here.
+        let neutral = [false; PERSONALITY_MASK];
+        let bed = Vec3::new(0, 0, 0);
+        let mutual = pair_affinity(1, 2, 0.25, 0.25, neutral, neutral, bed, bed, 0);
+        let lopsided = pair_affinity(1, 2, 0.9, 0.0, neutral, neutral, bed, bed, 0);
+        assert!(
+            mutual > lopsided,
+            "a sum would have preferred the one-sided pair: {mutual} vs {lopsided}"
+        );
+        // ★ THE SPARK MAY SEPARATE, NEVER DECIDE. Bounded an order of
+        // magnitude below the evidence it sits beside.
+        for day in 0..500i64 {
+            let s = pair_spark(3, 11, day);
+            assert!(
+                (0.0..=COURTSHIP_SPARK).contains(&s),
+                "day {day}: spark {s} escaped its bound"
+            );
+        }
+        assert!(
+            COURTSHIP_SPARK * 4.0 < COURTSHIP_SENTIMENT_BAR,
+            "the spark must not be able to carry a pair over the evidence bar"
+        );
+        assert_eq!(pair_spark(3, 11, 7), pair_spark(3, 11, 7), "deterministic");
+        let across: std::collections::HashSet<u32> =
+            (0..40i64).map(|d| pair_spark(3, 11, d).to_bits()).collect();
+        assert!(across.len() > 20, "the spark must actually re-roll by day");
+        // ROW 53: proximity has the sign it claims — you court whom you
+        // live near.
+        let near = pair_affinity(
+            1, 2, 0.3, 0.3, neutral, neutral, Vec3::new(0, 0, 0), Vec3::new(2, 0, 0), 4,
+        );
+        let far = pair_affinity(
+            1, 2, 0.3, 0.3, neutral, neutral, Vec3::new(0, 0, 0), Vec3::new(90, 0, 0), 4,
+        );
+        assert!(near > far, "the far neighbour must not outrank the near one");
+        // Personality compatibility is symmetric and signed the right way.
+        assert_eq!(personality_compat(m1, m2), personality_compat(m2, m1));
+        let same = [true, false, true, false, true, false, true, false, true, false];
+        let opp = [false, true, false, true, false, true, false, true, false, true];
+        assert_eq!(personality_compat(same, same), PERSONALITY_AXES as i32);
+        assert_eq!(personality_compat(same, opp), -(PERSONALITY_AXES as i32));
+        assert_eq!(personality_compat([false; PERSONALITY_MASK], same), 0);
+    }
+
+    /// ★ ROW 53: THE MATCH IS ORDER-INDEPENDENT OVER THE INPUT SET.
+    /// `pair_sort_key` is a TOTAL order — score first, then the canonical
+    /// uid pair, which is unique — so the greedy match below it cannot
+    /// depend on the order specs handed the candidates over.
+    #[test]
+    fn the_greedy_match_is_a_function_of_the_set_not_of_the_order() {
+        // A hand-built pair table: (lo, hi, score).
+        //
+        // ★ THE TIE HAS TO MATTER, and the first version of this table made
+        // sure it did not: its two tied pairs both wanted the same
+        // already-taken partner, so greedy skipped one of them whatever the
+        // order was, and DELETING the uid tiebreak entirely left this pin
+        // green. `sort_by_key` is STABLE, so with no tiebreak the winner is
+        // whichever tied pair the caller happened to hand over first — the
+        // exact iteration-order dependency the key exists to kill.
+        //
+        // (5,6) and (5,7) are that tie: same score, both fully available,
+        // and they compete for colonist 5.
+        let pairs = [
+            (1u64, 2u64, 0.31f32),
+            (1, 3, 0.42),
+            (2, 3, 0.42),
+            (3, 4, 0.20),
+            (2, 4, 0.55),
+            (1, 4, 0.11),
+            (5, 6, 0.50),
+            (5, 7, 0.50),
+        ];
+        let matched = |order: &[usize]| -> Vec<(u64, u64)> {
+            let mut keyed: Vec<((i64, u64, u64), u64, u64)> = order
+                .iter()
+                .map(|i| {
+                    let (lo, hi, s) = pairs[*i];
+                    (pair_sort_key(s, lo, hi), lo, hi)
+                })
+                .collect();
+            keyed.sort_by_key(|(k, ..)| *k);
+            let mut taken: std::collections::HashSet<u64> = Default::default();
+            let mut out = Vec::new();
+            for (_, lo, hi) in keyed {
+                if taken.contains(&lo) || taken.contains(&hi) {
+                    continue;
+                }
+                taken.insert(lo);
+                taken.insert(hi);
+                out.push((lo, hi));
+            }
+            out
+        };
+        let forward: Vec<usize> = (0..pairs.len()).collect();
+        let backward: Vec<usize> = (0..pairs.len()).rev().collect();
+        let shuffled = [3usize, 0, 7, 5, 2, 6, 4, 1];
+        let a = matched(&forward);
+        assert_eq!(a, matched(&backward), "reversing the input changed the match");
+        assert_eq!(a, matched(&shuffled), "permuting the input changed the match");
+        assert_eq!(a[0], (2, 4), "the best pair must be taken first");
+        // ★ THE LIVE TIE: (5,6) and (5,7) score identically and both are
+        // free, so ONLY the uid tiebreak can choose. (5,6) precedes (5,7).
+        assert!(
+            a.contains(&(5, 6)) && !a.contains(&(5, 7)),
+            "the tie must break on the canonical uid pair, not on input order: {a:?}"
+        );
+        assert!(a.contains(&(1, 3)), "and the lower tied pair wins throughout: {a:?}");
+        // A NaN score must not silently permute anything: it sorts LAST.
+        let nan = pair_sort_key(f32::NAN, 1, 2);
+        let real = pair_sort_key(-1.0, 1, 2);
+        assert!(nan > real, "a NaN score must rank below every real one, not anywhere");
+    }
+
+    /// ROW 53: kinship, both directions and both parents. `parent_b` is
+    /// exactly what makes the half-sibling case detectable at all — with
+    /// only one recorded parent the third assertion below cannot be made.
+    #[test]
+    fn the_town_does_not_marry_its_own_siblings() {
+        use slotmap::KeyData;
+        let npc = |n: u64| -> common::rtsim::NpcId {
+            KeyData::from_ffi((1u64 << 32) | n).into()
+        };
+        let (ann, bob, cal, dot, eve) = (npc(1), npc(2), npc(3), npc(4), npc(5));
+        let none = [None, None];
+        // Strangers may marry.
+        assert!(!is_kin(ann, none, bob, none));
+        // Parent and child, either way round, through EITHER field.
+        assert!(is_kin(ann, none, cal, [Some(ann), None]));
+        assert!(is_kin(cal, [Some(ann), None], ann, none));
+        assert!(is_kin(ann, none, cal, [None, Some(ann)]));
+        assert!(is_kin(cal, [None, Some(ann)], ann, none));
+        // Full siblings.
+        assert!(is_kin(cal, [Some(ann), Some(bob)], dot, [Some(ann), Some(bob)]));
+        // ★ HALF-SIBLINGS THROUGH THE SECOND PARENT — invisible without
+        // `parent_b`, and this is the assertion that proves it: the two
+        // share only `bob`, who is recorded in the second slot for one of
+        // them.
+        assert!(is_kin(cal, [Some(ann), Some(bob)], dot, [Some(eve), Some(bob)]));
+        assert!(
+            !is_kin(cal, [Some(ann), None], dot, [Some(eve), None]),
+            "and unrelated children of different parents are NOT kin"
+        );
+        // Symmetric everywhere.
+        for (a, ap, b, bp) in [
+            (ann, none, bob, none),
+            (cal, [Some(ann), Some(bob)], dot, [Some(eve), Some(bob)]),
+            (ann, none, cal, [Some(ann), None]),
+        ] {
+            assert_eq!(is_kin(a, ap, b, bp), is_kin(b, bp, a, ap), "kinship must be symmetric");
+        }
+        // Nobody marries themself.
+        assert!(is_kin(ann, none, ann, none));
+    }
+
+    /// ★★ ROW 53: THE NUMBER THAT WOULD HAVE FALSELY REGRESSED. `shared`
+    /// conflates a FAMILY with the founding claim race cramming strangers
+    /// into one house, so the standing `shared == 0` criterion would have
+    /// read the first couple moving in as a defect. The split must be
+    /// NUMERICALLY IDENTICAL before courtship exists, which is what makes
+    /// moving the criterion to `crowded == 0` safe in the same commit.
+    #[test]
+    fn a_family_is_not_a_crowd() {
+        let m = |uid: u64, partner: Option<u64>, parents: [Option<u64>; 2]| KinMember {
+            uid,
+            partner,
+            parents,
+        };
+        // BEFORE courtship: no partners, no recorded parents. Every shared
+        // house is a CROWD, so families == 0 and crowded == shared.
+        let strangers = [m(1, None, [None, None]), m(2, None, [None, None])];
+        assert!(!household_is_family(&strangers), "two strangers are not a family");
+        assert_eq!(household_couples(&strangers), 0);
+        // A couple.
+        let couple = [m(1, Some(2), [None, None]), m(2, Some(1), [None, None])];
+        assert!(household_is_family(&couple));
+        assert_eq!(household_couples(&couple), 1, "counted ONCE per pair, not per person");
+        // A couple and their grown child who still owns a bed at home.
+        let with_child = [
+            m(1, Some(2), [None, None]),
+            m(2, Some(1), [None, None]),
+            m(9, None, [Some(1), Some(2)]),
+        ];
+        assert!(household_is_family(&with_child));
+        assert_eq!(household_couples(&with_child), 1);
+        // A single parent and child is a family too (the ROW 50 shape).
+        let single_parent = [m(1, None, [None, None]), m(9, None, [Some(1), None])];
+        assert!(household_is_family(&single_parent));
+        assert_eq!(household_couples(&single_parent), 0);
+        // A couple with a LODGER is not a family — the lodger is the crowd.
+        let lodger = [
+            m(1, Some(2), [None, None]),
+            m(2, Some(1), [None, None]),
+            m(7, None, [None, None]),
+        ];
+        assert!(!household_is_family(&lodger));
+        // Degenerate shapes.
+        assert!(household_is_family(&[]), "an empty house is not a crowd");
+        assert!(household_is_family(&[m(1, None, [None, None])]), "nor a single occupant");
+        // A partner who does NOT live here does not make this a family, and
+        // does not earn a cot.
+        let half = [m(1, Some(99), [None, None]), m(2, None, [None, None])];
+        assert!(!household_is_family(&half));
+        assert_eq!(household_couples(&half), 0, "an absent spouse earns no cot");
+
+        // ★★ AND THE MOVE-OUT EXEMPTION, WHICH MUST SHIP IN THE SAME COMMIT
+        // AS THE UNION. Without it the pass evicts the junior partner within
+        // two sweeps and the town produces couples that dissolve daily —
+        // while every count in the census reads exactly as it does today.
+        let here = [1u64, 2, 9];
+        assert!(
+            move_out_exempt_partner(&m(2, Some(1), [None, None]), &here),
+            "a spouse living here must NOT be moved out"
+        );
+        assert!(
+            !move_out_exempt_partner(&m(2, None, [None, None]), &here),
+            "and an unattached sharer still must be — the pass keeps its job"
+        );
+        assert!(
+            !move_out_exempt_partner(&m(2, Some(77), [None, None]), &here),
+            "a spouse living SOMEWHERE ELSE does not exempt you from moving out"
+        );
+        assert!(
+            !move_out_exempt_partner(&m(9, None, [Some(1), Some(2)]), &here),
+            "a grown child is NOT exempt through this door — childhood's own \
+             exemption ends on its own, and that is what gives them a house"
+        );
+    }
+
+    /// ROW 53: the courtship clock is the CHILDHOOD clock — persistent
+    /// (`Data.tick`), derived denominator, never the wall and never
+    /// `born_day`.
+    #[test]
+    fn a_courtship_is_measured_in_game_days_on_a_persistent_clock() {
+        let tpgd = ticks_per_game_day(1.0 / 30.0, 48.0);
+        assert!((tpgd - 54_000.0).abs() < 1.0, "the measured default: {tpgd}");
+        let began = 1_000_000u64;
+        let at = |d: f64| began + (d * tpgd) as u64;
+        assert!(!courtship_is_ripe(at(0.0), began, tpgd));
+        assert!(
+            !courtship_is_ripe(at(COURTSHIP_DAYS as f64 - 0.05), began, tpgd),
+            "a courtship must not seal a day early"
+        );
+        assert!(courtship_is_ripe(at(COURTSHIP_DAYS as f64), began, tpgd));
+        assert!(courtship_is_ripe(at(COURTSHIP_DAYS as f64 + 10.0), began, tpgd));
+        // A harness running a different day_length must still see
+        // COURTSHIP_DAYS of GAME time, not of ticks.
+        let harness = ticks_per_game_day(1.0 / 30.0, 720.0);
+        assert!(harness > 0.0 && harness < tpgd);
+        assert!(courtship_is_ripe(
+            (COURTSHIP_DAYS as f64 * harness) as u64,
+            0,
+            harness
+        ));
+        // A rolled-back save must not seal every courtship at once.
+        assert!(!courtship_is_ripe(5, 1_000, tpgd), "a backwards clock must refuse");
+        // A degenerate denominator must not ripen everybody instantly.
+        assert!(!courtship_is_ripe(1, 0, 0.0));
+        assert!(!courtship_is_ripe(1, 0, f64::NAN));
+        assert!(
+            (1..=30).contains(&COURTSHIP_DAYS),
+            "a courtship nobody can watch end is a courtship that does not exist"
+        );
+    }
+
+    /// ROW 53: where a junior partner would sleep. Deterministic against a
+    /// HashMap source, house-scoped, and nearest-first.
+    #[test]
+    fn cohabitation_picks_a_free_bed_in_the_right_house() {
+        let mut beds: HashMap<Vec3<i32>, common::bastion::BedSlot> = HashMap::new();
+        let mut bed_house: HashMap<Vec3<i32>, usize> = HashMap::new();
+        let uid = |n: u64| common::uid::Uid(std::num::NonZeroU64::new(n).expect("nonzero"));
+        // House 0: two beds, one owned. House 1: one bed, owned.
+        let (a0, a1) = (Vec3::new(0, 0, 40), Vec3::new(3, 0, 40));
+        let b0 = Vec3::new(60, 0, 40);
+        for (p, owner, house) in [
+            (a0, Some(uid(1)), 0usize),
+            (a1, None, 0),
+            (b0, Some(uid(2)), 1),
+        ] {
+            beds.insert(p, common::bastion::BedSlot { kind: common::bastion::BedKind::Frame, owner, occupant: None });
+            bed_house.insert(p, house);
+        }
+        assert_eq!(
+            free_bed_in_house(&beds, &bed_house, a0, b0),
+            Some(a1),
+            "the junior takes the free bed in the senior's own house"
+        );
+        assert_eq!(
+            free_bed_in_house(&beds, &bed_house, b0, a0),
+            None,
+            "a full house offers nothing — this is the `no_home` case"
+        );
+        assert_eq!(
+            free_bed_in_house(&beds, &bed_house, Vec3::new(999, 999, 999), a0),
+            None,
+            "a bed outside every derived house belongs to no household"
+        );
+        // Determinism against the HashMap: two equally free beds resolve to
+        // the nearest, and equidistant ones to the (x,y,z)-lowest.
+        let a2 = Vec3::new(-3, 0, 40);
+        beds.insert(a2, common::bastion::BedSlot { kind: common::bastion::BedKind::Frame, owner: None, occupant: None });
+        bed_house.insert(a2, 0);
+        let picked = free_bed_in_house(&beds, &bed_house, a0, b0);
+        assert_eq!(picked, Some(a1), "nearest to the mover's own bed wins");
+        for _ in 0..20 {
+            assert_eq!(
+                free_bed_in_house(&beds, &bed_house, a0, b0),
+                picked,
+                "the pick must not depend on HashMap iteration order"
+            );
+        }
     }
 
     /// ROW 50 (CHILDREN): childhood is an empty work profile, and coming of
@@ -45507,15 +47315,25 @@ mod tests {
         const HOME: usize = 3;
         // Every table keeps the same total, so the draw needs no
         // renormalisation and no bucket can silently vanish.
-        for (soc, intro, adv) in [
-            (false, false, false), (true, false, false), (false, true, false),
-            (false, false, true), (true, false, true), (false, true, true),
+        for (soc, intro, adv, court) in [
+            (false, false, false, false), (true, false, false, false),
+            (false, true, false, false), (false, false, true, false),
+            (true, false, true, false), (false, true, true, false),
+            (false, false, false, true), (true, false, false, true),
+            (false, true, false, true), (false, false, true, true),
+            (true, false, true, true), (false, true, true, true),
         ] {
-            let w = evening_weights(soc, intro, adv);
+            let w = evening_weights(soc, intro, adv, court);
             assert_eq!(
-                u32::from(w[0]) + u32::from(w[1]) + u32::from(w[2]) + u32::from(w[3]),
+                w.iter().map(|x| u32::from(*x)).sum::<u32>(),
                 10,
-                "weights must be MOVED, not added: {soc} {intro} {adv} gave {w:?}"
+                "weights must be MOVED, not added: {soc} {intro} {adv} {court} gave {w:?}"
+            );
+            // ROW 53: the fifth bucket is nonzero EXACTLY while courting.
+            assert_eq!(
+                w[4] > 0,
+                court,
+                "COURT must be weighted only for a courting colonist: {w:?}"
             );
         }
         // Identity: a colonist with no strong trait behaves EXACTLY as
@@ -45527,7 +47345,7 @@ mod tests {
         // inverting `if introverted`) it is the ONLY assertion in the whole
         // suite that fires, because every other check compares against the
         // constant rather than the mutated neutral.
-        assert_eq!(evening_weights(false, false, false), EVENING_WEIGHTS_BASE);
+        assert_eq!(evening_weights(false, false, false, false), EVENING_WEIGHTS_BASE);
         // ★ AND THE GOLDEN VECTOR, spelled out. A 2,400-iteration loop used
         // to sit here comparing `evening_activity` to its own body (the
         // function is now a one-line wrapper), which was equal by
@@ -45535,17 +47353,18 @@ mod tests {
         // independent witness that loop pretended to be: ROW 36b's palette
         // is sit 4 / stroll 3 / visit 2 / home 1.
         assert_eq!(
-            EVENING_WEIGHTS_BASE, [4, 3, 2, 1],
+            EVENING_WEIGHTS_BASE, [4, 3, 2, 1, 0],
             "the ROW 36b palette is the neutral centre; changing it silently \
-             re-tunes every colonist's evening"
+             re-tunes every colonist's evening. ROW 53's fifth bucket is APPENDED \
+             and ZERO, which is what keeps that true"
         );
         // The shifts go the way the trait says.
         let base = EVENING_WEIGHTS_BASE;
-        let socl = evening_weights(true, false, false);
+        let socl = evening_weights(true, false, false, false);
         assert!(socl[VISIT] > base[VISIT] && socl[SIT] < base[SIT], "sociable visits more");
-        let intro = evening_weights(false, true, false);
+        let intro = evening_weights(false, true, false, false);
         assert!(intro[HOME] > base[HOME], "the introvert heads home more often");
-        let advn = evening_weights(false, false, true);
+        let advn = evening_weights(false, false, true, false);
         assert!(advn[STROLL] > base[STROLL] && advn[SIT] < base[SIT], "the restless walk");
         // ★ AND NOBODY IS DICTATED TO. Every trait profile must still
         // produce EVERY activity across a population — a trait that
@@ -45555,7 +47374,7 @@ mod tests {
             (false, false, false), (true, false, false),
             (false, true, false), (false, false, true),
         ] {
-            let w = evening_weights(soc, intro_f, adv);
+            let w = evening_weights(soc, intro_f, adv, false);
             let mut seen = [false; 4];
             for uid in 1..400u64 {
                 seen[evening_activity_weighted(uid, 3, w) as usize] = true;
@@ -45564,14 +47383,86 @@ mod tests {
                 seen.iter().all(|s| *s),
                 "profile {soc} {intro_f} {adv} (weights {w:?}) never produced some activity"
             );
+            // ROW 53: a COURTING colonist still gets a whole life —
+            // courtship SHIFTS the evening the way a trait does, it does
+            // not replace it.
+            let wc = evening_weights(soc, intro_f, adv, true);
+            let mut seen5 = [false; 5];
+            for uid in 1..400u64 {
+                seen5[evening_activity_weighted(uid, 3, wc) as usize] = true;
+            }
+            assert!(seen5[4], "a courting colonist must actually court: {wc:?}");
+            assert!(
+                seen5.iter().filter(|s| **s).count() >= 3,
+                "courtship must not swallow the evening: {wc:?} produced {seen5:?}"
+            );
         }
         // A degenerate table falls back to the base SHAPE, not to a
         // constant activity — and must not divide by zero.
         let mut seen = [false; 4];
         for uid in 1..400u64 {
-            seen[evening_activity_weighted(uid, 1, [0, 0, 0, 0]) as usize] = true;
+            seen[evening_activity_weighted(uid, 1, [0, 0, 0, 0, 0]) as usize] = true;
         }
         assert!(seen.iter().all(|s| *s), "the zero-table fallback must be the base palette");
+    }
+
+    /// ★★ ROW 53: THE FIFTH BUCKET CHANGES NOBODY WHO IS NOT COURTING.
+    ///
+    /// The palette is drawn by EVERY colonist EVERY evening, so a fifth
+    /// bucket that shifted the draw would silently re-tune the whole town
+    /// — and every distribution pin above would move with it, a change that
+    /// hides inside its own witnesses.
+    ///
+    /// Identity needs BOTH halves and neither alone is sufficient: the new
+    /// weight must be ZERO, and the hash's modulo must see the SAME TOTAL.
+    /// The reference is a hand-written copy of the SHIPPED four-bucket draw,
+    /// not a call back into the function under test — a pin that asserts a
+    /// function equals its own body is testing nothing, which is exactly
+    /// what the ROW 51 pin audit found in this palette.
+    #[test]
+    fn the_fifth_bucket_changes_nobody_who_is_not_courting() {
+        fn shipped_draw(uid_raw: u64, epoch: u64, w: [u8; 4]) -> u8 {
+            let h = uid_raw
+                .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                .wrapping_add(epoch.wrapping_mul(0xBF58_476D_1CE4_E5B9));
+            let total = u64::from(w[0]) + u64::from(w[1]) + u64::from(w[2]) + u64::from(w[3]);
+            if total == 0 {
+                return shipped_draw(uid_raw, epoch, [4, 3, 2, 1]);
+            }
+            let mut roll = (h >> 32) % total;
+            for (i, weight) in w.iter().enumerate() {
+                let weight = u64::from(*weight);
+                if roll < weight {
+                    return i as u8;
+                }
+                roll -= weight;
+            }
+            3
+        }
+        for (soc, intro, adv) in [
+            (false, false, false), (true, false, false),
+            (false, true, false), (false, false, true),
+            (true, false, true), (false, true, true),
+        ] {
+            let w5 = evening_weights(soc, intro, adv, false);
+            let w4 = [w5[0], w5[1], w5[2], w5[3]];
+            assert_eq!(w5[4], 0, "an uncommitted colonist must carry no COURT weight");
+            assert_eq!(
+                w4.iter().map(|x| u32::from(*x)).sum::<u32>(),
+                10,
+                "the modulo's divisor must be unchanged, or every draw moves"
+            );
+            for uid in 1..=1_000u64 {
+                for epoch in 0..12u64 {
+                    assert_eq!(
+                        evening_activity_weighted(uid, epoch, w5),
+                        shipped_draw(uid, epoch, w4),
+                        "uid {uid} epoch {epoch} profile {soc}/{intro}/{adv}: the fifth \
+                         bucket moved an uncommitted colonist's evening"
+                    );
+                }
+            }
+        }
     }
 
     /// ★ ROW 52 v2: the forge gate, both directions, on the THREE-tool par
@@ -45850,11 +47741,17 @@ mod tests {
         // delta. Needles built at runtime.
         let src = include_str!("bastion_jobs.rs");
         let nominal_call = format!("1.0 / crate::{} as f64", "SIM_TPS");
+        // ROW 53: TWO call sites now, not one — the childhood gate and the
+        // courtship clock, which is deliberately the same clock (a
+        // persistent numerator needs a persistent denominator). The count
+        // is still exact: changing EITHER site back to the measured frame
+        // delta drops it to 1 and fails here.
         assert_eq!(
             src.matches(&nominal_call).count(),
-            1,
-            "the childhood sweep no longer derives ticks-per-game-day from the nominal tick \
-             rate — if it is reading dt again, one slow frame graduates the whole cohort"
+            2,
+            "a game-day gate no longer derives ticks-per-game-day from the nominal tick \
+             rate — if it is reading dt again, one slow frame graduates the whole cohort \
+             (and seals every courtship at once)"
         );
         let frame_delta = format!("ticks_per_game_day(\n                        f64::from({}.0),", "dt");
         assert_eq!(
@@ -46255,18 +48152,14 @@ mod tests {
     /// different evenings simultaneously and asserts every cell distinct.
     #[test]
     fn every_evening_seat_is_its_own_cell() {
-        const AROUND: [(i32, i32); 8] = [
-            (1, 0),
-            (0, 1),
-            (-1, 0),
-            (0, -1),
-            (1, 1),
-            (-1, 1),
-            (1, -1),
-            (-1, -1),
-        ];
+        // ROW 53: the eight cells are now a named constant with three
+        // consumers; a fourth hand-written copy here is how this palette
+        // earned its collision history in the first place.
+        const AROUND: [(i32, i32); 8] = BENCH_AROUND;
+        const COLONY: usize = 30;
         let anchor = Vec3::new(1000, 2000, 40);
-        let seat = |act: u8, rank: usize| -> Vec3<i32> {
+        // ROW 53: `senior` is the rank a COURT seat is aimed at.
+        let seat = |act: u8, rank: usize, senior: usize| -> Vec3<i32> {
             match act {
                 1 => gathering_spot(anchor, rank + STROLL_BAND),
                 2 => {
@@ -46274,16 +48167,62 @@ mod tests {
                     let (dx, dy) = AROUND[rank % 8];
                     bench + Vec3::new(dx, dy, 0)
                 },
+                4 => court_seat(anchor, senior, COLONY),
                 _ => gathering_spot(anchor, rank),
             }
         };
+        // ★★ ROW 53, THE THEOREM THE COURT SEAT IS BUILT ON, swept over the
+        // whole seniority space at seven colony sizes rather than sampled:
+        // a court seat is NEVER anybody's bench, VISIT seat, STROLL seat or
+        // another couple's court seat, and is always BESIDE its own
+        // senior's bench.
+        //
+        // The gathering ring's benches are only TWO cells apart, so the
+        // eight-cell neighbourhood of one bench routinely contains another
+        // — measured, `gathering_spot(22) + (-1,-1) == gathering_spot(8)`
+        // exactly — which is why the offset has to be dealt rather than
+        // indexed. (It is also why the shipped VISIT arm collides; see the
+        // note below.)
+        for n in [8usize, 12, 20, 30, 50, 80, 120] {
+            let benches: std::collections::HashSet<Vec3<i32>> =
+                (0..n).map(|r| gathering_spot(anchor, r)).collect();
+            let visits: std::collections::HashSet<Vec3<i32>> = (0..n)
+                .map(|r| {
+                    gathering_spot(anchor, r ^ 1)
+                        + Vec3::new(AROUND[r % 8].0, AROUND[r % 8].1, 0)
+                })
+                .collect();
+            let strolls: std::collections::HashSet<Vec3<i32>> =
+                (0..n).map(|r| gathering_spot(anchor, r + STROLL_BAND)).collect();
+            let mut seen: std::collections::HashMap<Vec3<i32>, usize> =
+                std::collections::HashMap::new();
+            for senior in 0..n {
+                let c = court_seat(anchor, senior, n);
+                assert!(!benches.contains(&c), "n={n} senior {senior}: court seat is a bench");
+                assert!(
+                    !visits.contains(&c),
+                    "n={n} senior {senior}: court seat is somebody's visit seat"
+                );
+                assert!(!strolls.contains(&c), "n={n} senior {senior}: court seat is a stroll");
+                if let Some(prev) = seen.insert(c, senior) {
+                    panic!("n={n}: seniors {prev} and {senior} share a court seat at {c:?}");
+                }
+                let d = c - gathering_spot(anchor, senior);
+                assert_eq!(
+                    d.x.abs().max(d.y.abs()),
+                    1,
+                    "n={n} senior {senior}: a court seat must be BESIDE the senior's bench"
+                );
+                assert_eq!(d.z, 0, "and on the same level");
+            }
+        }
         // A 30-person colony where every colonist rolls a DIFFERENT
         // activity than their neighbours — the worst case for collisions.
         let mut cells: std::collections::HashMap<Vec3<i32>, (u8, usize)> =
             std::collections::HashMap::new();
-        for rank in 0..30usize {
+        for rank in 0..COLONY {
             let act = (rank % 3) as u8; // 0 sit, 1 stroll, 2 visit
-            let c = seat(act, rank);
+            let c = seat(act, rank, rank);
             if let Some(prev) = cells.insert(c, (act, rank)) {
                 panic!(
                     "seat collision at {c:?}: act {act} rank {rank} lands on act {} rank {}",
@@ -46291,21 +48230,69 @@ mod tests {
                 );
             }
         }
+        // ★ ROW 53: THE SAME COLONY WITH COUPLES IN IT. Ranks 0..2n are n
+        // courting couples — the even rank is the senior (their own bench)
+        // and the odd rank is the junior (beside it) — and everybody else
+        // keeps the rotation. Swept over every plausible number of
+        // simultaneous couples, because one union per game day plus a
+        // two-day courtship means the count is small but not fixed.
+        //
+        // ★ THE ASSERTION IS SCOPED TO COURT SEATS, AND HONESTLY SO. This
+        // scenario ALSO exposes a PRE-EXISTING defect that has nothing to
+        // do with this row: the shipped VISIT arm can land on a third
+        // party's bench — `visit(23)` is `gathering_spot(22) + (-1,-1)`,
+        // which IS `gathering_spot(8)` — and on another visitor's seat
+        // (`visit(8) == visit(27)`, `visit(28) == visit(29)`). The pin
+        // above this one cannot see it because it gives each rank exactly
+        // one activity via `rank % 3`, and 8, 23 and 27 all land on VISIT
+        // there. Fixing VISIT needs a global seat assignment, not a local
+        // rule (the call site draws per colonist, independently), so it is
+        // named here and left for its own row rather than smuggled in.
+        for pairs in 0..=6usize {
+            let mut cells: std::collections::HashMap<Vec3<i32>, (u8, usize)> =
+                std::collections::HashMap::new();
+            for rank in 0..COLONY {
+                let (act, senior) = if rank < 2 * pairs {
+                    // Even = senior at own bench; odd = junior beside them.
+                    if rank % 2 == 0 { (0u8, rank) } else { (4u8, rank - 1) }
+                } else {
+                    ((rank % 3) as u8, rank)
+                };
+                let c = seat(act, rank, senior);
+                if let Some(prev) = cells.insert(c, (act, rank)) {
+                    assert!(
+                        act != 4 && prev.0 != 4,
+                        "with {pairs} couples: a COURT seat collided at {c:?}: act {act} \
+                         rank {rank} against act {} rank {}",
+                        prev.0,
+                        prev.1
+                    );
+                }
+            }
+        }
         // And the pathological case the first version actually hit: every
         // colonist strolling while every OTHER colonist sits.
         let mut cells2: std::collections::HashSet<Vec3<i32>> = Default::default();
-        for rank in 0..30usize {
-            assert!(cells2.insert(seat(0, rank)), "sit rank {rank} collided");
+        for rank in 0..COLONY {
+            assert!(cells2.insert(seat(0, rank, rank)), "sit rank {rank} collided");
         }
-        for rank in 0..30usize {
+        for rank in 0..COLONY {
             assert!(
-                cells2.insert(seat(1, rank)),
+                cells2.insert(seat(1, rank, rank)),
                 "stroll rank {rank} landed on an occupied seat — the +24 defect"
+            );
+        }
+        // ROW 53: and every court seat on top of a FULLY seated colony —
+        // the strongest form of the theorem above.
+        for senior in 0..COLONY {
+            assert!(
+                !cells2.contains(&seat(4, senior + 1, senior)),
+                "court seat for senior {senior} landed on an occupied cell"
             );
         }
         // A stroll must be a WALK: the far band sits well outside the
         // benches (radius 3-5), not on the first ring.
-        let stroll = seat(1, 0) - anchor;
+        let stroll = seat(1, 0, 0) - anchor;
         assert!(
             stroll.x.abs().max(stroll.y.abs()) >= 12,
             "a stroll that ends 6 blocks from the plaza is not a walk: {stroll:?}"
@@ -46313,7 +48300,7 @@ mod tests {
         // A visit is BESIDE the host, not on them.
         for rank in 0..12usize {
             assert_ne!(
-                seat(2, rank),
+                seat(2, rank, rank),
                 gathering_spot(anchor, rank ^ 1),
                 "visit rank {rank} sat in the host's own chair"
             );

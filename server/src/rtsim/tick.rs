@@ -1265,6 +1265,23 @@ impl<'a> System<'a> for Sys {
             // trade, which is exactly what a child is.
             colonist.work_priorities = common::bastion::WorkPriorities::childhood();
             colonist.parent = parent_id;
+            // ★ ROW 53: THE SECOND PARENT. Read off the named parent's own
+            // partner, at the only moment it is knowable — nothing anywhere
+            // else records who the other parent was, so a child born without
+            // this field can never have it derived later.
+            //
+            // Read from the PERSISTENT record and not from an ECS comp,
+            // deliberately: this drain's own `parent_id` resolution has a
+            // whole doc block about the producer naming a bed owner the ECS
+            // cannot resolve (unloaded or demoted). The rtsim record is
+            // mirrored from the live comp every loaded tick by
+            // `colonist_record`, so for a loaded parent it is current, and
+            // for an unloaded one it is their last save-back — correct in
+            // both frames, where an ECS read would be correct in only one.
+            colonist.parent_b = parent_id
+                .and_then(|id| data.npcs.get(id))
+                .and_then(|n| n.bastion_colonist.as_ref())
+                .and_then(|c| c.partner);
             colonist.born_day = Some(day);
             // ★ THE GATE'S CLOCK: persistent and monotonic. `day` above is
             // boot-relative and resets to settings.world.start_time on every
@@ -1723,6 +1740,67 @@ impl<'a> System<'a> for Sys {
 #[cfg(test)]
 mod bastion_promotion_pins {
     use super::*;
+
+    /// ★★ ROW 53, THE MIRROR CLOBBER — invisible in a fixture and fatal in
+    /// a soak, so it is pinned at the seam rather than argued about in a
+    /// comment.
+    ///
+    /// `colonist_record` CLONES the live ECS comp and the per-tick save-back
+    /// writes the result into `npc.bastion_colonist`. So a `partner` written
+    /// onto the RTSIM RECORD of a loaded colonist survives exactly until the
+    /// next tick, and a courtship pass that wrote there would produce a town
+    /// whose couples silently un-married one frame later — with every log
+    /// line still saying the union happened.
+    ///
+    /// Both halves are asserted, because only the pair of them says what the
+    /// rule actually is: the comp's marriage state REACHES the record, and a
+    /// record-only marriage is DESTROYED by the very next mirror.
+    #[test]
+    fn the_mirror_carries_marriage_from_the_comp_and_clobbers_it_on_the_record() {
+        use rand::SeedableRng;
+        let mut rng = rand_chacha::ChaCha8Rng::seed_from_u64(53);
+        let other: NpcId = Default::default();
+
+        // (1) THE WRITE PATH the courtship pass must use: through the comp.
+        let mut rec = common::bastion::BastionColonist::generate(&mut rng);
+        rec.partner = Some(other);
+        rec.courting = Some((other, 12_345));
+        rec.parent_b = Some(other);
+        let comp_married = comp::Colonist(rec);
+        let mirrored = colonist_record(&comp_married, None, None, None);
+        assert_eq!(mirrored.partner, Some(other), "the comp's partner must reach the record");
+        assert_eq!(
+            mirrored.courting,
+            Some((other, 12_345)),
+            "and so must the courtship, or the palette's COURT bucket dies on reload"
+        );
+        assert_eq!(mirrored.parent_b, Some(other), "and the second parent");
+
+        // (2) THE WRITE PATH IT MUST NOT USE. A record that holds a marriage
+        // the comp does not is overwritten wholesale by the next mirror —
+        // this is the clobber, stated as a test rather than as a claim.
+        let mut single = common::bastion::BastionColonist::generate(&mut rng);
+        single.partner = None;
+        single.courting = None;
+        let comp_single = comp::Colonist(single);
+        let mut record_only_marriage =
+            common::bastion::BastionColonist::generate(&mut rng);
+        record_only_marriage.partner = Some(other);
+        record_only_marriage.courting = Some((other, 7));
+        assert!(
+            record_only_marriage.partner.is_some(),
+            "premise: the record starts out holding a marriage"
+        );
+        // …and this is what the very next loaded tick does to it.
+        record_only_marriage = colonist_record(&comp_single, None, None, None);
+        assert_eq!(
+            record_only_marriage.partner, None,
+            "a partner written on the rtsim record alone MUST be clobbered by the mirror — \
+             if this ever passes with Some(..), the save-back has stopped being a clone and \
+             the courtship pass's write path must be re-derived"
+        );
+        assert_eq!(record_only_marriage.courting, None);
+    }
 
     /// ★ THE INVARIANT, SWEPT OVER THE WHOLE INPUT SPACE. A promotion that the
     /// deletion sweep would reverse in the same tick is an oscillator, and the
