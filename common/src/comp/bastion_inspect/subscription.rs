@@ -30,7 +30,7 @@
 //! client's cadence is a courtesy, and a rate limit that lives only in the
 //! requester is not a rate limit.
 
-use super::{SectionIdV1, SectionRequestV1, SectionSetV1, SectionedInspectV1};
+use super::{SectionIdV1, SectionPayloadV1, SectionRequestV1, SectionSetV1, SectionedInspectV1};
 use crate::uid::Uid;
 
 /// The outstanding request, if any.
@@ -67,6 +67,12 @@ pub struct InspectSubscription {
     /// registry.
     last_sent: [Option<f64>; SectionIdV1::COUNT],
     latest: Option<SectionedInspectV1>,
+    /// The `frames.server_tick` each retained section was ANSWERED at.
+    ///
+    /// See [`InspectSubscription::accept`] for why sections are retained
+    /// at all, and [`InspectSubscription::section_age_ticks`] for why
+    /// their age has to be visible.
+    section_tick: [Option<u64>; SectionIdV1::COUNT],
 }
 
 impl InspectSubscription {
@@ -93,6 +99,7 @@ impl InspectSubscription {
         self.subject = subject;
         self.latest = None;
         self.last_sent = [None; SectionIdV1::COUNT];
+        self.section_tick = [None; SectionIdV1::COUNT];
         // The outstanding request is for the OLD subject. Forgetting it
         // here (rather than waiting for its reply) is what lets the new
         // subject be asked immediately; the reply itself is still
@@ -168,6 +175,28 @@ impl InspectSubscription {
     /// at `u32::MAX`, and a reply that arrives after the player has
     /// re-selected the previous colonist could otherwise match by
     /// coincidence.
+    ///
+    /// ★ SECTIONS ARE CARRIED FORWARD, and this is a PHASE-1 DEFECT FIX,
+    /// not an embellishment. A reply carries only the sections that were
+    /// DUE, and `Live` (0.5 s) and `Slow` (2.0 s) cadences interleave — so
+    /// three replies in four contained no Identity payload at all, and
+    /// replacing `latest` wholesale made the whole Identity block VANISH
+    /// from the panel between slow refreshes and reappear a moment later.
+    /// With five sections and three of them slow, the panel would have
+    /// spent most of its life mostly empty.
+    ///
+    /// So a section that this reply did not answer keeps its previous
+    /// payload. Two consequences are stated rather than hoped away:
+    ///
+    /// * A carried section's rows were computed at an EARLIER tick than
+    ///   the header's clocks. That is two frames on one screen, which is
+    ///   the defect class this subsystem loses most rows to — so the age
+    ///   is retained per section ([`Self::section_age_ticks`]) and the
+    ///   panel prints it. A carried row is never silently passed off as
+    ///   fresh.
+    /// * Merging is by section ID, so a fresh payload always wins over a
+    ///   carried one and the merged list stays in REGISTRY order — the
+    ///   same order `assemble` emits, so nothing downstream has to sort.
     pub fn accept(&mut self, reply: SectionedInspectV1) -> bool {
         let Some(f) = &self.in_flight else {
             return false;
@@ -176,8 +205,38 @@ impl InspectSubscription {
             return false;
         }
         self.in_flight = None;
-        self.latest = Some(reply);
+
+        let fresh: SectionSetV1 = reply.sections.iter().map(SectionPayloadV1::id).collect();
+        for id in fresh.iter() {
+            self.section_tick[id.index()] = Some(reply.frames.server_tick);
+        }
+        let mut sections: Vec<SectionPayloadV1> = self
+            .latest
+            .take()
+            .map(|prev| {
+                prev.sections
+                    .into_iter()
+                    .filter(|p| !fresh.contains(p.id()))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        sections.extend(reply.sections.iter().cloned());
+        // REGISTRY order, always — the order is a property of the
+        // registry and never of which sections happened to be due.
+        sections.sort_by_key(|p| p.id().index());
+        self.latest = Some(SectionedInspectV1 { sections, ..reply });
         true
+    }
+
+    /// How many server ticks OLD a retained section's payload is, against
+    /// the newest reply's own clock. `Some(0)` = answered by this very
+    /// reply; `None` = the section has never been answered.
+    ///
+    /// A backwards clock (a restart resets `server_tick` to 0) saturates
+    /// to 0 rather than wrapping to a colossal age.
+    pub fn section_age_ticks(&self, id: SectionIdV1) -> Option<u64> {
+        let now = self.latest.as_ref()?.frames.server_tick;
+        Some(now.saturating_sub(self.section_tick[id.index()]?))
     }
 }
 
@@ -377,6 +436,86 @@ mod tests {
         // throttle (a player wiggling the mouse must not spam the server).
         s.set_subject(Some(uid(2)));
         assert!(s.has_request_in_flight(), "an identical set_subject must not clear state");
+    }
+
+    /// ★ A SLOW SECTION MUST NOT VANISH BETWEEN LIVE REFRESHES — the
+    /// phase-1 defect this fix closes.
+    ///
+    /// Live sections come round every 0.5 s and slow ones every 2.0 s, so
+    /// three replies in four carry no slow payload at all. Replacing
+    /// `latest` wholesale emptied the Identity block for those three, and
+    /// with five registered sections the panel would flicker most of its
+    /// content most of the time.
+    ///
+    /// FALSIFIER: delete the carry-forward in `accept` (assign
+    /// `self.latest = Some(reply)` as it was) and the `Identity survives`
+    /// assertion goes RED. That is exactly the shipped behaviour.
+    #[test]
+    fn a_slow_sections_payload_survives_a_live_only_reply() {
+        use super::super::{PathSectionV1, UnavailableReasonV1};
+
+        let mut s = InspectSubscription::new();
+        s.set_subject(Some(uid(1)));
+
+        let ident = SectionPayloadV1::Unavailable(
+            SectionIdV1::Identity,
+            UnavailableReasonV1::NotAColonist,
+        );
+        let path = |hash: u64| {
+            SectionPayloadV1::Path(PathSectionV1 {
+                nodes: Vec::new(),
+                next_idx: 0,
+                total_nodes: 0,
+                truncated: false,
+                needs_search: true,
+                nodes_hash: hash,
+            })
+        };
+
+        // The first reply answers everything, at server tick 100.
+        let first = s.poll(0.0, all()).expect("send");
+        let mut r1 = reply_to(&first);
+        r1.frames.server_tick = 100;
+        r1.sections = vec![ident.clone(), path(7)];
+        assert!(s.accept(r1));
+        assert_eq!(s.section_age_ticks(SectionIdV1::Identity), Some(0));
+
+        // The second is LIVE ONLY -- exactly what `due` produces at 0.6 s.
+        let second = s.poll(0.6, all()).expect("the live sections are due");
+        assert!(!second.sections.contains(SectionIdV1::Identity), "fixture premise");
+        let mut r2 = reply_to(&second);
+        r2.frames.server_tick = 120;
+        r2.sections = vec![path(9)];
+        assert!(s.accept(r2));
+
+        let latest = s.latest().expect("a reply is retained");
+        let ids: Vec<SectionIdV1> = latest.sections.iter().map(|p| p.id()).collect();
+        assert!(
+            ids.contains(&SectionIdV1::Identity),
+            "Identity survives a live-only reply (it did not before this fix)"
+        );
+        // The FRESH payload wins, and the list stays in registry order.
+        assert_eq!(ids, vec![SectionIdV1::Identity, SectionIdV1::Path]);
+        match latest.sections.iter().find(|p| p.id() == SectionIdV1::Path) {
+            Some(SectionPayloadV1::Path(p)) => {
+                assert_eq!(p.nodes_hash, 9, "a fresh payload must replace the carried one")
+            },
+            other => panic!("expected a Path payload, got {other:?}"),
+        }
+        // And the CARRIED one is visibly older, so nothing renders a
+        // 20-tick-old row under a fresh clock without saying so.
+        assert_eq!(s.section_age_ticks(SectionIdV1::Identity), Some(20));
+        assert_eq!(s.section_age_ticks(SectionIdV1::Path), Some(0));
+        assert_eq!(
+            s.section_age_ticks(SectionIdV1::Colony),
+            None,
+            "a section never answered has no age, which is not an age of zero"
+        );
+
+        // Switching subject drops the carried payloads AND their ages.
+        s.set_subject(Some(uid(2)));
+        assert!(s.latest().is_none());
+        assert_eq!(s.section_age_ticks(SectionIdV1::Identity), None);
     }
 
     /// Deselecting stops the traffic and clears the panel.

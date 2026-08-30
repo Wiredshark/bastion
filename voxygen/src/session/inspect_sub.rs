@@ -102,8 +102,14 @@ impl InspectSubState {
         // did not say which would be inviting the reader to assume.
         let mut out =
             bastion_inspector::header_lines(&reply.frames, reply.loaded, self.verbose);
+        // ★ EACH SECTION'S OWN AGE. Sections refresh at different
+        // cadences and the subscription CARRIES FORWARD one the newest
+        // reply did not answer, so a slow section's rows are routinely
+        // older than the clocks printed above them. The heading says how
+        // much older; a panel that did not would be putting two frames on
+        // one screen unlabelled.
         out.extend(bastion_inspector::to_lines(
-            &bastion_inspector::render(reply),
+            &bastion_inspector::render(reply, |id| self.sub.section_age_ticks(id)),
             self.verbose,
         ));
         out

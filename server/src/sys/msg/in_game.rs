@@ -903,6 +903,12 @@ impl<'a> System<'a> for Sys {
             // entry point needs `&mut self`, so the inspector physically
             // cannot trigger a path search.
             ReadStorage<'a, common::comp::Agent>,
+            // bastion (INSPECTOR-M2): the Colony section's stock census
+            // has to answer "how many hammers, and WHERE" -- and
+            // `CarriedByColonists` is one of the three scopes, so the
+            // inventories are not optional. Taken read-only, and walked
+            // ONLY when the request names the Colony section.
+            ReadStorage<'a, common::comp::Inventory>,
         ),
     );
 
@@ -957,6 +963,7 @@ impl<'a> System<'a> for Sys {
                 insp_active_jobs,
                 insp_healths,
                 insp_agents,
+                insp_inventories,
             ),
         ): Self::SystemData,
     ) {
@@ -1851,76 +1858,72 @@ impl<'a> System<'a> for Sys {
                                         (&insp_pickup_items, &positions).join(),
                                         &job_board,
                                     );
-                                    let jobs_total = job_board.jobs.len() as u32;
-                                    let jobs_claimed = job_board
-                                        .jobs
-                                        .values()
-                                        .filter(|j| j.claimed_by.is_some())
-                                        .count()
-                                        as u32;
-                                    // ★ F19 (found by an adversarial play
-                                    // session, 2026-08-21): a refusal reason
-                                    // with no dashboard category is INVISIBLE
-                                    // BY CONSTRUCTION. The session watched 8
-                                    // colonists stand idle beside 4 jobs while
-                                    // the player-facing counters read
-                                    // `jobs_unreachable=0 blocked_materials=0`
-                                    // -- every one of 32 considerations had
-                                    // been refused on AFFORDANCE (no cell a
-                                    // colonist can stand in to work the job),
-                                    // and the dashboard had no bucket for it.
-                                    // The player sees four healthy-looking
-                                    // jobs, zero claimed, eight idle people,
-                                    // and no explanation anywhere.
+                                    // ★ ONE SCAN, NOT FOUR (INSPECTOR-M2).
+                                    // This block was four separate
+                                    // `job_board.jobs.values().filter()`
+                                    // passes -- claimed, blocked_stance,
+                                    // unreachable, blocked_materials --
+                                    // and the material pass re-joined
+                                    // every dropped item in the world
+                                    // INSIDE its filter. Four passes is
+                                    // four chances for one predicate to
+                                    // drift from its neighbours, on four
+                                    // counters the dashboard prints side
+                                    // by side as though they partitioned
+                                    // one population.
                                     //
-                                    // Same predicate the claim gate uses, for
-                                    // the same reason blocked_materials does:
-                                    // the dashboard must not disagree with the
-                                    // selector about why work is stuck.
-                                    let jobs_blocked_stance = job_board
-                                        .jobs
-                                        .values()
-                                        .filter(|j| {
-                                            j.claimed_by.is_none()
-                                                && crate::bastion_jobs::job_stance_missing(
-                                                    &terrain, j,
-                                                )
-                                        })
-                                        .count() as u32;
-                                    let jobs_unreachable = job_board
-                                        .jobs
-                                        .values()
-                                        .filter(|j| j.unreachable)
-                                        .count()
-                                        as u32;
-                                    // BLOCKED-MATERIALS row: per JOB, never per
-                                    // (job, colonist) pair. `needs_materials`
-                                    // is the colony-wide "nobody carries it"
-                                    // flag the board already maintains;
-                                    // `stockpile_has_material` is the SAME
-                                    // fetch-leg rule the claim gate uses, so
-                                    // the dashboard cannot disagree with the
-                                    // selector about what is blocked.
-                                    let jobs_blocked_materials = job_board
-                                        .jobs
-                                        .values()
-                                        .filter(|j| {
-                                            j.needs_materials
-                                                && !matches!(
-                                                    j.kind,
-                                                    common::bastion::JobKind::Haul { .. }
-                                                )
-                                                && j.required_item.is_some_and(|req| {
-                                                    !crate::bastion_jobs::stockpile_has_material(
-                                                        req,
-                                                        (&insp_pickup_items, &positions, &insp_uids)
-                                                            .join(),
-                                                        &job_board,
-                                                    )
-                                                })
-                                        })
-                                        .count()
-                                        as u32;
+                                    // FALLBACK IS IDENTITY: every
+                                    // predicate below is the one that
+                                    // shipped, moved wholesale into
+                                    // `tally_jobs`, including the
+                                    // asymmetries (blocked_stance is
+                                    // unclaimed-only; unreachable counts
+                                    // regardless of claim; a `Haul` job
+                                    // that bills a material IS the fetch
+                                    // and never counts as blocked). The
+                                    // new Colony section reads the SAME
+                                    // producer, so the dashboard and the
+                                    // panel cannot disagree.
+                                    //
+                                    // ★ F19 (found by an adversarial play
+                                    // session, 2026-08-21) is why
+                                    // `blocked_stance` exists at all: a
+                                    // refusal reason with no dashboard
+                                    // category is INVISIBLE BY
+                                    // CONSTRUCTION. The session watched 8
+                                    // colonists stand idle beside 4 jobs
+                                    // while the counters read
+                                    // `jobs_unreachable=0
+                                    // blocked_materials=0` -- every one of
+                                    // 32 considerations had been refused
+                                    // on AFFORDANCE (no cell a colonist
+                                    // can stand in to work the job), and
+                                    // the dashboard had no bucket for it.
+                                    //
+                                    // BLOCKED-MATERIALS is counted per
+                                    // JOB, never per (job, colonist) pair,
+                                    // and `stockpile_has_material` is the
+                                    // SAME fetch-leg rule the claim gate
+                                    // uses -- the dashboard must not
+                                    // disagree with the selector about
+                                    // what is blocked.
+                                    let tally = bastion_server::bastion_inspector::tally_jobs(
+                                        job_board.jobs.values(),
+                                        |j| crate::bastion_jobs::job_stance_missing(&terrain, j),
+                                        |req| {
+                                            !crate::bastion_jobs::stockpile_has_material(
+                                                req,
+                                                (&insp_pickup_items, &positions, &insp_uids)
+                                                    .join(),
+                                                &job_board,
+                                            )
+                                        },
+                                    );
+                                    let jobs_total = job_board.jobs.len() as u32;
+                                    let jobs_claimed = tally.claimed;
+                                    let jobs_blocked_stance = tally.blocked_stance;
+                                    let jobs_unreachable = tally.unreachable;
+                                    let jobs_blocked_materials = tally.blocked_materials;
                                     Some(BastionInspectKind::Colony(
                                         common::comp::bastion::BastionColonyInspect {
                                             colonists,
@@ -2049,7 +2052,324 @@ impl<'a> System<'a> for Sys {
                                         chaser: insp_agents
                                             .get(e)
                                             .map(|a| &a.chaser),
+                                        // ★ THE MIRROR, AS AN OPTION. The
+                                        // legacy payload three hundred
+                                        // lines up does
+                                        // `.map_or(0.0, |m| m.0)`, which
+                                        // renders a colonist with NO Mood
+                                        // component as one in total
+                                        // despair. Absence is not zero.
+                                        mood: insp_moods.get(e).map(|m| m.0),
+                                        needs: insp_needs.get(e).map(|n| {
+                                            (n.hunger, n.rest, n.recreation)
+                                        }),
+                                        energy: insp_energies
+                                            .get(e)
+                                            .map(|en| en.fraction()),
                                     });
+
+                                    // ★ THE MEASUREMENTS ARE GATED ON THE
+                                    // REQUEST. Everything below walks the
+                                    // rtsim roster, the chronicle, every
+                                    // dropped item and every colonist
+                                    // inventory -- so a COLLAPSED section
+                                    // must not pay for it. `bi::wants` is
+                                    // the SAME predicate `bi::assemble`
+                                    // iterates, exported as one function
+                                    // so the gate and the assembler
+                                    // cannot drift; the pin that holds
+                                    // them together is
+                                    // `assemble_computes_exactly_what_wants_admits`.
+                                    let wants_thinking =
+                                        bi::wants(
+                                            &req,
+                                            common::comp::bastion_inspect::SectionIdV1::Thinking,
+                                        );
+                                    let wants_colony =
+                                        bi::wants(
+                                            &req,
+                                            common::comp::bastion_inspect::SectionIdV1::Colony,
+                                        );
+
+                                    // Uid -> name for the LOADED roster,
+                                    // sorted so every lookup is a binary
+                                    // search and nothing downstream can
+                                    // depend on join order.
+                                    let names: Vec<(common::uid::Uid, String)> =
+                                        if wants_thinking || wants_colony {
+                                            let mut v: Vec<_> =
+                                                (&insp_uids, &insp_colonists)
+                                                    .join()
+                                                    .map(|(u, c)| (*u, c.0.name.clone()))
+                                                    .collect();
+                                            v.sort_by_key(|(u, _)| u.0.get());
+                                            v
+                                        } else {
+                                            Vec::new()
+                                        };
+
+                                    // ── THINKING: the rtsim-backed half.
+                                    let mind = if wants_thinking {
+                                        ent.and_then(|e| {
+                                            let colonist = insp_colonists.get(e)?;
+                                            let needs = insp_needs.get(e)?;
+                                            let re = insp_rtsim_entities.get(e);
+                                            let data = rtsim.state().data();
+                                            let neurotic = re
+                                                .and_then(|re| data.npcs.get(*re))
+                                                .is_some_and(|npc| {
+                                                    npc.personality.is(
+                                                        common::rtsim::PersonalityTrait::Neurotic,
+                                                    )
+                                                });
+                                            // ITEM 21's list, same source:
+                                            // `PersonalityTrait` has no
+                                            // `Debug`, so the labels are
+                                            // parallel to the variants.
+                                            let traits = re
+                                                .and_then(|re| data.npcs.get(*re))
+                                                .map(|npc| {
+                                                    use common::rtsim::PersonalityTrait as PT;
+                                                    [
+                                                        (PT::Open, "Open"),
+                                                        (PT::Adventurous, "Adventurous"),
+                                                        (PT::Closed, "Closed"),
+                                                        (PT::Conscientious, "Conscientious"),
+                                                        (PT::Busybody, "Busybody"),
+                                                        (PT::Unconscientious, "Unconscientious"),
+                                                        (PT::Extroverted, "Extroverted"),
+                                                        (PT::Introverted, "Introverted"),
+                                                        (PT::Agreeable, "Agreeable"),
+                                                        (PT::Sociable, "Sociable"),
+                                                        (PT::Disagreeable, "Disagreeable"),
+                                                        (PT::Neurotic, "Neurotic"),
+                                                        (PT::Seeker, "Seeker"),
+                                                        (PT::Worried, "Worried"),
+                                                        (PT::SadLoner, "SadLoner"),
+                                                        (PT::Stable, "Stable"),
+                                                    ]
+                                                    .into_iter()
+                                                    .filter(|(t, _)| npc.personality.is(*t))
+                                                    .map(|(_, l)| l.to_string())
+                                                    .collect::<Vec<_>>()
+                                                })
+                                                .unwrap_or_default();
+                                            // ★ THE WATERFALL, RECOMPUTED
+                                            // THROUGH THE REAL FORMULA.
+                                            // Same tables and same Actor
+                                            // the B7-0 mood tick reads,
+                                            // assembled fresh at request
+                                            // cadence and never cached --
+                                            // which is exactly what makes
+                                            // a disagreement with the ECS
+                                            // `Mood` mirror meaningful.
+                                            let explanation = re.map(|re| {
+                                                let cfg =
+                                                    common::bastion::MoodConfig::current();
+                                                let table =
+                                                    bastion_server::bastion_mood::ThoughtTable::current();
+                                                let affinities =
+                                                    bastion_server::bastion_mood::ValueAffinityTable::current();
+                                                let actor =
+                                                    common::rtsim::Actor::Npc(*re);
+                                                let thoughts =
+                                                    bastion_server::bastion_mood::thought_contributions(
+                                                        &data.chronicle,
+                                                        &table,
+                                                        &affinities,
+                                                        actor,
+                                                        data.time_of_day.0,
+                                                        &colonist.0.values,
+                                                        neurotic,
+                                                    );
+                                                let sum =
+                                                    bastion_server::bastion_mood::thought_sum(
+                                                        &data.chronicle,
+                                                        &table,
+                                                        &affinities,
+                                                        actor,
+                                                        data.time_of_day.0,
+                                                        &colonist.0.values,
+                                                        neurotic,
+                                                    );
+                                                common::comp::bastion::MoodExplanationV1::build(
+                                                    insp_tick.0,
+                                                    actor,
+                                                    &cfg,
+                                                    needs,
+                                                    sum,
+                                                    thoughts,
+                                                )
+                                            });
+                                            // ★ SENTIMENTS RESOLVED TO
+                                            // NAMES. The shipped payload
+                                            // labels these `"uid:N"` -- a
+                                            // number that names nobody.
+                                            // Resolved through the rtsim
+                                            // roster rather than through
+                                            // `IdMaps`, so an UNLOADED
+                                            // neighbour still resolves;
+                                            // the KIND rides along so an
+                                            // unresolved target is
+                                            // visibly unresolved.
+                                            let mut sentiments: Vec<_> = re
+                                                .and_then(|re| data.npcs.get(*re))
+                                                .map(|npc| {
+                                                    use ::rtsim::data::sentiment::Target;
+                                                    use common::comp::bastion_inspect::{
+                                                        SentimentRowV1,
+                                                        SentimentTargetKindV1 as K,
+                                                    };
+                                                    npc.sentiments
+                                                        .iter_held()
+                                                        .map(|(t, value)| {
+                                                            let (who, kind) = match t {
+                                                                Target::Npc(id) => data
+                                                                    .npcs
+                                                                    .get(id)
+                                                                    .and_then(|n| {
+                                                                        n.bastion_colonist
+                                                                            .as_ref()
+                                                                    })
+                                                                    .map(|c| {
+                                                                        (
+                                                                            c.name.clone(),
+                                                                            K::Colonist,
+                                                                        )
+                                                                    })
+                                                                    .unwrap_or_else(|| {
+                                                                        (
+                                                                            format!("{id:?}"),
+                                                                            K::Npc,
+                                                                        )
+                                                                    }),
+                                                                Target::Character(c) => {
+                                                                    (format!("{c:?}"), K::Character)
+                                                                },
+                                                                Target::Faction(f) => {
+                                                                    (format!("{f:?}"), K::Faction)
+                                                                },
+                                                            };
+                                                            SentimentRowV1 { who, kind, value }
+                                                        })
+                                                        .collect::<Vec<_>>()
+                                                })
+                                                .unwrap_or_default();
+                                            // `iter_held` walks a
+                                            // `BTreeMap` and is already
+                                            // ordered, but RESOLUTION is
+                                            // many-to-one (two npc ids
+                                            // can carry one name), so the
+                                            // display order is sorted on
+                                            // what is displayed.
+                                            sentiments.sort_by(|a, b| {
+                                                a.who
+                                                    .cmp(&b.who)
+                                                    .then(a.kind.cmp(&b.kind))
+                                                    .then(b.value.total_cmp(&a.value))
+                                            });
+                                            Some(bi::MindCtx {
+                                                explanation,
+                                                traits,
+                                                sentiments,
+                                            })
+                                        })
+                                    } else {
+                                        None
+                                    };
+
+                                    // ── COLONY: the town-wide census.
+                                    let colony = if wants_colony {
+                                        let board: &crate::bastion_jobs::JobBoard = &job_board;
+                                        let mut colonist_uids: Vec<common::uid::Uid> =
+                                            (&insp_uids, &insp_colonists)
+                                                .join()
+                                                .map(|(u, _)| *u)
+                                                .collect();
+                                        colonist_uids.sort_by_key(|u| u.0.get());
+                                        let (stock, stock_distinct, stock_truncated) =
+                                            bi::colony::stock_census(
+                                                (&insp_pickup_items, &positions).join(),
+                                                (&insp_colonists, &insp_inventories)
+                                                    .join()
+                                                    .map(|(_, inv)| inv),
+                                                board,
+                                                bi::colony::STOCK_LABEL_CAP,
+                                            );
+                                        // ★ ONE SCAN. Same producer the
+                                        // colony dashboard above reads,
+                                        // so the panel and the dashboard
+                                        // cannot report different job
+                                        // counts for the same board.
+                                        let jobs = bi::tally_jobs(
+                                            board.jobs.values(),
+                                            |j| {
+                                                crate::bastion_jobs::job_stance_missing(
+                                                    &terrain, j,
+                                                )
+                                            },
+                                            |req| {
+                                                !crate::bastion_jobs::stockpile_has_material(
+                                                    req,
+                                                    (
+                                                        &insp_pickup_items,
+                                                        &positions,
+                                                        &insp_uids,
+                                                    )
+                                                        .join(),
+                                                    board,
+                                                )
+                                            },
+                                        );
+                                        // ★ AN HONEST DUPLICATION, NAMED
+                                        // (see `ColonyCtx::threats`). This
+                                        // is the SAME predicate
+                                        // `bastion_jobs`'s drive tick
+                                        // applies -- the colony's own
+                                        // perception of hostility, which
+                                        // is what stops 22 friendly
+                                        // villagers reading as 22
+                                        // threats -- but it is a SECOND
+                                        // SITE holding it, because the
+                                        // tick owns the expression inline
+                                        // and exposes no accessor. The
+                                        // repair is a `colony_threat_count`
+                                        // producer on that module; this
+                                        // comment cannot enforce and does
+                                        // not pretend to.
+                                        let threats = (&entities, &insp_colonists)
+                                            .join()
+                                            .filter(|(e, _)| {
+                                                insp_agents
+                                                    .get(*e)
+                                                    .and_then(|ag| ag.target)
+                                                    .is_some_and(|t| t.hostile)
+                                            })
+                                            .count()
+                                            as u32;
+                                        Some(bi::ColonyCtx {
+                                            colonist_uids,
+                                            stock,
+                                            stock_distinct,
+                                            stock_truncated,
+                                            jobs,
+                                            food_pantry:
+                                                crate::bastion_jobs::colony_food_stock(
+                                                    (&insp_pickup_items, &positions).join(),
+                                                    board,
+                                                ),
+                                            food_total:
+                                                crate::bastion_jobs::colony_food_total(
+                                                    (&insp_pickup_items).join(),
+                                                    (&insp_colonists, &insp_inventories)
+                                                        .join()
+                                                        .map(|(_, inv)| inv),
+                                                ),
+                                            threats,
+                                        })
+                                    } else {
+                                        None
+                                    };
                                     // TWO CLOCKS, BOTH NAMED, plus the
                                     // ticks-per-game-day the client cannot
                                     // derive (it has the coefficient but
@@ -2073,6 +2393,9 @@ impl<'a> System<'a> for Sys {
                                         parent_name,
                                         board: &job_board,
                                         loaded,
+                                        names: &names,
+                                        mind: mind.as_ref(),
+                                        colony: colony.as_ref(),
                                     };
                                     Some(BastionInspectKind::Sectioned(bi::assemble(
                                         &ctx, &req,

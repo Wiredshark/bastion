@@ -95,7 +95,13 @@ mod tests {
                 arbiter: None,
                 active_job: None,
                 chaser,
+                mood: None,
+                needs: None,
+                energy: None,
             }),
+            names: &[],
+            mind: None,
+            colony: None,
         }
     }
 
@@ -196,6 +202,9 @@ mod tests {
             parent_name: None,
             board: &board,
             loaded: None,
+            names: &[],
+            mind: None,
+            colony: None,
         };
         match provide(&ctx) {
             SectionPayloadV1::Unavailable(id, reason) => {

@@ -17,12 +17,14 @@
 //! the author.
 
 use common::comp::bastion_inspect::{
-    FrameV1, InspectFramesV1, InspectRow, SectionIdV1, SectionPayloadV1,
+    FrameV1, InspectFramesV1, InspectRow, RowSeverityV1, SectionIdV1, SectionPayloadV1,
 };
 
+pub mod colony;
 pub mod identity;
 pub mod path;
 pub mod right_now;
+pub mod thinking;
 
 /// A section view. Pure.
 pub type ViewFn = fn(&SectionPayloadV1, &InspectFramesV1) -> Vec<InspectRow>;
@@ -33,6 +35,8 @@ pub const fn view_for(id: SectionIdV1) -> ViewFn {
         SectionIdV1::Identity => identity::rows,
         SectionIdV1::RightNow => right_now::rows,
         SectionIdV1::Path => path::rows,
+        SectionIdV1::Thinking => thinking::rows,
+        SectionIdV1::Colony => colony::rows,
     }
 }
 
@@ -149,20 +153,40 @@ pub fn header_rows(frames: &InspectFramesV1, loaded: bool) -> Vec<InspectRow> {
     rows
 }
 
-/// One rendered section: its heading and its rows.
+/// One rendered section: its heading, its rows, and how OLD its payload
+/// is against the reply's own clock.
 pub struct RenderedSection {
     pub id: SectionIdV1,
     pub rows: Vec<InspectRow>,
+    /// Server ticks between this section's answer and the header's clocks.
+    /// `Some(0)` is fresh; `None` is "unknown", which happens only when
+    /// nothing is tracking ages.
+    ///
+    /// ★ WHY THIS IS NOT COSMETIC. Sections refresh at different cadences
+    /// and the subscription CARRIES FORWARD a section the newest reply did
+    /// not answer (otherwise every slow section blinks out three refreshes
+    /// in four). A carried section's rows were computed at an earlier tick
+    /// than the clocks above them — two frames on one screen, the defect
+    /// class this subsystem loses most rows to — so the age is printed
+    /// rather than left for the reader to assume away.
+    pub age_ticks: Option<u64>,
 }
 
 /// Render a whole reply into headed sections, in registry order.
-pub fn render(reply: &common::comp::bastion_inspect::SectionedInspectV1) -> Vec<RenderedSection> {
+///
+/// `age_of` supplies each section's staleness; pass `|_| None` when
+/// nothing is tracking it.
+pub fn render(
+    reply: &common::comp::bastion_inspect::SectionedInspectV1,
+    age_of: impl Fn(SectionIdV1) -> Option<u64>,
+) -> Vec<RenderedSection> {
     reply
         .sections
         .iter()
         .map(|p| RenderedSection {
             id: p.id(),
             rows: rows_for(p, &reply.frames),
+            age_ticks: age_of(p.id()),
         })
         .collect()
 }
@@ -184,6 +208,17 @@ pub fn header_lines(
     out
 }
 
+/// The prefix an [`RowSeverityV1::Alarm`] row carries in the text block.
+///
+/// ★ A SEVERITY, NOT A COLOUR — and a marker rather than nothing. The HUD
+/// draws one unstyled text block today, so an alarm row that rendered
+/// identically to its forty neighbours would be invisible in exactly the
+/// case it exists for (a stale `Mood` mirror, a disabled chronicle, a
+/// household over capacity). When this block grows real conrod styling the
+/// marker becomes a colour and this constant goes away; until then the
+/// severity is on the screen rather than only in the type.
+pub const ALARM_PREFIX: &str = "!! ";
+
 /// One row per line. Shared by the header and by every section, so
 /// provenance renders identically wherever it appears.
 fn row_lines(rows: &[InspectRow], verbose: bool) -> Vec<String> {
@@ -194,10 +229,14 @@ fn row_lines(rows: &[InspectRow], verbose: bool) -> Vec<String> {
             } else {
                 format!(" {}", r.unit())
             };
+            let mark = match r.severity() {
+                RowSeverityV1::Normal => "",
+                RowSeverityV1::Alarm => ALARM_PREFIX,
+            };
             if verbose {
-                format!("{}: {}{}   [{}]", r.label(), r.value(), unit, r.provenance())
+                format!("{mark}{}: {}{}   [{}]", r.label(), r.value(), unit, r.provenance())
             } else {
-                format!("{}: {}{}", r.label(), r.value(), unit)
+                format!("{mark}{}: {}{}", r.label(), r.value(), unit)
             }
         })
         .collect()
@@ -214,7 +253,14 @@ fn row_lines(rows: &[InspectRow], verbose: bool) -> Vec<String> {
 pub fn to_lines(sections: &[RenderedSection], verbose: bool) -> Vec<String> {
     let mut out = Vec::new();
     for s in sections {
-        out.push(format!("- {} -", s.id.title()));
+        // ★ A CARRIED SECTION SAYS SO. Sections refresh at different
+        // cadences, so a slow one is routinely older than the clocks in
+        // the header. Printing the gap is the difference between two
+        // frames on one screen and two frames LABELLED on one screen.
+        out.push(match s.age_ticks {
+            Some(0) | None => format!("- {} -", s.id.title()),
+            Some(age) => format!("- {} -   (as of {age} server ticks ago)", s.id.title()),
+        });
         out.extend(row_lines(&s.rows, verbose));
     }
     out
@@ -282,6 +328,46 @@ mod tests {
                 SectionIdV1::RightNow,
                 UnavailableReasonV1::SubjectUnloaded,
             ),
+            SectionPayloadV1::Thinking(
+                common::comp::bastion_inspect::ThinkingSectionV1 {
+                    mood_mirror: Some(0.6),
+                    explanation: None,
+                    needs: Some((0.4, 0.4, 0.4)),
+                    energy: Some(0.9),
+                    guard_bravery: 0.4,
+                    traits: vec!["Stable".into()],
+                    values: vec![(common::bastion::Value::Craft, -10)],
+                    sentiments: Vec::new(),
+                    chronicle: common::comp::bastion_inspect::ChronicleViewV1 {
+                        enabled: true,
+                        truncated: false,
+                        total: 0,
+                        hidden_released: 0,
+                        raw: false,
+                        rows: Vec::new(),
+                        row_cap: 64,
+                    },
+                },
+            ),
+            SectionPayloadV1::Colony(common::comp::bastion_inspect::ColonySectionV1 {
+                drive: common::bastion::ColonyDrive::Grow,
+                drive_since_tick: 10,
+                drive_held_ticks: 890,
+                verdict: None,
+                households: Vec::new(),
+                beds_total: 0,
+                beds_outside_households: 0,
+                professions: [0; WorkType::COUNT],
+                profession_unnamed: 0,
+                roster_loaded: 0,
+                professions_board_entries: 0,
+                stock: Vec::new(),
+                stock_distinct: 0,
+                stock_truncated: false,
+                jobs: common::comp::bastion_inspect::JobTallyV1::default(),
+                designations: 0,
+                tick: 900,
+            }),
         ]
     }
 
@@ -391,7 +477,7 @@ mod tests {
             frames: f,
             sections: every_payload(),
         };
-        let rendered = render(&reply);
+        let rendered = render(&reply, |_| None);
         let plain = to_lines(&rendered, false);
         let verbose = to_lines(&rendered, true);
         let row_count: usize = rendered.iter().map(|s| s.rows.len()).sum();
@@ -404,6 +490,90 @@ mod tests {
         assert!(
             !plain.iter().any(|l| l.contains("frame: ")),
             "normal mode must not"
+        );
+    }
+
+    /// ★ A CARRIED-FORWARD SECTION IS LABELLED WITH ITS AGE.
+    ///
+    /// The subscription retains a section the newest reply did not answer
+    /// (otherwise every slow section blinks out three refreshes in four),
+    /// so the panel routinely shows rows computed at an earlier tick than
+    /// the clocks in its own header. TWO FRAMES COMPARED AS ONE is the
+    /// defect class this subsystem loses most rows to; the heading is
+    /// where it gets named.
+    ///
+    /// FALSIFIER: drop the `Some(age)` arm in `to_lines` and the stale
+    /// heading becomes indistinguishable from the fresh one.
+    #[test]
+    fn a_stale_section_heading_says_how_old_it_is() {
+        let f = frames(0);
+        let reply = SectionedInspectV1 {
+            subject: Uid(std::num::NonZeroU64::new(1).expect("nonzero")),
+            seq: 1,
+            loaded: true,
+            frames: f,
+            sections: vec![identity()],
+        };
+        let fresh = to_lines(&render(&reply, |_| Some(0)), false);
+        assert_eq!(fresh[0], "- Identity -", "a fresh section carries no age note");
+
+        let stale = to_lines(&render(&reply, |_| Some(42)), false);
+        assert!(stale[0].contains("42 server ticks ago"), "got {}", stale[0]);
+
+        // Unknown age renders like fresh rather than inventing a number.
+        let unknown = to_lines(&render(&reply, |_| None), false);
+        assert_eq!(unknown[0], "- Identity -");
+    }
+
+    /// ★ AN ALARM ROW IS VISIBLE IN THE TEXT BLOCK.
+    ///
+    /// The HUD draws one unstyled block, so a severity that lived only in
+    /// the type would be invisible in exactly the cases it exists for.
+    ///
+    /// FALSIFIER: delete the `mark` from `row_lines` and this goes RED.
+    #[test]
+    fn an_alarm_row_is_marked_in_the_rendered_text() {
+        let quiet = InspectRow::new("a", "b", "P", "", FrameV1::Derived);
+        let loud = InspectRow::new("a", "b", "P", "", FrameV1::Derived).alarming();
+        let lines = row_lines(&[quiet, loud], false);
+        assert!(!lines[0].starts_with(ALARM_PREFIX), "a normal row must be quiet");
+        assert!(lines[1].starts_with(ALARM_PREFIX), "an alarm row must be marked");
+        // And the marking survives verbose mode, where a reader is
+        // scanning provenance and needs the alarm even more.
+        let loud = InspectRow::new("a", "b", "P", "", FrameV1::Derived).alarming();
+        assert!(row_lines(&[loud], true)[0].starts_with(ALARM_PREFIX));
+    }
+
+    /// ★ EVERY REGISTERED SECTION HAS A VIEW THAT PRODUCES ROWS FOR ITS
+    /// OWN PAYLOAD — the miswiring check, extended to phase 2.
+    ///
+    /// A registry can be total and still be MISWIRED (Colony's slot
+    /// returning the Thinking view). That compiles; only a round-trip
+    /// catches it, and each view returns an EMPTY vec for a payload that
+    /// is not its own, so a swap shows up as a section with no rows.
+    ///
+    /// FALSIFIER: swap the `Thinking` and `Colony` arms in `view_for` and
+    /// this goes RED on both.
+    #[test]
+    fn every_registered_section_renders_its_own_payload() {
+        let f = frames(0);
+        let mut covered = 0;
+        for p in every_payload() {
+            if matches!(p, SectionPayloadV1::Unavailable(..)) {
+                continue;
+            }
+            let rows = rows_for(&p, &f);
+            assert!(
+                !rows.is_empty(),
+                "{:?} rendered no rows — its view is wired to another section",
+                p.id()
+            );
+            covered += 1;
+        }
+        assert_eq!(
+            covered,
+            SectionIdV1::COUNT,
+            "the fixture must carry one real payload per registered section"
         );
     }
 }

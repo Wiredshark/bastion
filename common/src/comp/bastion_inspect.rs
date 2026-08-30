@@ -114,6 +114,29 @@ pub struct InspectFramesV1 {
 // Rows
 // ---------------------------------------------------------------------------
 
+/// HOW LOUD A ROW IS.
+///
+/// ★ WHY THIS EXISTS AT ALL, and why it is not styling. Phase 2 adds a row
+/// that compares two producers of ONE number — the ECS `Mood` mirror
+/// against `MoodExplanationV1::total_mood`, which is recomputed through the
+/// real `mood_formula`. When they disagree the mirror is stale, and a stale
+/// mirror is the single most valuable thing this panel can say. A reader
+/// scanning forty rows will not find it unless the row itself carries the
+/// fact that it is a FINDING and not a reading.
+///
+/// Deliberately NOT a colour: `InspectRow` is shared by `common` and knows
+/// nothing about a renderer. It is a severity, and each view decides how to
+/// draw it.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub enum RowSeverityV1 {
+    /// An ordinary reading.
+    #[default]
+    Normal,
+    /// A row that is itself a finding — two producers disagreeing, a
+    /// durable record contradicting a runtime table.
+    Alarm,
+}
+
 /// ONE DISPLAYED ROW, which CANNOT BE BUILT WITHOUT NAMING ITS PRODUCER.
 ///
 /// ★ THE DEFECT THIS IS SHAPED AROUND. The inspector once displayed a tool
@@ -146,6 +169,7 @@ pub struct InspectRow {
     /// itself and nothing was filtered.
     scope: Option<&'static str>,
     frame: FrameV1,
+    severity: RowSeverityV1,
 }
 
 impl InspectRow {
@@ -169,6 +193,7 @@ impl InspectRow {
             unit,
             scope: None,
             frame,
+            severity: RowSeverityV1::Normal,
         }
     }
 
@@ -177,6 +202,26 @@ impl InspectRow {
     #[must_use]
     pub fn scoped(mut self, scope: &'static str) -> Self {
         self.scope = Some(scope);
+        self
+    }
+
+    /// Mark the row as a FINDING rather than a reading. Reserve it for
+    /// rows that are only interesting because something disagrees — a
+    /// row that is always loud teaches the reader to skip it.
+    #[must_use]
+    pub fn alarming(mut self) -> Self {
+        self.severity = RowSeverityV1::Alarm;
+        self
+    }
+
+    /// As [`Self::alarming`], but only when `yes`. Written as one call so
+    /// a view cannot build the alarming and the calm row down two
+    /// branches that then drift apart.
+    #[must_use]
+    pub fn alarming_if(mut self, yes: bool) -> Self {
+        if yes {
+            self.severity = RowSeverityV1::Alarm;
+        }
         self
     }
 
@@ -191,6 +236,8 @@ impl InspectRow {
     pub fn scope(&self) -> Option<&'static str> { self.scope }
 
     pub fn frame(&self) -> FrameV1 { self.frame }
+
+    pub fn severity(&self) -> RowSeverityV1 { self.severity }
 
     /// The provenance suffix a UI shows on hover / in verbose mode:
     /// `producer | unit | scope | frame`. Kept here so every view renders
@@ -256,14 +303,34 @@ pub enum SectionIdV1 {
     RightNow,
     /// The retained navigation route, drawn in the world.
     Path,
+    /// WHAT THEY ARE FEELING AND WHY: the mood waterfall (`mood_formula`'s
+    /// own working shown), the personality and values that weight it, the
+    /// needs meters it reads, who they like, and what has happened to
+    /// them.
+    ///
+    /// Almost all of this ALREADY CROSSES THE WIRE in
+    /// `BastionInspectPayload` and is thrown away unread by the client.
+    Thinking,
+    /// THE TOWN AROUND THEM: the colony drive and its reason, households,
+    /// the profession census, the stock breakdown and the job tally.
+    ///
+    /// Subject-independent — it answers the same for every colonist — but
+    /// it rides the same request because the question a player asks while
+    /// looking at one idle colonist is usually about the town.
+    Colony,
 }
 
 impl SectionIdV1 {
-    pub const COUNT: usize = 3;
+    pub const COUNT: usize = 5;
 
     /// Every section, in display order.
-    pub const ALL: [SectionIdV1; Self::COUNT] =
-        [SectionIdV1::Identity, SectionIdV1::RightNow, SectionIdV1::Path];
+    pub const ALL: [SectionIdV1; Self::COUNT] = [
+        SectionIdV1::Identity,
+        SectionIdV1::RightNow,
+        SectionIdV1::Path,
+        SectionIdV1::Thinking,
+        SectionIdV1::Colony,
+    ];
 
     /// The exhaustiveness anchor for [`Self::ALL`]. No wildcard arm — a
     /// new variant fails to compile here first.
@@ -272,6 +339,8 @@ impl SectionIdV1 {
             SectionIdV1::Identity => 0,
             SectionIdV1::RightNow => 1,
             SectionIdV1::Path => 2,
+            SectionIdV1::Thinking => 3,
+            SectionIdV1::Colony => 4,
         }
     }
 
@@ -281,6 +350,8 @@ impl SectionIdV1 {
             SectionIdV1::Identity => "Identity",
             SectionIdV1::RightNow => "Right Now",
             SectionIdV1::Path => "Path",
+            SectionIdV1::Thinking => "Thinking",
+            SectionIdV1::Colony => "Colony",
         }
     }
 
@@ -291,6 +362,16 @@ impl SectionIdV1 {
             SectionIdV1::Identity => SectionCadenceV1::Slow,
             SectionIdV1::RightNow => SectionCadenceV1::Live,
             SectionIdV1::Path => SectionCadenceV1::Live,
+            // The mood cadence is a multi-second thing and the chronicle
+            // is event-driven; polling either at 2 Hz would cost a
+            // chronicle scan and a sentiment walk twice a second for a
+            // picture that has not moved.
+            SectionIdV1::Thinking => SectionCadenceV1::Slow,
+            // The colony drive is evaluated once every 1,500 server
+            // ticks and the profession census once a game-day. Asking
+            // faster than Slow would re-scan every item in the world for
+            // an answer that cannot have changed.
+            SectionIdV1::Colony => SectionCadenceV1::Slow,
         }
     }
 
@@ -310,6 +391,19 @@ impl SectionIdV1 {
             SectionIdV1::RightNow => false,
             // The route lives on `Agent::chaser`, an ECS component.
             SectionIdV1::Path => false,
+            // Mood, needs and energy are ECS components. The chronicle
+            // and the sentiments would survive an unload, but a Thinking
+            // section that answered with half its rows missing and no
+            // mood at all would be worse than one that says why: the
+            // waterfall IS the section.
+            SectionIdV1::Thinking => false,
+            // ★ THE ONE SECTION THAT IS NOT ABOUT THE SUBJECT. The town
+            // is still there when a colonist walks out of view, so this
+            // answers regardless — which is also what makes it useful
+            // for the case the panel was rebuilt around: a colonist
+            // unloads mid-inspection and the player still wants to know
+            // what the colony is doing.
+            SectionIdV1::Colony => true,
         }
     }
 }
@@ -583,6 +677,371 @@ impl PathSectionV1 {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Thinking
+// ---------------------------------------------------------------------------
+
+/// How far the ECS `Mood` mirror may drift from the recomputed
+/// `mood_formula` output before the panel calls it a defect.
+///
+/// The two are computed from the same tables at different cadences, so a
+/// tiny float difference is expected and meaningless. Anything the reader
+/// could notice on a 0..1 meter is not.
+pub const MOOD_MIRROR_TOLERANCE: f32 = 0.01;
+
+/// ★ THE SECTION'S MOST VALUABLE OUTPUT, as a PURE RULE.
+///
+/// `comp::Mood(f32)` is a MIRROR: it is written by the mood tick and read
+/// by everything downstream. `MoodExplanationV1::total_mood` is recomputed
+/// at request time through the REAL [`crate::comp::bastion::mood_formula`].
+/// If the two disagree by more than [`MOOD_MIRROR_TOLERANCE`] the mirror is
+/// stale, and every consumer of `Mood` is acting on a number the formula
+/// would no longer produce.
+///
+/// Returns the SIGNED difference (`mirror - explained`) when it matters, so
+/// a caller can say which way it drifted, and `None` when the comparison
+/// cannot be made at all. `None` is not "they agree": a missing `Mood`
+/// component and a mood that matches are different states and the panel
+/// must not render them alike.
+///
+/// Lives here rather than in the view so the rule is pinned in a
+/// `-p veloren-common` test — and so the server could adopt it later
+/// without a second copy of the tolerance.
+pub fn mood_mirror_disagreement(mirror: Option<f32>, explained: Option<f32>) -> Option<f32> {
+    let (m, e) = (mirror?, explained?);
+    let d = m - e;
+    (d.abs() > MOOD_MIRROR_TOLERANCE).then_some(d)
+}
+
+/// What a sentiment is held TOWARD, once the server has resolved it.
+///
+/// ★ THE DEFECT THIS REPLACES. The shipped payload labels every sentiment
+/// `"uid:N"` — a number that names nobody. Resolution happens server-side,
+/// where the rtsim roster is already open, and the KIND rides along so a
+/// name the server could not resolve is visibly unresolved rather than
+/// quietly rendered as if it were a person.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum SentimentTargetKindV1 {
+    /// An rtsim NPC that carries a `BastionColonist` record — `who` is
+    /// their real name.
+    Colonist,
+    /// An rtsim NPC with no colonist record — `who` is the raw id.
+    Npc,
+    /// A player character.
+    Character,
+    /// A faction.
+    Faction,
+}
+
+impl SentimentTargetKindV1 {
+    /// No wildcard arm.
+    pub const fn label(self) -> &'static str {
+        match self {
+            SentimentTargetKindV1::Colonist => "colonist",
+            SentimentTargetKindV1::Npc => "npc (no colonist record)",
+            SentimentTargetKindV1::Character => "player character",
+            SentimentTargetKindV1::Faction => "faction",
+        }
+    }
+}
+
+/// One held sentiment, with its target RESOLVED.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SentimentRowV1 {
+    pub who: String,
+    pub kind: SentimentTargetKindV1,
+    /// `Sentiment::value()` — the same scale gameplay consumes.
+    pub value: f32,
+}
+
+/// One chronicle line.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ChronicleRowV1 {
+    pub tick: u64,
+    /// The `EventKind`'s own `Debug`, which carries each variant's typed
+    /// payload. Formatted server-side because `bastion_entity_event_log`
+    /// lives in `bastion-server` and `common` cannot name its types.
+    pub kind: String,
+    /// The second party, resolved to a name where one exists.
+    pub actor: Option<String>,
+}
+
+/// The colonist's chronicle AND EVERY FILTER BETWEEN THE RING AND THE ROWS.
+///
+/// ★ AN EMPTY SECTION, A DISABLED PRODUCER AND A FILTERED ONE MUST NEVER
+/// RENDER ALIKE. Three states hide behind "no events here":
+///
+/// * the log is switched off (`BASTION_ENTITY_EVENT_LOG=0`) — nothing was
+///   ever recorded and nothing ever will be until it is switched back on;
+/// * the log is on and this colonist genuinely has no history;
+/// * the log is on, the colonist has 476 events, and the player VIEW drops
+///   the `Released` rows — so 412 are shown and 64 are hidden by a filter
+///   the reader never agreed to.
+///
+/// Every one of those is carried as its own field. `total` is the count
+/// BEFORE the view filter, `hidden_released` is what the filter took, and
+/// `truncated` is the ring having dropped the oldest to make room —
+/// a fourth, independent kind of missing.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ChronicleViewV1 {
+    /// `bastion_entity_event_log::enabled()`. FALSE means the producer is
+    /// off, not that the colonist is uneventful.
+    pub enabled: bool,
+    /// The per-entity ring dropped older events to make room.
+    pub truncated: bool,
+    /// Rows the ring held for this subject, BEFORE the view filter.
+    pub total: u32,
+    /// Rows the player view dropped because they are job-release spam.
+    /// Zero while `raw` is set.
+    pub hidden_released: u32,
+    /// `BASTION_CHRONICLE_RAW` is set, so nothing was filtered.
+    pub raw: bool,
+    /// The most recent rows, oldest-first, at most [`Self::row_cap`].
+    pub rows: Vec<ChronicleRowV1>,
+    /// The transmitted-row cap, so the panel can say the list is a
+    /// SUFFIX rather than quietly showing a short history.
+    pub row_cap: u32,
+}
+
+impl ChronicleViewV1 {
+    /// Rows that survived the view filter — `total - hidden_released`,
+    /// saturating.
+    pub const fn shown_after_filter(&self) -> u32 { self.total.saturating_sub(self.hidden_released) }
+
+    /// Whether the transmitted list is a suffix of what survived the
+    /// filter.
+    pub const fn capped(&self) -> bool { (self.rows.len() as u32) < self.shown_after_filter() }
+}
+
+/// Thinking — WHAT THEY ARE FEELING AND WHY.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ThinkingSectionV1 {
+    /// The ECS `Mood(f32)` MIRROR — what every downstream consumer reads.
+    /// `None` = no `Mood` component, which is NOT mood zero.
+    pub mood_mirror: Option<f32>,
+    /// The recomputed explanation, whose `total_mood` came back through
+    /// the real `mood_formula`. `None` when the subject has no rtsim
+    /// entity, so the chronicle-dependent thought half cannot be built.
+    pub explanation: Option<crate::comp::bastion::MoodExplanationV1>,
+    /// `Needs { hunger, rest, recreation }`, ECS frame. The same three
+    /// values the waterfall's penalties are computed from — carried
+    /// separately so the reader can see the meter beside the penalty.
+    pub needs: Option<(f32, f32, f32)>,
+    /// `Energy::fraction`.
+    pub energy: Option<f32>,
+    /// `BastionColonist::guard_bravery`. LOWER is braver.
+    pub guard_bravery: f32,
+    /// Every vanilla Big-Five trait the rtsim `Personality` satisfies.
+    pub traits: Vec<String>,
+    /// `BastionColonist::values` — the ±50 map `care_multiplier` scales
+    /// each thought by. In `Value` order (it is a `BTreeMap`), so it
+    /// cannot reorder between two assemblies.
+    pub values: Vec<(crate::bastion::Value, i8)>,
+    /// Held sentiments, target RESOLVED, sorted by `(who, kind)`.
+    pub sentiments: Vec<SentimentRowV1>,
+    pub chronicle: ChronicleViewV1,
+}
+
+// ---------------------------------------------------------------------------
+// Colony
+// ---------------------------------------------------------------------------
+
+/// WHERE a counted item was.
+///
+/// ★ THE DEFECT THIS TYPE EXISTS FOR, restated because it is the reason
+/// every stock row is a breakdown and never a scalar. The inspector once
+/// showed a tool count of `0` while 64 tools existed in the colony: the
+/// number was stockpile-scoped and the label did not say so, and a player
+/// reading it could not tell a broken forge from broken hauling. With the
+/// three disjoint scopes side by side, `0 in stockpiles · 64 carried · 3 on
+/// ground` says "hauling" at a glance and `0 · 0 · 0` says "forge".
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum StockScopeV1 {
+    /// Inside a stockpile region — the pantry, and the ONLY domain
+    /// `colony_food_stock` and the fetch leg draw from.
+    InStockpileRegions,
+    /// In a colonist's `Inventory`.
+    CarriedByColonists,
+    /// A dropped `PickupItem` that is NOT inside a stockpile region.
+    OnGroundAnywhere,
+    /// The sum of the three above. Carried explicitly rather than left to
+    /// the view to add up, so producer and consumer cannot disagree about
+    /// whether the scopes are disjoint.
+    Total,
+}
+
+impl StockScopeV1 {
+    /// The three DISJOINT scopes, in display order. `Total` is excluded
+    /// deliberately: it is their sum, and including it here would make
+    /// any loop that sums `ALL` double-count.
+    pub const DISJOINT: [StockScopeV1; 3] = [
+        StockScopeV1::InStockpileRegions,
+        StockScopeV1::CarriedByColonists,
+        StockScopeV1::OnGroundAnywhere,
+    ];
+
+    /// No wildcard arm.
+    pub const fn label(self) -> &'static str {
+        match self {
+            StockScopeV1::InStockpileRegions => "in stockpiles",
+            StockScopeV1::CarriedByColonists => "carried",
+            StockScopeV1::OnGroundAnywhere => "on ground",
+            StockScopeV1::Total => "total",
+        }
+    }
+}
+
+/// One (item, scope) count. Never a bare number.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StockRowV1 {
+    /// The item's `itemdef_id` — a greppable asset path, not a prose
+    /// name, for the same reason `InspectRow::producer` is a symbol.
+    pub item_label: String,
+    pub count: u32,
+    pub scope: StockScopeV1,
+}
+
+/// One member of a household.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HouseholdMemberV1 {
+    pub uid: Uid,
+    /// `None` when the owner uid resolves to no loaded colonist — a real
+    /// state (a bed owned by someone who has unloaded), reported rather
+    /// than hidden behind the uid.
+    pub name: Option<String>,
+}
+
+/// One derived household — "one colonist per house" made visible.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HouseholdRowV1 {
+    pub min: vek::Vec3<i32>,
+    pub max: vek::Vec3<i32>,
+    /// Real bed slots inside the region — the capacity SOURCE.
+    pub beds: u32,
+    /// `household_capacity(beds)` — the 1..6 clamp Ben's ruling pins.
+    pub capacity: u32,
+    /// Uid-sorted by `derive_households`; `members[0]` is the head.
+    pub members: Vec<HouseholdMemberV1>,
+}
+
+/// The job board's four refusal counters, from ONE scan.
+///
+/// ★ WHY THIS IS A STRUCT AND NOT FOUR RETURNS. The shipped colony
+/// dashboard walked `board.jobs.values()` FOUR separate times, once per
+/// counter, with the material predicate re-joining every dropped item in
+/// the world inside its filter. Four passes is not only four times the
+/// work — it is four chances for one predicate to drift from its
+/// neighbours, and the counters are read side by side as if they
+/// partitioned the same population.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JobTallyV1 {
+    pub total: u32,
+    /// `Job::claimed_by.is_some()` — ACTIVELY HELD, not merely owned.
+    pub claimed: u32,
+    /// Unclaimed AND no cell a colonist can stand in to work it.
+    pub blocked_stance: u32,
+    /// `Job::unreachable`.
+    pub unreachable: u32,
+    /// Waiting on a material nobody carries and no stockpile holds.
+    pub blocked_materials: u32,
+}
+
+/// The colony ladder RE-EVALUATED at inspect time.
+///
+/// ★ WHAT THIS IS AND IS NOT. `JobBoard::colony_drive` stores only
+/// `(drive, since_tick)` — `colony_drive_for` returns `(drive, reason,
+/// value)` and the call site DISCARDS the last two. There is therefore no
+/// stored reason to read, and the only honest way to get one is to run the
+/// same pure function again over freshly measured inputs.
+///
+/// That makes this a SECOND SAMPLE, not a second producer: the function is
+/// the sim's own, and every input it was fed is carried here so the reader
+/// can see what the verdict was computed from. When `want` differs from the
+/// held drive the colony is mid-transition or the dwell timer is eating it
+/// — which is exactly the state the DWELL SUPPRESSED log line exists to
+/// report, and which nothing player-facing could see before.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ColonyDriveVerdictV1 {
+    pub want: crate::bastion::ColonyDrive,
+    /// `colony_drive_for`'s own `deciding` string — `"threats"`,
+    /// `"food_per_cap"`, `"beds_short"`, `"satisfied"`.
+    pub deciding: String,
+    /// The magnitude behind `deciding`.
+    pub value: f32,
+    /// `colony_sustain_bar(held)` — the Sustain arm's threshold is a BAND,
+    /// so a value without its bar is unreadable.
+    pub bar: f32,
+    pub food_per_cap: f32,
+    /// Food inside stockpile regions.
+    pub food_pantry: u32,
+    /// Food anywhere the colony can eat it — the number that DECIDES.
+    pub food_total: u32,
+    pub threats: u32,
+    pub beds: u32,
+    pub pop: u32,
+}
+
+/// Colony — the town around the subject.
+///
+/// ★ FRAME WARNING, carried in the type's own doc because it is the
+/// commonest defect in this subsystem. Everything derived from `JobBoard`
+/// is RUNTIME-ONLY: the board is rebuilt from `JobBoard::default()` at
+/// every server start, so `professions`, `colony_drive` and the household
+/// derivation all read empty after a restart until their own cadences run
+/// again. `roster_loaded` and the stock census are ECS. The two are NOT
+/// commensurable and every row that renders them says which it is.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ColonySectionV1 {
+    /// `JobBoard::colony_drive.0` — the HELD drive, read, never recomputed.
+    pub drive: crate::bastion::ColonyDrive,
+    /// The server tick it last TRANSITIONED. Boot-relative.
+    pub drive_since_tick: u64,
+    /// `server_tick - drive_since_tick`, saturating.
+    pub drive_held_ticks: u64,
+    /// The ladder re-run over freshly measured inputs. `None` when the
+    /// request did not ask for the Colony section's measurements.
+    pub verdict: Option<ColonyDriveVerdictV1>,
+    /// `derive_households`, in board push order (stable per world).
+    pub households: Vec<HouseholdRowV1>,
+    /// `JobBoard::beds.len()`.
+    pub beds_total: u32,
+    /// Beds that fall inside no `Bed` region — open-ground bedrolls, which
+    /// house nobody as far as the population loop is concerned.
+    pub beds_outside_households: u32,
+    /// ★ TOTAL OVER `WorkType::ALL` BY CONSTRUCTION, indexed by
+    /// `lane_index()`, for exactly the reason `IdentitySectionV1::skills`
+    /// is: a hand-written lane list is a defect waiting for the next
+    /// lane, and this codebase has already shipped that bug twice.
+    ///
+    /// Counted over the LOADED roster only, by keyed lookup — see
+    /// `profession_unnamed`.
+    pub professions: [u32; WorkType::COUNT],
+    /// Loaded colonists the board has named no profession for. `roster_loaded
+    /// - Σ professions` by construction, carried explicitly so a view
+    /// cannot forget the bucket. THIS is the owner's acceptance criterion
+    /// as a number: it should fall, not the histogram's total.
+    pub profession_unnamed: u32,
+    /// Loaded colonists — the ECS-frame denominator of the histogram.
+    pub roster_loaded: u32,
+    /// `JobBoard::professions.len()` — entries INCLUDING colonists who
+    /// have since unloaded. Reported beside the loaded histogram rather
+    /// than mixed into it: subtracting one from the other would be two
+    /// frames compared as one.
+    pub professions_board_entries: u32,
+    /// Four rows per item (three disjoint scopes plus their total),
+    /// heaviest item first.
+    pub stock: Vec<StockRowV1>,
+    /// Distinct item definitions seen, BEFORE the cap.
+    pub stock_distinct: u32,
+    /// The census hit its cap and the list is a prefix of the heaviest.
+    pub stock_truncated: bool,
+    pub jobs: JobTallyV1,
+    /// `JobBoard::designated_regions().count()`.
+    pub designations: u32,
+    /// The server tick this whole section was sampled at.
+    pub tick: u64,
+}
+
 /// One section's answer.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum SectionPayloadV1 {
@@ -598,6 +1057,10 @@ pub enum SectionPayloadV1 {
     /// inspector exists to remove. So refusal is a payload, and it names
     /// which section refused and why.
     Unavailable(SectionIdV1, UnavailableReasonV1),
+    /// APPENDED after `Unavailable`, which is where new variants go: the
+    /// ordinal is wire-visible and the existing ones must not move.
+    Thinking(ThinkingSectionV1),
+    Colony(ColonySectionV1),
 }
 
 /// Why a section could not answer.
@@ -611,6 +1074,19 @@ pub enum UnavailableReasonV1 {
     NotAColonist,
     /// The subject has no retained route right now.
     NoRoute,
+    /// ★ THE COLLAPSED-SECTION REFUSAL, and the reason it is a distinct
+    /// state rather than an error.
+    ///
+    /// The expensive halves of Thinking (a chronicle walk, a sentiment
+    /// walk, a mood recomputation) and of Colony (every dropped item and
+    /// every colonist inventory in the world) are measured AT THE CALL
+    /// SITE and only when the request asks for them — that is how a
+    /// collapsed section costs zero. If a section is somehow reached
+    /// without its measurement, it must say so rather than answer with
+    /// zeroes: "the colony holds no tools" and "nobody counted the tools"
+    /// are opposite conclusions and a panel that renders them alike is the
+    /// original defect wearing a new hat.
+    NotMeasured,
 }
 
 impl UnavailableReasonV1 {
@@ -620,6 +1096,9 @@ impl UnavailableReasonV1 {
             UnavailableReasonV1::SubjectUnloaded => "unloaded — showing roster state only",
             UnavailableReasonV1::NotAColonist => "not a colonist",
             UnavailableReasonV1::NoRoute => "no route retained right now",
+            UnavailableReasonV1::NotMeasured => {
+                "not measured this request — NOT the same as zero"
+            },
         }
     }
 }
@@ -635,6 +1114,8 @@ impl SectionPayloadV1 {
             SectionPayloadV1::RightNow(_) => SectionIdV1::RightNow,
             SectionPayloadV1::Path(_) => SectionIdV1::Path,
             SectionPayloadV1::Unavailable(id, _) => *id,
+            SectionPayloadV1::Thinking(_) => SectionIdV1::Thinking,
+            SectionPayloadV1::Colony(_) => SectionIdV1::Colony,
         }
     }
 }
@@ -699,6 +1180,8 @@ mod tests {
             ),
             SectionPayloadV1::Unavailable(SectionIdV1::RightNow, UnavailableReasonV1::NotAColonist),
             SectionPayloadV1::Unavailable(SectionIdV1::Path, UnavailableReasonV1::NoRoute),
+            SectionPayloadV1::Unavailable(SectionIdV1::Thinking, UnavailableReasonV1::NotMeasured),
+            SectionPayloadV1::Unavailable(SectionIdV1::Colony, UnavailableReasonV1::NotMeasured),
         ];
         let mut seen: Vec<SectionIdV1> = samples.iter().map(|p| p.id()).collect();
         seen.sort();
@@ -893,5 +1376,209 @@ mod tests {
             SectionCadenceV1::Live.min_interval_secs()
                 < SectionCadenceV1::Slow.min_interval_secs()
         );
+    }
+
+    /// ★ THE APPENDED SECTION PAYLOADS DO NOT MOVE THE EXISTING ONES.
+    ///
+    /// `SectionPayloadV1` rides inside `SectionedInspectV1`, so its
+    /// variant ordinals are as wire-visible as the outer enum's. The two
+    /// phase-2 payloads are appended AFTER `Unavailable` — which reads
+    /// oddly (a refusal in the middle of the answers) and is exactly
+    /// right: append-only means append, and moving `Unavailable` to the
+    /// end to tidy the list would silently re-map every reply in flight
+    /// between two builds.
+    ///
+    /// FALSIFIER: move `Thinking` above `Unavailable` and this goes RED.
+    #[test]
+    fn appended_section_payloads_do_not_move_existing_ordinals() {
+        let enc = |v: &SectionPayloadV1| {
+            bincode::serde::encode_to_vec(v, bincode::config::legacy()).expect("encodes")[0..4]
+                .to_vec()
+        };
+        let unavail = |id| SectionPayloadV1::Unavailable(id, UnavailableReasonV1::SubjectUnloaded);
+        // Ordinals 0..2 belong to payloads that need a full struct to
+        // build, so the refusal arm stands in for the ONE thing under
+        // test here: where `Unavailable`, `Thinking` and `Colony` sit.
+        assert_eq!(enc(&unavail(SectionIdV1::Identity)), [3, 0, 0, 0]);
+        assert_eq!(enc(&SectionPayloadV1::Thinking(thinking_fixture())), [4, 0, 0, 0]);
+        assert_eq!(enc(&SectionPayloadV1::Colony(colony_fixture())), [5, 0, 0, 0]);
+
+        // And the reason enum is append-only too: `NotMeasured` is last.
+        let renc = |r: UnavailableReasonV1| {
+            bincode::serde::encode_to_vec(&r, bincode::config::legacy()).expect("encodes")[0..4]
+                .to_vec()
+        };
+        assert_eq!(renc(UnavailableReasonV1::SubjectUnloaded), [0, 0, 0, 0]);
+        assert_eq!(renc(UnavailableReasonV1::NotAColonist), [1, 0, 0, 0]);
+        assert_eq!(renc(UnavailableReasonV1::NoRoute), [2, 0, 0, 0]);
+        assert_eq!(renc(UnavailableReasonV1::NotMeasured), [3, 0, 0, 0]);
+    }
+
+    fn chronicle(enabled: bool, total: u32, hidden: u32, rows: u32) -> ChronicleViewV1 {
+        ChronicleViewV1 {
+            enabled,
+            truncated: false,
+            total,
+            hidden_released: hidden,
+            raw: false,
+            rows: (0..rows)
+                .map(|i| ChronicleRowV1 { tick: u64::from(i), kind: "Slept".into(), actor: None })
+                .collect(),
+            row_cap: 64,
+        }
+    }
+
+    fn thinking_fixture() -> ThinkingSectionV1 {
+        ThinkingSectionV1 {
+            mood_mirror: Some(0.6),
+            explanation: None,
+            needs: Some((0.5, 0.5, 0.5)),
+            energy: Some(1.0),
+            guard_bravery: 0.4,
+            traits: vec!["Neurotic".into()],
+            values: vec![(crate::bastion::Value::Kin, 30)],
+            sentiments: Vec::new(),
+            chronicle: chronicle(true, 0, 0, 0),
+        }
+    }
+
+    fn colony_fixture() -> ColonySectionV1 {
+        ColonySectionV1 {
+            drive: crate::bastion::ColonyDrive::Grow,
+            drive_since_tick: 0,
+            drive_held_ticks: 0,
+            verdict: None,
+            households: Vec::new(),
+            beds_total: 0,
+            beds_outside_households: 0,
+            professions: [0; WorkType::COUNT],
+            profession_unnamed: 0,
+            roster_loaded: 0,
+            professions_board_entries: 0,
+            stock: Vec::new(),
+            stock_distinct: 0,
+            stock_truncated: false,
+            jobs: JobTallyV1::default(),
+            designations: 0,
+            tick: 0,
+        }
+    }
+
+    /// ★ THE MOOD MIRROR CHECK — the Thinking section's most valuable
+    /// output, as a pure rule.
+    ///
+    /// `Mood(f32)` is written by the mood tick; `total_mood` is recomputed
+    /// through the real `mood_formula` at request time. A disagreement
+    /// means every consumer of `Mood` is acting on a stale number.
+    ///
+    /// FALSIFIERS, both of which have been RUN:
+    ///
+    /// * return `Some(d.abs())` instead of `Some(d)` and the "which
+    ///   direction" assertion goes RED;
+    /// * replace the `?`s with `unwrap_or(0.0)` and the three
+    ///   absent-input assertions go RED.
+    ///
+    /// ★ A FALSIFIER THAT DOES NOT WORK, recorded so nobody tries it:
+    /// changing `>` to `>=` does NOT flip anything here. The boundary of a
+    /// float comparison is fuzzy by about one ULP — `0.61f32 - 0.60f32` is
+    /// 0.00999999…, a hair BELOW the tolerance — so the "exactly at the
+    /// bar" case is not representable and no amount of wanting makes it
+    /// sharp. The same lesson is already on the record at
+    /// `the_request_floor_admits_normal_play_and_refuses_a_flood`.
+    #[test]
+    fn the_mood_mirror_check_fires_only_on_a_real_disagreement() {
+        // Agreement, and float noise well inside the tolerance.
+        assert_eq!(mood_mirror_disagreement(Some(0.6), Some(0.6)), None);
+        assert_eq!(mood_mirror_disagreement(Some(0.6), Some(0.6001)), None);
+        // A difference AT the tolerance (to within one ULP) is not a
+        // disagreement; a clear multiple of it is.
+        assert_eq!(mood_mirror_disagreement(Some(0.61), Some(0.60)), None);
+        let d = mood_mirror_disagreement(Some(0.62), Some(0.60)).expect("a real drift");
+        assert!((d - 0.02).abs() < 1e-6, "the SIGNED difference must say which way: {d}");
+        assert!(
+            mood_mirror_disagreement(Some(0.30), Some(0.60)).is_some_and(|d| d < 0.0),
+            "the other direction must be reported too"
+        );
+        // ★ AN ABSENT INPUT IS NOT AN AGREEMENT. A colonist with no
+        // `Mood` component and a colonist whose mood matches are
+        // different states; collapsing them would let a missing mirror
+        // read as a healthy one.
+        assert_eq!(mood_mirror_disagreement(None, Some(0.6)), None);
+        assert_eq!(mood_mirror_disagreement(Some(0.6), None), None);
+        assert_eq!(mood_mirror_disagreement(None, None), None);
+    }
+
+    /// ★ AN EMPTY CHRONICLE, A DISABLED ONE AND A FILTERED ONE ARE THREE
+    /// DIFFERENT STATES, and the payload can tell them apart.
+    ///
+    /// FALSIFIER: drop `enabled` or `hidden_released` from the payload and
+    /// the corresponding pair below becomes indistinguishable.
+    #[test]
+    fn chronicle_absence_disabled_and_filtered_are_distinguishable() {
+        let off = chronicle(false, 0, 0, 0);
+        let empty = chronicle(true, 0, 0, 0);
+        let filtered = chronicle(true, 476, 64, 64);
+
+        assert_ne!(off, empty, "a disabled log must not look like an empty one");
+        assert!(!off.enabled && empty.enabled);
+
+        // The filtered case can state its own arithmetic.
+        assert_eq!(filtered.shown_after_filter(), 412);
+        assert!(filtered.capped(), "64 rows of 412 is a suffix and must say so");
+        assert!(!empty.capped(), "nothing to cap");
+        assert!(!filtered.rows.is_empty());
+
+        // A colonist with a handful of events is NOT capped and NOT
+        // filtered -- the ordinary case must stay quiet.
+        let plain = chronicle(true, 3, 0, 3);
+        assert_eq!(plain.shown_after_filter(), 3);
+        assert!(!plain.capped());
+        assert_eq!(plain.hidden_released, 0);
+    }
+
+    /// A row's severity is part of the row, defaults to quiet, and
+    /// survives `scoped`.
+    ///
+    /// FALSIFIER: make `alarming_if(false)` set `Alarm` and the quiet case
+    /// goes RED.
+    #[test]
+    fn row_severity_defaults_quiet_and_is_opt_in() {
+        let plain = InspectRow::new("a", "b", "P", "", FrameV1::Derived);
+        assert_eq!(plain.severity(), RowSeverityV1::Normal);
+        assert_eq!(
+            InspectRow::new("a", "b", "P", "", FrameV1::Derived).alarming().severity(),
+            RowSeverityV1::Alarm
+        );
+        assert_eq!(
+            InspectRow::new("a", "b", "P", "", FrameV1::Derived)
+                .alarming_if(false)
+                .scoped("s")
+                .severity(),
+            RowSeverityV1::Normal
+        );
+        assert_eq!(
+            InspectRow::new("a", "b", "P", "", FrameV1::Derived)
+                .alarming_if(true)
+                .scoped("s")
+                .severity(),
+            RowSeverityV1::Alarm
+        );
+    }
+
+    /// The stock scopes PARTITION: `Total` is their sum and is excluded
+    /// from `DISJOINT`, so nothing that iterates the disjoint set can
+    /// double-count.
+    ///
+    /// FALSIFIER: add `Total` to `DISJOINT` and this goes RED.
+    #[test]
+    fn stock_scopes_partition_and_total_is_not_one_of_them() {
+        assert_eq!(StockScopeV1::DISJOINT.len(), 3);
+        assert!(!StockScopeV1::DISJOINT.contains(&StockScopeV1::Total));
+        let mut labels: Vec<&str> =
+            StockScopeV1::DISJOINT.iter().map(|s| s.label()).collect();
+        labels.sort_unstable();
+        labels.dedup();
+        assert_eq!(labels.len(), 3, "two scopes share a label");
+        assert_ne!(StockScopeV1::Total.label(), StockScopeV1::InStockpileRegions.label());
     }
 }
