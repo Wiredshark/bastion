@@ -1248,6 +1248,23 @@ pub(crate) fn off_grade_verdict(
 /// grade". Named so the pin can state which constant it is guarding.
 pub const OFF_GRADE_BLOCKS: f32 = 3.0;
 
+/// bastion (2026-08-31): how many times the search-gap bridge's override
+/// declined to glide a body into solid terrain. The fix WITNESSES ITSELF --
+/// a silent fix is an unproven one, and this branch must be shown to be
+/// reached before any drop in `EMBED WATCH` may be attributed to it.
+pub static GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// Would the search-gap bridge's override be walking a body INTO ROCK?
+///
+/// The surface probe refuses for two reasons and the override used to treat
+/// them alike: a missing floor (a gap or ledge — glide across it, that is the
+/// bridge's whole purpose) versus a solid feet/head cell (a wall — the body
+/// must hold). Only the second is a defect, so only the second is refused.
+pub(crate) fn glide_would_enter_rock(feet_solid: bool, head_solid: bool) -> bool {
+    feet_solid || head_solid
+}
+
 pub(crate) fn census_is_wedged(speed: f32, stuck_time: f32) -> bool {
     speed < 0.2 && stuck_time > CENSUS_WEDGED_SECS
 }
@@ -29637,10 +29654,99 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         // persists instead of stuttering.
                                         active.stuck_time += dt.0;
                                         if active.stuck_time > 1.0 {
-                                            let anim = (d / d.magnitude().max(0.01))
-                                                * KINEMATIC_WALK_SPEED;
-                                            pending_kinematic
-                                                .push((entity, try_pos, anim));
+                                            // ★ THE OVERRIDE MUST NOT WALK
+                                            // INTO ROCK (2026-08-31). The
+                                            // probe above refuses for TWO
+                                            // different reasons and this
+                                            // branch treated them as one:
+                                            //   (a) `below` is not solid at
+                                            //       any dz -- a gap or a
+                                            //       ledge. Gliding across it
+                                            //       is what the bridge EXISTS
+                                            //       for; unchanged.
+                                            //   (b) `feet`/`head` are SOLID --
+                                            //       the body is facing a wall.
+                                            //       `try_pos` is then a cell
+                                            //       inside the rock, and this
+                                            //       branch wrote it anyway.
+                                            //
+                                            // The mover is SOLE OWNER (the
+                                            // `kinematic_travels` opt-out
+                                            // stops physics integrating under
+                                            // it), so nothing downstream
+                                            // catches the write. The body
+                                            // simply is inside the world.
+                                            //
+                                            // MEASURED, live, with the
+                                            // `entry_step` instrument: every
+                                            // sampled embed entered at
+                                            // step 0.140 == KINEMATIC_WALK_
+                                            // SPEED*dt (4.2 * 0.0333) with
+                                            // `entry_vel.z == 0` -- this
+                                            // glide, not a teleport. Geometry:
+                                            // entry z=181 against the +5 face
+                                            // to z=186 lodges at 183.9-184.5;
+                                            // entry z=185 against the -4 face
+                                            // lodges at 182.3. Scale: 63,445
+                                            // EMBED WATCH fires in the owner's
+                                            // real world in 18h across 50 of
+                                            // 51 colonists, 50% of them at ten
+                                            // cells -- the faces.
+                                            //
+                                            // A GUARD MUST REFUSE BEFORE IT
+                                            // SPENDS, and a mover's refusal
+                                            // must not be overridden into the
+                                            // thing it refused.
+                                            let tx = try_pos.x.floor() as i32;
+                                            let ty = try_pos.y.floor() as i32;
+                                            let tz = try_pos.z.floor() as i32;
+                                            let into_rock = glide_would_enter_rock(
+                                                solid(Vec3::new(tx, ty, tz)),
+                                                solid(Vec3::new(tx, ty, tz + 1)),
+                                            );
+                                            if into_rock {
+                                                // Hold. The route watchdog,
+                                                // the replan and the fail-safe
+                                                // remain the backstops; a body
+                                                // standing at a wall is
+                                                // correctable, a body inside
+                                                // one is not.
+                                                let n = GLIDE_REFUSED_INTO_ROCK
+                                                    .fetch_add(
+                                                        1,
+                                                        core::sync::atomic::Ordering::Relaxed,
+                                                    ) + 1;
+                                                if n.is_power_of_two() {
+                                                    tracing::info!(
+                                                        uid = uids
+                                                            .get(entity)
+                                                            .map(|u| u.0.get()),
+                                                        ?try_pos,
+                                                        feet_solid =
+                                                            solid(Vec3::new(tx, ty, tz)),
+                                                        head_solid = solid(Vec3::new(
+                                                            tx,
+                                                            ty,
+                                                            tz + 1
+                                                        )),
+                                                        refusals_now = n,
+                                                        "bastion: GLIDE REFUSED INTO ROCK \
+                                                         — the search-gap bridge would have \
+                                                         walked a body into solid terrain; \
+                                                         holding instead"
+                                                    );
+                                                }
+                                                pending_kinematic.push((
+                                                    entity,
+                                                    pos.0,
+                                                    Vec3::zero(),
+                                                ));
+                                            } else {
+                                                let anim = (d / d.magnitude().max(0.01))
+                                                    * KINEMATIC_WALK_SPEED;
+                                                pending_kinematic
+                                                    .push((entity, try_pos, anim));
+                                            }
                                         } else {
                                             pending_kinematic.push((
                                                 entity,
@@ -45506,6 +45612,49 @@ mod tests {
     /// rescue below is `grounded == true` — so "disarm whenever grounded"
     /// would have starved exactly the population the guard protects. That is
     /// the reason the lateral arm, not the guard, is what changed.
+    /// ★ THE SEARCH-GAP BRIDGE'S OVERRIDE WALKED BODIES INTO ROCK
+    /// (2026-08-31). Guards the `into_rock` branch of the kinematic mover's
+    /// glide override. The probe above it refuses for two different reasons
+    /// and the override treated them as one.
+    ///
+    /// Measured with the `entry_step` instrument: every sampled embed
+    /// entered at step 0.140 == KINEMATIC_WALK_SPEED*dt with entry_vel.z
+    /// == 0 — this glide, not a teleport. 63,445 EMBED WATCH fires in the
+    /// owner's real world in 18h, 50% of them at ten cells: the vertical
+    /// faces between the town's two grades.
+    #[test]
+    fn the_glide_override_refuses_rock_but_still_crosses_a_gap() {
+        // A WALL. The probe found nothing standable because the feet cell is
+        // solid — the +5 face from z=181 to z=186 that produced the measured
+        // lodgings at 183.9, 184.2 and 184.5. Must refuse.
+        assert!(
+            glide_would_enter_rock(true, false),
+            "a solid feet cell is rock; the override must hold, not enter it"
+        );
+        // Head-height rock with clear feet — a low overhang or the underside
+        // of the same face. Also a wall.
+        assert!(
+            glide_would_enter_rock(false, true),
+            "a solid head cell is rock too"
+        );
+        // A GAP or LEDGE: feet and head both clear, the probe refused only
+        // because no floor was found beneath any of dz [0,+1,-1,-2]. This is
+        // the case the bridge EXISTS for and it must still glide, or the fix
+        // has starved the thing it was protecting.
+        assert!(
+            !glide_would_enter_rock(false, false),
+            "clear feet and head is a gap, not rock — the bridge must still \
+             glide or the search-gap freeze returns"
+        );
+        // The counter exists so the fix can be shown to be REACHED. A silent
+        // fix is an unproven one.
+        assert_eq!(
+            GLIDE_REFUSED_INTO_ROCK.load(core::sync::atomic::Ordering::Relaxed),
+            0,
+            "the witness starts at zero so a live run's count is meaningful"
+        );
+    }
+
     #[test]
     fn off_grade_keeps_the_real_rescues_and_drops_the_indoor_ones() {
         // Pin 1, MUST STAY ARMED. Real fire, uid=318136: standing at z=186 on
