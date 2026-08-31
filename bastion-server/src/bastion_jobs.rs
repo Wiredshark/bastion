@@ -34954,6 +34954,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // route or the waypoint no longer stands, so the
                         // cave-in path and every non-colonist keep today's
                         // behaviour exactly.
+                        // The two waypoints bracketing this body, and
+                        // whether either is itself inside terrain.
+                        let solid_cell = |q: Vec3<i32>| {
+                            terrain.get(q).is_ok_and(|b| {
+                                b.is_solid() || common::path::blocks_colonist_body(b)
+                            })
+                        };
+                        let (route_head, route_prev) = board
+                            .path_cache
+                            .get(uid)
+                            .map(|(wps, idx, _)| {
+                                (
+                                    wps.get(*idx).copied(),
+                                    wps.get(idx.saturating_sub(1)).copied(),
+                                )
+                            })
+                            .unwrap_or((None, None));
+                        let route_head_solid = route_head.map(&solid_cell);
+                        let route_prev_solid = route_prev.map(&solid_cell);
                         let back_along_route = board
                             .path_cache
                             .get(uid)
@@ -35007,6 +35026,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // mover still owns this body, false = physics
                                 // has it back. Names the writer.
                                 kinematic,
+                                // ★ IS THE PLAN ITSELF ADMISSIBLE? (2026-08-31)
+                                // `pure_glide` writes the straight-line
+                                // interpolation between waypoints with no
+                                // terrain check, on the stated premise that
+                                // "the route was admissible when the router
+                                // computed it". These four fields test that
+                                // premise directly. If the waypoints are CLEAR
+                                // while the body between them is in rock, the
+                                // segment clips a corner and the ROUTER is
+                                // what needs fixing. If a waypoint is itself
+                                // solid, the router emits cells inside walls
+                                // and that is a different repair entirely.
+                                route_head = ?route_head,
+                                route_head_solid,
+                                route_prev = ?route_prev,
+                                route_prev_solid,
                                 "bastion EMBED WATCH: colonist WEDGED in \
                                  terrain (persisted a full second) — \
                                  relocated; hunt the writer"
