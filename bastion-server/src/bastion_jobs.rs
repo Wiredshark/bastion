@@ -29412,12 +29412,28 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     let y_slide =
                                         Vec3::new(pos.0.x, try_pos.y, try_pos.z);
                                     let mut new_pos = None;
+                                    // ★ THE FOUR CHASER SUB-PATHS ARE NOT ONE
+                                    // (2026-08-31). All four were tagged
+                                    // `chaser-probe`, and 63 of 63 embeds came
+                                    // back with that tag -- true but useless,
+                                    // because THREE of the four write
+                                    // `try_pos` with NO surface probe at all.
+                                    // `try_pos` is the 3D interpolated point,
+                                    // which is exactly where the fractional z
+                                    // (83% of embeds) and the vertical entry
+                                    // velocity (71%) come from. Split the tag
+                                    // before fixing anything: a tag that
+                                    // cannot separate probed from unprobed
+                                    // cannot convict either.
+                                    let mut chaser_sub = "chaser-probed";
                                     if pure_glide {
+                                        chaser_sub = "chaser-pure-glide";
                                         new_pos = Some(try_pos);
                                     } else if phased.xy().magnitude() <= 0.05 {
                                         // Pure-vertical settle (xy arrived):
                                         // z is the node's own promise — no
                                         // surface probe, no slide.
+                                        chaser_sub = "chaser-settle";
                                         new_pos = Some(try_pos);
                                     } else {
                                         for cand in [try_pos, x_slide, y_slide] {
@@ -29437,6 +29453,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             && d.z < -1.2
                                             && horiz.magnitude() > 0.3
                                         {
+                                            chaser_sub = "chaser-deepdrop";
                                             new_pos = Some(try_pos);
                                         }
                                     }
@@ -29646,7 +29663,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         let site = if overridden {
                                             "chaser-override"
                                         } else {
-                                            "chaser-probe"
+                                            chaser_sub
                                         };
                                         let displaced = (np - pos.0).magnitude()
                                             > (KINEMATIC_WALK_SPEED * dt.0) * 0.3;
