@@ -1222,6 +1222,32 @@ pub(crate) fn flee_hurt_signal(sees_hostile: bool, health_frac: f32, flee_health
 /// transient) so no information is destroyed — a rising `slowed` is the
 /// congestion signal, a rising `stuck` is the pathing-defect signal.
 pub(crate) const CENSUS_WEDGED_SECS: f32 = 5.0;
+/// Is this body OFF GRADE — i.e. in the pit/roof case the 60s fail-safe
+/// teleport exists to rescue?
+///
+/// `dest_*` is the nearest STANDABLE OPEN cell found by the surface scan,
+/// `pos_*` the body. See the call site for the measurement; the short version
+/// is that the lateral arm alone read "indoors" as "in a hole", because the
+/// nearest open cell to someone standing in a house is outside the wall.
+///
+/// The vertical arm is unconditional and symmetric (pit below, roof above).
+/// The lateral arm requires the body to be OFF THE GROUND: a body standing on
+/// solid ground at grade is not off grade, however far the scan had to walk.
+pub(crate) fn off_grade_verdict(
+    grounded: bool,
+    dest_xy: Vec2<f32>,
+    dest_z: f32,
+    pos_xy: Vec2<f32>,
+    pos_z: f32,
+) -> bool {
+    (!grounded && dest_xy.distance(pos_xy) >= OFF_GRADE_BLOCKS)
+        || (dest_z - pos_z).abs() >= OFF_GRADE_BLOCKS
+}
+
+/// The distance, in blocks, at which the fail-safe watch calls a body "off
+/// grade". Named so the pin can state which constant it is guarding.
+pub const OFF_GRADE_BLOCKS: f32 = 3.0;
+
 pub(crate) fn census_is_wedged(speed: f32, stuck_time: f32) -> bool {
     speed < 0.2 && stuck_time > CENSUS_WEDGED_SECS
 }
@@ -37610,9 +37636,53 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // and not the other would have left a colonist who reaches the
                 // egress scan but whose stuck-watch never armed -- two clocks
                 // disagreeing about whether the same colonist is in trouble.
+                // ★ DISTANCE IS NOT CONNECTIVITY (2026-08-31). `dest` is the
+                // nearest STANDABLE OPEN cell (r=0..=8). INDOORS the nearest
+                // such cell is on the far side of a wall, so the lateral term
+                // read "this colonist is inside a building" as "this colonist
+                // is in a hole" and teleported him out of his own house after
+                // 60s of standing still.
+                //
+                // Measured, n=55 fail-safe teleports over 14 game days
+                // (soak-accept, roster 24->51): 49 of 55 were LATERAL-ONLY
+                // (mean |dz| 0.76 blocks -- at grade), mean lateral throw 7.3
+                // blocks, max 12.6. Of those, 27 were on_ground=true + Idle +
+                // at grade: a jobless colonist standing perfectly still on a
+                // floor, which is what people in a town DO. 12 colonists
+                // produced 39 of the 55 fires (one uid 7x): the response
+                // repeated, the outcome never changed.
+                //
+                // Prior art says the same thing structurally. RimWorld answers
+                // "is this pawn trapped?" with region flood-fill, Dwarf
+                // Fortress with pathfind failure; neither uses distance, and
+                // neither teleports. Entrapment is a CONNECTIVITY question,
+                // and a distance proxy measures WALL PROXIMITY instead.
+                //
+                // The vertical arm is untouched -- it is the one that carries
+                // the real cases (pit below, roof above, both via
+                // `ground_below_dest`), and it armed 6 of 6 genuine fires and
+                // 0 of 49 false ones. The lateral arm now requires the body to
+                // be OFF THE GROUND: airborne near a wall may still be a real
+                // wedge, but a body standing on solid ground at grade is not
+                // "off grade" however far away the scan found its next open
+                // cell.
+                //
+                // REJECTED, on measurement, before building: gating on
+                // `grounded && head_clear`. All 6 GENUINE fires are also
+                // grounded && head_clear, so that predicate would have starved
+                // exactly the population this guard exists to protect.
+                let grounded = id_maps
+                    .uid_entity(*uid)
+                    .and_then(|entity| physics_states.get(entity))
+                    .is_some_and(|state| state.on_ground.is_some());
                 let off_grade = dest.is_some_and(|d| {
-                    d.map(|e| e as f32).xy().distance(pos.0.xy()) >= 3.0
-                        || (d.z as f32 - pos.0.z).abs() >= 3.0
+                    off_grade_verdict(
+                        grounded,
+                        d.map(|e| e as f32).xy(),
+                        d.z as f32,
+                        pos.0.xy(),
+                        pos.0.z,
+                    )
                 });
                 if !off_grade {
                     // On/at a surface — not stuck (B7 feeds idle colonists).
@@ -37623,10 +37693,6 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // this boundary, 13 oscillations, 200s never rescued.
                     // Airborne near-surface = freeze (no accrual, no wipe);
                     // the E2/churn discipline at a spatial boundary.
-                    let grounded = id_maps
-                        .uid_entity(*uid)
-                        .and_then(|entity| physics_states.get(entity))
-                        .is_some_and(|state| state.on_ground.is_some());
                     if grounded {
                         watch_wipe(&mut board.stuck_watch, uid, "surface");
                         // Genuine surface: the below-grade episode is over —
@@ -45385,6 +45451,86 @@ mod tests {
     /// `condemned_cells`, every job on it dropped, gauntlet refuses it
     /// forever), each successful rescue permanently condemned its own
     /// landing pad while the trap took zero strikes and stayed armed.
+    /// ★ THE FAIL-SAFE'S LATERAL ARM READ "INDOORS" AS "IN A HOLE"
+    /// (2026-08-31). Every coordinate below is taken from the soak-accept
+    /// corpus (roster 24->51, 14 game days, n=55 fail-safe teleports), not
+    /// invented, so a future reader can find the fire that produced it.
+    ///
+    /// The three pins together state the shape of the fix: the VERTICAL arm
+    /// carries every genuine case and is untouched; the LATERAL arm now
+    /// requires the body to be off the ground.
+    ///
+    /// Pin 1 also records WHY the obvious predicate was rejected. The real
+    /// rescue below is `grounded == true` — so "disarm whenever grounded"
+    /// would have starved exactly the population the guard protects. That is
+    /// the reason the lateral arm, not the guard, is what changed.
+    #[test]
+    fn off_grade_keeps_the_real_rescues_and_drops_the_indoor_ones() {
+        // Pin 1, MUST STAY ARMED. Real fire, uid=318136: standing at z=186 on
+        // an upper storey with its exit five blocks below at z=181, and
+        // `on_ground == true`. Vertical arm, unchanged.
+        assert!(
+            off_grade_verdict(true, Vec2::new(9348.0, 13826.0), 181.0, Vec2::new(
+                9345.0, 13820.0
+            ), 186.0),
+            "a body five blocks above its exit is off grade even when grounded"
+        );
+
+        // Pin 1b, MUST STAY ARMED. Real fire, uid=24: z=182 with its exit four
+        // blocks ABOVE at z=186 — the pit direction. Both directions, one arm.
+        assert!(
+            off_grade_verdict(true, Vec2::new(9329.0, 13815.0), 186.0, Vec2::new(
+                9333.0, 13819.0
+            ), 182.0),
+            "a body four blocks below its exit is off grade (pit direction)"
+        );
+
+        // Pin 2, MUST NOW DISARM — this is the pin that is RED before the fix.
+        // Real fire, uid=32616735: body at (9334.68, 13824.15, 181.33),
+        // teleported to (9327, 13817, 181). |dz| = 0.33 blocks, so the vertical
+        // arm never armed it; the lateral throw was 10.5 blocks. Grounded,
+        // head clear, Idle, jobless — a colonist standing indoors.
+        assert!(
+            !off_grade_verdict(
+                true,
+                Vec2::new(9327.0, 13817.0),
+                181.0,
+                Vec2::new(9334.68, 13824.15),
+                181.33,
+            ),
+            "a grounded body at grade is not off grade, however far the surface \
+             scan had to walk to find its next open cell"
+        );
+
+        // Pin 3, MUST STAY ARMED (P5): the same geometry with the body OFF the
+        // ground is the airborne/Wallrun class — 21 of the 55 fires. This row
+        // deliberately does not touch it; removing its rescue without a
+        // replacement could hang a body on a wall. If this pin ever flips,
+        // that class was absorbed silently.
+        assert!(
+            off_grade_verdict(
+                false,
+                Vec2::new(9327.0, 13817.0),
+                181.0,
+                Vec2::new(9334.68, 13824.15),
+                181.33,
+            ),
+            "an AIRBORNE body ten blocks from its nearest open cell stays armed"
+        );
+
+        // Pin 4: the threshold itself, against its degenerate settings. At
+        // exactly OFF_GRADE_BLOCKS it arms; a hair under, it does not.
+        let at = 181.0 + OFF_GRADE_BLOCKS;
+        assert!(
+            off_grade_verdict(true, Vec2::zero(), at, Vec2::zero(), 181.0),
+            "exactly OFF_GRADE_BLOCKS of vertical displacement arms"
+        );
+        assert!(
+            !off_grade_verdict(true, Vec2::zero(), at - 0.01, Vec2::zero(), 181.0),
+            "a hair under OFF_GRADE_BLOCKS does not arm"
+        );
+    }
+
     #[test]
     fn the_failsafe_eject_condemns_the_trap_not_its_own_landing_pad() {
         let src = include_str!("bastion_jobs.rs");
