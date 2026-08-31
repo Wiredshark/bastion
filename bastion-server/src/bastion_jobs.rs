@@ -6190,16 +6190,92 @@ pub(crate) fn crop_is_colony_managed(sprite: SpriteKind, has_growth_clock: bool)
         && (volunteer_crop_item(sprite).is_none() || has_growth_clock)
 }
 
-/// What a plot is actually planted with, counted per roster crop and split
-/// by provenance. Fixed-size arrays indexed by roster position: no HashMap,
-/// no iteration order, nothing for DETERMINISM BY CONSTRUCTION to worry
-/// about.
+/// ★★ ROW 53b — WHOSE CELL IS THIS, *AND DID THE COLONY KNOW WHY IT PLANTED
+/// IT?*
+///
+/// The shipped census answered only the first half, with the growth clock:
+/// clocked = the colony's, unclocked = the village's. That is exactly enough
+/// to ROUTE a cell (see [`crop_is_colony_managed`]) and not enough to WEIGH
+/// its vote, because the colony's first sow on a fresh plot is taken against
+/// an EMPTY census — a guess made before any evidence exists — and a guess
+/// that votes in tier 1 decides the field for the rest of the game. Tier 1
+/// strictly dominates tier 2 and sowing the modal crop can only raise its own
+/// count, so ONE fallback wheat out-ranks any number of village tomatoes that
+/// load later. Measured on the owner's live plot: two `source=Fallback` sows
+/// followed by seventy `source=Colony` ones, on a field whose census never
+/// showed a single crop.
+///
+/// So the clock keeps answering "whose?", and a per-cell BLIND MARK
+/// ([`JobBoard::farm_blind_sown`]) answers "did it know?". Three electorates
+/// — and only one of them elects tier 1.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) enum CropProvenance {
+    /// No growth clock: the VILLAGE grew it. Tier 2's electorate.
+    Village,
+    /// The colony sowed it against a census that was NOT empty — a choice
+    /// taken on evidence. Tier 1's electorate, and the only one.
+    Chosen,
+    /// The colony sowed it against an EMPTY census: [`FARM_CROP_FALLBACK`]
+    /// planted because there was nothing to go on. Votes in NO tier — a
+    /// placeholder standing in the ground, not a standing decision — so the
+    /// plot stays open to tier 2 until real evidence turns up.
+    Blind,
+}
+
+/// The provenance ladder, hoisted out of [`plot_crop_plan`] so it can be
+/// pinned as a rule instead of as a call.
+///
+/// ★ THE ORDER IS LOAD-BEARING. The clock is tested FIRST, which is what
+/// makes a stale blind mark inert: a mark left behind on a cell whose crop
+/// was harvested cannot be seen, because that cell no longer carries the
+/// colony's clock and is counted as the village's (or, having no sprite at
+/// all, is not counted). That single fact is what lets the mark's lifecycle
+/// be "rewritten on every sow" instead of "evicted at four removal sites" —
+/// see [`JobBoard::farm_blind_sown`].
+pub(crate) fn crop_provenance(has_growth_clock: bool, sown_blind: bool) -> CropProvenance {
+    if !has_growth_clock {
+        CropProvenance::Village
+    } else if sown_blind {
+        CropProvenance::Blind
+    } else {
+        CropProvenance::Chosen
+    }
+}
+
+/// What a plot is actually planted with, counted per roster crop and split by
+/// provenance — PLUS what the instrument could see while counting. Fixed-size
+/// arrays indexed by roster position: no HashMap, no iteration order, nothing
+/// for DETERMINISM BY CONSTRUCTION to worry about.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct CropCensus {
-    /// Cells carrying this colony's growth clock — what IT planted here.
+    /// Cells the colony sowed ON EVIDENCE — tier 1's electorate, and the
+    /// only bucket [`CropCensus::plan`] consults first.
     pub colony: [u32; FARM_CROP_ROSTER.len()],
-    /// Roster cells with no clock — what the VILLAGE grew here.
+    /// Roster cells with no clock — what the VILLAGE grew here. Tier 2.
     pub worldgen: [u32; FARM_CROP_ROSTER.len()],
+    /// Cells the colony sowed BLIND. Counted so the witness can show them,
+    /// consulted by no tier. See [`CropProvenance::Blind`].
+    pub blind: [u32; FARM_CROP_ROSTER.len()],
+    /// ★ THE DENOMINATOR. Columns of this plot that had a resolved ground z
+    /// — i.e. how much of the plot the census was even ALLOWED to look at.
+    pub columns: u32,
+    /// Crop cells whose terrain read SUCCEEDED. `columns - read` is the part
+    /// of the plot sitting in an unloaded chunk, so `read = 0` is "the
+    /// instrument saw nothing", never "the field is empty".
+    pub read: u32,
+    /// ★★ THE AMBIGUITY THIS COUNTER EXISTS TO KILL. Cells carrying a real
+    /// sprite that is not on the roster: worldgen plants eleven crops and
+    /// [`FARM_CROP_ROSTER`] covers four, so corn, flax, radish, turnip,
+    /// pumpkin, sunflower and wildflower fields censused ZERO and printed
+    /// the same all-zero line as bare dirt. A whole diagnosis was spent on
+    /// that difference. Now: `read` high, `unrostered` zero, every bucket
+    /// zero ⇒ the plot is genuinely BARE; `unrostered` high ⇒ there is a
+    /// real field here, of crops this colony has no food item for.
+    ///
+    /// A COUNTER, NEVER AN INPUT. [`CropCensus::plan`] must not read this or
+    /// the other two — pinned by
+    /// `the_witness_counters_cannot_change_the_plan`.
+    pub unrostered: u32,
 }
 
 /// Which tier of [`CropCensus::plan`] answered — the witness's `source`.
@@ -6236,13 +6312,35 @@ impl CropCensus {
     /// `WheatYellow` standing in an adopted village TOMATO field would count
     /// as colony wheat, win tier 1 outright, and out-vote three hundred
     /// tomatoes. Two questions, two tests, both pinned.
-    pub(crate) fn observe(&mut self, sprite: SpriteKind, has_growth_clock: bool) {
-        if let Some(i) = crop_roster_index(sprite) {
-            if has_growth_clock {
-                self.colony[i] += 1;
-            } else {
-                self.worldgen[i] += 1;
-            }
+    pub(crate) fn observe(&mut self, sprite: SpriteKind, provenance: CropProvenance) {
+        match crop_roster_index(sprite) {
+            Some(i) => match provenance {
+                CropProvenance::Chosen => self.colony[i] += 1,
+                CropProvenance::Village => self.worldgen[i] += 1,
+                CropProvenance::Blind => self.blind[i] += 1,
+            },
+            // Not on the roster — no vote, but SAY SO. This is the whole of
+            // the `unrostered` counter's producer.
+            None => self.unrostered += 1,
+        }
+    }
+
+    /// One readable cell of a plot, sprite and all — the per-cell half of
+    /// [`plot_crop_plan`], hoisted so the counting can be tested at all (the
+    /// loop itself needs a `TerrainGrid`).
+    ///
+    /// ★★ AIR READS `Some(SpriteKind::Empty)`, NOT `None`. That vanilla
+    /// encoding has already cost this file one silently-dead arm (the farm
+    /// pass's own `match crop.get_sprite()` carries the scar: "a None-only
+    /// arm silently skipped every empty field cell"). Counting `Empty` as an
+    /// unrostered sprite would make every bare plot in the world report a
+    /// foreign field — the exact misreading the counter exists to prevent,
+    /// reintroduced by the counter itself.
+    pub(crate) fn observe_cell(&mut self, sprite: Option<SpriteKind>, provenance: CropProvenance) {
+        self.read += 1;
+        match sprite {
+            None | Some(SpriteKind::Empty) => {},
+            Some(s) => self.observe(s, provenance),
         }
     }
 
@@ -6264,21 +6362,48 @@ impl CropCensus {
     }
 
     /// ★★ ANTI-CHURN IS THE ACCEPTANCE CRITERION, AND IT IS STRUCTURAL, NOT
-    /// TUNED. The plan is a STRICT FIXED POINT under its own output: sowing
-    /// crop C on an empty cell adds one to `colony[C]` and nothing else, so
-    ///   - tier 1 leader C stays leader (its count strictly rose);
-    ///   - a tier-2 answer C promotes to tier 1 with `colony[C] = 1 > 0`, the
-    ///     only non-zero entry, so C again;
-    ///   - the tier-3 fallback promotes to tier 1 on `FARM_CROP_FALLBACK`.
-    /// In every tier the plan's own output re-elects it, and a tie broken to
-    /// index i is broken the same way next time because sowing i made it a
-    /// STRICT winner. There is no ratio at which this oscillates, which is
-    /// why the pin sweeps every mix rather than a single 50/50 case.
+    /// TUNED. The plan is a STRICT FIXED POINT under its own output. Sowing
+    /// crop C records ONE cell whose provenance is decided by the tier that
+    /// answered ([`CropProvenance`]), so:
+    ///   - tier 1 leader C is answered `Colony` ⇒ the cell is `Chosen` ⇒
+    ///     `colony[C]` strictly rises ⇒ C is still the strict leader;
+    ///   - a tier-2 answer C is answered `Worldgen` ⇒ the cell is `Chosen`
+    ///     ⇒ `colony[C] = 1`, the ONLY non-zero entry (tier 2 fires only
+    ///     when `colony` is empty) ⇒ tier 1 now answers C — the same crop,
+    ///     one tier up;
+    ///   - a tier-3 answer is `Fallback` ⇒ the cell is `Blind` ⇒ NO bucket a
+    ///     tier reads changes ⇒ tier 3 answers [`FARM_CROP_FALLBACK`] again.
+    /// In every tier the plan's own output re-elects the same CROP, and a tie
+    /// broken to index i is broken the same way next time because sowing i
+    /// made it a strict winner. There is no ratio at which this oscillates,
+    /// which is why the pin sweeps every mix rather than a single 50/50 case.
     ///
-    /// NOT STORED, ANYWHERE. Re-derived from terrain + the growth clock every
-    /// time it is needed. A stored plan is a second source of truth that can
-    /// disagree with the field it names; this one cannot go stale because it
-    /// has no state to go stale.
+    /// ★★ ROW 53b — WHY THE TIER-3 ARM NO LONGER PROMOTES, AND WHY THAT IS
+    /// STILL ANTI-CHURN. It used to: a blind wheat cell landed in `colony`
+    /// and armed tier 1, which made the fixed point hold on the CROP *and*
+    /// slammed the door on tier 2 forever. The plot's first, evidence-free
+    /// guess became its permanent decision. Routing blind cells to their own
+    /// bucket keeps the fixed point (tier 3 is now a fixed point on its own
+    /// terms, planting the identical crop) and re-opens exactly one door:
+    /// evidence that arrives LATER can still be adopted. Nothing else moves —
+    /// a plot with no evidence at all plants `FARM_CROP_FALLBACK` forever,
+    /// bit for bit as before.
+    ///
+    /// THE ADOPTION IS ONE-WAY. Tier 1 is consulted first and never looks at
+    /// `worldgen`, so the FIRST sow taken on evidence locks the plot: a
+    /// village census that then flaps (crops gleaned, chunks loading and
+    /// unloading) cannot drag an adopted plot off its crop. The window in
+    /// which a flapping tier 2 can change the answer is bounded by that first
+    /// sow, and nothing is planted inside it, so the FIELD cannot churn even
+    /// while the forecast line does.
+    ///
+    /// NOT STORED, ANYWHERE. Re-derived from terrain + the growth clock +
+    /// the blind marks every time it is needed. A stored plan is a second
+    /// source of truth that can disagree with the field it names; this one
+    /// cannot go stale because it has no state to go stale. (The blind mark
+    /// is not a stored plan — it is per-cell provenance of a past ACTION, the
+    /// same class of fact as the growth clock itself; see
+    /// [`JobBoard::farm_blind_sown`].)
     pub(crate) fn plan(&self) -> CropPlan {
         if let Some(i) = Self::modal(&self.colony) {
             CropPlan {
@@ -6301,14 +6426,31 @@ impl CropCensus {
         }
     }
 
-    /// Compact witness text — roster order, both provenances, one line.
+    /// Compact witness text — roster order, all three provenances
+    /// (`chosen/village/blind`), then what the instrument could see.
+    ///
+    /// ★ THE MECHANISM MUST SHOW ITSELF FAILING. The three trailing counters
+    /// are the half that was missing: `columns=540 read=540 unrostered=0`
+    /// with every bucket zero says the plot is genuinely BARE; the same line
+    /// with `unrostered=312` says there is a real village field here of crops
+    /// the roster cannot name; `read=0` says the census never got to look.
+    /// Before this, all three printed identically.
     pub(crate) fn line(&self) -> String {
-        FARM_CROP_ROSTER
+        let crops = FARM_CROP_ROSTER
             .iter()
             .enumerate()
-            .map(|(i, s)| format!("{s:?}={}/{}", self.colony[i], self.worldgen[i]))
+            .map(|(i, s)| {
+                format!(
+                    "{s:?}={}/{}/{}",
+                    self.colony[i], self.worldgen[i], self.blind[i]
+                )
+            })
             .collect::<Vec<_>>()
-            .join(" ")
+            .join(" ");
+        format!(
+            "{crops} columns={} read={} unrostered={}",
+            self.columns, self.read, self.unrostered
+        )
     }
 }
 
@@ -6326,12 +6468,16 @@ impl CropCensus {
 ///
 /// A column absent from `column_z`, or reading unloaded, is skipped exactly
 /// as the farm pass skips it: an unseen cell casts no vote rather than
-/// voting for nothing.
+/// voting for nothing. It is COUNTED as it is skipped, though — `columns`
+/// and `read` are what separate "the field is empty" from "the census never
+/// got to look", which is a distinction this witness could not previously
+/// make and which cost a whole diagnosis.
 pub(crate) fn plot_crop_plan(
     plot: &Region,
     terrain: &TerrainGrid,
     column_z: &std::collections::BTreeMap<(i32, i32), i32>,
     growth: &std::collections::BTreeMap<(i32, i32, i32), f64>,
+    blind_sown: &std::collections::BTreeSet<(i32, i32, i32)>,
 ) -> CropPlan {
     let mut census = CropCensus::default();
     for y in plot.min.y..=plot.max.y {
@@ -6339,14 +6485,16 @@ pub(crate) fn plot_crop_plan(
             let Some(&gz) = column_z.get(&(x, y)) else {
                 continue;
             };
+            census.columns += 1;
             let cpos = Vec3::new(x, y, gz + 1);
             let Ok(crop) = terrain.get(cpos) else {
                 continue;
             };
-            let Some(sprite) = crop.get_sprite() else {
-                continue;
-            };
-            census.observe(sprite, growth.contains_key(&(cpos.x, cpos.y, cpos.z)));
+            let key = (cpos.x, cpos.y, cpos.z);
+            census.observe_cell(
+                crop.get_sprite(),
+                crop_provenance(growth.contains_key(&key), blind_sown.contains(&key)),
+            );
         }
     }
     census.plan()
@@ -11491,6 +11639,33 @@ pub struct JobBoard {
     /// ordering, never hash-iteration order (the PATH-0 discipline).
     /// Evicted at harvest and by the pass when the sprite vanishes.
     farm_growth: std::collections::BTreeMap<(i32, i32, i32), f64>,
+    /// ★★ ROW 53b — THE BLIND MARK. Cells this colony sowed against an EMPTY
+    /// census, i.e. [`FARM_CROP_FALLBACK`] planted because there was nothing
+    /// to go on. [`crop_provenance`] routes them to [`CropCensus::blind`],
+    /// which no tier of [`CropCensus::plan`] reads — so a guess taken at boot
+    /// can no longer establish tier 1 and lock the plot out of the village's
+    /// own crop for the rest of the game.
+    ///
+    /// NOT A STORED PLAN. [`plot_crop_plan`] still re-derives the plan from
+    /// terrain every time and still cannot be handed an answer: this is
+    /// per-CELL provenance of a past ACTION, the same class of fact as
+    /// `farm_growth` directly above (which already answers "did the colony
+    /// plant this?"). This map answers the second half — "did it know why?".
+    ///
+    /// ★ WHY IT CANNOT GO STALE, and so needs no eviction beside the four
+    /// `farm_growth` removal sites: it is REWRITTEN — inserted or removed —
+    /// by the sow completion on EVERY sow, and it is READ only through
+    /// [`crop_provenance`], which tests the growth clock FIRST. A mark left
+    /// on a cell whose crop has been harvested is therefore invisible (that
+    /// cell has no clock, and having been cleared to `Block::empty()` has no
+    /// sprite to count either), and the moment the cell IS sown again the
+    /// mark is rewritten. Pruned in `cancel_region` for MEMORY only, which
+    /// bounds it — like `farm_column_z` — by the painted farm footprint
+    /// rather than by the history of painting.
+    ///
+    /// BTreeSet, not HashSet: the PATH-0 discipline. Nothing iterates it
+    /// today and nothing that ever does may inherit hash order.
+    farm_blind_sown: std::collections::BTreeSet<(i32, i32, i32)>,
     /// ★ ROW 53 — WITNESS ONLY, NEVER AN INPUT. The last crop plan LOGGED
     /// for a plot (keyed by its `min` corner), so the farm pass can say
     /// whether the plan CHANGED. Nothing reads it to decide anything:
@@ -13446,6 +13621,12 @@ impl JobBoard {
         // survivor is harmless (one extra "changed" line); dropping it keeps
         // a repainted plot from inheriting the last tenant's plan in the log.
         self.farm_plan_witness.retain(|&(x, y, _), _| covered(x, y));
+        // ROW 53b: the blind marks die with their columns. MEMORY ONLY — a
+        // survivor is inert (the census tests the growth clock first, and
+        // every sow rewrites the mark; see the field's own doc) — but this
+        // is what bounds the set by the painted footprint instead of by the
+        // history of painting.
+        self.farm_blind_sown.retain(|&(x, y, _)| covered(x, y));
         let growth_before = self.farm_growth.len();
         self.farm_growth.retain(|&(x, y, z), _| {
             covered(x, y) && !region.contains_point(Vec3::new(x, y, z))
@@ -24325,6 +24506,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     &terrain,
                     &board.farm_column_z,
                     &board.farm_growth,
+                    &board.farm_blind_sown,
                 );
                 let plan_key = (plot.min.x, plot.min.y, plot.min.z);
                 let plan_changed =
@@ -32266,6 +32448,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             &terrain,
                                             &board.farm_column_z,
                                             &board.farm_growth,
+                                            &board.farm_blind_sown,
                                         )
                                     })
                                     .unwrap_or_else(CropPlan::fallback);
@@ -32273,9 +32456,36 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     Block::air(plan.crop).with_attr(Growth(FARM_GROWTH_SOWN))
                                 {
                                     block_change.set(job.pos, nb);
-                                    board
-                                        .farm_growth
-                                        .insert((job.pos.x, job.pos.y, job.pos.z), time.0);
+                                    let ck = (job.pos.x, job.pos.y, job.pos.z);
+                                    board.farm_growth.insert(ck, time.0);
+                                    // ★★ ROW 53b: A GUESS IS NOT A DECISION,
+                                    // AND THIS IS THE ONLY PLACE THAT KNOWS
+                                    // THE DIFFERENCE. The census is derived
+                                    // from terrain and terrain does not
+                                    // record WHY a crop was planted, so the
+                                    // tier that answered has to be written
+                                    // down at the moment it answers or the
+                                    // fact is gone forever. `Fallback` means
+                                    // the census was empty on both sides —
+                                    // there was nothing to go on — so the
+                                    // cell is marked BLIND and votes in no
+                                    // tier, leaving the plot open to the
+                                    // village's own crop if it ever loads.
+                                    //
+                                    // BOTH BRANCHES ARE LOAD-BEARING. The
+                                    // `remove` is what makes a stale mark
+                                    // impossible: every sow rewrites this
+                                    // cell's answer, so a mark left over
+                                    // from an earlier blind sow cannot
+                                    // survive the cell being re-sown on
+                                    // evidence. Drop it and an adopted plot
+                                    // would keep discounting its own
+                                    // deliberate cells and could never lock.
+                                    if plan.source == CropPlanSource::Fallback {
+                                        board.farm_blind_sown.insert(ck);
+                                    } else {
+                                        board.farm_blind_sown.remove(&ck);
+                                    }
                                     acted = true;
                                     // Treatment beside outcome, per subject:
                                     // the crop actually planted and the tier
@@ -44206,56 +44416,93 @@ mod tests {
     /// must never move the answer, so a two-cycle oscillation cannot hide
     /// behind a one-step test.
     ///
-    /// Guards: `CropCensus::plan` and `CropCensus::modal`.
+    /// ★★ ROW 53b MADE THIS PIN STRICTLY HARDER, and it had to. The old
+    /// version fed every sow back into `colony` — which is what the shipped
+    /// ratchet actually did, and which made the tier-3 case trivially stable
+    /// because it PROMOTED to tier 1 on the same crop. Feeding the cell back
+    /// with the provenance its answering tier gives it (exactly what the sow
+    /// completion now writes) means the tier-3 case must be a fixed point on
+    /// its OWN terms: a blind sow may move neither the crop nor the tier.
+    /// That is the one case this row changed, so it is the one case the pin
+    /// now actually exercises.
+    ///
+    /// Guards: `CropCensus::plan`, `CropCensus::modal`, and the sow
+    /// completion's provenance rule (modelled here, pinned at the site by
+    /// `the_sow_completion_records_whether_the_plan_was_a_guess`).
     #[test]
     fn the_crop_plan_is_a_strict_fixed_point_at_every_mix() {
         let n = FARM_CROP_ROSTER.len();
         let mut cases = 0u32;
-        // Full sweep: each roster slot 0..=2 in BOTH provenances. 3^4 × 3^4 =
-        // 6561 mixes, every ratio the four-crop space can express at that
-        // resolution — including all the ties, which are the interesting half.
+        // Full sweep: each roster slot 0..=2 in ALL THREE provenances.
+        // 3^4 × 3^4 × 3^4 = 531,441 mixes, every ratio the four-crop space
+        // can express at that resolution — including all the ties, which are
+        // the interesting half, and every combination of a blind residue
+        // sitting under real evidence.
         let lim = 3u32;
-        for c in 0..lim.pow(n as u32) {
-            for w in 0..lim.pow(n as u32) {
-                let mut census = CropCensus::default();
-                for i in 0..n {
-                    census.colony[i] = (c / lim.pow(i as u32)) % lim;
-                    census.worldgen[i] = (w / lim.pow(i as u32)) % lim;
+        let span = lim.pow(n as u32);
+        for c in 0..span {
+            for w in 0..span {
+                for b in 0..span {
+                    let mut census = CropCensus::default();
+                    for i in 0..n {
+                        census.colony[i] = (c / lim.pow(i as u32)) % lim;
+                        census.worldgen[i] = (w / lim.pow(i as u32)) % lim;
+                        census.blind[i] = (b / lim.pow(i as u32)) % lim;
+                    }
+                    let first = census.plan();
+                    // The tier that answers first decides the tier every
+                    // later pass answers in: tiers 1 and 2 both put a CHOSEN
+                    // cell in the ground, which arms tier 1 and locks it;
+                    // tier 3 puts a BLIND cell in the ground, which arms
+                    // nothing and must leave the plan exactly where it was.
+                    let settled = match first.source {
+                        CropPlanSource::Fallback => CropPlanSource::Fallback,
+                        _ => CropPlanSource::Colony,
+                    };
+                    let mut fed = census;
+                    for step in 1..=10 {
+                        let p = fed.plan();
+                        crop_roster_index(p.crop)
+                            .expect("the plan must always name a roster crop");
+                        // EXACTLY what the sow completion writes, and fed
+                        // back through the PRODUCTION recorder rather than
+                        // by poking the arrays — otherwise this pin models
+                        // the census instead of exercising it, and a
+                        // `CropCensus::observe` that routed blind cells
+                        // straight back into `colony` (i.e. the shipped
+                        // ratchet) would leave it green.
+                        fed.observe(p.crop, match p.source {
+                            CropPlanSource::Fallback => CropProvenance::Blind,
+                            _ => CropProvenance::Chosen,
+                        });
+                        let again = fed.plan();
+                        assert_eq!(
+                            again.crop, first.crop,
+                            "plot planned {:?} (source {:?}, census {}), sowing it {step} \
+                             time(s) re-planned {:?} — the plan is not a fixed point under \
+                             its own output and this plot will churn: plant, glean, replant, \
+                             forever",
+                            first.crop,
+                            first.source,
+                            census.line(),
+                            again.crop
+                        );
+                        assert_eq!(
+                            again.source, settled,
+                            "after sowing, the plan left the tier its own output arms (census \
+                             {}) — a blind sow that promotes to the colony tier is the ratchet \
+                             back, and a chosen sow that falls out of it is a plot that can be \
+                             dragged off its crop by a village census that flaps",
+                            fed.line()
+                        );
+                        cases += 1;
+                    }
                 }
-                let first = census.plan();
-                let mut fed = census;
-                for step in 1..=10 {
-                    // Sowing the plan plants exactly one colony cell of it.
-                    let idx = crop_roster_index(fed.plan().crop)
-                        .expect("the plan must always name a roster crop");
-                    fed.colony[idx] += 1;
-                    let again = fed.plan();
-                    assert_eq!(
-                        again.crop, first.crop,
-                        "plot planned {:?} (source {:?}, census {}), sowing it {step} time(s) \
-                         re-planned {:?} — the plan is not a fixed point under its own output \
-                         and this plot will churn: plant, glean, replant, forever",
-                        first.crop,
-                        first.source,
-                        census.line(),
-                        again.crop
-                    );
-                    // Once any colony cell exists the answer is the colony
-                    // tier by construction; say so, so a silent tier flip
-                    // cannot pass as a stable crop.
-                    assert_eq!(
-                        again.source,
-                        CropPlanSource::Colony,
-                        "after sowing, the plan must be answered by the colony tier — census {}",
-                        fed.line()
-                    );
-                }
-                cases += 1;
             }
         }
         assert_eq!(
             cases,
-            lim.pow(n as u32) * lim.pow(n as u32),
+            span * span * span * 10,
             "the mix sweep did not run the space it claims to cover"
         );
     }
@@ -44280,10 +44527,9 @@ mod tests {
 
         // A whole plot of crops the colony has no item for: worldgen's Corn,
         // Pumpkin, Radish, Turnip, Flax and Sunflower fields. They must cast
-        // NO vote at all, in either provenance — counting them would make the
+        // NO vote at all, in any provenance — counting them would make the
         // plan name a crop `farm_crop_item` cannot harvest.
-        let mut foreign = CropCensus::default();
-        for s in [
+        let foreign_sprites = [
             SpriteKind::Corn,
             SpriteKind::Pumpkin,
             SpriteKind::Radish,
@@ -44291,16 +44537,36 @@ mod tests {
             SpriteKind::Flax,
             SpriteKind::Sunflower,
             SpriteKind::WheatGreen,
-        ] {
-            for clock in [false, true] {
-                foreign.observe(s, clock);
+        ];
+        let mut foreign = CropCensus::default();
+        for s in foreign_sprites {
+            for p in [
+                CropProvenance::Village,
+                CropProvenance::Chosen,
+                CropProvenance::Blind,
+            ] {
+                foreign.observe(s, p);
             }
         }
+        // ★ ASSERT THE VOTE ARRAYS, NOT THE WHOLE STRUCT. The old form
+        // (`foreign == CropCensus::default()`) said "nothing was recorded",
+        // which is no longer the claim: the census now MUST record these
+        // cells, in `unrostered`, and must still not let them vote.
         assert_eq!(
-            foreign,
-            CropCensus::default(),
+            (foreign.colony, foreign.worldgen, foreign.blind),
+            ([0; 4], [0; 4], [0; 4]),
             "an unrostered sprite voted in the census — the plan could name a crop with no \
              item, and the sow completion would place a block the harvest arm cannot read"
+        );
+        // ★ AND THE COUNTER IS NOT SATISFIED BY A ONE-ELEMENT SET. An exact
+        // count, not `> 0`: a producer that fired once (or that counted the
+        // sprite kinds rather than the cells) would pass a `> 0` check and
+        // still under-report a village field by an order of magnitude.
+        assert_eq!(
+            foreign.unrostered,
+            (foreign_sprites.len() * 3) as u32,
+            "the unrostered counter did not see every foreign cell — a corn field would still \
+             read as bare ground, which is the ambiguity this counter exists to remove"
         );
         let plan = foreign.plan();
         assert_eq!(plan.crop, SpriteKind::WheatYellow);
@@ -44421,9 +44687,9 @@ mod tests {
     fn one_stray_wheat_sprite_cannot_outvote_a_village_tomato_field() {
         let mut census = CropCensus::default();
         for _ in 0..300 {
-            census.observe(SpriteKind::Tomato, false);
+            census.observe(SpriteKind::Tomato, CropProvenance::Village);
         }
-        census.observe(SpriteKind::WheatYellow, false);
+        census.observe(SpriteKind::WheatYellow, CropProvenance::Village);
         let plan = census.plan();
         assert_eq!(
             plan.crop,
@@ -44442,7 +44708,7 @@ mod tests {
         // whole village field, because tier 1 is "what the colony last
         // planted here" and that is the colony's own standing decision.
         let mut sown = census;
-        sown.observe(SpriteKind::Carrot, true);
+        sown.observe(SpriteKind::Carrot, CropProvenance::Chosen);
         let plan = sown.plan();
         assert_eq!(plan.crop, SpriteKind::Carrot);
         assert_eq!(plan.source, CropPlanSource::Colony);
@@ -44464,8 +44730,8 @@ mod tests {
         ] {
             let mut census = CropCensus::default();
             for _ in 0..40 {
-                census.observe(crop, false);
-                census.observe(SpriteKind::WheatGreen, false);
+                census.observe(crop, CropProvenance::Village);
+                census.observe(SpriteKind::WheatGreen, CropProvenance::Village);
             }
             let plan = census.plan();
             assert_eq!(
@@ -44475,6 +44741,344 @@ mod tests {
                 plan.crop
             );
             assert_eq!(plan.source, CropPlanSource::Worldgen);
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // ROW 53b — A GUESS IS NOT A DECISION
+    // ══════════════════════════════════════════════════════════════════
+
+    /// ★★ THE ROW. A BLIND SOW MUST NOT LOCK THE PLOT OUT OF THE VILLAGE'S
+    /// OWN CROP.
+    ///
+    /// The shipped defect, reproduced from the owner's live plot: the plan
+    /// runs at boot on a field whose census is empty on both sides, answers
+    /// `Fallback`, plants wheat — and that one wheat cell then out-ranked
+    /// every tomato the village ever grew there, because tier 1 strictly
+    /// dominates tier 2 and the colony bucket was keyed on the growth clock
+    /// alone. `2 x source=Fallback, then 70 x source=Colony`, on a plot whose
+    /// census never showed a single crop.
+    ///
+    /// Guards: `crop_provenance`'s `Blind` arm and `CropCensus::plan`'s tier
+    /// order. The BREAK that turns it red is routing blind cells back into
+    /// `colony` — i.e. the shipped behaviour.
+    #[test]
+    fn a_blind_sow_must_not_lock_the_plot_out_of_the_village_crop() {
+        // Boot: nothing loaded, nothing known. Plants wheat — unchanged.
+        let mut plot = CropCensus::default();
+        assert_eq!(plot.plan().source, CropPlanSource::Fallback);
+        assert_eq!(plot.plan().crop, FARM_CROP_FALLBACK);
+
+        // The owner's two blind sows, and then sixty-eight more — because
+        // under the fix the census stays empty of evidence, so every one of
+        // them is still a guess.
+        for _ in 0..70 {
+            let p = plot.plan();
+            assert_eq!(
+                p.source,
+                CropPlanSource::Fallback,
+                "a blind sow promoted the plot into the colony tier — the ratchet is back and \
+                 the field is decided by a guess taken before anything had loaded"
+            );
+            plot.observe(p.crop, CropProvenance::Blind);
+        }
+
+        // NOW the village field loads: 500 tomatoes, exactly the evidence the
+        // shipped plan could no longer see.
+        let mut later = plot;
+        for _ in 0..500 {
+            later.observe(SpriteKind::Tomato, CropProvenance::Village);
+        }
+        assert_eq!(
+            later.plan().crop,
+            SpriteKind::Tomato,
+            "70 blind wheat cells out-voted 500 village tomatoes (census {}) — a plot that fell \
+             back before any evidence existed is still deciding the field from that guess",
+            later.line()
+        );
+        assert_eq!(
+            later.plan().source,
+            CropPlanSource::Worldgen,
+            "the adoption must be answered by the VILLAGE tier — if it is answered by the \
+             colony tier the blind cells are voting after all"
+        );
+
+        // ── AND THE ADOPTION IS ONE-WAY. The first sow taken on that
+        // evidence is CHOSEN, which arms tier 1 and closes tier 2 for good.
+        let mut adopted = later;
+        adopted.observe(SpriteKind::Tomato, CropProvenance::Chosen);
+        assert_eq!(adopted.plan().crop, SpriteKind::Tomato);
+        assert_eq!(
+            adopted.plan().source,
+            CropPlanSource::Colony,
+            "one deliberate sow did not arm tier 1 — the plot would keep re-asking a village \
+             census that flaps, which is the churn this row is forbidden to introduce"
+        );
+    }
+
+    /// ★★ FALLBACK IS IDENTITY, AND NOW IT IS A FIXED POINT TOO.
+    ///
+    /// A plot with no evidence at all — the owner's mountain fields, if their
+    /// crop sprites really were suppressed by worldgen's `is_bank` slope
+    /// rule — must plant `FARM_CROP_FALLBACK` forever and never leave tier 3.
+    /// The CROP is today's behaviour exactly; the TIER is the change, and it
+    /// is what keeps the plot able to adopt the village's crop if the village
+    /// ever turns out to have one.
+    ///
+    /// Guards: `CropCensus::plan`'s tier-3 arm against the blind bucket.
+    #[test]
+    fn a_plot_with_no_evidence_at_all_never_leaves_the_fallback_tier() {
+        let mut plot = CropCensus::default();
+        for step in 1..=200 {
+            let p = plot.plan();
+            assert_eq!(
+                p.crop, FARM_CROP_FALLBACK,
+                "an evidence-free plot planned {:?} on sow {step} — every fresh field in the \
+                 world just changed behaviour",
+                p.crop
+            );
+            assert_eq!(
+                p.source,
+                CropPlanSource::Fallback,
+                "an evidence-free plot left the fallback tier on sow {step} (census {}) — its \
+                 own guesses are electing it, which is exactly the ratchet",
+                plot.line()
+            );
+            plot.observe(p.crop, CropProvenance::Blind);
+        }
+        // 200 blind cells, and the plan is still a forecast rather than a
+        // decision: the door to tier 2 is still open.
+        let mut village_arrives = plot;
+        village_arrives.observe(SpriteKind::Carrot, CropProvenance::Village);
+        assert_eq!(village_arrives.plan().crop, SpriteKind::Carrot);
+        assert_eq!(village_arrives.plan().source, CropPlanSource::Worldgen);
+    }
+
+    /// ★★ FARMS LIKE FARMS. ONCE A PLOT HAS ADOPTED A CROP ON EVIDENCE,
+    /// A FLAPPING VILLAGE CENSUS CANNOT DRAG IT OFF.
+    ///
+    /// This is the failure mode the row had to be designed against, and it is
+    /// a real one: worldgen crops are gleaned away one by one, chunks load
+    /// and unload, so `worldgen` is a VOLATILE signal. Any rule that keeps
+    /// re-reading it after the colony has committed will oscillate — and an
+    /// oscillating plan means every cell planted, gleaned and replanted
+    /// forever, which outranks crop variety as an acceptance criterion.
+    ///
+    /// The mechanism that makes it impossible is the tier ORDER: tier 1 never
+    /// looks at `worldgen`, and one CHOSEN cell arms tier 1. So the window in
+    /// which a flapping village census can change the answer is closed by the
+    /// first sow it authorises.
+    ///
+    /// Guards: `CropCensus::plan`'s tier order (tier 1 strictly before tier
+    /// 2). Sweeps the whole village-census space rather than one hand-picked
+    /// flap, because "no oscillation at 50/50" is not the claim.
+    #[test]
+    fn an_adopted_plot_ignores_a_village_census_that_flaps() {
+        let n = FARM_CROP_ROSTER.len();
+        // A plot that adopted Tomato: one deliberate cell, on top of a pile
+        // of blind wheat left over from before the evidence arrived.
+        let mut adopted = CropCensus::default();
+        for _ in 0..70 {
+            adopted.observe(FARM_CROP_FALLBACK, CropProvenance::Blind);
+        }
+        adopted.observe(SpriteKind::Tomato, CropProvenance::Chosen);
+        assert_eq!(adopted.plan().crop, SpriteKind::Tomato);
+
+        // Now flap the village census through EVERY mix the four-crop space
+        // can express at 0..=3 per crop — gleaned away to nothing, reloaded
+        // as a wheat field, reloaded as a lettuce field, everything between.
+        let lim = 4u32;
+        let mut mixes = 0u32;
+        for w in 0..lim.pow(n as u32) {
+            let mut flapped = adopted;
+            for i in 0..n {
+                flapped.worldgen[i] = (w / lim.pow(i as u32)) % lim;
+            }
+            let p = flapped.plan();
+            assert_eq!(
+                p.crop,
+                SpriteKind::Tomato,
+                "an adopted plot re-planned {:?} when the village census changed to {} — the \
+                 plan is re-reading a volatile signal after the colony committed, so this plot \
+                 will flip crops every time a worldgen crop is gleaned or a chunk unloads",
+                p.crop,
+                flapped.line()
+            );
+            assert_eq!(p.source, CropPlanSource::Colony);
+            mixes += 1;
+        }
+        assert_eq!(mixes, lim.pow(n as u32));
+    }
+
+    /// ★ THE PROVENANCE LADDER TESTS THE CLOCK FIRST, WHICH IS WHAT MAKES A
+    /// STALE BLIND MARK INERT.
+    ///
+    /// `farm_blind_sown` is rewritten by every sow and pruned only with its
+    /// plot, so a mark can outlive the crop it described (harvest removes the
+    /// growth clock and clears the cell, and nothing removes the mark). The
+    /// whole argument that this is safe is one line of ordering: a cell with
+    /// no clock is the VILLAGE's, mark or no mark. Invert the ladder and a
+    /// harvested-then-regrown village cell would be silently disenfranchised.
+    ///
+    /// Guards: `crop_provenance`'s arm order.
+    #[test]
+    fn a_blind_mark_on_an_unclocked_cell_is_inert() {
+        assert_eq!(
+            crop_provenance(false, true),
+            CropProvenance::Village,
+            "a stale blind mark on a cell the colony no longer owns changed its provenance — \
+             the mark's entire lifecycle rests on this being impossible"
+        );
+        assert_eq!(crop_provenance(false, false), CropProvenance::Village);
+        assert_eq!(crop_provenance(true, true), CropProvenance::Blind);
+        assert_eq!(crop_provenance(true, false), CropProvenance::Chosen);
+
+        // The consequence, stated as behaviour: a village field whose cells
+        // all happen to carry stale marks still elects its own crop.
+        let mut census = CropCensus::default();
+        for _ in 0..40 {
+            census.observe(
+                SpriteKind::Lettuce,
+                crop_provenance(false, /* stale mark */ true),
+            );
+        }
+        assert_eq!(census.plan().crop, SpriteKind::Lettuce);
+        assert_eq!(census.plan().source, CropPlanSource::Worldgen);
+    }
+
+    /// ★★ AIR IS NOT A FOREIGN CROP.
+    ///
+    /// `Block::get_sprite()` returns `Some(SpriteKind::Empty)` for plain air,
+    /// not `None` — the vanilla encoding that already cost this file one
+    /// silently-dead arm ("a None-only arm silently skipped every empty field
+    /// cell"). The `unrostered` counter exists to tell a village corn field
+    /// from bare dirt; counting `Empty` as a foreign sprite would make every
+    /// bare plot in the world report a full field, i.e. would reintroduce the
+    /// exact misreading through the instrument built to prevent it.
+    ///
+    /// Guards: `CropCensus::observe_cell`'s `Empty` arm.
+    #[test]
+    fn air_does_not_count_as_a_crop_this_colony_cannot_name() {
+        let mut bare = CropCensus::default();
+        for _ in 0..540 {
+            bare.observe_cell(Some(SpriteKind::Empty), CropProvenance::Village);
+        }
+        // A solid block above the surface reads `None`, and is not a crop
+        // either.
+        for _ in 0..60 {
+            bare.observe_cell(None, CropProvenance::Village);
+        }
+        assert_eq!(
+            bare.unrostered, 0,
+            "empty air counted as an unrostered crop — a bare plot would report a village \
+             field of 600 cells and the counter would be worse than no counter at all"
+        );
+        assert_eq!(
+            bare.read, 600,
+            "the read counter did not see every cell the census looked at"
+        );
+        assert_eq!(bare.plan().source, CropPlanSource::Fallback);
+
+        // ★ A FALSIFIER NEEDS ITS OWN CONTROL: the counter must be able to
+        // fire at all, or the zero above proves nothing.
+        let mut corn = CropCensus::default();
+        for _ in 0..312 {
+            corn.observe_cell(Some(SpriteKind::Corn), CropProvenance::Village);
+        }
+        assert_eq!(
+            corn.unrostered, 312,
+            "the unrostered counter never fires — the zero on the bare plot above is a blind \
+             instrument agreeing with whatever it is asked"
+        );
+        // ...and a rostered crop still votes rather than counting as foreign.
+        let mut tomatoes = CropCensus::default();
+        tomatoes.observe_cell(Some(SpriteKind::Tomato), CropProvenance::Village);
+        assert_eq!(tomatoes.unrostered, 0);
+        assert_eq!(tomatoes.worldgen[crop_roster_index(SpriteKind::Tomato).unwrap()], 1);
+    }
+
+    /// ★★ THE WITNESS MUST TELL A BARE PLOT FROM A FIELD OF CROPS IT CANNOT
+    /// NAME — the ambiguity that cost a whole diagnosis.
+    ///
+    /// `FARM_CROP_ROSTER` covers 4 of the 11 crops worldgen plants. A corn,
+    /// flax, radish, turnip, pumpkin, sunflower or wildflower field censuses
+    /// ZERO in every bucket and printed a line indistinguishable from bare
+    /// ground — and from a plot whose chunks had not loaded. Three completely
+    /// different states, one string.
+    ///
+    /// Guards: `CropCensus::line`'s trailing counters.
+    #[test]
+    fn the_witness_tells_a_bare_plot_from_a_foreign_field_from_an_unread_one() {
+        let mut bare = CropCensus::default();
+        bare.columns = 540;
+        for _ in 0..540 {
+            bare.observe_cell(Some(SpriteKind::Empty), CropProvenance::Village);
+        }
+
+        let mut foreign = CropCensus::default();
+        foreign.columns = 540;
+        for _ in 0..540 {
+            foreign.observe_cell(Some(SpriteKind::Corn), CropProvenance::Village);
+        }
+
+        // Registered, but nothing loaded: the census never got to look.
+        let mut unread = CropCensus::default();
+        unread.columns = 540;
+
+        // Not even registered.
+        let unregistered = CropCensus::default();
+
+        // All four plan the identity — which is exactly why the LINE has to
+        // carry the difference: the plan cannot.
+        for c in [bare, foreign, unread, unregistered] {
+            assert_eq!(c.plan().crop, FARM_CROP_FALLBACK);
+            assert_eq!(c.plan().source, CropPlanSource::Fallback);
+        }
+
+        let lines = [bare.line(), foreign.line(), unread.line(), unregistered.line()];
+        for (i, a) in lines.iter().enumerate() {
+            for b in lines.iter().skip(i + 1) {
+                assert_ne!(
+                    a, b,
+                    "two different plot states print the identical census line — this is the \
+                     ambiguity that sent a diagnosis after a crop-variety bug on a field that \
+                     may simply have been bare"
+                );
+            }
+        }
+    }
+
+    /// ★ THE COUNTERS ARE A WITNESS, NEVER AN INPUT.
+    ///
+    /// `columns`, `read` and `unrostered` were added to make the log
+    /// readable. The moment `plan` consults one of them the census stops
+    /// being order-free over its own votes and the fixed-point argument
+    /// (which reasons only about the three vote arrays) stops covering the
+    /// thing that actually decides.
+    ///
+    /// Guards: `CropCensus::plan`'s independence from the witness fields.
+    #[test]
+    fn the_witness_counters_cannot_change_the_plan() {
+        let mut base = CropCensus::default();
+        for _ in 0..12 {
+            base.observe(SpriteKind::Carrot, CropProvenance::Village);
+        }
+        let expect = base.plan();
+        for columns in [0u32, 1, 540, u32::MAX] {
+            for read in [0u32, 1, 540] {
+                for unrostered in [0u32, 1, 9999] {
+                    let mut c = base;
+                    c.columns = columns;
+                    c.read = read;
+                    c.unrostered = unrostered;
+                    assert_eq!(
+                        (c.plan().crop, c.plan().source),
+                        (expect.crop, expect.source),
+                        "a witness counter changed the plan (census {})",
+                        c.line()
+                    );
+                }
+            }
         }
     }
 
@@ -44528,6 +45132,92 @@ mod tests {
              last printed, and anything that writes it from a second place is on its way to \
              becoming a stored plan, i.e. a second source of truth that can disagree with the \
              field it names"
+        );
+    }
+
+    /// ★★ Guards: the SOW completion's PROVENANCE WRITE — the one place in
+    /// the program that knows whether the plan was a decision or a guess.
+    ///
+    /// A PURE PIN CANNOT WITNESS A CALL SITE, and this is the call site that
+    /// carries the row. Terrain does not record WHY a crop was planted, so if
+    /// the sow completion stops writing the mark the census silently reverts
+    /// to the shipped ratchet — every pure test above would stay green while
+    /// production went back to letting a boot-time guess decide the field.
+    /// Both branches are asserted: the `insert` is the row, and the `remove`
+    /// is what stops a mark from an earlier blind sow outliving a later
+    /// deliberate one on the same cell.
+    #[test]
+    fn the_sow_completion_records_whether_the_plan_was_a_guess() {
+        let arm = arm_code(
+            &format!("★ ROW 53: {} to sow, decided HERE", "WHAT"),
+            &format!("bastion: {}", "sown"),
+        );
+        let set = format!("{}.insert(ck)", "farm_blind_sown");
+        assert!(
+            arm.contains(&set),
+            "the sow completion no longer marks a fallback sow as blind — terrain does not \
+             record why a crop was planted, so the census reverts to counting a boot-time \
+             guess as the colony's standing decision and the tomato-to-wheat ratchet is back"
+        );
+        let clear = format!("{}.remove(&ck)", "farm_blind_sown");
+        assert!(
+            arm.contains(&clear),
+            "the sow completion no longer clears the blind mark when it sows on evidence — a \
+             cell blind-sown once would be discounted forever, so an adopted plot could never \
+             arm tier 1 and would keep re-reading a village census that flaps"
+        );
+        // And the discriminator must be the TIER, not something that merely
+        // correlates with it (the crop, say — a deliberate wheat sow and a
+        // blind one plant the same sprite and are not the same fact).
+        let discriminator = format!("plan.source == {}::Fallback", "CropPlanSource");
+        assert!(
+            arm.contains(&discriminator),
+            "the sow completion is deciding blindness by something other than the tier that \
+             answered — a deliberately-sown WheatYellow and a guessed one are the same block \
+             and only the source tells them apart"
+        );
+    }
+
+    /// ★★ Guards: the PLOT SCAN — the census must actually be fed the blind
+    /// marks, and must count every cell it looks at.
+    ///
+    /// The pure helpers above all keep passing if `plot_crop_plan` simply
+    /// stops consulting `farm_blind_sown` (every cell reads `Chosen`, which
+    /// is the shipped ratchet) or bypasses `observe_cell` (the witness
+    /// counters stay zero, which is the ambiguity the row was also asked to
+    /// remove). Both are one deleted argument away, so both are pinned at the
+    /// site, comment-stripped — this function's own doc names every
+    /// identifier below.
+    #[test]
+    fn the_plot_scan_feeds_the_census_the_marks_and_counts_what_it_sees() {
+        let scan = arm_code(
+            &format!("★ THE PLAN, {} FRESH", "EVALUATED"),
+            "FOUNDING SEED STOCK, 2026-08-10",
+        );
+        assert!(
+            scan.contains(&format!("{}.contains(&key)", "blind_sown")),
+            "the plot scan no longer consults the blind marks — every colony cell would read \
+             as a deliberate choice again, which is exactly the shipped ratchet"
+        );
+        assert!(
+            scan.contains(&format!("{}(", "crop_provenance")),
+            "the plot scan is not classifying cells through the provenance ladder"
+        );
+        assert!(
+            scan.contains(&format!("{}(", "observe_cell")),
+            "the plot scan is not feeding cells through observe_cell — `read` and `unrostered` \
+             would stay zero and a village corn field would print as bare ground again"
+        );
+        assert_eq!(
+            scan.matches(&format!(".{}(", "observe")).count(),
+            0,
+            "the plot scan is calling the raw vote recorder directly, which skips the counters \
+             that separate `no rostered crop here` from `no crop here at all`"
+        );
+        assert!(
+            scan.contains(&format!("census.{} += 1", "columns")),
+            "the plot scan stopped counting the columns it was allowed to look at — `read = 0` \
+             could then mean either `nothing loaded` or `nothing registered`"
         );
     }
 
