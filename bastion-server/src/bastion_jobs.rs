@@ -1255,6 +1255,15 @@ pub const OFF_GRADE_BLOCKS: f32 = 3.0;
 pub static GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// bastion (2026-08-31): the same count for the CHASER override — the other
+/// glide that overrides a refusal, and the one the measurements actually
+/// convict. Kept separate from [`GLIDE_REFUSED_INTO_ROCK`] so the two
+/// branches can never be credited with each other's work: conflating them is
+/// exactly the mistake that made me attribute 168 embeds to a branch that had
+/// fired 4 times.
+pub static CHASER_GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// Would the search-gap bridge's override be walking a body INTO ROCK?
 ///
 /// The surface probe refuses for two reasons and the override used to treat
@@ -29550,6 +29559,74 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         }
                                     }
                                     if let Some(np) = new_pos {
+                                        // ★ THE SAME RULE AS THE SEARCH-GAP
+                                        // BRIDGE, AT THE OTHER OVERRIDE
+                                        // (2026-08-31). This one glides along
+                                        // the FULL 3D delta `d`, not the
+                                        // horizontal vector, and never checked
+                                        // its destination at all. That is why
+                                        // embedded bodies carry a FRACTIONAL z
+                                        // (43 of 52) and a nonzero vertical
+                                        // entry velocity (37 of 52) which the
+                                        // probe-approved path -- integer `gz`,
+                                        // horizontal `anim` -- cannot produce.
+                                        //
+                                        // Measured: `kinematic=true` in 52 of
+                                        // 52 embeds, so the mover owns the body
+                                        // every time; and the bridge override
+                                        // fired only 4 times against 168
+                                        // embeds, so it was never the lever.
+                                        // Half of these chaser overrides steer
+                                        // at a node 3-15 blocks BELOW the feet
+                                        // (mean feet.z - node.z = +2.71, max
+                                        // +15.4), so "walk at the node" walks
+                                        // the body down into the ground.
+                                        //
+                                        // Only the OVERRIDE is gated. Probe-
+                                        // approved motion is untouched: it was
+                                        // already validated, and refusing it
+                                        // here would starve the walk.
+                                        let into_rock = overridden && {
+                                            let rock = |q: Vec3<i32>| {
+                                                terrain.get(q).is_ok_and(|b| {
+                                                    b.is_solid()
+                                                        || common::path::blocks_colonist_body(b)
+                                                })
+                                            };
+                                            let tx = np.x.floor() as i32;
+                                            let ty = np.y.floor() as i32;
+                                            let tz = np.z.floor() as i32;
+                                            glide_would_enter_rock(
+                                                rock(Vec3::new(tx, ty, tz)),
+                                                rock(Vec3::new(tx, ty, tz + 1)),
+                                            )
+                                        };
+                                        if into_rock {
+                                            let n = CHASER_GLIDE_REFUSED_INTO_ROCK
+                                                .fetch_add(
+                                                    1,
+                                                    core::sync::atomic::Ordering::Relaxed,
+                                                )
+                                                + 1;
+                                            if n.is_power_of_two() {
+                                                info!(
+                                                    uid = uids
+                                                        .get(entity)
+                                                        .map(|u| u.0.get()),
+                                                    ?np,
+                                                    node = ?steer_node,
+                                                    refusals_now = n,
+                                                    "bastion: CHASER GLIDE REFUSED INTO ROCK \
+                                                     — the convicted override would have walked \
+                                                     a body into solid terrain; holding instead"
+                                                );
+                                            }
+                                            pending_kinematic.push((
+                                                entity,
+                                                pos.0,
+                                                Vec3::zero(),
+                                            ));
+                                        } else {
                                         let displaced = (np - pos.0).magnitude()
                                             > (KINEMATIC_WALK_SPEED * dt.0) * 0.3;
                                         pending_kinematic.push((entity, np, anim));
@@ -29569,6 +29646,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         // persists to the node.
                                         if displaced && !overridden {
                                             active.stuck_time = 0.0;
+                                        }
                                         }
                                     }
                                 }
@@ -45671,6 +45749,19 @@ mod tests {
             GLIDE_REFUSED_INTO_ROCK.load(core::sync::atomic::Ordering::Relaxed),
             0,
             "the witness starts at zero so a live run's count is meaningful"
+        );
+        // The CHASER override is a SEPARATE branch with a SEPARATE counter,
+        // on purpose. Conflating the two is precisely the error that let me
+        // credit 168 embeds to a branch which had fired 4 times; if these
+        // ever share a counter, that mistake becomes unmeasurable again.
+        assert_eq!(
+            CHASER_GLIDE_REFUSED_INTO_ROCK.load(core::sync::atomic::Ordering::Relaxed),
+            0,
+            "the chaser witness is counted separately from the bridge's"
+        );
+        assert!(
+            !core::ptr::eq(&GLIDE_REFUSED_INTO_ROCK, &CHASER_GLIDE_REFUSED_INTO_ROCK),
+            "the two overrides must never be credited with each other's work"
         );
     }
 
