@@ -14356,6 +14356,39 @@ pub(crate) fn trade_good_refusal(c: &TradeCandidate) -> Option<&'static str> {
     None
 }
 
+/// ★ THE WITNESS MUST NAME EVERY REFUSAL, NOT THE FIRST ONE (2026-08-31).
+///
+/// [`trade_good_refusal`] short-circuits, which is right for the GATE and
+/// wrong for the LOG. Measured cost, in the owner's live session: the lane
+/// printed `craftsman_hammer=not_stockpiled(30/46)` and a whole diagnosis
+/// went after HAULING TOOLS — when 30 against a par of 46 means the good
+/// was ALSO `at_par` and could never have been sold however perfectly it
+/// was hauled. The one good actually worth chasing, `stones(219/192)`,
+/// rendered with the identical single word beside it. A refusal that hides
+/// its siblings does not just under-inform; it AIMS the reader.
+///
+/// The gate is untouched — this is the same predicates, unabbreviated, for
+/// the witness only. `the_witness_and_the_gate_agree_on_offerability`
+/// executes the equivalence over the full cross-product, so the line can
+/// never claim a good is offerable that the gate refuses (or the reverse).
+pub(crate) fn trade_good_refusal_set(c: &TradeCandidate) -> Vec<&'static str> {
+    let mut all = Vec::new();
+    if !c.stockpiled {
+        all.push("not_stockpiled");
+    }
+    // Wood's par exemption suppresses BOTH par-side refusals, exactly as it
+    // does in the gate — FALLBACK IS IDENTITY, including in the log.
+    if !c.par_exempt {
+        if c.billed {
+            all.push("billed");
+        }
+        if c.units <= c.par {
+            all.push("at_par");
+        }
+    }
+    all
+}
+
 /// The good this town sells today, or `None` (every refusal is named by
 /// [`trade_good_refusal`], which the witness prints).
 ///
@@ -14474,6 +14507,77 @@ pub(crate) fn haul_admitted_def(def: Option<&str>) -> Option<&'static str> {
         },
         _ => None,
     }
+}
+
+/// ★ THE BAG IS THE OTHER HALF OF THE STOCKPILE (2026-08-31, measured in
+/// the owner's live mountain session — `play-server.log`, 296,772 lines).
+///
+/// THE SINGLE PRODUCER of "what does this colonist's bag owe the colony",
+/// for BOTH the deposit run's trigger and its cargo. One function, because
+/// those two had already drifted once: the generator was widened on
+/// 2026-08-21 to send a colonist carrying FETCH SURPLUS home, and the
+/// deposit itself was left reading `gathered_defs` only, so the run walked
+/// and deposited nothing ("forage deposited defs=0 amount=0"). That fix
+/// was applied to both halves — but only for `FOOD_DEFS`, which is a
+/// SECOND, NARROWER definition of colony stock than the one the haul lane
+/// and the trade gate use.
+///
+/// MEASURED CONSEQUENCE of that narrowness, in one session:
+///   * `TRADE LANE DEAD ... blocker="nothing_to_sell"` with
+///     `common.items.crafting_ing.stones=not_stockpiled(219/192)` — a
+///     genuine 27-unit surplus over par, refused because not one unit of
+///     it was in a stockpile;
+///   * `HAUL-GEN ... seen_pickups=7 ... cap=184` — SEVEN loose items in
+///     the whole world, so the haul lane had nothing to carry and its cap
+///     was never remotely the constraint;
+///   * `food_stock=3 par=16` for a roster of 46, with trade the colony's
+///     ONLY food import.
+/// The stone was not missing. It was in bags, and nothing could bring it
+/// back out.
+///
+/// GENERATOR AND CONSUMER MUST AGREE: [`haul_admitted_def`] is already THE
+/// definition of "a loose drop that is colony stock", and it is the
+/// definition the trade gate's sell-side is checked against. A bag holding
+/// a def that function admits holds colony stock that has simply gone the
+/// wrong way through a colonist. So the bag returns EXACTLY that set — not
+/// a second list that can drift from it.
+///
+/// FALLBACK IS IDENTITY: `FOOD_DEFS` is one of `haul_admitted_def`'s own
+/// arms, so this is a strict WIDENING. A colonist whose bag holds only
+/// food triggers the same run and deposits the same defs as before, and a
+/// colony that never mines or fetches non-food behaves bit-for-bit as it
+/// did.
+///
+/// DETERMINISM BY CONSTRUCTION: a `BTreeSet<&'static str>`, so the deposit
+/// order is the defs' own lexical order and never a hash seed. The
+/// `&'static` also does real work here — it is what lets a def OUTLIVE the
+/// `ItemDefinitionId` temporary it was read through, which is the borrow
+/// the deposit arm's own note warns about.
+///
+/// BOUND (a churn engine floods its neighbours): this admits no new job
+/// KIND and no new run per colonist. A run still fires only for an IDLE
+/// colonist (the `!&active_jobs` join), still at most one per colonist per
+/// pass, and still empties the bag in a single trip — so the widening
+/// changes what a trip CARRIES, not how many trips there are. The tool
+/// backlog it drains is one-shot: the founding kit (`server/src/lib.rs`,
+/// `bastion_found_colony_tool_kit`) pushes a colonist's two spare tools
+/// into the bag exactly once and re-arms only on an empty MAINHAND, which
+/// a bag deposit never touches.
+pub(crate) fn bag_stock_defs<'a>(
+    bag: impl IntoIterator<Item = &'a comp::Item>,
+) -> std::collections::BTreeSet<&'static str> {
+    let mut owed = std::collections::BTreeSet::new();
+    for item in bag {
+        // The intermediate MUST be bound: `ItemDefinitionId` is a
+        // temporary, and borrowing through it in one expression drops it at
+        // the semicolon (the deposit arm learned this the hard way).
+        let id = item.item_definition_id();
+        let Some(d) = id.itemdef_id() else { continue };
+        if let Some(stock) = haul_admitted_def(Some(d)) {
+            owed.insert(stock);
+        }
+    }
+    owed
 }
 
 #[cfg(test)]
@@ -22300,13 +22404,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let refused = cands
                     .iter()
                     .map(|c| {
-                        format!(
-                            "{}={}({}/{})",
-                            c.def,
-                            trade_good_refusal(c).unwrap_or("OFFERABLE"),
-                            c.units,
-                            c.par,
-                        )
+                        // EVERY refusal, joined — see
+                        // `trade_good_refusal_set`. Empty ⇒ OFFERABLE, and
+                        // a pin holds that to the gate's own verdict.
+                        let all = trade_good_refusal_set(c);
+                        let why = if all.is_empty() {
+                            "OFFERABLE".to_string()
+                        } else {
+                            all.join("+")
+                        };
+                        format!("{}={}({}/{})", c.def, why, c.units, c.par)
                     })
                     .collect::<Vec<_>>()
                     .join(" ");
@@ -23123,13 +23230,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // CONTRACT, not by cooking, so a cook-specific fix would
                     // leave the identical bug waiting for the next consumer
                     // that carries a required_item.
-                    let carries_surplus = inventories.get(entity).is_some_and(|inv| {
-                        inv.slots().flatten().any(|i| {
-                            i.item_definition_id()
-                                .itemdef_id()
-                                .is_some_and(|d| FOOD_DEFS.iter().any(|f| *f == d))
-                        })
-                    });
+                    //
+                    // ★ AND THE SURPLUS WAS NEVER ONLY FOOD (2026-08-31).
+                    // The paragraph above names the PICKUP CONTRACT as the
+                    // cause and then says, in as many words, that fixing it
+                    // per-consumer "would leave the identical bug waiting
+                    // for the next consumer that carries a required_item".
+                    // The next consumer was BUILD, and the bug was waiting:
+                    // a build fetch reserves stone, vanilla's `pick_up()`
+                    // takes the WHOLE STACK, one unit is spent, and the rest
+                    // never came home because this predicate asked about
+                    // FOOD. Measured: `stones=not_stockpiled(219/192)` — a
+                    // surplus OVER par that the trade gate could not see,
+                    // while the colony's only food import sat blocked on
+                    // "nothing_to_sell" and 46 people ate 3 units of stock.
+                    //
+                    // The question is now asked ONCE, by the same producer
+                    // the deposit itself uses, over the same colony-stock
+                    // set the haul lane admits.
+                    let owed = inventories
+                        .get(entity)
+                        .map(|inv| bag_stock_defs(inv.slots().flatten()))
+                        .unwrap_or_default();
+                    let carries_surplus = !owed.is_empty();
                     // Forage still waits for the forage stint to END (the bag
                     // is its batch unit -- one trip per stint, not per sprite).
                     // Surplus does not: it is already surplus, and holding it
@@ -23175,10 +23298,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         affordance: AffordanceClass::Untargeted,
                     });
                     board.total_claims += 1;
+                    // EVERY MECHANISM WITNESSES ITSELF: the run says which
+                    // of the two reasons fired and WHAT the bag owes, so a
+                    // stock class that never comes home is readable at the
+                    // trigger instead of having to be inferred from a
+                    // stockpile count that stayed flat. The absence of this
+                    // is what cost the bag-drain diagnosis a whole session.
                     info!(
                         job = id,
                         colonist = %uid,
                         zone = dest,
+                        forage = has_forage,
+                        stock = %owed.iter().copied().collect::<Vec<_>>().join(","),
                         "bastion: forage deposit run created"
                     );
                     deposit_runs.push((entity, id));
@@ -31472,36 +31603,44 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // is safe even when the two overlap.
                                 let mut defs = board.gathered_defs.remove(&u).unwrap_or_default();
                                 if let Some(inv) = inventories.get(entity) {
-                                    for slot in inv.slots().flatten() {
-                                        // Bound in the LOOP BODY, not an
-                                        // iterator chain: itemdef_id() borrows
-                                        // a temporary that does not outlive a
-                                        // filter_map closure.
-                                        // The intermediate MUST be bound: the
-                                        // ItemDefinitionId is a temporary, and
-                                        // borrowing through it in one expression
-                                        // drops it at the semicolon.
-                                        let id = slot.item_definition_id();
-                                        let Some(d) = id.itemdef_id() else {
-                                            continue;
-                                        };
-                                        // A SET, so it dedups itself and the
-                                        // union with recorded forage is free.
-                                        if let Some(f) = FOOD_DEFS.iter().find(|f| **f == d) {
-                                            defs.insert((*f).to_string());
-                                        }
+                                    // ★ THE CARGO IS THE COLONY-STOCK SET,
+                                    // NOT THE FOOD SET (2026-08-31). This
+                                    // read was `FOOD_DEFS`, so a colonist
+                                    // walked to the stockpile with 219 units
+                                    // of stone in the bag and put down only
+                                    // the mushrooms — the trigger and the
+                                    // cargo now come from ONE producer over
+                                    // the set `haul_admitted_def` defines, so
+                                    // they cannot drift the way they did on
+                                    // 2026-08-21. A SET, so it dedups itself
+                                    // and the union with recorded forage is
+                                    // free.
+                                    for stock in bag_stock_defs(inv.slots().flatten()) {
+                                        defs.insert(stock.to_string());
                                     }
                                 }
                                 let mut total = 0u32;
+                                // PRINT WHAT YOU DELIVERED, NOT WHAT YOU
+                                // INTENDED: per-def amounts, so a def that
+                                // was ATTEMPTED and moved ZERO is visible.
+                                // `defs.len()` alone renders "carried
+                                // nothing" and "carried stone but could not
+                                // put it down" identically, and this
+                                // mechanism must be able to show itself
+                                // FAILING. BTreeSet ⇒ lexical order, never a
+                                // hash seed.
+                                let mut moved: Vec<String> = Vec::new();
                                 if let Some(mut inv) = inventories.get_mut(entity) {
                                     for def in &defs {
-                                        total += crate::bastion_actions::deposit_all_of(
+                                        let n = crate::bastion_actions::deposit_all_of(
                                             &mut inv,
                                             def,
                                             job.pos,
                                             &mut item_drop_emitter,
                                             *program_time,
                                         );
+                                        total += n;
+                                        moved.push(format!("{def}={n}"));
                                     }
                                 }
                                 info!(
@@ -31509,6 +31648,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     zone = destination,
                                     defs = defs.len(),
                                     amount = total,
+                                    moved = %moved.join(" "),
                                     "bastion: forage deposited"
                                 );
                             }
@@ -43740,6 +43880,203 @@ mod tests {
             panic!("arm end marker {end_marker:?} moved — re-anchor this pin")
         });
         strip_comments(&src[start..start + end])
+    }
+
+    // ══════════════════════════════════════════════════════════════════
+    // THE BAG IS THE OTHER HALF OF THE STOCKPILE (2026-08-31)
+    // ══════════════════════════════════════════════════════════════════
+
+    /// ★ THE DEPOSIT RUN'S TRIGGER AND ITS CARGO ARE THE SAME SET, AND IT
+    /// IS THE COLONY-STOCK SET.
+    ///
+    /// Guards the two PRODUCTION CALL SITES — the `DepositRun` generator's
+    /// `carries_surplus` predicate and the run's own deposit arm — because
+    /// the defect was never in a pure function. `haul_admitted_def` was
+    /// already correct and already pinned; both call sites simply asked
+    /// `FOOD_DEFS` instead, so a colonist walked to the stockpile with 219
+    /// units of stone in the bag and put down only the mushrooms.
+    ///
+    /// A PURE PIN CANNOT WITNESS A CALL SITE. This one reads the arms
+    /// themselves, comment-stripped through `arm_code`, so the several
+    /// hundred words of prose I just wrote about `FOOD_DEFS` and
+    /// `bag_stock_defs` cannot satisfy or break it.
+    ///
+    /// Breaking it: restore either call site to the `FOOD_DEFS` scan and
+    /// this goes red on both halves of the assertion.
+    #[test]
+    fn the_deposit_run_returns_the_colony_stock_set_not_the_food_set() {
+        // Needle built at runtime so this test's own source cannot satisfy
+        // a whole-file scan (the idiom the traversal and row-53 pins use).
+        let producer = format!("{}(inv.{}().flatten())", "bag_stock_defs", "slots");
+
+        let generator = arm_code(
+            "★ THE FETCH SURPLUS, which had no way home",
+            "bastion: forage deposit run created",
+        );
+        assert!(
+            generator.contains(&producer),
+            "the DepositRun GENERATOR no longer asks the colony-stock producer whether the \
+             bag owes anything — a colonist carrying stone has no way home again"
+        );
+        assert!(
+            !generator.contains("FOOD_DEFS"),
+            "the DepositRun generator is scanning FOOD_DEFS again: it will fire for a bag of \
+             mushrooms and ignore a bag of stone, which is the 2026-08-31 defect exactly"
+        );
+
+        let deposit = arm_code(
+            "GATHER deposit ruling: the end-of-forage stockpile",
+            "bastion: forage deposited",
+        );
+        assert!(
+            deposit.contains(&producer),
+            "the DepositRun COMPLETION no longer drains the colony-stock set from the bag — \
+             the trigger and the cargo have drifted apart for the SECOND time (the first was \
+             2026-08-21, and it shipped a run that walked and deposited nothing)"
+        );
+        assert!(
+            !deposit.contains("FOOD_DEFS"),
+            "the deposit arm reads FOOD_DEFS again — stone, wood, seeds and tools ride home in \
+             the bag and are carried straight back out of the stockpile"
+        );
+
+        // PRINT WHAT YOU DELIVERED: the per-def amounts must come from the
+        // RETURN of each deposit, or a def that moved zero is invisible.
+        assert!(
+            deposit.contains("moved.push("),
+            "the deposit witness no longer records per-def amounts — 'carried nothing' and \
+             'carried stone but could not put it down' render identically again"
+        );
+    }
+
+    /// ★ THE WITNESS AND THE GATE MUST NOT BE ABLE TO DISAGREE.
+    ///
+    /// `trade_good_refusal_set` exists so the mint-gate line can name EVERY
+    /// refusal instead of the first — the single word `not_stockpiled`
+    /// beside `craftsman_hammer(30/46)` sent a whole session after hauling
+    /// a good that was also below par and could never have sold. But a
+    /// second producer of "is this offerable" is exactly the shape this
+    /// project keeps getting burned by, so the two are held equal here over
+    /// the full cross-product rather than by example.
+    ///
+    /// Guards: `trade_good_refusal_set`, against `trade_good_refusal`.
+    /// Breaking it: drop the `par_exempt` guard from the set (wood then
+    /// reads `at_par` in the log while the gate still offers it), or invert
+    /// any one predicate.
+    #[test]
+    fn the_witness_and_the_gate_agree_on_offerability() {
+        let mut checked = 0u32;
+        for stockpiled in [false, true] {
+            for billed in [false, true] {
+                for par_exempt in [false, true] {
+                    for (units, par) in [(0, 0), (0, 5), (5, 5), (6, 5), (219, 192)] {
+                        let c = TradeCandidate {
+                            def: CRAFT_OUTPUTS[0],
+                            units,
+                            par,
+                            stockpiled,
+                            billed,
+                            par_exempt,
+                        };
+                        let set = trade_good_refusal_set(&c);
+                        let gate = trade_good_refusal(&c);
+                        assert_eq!(
+                            set.is_empty(),
+                            gate.is_none(),
+                            "witness and gate disagree on offerability for {c:?}: set={set:?} \
+                             gate={gate:?}"
+                        );
+                        if let Some(g) = gate {
+                            assert!(
+                                set.contains(&g),
+                                "the witness omits the very refusal the gate acted on ({g}) \
+                                 for {c:?}"
+                            );
+                        }
+                        checked += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(checked, 40, "the cross-product shrank — this pin stopped covering its case");
+    }
+
+    /// ★ AND THE WITNESS MUST ACTUALLY SAY THE SECOND THING.
+    ///
+    /// The equivalence above is satisfied by a set that only ever holds ONE
+    /// element, which is the very rendering that misled the diagnosis. This
+    /// is the case that must print BOTH words: the owner's own hammer
+    /// reading, 30 units against a par of 46 with nothing in a stockpile.
+    ///
+    /// Breaking it: return early after the first push in
+    /// `trade_good_refusal_set`.
+    #[test]
+    fn a_good_that_is_both_unstocked_and_at_par_says_both() {
+        let hammer = TradeCandidate {
+            def: CRAFT_OUTPUTS[0],
+            units: 30,
+            par: 46,
+            stockpiled: false,
+            billed: false,
+            par_exempt: false,
+        };
+        assert_eq!(trade_good_refusal_set(&hammer), vec!["not_stockpiled", "at_par"]);
+        // ...and the stone that WAS worth chasing names only the logistics
+        // failure, so the two are told apart at a glance.
+        let stone = TradeCandidate {
+            def: BUILD_MATERIAL_ITEM,
+            units: 219,
+            par: 192,
+            stockpiled: false,
+            billed: false,
+            par_exempt: false,
+        };
+        assert_eq!(trade_good_refusal_set(&stone), vec!["not_stockpiled"]);
+    }
+
+    /// ★ FALLBACK IS IDENTITY, at the def level: every def the OLD
+    /// food-only contract returned is still returned.
+    ///
+    /// `bag_stock_defs` routes the bag through `haul_admitted_def`, whose
+    /// `FOOD_DEFS` arm predates this row — so the widening is a strict
+    /// superset and a colony that only ever carries food deposits exactly
+    /// what it deposited before. Pinned rather than asserted in prose,
+    /// because "it's a superset" is the kind of claim that stops being true
+    /// the day someone reorders the match arms.
+    ///
+    /// Breaking it: delete the `FOOD_DEFS` arm from `haul_admitted_def`
+    /// (the food half goes red), or the `MINE_DROP_ITEM` arm (the stone
+    /// half goes red).
+    #[test]
+    fn the_bag_returns_every_food_it_used_to_and_the_stock_it_never_did() {
+        for &f in FOOD_DEFS.iter() {
+            assert_eq!(
+                haul_admitted_def(Some(f)),
+                Some(f),
+                "{f} used to come home in the bag under the food-only contract and no longer \
+                 does — this row was supposed to be a WIDENING"
+            );
+        }
+        // The defs the old contract stranded. Each one is a good the trade
+        // lane can offer, so each one is a good the bag must return.
+        for d in [
+            BUILD_MATERIAL_ITEM,
+            CHOP_DROP_ITEM,
+            FARM_SEED_ITEM,
+            FARM_WHEAT_ITEM,
+            CRAFT_OUTPUTS[0],
+            CRAFT_OUTPUTS[1],
+            CRAFT_OUTPUTS[2],
+        ] {
+            assert_eq!(
+                haul_admitted_def(Some(d)),
+                Some(d),
+                "{d} is offerable by the trade lane but the bag would not bring it home"
+            );
+        }
+        // ...and junk still stays in the bag: the widening is to COLONY
+        // STOCK, not to everything a colonist happens to be holding.
+        assert_eq!(haul_admitted_def(Some("common.items.armor.misc.head.hood")), None);
     }
 
     /// ★ THE TIE-BREAK IS THE SPRITE DISCRIMINANT, AND THE ROSTER'S ORDER IS
