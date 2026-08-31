@@ -11897,6 +11897,13 @@ pub struct JobBoard {
     /// embedded ones -- the interesting step is the one INTO the terrain,
     /// which happens before anything knows the body is embedded.
     embed_prev_pos: HashMap<Uid, Vec3<f32>>,
+    /// bastion (2026-08-31): which mover branch last moved each colonist.
+    /// Every branch in the mover glides at exactly KINEMATIC_WALK_SPEED, so
+    /// `entry_step` proves the entry was a GLIDE but cannot say WHICH. Two
+    /// attributions in a row named a branch that had fired a handful of
+    /// times against hundreds of embeds. The tag makes attribution a
+    /// measurement.
+    last_push_site: HashMap<Uid, &'static str>,
     /// bastion (2026-08-31): the trajectory INTO terrain, captured on the
     /// tick the core first reads solid and held until the relocation warns.
     /// `(from, step, vel)`.
@@ -26669,7 +26676,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         prof_need_us = prof_t0.elapsed().as_micros();
         let mut pending_assists: Vec<(specs::Entity, Vec3<i32>)> = Vec::new();
         // KINEMATIC MOVER: (entity, new position, velocity-for-animation).
-        let mut pending_kinematic: Vec<(specs::Entity, Vec3<f32>, Vec3<f32>)> = Vec::new();
+        // ★ EVERY MOVER PUSH SIGNS ITS SITE (2026-08-31). Two attributions in
+        // a row named a branch that had fired a handful of times against
+        // hundreds of embeds, because every branch here moves at exactly
+        // KINEMATIC_WALK_SPEED and `entry_step` cannot tell them apart.
+        // The tag ends the genre: the EMBED WATCH reports WHICH branch
+        // last moved the body, so attribution is measured, not reasoned.
+        let mut pending_kinematic: Vec<(specs::Entity, Vec3<f32>, Vec3<f32>, &'static str)> =
+            Vec::new();
         let mut upkeep_iter = (
             &entities,
             &mut colonists,
@@ -29554,6 +29568,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                     entity,
                                                     pos.0,
                                                     Vec3::zero(),
+                                                    "chaser-hold",
                                                 ));
                                             }
                                         }
@@ -29625,11 +29640,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 entity,
                                                 pos.0,
                                                 Vec3::zero(),
+                                                "chaser-refused-rock",
                                             ));
                                         } else {
+                                        let site = if overridden {
+                                            "chaser-override"
+                                        } else {
+                                            "chaser-probe"
+                                        };
                                         let displaced = (np - pos.0).magnitude()
                                             > (KINEMATIC_WALK_SPEED * dt.0) * 0.3;
-                                        pending_kinematic.push((entity, np, anim));
+                                        pending_kinematic.push((entity, np, anim, site));
                                         // ★ v3 WATCHDOG TRUTH: under kinematic
                                         // the body ALWAYS closes on its node —
                                         // straight-line stall metrics (sdist)
@@ -29714,7 +29735,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         let np = Vec3::new(try_pos.x, try_pos.y, gz);
                                         let displaced = (np - pos.0).magnitude()
                                             > (KINEMATIC_WALK_SPEED * dt.0) * 0.3;
-                                        pending_kinematic.push((entity, np, anim));
+                                        pending_kinematic.push((
+                                            entity,
+                                            np,
+                                            anim,
+                                            "bridge-probe",
+                                        ));
                                         if displaced {
                                             active.stuck_time = 0.0;
                                         }
@@ -29818,18 +29844,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                     entity,
                                                     pos.0,
                                                     Vec3::zero(),
+                                                    "bridge-refused-rock",
                                                 ));
                                             } else {
                                                 let anim = (d / d.magnitude().max(0.01))
                                                     * KINEMATIC_WALK_SPEED;
                                                 pending_kinematic
-                                                    .push((entity, try_pos, anim));
+                                                    .push((entity, try_pos, anim, "bridge-override"));
                                             }
                                         } else {
                                             pending_kinematic.push((
                                                 entity,
                                                 pos.0,
                                                 Vec3::zero(),
+                                                "bridge-hold",
                                             ));
                                         }
                                     }
@@ -33955,7 +33983,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     }
                 }
             }
-            for (entity, new_pos, vel) in pending_kinematic.drain(..) {
+            for (entity, new_pos, vel, site) in pending_kinematic.drain(..) {
+                if let Some(u) = uids.get(entity) {
+                    board.last_push_site.insert(*u, site);
+                }
                 if let Some(p) = positions.get_mut(entity) {
                     let prev = p.0;
                     p.0 = new_pos;
@@ -34953,6 +34984,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 entry_vel = ?board.embed_entry.get(uid).map(|e| e.2),
                                 step_now = step,
                                 vel_now = ?vel.0,
+                                // WHICH mover branch last moved this body.
+                                writer_site = board.last_push_site.get(uid).copied(),
                                 // Sole-owner marker: true = the kinematic
                                 // mover still owns this body, false = physics
                                 // has it back. Names the writer.
