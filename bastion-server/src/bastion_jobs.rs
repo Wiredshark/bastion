@@ -34783,6 +34783,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // is several ticks in the past.
                 let prev = board.embed_prev_pos.insert(*uid, pos.0);
                 let step = prev.map_or(-1.0, |p| pos.0.distance(p));
+                // ★ WHOSE BODY IS THIS? (2026-08-31) The mover is SOLE OWNER
+                // only while `kinematic_travels` is set; the marker is
+                // re-earned every tick and a colonist who arrived, released
+                // or is fleeing is swept straight back to physics. So
+                // "moving at walk speed" does NOT by itself name the mover
+                // as the writer -- an attribution I made and the live run
+                // refuted (the glide override fired 4 times against 168
+                // embeds). This field separates the two owners. Note the
+                // embedded z is FRACTIONAL (184.54) while the mover only
+                // ever writes an integer z, and `vel_now.z` reads +3.94:
+                // evidence something other than the mover moves these
+                // bodies vertically.
+                let kinematic = id_maps
+                    .uid_entity(*uid)
+                    .is_some_and(|e| kinematic_travels.contains(e));
                 if core_solid {
                     // Captured BEFORE the `entry()` borrow below, so the
                     // first-solid tick records its own trajectory.
@@ -34860,6 +34875,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 entry_vel = ?board.embed_entry.get(uid).map(|e| e.2),
                                 step_now = step,
                                 vel_now = ?vel.0,
+                                // Sole-owner marker: true = the kinematic
+                                // mover still owns this body, false = physics
+                                // has it back. Names the writer.
+                                kinematic,
                                 "bastion EMBED WATCH: colonist WEDGED in \
                                  terrain (persisted a full second) — \
                                  relocated; hunt the writer"
