@@ -190,6 +190,258 @@ pub(crate) fn bastion_demote_is_ringing(previous_demote_tick: Option<u64>, now: 
     }
 }
 
+// ── ROW 54: THE HOUSING CAP MUST BIND ADOPTED RESIDENTS TOO ──────────────
+//
+// ★ THE DEFECT, MEASURED IN THE OWNER'S LIVE SESSION (2026-08-30). He
+// adopted a real worldgen village and his log printed, in this order:
+//
+//   ADOPT-NPCS      site_population=46 eligible=46
+//   ADOPT-A-TOWN    roll adopted_existing=46 settled=0 houses=10 wanted=8
+//   ADOPT-IN-PLACE  house registered x10, adopted_beds=2 each  ->  beds=20
+//   HOUSING GROWTH  fired=false deciding="drive_not_expand" ... drive=Grow
+//   BIRTHS          fired=false deciding="drive_not_expand"
+//   COURTSHIP       fired=false deciding="no_home" candidates=20
+//   Build jobs created: 0
+//
+// 46 colonists into 20 bed slots. `Server::bastion_adopt_town_people` HAD
+// computed the cap (`wanted_eff = min(8, 10) = 8`) and HAD logged
+// "ADOPT-A-TOWN population CAPPED BY HOUSING — one colonist per house (Ben's
+// ruling)" — but `wanted_eff` reached only `common::bastion::settle_plan`,
+// which returns EMPTY the moment `adopted_existing >= wanted`. The conversion
+// loop at the bottom of [`RtSim::bastion_adopt_town_npcs`] then wrote
+// `npc.bastion_colonist = Some(colonist)` onto every eligible resident
+// UNCONDITIONALLY. So the cap bound only the colonists the game MANUFACTURES
+// and was ignored for the entire population of an adopted town — while
+// printing a line saying it had been applied. A COMMENT CANNOT ENFORCE, and
+// neither can a log line.
+//
+// ★ THE COST IS THREE SHIPPED SYSTEMS, EACH NAMING ITS OWN BLOCKER IN THAT
+// LOG. `bastion_server::bastion_jobs::colony_drive_for` returns Grow while
+// `beds < pop`, so 46 > 20 pins the drive at Grow forever; `immigration_verdict`
+// and `birth_verdict` both refuse `drive_not_expand` off exactly that; and
+// `courtship_verdict` refuses `no_home` because all 20 slots are owned, so
+// `free_bed_in_house` can never resolve. Nothing can add a bed either:
+// `JobBoard::adopt_beds_surface` mints ZERO build jobs by construction (the
+// houses already exist), which is the `Build jobs created: 0` line. A
+// PERMANENT SIGNAL BLOCKING ITS OWN CURE.
+
+/// ★ THE DENOMINATOR IS HOUSE PLOTS, with the env count surviving only as an
+/// upper bound — `min(wanted, houses.max(1))`. Ben's ruling, already quoted
+/// in the line this fix makes true, is *"one colonist per house"*.
+///
+/// REJECTED — registered bed SLOTS (20 on the owner's town), for three
+/// independent reasons, any one of which is fatal:
+///  1. **It does not exist yet.** Slots are registered by
+///     `JobBoard::adopt_beds_surface` / `adopt_furniture_surface`, which take
+///     a `&TerrainGrid` and run inside the job-board tick system — strictly
+///     AFTER this call, which is why the owner's log prints ADOPT-IN-PLACE
+///     below ADOPT-A-TOWN. At founding tick the town has no loaded chunks at
+///     all; that is the whole reason the caller reads `get_alt_approx`
+///     instead of terrain. Adoption cannot count a bed it cannot see.
+///  2. **It is the wrong number even if handed to us.** The growth ceiling
+///     `immigration_target_pop` counts HOUSES that hold beds, not slots — 10,
+///     not 20. Wherever the slot denominator actually binds it puts `roster`
+///     at twice that ceiling, so `birth_verdict` refuses `no_room_in_town`
+///     and `immigration_verdict` refuses `roster_at_target`; every house is
+///     full, so courtship's `free_bed_in_house` cannot resolve either. The
+///     drive would leave Grow and the other two witnesses would STILL be
+///     dead. MEASURE THE OUTCOME, NOT THE RESPONSE.
+///
+///     ★ HONESTLY: on the owner's OWN town this reason is inert, and that was
+///     found by falsification rather than review — planting the slot
+///     denominator left the reachability pin green. His env `wanted` is 8 and
+///     his town has 10 houses, so `min(8, 10)` and `min(8, 20)` are both 8
+///     and the two denominators are indistinguishable at his numbers. They
+///     separate only when the housing binds below the env count. The pin now
+///     tests them there; see `a_town_with_fewer_houses_than_the_env_count_
+///     starts_at_its_ceiling` for what that boundary costs.
+///  3. **The number is a documented artefact.** `PainterSpriteExt::bed`'s
+///     `with_corner_sprite_side` sets BOTH corners of the head side, so one
+///     physical bed registers as TWO slots — measured and deliberately left
+///     alone in `is_adoptable_bed_sprite`'s own doc block. A denominator
+///     built on a count its own producer records as doubled is a denominator
+///     waiting to halve under someone else's row.
+///
+/// REJECTED — `immigration_target_pop` (10). Same availability problem (it
+/// reads `derive_households` over board regions the post-adoption terrain
+/// sweep populates), and it is the town's growth CEILING, not its starting
+/// population. Capping the start AT the ceiling makes `roster >= target_pop`
+/// true on tick one: births refuse `no_room_in_town`, housing growth refuses
+/// `roster_at_target`. The gates would be reachable and would never fire. A
+/// population loop needs somewhere to go.
+///
+/// CHOSEN — house plots. Available (it is the argument this path already
+/// carries, resolved from worldgen plot data, terrain-independent by
+/// construction); it is literally the ruling; and it is REACHABLE on the
+/// owner's own numbers: 10 houses, env wanted 8 → cap 8; beds 20 ≥ pop 8 so
+/// the drive reaches Expand; roster 8 < target_pop 10 so the two roster arms
+/// clear; and 8 people in 10 houses leaves 2 houses empty with 4 unowned
+/// slots, so courtship's `free_bed_in_house` resolves. All three witnesses
+/// can fire — pinned in `the_three_witnesses_become_reachable`, against the
+/// shipped `colony_drive_for`.
+///
+/// THE ONE PRODUCER of that cap. `Server::bastion_adopt_town_people` applies
+/// it to the house positions it resolved; [`RtSim::bastion_adopt_town_npcs`]
+/// re-applies it to the same slice it is handed. That is a RE-APPLICATION,
+/// not a second producer: the function is idempotent —
+/// `cap(cap(w, h), h) == cap(w, h)`, pinned — so the two can never disagree,
+/// and the rtsim entry point (which is `pub`) defends itself against a future
+/// caller that passes an uncapped `wanted`.
+///
+/// The `.max(1)` floor is carried over UNCHANGED from the shipped expression:
+/// a colony of zero is not a colony, and retuning that floor is the DECISIONS
+/// log's row, not this one.
+pub(crate) fn bastion_housing_cap(wanted: usize, houses: usize) -> usize {
+    wanted.min(houses.max(1))
+}
+
+/// How far a resident is from the nearest house of the town being adopted, as
+/// an INTEGER squared block distance. `i64::MAX` when the town resolved no
+/// houses at all, so a house-less town ranks everyone equally and the NpcId
+/// tiebreak alone decides — a total order either way.
+///
+/// Integer by construction, using the same `.map(|e| e as i64)` idiom the two
+/// site lookups in this file already use: a float comparator would put a
+/// NaN-ordering hazard on the path that chooses who lives in the town.
+pub(crate) fn bastion_adoption_rank(wpos: Vec3<f32>, house_plots: &[Vec3<f32>]) -> i64 {
+    house_plots
+        .iter()
+        .map(|h| {
+            h.xy()
+                .map(|e| e as i64)
+                .distance_squared(wpos.xy().map(|e| e as i64))
+        })
+        .min()
+        .unwrap_or(i64::MAX)
+}
+
+/// ★ WHO GETS ADOPTED when a town has more residents than houses.
+///
+/// BED OWNERSHIP IS NOT AVAILABLE HERE, and that is worth stating plainly
+/// because it is the rule one reaches for first: `BedSlot.owner` lives on the
+/// job board's bed table, which does not exist until the post-adoption
+/// terrain sweep builds it. At adoption tick NOBODY owns a bed, because there
+/// are no beds yet — the same reason the bed-slot denominator was rejected
+/// above.
+///
+/// The nearest signal that does exist is where the person is standing.
+/// `Site.population` is site MEMBERSHIP, not proximity — it holds villagers
+/// out on the roads — so ranking by distance to the closest house plot adopts
+/// the people actually in the village and leaves the wanderers to the vanilla
+/// rules. It also agrees with the bed assigner, which scores by distance: the
+/// people adopted are the ones already standing next to the beds.
+///
+/// ★ THE KEPT SET IS RE-SORTED BY NpcId BEFORE IT IS RETURNED, and that is
+/// not tidiness — it is FALLBACK IS IDENTITY. The caller draws one
+/// `BastionColonist::generate` per entry from a seeded stream, so the ORDER
+/// decides which record each person receives. Rank order SELECTS; NpcId order
+/// CONVERTS. That makes the uncapped case (`cap >= ranked.len()`) byte-for-
+/// byte the `residents.sort()` that shipped — an adopted town already at or
+/// under its housing is bit-for-bit unchanged, pinned.
+///
+/// DETERMINISM BY CONSTRUCTION: integer rank, NpcId total-order tiebreak, one
+/// explicit sort. No wall clock, no RNG, and nothing here can see a HashMap.
+pub(crate) fn bastion_adoption_pick<T: Copy + Ord>(
+    mut ranked: Vec<(i64, T)>,
+    cap: usize,
+) -> Vec<T> {
+    ranked.sort_by_key(|(rank, id)| (*rank, *id));
+    ranked.truncate(cap);
+    let mut kept: Vec<T> = ranked.into_iter().map(|(_, id)| id).collect();
+    kept.sort();
+    kept
+}
+
+/// A MOVER'S REFUSAL MUST NOT REARM ITS RIVAL: the settle branch's want is the
+/// CAP, never the raw `wanted`.
+///
+/// [`RtSim::bastion_adopt_town_npcs`] now caps the population BEFORE asking
+/// `common::bastion::settle_plan` for the shortfall. If that second question
+/// were still measured against an uncapped want, the settle branch would
+/// manufacture back exactly the people the cap had just declined to adopt —
+/// 36 strangers on the owner's town — and the fix would have moved the
+/// overcrowding from one producer to the other while every count still looked
+/// right.
+///
+/// ★ THIS FUNCTION EXISTS BECAUSE THE PIN THAT WAS MEANT TO GUARD THAT RULE
+/// COULD NOT. Written first as `settle_plan(adopted_existing, cap, ..)` at the
+/// call site, the rule lived in a chosen ARGUMENT, and an argument is not
+/// something a pure pin can reach: the test could only call `settle_plan`
+/// itself with hand-passed values, so it asserted a property of `settle_plan`
+/// (which this row may not even edit) and would have stayed GREEN through any
+/// mutation of the line it claimed to guard. Deriving the cap INSIDE the
+/// function moves the rule from an argument into code, which is the only form
+/// a pin can break. Pinned by `the_cap_does_not_rearm_the_settle_branch`.
+///
+/// Idempotent in the live path (`wanted` arrives already capped), so this is
+/// the identity there — the re-application exists for the `pub` entry point's
+/// self-defence, exactly as in [`bastion_housing_cap`].
+pub(crate) fn bastion_settle_plan_capped(
+    adopted: usize,
+    wanted: usize,
+    houses: usize,
+) -> Vec<usize> {
+    common::bastion::settle_plan(adopted, bastion_housing_cap(wanted, houses), houses)
+}
+
+/// ★★ THE CAP IS ENFORCED BY THE TYPE, BECAUSE THE PIN COULD NOT.
+///
+/// FOUND BY FALSIFICATION, and it is the more useful half of this row.
+/// `the_cap_binds_the_towns_own_residents` stayed GREEN when the cap
+/// application was deleted from [`RtSim::bastion_adopt_town_npcs`] and the
+/// shipped uncapped `residents.sort()` put back in its place — a VALID cycle,
+/// with `Compiling veloren-server` and a 22.59s rebuild in the log, so not the
+/// stale-binary trap. It had to be green: the pin calls
+/// [`bastion_adoption_pick`] itself, so it can assert what that helper DOES
+/// and never that the caller CALLED it. No pure pin can witness a call site.
+///
+/// That blindness is the exact shape of the defect this row exists to fix:
+/// `wanted_eff` was computed correctly, logged correctly, and simply not
+/// applied. Re-asserting the rule in a stronger sentence would repeat the
+/// mistake — A COMMENT CANNOT ENFORCE — so the TYPE carries it instead.
+///
+/// [`Eligible`]'s field is private and this module is a CHILD of `rtsim`, so
+/// the parent cannot reach inside it: `eligible.0` and `eligible.into_iter()`
+/// both fail to compile. The ONLY way the adoption path can turn its census
+/// into a roster is [`Eligible::into_capped`], which applies the cap. The
+/// mutation the pin missed is now a compile error rather than a silent
+/// regression, and [`Roster`] hands the witness line the same numbers the
+/// decision used — A NUMBER CARRIES ITS PRODUCER.
+pub(crate) mod adoption {
+    /// What the cap decided, from the SAME call that decided it.
+    pub(crate) struct Roster {
+        pub(crate) population_seen: usize,
+        pub(crate) cap: usize,
+        pub(crate) adopted: usize,
+        pub(crate) left_as_npcs: usize,
+    }
+
+    /// The eligible residents of a town being adopted, each paired with its
+    /// [`super::bastion_adoption_rank`]. PRIVATE FIELD BY DESIGN — see the
+    /// module doc block above.
+    pub(crate) struct Eligible<T>(Vec<(i64, T)>);
+
+    impl<T: Copy + Ord> Eligible<T> {
+        pub(crate) fn empty() -> Self { Self(Vec::new()) }
+
+        pub(crate) fn push(&mut self, rank: i64, id: T) { self.0.push((rank, id)); }
+
+        /// THE ONLY EXIT, and it caps.
+        pub(crate) fn into_capped(self, wanted: usize, houses: usize) -> (Vec<T>, Roster) {
+            let cap = super::bastion_housing_cap(wanted, houses);
+            let population_seen = self.0.len();
+            let kept = super::bastion_adoption_pick(self.0, cap);
+            let adopted = kept.len();
+            (kept, Roster {
+                population_seen,
+                cap,
+                adopted,
+                left_as_npcs: population_seen - adopted,
+            })
+        }
+    }
+}
+
 /// The bounded state behind the demote witness in
 /// [`RtSim::hook_rtsim_entity_unload`].
 ///
@@ -758,7 +1010,7 @@ impl RtSim {
         let mut already = 0u32;
         let mut not_civilised = 0u32;
         let mut not_humanoid = 0u32;
-        let mut residents: Vec<::rtsim::data::npc::NpcId> = Vec::new();
+        let mut eligible = adoption::Eligible::<::rtsim::data::npc::NpcId>::empty();
         for id in population.iter().copied() {
             let Some(npc) = data.npcs.npcs.get(id) else { continue };
             total += 1;
@@ -774,19 +1026,54 @@ impl RtSim {
                 not_humanoid += 1;
                 continue;
             }
-            residents.push(id);
+            eligible.push(bastion_adoption_rank(npc.wpos, house_plots), id);
         }
+
+        // ★ ROW 54: AND NOW THE CAP ACTUALLY BINDS. This is the decision the
+        // defect was missing — see the block above `bastion_housing_cap` for
+        // the measurement, and that function's doc for why the denominator is
+        // house plots rather than bed slots or the growth ceiling.
+        //
+        // Through `Eligible::into_capped` because it is the ONLY exit that
+        // type offers: the census cannot become a roster without being capped.
+        // See the `adoption` module's doc for the falsification result that
+        // forced that shape. The cap is re-derived there rather than trusted
+        // from the caller — idempotent, and this entry point is `pub`.
+        //
+        // Selection is by distance-to-a-house with an NpcId tiebreak, and the
+        // kept set is restored to NpcId order, so the uncapped case is
+        // byte-for-byte the `residents.sort()` that shipped. Determinism by
+        // construction — integers and one sort, no clock, no RNG, no HashMap.
+        let (mut residents, roll) = eligible.into_capped(wanted, house_plots.len());
         tracing::info!(
             site_population = total,
-            eligible = residents.len(),
+            eligible = roll.population_seen,
             rej_already_colonist = already,
             rej_not_civilised = not_civilised,
             rej_not_humanoid = not_humanoid,
             ?site_id,
             "bastion: ADOPT-NPCS census — the site's own roll, and who on it is eligible"
         );
-        // Sorted for determinism: a set's order is not a promise.
-        residents.sort();
+        // EVERY MECHANISM WITNESSES ITSELF, and this one must be able to show
+        // itself REFUSING: `capped` is the field that separates "the cap bound
+        // and 38 people stayed villagers" from "the town was already within
+        // its housing". Printed on BOTH arms — a cap that only logs when it
+        // fires cannot be told from a cap that is not running at all, which is
+        // exactly how the shipped line lied for three rows. Every field comes
+        // off the `Roster` the decision itself returned, so the witness cannot
+        // drift off the decision it reports.
+        tracing::info!(
+            population_seen = roll.population_seen,
+            cap = roll.cap,
+            denominator = "house_plots",
+            houses = house_plots.len(),
+            wanted,
+            adopted = roll.adopted,
+            left_as_npcs = roll.left_as_npcs,
+            capped = roll.left_as_npcs > 0,
+            ?site_id,
+            "bastion: ADOPT-A-TOWN HOUSING CAP — one colonist per house (Ben's ruling), now              BINDING on the town's own residents; those not adopted stay ordinary              villagers, untouched"
+        );
 
         // ★ THE ARCHITECT WILL NEVER FILL THIS VILLAGE, SO FILL IT OURSELVES
         // (2026-08-21). A peer traced the last hop of a bug three of us had
@@ -823,7 +1110,13 @@ impl RtSim {
         // "adopt rather than manufacture" is asserted by a test rather than
         // trusted to this loop: one house index per resident to create, empty
         // when the village already has its own people.
-        let plan = common::bastion::settle_plan(adopted_existing, wanted, house_plots.len());
+        // ★ AND THE SETTLE BRANCH MEASURES AGAINST THE CAP, NOT THE RAW WANT
+        // — through `bastion_settle_plan_capped`, which derives the cap
+        // ITSELF rather than taking it as an argument. See that function's doc
+        // for why: as a chosen argument the rule was unpinnable, and the pin
+        // that claimed to guard it was green against every mutation of this
+        // line. A MOVER'S REFUSAL MUST NOT REARM ITS RIVAL.
+        let plan = bastion_settle_plan_capped(adopted_existing, wanted, house_plots.len());
         let settled = plan.len();
         if !plan.is_empty() {
             let faction = data.sites.get(site_id).and_then(|s| s.faction);
@@ -1784,3 +2077,380 @@ mod bastion_personality_pins {
         }
     }
 }
+
+/// ROW 54's pins. Every constant below is a number from the owner's live
+/// session of 2026-08-30, not a number invented to make a test pass.
+#[cfg(test)]
+mod bastion_adoption_cap_pins {
+    use super::*;
+
+    /// `ADOPT-NPCS site_population=46 eligible=46`.
+    const SEEN: usize = 46;
+    /// `ADOPT-A-TOWN roll ... houses=10`.
+    const HOUSES: usize = 10;
+    /// `ADOPT-A-TOWN roll ... wanted=8` — the env count, already the `wanted`
+    /// this path receives.
+    const ENV_WANTED: usize = 8;
+    /// `ADOPT-IN-PLACE house registered x10, adopted_beds=2 each -> beds=20`.
+    /// Two SLOTS per physical bed; see `is_adoptable_bed_sprite`'s doc.
+    const SLOTS_PER_HOUSE: u32 = 2;
+    /// `bastion_server::bastion_jobs::immigration_target_pop` counts HOUSES
+    /// that hold beds, not slots — the owner's log reads `target_pop=10`
+    /// against `houses=10`, which is the reading this transcribes. It is
+    /// `pub(crate)` in a crate this row may not edit, so the value is carried
+    /// here by symbol rather than called; the drive gate below IS called.
+    const TARGET_POP: u32 = HOUSES as u32;
+    /// The one drive input this row is not about: the same session logged
+    /// `food_per_cap=3.5`, clear of both Sustain bars, and no threats. Held
+    /// where it is not the blocker so the housing term is isolated.
+    const FOOD_PER_CAP: f32 = 3.5;
+
+    /// PRODUCTION LINE GUARDED: the `cap` derivation inside
+    /// [`adoption::Eligible::into_capped`], which is the one exit the census
+    /// has. Replace it with `usize::MAX` and this reads 46.
+    ///
+    /// ★ THIS PIN WAS GREEN AND BLIND ON ITS FIRST WRITING, and the finding
+    /// outlived the fix. It was written against `bastion_adoption_pick`
+    /// directly, and stayed green through a plant that DELETED the cap from
+    /// `bastion_adopt_town_npcs` and restored the shipped uncapped
+    /// `residents.sort()` — a valid cycle, 22.59s rebuild, `Compiling
+    /// veloren-server` in the log. A pure pin cannot witness a call site. The
+    /// production code was reshaped so that it does not have to: see the
+    /// `adoption` module, where the uncapped construction no longer compiles.
+    /// The pin now drives that one exit end to end.
+    #[test]
+    fn the_cap_binds_the_towns_own_residents() {
+        let mut eligible = adoption::Eligible::<u32>::empty();
+        for i in 0..SEEN as u32 {
+            eligible.push(i as i64, i);
+        }
+        let (adopted, roll) = eligible.into_capped(ENV_WANTED, HOUSES);
+        assert_eq!(roll.cap, 8, "min(env wanted 8, houses 10)");
+        assert_eq!(
+            adopted.len(),
+            roll.cap,
+            "the owner's town had {SEEN} eligible residents and room for {}; adoption kept \
+             {}. The cap is being computed and ignored again.",
+            roll.cap,
+            adopted.len()
+        );
+        // The witness must be able to show the cap REFUSING, and its numbers
+        // must come off the decision itself.
+        assert_eq!(roll.population_seen, SEEN);
+        assert_eq!(roll.adopted, 8);
+        assert_eq!(roll.left_as_npcs, SEEN - 8, "38 residents stay ordinary villagers");
+        assert!(roll.left_as_npcs > 0, "the `capped=true` arm must be reachable");
+    }
+
+    /// FALLBACK IS IDENTITY on the same exit: a town within its housing is
+    /// adopted whole and the witness reports a cap that did NOT refuse, so
+    /// `capped=false` is reachable too. A cap that could only ever log itself
+    /// firing could not be told from one that is not running at all — which is
+    /// precisely how the shipped line lied for three rows.
+    #[test]
+    fn the_witness_can_show_the_cap_not_refusing() {
+        let mut eligible = adoption::Eligible::<u32>::empty();
+        for i in 0..6u32 {
+            eligible.push(i as i64, i);
+        }
+        let (adopted, roll) = eligible.into_capped(ENV_WANTED, HOUSES);
+        assert_eq!(adopted.len(), 6, "six residents, room for eight — adopt all six");
+        assert_eq!(roll.left_as_npcs, 0);
+        assert!(!(roll.left_as_npcs > 0), "the `capped=false` arm must be reachable");
+    }
+
+    /// FALLBACK IS IDENTITY. PRODUCTION LINES GUARDED: `ranked.truncate(cap)`
+    /// and `kept.sort()` in [`bastion_adoption_pick`], together.
+    ///
+    /// The shipped behaviour was "adopt every eligible resident, in NpcId
+    /// order" (`residents.sort()`), and an adopted town already within its
+    /// housing must still get exactly that — SAME SET and SAME ORDER, because
+    /// the caller draws one `BastionColonist::generate` per entry from a
+    /// seeded stream and the order decides who receives which record.
+    ///
+    /// The ranks here are deliberately ANTI-correlated with the ids, so a pick
+    /// that selected correctly but forgot to restore NpcId order returns a
+    /// different permutation and fails.
+    #[test]
+    fn a_town_within_its_housing_is_bit_for_bit_unchanged() {
+        let ids: Vec<u32> = vec![9, 2, 7, 1, 4, 3];
+        let eligible: Vec<(i64, u32)> = ids
+            .iter()
+            .enumerate()
+            .map(|(i, id)| (1_000 - i as i64, *id))
+            .collect();
+        let shipped = {
+            let mut s = ids.clone();
+            s.sort();
+            s
+        };
+        for cap in [ids.len(), ids.len() + 1, ENV_WANTED, usize::MAX] {
+            assert_eq!(
+                bastion_adoption_pick(eligible.clone(), cap),
+                shipped,
+                "cap={cap}: a town at or under its housing must be the shipped adoption, \
+                 set AND order"
+            );
+        }
+    }
+
+    /// ★ THE ROW'S OWN PIN: A GATE MUST BE REACHABLE, and the success
+    /// condition is that the three witnesses can FIRE — not that a cap was
+    /// applied.
+    ///
+    /// PRODUCTION LINES GUARDED: `bastion_housing_cap`'s denominator together
+    /// with the `bastion_adoption_pick` call. Widen the denominator to bed
+    /// SLOTS (`HOUSES * SLOTS_PER_HOUSE`) and the drive assertions still pass
+    /// while `pop < TARGET_POP` fails — which is precisely why bed slots were
+    /// rejected, and why this pin asserts the roster arms as well as the drive.
+    ///
+    /// The drive arm calls the SHIPPED `colony_drive_for`. The other two arms
+    /// are transcribed (their verdict functions are `pub(crate)` in
+    /// `bastion-server`, which this row may not edit) and each names the
+    /// symbol and refusal string it stands for.
+    #[test]
+    fn the_three_witnesses_become_reachable() {
+        use bastion_server::bastion_jobs::colony_drive_for;
+        use common::bastion::ColonyDrive;
+
+        let beds = HOUSES as u32 * SLOTS_PER_HOUSE;
+        assert_eq!(beds, 20, "the owner's logged bed count");
+
+        // ── CONTROL: the shipped behaviour, "adopt everyone". A FALSIFIER
+        // NEEDS ITS OWN CONTROL — if these three refusals did not reproduce,
+        // the "after" arm below would be measuring nothing.
+        let pop_before = SEEN as u32;
+        let (drive_before, term_before, _) =
+            colony_drive_for(FOOD_PER_CAP, 0, beds, pop_before, ColonyDrive::Grow);
+        assert_eq!(
+            (drive_before, term_before),
+            (ColonyDrive::Grow, "beds_short"),
+            "46 people into 20 slots must pin the drive at Grow — that is the logged defect"
+        );
+        assert!(
+            pop_before >= TARGET_POP,
+            "control: `roster >= target_pop`, so birth_verdict refuses no_room_in_town and \
+             immigration_verdict refuses roster_at_target"
+        );
+        assert!(
+            pop_before.div_ceil(HOUSES as u32) >= SLOTS_PER_HOUSE,
+            "control: every slot in every house is owned, so courtship's free_bed_in_house \
+             cannot resolve and courtship_verdict refuses no_home"
+        );
+
+        // ── AFTER: the cap binds.
+        let pop = bastion_housing_cap(ENV_WANTED, HOUSES) as u32;
+        let (drive, term, _) =
+            colony_drive_for(FOOD_PER_CAP, 0, beds, pop, ColonyDrive::Grow);
+        assert_eq!(
+            (drive, term),
+            (ColonyDrive::Expand, "satisfied"),
+            "beds {beds} >= pop {pop} must let the colony mind leave Grow — without this, \
+             immigration_verdict and birth_verdict both refuse drive_not_expand forever"
+        );
+        assert!(
+            pop < TARGET_POP,
+            "roster {pop} must sit BELOW target_pop {TARGET_POP}, or the drive clears and \
+             births still refuse no_room_in_town while housing growth refuses \
+             roster_at_target. This is the assertion the bed-slot denominator fails."
+        );
+        assert!(
+            (HOUSES as u32) > pop,
+            "at least one house must stand empty, or immigration_verdict refuses \
+             no_vacant_house"
+        );
+        assert!(
+            pop.div_ceil(HOUSES as u32) < SLOTS_PER_HOUSE,
+            "every occupied house must keep a free slot, or courtship's free_bed_in_house \
+             fails for the winning pair's OWN home and no_home returns"
+        );
+
+        // ★ AND THE DENOMINATOR ITSELF, WHERE IT ACTUALLY BITES — a correction
+        // found by falsification, not by review. Planting the bed-SLOT
+        // denominator left everything above GREEN, because on the owner's town
+        // the env count binds first: `min(8, 10)` and `min(8, 20)` are both 8,
+        // so houses-vs-slots is INERT at his numbers. Everything above would
+        // have passed under the denominator this row rejects.
+        //
+        // Take the env cap off and the two separate. One colonist per HOUSE is
+        // the ruling, and it is a bound on the cap for every env count:
+        let houses_denom = bastion_housing_cap(usize::MAX, HOUSES) as u32;
+        assert_eq!(
+            houses_denom, HOUSES as u32,
+            "with no env bound the cap must be one colonist per house, not per bed slot"
+        );
+        assert!(
+            houses_denom < HOUSES as u32 * SLOTS_PER_HOUSE,
+            "the bed-slot denominator would seat {} in {HOUSES} houses",
+            HOUSES as u32 * SLOTS_PER_HOUSE
+        );
+        // That is what it would cost, in the witnesses' own terms: with the
+        // slot denominator every house is full, so courtship's
+        // free_bed_in_house cannot resolve for ANY pair, and the roster sits
+        // at twice the growth ceiling.
+        let slots_denom = HOUSES as u32 * SLOTS_PER_HOUSE;
+        assert!(slots_denom.div_ceil(HOUSES as u32) >= SLOTS_PER_HOUSE);
+        assert!(slots_denom > TARGET_POP);
+        assert!(houses_denom.div_ceil(HOUSES as u32) < SLOTS_PER_HOUSE);
+    }
+
+    /// ★ THE HEADROOM IS THE ENV COUNT'S, NOT THE DENOMINATOR'S — stated
+    /// because the pin above only found it under mutation, and a future reader
+    /// should not have to.
+    ///
+    /// `beds >= pop` (the drive gate, and the blocker all three witnesses
+    /// name) is made reachable by the denominator ROBUSTLY: the cap never
+    /// exceeds the house count, and every registered house carries at least
+    /// one bed, so `pop <= houses <= beds` holds for every town.
+    ///
+    /// The two ROSTER arms — `birth_verdict`'s `no_room_in_town` and
+    /// `immigration_verdict`'s `roster_at_target` — need strictly more:
+    /// `roster < target_pop`, where `immigration_target_pop` IS the house
+    /// count. So they clear only when the env `wanted` sits BELOW the house
+    /// count, which is true on the owner's town (8 < 10) and is a property of
+    /// the env default, not of the denominator. A town with FEWER houses than
+    /// the env count adopts exactly one colonist per house and therefore
+    /// starts at its own growth ceiling: the drive reaches Expand, courtship
+    /// can fire, and births and immigration correctly refuse until the colony
+    /// BUILDS another house.
+    ///
+    /// That is a defensible equilibrium and not a regression — it is the
+    /// ruling working — but it is a real boundary, so it is pinned rather than
+    /// left to be rediscovered. It is the number to revisit if a live adopted
+    /// town is seen sitting at `roster_at_target` forever.
+    #[test]
+    fn a_town_with_fewer_houses_than_the_env_count_starts_at_its_ceiling() {
+        use bastion_server::bastion_jobs::colony_drive_for;
+        use common::bastion::ColonyDrive;
+
+        let houses = 3usize;
+        let beds = houses as u32 * SLOTS_PER_HOUSE;
+        let pop = bastion_housing_cap(ENV_WANTED, houses) as u32;
+        assert_eq!(pop, 3, "housing binds below the env count here");
+
+        // The gate this row is about is still reached, robustly.
+        let (drive, term, _) = colony_drive_for(FOOD_PER_CAP, 0, beds, pop, ColonyDrive::Grow);
+        assert_eq!((drive, term), (ColonyDrive::Expand, "satisfied"));
+        // Courtship still fires: one per house, two slots each.
+        assert!(pop.div_ceil(houses as u32) < SLOTS_PER_HOUSE);
+        // The roster arms sit exactly AT the ceiling — refusing, correctly.
+        assert_eq!(pop, houses as u32, "one colonist per house IS the ceiling here");
+    }
+
+    /// PRODUCTION LINE GUARDED: `wanted.min(houses.max(1))` in
+    /// [`bastion_housing_cap`]. Idempotence is what makes the caller's
+    /// application and the adoption path's re-application ONE producer rather
+    /// than two; drop the `.max(1)` and the floor assertion goes red.
+    #[test]
+    fn the_cap_is_idempotent_and_never_reaches_zero_on_a_housed_town() {
+        for w in 0..24usize {
+            for h in 0..24usize {
+                let c = bastion_housing_cap(w, h);
+                assert_eq!(
+                    bastion_housing_cap(c, h),
+                    c,
+                    "w={w} h={h}: re-applying the cap must be a no-op, or the caller and \
+                     the adoption path are two producers of one number"
+                );
+                assert!(c <= w, "w={w} h={h}: the env count stays an upper bound");
+                assert!(c <= h.max(1), "w={w} h={h}: housing is the denominator");
+            }
+        }
+        assert_eq!(bastion_housing_cap(ENV_WANTED, HOUSES), 8, "the owner's town");
+        assert_eq!(bastion_housing_cap(8, 3), 3, "three houses, three colonists");
+        assert_eq!(
+            bastion_housing_cap(8, 0),
+            1,
+            "the shipped floor, carried over unchanged: a colony of zero is not a colony"
+        );
+    }
+
+    /// PRODUCTION LINE GUARDED: `ranked.sort_by_key(|(rank, id)| (*rank,
+    /// *id))` in [`bastion_adoption_pick`]. The far-away villagers carry the
+    /// LOWEST ids here, so a pick that ignored rank — or that leaned on input
+    /// order — keeps them and fails.
+    #[test]
+    fn selection_is_deterministic_and_prefers_residents_near_the_houses() {
+        let mut input: Vec<(i64, u32)> = (0..5u32).map(|i| (10_000 + i as i64, i)).collect();
+        input.extend((100..105u32).map(|i| (i as i64 - 100, i)));
+        let kept = bastion_adoption_pick(input.clone(), 5);
+        assert_eq!(
+            kept,
+            vec![100, 101, 102, 103, 104],
+            "the five standing in the village must be adopted over the five out on the roads"
+        );
+        // ORDER-INDEPENDENT OVER THE INPUT SET — the property a slotmap-backed
+        // source needs, since `Site.population`'s iteration order is not a
+        // promise and neither is a specs join's.
+        for shift in 0..input.len() {
+            let mut rot = input.clone();
+            rot.rotate_left(shift);
+            assert_eq!(
+                bastion_adoption_pick(rot, 5),
+                kept,
+                "shift={shift}: who lives in the town must not depend on iteration order"
+            );
+        }
+        // Ties on rank fall through to NpcId, so the order is TOTAL.
+        assert_eq!(bastion_adoption_pick(vec![(7, 30), (7, 10), (7, 20)], 2), vec![10, 20]);
+    }
+
+    /// VALIDATE THE INSTRUMENT FIRST. PRODUCTION LINE GUARDED: the `.min()`
+    /// over `house_plots` in [`bastion_adoption_rank`]. A rank that returned a
+    /// constant would let the pin above pass on the NpcId tiebreak alone and
+    /// say nothing about proximity.
+    #[test]
+    fn the_rank_measures_distance_to_the_nearest_house() {
+        let houses = vec![Vec3::new(0.0, 0.0, 40.0), Vec3::new(100.0, 0.0, 40.0)];
+        // NEAREST, not first: this villager stands beside house two.
+        assert_eq!(bastion_adoption_rank(Vec3::new(97.0, 4.0, 41.0), &houses), 9 + 16);
+        assert_eq!(bastion_adoption_rank(Vec3::new(3.0, 4.0, 41.0), &houses), 9 + 16);
+        // Height is not distance — a villager on the roof is home.
+        assert_eq!(bastion_adoption_rank(Vec3::new(0.0, 0.0, 999.0), &houses), 0);
+        // A town that resolved no house plots ranks everyone alike, so the
+        // NpcId tiebreak alone decides and the order is still total.
+        assert_eq!(bastion_adoption_rank(Vec3::new(3.0, 4.0, 41.0), &[]), i64::MAX);
+    }
+
+    /// A MOVER'S REFUSAL MUST NOT REARM ITS RIVAL. PRODUCTION LINE GUARDED:
+    /// `bastion_housing_cap(wanted, houses)` INSIDE
+    /// [`bastion_settle_plan_capped`] — swap it for the bare `wanted` and the
+    /// first assertion goes red.
+    ///
+    /// ★ THIS PIN WAS GREEN AND FAKE ON ITS FIRST WRITING, and that is the
+    /// more useful half of it. The rule then lived in an ARGUMENT at the call
+    /// site (`settle_plan(adopted_existing, cap, ..)`), so the pin could only
+    /// call `settle_plan` with hand-passed values — it asserted a property of
+    /// `settle_plan`, a function this row may not even edit, and would have
+    /// stayed green through any mutation of the line it named. The production
+    /// code was changed to derive the cap inside a function so that a pin
+    /// could reach it; see [`bastion_settle_plan_capped`].
+    #[test]
+    fn the_cap_does_not_rearm_the_settle_branch() {
+        let uncapped_want = SEEN;
+        let adopted = bastion_adoption_pick(
+            (0..SEEN as u32).map(|i| (i as i64, i)).collect(),
+            bastion_housing_cap(uncapped_want, HOUSES),
+        )
+        .len();
+        assert_eq!(adopted, HOUSES);
+        assert_eq!(
+            bastion_settle_plan_capped(adopted, uncapped_want, HOUSES),
+            Vec::<usize>::new(),
+            "a capped town settles NOBODY — the houses are all spoken for. Measured against \
+             an UNCAPPED want, this branch manufactures {} strangers to replace the {} \
+             residents the cap just left as villagers.",
+            SEEN - HOUSES,
+            SEEN - HOUSES
+        );
+        // FALLBACK IS IDENTITY, against `settle_plan`'s own shipped pin
+        // `settle_plan_fills_only_the_shortfall_and_shares_houses`: whenever
+        // the want is already within the housing — which is ALWAYS true on the
+        // live path, since the caller applies the same producer first — the
+        // wrapper is `settle_plan` unchanged. The cap is a ceiling, not a
+        // freeze: an under-populated town still settles its shortfall.
+        assert_eq!(bastion_settle_plan_capped(0, 3, 5), vec![0, 1, 2]);
+        assert_eq!(bastion_settle_plan_capped(2, 5, 8), vec![0, 1, 2]);
+    }
+}
+

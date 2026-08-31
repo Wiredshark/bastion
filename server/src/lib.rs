@@ -1434,7 +1434,16 @@ impl Server {
         // One colonist per house, the env count surviving only as an upper
         // cap; the .max(1) floor exists because a colony of zero is not a
         // colony (that floor case is the DECISIONS log's to retune).
-        let wanted_eff = (wanted as usize).min(houses.len().max(1));
+        //
+        // ★ ROW 54: THROUGH THE ONE PRODUCER. This expression used to be
+        // written out here and was the ONLY place the ruling existed, which is
+        // how it came to bind manufactured settlers and not the town's own
+        // residents — it reached `settle_plan` and stopped. `bastion_housing_cap`
+        // is now that producer, and the adoption path re-applies it to the
+        // population itself (see its doc for the denominator and its rejected
+        // alternatives). Same arithmetic, byte for byte: `min(wanted,
+        // houses.max(1))`.
+        let wanted_eff = rtsim::bastion_housing_cap(wanted as usize, houses.len());
         if wanted_eff < wanted as usize {
             tracing::info!(
                 wanted = wanted,
