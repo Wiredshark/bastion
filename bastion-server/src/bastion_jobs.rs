@@ -11865,6 +11865,24 @@ pub struct JobBoard {
     /// transient core-solid states (a top-down digger settling into its own
     /// fresh 1-deep pocket) clear in a few ticks and never trip it.
     embed_watch: HashMap<Uid, u32>,
+    /// bastion (2026-08-31): every colonist's position at the PREVIOUS tick
+    /// of the embed sweep, so the sweep can report the STEP a body took to
+    /// get where it is. Written for every colonist every tick, not only for
+    /// embedded ones -- the interesting step is the one INTO the terrain,
+    /// which happens before anything knows the body is embedded.
+    embed_prev_pos: HashMap<Uid, Vec3<f32>>,
+    /// bastion (2026-08-31): the trajectory INTO terrain, captured on the
+    /// tick the core first reads solid and held until the relocation warns.
+    /// `(from, step, vel)`.
+    ///
+    /// The EMBED WATCH's own message has said "hunt the writer" since it was
+    /// built, and nothing recorded HOW the body arrived -- only where it
+    /// ended up. 7,684 fires over 14 game days across 50 of 51 colonists,
+    /// and the log could not distinguish a body TELEPORTED into a wall by a
+    /// bad write from one that CREPT in because collision failed. Those want
+    /// opposite fixes, so the step is the discriminator: a step near a whole
+    /// block is a write, a step near the per-tick walk distance is a leak.
+    embed_entry: HashMap<Uid, (Vec3<f32>, f32, Vec3<f32>)>,
     /// bastion (B-LIVE4, mine-oscillation): CUMULATIVE count of job-claim
     /// events over the board's life — every `claimed_by = Some` in
     /// arbitration bumps it (initial claims AND re-claims after a release).
@@ -34653,7 +34671,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             + Vec3::unit_z();
                         terrain.get(corner).map(|b| b.is_filled()).unwrap_or(false)
                     });
+                // The step that got the body HERE, recorded for every
+                // colonist every tick (see `embed_prev_pos`): by the time a
+                // body is known to be embedded, the move that put it there
+                // is several ticks in the past.
+                let prev = board.embed_prev_pos.insert(*uid, pos.0);
+                let step = prev.map_or(-1.0, |p| pos.0.distance(p));
                 if core_solid {
+                    // Captured BEFORE the `entry()` borrow below, so the
+                    // first-solid tick records its own trajectory.
+                    if board.embed_watch.get(uid).copied().unwrap_or(0) == 0 {
+                        board
+                            .embed_entry
+                            .insert(*uid, (prev.unwrap_or(pos.0), step, vel.0));
+                    }
                     let n = board.embed_watch.entry(*uid).or_insert(0);
                     *n += 1;
                     if *n >= EMBED_PERSIST_TICKS {
@@ -34713,6 +34744,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // rooftop tail can be watched rather than
                                 // assumed gone.
                                 back_along_route = back_along_route.is_some(),
+                                // 2026-08-31 — HUNTING THE WRITER. How the
+                                // body got in, not just where it ended up.
+                                // `entry_step` near a whole block means a
+                                // WRITE put it there; near the per-tick walk
+                                // distance means it CREPT in past collision.
+                                entry_from = ?board.embed_entry.get(uid).map(|e| e.0),
+                                entry_step = board.embed_entry.get(uid).map(|e| e.1),
+                                entry_vel = ?board.embed_entry.get(uid).map(|e| e.2),
+                                step_now = step,
+                                vel_now = ?vel.0,
                                 "bastion EMBED WATCH: colonist WEDGED in \
                                  terrain (persisted a full second) — \
                                  relocated; hunt the writer"
@@ -34725,6 +34766,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     }
                 } else {
                     board.embed_watch.remove(uid);
+                    board.embed_entry.remove(uid);
                 }
             }
         }
