@@ -42132,6 +42132,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // votes by TIME HELD"). So the share needs no new
                         // accumulation, only reporting.
                         //
+                        // ★★ MEASURED (2026-09-01), flat megatown, 25
+                        // colonists named at the first day boundary:
+                        //     mean lane share 90%
+                        //     >=70%: 23   50-69%: 2   <50%: 0
+                        //     Haul 100% (n=7), Craft 100% (n=1), Guard 92%
+                        //     (n=5), Cook 88% (n=4), Chop 87%, Farm 79% (n=7)
+                        //     raw: 68 68 72 72 79 80 87 87 87 87 88 92 92
+                        //          96 97 and TEN at 100
+                        // Colonists spend 90% of their HELD WORKING TIME in
+                        // the lane they are named by. "Name someone's job
+                        // from an hour of watching" is satisfied per PERSON,
+                        // not merely per colony.
+                        //
+                        // This also settles the unit question outright: the
+                        // arrivals join says 77% of colonists are dominated
+                        // by Recreate/RestAt, the time-held tally says 90%
+                        // are in a trade. Same town, opposite conclusions,
+                        // and the difference is entirely the unit.
+                        //
                         // REJECTED: joining `colonist arrived at job site`
                         // against `kind`. That join EXISTS and was run — it
                         // reports 77% of colonists dominated by Recreate or
