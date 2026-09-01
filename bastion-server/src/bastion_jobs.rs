@@ -193,42 +193,6 @@ pub struct BastionTileGraph {
     /// adoption spawn's ground at ingest; 0 = unknown (fall back to
     /// walker z).
     pub ground_z: i32,
-    /// ★ PER-TILE GROUND (2026-09-01). The graph held cost, plot and door
-    /// but NO height, and one `ground_z` for the whole town — so
-    /// [`tile_route`] was purely 2D and could not know two adjacent tiles
-    /// differ by twenty blocks. It was not CHOOSING a cliff; it could not
-    /// SEE one, and every fix downstream of it has been treating a symptom.
-    ///
-    /// Measured: after waypoints took their own column heights the residual
-    /// was 8.6 embeds per 10k on real relief with `route_prev_solid=FALSE`
-    /// 17 of 17 — endpoints valid, the LINE between them through rock —
-    /// mean segment |dz| 12.9, repeatedly `seg(1,-1,-21)`. Subdividing those
-    /// spans was built, run and reverted: a cliff cannot be subdivided.
-    ///
-    /// Empty = unknown, and an unknown tile is never fenced — FALLBACK IS
-    /// IDENTITY, so a graph ingested without heights routes exactly as it
-    /// does today.
-    pub tile_z: HashMap<Vec2<i32>, i32>,
-}
-
-/// The vertical step the trunk router treats as walkable between adjacent
-/// tiles, matching the mover's own surface probe window (`[0,+1,-1,-2]`).
-pub const TILE_STEP: i32 = 2;
-
-/// What an unwalkable edge costs. The SAME fence the door rule uses for
-/// crossing between two buildings — priced, never forbidden, so a tile stays
-/// reachable when there is no alternative. A colonist who cannot route home
-/// is worse than one who clips a hill.
-pub const TILE_CLIFF_FENCE: f32 = 10000.0;
-
-/// Is the step between two tiles too tall for the trunk to treat as walking?
-/// Unknown height on either side is NOT a cliff: an ungraded graph must
-/// behave exactly as it did before heights existed.
-pub(crate) fn tile_edge_is_cliff(from_z: Option<i32>, to_z: Option<i32>) -> bool {
-    match (from_z, to_z) {
-        (Some(a), Some(b)) => (a - b).abs() > TILE_STEP,
-        _ => false,
-    }
 }
 
 impl BastionTileGraph {
@@ -313,22 +277,7 @@ pub fn tile_route(
             } else {
                 1.0
             };
-            // ★ A CLIFF IS AN EDGE COST (2026-09-01). The graph now carries
-            // per-tile ground, so a step nobody can walk is PRICED at the
-            // same fence the door rule uses — never forbidden, so the tile
-            // stays reachable when there is no alternative. A colonist who
-            // cannot route home is worse than one who clips a hill.
-            // An unknown height on either side is not a cliff, so an
-            // ungraded graph routes exactly as it did before heights.
-            let cliff = if tile_edge_is_cliff(
-                graph.tile_z.get(&cur).copied(),
-                graph.tile_z.get(&nb).copied(),
-            ) {
-                TILE_CLIFF_FENCE
-            } else {
-                0.0
-            };
-            let ng = g + n_cost + building + cliff;
+            let ng = g + n_cost + building;
             if best.get(&nb).is_none_or(|(bg, _)| ng < *bg) {
                 best.insert(nb, (ng, cur));
                 open.push(std::cmp::Reverse((
@@ -46526,39 +46475,6 @@ mod tests {
         assert!(
             !tail.contains(".count() as u32"),
             "counting entities here is the ITEM 27 frame error"
-        );
-    }
-
-    /// ★ THE TRUNK ROUTER MUST BE ABLE TO SEE A CLIFF (2026-09-01). The
-    /// graph carried cost, plot and door but no height and ONE `ground_z`
-    /// for the whole town, so `tile_route` was 2D and could not know two
-    /// adjacent tiles differ by twenty blocks. Measured residual it explains:
-    /// 8.6 embeds per 10k on real relief with endpoints CLEAR and the line
-    /// between them through rock, `seg(1,-1,-21)`.
-    #[test]
-    fn the_trunk_prices_a_cliff_edge_but_never_forbids_it() {
-        // The measured case: a 21-block drop between adjacent tiles.
-        assert!(tile_edge_is_cliff(Some(400), Some(379)));
-        assert!(tile_edge_is_cliff(Some(379), Some(400)), "both directions");
-        // A walkable step is not a cliff — the mover's own probe window.
-        assert!(!tile_edge_is_cliff(Some(400), Some(400 - TILE_STEP)));
-        assert!(!tile_edge_is_cliff(Some(400), Some(400 + TILE_STEP)));
-        assert!(tile_edge_is_cliff(Some(400), Some(400 - TILE_STEP - 1)));
-
-        // ★ FALLBACK IS IDENTITY. An unknown height on EITHER side is not a
-        // cliff, so a graph ingested without heights routes exactly as it
-        // did before heights existed. If this ever flips, every ungraded
-        // town silently loses its road network.
-        assert!(!tile_edge_is_cliff(None, Some(379)));
-        assert!(!tile_edge_is_cliff(Some(400), None));
-        assert!(!tile_edge_is_cliff(None, None));
-
-        // PRICED, NOT FORBIDDEN: the fence must be finite, so a cliff tile
-        // stays reachable when nothing else leads there. A colonist who
-        // cannot route home is worse than one who clips a hill.
-        assert!(
-            TILE_CLIFF_FENCE.is_finite() && TILE_CLIFF_FENCE > 0.0,
-            "an infinite fence would strand whatever lies past it"
         );
     }
 

@@ -7567,7 +7567,6 @@ impl Server {
                                         // spawn's FEET cell (spawn z is
                                         // one above it — the drop-in).
                                         ground_z: asp.z as i32 - 1,
-                                        tile_z: tile_graph.tile_z.clone(),
                                     },
                                 );
                                 tracing::info!(
@@ -8404,8 +8403,6 @@ impl Server {
         let tile_graph = {
             use world::site::TileKind as TK;
             use world::site::Structure as _;
-            let mut tile_z: std::collections::HashMap<Vec2<i32>, i32> =
-                std::collections::HashMap::new();
             let mut tiles: std::collections::HashMap<
                 Vec2<i32>,
                 (f32, Option<u32>, bool),
@@ -8447,23 +8444,12 @@ impl Server {
                         (None, false)
                     };
                     tiles.insert(tpos, (cost, plot, door));
-                    // ★ THE TRUNK ROUTER NEEDS TO SEE A CLIFF. Same source
-                    // the site scorer already uses for `alt_range`, so the
-                    // two agree by construction; sim data, terrain-
-                    // independent, and readable at ingest when no chunk is
-                    // loaded. A column it cannot resolve stays ABSENT, and
-                    // an absent height is never fenced.
-                    let tcw = site.origin + tpos * 6 + 3;
-                    if let Some(alt) = sim.get_alt_approx(tcw) {
-                        tile_z.insert(tpos, alt as i32);
-                    }
                 }
             }
             bastion_server::bastion_jobs::BastionTileGraph {
                 origin: site.origin,
                 tiles: tiles.into_iter().collect(),
                 ground_z: 0,
-                tile_z: tile_z.into_iter().collect(),
             }
         };
         tracing::info!(
