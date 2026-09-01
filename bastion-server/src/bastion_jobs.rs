@@ -42145,6 +42145,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // from an hour of watching" is satisfied per PERSON,
                         // not merely per colony.
                         //
+                        // STABILITY, same arm, carried to 1.26 game days:
+                        // ZERO lane changes after the day-0 naming. The line
+                        // fires only on a SWITCH, so 25 assignments and no
+                        // more IS the stability result. Consistent with the
+                        // owner's 86-day world (median 2 changes per
+                        // colonist; 43% never change at all).
+                        //
                         // This also settles the unit question outright: the
                         // arrivals join says 77% of colonists are dominated
                         // by Recreate/RestAt, the time-held tally says 90%
