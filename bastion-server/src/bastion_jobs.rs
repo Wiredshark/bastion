@@ -1264,6 +1264,18 @@ pub static GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
 pub static CHASER_GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// The z a trunk waypoint should sit at: the standable cell ABOVE that
+/// column's own surface, or — when the column cannot be read — today's
+/// constant street level, unchanged.
+///
+/// FALLBACK IS IDENTITY on purpose. An unreadable column is exactly where a
+/// wrong guess would be invisible, and ROW 28 records FOUR same-day
+/// route-shape fixes that each made embeds worse. Where the terrain cannot
+/// be seen, nothing moves.
+pub(crate) fn waypoint_z(column_surface: Option<i32>, street_level: i32) -> i32 {
+    column_surface.map_or(street_level, |s| s + 1)
+}
+
 /// bastion (2026-08-31): the BASE RATE of a solid previous waypoint across
 /// every router-following colonist, embedded or not — the control for the
 /// 96% seen among embedded bodies. Sampled once per colonist per embed
@@ -28667,7 +28679,56 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                             }
                                                         }
                                                     }
-                                                    Vec3::new(c.x, c.y, z)
+                                                    // ★ ONE Z FOR A WHOLE
+                                                    // TOWN IS A LIE
+                                                    // (2026-08-31). The tile
+                                                    // graph is 2D and carries
+                                                    // a single `ground_z`, so
+                                                    // every waypoint of a
+                                                    // trunk route was placed
+                                                    // at street level no
+                                                    // matter what the ground
+                                                    // under that tile
+                                                    // actually is. A town
+                                                    // with two grades -- the
+                                                    // measured 181 and 186 --
+                                                    // therefore got waypoints
+                                                    // FIVE BLOCKS INSIDE
+                                                    // ROCK, and `pure_glide`
+                                                    // walks bodies to them by
+                                                    // design, on the premise
+                                                    // that the plan is
+                                                    // admissible.
+                                                    //
+                                                    // Measured with a
+                                                    // control: `route_prev`
+                                                    // is SOLID in 94-96% of
+                                                    // embeds against a 12%
+                                                    // base rate across all
+                                                    // router-following
+                                                    // colonists (n=102,264
+                                                    // body-ticks) -- 7.8x.
+                                                    // The door case was
+                                                    // already patched for
+                                                    // exactly this reason
+                                                    // ("a door tile's center
+                                                    // is inside the wall
+                                                    // line"); the general
+                                                    // case never was.
+                                                    //
+                                                    // FALLBACK IS IDENTITY:
+                                                    // an unreadable column
+                                                    // keeps today's constant
+                                                    // z, so nothing changes
+                                                    // where the terrain
+                                                    // cannot be seen.
+                                                    let wz = waypoint_z(
+                                                        column_surface_z(
+                                                            &terrain, c.x, c.y, z + 32,
+                                                        ),
+                                                        z,
+                                                    );
+                                                    Vec3::new(c.x, c.y, wz)
                                                 })
                                                 .collect();
                                             wps.push(
@@ -45861,6 +45922,40 @@ mod tests {
     /// == 0 — this glide, not a teleport. 63,445 EMBED WATCH fires in the
     /// owner's real world in 18h, 50% of them at ten cells: the vertical
     /// faces between the town's two grades.
+    /// ★ ONE Z FOR A WHOLE TOWN IS A LIE (2026-08-31). Guards the trunk
+    /// route's per-waypoint height against the constant `g.ground_z` it used
+    /// to carry. Measured: `route_prev` SOLID in 94-96% of embeds against a
+    /// 12% base rate over 102,264 body-ticks.
+    #[test]
+    fn a_trunk_waypoint_takes_its_own_columns_height() {
+        // The two grades of the measured town. A tile whose ground is at 185
+        // must put its waypoint at 186 — the standable cell above it — not at
+        // the street level 181 the whole route used to inherit.
+        assert_eq!(
+            waypoint_z(Some(185), 181),
+            186,
+            "a waypoint stands on its own column, not on the town's average"
+        );
+        // The street-level tile is unchanged: 180 surface -> 181 standable.
+        assert_eq!(waypoint_z(Some(180), 181), 181, "street level is unmoved");
+        // FALLBACK IS IDENTITY: an unreadable column keeps today's behaviour
+        // exactly. If this ever returns anything else, the fix has started
+        // guessing where it cannot see.
+        assert_eq!(
+            waypoint_z(None, 181),
+            181,
+            "an unreadable column must change NOTHING"
+        );
+        // The defect itself, stated as a pin: a 5-block grade difference is
+        // exactly the +5.0 face the embeds were measured against, and the old
+        // constant-z form would have returned 181 here.
+        assert_ne!(
+            waypoint_z(Some(185), 181),
+            181,
+            "the constant-z form put this waypoint five blocks inside rock"
+        );
+    }
+
     #[test]
     fn the_glide_override_refuses_rock_but_still_crosses_a_gap() {
         // A WALL. The probe found nothing standable because the feet cell is
