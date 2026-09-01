@@ -16746,6 +16746,34 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         running,
                         "bastion EXPERIENCE census (engaged = has a job and is not stuck;                          `working` EXCLUDES travel, so hauling reads as `moving`;                          `stuck` = wedged >5s at speed~0, `slowed` = transient dip,                          also inside `moving`)"
                     );
+                    // ★ WHOSE BED IS OUTSIDE A HOUSE? (2026-09-01) The
+                    // growth ratchet jams because five colonists hold beds
+                    // while only four households read occupied and shared=0
+                    // -- one colonist's bed maps to NO household, so its
+                    // house stays `vacant` and the build gate refuses "a
+                    // house already stands empty" forever.
+                    //
+                    // `derive_households` SKIPS a bed outside every Bed
+                    // region (`continue`), and nothing has ever reported how
+                    // many it skips. Two frames disagree about who lives
+                    // where and this counts the gap directly, in the
+                    // household builder's OWN terms, before anything is
+                    // changed.
+                    {
+                        let (hh, _) = derive_households(&board.designated, &board.beds);
+                        let in_house: usize = hh.iter().map(|h| h.beds as usize).sum();
+                        let owned = board.beds.values().filter(|b| b.owner.is_some()).count();
+                        let members: usize = hh.iter().map(|h| h.members.len()).sum();
+                        info!(
+                            beds_total = board.beds.len(),
+                            beds_in_a_house = in_house,
+                            beds_orphaned = board.beds.len().saturating_sub(in_house),
+                            beds_owned = owned,
+                            household_members = members,
+                            houses = hh.len(),
+                            "bastion: BED-HOUSE CENSUS — beds the household builder cannot                              place. `beds_owned` above `household_members` means an owner                              sleeps outside every Bed region, and its house reads vacant                              forever"
+                        );
+                    }
                     // ★ THE CONTROL beside the threshold log. `solid` and
                     // `clear` are body-ticks across EVERY router-following
                     // colonist; the 96% solid-prev seen among EMBEDDED bodies
