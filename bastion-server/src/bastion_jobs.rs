@@ -22796,6 +22796,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         "bastion: REACHABILITY FLOOD TRUNCATED — the survey ran out of cell budget and has proven NOTHING about what it did not reach; condemning nothing this pass (the frontier of a search is not its cause)"
                     );
                 }
+                // ★ THE MECHANISM WITNESSES ITSELF (2026-09-01). The unloaded-
+                // frontier fix shipped one build without this line and could
+                // not be verified by contents — a struct field is not a
+                // runtime string. Now the survey says, in one WARN, that it
+                // ran out of WORLD and condemned nothing because of it.
+                if survey.unloaded_frontier > 0 {
+                    tracing::warn!(
+                        surveyed = survey.seen.len(),
+                        unloaded_frontier = survey.unloaded_frontier,
+                        radius = FLOOD_RADIUS,
+                        withheld = verdict.withheld,
+                        "bastion: REACHABILITY FLOOD BLIND — the survey's frontier touched                          UNLOADED terrain, so 'not reached' means 'not seen'; condemning                          nothing this pass (an unloaded chunk is not a wall)"
+                    );
+                }
                 let mut flood_condemned = 0u32;
                 for p in verdict.condemn {
                     board.condemned_cells.insert(p);
