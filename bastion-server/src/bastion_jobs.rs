@@ -14650,6 +14650,32 @@ fn favor_zero_pin() -> bool {
 
 /// bastion (ITEM 29): mint a mission when colony food drops below this.
 /// A PAR, not a balance tweak — the par-stock pull the charter names.
+///
+/// ★ PER COLONIST (2026-08-31). This was a FLAT 16 for every town size,
+/// used raw at all four sites and never multiplied by population, while
+/// [`STONE_PAR_PER_COLONIST`] — the other consumable — already scaled. So
+/// the colony's food BACKSTOP stopped buying at sixteen units whether the
+/// town held two people or forty-six.
+///
+/// Grounding: hunger decays at 0.000889/sec, so a colonist empties in
+/// ~1,125 sim-seconds ~ 15 game hours — about one meal per head per game
+/// day. Sixteen units is therefore sixteen days of buffer for a town of ONE
+/// and roughly a QUARTER of a day for the owner's town of forty-six, whose
+/// log reads `TRADE LANE DEAD ... food_stock=0 par=16` beside `fed=0` for
+/// sixteen consecutive game days.
+///
+/// The SHAPE (per-capita, not absolute) is the measured part. The
+/// COEFFICIENT is taste: 4 mirrors stone and gives roughly four days a head.
+/// It is the number to overrule first if the town hoards food.
+pub const FOOD_PAR_PER_COLONIST: u32 = 4;
+
+/// The colony's food par for a roster of `roster`. Floored at the old flat
+/// value so a tiny colony is never WORSE off than before this change --
+/// FALLBACK IS IDENTITY at the small end.
+pub fn food_par_for(roster: u32) -> u32 {
+    (roster * FOOD_PAR_PER_COLONIST).max(TRADE_FOOD_PAR)
+}
+
 pub const TRADE_FOOD_PAR: u32 = 16;
 
 /// ★★ THE TREELINE (2026-08-30, found in the owner's own 2.5-hour play
@@ -22901,7 +22927,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         }
 
         // ── ITEM 29: the TRADE MISSION generator ─────────────────────────
-        // Par-stock pull: when colony food drops below TRADE_FOOD_PAR and
+        // Par-stock pull: when colony food drops below the food par and
         // stockpiled wood exists to sell, mint ONE mission against the
         // nearest priced site. The ratio freezes at mint from the site's
         // own book entry (bar 2's audit line); the B6 fetch contract
@@ -22923,9 +22949,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // log line it usually never printed". So the build is a CLOSURE
             // and `.then` decides whether to pay for it.
             let witness_tick = tick.0 % (ARBITRATION_INTERVAL as u64 * 40) == 4;
+            // ONE reading of the par, consumed by the decision AND the
+            // witness — the same discipline the treeline row imposed on
+            // `wood`: a second producer of the gate's own question is how a
+            // wrong diagnosis gets published.
+            let food_par = food_par_for(colonists.count() as u32);
             let wants_mission = !mission_live
                 && !trade_price_book.0.is_empty()
-                && food_stock < TRADE_FOOD_PAR;
+                && food_stock < food_par;
             let build_candidates = || {
                 let roster = colonists.count() as u32;
                 // ★ THE TREELINE (2026-08-30): ONE reading, consumed by BOTH the
@@ -23024,7 +23055,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     book = trade_price_book.0.len(),
                     mission_live,
                     food_stock,
-                    par = TRADE_FOOD_PAR,
+                    par = food_par,
                     offer = ?offer,
                     stone_owed = board.stone_owed,
                     %refused,
@@ -23038,7 +23069,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // marginally better — this one is a WARN and says what it
                 // means. It clears by itself the moment any good becomes
                 // offerable, so it can never outlive its own cause.
-                if food_stock < TRADE_FOOD_PAR && !mission_live && offer.is_none() {
+                if food_stock < food_par && !mission_live && offer.is_none() {
                     let blocker = if trade_price_book.0.is_empty() {
                         "no_priced_site"
                     } else {
@@ -23046,7 +23077,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     };
                     tracing::warn!(
                         food_stock,
-                        par = TRADE_FOOD_PAR,
+                        par = food_par,
                         book = trade_price_book.0.len(),
                         blocker,
                         %refused,
@@ -46231,6 +46262,51 @@ mod tests {
     /// 12% base rate over 102,264 body-ticks.
     /// ★ THE TOWN MUST BE ABLE TO ASK FOR A HOUSE, AND MUST REFUSE BEFORE
     /// IT SPENDS (2026-08-31). Guards `housing_build_verdict`'s ordering.
+    /// ★ THE FOOD PAR MUST KNOW HOW MANY MOUTHS IT FEEDS (2026-08-31).
+    /// `TRADE_FOOD_PAR` was a flat 16 used raw at all four sites while
+    /// `STONE_PAR_PER_COLONIST` — the other consumable — already scaled.
+    /// The owner's town read `TRADE LANE DEAD ... food_stock=0 par=16` with
+    /// a roster of 46, beside `fed=0` for sixteen consecutive game days.
+    #[test]
+    fn the_food_par_scales_with_the_roster_and_floors_for_a_hamlet() {
+        // The owner's town. A quarter of a game day of food under the flat
+        // par; four days a head under this one.
+        assert_eq!(food_par_for(46), 46 * FOOD_PAR_PER_COLONIST);
+        assert!(
+            food_par_for(46) > TRADE_FOOD_PAR,
+            "a town of 46 must not keep a town of one's larder"
+        );
+        // It MOVES with the roster — the property the flat constant lacked.
+        assert!(
+            food_par_for(8) > food_par_for(2),
+            "the par must be a function of population, not a constant"
+        );
+        // FALLBACK IS IDENTITY at the small end: a hamlet is never worse off
+        // than before this change.
+        assert_eq!(food_par_for(1), TRADE_FOOD_PAR);
+        assert_eq!(food_par_for(0), TRADE_FOOD_PAR);
+    }
+
+    /// The gates must consume the SCALED par, never the flat constant. A
+    /// second producer of the gate's own question is how ITEM 27 published a
+    /// wrong diagnosis, and how the treeline row's `wood` went wrong.
+    #[test]
+    fn no_trade_gate_reads_the_flat_food_par() {
+        let src = include_str!("bastion_jobs.rs");
+        // The needles are ASSEMBLED, never written whole: `include_str!`
+        // includes THIS test, so a literal would match itself and the pin
+        // would fail on its own text. (It did, first run.)
+        let flat = "TRADE_FOOD".to_string() + "_PAR";
+        assert!(
+            !src.contains(&format!("food_stock < {flat}")),
+            "a gate comparing stock against the FLAT par ignores the roster"
+        );
+        assert!(
+            !src.contains(&format!("par = {flat},")),
+            "a witness printing the FLAT par misreports what the gate used"
+        );
+    }
+
     #[test]
     fn the_housing_build_gate_fires_on_grow_and_refuses_before_it_spends() {
         use common::bastion::ColonyDrive as CD;
