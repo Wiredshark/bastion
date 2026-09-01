@@ -3388,6 +3388,24 @@ pub(crate) struct ImmigrationVerdict {
 /// refusing on. POPULATION EXCEEDED THE FOUNDING HOUSE COUNT — the charter's
 /// GROW horizon, observed rather than argued.
 ///
+/// ⚠ RETRACTED (2026-09-01, same day): the "ratchets once and JAMS" reading
+/// below is NOT established, and I withdraw it. `housing_build_verdict` is
+/// evaluated ONCE PER GAME DAY, and 25,500 ticks is 0.47 of a game day — the
+/// gate never got a second evaluation, so "it stopped building" is a claim
+/// about a mechanism that had not yet been allowed to run. A second arm
+/// carried to tick 24,600 shows the same thing for the same reason: exactly
+/// one HOUSING BUILD line, because exactly one day boundary has passed.
+///
+/// The BED-HOUSE CENSUS added for this row also refutes the mechanism I
+/// guessed at: `beds_orphaned=0`, `beds_owned=5`, `household_members=5`,
+/// `houses=5` — `derive_households` places every bed and counts every owner.
+/// The `occupied=4` in the HOUSEHOLDS witness is a STALER SAMPLE from a
+/// different cadence, not a disagreement about who lives where.
+///
+/// WHAT IS ACTUALLY OPEN: whether growth CONTINUES past +1. That needs an arm
+/// carried past tick 54,000 — a full game day — and nobody has run one. The
+/// text below is kept as the shape of the question, not as a finding.
+///
 /// ★ THE NEXT ROW, MEASURED AND OPEN (2026-09-01): GROWTH RATCHETS ONCE AND
 /// JAMS. In the same arm, roster held at 5 for 25,500 ticks:
 ///     HOUSEHOLDS  houses=5 occupied=4 vacant=1 shared=0
