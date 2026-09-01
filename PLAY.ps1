@@ -45,7 +45,10 @@ param(
     [string]$UserData,
     [int]$Port = 14004,
     # Headless arm: nobody will choose a town on the character screen, so let
-    # the autofound adopt one itself.
+    # the autofound adopt one itself. Proven 2026-09-01 19:23 on the fixed
+    # flattown: chosen_houses=58 flat=true alt_range=0.0, wanted=48 -> 48 settled
+    # (the village had no villagers of its own), target_pop=114 (sum of beds),
+    # one settler sent for by tick 2,000. That is ONE MINUTE of run.
     [switch]$NoWait
 )
 
