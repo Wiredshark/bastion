@@ -16352,6 +16352,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // congestion (`slowed`, also counted in `moving`), not
                     // pathing defects (`stuck`). See census_is_wedged.
                     let mut slowed = 0u32;
+                    // ★ PEOPLE WALK (the goal's own line: "Running =
+                    // emergencies only"). `TRAVEL_SPEED = 0.45` is the
+                    // vanilla villager stroll and `RUN_SPEED = 1.0` is
+                    // picked off `colonist.running` — the MECHANISM was set
+                    // deliberately and then never witnessed, so the one
+                    // criterion in the charter with no instrument at all was
+                    // the one a player notices from the air. A mechanism
+                    // that cannot show itself FAILING is not evidenced.
+                    let mut running = 0u32;
                     let (mut fed, mut rested, mut total) = (0u32, 0u32, 0u32);
                     // ★ ITEM 36 (2026-08-21): DOWNED colonists, surfaced.
                     //
@@ -16376,10 +16385,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // Whether colonists SHOULD be downed-and-revivable or die
                     // outright is a gameplay ruling and is banked for Ben.
                     let mut downed = 0u32;
-                    for (_, entity, needs) in
+                    for (colonist_c, entity, needs) in
                         (&colonists, &entities, (&needs_storage).maybe()).join()
                     {
                         total += 1;
+                        if colonist_c.0.running {
+                            running += 1;
+                        }
                         if comp::is_downed_or_dead(
                             healths.get(entity),
                             char_states.get(entity),
@@ -16559,6 +16571,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         idle,
                         fed,
                         rested,
+                        // PEOPLE WALK: `running` is the emergency gait. On a
+                        // town at peace this must read ZERO; any sustained
+                        // nonzero without an alarm is the criterion failing.
+                        running,
                         "bastion EXPERIENCE census (engaged = has a job and is not stuck;                          `working` EXCLUDES travel, so hauling reads as `moving`;                          `stuck` = wedged >5s at speed~0, `slowed` = transient dip,                          also inside `moving`)"
                     );
                     // ★ THE CONTROL beside the threshold log. `solid` and
