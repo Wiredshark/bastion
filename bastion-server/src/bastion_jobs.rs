@@ -19779,25 +19779,31 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             {
                                 continue;
                             }
-                            placed = Some(c);
+                            // Carry the VALIDATED cell out, not just its
+                            // column. The first version handed the column to
+                            // `place_designation_surface`, which re-resolved
+                            // the surface from a DIFFERENT hint_z than the
+                            // scan had used — two frames for one cell, and it
+                            // placed a designation that matched no block:
+                            // "★ THE TOWN BUILDS A HOUSE ... jobs=0".
+                            placed = Some(cell);
                             break 'ring;
                         }
                     }
                 }
                 match placed {
-                    Some(c) => {
-                        let jobs = board.place_designation_surface(
+                    Some(cell) => {
+                        // The exact cell the scan proved standable and open.
+                        // `place_designation` takes the region verbatim, so
+                        // there is no second surface resolution to disagree
+                        // with the first.
+                        let jobs = board.place_designation(
                             &terrain,
-                            c,
-                            c,
-                            anchor.z,
-                            common::bastion::ZExtent::default_for(
-                                DesignationKind::Bed,
-                            ),
+                            Region { min: cell, max: cell },
                             DesignationKind::Bed,
                         );
                         info!(
-                            at = ?c,
+                            at = ?cell,
                             jobs = jobs.len(),
                             day = board.pending_house,
                             "bastion: ★ THE TOWN BUILDS A HOUSE — a bed is designated on                              open ground; population is what its houses allow, and the town                              can now add one"
