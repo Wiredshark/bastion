@@ -3253,6 +3253,83 @@ pub(crate) struct ImmigrationVerdict {
 /// sorted: it is built by walking a HashMap, and an unsorted `[0]` would
 /// settle different houses across two runs of one seed while every count
 /// still matched — the silent divergence the bed assigner warns about.
+/// Whether the town should START A HOUSE today, and what stopped it.
+///
+/// ★ THE COLONY COULD NOT BUILD (2026-08-31). `JobBoard::queue_build_plan` is
+/// complete -- it freezes the region's empty cells, joins the claim mask,
+/// registers the Build designation, and the generator mints the jobs. Its
+/// only callers were the TEST HARNESS and a thin server wrapper. Nothing in
+/// the colony ever called it, so `Build jobs created: 0` for 86 game days in
+/// the owner's session, population was permanently whatever the adopted
+/// village happened to offer (10 in his town, 2 in both autofounds), and the
+/// GROW horizon was arithmetically unreachable. rtsim/mod.rs already names
+/// it: "A PERMANENT SIGNAL BLOCKING ITS OWN CURE."
+///
+/// Ordered so it REFUSES BEFORE IT SPENDS. The material check sits ABOVE the
+/// fire, because the trade lane's `not_stockpiled` guard exists for exactly
+/// this failure: a job minted against stock that is not in a stockpile can be
+/// claimed and never fetched, and it blocks a one-at-a-time lane forever.
+///
+/// Deliberately NOT gated on `drive == Expand`. That gate is what deadlocked
+/// the owner's town: the drive sits at Grow precisely while `beds < pop`, so
+/// requiring Expand would refuse to build exactly when housing is short --
+/// a guard starving the thing it protects, and a permanent signal blocking
+/// its own cure.
+/// Wood a single house plan is assumed to cost. A GUESS, not a measurement --
+/// it exists so the gate can refuse before it spends, and it is the first
+/// number to overrule once a real plan has a real bill.
+pub const HOUSE_PLAN_WOOD: u32 = 20;
+
+pub(crate) struct HousingBuildVerdict {
+    pub fired: bool,
+    pub deciding: &'static str,
+}
+
+pub(crate) fn housing_build_verdict(
+    enabled: bool,
+    drive: common::bastion::ColonyDrive,
+    roster: u32,
+    houses: usize,
+    vacant_free: usize,
+    plan_in_flight: bool,
+    material_stockpiled: u32,
+    material_needed: u32,
+    today: i64,
+    last: Option<i64>,
+) -> HousingBuildVerdict {
+    let no = |d: &'static str| HousingBuildVerdict { fired: false, deciding: d };
+    if !enabled {
+        return no("disabled");
+    }
+    if last == Some(today) {
+        return no("same_day");
+    }
+    // ONE plan at a time. Bounds the haul share so building cannot starve
+    // every other lane; the rate is a GUESS chosen for that bound, not a
+    // measurement, and it is the number to overrule first if a flyover
+    // shows the town building too slowly.
+    if plan_in_flight {
+        return no("plan_in_flight");
+    }
+    if drive == common::bastion::ColonyDrive::Defend {
+        return no("under_threat");
+    }
+    // A roof already standing empty is the cheaper answer.
+    if vacant_free > 0 {
+        return no("a house already stands empty");
+    }
+    if (roster as usize) < houses {
+        return no("housing_not_short");
+    }
+    if material_stockpiled < material_needed {
+        return no("materials_not_stockpiled");
+    }
+    HousingBuildVerdict {
+        fired: true,
+        deciding: "the town needs another roof",
+    }
+}
+
 pub(crate) fn immigration_verdict(
     enabled: bool,
     drive: common::bastion::ColonyDrive,
@@ -21436,6 +21513,62 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             drive = ?board.colony_drive.0,
                             day = today,
                             "bastion: HOUSING GROWTH — the town's population is what its houses allow"
+                        );
+                    }
+                    // ── THE TOWN CANNOT BUILD A HOUSE ──────────────────
+                    // `queue_build_plan` is complete and its only callers
+                    // are the TEST HARNESS and a server wrapper. Nothing in
+                    // the colony ever asked for a house, so `Build jobs
+                    // created: 0` for 86 game days and the population was
+                    // permanently whatever village was adopted -- 10 in the
+                    // owner's town, 2 in both autofounds.
+                    //
+                    // This is the WITNESS half, shipped first and alone on
+                    // purpose. A lane that silently never fires looks
+                    // exactly like one that correctly declines, and the
+                    // measurement it produces -- how often the gate WOULD
+                    // fire, and what actually stops it -- is what the site
+                    // selector should be designed against. Building the
+                    // selector first would be designing against a guess.
+                    // Nothing is queued here; there is no intent to drain
+                    // and therefore no lane without a consumer.
+                    if day_changed {
+                        let wood_units = (&pickup_items, &positions)
+                            .join()
+                            .filter(|(pi, ipos)| {
+                                pi.item().item_definition_id().itemdef_id()
+                                    == Some("common.items.log.wood")
+                                    && board
+                                        .stockpile_at(
+                                            ipos.0.map(|e| e.floor() as i32),
+                                        )
+                                        .is_some()
+                            })
+                            .count() as u32;
+                        let bv = housing_build_verdict(
+                            true,
+                            board.colony_drive.0,
+                            roster,
+                            households.len(),
+                            vacant_free.len(),
+                            !board.plans.is_empty(),
+                            wood_units,
+                            HOUSE_PLAN_WOOD,
+                            today,
+                            None,
+                        );
+                        info!(
+                            would_fire = bv.fired,
+                            deciding = bv.deciding,
+                            roster,
+                            houses = households.len(),
+                            vacant = vacant_free.len(),
+                            wood_stockpiled = wood_units,
+                            wood_needed = HOUSE_PLAN_WOOD,
+                            plans_in_flight = board.plans.len(),
+                            drive = ?board.colony_drive.0,
+                            day = today,
+                            "bastion: HOUSING BUILD — whether the town would start a house                              today, and what stops it (WITNESS ONLY; nothing is queued yet)"
                         );
                     }
                     // ── ROW 53: THE COURTING DAY ───────────────────────
@@ -45926,6 +46059,61 @@ mod tests {
     /// route's per-waypoint height against the constant `g.ground_z` it used
     /// to carry. Measured: `route_prev` SOLID in 94-96% of embeds against a
     /// 12% base rate over 102,264 body-ticks.
+    /// ★ THE TOWN MUST BE ABLE TO ASK FOR A HOUSE, AND MUST REFUSE BEFORE
+    /// IT SPENDS (2026-08-31). Guards `housing_build_verdict`'s ordering.
+    #[test]
+    fn the_housing_build_gate_fires_on_grow_and_refuses_before_it_spends() {
+        use common::bastion::ColonyDrive as CD;
+        let v = |drive, roster, houses, vacant, in_flight, wood| {
+            housing_build_verdict(
+                true, drive, roster, houses, vacant, in_flight, wood,
+                HOUSE_PLAN_WOOD, 5, None,
+            )
+        };
+        // ★ THE DEADLOCK PIN. The drive sits at GROW precisely while
+        // `beds < pop` — exactly when housing is short. Gating this on
+        // Expand (as immigration and births do) would refuse to build at
+        // the only moment building is the answer: a guard starving the
+        // thing it protects, and a permanent signal blocking its own cure.
+        // That is the shape that froze the owner's town for 86 game days.
+        let g = v(CD::Grow, 10, 10, 0, false, HOUSE_PLAN_WOOD);
+        assert!(g.fired, "must fire on Grow: {}", g.deciding);
+        assert_eq!(g.deciding, "the town needs another roof");
+
+        // REFUSE BEFORE IT SPENDS: no stockpiled wood, no plan. The trade
+        // lane's `not_stockpiled` guard exists because a job minted against
+        // stock that is not IN a stockpile can be claimed and never
+        // fetched, blocking a one-at-a-time lane forever.
+        assert_eq!(
+            v(CD::Grow, 10, 10, 0, false, HOUSE_PLAN_WOOD - 1).deciding,
+            "materials_not_stockpiled"
+        );
+        // Bounded rate: one plan at a time, so building cannot starve every
+        // other lane.
+        assert_eq!(
+            v(CD::Grow, 10, 10, 0, true, HOUSE_PLAN_WOOD).deciding,
+            "plan_in_flight"
+        );
+        // A standing empty roof is the cheaper answer than a new one.
+        assert_eq!(
+            v(CD::Grow, 10, 10, 1, false, HOUSE_PLAN_WOOD).deciding,
+            "a house already stands empty"
+        );
+        // Housing is not short.
+        assert_eq!(
+            v(CD::Grow, 5, 10, 0, false, HOUSE_PLAN_WOOD).deciding,
+            "housing_not_short"
+        );
+        // An emergency outranks construction.
+        assert_eq!(
+            v(CD::Defend, 10, 10, 0, false, HOUSE_PLAN_WOOD).deciding,
+            "under_threat"
+        );
+        // ORDERING: the material check must sit ABOVE the fire, so a town
+        // with no wood NEVER reaches "the town needs another roof".
+        assert!(!v(CD::Grow, 10, 10, 0, false, 0).fired);
+    }
+
     #[test]
     fn a_trunk_waypoint_takes_its_own_columns_height() {
         // The two grades of the measured town. A tile whose ground is at 185
