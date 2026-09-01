@@ -1336,6 +1336,60 @@ pub static CHASER_GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
 /// residual whose producer was never identified — the same mistake the site
 /// tag cured for the embed writer, unlearned one level up.
 ///
+/// Insert waypoints where the GROUND BETWEEN two valid waypoints rises above
+/// the straight line the mover glides along.
+///
+/// ★ THE THIRD ATTEMPT ON THIS RESIDUAL, AND THE FIRST AIMED AT A MEASURED
+/// GEOMETRY (2026-09-01). One cell produced 263 identical events:
+///     prev(15165,15929,417) -> head(15165,15935,418)   dz=1 over SIX blocks
+///     body lodges at (15165.5,15934.3,417.80)
+/// Both endpoints are walkable. Interpolating 5.3/6 along gives z=417.88,
+/// which is where it stops — so the ground at the MIDDLE is above the line.
+///
+/// Two earlier fixes could not see this and were reverted: the subdivider
+/// triggered on endpoint |dz| > 2, the trunk rejection on |dz| > 6, and here
+/// dz is ONE. Both judged the ENDPOINTS; neither sampled BETWEEN them. That
+/// is Theta*'s line-of-sight test, which this router has never had.
+///
+/// FALLBACK IS IDENTITY: an unreadable column inserts nothing, so an unseen
+/// span keeps today's route. Bounded by `SEGMENT_SAMPLES` so a trunk route
+/// can never become a per-block path.
+pub(crate) fn lift_over_ground(
+    wps: &[Vec3<i32>],
+    surface: impl Fn(i32, i32, i32) -> Option<i32>,
+) -> Vec<Vec3<i32>> {
+    let mut out: Vec<Vec3<i32>> = Vec::with_capacity(wps.len());
+    for pair in wps.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        out.push(a);
+        let span = (b.x - a.x).abs().max((b.y - a.y).abs());
+        if span < 2 {
+            continue;
+        }
+        let n = span.min(SEGMENT_SAMPLES);
+        for i in 1..n {
+            let x = a.x + (b.x - a.x) * i / n;
+            let y = a.y + (b.y - a.y) * i / n;
+            // The line's own height at this point along the segment.
+            let line_z = a.z + (b.z - a.z) * i / n;
+            let Some(gz) = surface(x, y, a.z) else {
+                continue;
+            };
+            // Ground standing ABOVE the line is what the body walks into.
+            if gz + 1 > line_z {
+                out.push(Vec3::new(x, y, gz + 1));
+            }
+        }
+    }
+    if let Some(last) = wps.last() {
+        out.push(*last);
+    }
+    out
+}
+
+/// Hard bound on intermediates per span, so a trunk stays a trunk.
+pub const SEGMENT_SAMPLES: i32 = 8;
+
 /// The z a trunk waypoint should sit at: the standable cell ABOVE that
 /// column's own surface, or — when the column cannot be read — today's
 /// constant street level, unchanged.
@@ -29334,6 +29388,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                     Vec3::new(c.x, c.y, wz)
                                                 })
                                                 .collect();
+                                            // ★ LINE OF SIGHT ALONG THE
+                                            // SEGMENT, not just at its ends.
+                                            // See `lift_over_ground`: one
+                                            // cell produced 263 embeds on a
+                                            // segment whose endpoints differ
+                                            // by ONE block over six.
+                                            wps = lift_over_ground(&wps, |x, y, hint| {
+                                                column_surface_z(&terrain, x, y, hint)
+                                            });
                                             wps.push(
                                                 target.map(|e| e.floor() as i32),
                                             );
@@ -46764,6 +46827,55 @@ mod tests {
         assert!(
             !tail.contains(".count() as u32"),
             "counting entities here is the ITEM 27 frame error"
+        );
+    }
+
+    /// ★ THE GROUND BETWEEN TWO VALID WAYPOINTS (2026-09-01). Guards
+    /// `lift_over_ground` against the two blind spots that got the previous
+    /// attempts reverted: both judged ENDPOINTS, and the measured defect has
+    /// endpoints one block apart over six.
+    #[test]
+    fn a_segment_is_lifted_over_ground_its_endpoints_cannot_see() {
+        // THE MEASURED CASE, 263 identical events at one cell:
+        // prev(15165,15929,417) -> head(15165,15935,418), dz=1 over six,
+        // with a BUMP in the middle the straight line passes through.
+        let a = Vec3::new(15165, 15929, 417);
+        let b = Vec3::new(15165, 15935, 418);
+        let bump = |_x: i32, y: i32, _h: i32| {
+            // Flat at 416 (standable 417) except a rise mid-span.
+            if (15932..=15934).contains(&y) { Some(418) } else { Some(416) }
+        };
+        let out = lift_over_ground(&[a, b], bump);
+        assert!(
+            out.len() > 2,
+            "a bump between two valid endpoints must add waypoints"
+        );
+        assert_eq!(out.first().copied(), Some(a), "endpoints are never moved");
+        assert_eq!(out.last().copied(), Some(b));
+        assert!(
+            out.iter().any(|w| w.z >= 419),
+            "the inserted waypoint must stand ON the bump, not inside it"
+        );
+
+        // ★ THE BLIND SPOT THAT REVERTED THE LAST TWO ATTEMPTS: this segment's
+        // endpoints differ by ONE. Any rule keyed on endpoint dz (> 2 for the
+        // subdivider, > 6 for the trunk rejection) sees nothing here.
+        assert_eq!((b.z - a.z).abs(), 1, "endpoint dz is 1 — invisible to both");
+
+        // FLAT ground under a flat segment inserts NOTHING — identity where
+        // there is nothing to fix.
+        let flat = |_x: i32, _y: i32, _h: i32| Some(416);
+        assert_eq!(lift_over_ground(&[a, Vec3::new(15165, 15935, 417)], flat).len(), 2);
+
+        // FALLBACK IS IDENTITY: an unreadable column inserts nothing.
+        let blind = |_x: i32, _y: i32, _h: i32| None;
+        assert_eq!(lift_over_ground(&[a, b], blind), vec![a, b]);
+
+        // BOUNDED: a trunk must never degenerate into a per-block path.
+        let long = vec![Vec3::new(0, 0, 0), Vec3::new(400, 0, 0)];
+        assert!(
+            lift_over_ground(&long, |x, _y, _h| Some(x)).len()
+                <= SEGMENT_SAMPLES as usize + 2
         );
     }
 
