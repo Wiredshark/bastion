@@ -21650,6 +21650,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     if day_changed {
                         // The material the CONSUMER bills, read from the
                         // consumer's own constant — not a second copy of it.
+                        // ★ UNIT-AWARE, NOT ENTITY-AWARE (ITEM 27). Items
+                        // MERGE into piles: one entity can hold forty
+                        // stones. `.count()` therefore reported 1 for a
+                        // stockpile the mine generator was calling
+                        // `supply=40` twenty lines away, and the gate
+                        // refused `materials_not_stockpiled` against a need
+                        // of 20 that was already met. Same lesson that once
+                        // let one eater's reservation lock a 64-unit larder;
+                        // the mine generator's own supply loop sums
+                        // `amount()` and this must agree with it.
                         let material_units = (&pickup_items, &positions)
                             .join()
                             .filter(|(pi, ipos)| {
@@ -21661,7 +21671,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         )
                                         .is_some()
                             })
-                            .count() as u32;
+                            .map(|(pi, _)| pi.item().amount() as u32)
+                            .sum::<u32>();
                         let bv = housing_build_verdict(
                             true,
                             board.colony_drive.0,
@@ -46257,6 +46268,19 @@ mod tests {
         assert!(
             !tail.contains("common.items.log.wood"),
             "counting wood here is the frame error this pin exists for: no              Build job has ever consumed wood"
+        );
+        // ★ UNIT-AWARE, NOT ENTITY-AWARE (ITEM 27). Items merge into piles,
+        // so one entity can hold forty stones. `.count()` reported 1 for a
+        // stockpile the mine generator was simultaneously calling
+        // `supply=40`, and the gate refused for lack of a material it
+        // already had. The two counts must agree.
+        assert!(
+            tail.contains("amount()") && tail.contains("sum::<u32>()"),
+            "the material count must SUM amounts, not COUNT entities — items              merge into piles and one entity is not one unit"
+        );
+        assert!(
+            !tail.contains(".count() as u32"),
+            "counting entities here is the ITEM 27 frame error"
         );
     }
 
