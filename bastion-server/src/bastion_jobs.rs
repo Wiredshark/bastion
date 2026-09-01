@@ -1332,6 +1332,17 @@ pub(crate) fn waypoint_z(column_surface: Option<i32>, street_level: i32) -> i32 
     column_surface.map_or(street_level, |s| s + 1)
 }
 
+/// bastion (2026-09-01): trunk routes containing a step taller than a body
+/// can walk, and the total count of such steps. Counted in the WAYPOINTS'
+/// OWN frame (`column_surface_z`, real terrain) rather than the sim
+/// altitude a reverted fence used — generator and consumer must agree, and
+/// that disagreement is the leading explanation for why that fence never
+/// engaged.
+pub static TRUNK_STEEP_ROUTES: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+pub static TRUNK_STEEP_SEGMENTS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// bastion (2026-08-31): the BASE RATE of a solid previous waypoint across
 /// every router-following colonist, embedded or not — the control for the
 /// 96% seen among embedded bodies. Sampled once per colonist per embed
@@ -29189,6 +29200,56 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         })
                                     });
                                 if let Some(wps) = trunked {
+                                    // ★ WITNESS THE TRUNK'S OWN SEGMENTS
+                                    // (2026-09-01). Two fixes for the 8.6
+                                    // per 10k embed residual failed the same
+                                    // way, and the commit that reverted the
+                                    // second says why: I never established
+                                    // where the |dz|=21 waypoints come from.
+                                    // `path_cache` has exactly ONE writer —
+                                    // this line — so the trunk IS the
+                                    // producer, and the open question is
+                                    // whether its segments are cliffs at
+                                    // BUILD time, measured in the SAME frame
+                                    // the waypoints use.
+                                    //
+                                    // The cliff fence read `get_alt_approx`
+                                    // (smooth sim data) while these
+                                    // waypoints carry `column_surface_z`
+                                    // (real terrain). GENERATOR AND CONSUMER
+                                    // MUST AGREE, and they did not — this
+                                    // counts in the consumer's own frame so
+                                    // the next attempt is aimed at a number,
+                                    // not at a guess.
+                                    let steep = wps
+                                        .windows(2)
+                                        .filter(|w| (w[1].z - w[0].z).abs() > 2)
+                                        .count();
+                                    if steep > 0 {
+                                        let worst = wps
+                                            .windows(2)
+                                            .map(|w| (w[1].z - w[0].z).abs())
+                                            .max()
+                                            .unwrap_or(0);
+                                        TRUNK_STEEP_SEGMENTS
+                                            .fetch_add(
+                                                steep as u64,
+                                                core::sync::atomic::Ordering::Relaxed,
+                                            );
+                                        let n = TRUNK_STEEP_ROUTES.fetch_add(
+                                            1,
+                                            core::sync::atomic::Ordering::Relaxed,
+                                        ) + 1;
+                                        if n.is_power_of_two() {
+                                            info!(
+                                                waypoints = wps.len(),
+                                                steep,
+                                                worst_dz = worst,
+                                                steep_routes = n,
+                                                "bastion: TRUNK STEEP SEGMENT — the trunk                                                  emitted a route whose consecutive waypoints                                                  step further than a body can walk, measured                                                  in the waypoints' OWN height frame"
+                                            );
+                                        }
+                                    }
                                     board.path_cache.insert(u, (wps, 0, target));
                                 } else {
                                     // → the SEARCH PUMP: enqueue, never
