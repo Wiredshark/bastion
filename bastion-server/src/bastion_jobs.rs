@@ -3275,10 +3275,24 @@ pub(crate) struct ImmigrationVerdict {
 /// requiring Expand would refuse to build exactly when housing is short --
 /// a guard starving the thing it protects, and a permanent signal blocking
 /// its own cure.
-/// Wood a single house plan is assumed to cost. A GUESS, not a measurement --
-/// it exists so the gate can refuse before it spends, and it is the first
-/// number to overrule once a real plan has a real bill.
-pub const HOUSE_PLAN_WOOD: u32 = 20;
+/// Material a single house plan is assumed to cost, in units of
+/// [`common::bastion::BUILD_MATERIAL_ITEM`] — STONE, which is what a Build
+/// job actually bills (`required_item: Some(BUILD_MATERIAL_ITEM)`) and what
+/// the mine generator already digs on demand from `board.plans`.
+///
+/// ★ THE FIRST VERSION OF THIS GATE CHECKED WOOD (2026-08-31), which no
+/// Build job has ever consumed — GENERATOR AND CONSUMER MUST AGREE, and mine
+/// did not. It made the fire arm UNREACHABLE in the live population: the
+/// flat arm reads `wood_stockpiled=1` and the owner's real town read
+/// `log.wood = not_stockpiled(0/180)`, so the gate would have refused
+/// forever for a reason that had nothing to do with building. His town held
+/// 217 STONES against a par of 188. Caught by reading the consumer instead
+/// of trusting the word "material".
+///
+/// The COUNT is still a guess chosen so the gate can refuse before it
+/// spends, not a measurement, and it is the first number to overrule once a
+/// real plan carries a real bill.
+pub const HOUSE_PLAN_MATERIAL: u32 = 20;
 
 pub(crate) struct HousingBuildVerdict {
     pub fired: bool,
@@ -21533,11 +21547,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // Nothing is queued here; there is no intent to drain
                     // and therefore no lane without a consumer.
                     if day_changed {
-                        let wood_units = (&pickup_items, &positions)
+                        // The material the CONSUMER bills, read from the
+                        // consumer's own constant — not a second copy of it.
+                        let material_units = (&pickup_items, &positions)
                             .join()
                             .filter(|(pi, ipos)| {
                                 pi.item().item_definition_id().itemdef_id()
-                                    == Some("common.items.log.wood")
+                                    == Some(common::bastion::BUILD_MATERIAL_ITEM)
                                     && board
                                         .stockpile_at(
                                             ipos.0.map(|e| e.floor() as i32),
@@ -21552,8 +21568,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             households.len(),
                             vacant_free.len(),
                             !board.plans.is_empty(),
-                            wood_units,
-                            HOUSE_PLAN_WOOD,
+                            material_units,
+                            HOUSE_PLAN_MATERIAL,
                             today,
                             None,
                         );
@@ -21563,8 +21579,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             roster,
                             houses = households.len(),
                             vacant = vacant_free.len(),
-                            wood_stockpiled = wood_units,
-                            wood_needed = HOUSE_PLAN_WOOD,
+                            material_stockpiled = material_units,
+                            material_needed = HOUSE_PLAN_MATERIAL,
+                            material_def = common::bastion::BUILD_MATERIAL_ITEM,
                             plans_in_flight = board.plans.len(),
                             drive = ?board.colony_drive.0,
                             day = today,
@@ -46067,7 +46084,7 @@ mod tests {
         let v = |drive, roster, houses, vacant, in_flight, wood| {
             housing_build_verdict(
                 true, drive, roster, houses, vacant, in_flight, wood,
-                HOUSE_PLAN_WOOD, 5, None,
+                HOUSE_PLAN_MATERIAL, 5, None,
             )
         };
         // ★ THE DEADLOCK PIN. The drive sits at GROW precisely while
@@ -46076,7 +46093,7 @@ mod tests {
         // the only moment building is the answer: a guard starving the
         // thing it protects, and a permanent signal blocking its own cure.
         // That is the shape that froze the owner's town for 86 game days.
-        let g = v(CD::Grow, 10, 10, 0, false, HOUSE_PLAN_WOOD);
+        let g = v(CD::Grow, 10, 10, 0, false, HOUSE_PLAN_MATERIAL);
         assert!(g.fired, "must fire on Grow: {}", g.deciding);
         assert_eq!(g.deciding, "the town needs another roof");
 
@@ -46085,33 +46102,58 @@ mod tests {
         // stock that is not IN a stockpile can be claimed and never
         // fetched, blocking a one-at-a-time lane forever.
         assert_eq!(
-            v(CD::Grow, 10, 10, 0, false, HOUSE_PLAN_WOOD - 1).deciding,
+            v(CD::Grow, 10, 10, 0, false, HOUSE_PLAN_MATERIAL - 1).deciding,
             "materials_not_stockpiled"
         );
         // Bounded rate: one plan at a time, so building cannot starve every
         // other lane.
         assert_eq!(
-            v(CD::Grow, 10, 10, 0, true, HOUSE_PLAN_WOOD).deciding,
+            v(CD::Grow, 10, 10, 0, true, HOUSE_PLAN_MATERIAL).deciding,
             "plan_in_flight"
         );
         // A standing empty roof is the cheaper answer than a new one.
         assert_eq!(
-            v(CD::Grow, 10, 10, 1, false, HOUSE_PLAN_WOOD).deciding,
+            v(CD::Grow, 10, 10, 1, false, HOUSE_PLAN_MATERIAL).deciding,
             "a house already stands empty"
         );
         // Housing is not short.
         assert_eq!(
-            v(CD::Grow, 5, 10, 0, false, HOUSE_PLAN_WOOD).deciding,
+            v(CD::Grow, 5, 10, 0, false, HOUSE_PLAN_MATERIAL).deciding,
             "housing_not_short"
         );
         // An emergency outranks construction.
         assert_eq!(
-            v(CD::Defend, 10, 10, 0, false, HOUSE_PLAN_WOOD).deciding,
+            v(CD::Defend, 10, 10, 0, false, HOUSE_PLAN_MATERIAL).deciding,
             "under_threat"
         );
         // ORDERING: the material check must sit ABOVE the fire, so a town
-        // with no wood NEVER reaches "the town needs another roof".
+        // with no material NEVER reaches "the town needs another roof".
         assert!(!v(CD::Grow, 10, 10, 0, false, 0).fired);
+    }
+
+    /// ★ GENERATOR AND CONSUMER MUST AGREE ON THE MATERIAL (2026-08-31).
+    /// The first version of the housing gate counted WOOD while a Build job
+    /// bills `BUILD_MATERIAL_ITEM` (stone). Nothing failed loudly — the fire
+    /// arm was simply UNREACHABLE in the live population, which is the
+    /// quietest way for a gate to be wrong: the flat arm reads
+    /// `wood_stockpiled=1` and the owner's real town read
+    /// `log.wood = not_stockpiled(0/180)` while holding 217 STONES.
+    #[test]
+    fn the_housing_gate_counts_the_material_a_build_job_actually_bills() {
+        let src = include_str!("bastion_jobs.rs");
+        let witness = src
+            .split("bastion: HOUSING BUILD")
+            .next()
+            .expect("the HOUSING BUILD witness must exist");
+        let tail = &witness[witness.len().saturating_sub(2000)..];
+        assert!(
+            tail.contains("BUILD_MATERIAL_ITEM"),
+            "the gate must count the def the CONSUMER bills, read from the              consumer's own constant"
+        );
+        assert!(
+            !tail.contains("common.items.log.wood"),
+            "counting wood here is the frame error this pin exists for: no              Build job has ever consumed wood"
+        );
     }
 
     #[test]
