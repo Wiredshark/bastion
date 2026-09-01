@@ -1278,6 +1278,28 @@ pub static CHASER_GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
 /// pathing on relief, which is the defect this fix addresses -- so the gate
 /// is now a candidate to relax, but NOT on this evidence alone.
 ///
+/// ★ THE RESIDUAL IS A CLIFF, NOT A SAMPLING GAP (2026-09-01, FAILED ROW
+/// RECORDED SO IT IS NOT RETRIED). After this fix the real-terrain residual
+/// is 8.6 embeds per 10k, fully attributed: `writer_site=chaser-pure-glide`
+/// 17 of 17, `route_prev_solid=FALSE` 17 of 17 -- the waypoints are clear
+/// and the LINE between them is not. Segment geometry: mean |dz| 12.9, and
+/// repeatedly `seg(1,-1,-21)` -- a 21-block drop over ONE block of
+/// horizontal.
+///
+/// Subdividing those spans was BUILT, PINNED, RUN AND REVERTED (85fe2824ae,
+/// reverted in ffbb64037c). Matched arm, same site and seed:
+///     control (this fix)  8.6 per 10k, mean segment |dz| 12.9
+///     + subdivision      14.1 per 10k, mean segment |dz| 15.0
+/// The mechanism never engaged: samples are bounded by
+/// `max(|dx|,|dy|)`, which is ONE for the cliff case, so no intermediate can
+/// be inserted. The pin had already said as much before the run -- an
+/// assertion that the unwalkable-step count must fall FAILED, correctly,
+/// because nobody walks down a cliff at any sampling density.
+///
+/// The real answer is ROUTER TOPOLOGY: the tile graph should not route
+/// across a 21-block drop at all. That is a larger row and it is not this
+/// one.
+///
 /// The z a trunk waypoint should sit at: the standable cell ABOVE that
 /// column's own surface, or — when the column cannot be read — today's
 /// constant street level, unchanged.
