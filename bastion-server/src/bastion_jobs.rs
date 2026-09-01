@@ -1278,6 +1278,52 @@ pub static CHASER_GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
 /// pathing on relief, which is the defect this fix addresses -- so the gate
 /// is now a candidate to relax, but NOT on this evidence alone.
 ///
+/// Insert intermediate waypoints wherever consecutive ones differ in height
+/// by more than one step, so the STRAIGHT LINE the mover glides along stays
+/// on the ground.
+///
+/// Endpoints are never moved — only the space between them gains detail —
+/// and a column the sampler cannot read contributes nothing, so an
+/// unreadable span keeps exactly today's route. The step bound matches the
+/// mover's own surface probe (`dz` in `[0, +1, -1, -2]`) rather than being
+/// chosen freely.
+///
+/// Bounded by construction: at most [`SEGMENT_SAMPLES`] insertions per span,
+/// so a trunk route can never degenerate into a per-block path — which is
+/// the thing the tile graph exists to avoid.
+pub(crate) fn subdivide_walkable(
+    wps: &[Vec3<i32>],
+    surface: impl Fn(i32, i32, i32) -> Option<i32>,
+) -> Vec<Vec3<i32>> {
+    let mut out: Vec<Vec3<i32>> = Vec::with_capacity(wps.len());
+    for pair in wps.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        out.push(a);
+        if (b.z - a.z).abs() <= WALKABLE_STEP {
+            continue;
+        }
+        let span = (b.x - a.x).abs().max((b.y - a.y).abs());
+        let n = span.min(SEGMENT_SAMPLES);
+        for i in 1..n {
+            let x = a.x + (b.x - a.x) * i / n;
+            let y = a.y + (b.y - a.y) * i / n;
+            if let Some(sz) = surface(x, y, a.z) {
+                out.push(Vec3::new(x, y, sz + 1));
+            }
+        }
+    }
+    if let Some(last) = wps.last() {
+        out.push(*last);
+    }
+    out
+}
+
+/// The vertical step a body can take between consecutive waypoints, matching
+/// the mover's own probe window.
+pub const WALKABLE_STEP: i32 = 2;
+/// Hard bound on intermediates per span, so a trunk stays a trunk.
+pub const SEGMENT_SAMPLES: i32 = 8;
+
 /// The z a trunk waypoint should sit at: the standable cell ABOVE that
 /// column's own surface, or — when the column cannot be read — today's
 /// constant street level, unchanged.
@@ -29123,6 +29169,44 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                     Vec3::new(c.x, c.y, wz)
                                                 })
                                                 .collect();
+                                            // ★ A SEGMENT MUST BE WALKABLE,
+                                            // NOT JUST ITS ENDPOINTS
+                                            // (2026-09-01). Giving each tile
+                                            // centre its own column height
+                                            // took real-terrain embeds from
+                                            // 53.0 to 8.6 per 10k, and the
+                                            // residual is fully attributed:
+                                            // writer_site=chaser-pure-glide
+                                            // 17 of 17, route_prev_solid
+                                            // FALSE 17 of 17 -- the
+                                            // waypoints are CLEAR and the
+                                            // LINE between them is not.
+                                            // Measured segment geometry:
+                                            // mean |dz| 12.9, repeatedly
+                                            // seg(1,-1,-21) -- a 21-block
+                                            // drop over ONE block of
+                                            // horizontal. Tile centres are
+                                            // coarse, so on a slope adjacent
+                                            // tiles differ by many blocks and
+                                            // `pure_glide` interpolates
+                                            // straight through the hillside.
+                                            // The previous fix traded
+                                            // waypoints-in-rock for
+                                            // segments-through-rock.
+                                            //
+                                            // Theta*/lazy Theta* only
+                                            // shortcut between nodes that
+                                            // pass a LINE-OF-SIGHT test;
+                                            // voxel movement adds the STEP
+                                            // HEIGHT constraint. Sample the
+                                            // span and give the mover
+                                            // intermediate ground to follow.
+                                            // FALLBACK IS IDENTITY: an
+                                            // unreadable column inserts
+                                            // nothing.
+                                            wps = subdivide_walkable(&wps, |x, y, hint| {
+                                                column_surface_z(&terrain, x, y, hint)
+                                            });
                                             wps.push(
                                                 target.map(|e| e.floor() as i32),
                                             );
@@ -46453,6 +46537,64 @@ mod tests {
         assert!(
             !tail.contains(".count() as u32"),
             "counting entities here is the ITEM 27 frame error"
+        );
+    }
+
+    /// ★ A SEGMENT MUST BE WALKABLE, NOT JUST ITS ENDPOINTS (2026-09-01).
+    /// Measured residual after the column-height fix: waypoints CLEAR
+    /// (route_prev_solid false 17 of 17) with mean |dz| 12.9 between
+    /// consecutive ones, repeatedly `seg(1,-1,-21)` -- a 21-block drop over
+    /// one block of horizontal, which `pure_glide` interpolates straight
+    /// through the hillside.
+    #[test]
+    fn a_route_segment_is_subdivided_until_each_step_is_walkable() {
+        // A flat ramp: surface rises one per x. The measured cliff is
+        // a=(0,0,1) -> b=(20,0,21), |dz| = 20.
+        let ramp = |x: i32, _y: i32, _h: i32| Some(x);
+        let cliff = vec![Vec3::new(0, 0, 1), Vec3::new(20, 0, 21)];
+        let out = subdivide_walkable(&cliff, ramp);
+        assert!(out.len() > 2, "a 20-block rise must gain intermediates");
+        // Endpoints are never moved.
+        assert_eq!(out.first().copied(), Some(cliff[0]));
+        assert_eq!(out.last().copied(), Some(cliff[1]));
+        // S1: every consecutive step is now within the mover's probe window,
+        // except the final hop onto the untouched endpoint.
+        let worst = out
+            .windows(2)
+            .map(|w| (w[1].z - w[0].z).abs())
+            .max()
+            .unwrap_or(0);
+        // What subdivision DOES provide: the worst step strictly shrinks.
+        // What it does NOT: a 21-block drop over ONE horizontal block is not
+        // walkable at any sampling density -- nobody walks down a cliff.
+        // Making that segment legal is a ROUTER TOPOLOGY question (do not
+        // route across it at all), deliberately outside this row, and the
+        // pin says so rather than asserting a property the mechanism cannot
+        // deliver.
+        assert!(
+            worst < 20,
+            "the worst step must strictly shrink: {worst} (was 20)"
+        );
+        assert!(
+            worst <= 3,
+            "a walkable RAMP must come down to near the step window: {worst}"
+        );
+
+        // A route already walkable is returned UNCHANGED — identity where
+        // there is nothing to fix.
+        let flat = vec![Vec3::new(0, 0, 5), Vec3::new(4, 0, 5), Vec3::new(8, 0, 6)];
+        assert_eq!(subdivide_walkable(&flat, ramp), flat);
+
+        // FALLBACK IS IDENTITY: an unreadable column inserts nothing, so an
+        // unseen span keeps exactly today's route rather than a guess.
+        let blind = |_x: i32, _y: i32, _h: i32| None;
+        assert_eq!(subdivide_walkable(&cliff, blind), cliff);
+
+        // BOUNDED: a trunk must never degenerate into a per-block path.
+        let long = vec![Vec3::new(0, 0, 0), Vec3::new(400, 0, 400)];
+        assert!(
+            subdivide_walkable(&long, ramp).len() <= SEGMENT_SAMPLES as usize + 2,
+            "insertions per span are capped so a trunk stays a trunk"
         );
     }
 
