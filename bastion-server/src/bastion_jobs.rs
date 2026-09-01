@@ -19709,8 +19709,32 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // and `houses` grows. Reusing that path beats inventing a second
             // one; a second placement path silently lacking what the first
             // had is a defect this file has already paid for once.
+            // ★ THE ANCHOR MUST NOT BE THE PLAZA ALONE (2026-08-31). The
+            // first version guarded on `gathering_anchor`, which a FOUNDED
+            // colony never has -- no adopted village, no Plaza plot. Live,
+            // the gate fired ("day=1 fire=true ... stone=41 'the town needs
+            // another roof'") and the drain never ran, and because the
+            // refusal witness lived INSIDE the guard it did not even say so.
+            // A silent lane, in the commit whose whole point was that a lane
+            // must never be silent. Fall back to the town's own beds, then
+            // its stockpiles -- deterministic min-by-position, never
+            // HashMap order -- and witness the case where nothing exists.
+            let house_anchor = board.gathering_anchor.or_else(|| {
+                board
+                    .beds
+                    .keys()
+                    .copied()
+                    .min_by_key(|c| (c.x, c.y, c.z))
+                    .or_else(|| {
+                        board
+                            .stockpiles
+                            .iter()
+                            .map(|(_, r)| r.min)
+                            .min_by_key(|c| (c.x, c.y, c.z))
+                    })
+            });
             if board.pending_house.is_some()
-                && let Some(anchor) = board.gathering_anchor
+                && let Some(anchor) = house_anchor
             {
                 // Ring outward from the town centre. Deterministic order —
                 // no HashMap iteration, no rng — so the same town always
@@ -19789,6 +19813,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         );
                     },
                 }
+            } else if board.pending_house.is_some() {
+                // The other silent case, now spoken: the town wants a house
+                // and has nowhere to measure FROM.
+                info!(
+                    beds = board.beds.len(),
+                    stockpiles = board.stockpiles.len(),
+                    "bastion: HOUSE ANCHOR MISSING — the gate fired but the colony has                      no plaza, no bed and no stockpile to place a house near; the intent                      is kept"
+                );
             }
             for (zid, cells) in board.plans.iter() {
                 let mut unfilled = 0usize;
