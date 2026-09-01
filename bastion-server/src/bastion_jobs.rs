@@ -3411,7 +3411,17 @@ pub(crate) struct ImmigrationVerdict {
 ///            (BUILDS=2)
 /// Build -> immigration fills the vacancy -> vacancy closes -> the gate
 /// fires again the next day. One house and one colonist per game day, which
-/// is the GROW horizon SUSTAINED rather than a single event. The "jam" was
+/// is the GROW horizon SUSTAINED rather than a single event.
+///
+/// ★ AND IT COMPOUNDS, WITH FOOD KEEPING UP (tick 66,900, same arm):
+///     roster 4 -> 5 -> 6,  houses 4 -> 5 -> 6,  BUILDS=2, beds_built=2
+///     fed mean 78% over 223 samples (83% of samples >= 50%)
+///     food_stock=50 against par=24
+/// `par=24` is `FOOD_PAR_PER_COLONIST * 6` — the per-capita par scaling with
+/// the population this row unlocked, and the first live evidence that change
+/// does anything: the old FLAT 16 would have under-provisioned exactly the
+/// town that is now free to grow. The two rows turn out to depend on each
+/// other, which is why the food one looked like a no-op when it shipped. The "jam" was
 /// never real; it was a snapshot taken 0.47 of a game day into a mechanism
 /// that runs once a day.
 ///
