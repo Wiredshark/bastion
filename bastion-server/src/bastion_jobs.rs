@@ -1267,11 +1267,18 @@ pub static CHASER_GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
 /// ★★ REPLICATED (2026-09-01) — and the replication CORRECTED my own
 /// precision while confirming the effect. Single runs of this measurement
 /// vary by 25x, so no one figure is the level:
-///     PRE-ROUTING    96.2, 134.8 per 10k                    (n=2)
-///     POST-ROUTING    0.4, 2.5, 8.7, 10.0 per 10k           (n=4)
+///     PRE-ROUTING    96.2, 134.8 per 10k                       (n=2)
+///     POST-ROUTING   0.0, 0.4, 0.7, 2.5, 8.7, 10.0 per 10k    (n=6)
+/// (a seventh post run reached only 1,200 ticks and is EXCLUDED — a stub is
+/// not a zero)
 /// The RANGES DO NOT OVERLAP — every pre-run above 96, every post-run below
 /// 10 — which is stronger evidence than any single ratio, and it is the
 /// honest way to state it: roughly 115 -> 5.4, about -95%.
+///
+/// The residual's STRUCTURE is also not established: `route_prev_solid` reads
+/// false in some runs and 8-of-9 true in another, so the "scattered, new
+/// signature" characterisation was run-to-run variance, exactly as its own
+/// retraction said. Do not treat it as a finding.
 ///
 /// I had quoted "0.4 per 10k" and "-97%" from SINGLE runs. Both were draws
 /// from a wide distribution presented as the level. The standing law says
