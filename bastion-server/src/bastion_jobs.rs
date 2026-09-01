@@ -1342,6 +1342,16 @@ pub static TRUNK_STEEP_ROUTES: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 pub static TRUNK_STEEP_SEGMENTS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
+/// The WORST step any trunk route has emitted, kept as a running maximum.
+///
+/// ★ A THROTTLED SAMPLE IS NOT THE DISTRIBUTION (2026-09-01). The first
+/// version of this witness logged at powers of two and I read the sampled
+/// routes' `worst_dz=6` as the population's worst — concluding the trunk was
+/// exonerated when it had simply not been sampled on a bad route. That is
+/// this program's own threshold-log law, in an instrument written to obey
+/// it. A maximum cannot be hidden by a throttle.
+pub static TRUNK_WORST_DZ: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
 
 /// bastion (2026-08-31): the BASE RATE of a solid previous waypoint across
 /// every router-following colonist, embedded or not — the control for the
@@ -29236,6 +29246,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 steep as u64,
                                                 core::sync::atomic::Ordering::Relaxed,
                                             );
+                                        // Running MAX — a throttle can hide
+                                        // a sample, never a maximum.
+                                        TRUNK_WORST_DZ.fetch_max(
+                                            worst as u64,
+                                            core::sync::atomic::Ordering::Relaxed,
+                                        );
                                         let n = TRUNK_STEEP_ROUTES.fetch_add(
                                             1,
                                             core::sync::atomic::Ordering::Relaxed,
@@ -29246,6 +29262,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 steep,
                                                 worst_dz = worst,
                                                 steep_routes = n,
+                                                worst_ever = TRUNK_WORST_DZ
+                                                    .load(core::sync::atomic::Ordering::Relaxed),
                                                 "bastion: TRUNK STEEP SEGMENT — the trunk                                                  emitted a route whose consecutive waypoints                                                  step further than a body can walk, measured                                                  in the waypoints' OWN height frame"
                                             );
                                         }
