@@ -3402,9 +3402,21 @@ pub(crate) struct ImmigrationVerdict {
 /// The `occupied=4` in the HOUSEHOLDS witness is a STALER SAMPLE from a
 /// different cadence, not a disagreement about who lives where.
 ///
-/// WHAT IS ACTUALLY OPEN: whether growth CONTINUES past +1. That needs an arm
-/// carried past tick 54,000 — a full game day — and nobody has run one. The
-/// text below is kept as the shape of the question, not as a finding.
+/// ★★ ANSWERED (2026-09-01): GROWTH SUSTAINS. The arm carried past the day
+/// boundary shows the ratchet turning twice:
+///     day=0  HOUSING BUILD  fire=true  roster=4 houses=4 vacant=0
+///            HOUSING GROWTH fired=true roster=4 target=5 vacant=1
+///                                          -> roster 4 -> 5
+///     day=1  HOUSING BUILD  fire=true  roster=5 houses=5 vacant=0
+///            (BUILDS=2)
+/// Build -> immigration fills the vacancy -> vacancy closes -> the gate
+/// fires again the next day. One house and one colonist per game day, which
+/// is the GROW horizon SUSTAINED rather than a single event. The "jam" was
+/// never real; it was a snapshot taken 0.47 of a game day into a mechanism
+/// that runs once a day.
+///
+/// The text below is kept as the shape of the question it was, not as a
+/// finding.
 ///
 /// ★ THE NEXT ROW, MEASURED AND OPEN (2026-09-01): GROWTH RATCHETS ONCE AND
 /// JAMS. In the same arm, roster held at 5 for 25,500 ticks:
