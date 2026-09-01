@@ -1296,9 +1296,29 @@ pub static CHASER_GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
 /// assertion that the unwalkable-step count must fall FAILED, correctly,
 /// because nobody walks down a cliff at any sampling density.
 ///
-/// The real answer is ROUTER TOPOLOGY: the tile graph should not route
-/// across a 21-block drop at all. That is a larger row and it is not this
-/// one.
+/// ROUTER TOPOLOGY WAS TRIED TOO, AND ALSO FAILED (b70f955576, reverted in
+/// 2531f2faab). The tile graph carries no per-tile height — only cost, plot,
+/// door and ONE `ground_z` for the town — so `tile_route` is 2D and cannot
+/// see a cliff. Giving it `tile_z` from `sim.get_alt_approx` and pricing
+/// tall edges at the door rule's own 10000 fence measured, matched arm:
+///     control (column heights)  8.6 per 10k, mean segment |dz| 12.9
+///     + cliff fence            34.5 per 10k, mean segment |dz| 14.6
+/// R3 passed cleanly (residual 0, unreachable_job 0, stuck 0, fetch-budget
+/// expiries 0) so nothing was stranded — but the embed number moved the
+/// wrong way and |dz| did not fall.
+///
+/// ★ THE REAL LESSON, and the reason BOTH attempts failed the same way:
+/// I shipped a mechanism WITHOUT A WITNESS, so I cannot say whether the
+/// fence ever fired. The pre-registered F3 names the likeliest cause —
+/// `get_alt_approx` is SMOOTH SIM DATA while the waypoint z comes from
+/// `column_surface_z` on REAL TERRAIN, two producers of one quantity, so
+/// the fence may see no cliff exactly where the waypoints do.
+///
+/// WHAT THE NEXT ATTEMPT MUST DO FIRST: witness where the |dz|=21 waypoints
+/// COME FROM. The tile trunk and the block-search pump both produce routes,
+/// and nothing has ever separated them. Two fixes have now been built for a
+/// residual whose producer was never identified — the same mistake the site
+/// tag cured for the embed writer, unlearned one level up.
 ///
 /// The z a trunk waypoint should sit at: the standable cell ABOVE that
 /// column's own surface, or — when the column cannot be read — today's
