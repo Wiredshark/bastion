@@ -16375,6 +16375,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // criterion in the charter with no instrument at all was
                     // the one a player notices from the air. A mechanism
                     // that cannot show itself FAILING is not evidenced.
+                    //
+                    // ★ VALIDATED IN BOTH DIRECTIONS (2026-09-01), because a
+                    // counter that only ever reads ZERO is indistinguishable
+                    // from a blind one — and this flag's own doc records that
+                    // "nothing ever set the emergency flag" once before:
+                    //   town at peace (NO_RAIDS):  running=0 in 41 of 41
+                    //   BASTION_PLANT_RAID=3000:   2 alarms, 16 civilians
+                    //                              sent home, running MAX=8
+                    //                              of 8, then back to 0
+                    // `running = true` is written in exactly ONE place (the
+                    // ALARM path, "civilian DROPS WORK and runs home") and
+                    // cleared by the all-clear, so zero at peace is the
+                    // criterion PASSING rather than the witness sleeping.
                     let mut running = 0u32;
                     let (mut fed, mut rested, mut total) = (0u32, 0u32, 0u32);
                     // ★ ITEM 36 (2026-08-21): DOWNED colonists, surfaced.
