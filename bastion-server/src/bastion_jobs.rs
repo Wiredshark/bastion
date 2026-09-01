@@ -3388,6 +3388,24 @@ pub(crate) struct ImmigrationVerdict {
 /// refusing on. POPULATION EXCEEDED THE FOUNDING HOUSE COUNT — the charter's
 /// GROW horizon, observed rather than argued.
 ///
+/// ★ THE NEXT ROW, MEASURED AND OPEN (2026-09-01): GROWTH RATCHETS ONCE AND
+/// JAMS. In the same arm, roster held at 5 for 25,500 ticks:
+///     HOUSEHOLDS  houses=5 occupied=4 vacant=1 shared=0
+///     B7-2 beds assigned  assigned=4 beds=8, then assigned=1 beds=9
+/// All five colonists hold beds, yet only FOUR households read occupied and
+/// `shared=0` — so one colonist belongs to no household, and the house it
+/// should be filling stays `vacant`. `housing_build_verdict` refuses on
+/// "a house already stands empty" while any vacancy exists, so the town
+/// never builds a sixth house and immigration never gets a sixth vacancy.
+/// The loop that GROW depends on closes after exactly one iteration.
+///
+/// Do NOT fix this by relaxing the vacancy check — that guard is right, and
+/// building while a roof stands empty is the waste it exists to prevent. The
+/// defect is that an immigrant's bed does not register as occupying its
+/// household. Start at `derive_households`' bed->household index and the
+/// B7-2 assignment, and confirm which of the two frames disagrees before
+/// changing either.
+///
 /// Note the arithmetic this makes plain: `immigration_target_pop` tracks
 /// HOUSES, and adoption sets roster = houses, so an adopted town refuses
 /// `roster_at_target` FOREVER until it builds. Growth was not merely slow
