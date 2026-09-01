@@ -15721,6 +15721,18 @@ pub struct FloodSurvey {
     pub frontier_left: usize,
     /// Did the cell budget stop the search short?
     pub truncated: bool,
+    /// ★ DID THE WORLD STOP THE SEARCH SHORT? (2026-09-01, Ben's flat-map
+    /// session.) `standable` answers false for a WALL and for an UNLOADED
+    /// chunk alike, so a flood that reached the edge of the loaded region
+    /// looked exactly like one that had mapped the whole town — and
+    /// `connectivity_is_trusted`, which judges by "stopped growing", trusted
+    /// it. At PRESENCE_VD=3 (~96 blocks) it condemned 1,207 bed cells beyond
+    /// that radius as disconnected, permanently, 38 seconds after founding;
+    /// nine colonists lost their beds and jobs in the same second. Non-zero
+    /// here means the survey proved nothing about anything past the edge,
+    /// and the verdict must condemn nothing — FALLBACK IS IDENTITY for a
+    /// world that has not finished arriving.
+    pub unloaded_frontier: usize,
 }
 
 /// The flood's verdict — what it may condemn, and what it deliberately did
@@ -15748,18 +15760,21 @@ pub struct FloodVerdict {
 /// touched only by `contains`/`insert`. Visit order, and therefore the
 /// truncated prefix, is a pure function of `(start, anchor, radius, cap,
 /// standable, waist_hurdle)`.
-pub fn flood_survey<S, W>(
+pub fn flood_survey<S, W, L>(
     start: Vec3<i32>,
     anchor: Vec3<i32>,
     radius: i32,
     cap: usize,
     standable: S,
     waist_hurdle: W,
+    loaded: L,
 ) -> FloodSurvey
 where
     S: Fn(Vec3<i32>) -> bool,
     W: Fn(Vec3<i32>) -> bool,
+    L: Fn(Vec3<i32>) -> bool,
 {
+    let mut unloaded_frontier = 0usize;
     let mut seen: HashSet<Vec3<i32>> = HashSet::new();
     let mut queue: std::collections::VecDeque<Vec3<i32>> = std::collections::VecDeque::new();
     seen.insert(start);
@@ -15791,6 +15806,10 @@ where
                 if !seen.contains(&n) && standable(n) {
                     seen.insert(n);
                     queue.push_back(n);
+                } else if !seen.contains(&n) && !loaded(n) {
+                    // The frontier touched the edge of the loaded world.
+                    // Not a wall — an absence of information.
+                    unloaded_frontier += 1;
                 }
             }
             // Fence-vault hop: over a waist sprite to the far cell — the
@@ -15807,6 +15826,7 @@ where
         seen,
         frontier_left,
         truncated,
+        unloaded_frontier,
     }
 }
 
@@ -15860,8 +15880,11 @@ where
             eligible.push(p);
         }
     }
-    if survey.truncated {
+    if survey.truncated || survey.unloaded_frontier > 0 {
         // ★ FAULT 1. A survey that did not complete must not condemn.
+        // ★ FAULT 3 (2026-09-01): a survey that ran out of WORLD did not
+        // complete either. Unloaded is not "unreachable"; it is "unseen",
+        // and the only honest verdict about the unseen is the empty one.
         //
         // Rejected alternative: "condemn only what was positively proven
         // unreachable within budget". There is no such set — a BFS that
@@ -15903,7 +15926,8 @@ where
     W: Fn(Vec3<i32>) -> bool,
     L: Fn(Vec3<i32>) -> bool,
 {
-    let survey = flood_survey(start, anchor, FLOOD_RADIUS, FLOOD_CAP, standable, waist_hurdle);
+    let survey =
+        flood_survey(start, anchor, FLOOD_RADIUS, FLOOD_CAP, standable, waist_hurdle, &loaded);
     let verdict = flood_verdict(
         &survey,
         anchor,
@@ -47209,6 +47233,7 @@ mod tests {
             FLOOD_CAP,
             |p| world.contains(&p),
             |_| false,
+            |_| true,
         );
         assert!(!survey.truncated, "the fixture must fit inside the budget");
         assert_eq!(survey.frontier_left, 0);
@@ -47256,6 +47281,7 @@ mod tests {
             4,
             |p| world.contains(&p),
             |_| false,
+            |_| true,
         );
         assert!(survey.truncated, "a cap of 4 on a 20-cell corridor must truncate");
         assert!(survey.frontier_left > 0, "the unexplored frontier must be reported");
@@ -47288,6 +47314,68 @@ mod tests {
     ///
     /// `FLOOD_CAP = usize::MAX`: the degenerate HIGH setting must still
     /// condemn, or the guard has been disabled instead of made honest.
+    /// ★ A SURVEY THAT RAN OUT OF WORLD MUST CONDEMN NOTHING (2026-09-01,
+    /// Ben's flat-map session). `standable` answers false for a wall and
+    /// for an unloaded chunk alike; at PRESENCE_VD=3 the flood stopped at
+    /// the loaded edge, looked complete, was trusted, and condemned 1,207
+    /// bed cells beyond ~96 blocks as disconnected — permanently, 38
+    /// seconds after founding.
+    #[test]
+    fn a_survey_that_touches_unloaded_terrain_condemns_nothing() {
+        // A 20-cell corridor whose far half is NOT LOADED. Standable says
+        // false past x=9 (it cannot see), loaded says false past x=9.
+        let anchor = Vec3::new(0, 0, 0);
+        let world: HashSet<Vec3<i32>> = (0..20).map(|x| Vec3::new(x, 0, 0)).collect();
+        let loaded_to = 9;
+        let survey = flood_survey(
+            anchor,
+            anchor,
+            FLOOD_RADIUS,
+            FLOOD_CAP,
+            |p| p.x <= loaded_to && world.contains(&p),
+            |_| false,
+            |p| p.x <= loaded_to,
+        );
+        assert!(!survey.truncated, "the budget did not stop it");
+        assert!(
+            survey.unloaded_frontier > 0,
+            "the frontier touched unloaded terrain and must say so"
+        );
+        // The beds past the edge are real and reachable in the real world;
+        // the survey simply cannot see them. It must NOT condemn them.
+        let beds: Vec<Vec3<i32>> = (12..20).map(|x| Vec3::new(x, 0, 0)).collect();
+        let v = flood_verdict(&survey, anchor, FLOOD_RADIUS, &beds, &HashSet::new(), |p| {
+            world.contains(&p)
+        });
+        assert!(
+            v.condemn.is_empty(),
+            "unloaded is UNSEEN, not unreachable: condemned {:?}",
+            v.condemn
+        );
+        assert_eq!(v.withheld, beds.len(), "every bed is withheld, none judged");
+
+        // IDENTITY: the same corridor fully loaded condemns exactly as before
+        // (nothing — every bed is on the corridor).
+        let full = flood_survey(
+            anchor,
+            anchor,
+            FLOOD_RADIUS,
+            FLOOD_CAP,
+            |p| world.contains(&p),
+            |_| false,
+            |_| true,
+        );
+        assert_eq!(full.unloaded_frontier, 0);
+        let v2 = flood_verdict(&full, anchor, FLOOD_RADIUS, &beds, &HashSet::new(), |_| true);
+        assert!(v2.condemn.is_empty() && v2.withheld == 0, "fully loaded and connected: identity");
+
+        // AND it still condemns a GENUINELY sealed cell when fully loaded —
+        // the guard must not starve the thing it protects.
+        let sealed = vec![Vec3::new(40, 40, 0)];
+        let v3 = flood_verdict(&full, anchor, FLOOD_RADIUS, &sealed, &HashSet::new(), |_| true);
+        assert_eq!(v3.condemn, sealed, "a loaded, unreachable cell is still condemned");
+    }
+
     #[test]
     fn flood_cap_is_pinned_at_both_degenerate_settings() {
         let anchor = Vec3::new(0, 0, 0);
@@ -47296,7 +47384,7 @@ mod tests {
         let standable = |p: Vec3<i32>| world.contains(&p);
 
         // LOW: zero budget. The start is popped and never expanded.
-        let starved = flood_survey(anchor, anchor, FLOOD_RADIUS, 0, standable, |_| false);
+        let starved = flood_survey(anchor, anchor, FLOOD_RADIUS, 0, standable, |_| false, |_| true);
         assert!(starved.truncated, "a zero budget must never read as a completed survey");
         assert_eq!(
             starved.frontier_left, 1,
@@ -47320,7 +47408,7 @@ mod tests {
         assert_eq!(starved_verdict.withheld, 2);
 
         // HIGH: unbounded budget. Identical to the healthy case.
-        let complete = flood_survey(anchor, anchor, FLOOD_RADIUS, usize::MAX, standable, |_| false);
+        let complete = flood_survey(anchor, anchor, FLOOD_RADIUS, usize::MAX, standable, |_| false, |_| true);
         assert!(!complete.truncated);
         assert_eq!(complete.seen.len(), 20);
         let complete_verdict = flood_verdict(
@@ -47403,7 +47491,7 @@ mod tests {
             world.insert(Vec3::new(0, step, 0));
             world.insert(Vec3::new(0, -step, 0));
         }
-        let run = || flood_survey(anchor, anchor, FLOOD_RADIUS, 6, |p| world.contains(&p), |_| false);
+        let run = || flood_survey(anchor, anchor, FLOOD_RADIUS, 6, |p| world.contains(&p), |_| false, |_| true);
         let first = run();
         assert!(first.truncated);
         assert!(
@@ -47439,6 +47527,7 @@ mod tests {
             FLOOD_CAP,
             |p| world.contains(&p),
             |_| false,
+            |_| true,
         );
         let judge = |cells: &[Vec3<i32>]| {
             flood_verdict(&survey, anchor, FLOOD_RADIUS, cells, &HashSet::new(), |_| true).condemn
