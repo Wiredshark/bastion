@@ -42116,10 +42116,40 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     }
                     named.sort_by_key(|(u, ..)| u.0.get());
                     for (u, w, c) in named {
+                        // ★ DOES THIS COLONIST SPEND THEIR HOURS IN THE LANE
+                        // THEY ARE NAMED BY? (2026-09-01) The charter asks a
+                        // watcher to "name someone's job from an hour of
+                        // watching", and the tally answered only half of it:
+                        // it names an ARGMAX without saying how dominant that
+                        // lane is. A colonist 90% in one trade and one split
+                        // 30/28/25/17 both get a label, and only the first is
+                        // legible from the air.
+                        //
+                        // `lane_counts` is already the right unit — it bumps
+                        // once per sweep per colonist WHILE HOLDING a job,
+                        // and `is_personal_hold_job` excludes rest and
+                        // recreation, which is ROW 48's fix ("the tally now
+                        // votes by TIME HELD"). So the share needs no new
+                        // accumulation, only reporting.
+                        //
+                        // REJECTED: joining `colonist arrived at job site`
+                        // against `kind`. That join EXISTS and was run — it
+                        // reports 77% of colonists dominated by Recreate or
+                        // RestAt — but it counts ARRIVALS, so it counts
+                        // errands rather than hours and inflates whatever job
+                        // is smallest. Same wrong unit ROW 48 already fixed.
+                        let total: u32 = board
+                            .lane_counts
+                            .iter()
+                            .filter(|((cu, _), _)| *cu == u)
+                            .map(|(_, v)| *v)
+                            .sum();
                         info!(
                             colonist = u.0.get(),
                             profession = ?w,
                             weight = c,
+                            lane_total = total,
+                            lane_share_pct = if total > 0 { c * 100 / total } else { 0 },
                             "bastion: PROFESSION — the town knows them as"
                         );
                     }
