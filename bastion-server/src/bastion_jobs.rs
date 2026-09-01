@@ -1377,6 +1377,11 @@ pub(crate) fn lift_over_ground(
             };
             // Ground standing ABOVE the line is what the body walks into.
             if gz + 1 > line_z {
+                // The mechanism witnesses itself. I shipped this fix without
+                // a counter and then could not check its own pre-registered
+                // G3 — the third time on this residual. A drop with a silent
+                // mechanism is a coincidence, not an attribution.
+                GROUND_LIFTS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 out.push(Vec3::new(x, y, gz + 1));
             }
         }
@@ -1389,6 +1394,10 @@ pub(crate) fn lift_over_ground(
 
 /// Hard bound on intermediates per span, so a trunk stays a trunk.
 pub const SEGMENT_SAMPLES: i32 = 8;
+
+/// Waypoints inserted because the ground stood above the segment's line.
+pub static GROUND_LIFTS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
 
 /// The z a trunk waypoint should sit at: the standable cell ABOVE that
 /// column's own surface, or — when the column cannot be read — today's
@@ -35926,6 +35935,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 route_head_solid,
                                 route_prev = ?route_prev,
                                 route_prev_solid,
+                            ground_lifts = GROUND_LIFTS
+                                .load(core::sync::atomic::Ordering::Relaxed),
                                 "bastion EMBED WATCH: colonist WEDGED in \
                                  terrain (persisted a full second) — \
                                  relocated; hunt the writer"
