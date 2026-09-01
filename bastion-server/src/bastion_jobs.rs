@@ -1356,6 +1356,22 @@ pub static TRUNK_WORST_DZ: core::sync::atomic::AtomicU64 =
 pub static TRUNK_ROUTES_REJECTED: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// ★ EVIDENCED (2026-09-01). Matched real-relief arm, same site
+/// (chosen_houses=4, chosen_dist=1224), same seed, roster 4:
+///     embeds        control 8.6 per 10k  ->  0.7 per 10k   (-92%)
+///     rejects fired 256, worst_dz=22      (so the zero is not a no-op)
+///     residual 0, unreachable_job 0, stuck 0, FETCH failures 0
+///     engaged 3.4 of 4 in BOTH arms, idle 0.6 in both, jobs created 7 vs 6
+///     fed mean 87% vs control 69%
+/// Engagement being IDENTICAL is the load-bearing check: the pump absorbing
+/// the rejected routes did not starve the town, which was the failure this
+/// change most risked.
+///
+/// NOT claimed: a 310x difference in `colonist arrived at job site` between
+/// the arms. That witness fires while a colonist is AT a site rather than
+/// once per arrival, so it is not a throughput metric, and its producer is
+/// not understood well enough to quote it.
+///
 /// The step above which a materialised trunk route is not used at all.
 /// Deliberately LOOSER than the mover's own probe window (2): a trunk is an
 /// approximation and rejecting every mildly steep route would push the whole
