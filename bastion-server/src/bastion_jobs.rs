@@ -1264,6 +1264,15 @@ pub static GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
 pub static CHASER_GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// bastion (2026-08-31): the BASE RATE of a solid previous waypoint across
+/// every router-following colonist, embedded or not — the control for the
+/// 96% seen among embedded bodies. Sampled once per colonist per embed
+/// sweep, so the ratio is over body-ticks, not over events.
+pub static ROUTE_PREV_SOLID_ALL: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+pub static ROUTE_PREV_CLEAR_ALL: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// Would the search-gap bridge's override be walking a body INTO ROCK?
 ///
 /// The surface probe refuses for two reasons and the override used to treat
@@ -16417,6 +16426,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         rested,
                         "bastion EXPERIENCE census (engaged = has a job and is not stuck;                          `working` EXCLUDES travel, so hauling reads as `moving`;                          `stuck` = wedged >5s at speed~0, `slowed` = transient dip,                          also inside `moving`)"
                     );
+                    // ★ THE CONTROL beside the threshold log. `solid` and
+                    // `clear` are body-ticks across EVERY router-following
+                    // colonist; the 96% solid-prev seen among EMBEDDED bodies
+                    // is only a defect if this base rate is far lower.
+                    {
+                        use core::sync::atomic::Ordering::Relaxed;
+                        let solid = ROUTE_PREV_SOLID_ALL.load(Relaxed);
+                        let clear = ROUTE_PREV_CLEAR_ALL.load(Relaxed);
+                        let total = solid + clear;
+                        info!(
+                            tick = tick.0,
+                            route_prev_solid = solid,
+                            route_prev_clear = clear,
+                            pct_solid = if total > 0 {
+                                (100 * solid / total) as u32
+                            } else {
+                                0
+                            },
+                            "bastion: ROUTE-PREV CENSUS — base rate of a SOLID previous                              waypoint across all router-following colonists (the control                              for the same figure among embedded bodies)"
+                        );
+                    }
                 }
                 // ITEM8-V4 sentinel S1 (Fable-ruled, LOG-ONLY -- never
                 // terminates the server, never gates anything; v3 would
@@ -34924,6 +34954,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let kinematic = id_maps
                     .uid_entity(*uid)
                     .is_some_and(|e| kinematic_travels.contains(e));
+                // ★ THE CONTROL FOR route_prev_solid (2026-08-31). 96% of
+                // EMBEDDED bodies have a SOLID previous waypoint -- but
+                // EMBED WATCH is a threshold log and only ever sees embedded
+                // bodies, so that number is meaningless without the base rate
+                // across EVERY router-following colonist. A FALSIFIER NEEDS
+                // ITS OWN CONTROL. If healthy walkers carry solid prev
+                // waypoints just as often, it is a convention and not a
+                // defect; if they do not, the router is emitting cells inside
+                // walls and `pure_glide` faithfully walks bodies to them.
+                if let Some((wps, idx, _)) = board.path_cache.get(uid)
+                    && let Some(prev) = wps.get(idx.saturating_sub(1))
+                {
+                    let rock = terrain.get(*prev).is_ok_and(|b| {
+                        b.is_solid() || common::path::blocks_colonist_body(b)
+                    });
+                    if rock {
+                        ROUTE_PREV_SOLID_ALL.fetch_add(
+                            1,
+                            core::sync::atomic::Ordering::Relaxed,
+                        );
+                    } else {
+                        ROUTE_PREV_CLEAR_ALL.fetch_add(
+                            1,
+                            core::sync::atomic::Ordering::Relaxed,
+                        );
+                    }
+                }
                 if core_solid {
                     // Captured BEFORE the `entry()` borrow below, so the
                     // first-solid tick records its own trajectory.
