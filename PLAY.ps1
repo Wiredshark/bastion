@@ -39,14 +39,20 @@ param(
     # autofound ("just boot me into a town that i own") for tests that must
     # not depend on a screen interaction.
     [switch]$Pick,
-    [switch]$Boot
+    [switch]$Boot,
+    # A second, side-by-side world for a headless test arm: its own userdata
+    # (the default is Ben's, which is DELETED on every boot) and its own port.
+    [string]$UserData,
+    [int]$Port = 14004,
+    # Headless arm: nobody will choose a town on the character screen, so let
+    # the autofound adopt one itself.
+    [switch]$NoWait
 )
 
 $ErrorActionPreference = 'Stop'
 $WT   = 'E:\veloren-master\.item29-wt'
 $Bin  = Join-Path $WT 'target\no_overflow'
-$UD   = Join-Path $WT 'userdata-play-ben'
-$Port = 14004
+$UD   = if ($UserData) { $UserData } else { Join-Path $WT 'userdata-play-ben' }
 
 # ★ THE LOCKED-TARGET FALLBACK (2026-08-24). Twice now a running game held
 # file locks on target\no_overflow's exes, so a rebuild compiled everything
@@ -256,7 +262,7 @@ $EnvVars = if ($Mode -eq 'megatown') {
         BASTION_ADOPT_WAIT_FOR_MARKER  = '1'
         BASTION_AUTOFOUND_REAL_TERRAIN = '1'
         BASTION_COLONY_PRESENCE_VD     = '7'
-        BASTION_AUTOFOUND_COLONY       = '8'
+        BASTION_AUTOFOUND_COLONY       = '48'   # was 8: a pre-cap default; the beds cap (houses*2) now decides, so give it room
         BASTION_SEED_FOOD              = '64'
         BASTION_SEED_MATERIALS         = '64'
     }
@@ -328,9 +334,23 @@ if (Test-Path $UD) { Remove-Item $UD -Recurse -Force }
 $env:VELOREN_USERDATA = $UD
 $env:VELOREN_ASSETS   = Join-Path $WT 'assets'
 foreach ($k in $EnvVars.Keys) { Set-Item -Path "Env:$k" -Value $EnvVars[$k] }
+# The server tests PRESENCE of this variable (var_os(..).is_some()), so '0' still
+# waits: -NoWait must REMOVE it.
+if ($NoWait) { Remove-Item -Path 'Env:BASTION_ADOPT_WAIT_FOR_MARKER' -ErrorAction SilentlyContinue }
 
 # Grant admin to the account you log in as. This one CAN be quiet: it exits.
 & "$Bin\veloren-server-cli.exe" --no-auth admin add player admin 2>&1 | Out-Null
+
+# -Port: splice the game port into the settings the admin-add just created,
+# and refuse to continue silently if the splice missed.
+if ($Port -ne 14004) {
+    $SP = Join-Path $UD 'server\server_config\settings.ron'
+    $ptxt = (Get-Content $SP -Raw) -replace ':14004"', ":$Port`""
+    [System.IO.File]::WriteAllText($SP, $ptxt, (New-Object System.Text.UTF8Encoding $false))
+    if (-not (Select-String -Path $SP -Pattern ":$Port`"" -Quiet)) {
+        Write-Host "port splice FAILED in $SP - not booting on the wrong port"; exit 1
+    }
+}
 
 # flattown: a small fast map — the plain is the point, not the continent. The
 # admin-add above is what created settings.ron; splice the generator in, and
@@ -338,9 +358,11 @@ foreach ($k in $EnvVars.Keys) { Set-Item -Path "Env:$k" -Value $EnvVars[$k] }
 # quietly generate 20 minutes of full-size erosion instead of 30 seconds).
 if ($Mode -eq 'flattown') {
     $S = Join-Path $UD 'server\server_config\settings.ron'
-    (Get-Content $S) -replace 'map_file: None,',
-        'map_file: Some(Generate((x_lg: 8, y_lg: 8, scale: 2.0, map_kind: Square, erosion_quality: 0.25))),' |
-        Set-Content $S -Encoding utf8
+    $txt = (Get-Content $S -Raw) -replace 'map_file: None,',
+        'map_file: Some(Generate((x_lg: 8, y_lg: 8, scale: 2.0, map_kind: Square, erosion_quality: 0.25))),'
+    # BOM-free: PS 5.1's `Set-Content -Encoding utf8` writes a BOM, RON refuses
+    # it, and the server silently falls back to DEFAULT settings.
+    [System.IO.File]::WriteAllText($S, $txt, (New-Object System.Text.UTF8Encoding $false))
     if (-not (Select-String -Path $S -Pattern 'map_file: Some' -Quiet)) {
         Write-Host "flattown map_file splice FAILED in $S - not booting a wrong-size world"
         return
@@ -361,11 +383,11 @@ Write-Host "booting a '$Mode' world... (worldgen takes a few minutes the first t
 # founding, so "did the villagers get adopted" was unanswerable from a world
 # that was running correctly. Redirecting with a new window is fine -- it was
 # only the -NoNewShell/-NoNewWindow combination that broke the TUI.
-$Log = Join-Path $WT 'play-server.log'
+$Log = if ($UserData) { Join-Path $UD 'play-server.log' } else { Join-Path $WT 'play-server.log' }
 if (Test-Path $Log) { Remove-Item $Log -Force }
 Start-Process -FilePath "$Bin\veloren-server-cli.exe" -ArgumentList '--no-auth' `
     -WorkingDirectory $WT -RedirectStandardOutput $Log `
-    -RedirectStandardError (Join-Path $WT 'play-server.err.log') | Out-Null
+    -RedirectStandardError (Join-Path (Split-Path $Log) 'play-server.err.log') | Out-Null
 
 # ★ WAIT ON THE PORT, not on a log line. The log is in the server's own window
 # now, and "is it accepting connections" is exactly what the port answers.
@@ -375,9 +397,22 @@ for ($i = 1; $i -le 120; $i++) {
     if (Test-PortHeld) { Write-Host "READY after $($i * 5)s"; $ready = $true; break }
 }
 
+# ★ THE SERVER, NOT THE FILE, SAYS WHETHER SETTINGS APPLIED. A BOM'd settings.ron
+# parses as nothing and the server runs DEFAULTS (default map, default port)
+# while the file still reads correctly — every "flattown" before 2026-09-01 was
+# the default continent for exactly this reason. Fail loudly.
+if (Test-Path $Log) {
+    if (Select-String -Path $Log -Pattern 'Failed to parse setting file' -Quiet) {
+        Write-Host ''
+        Write-Host '  SETTINGS NOT PARSED - the server fell back to DEFAULT settings (default map, default port).'
+        Write-Host "  See $Log. This is NOT the world you asked for; stop it with  .\PLAY.ps1 -Stop"
+        $ready = $false
+    }
+}
+
 Write-Host ''
 if ($ready) {
-    Write-Host '  JOIN AT:  localhost:14004'
+    Write-Host "  JOIN AT:  localhost:$Port"
     Write-Host '  USERNAME: player       (no password - the server runs --no-auth)'
 } else {
     Write-Host "  NOT READY after 10 min - check the server window for errors."
