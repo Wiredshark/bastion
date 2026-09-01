@@ -1420,6 +1420,15 @@ pub const SEGMENT_SAMPLES: i32 = 8;
 pub static GROUND_LIFTS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// bastion (2026-09-01): blocks the colony has PLACED, bumped by every
+/// completed build, so a route can be stamped with the world it was planned
+/// against. `path_cache` is invalidated only on target drift (>3 cells) and
+/// NEVER on terrain change, so a waypoint standing on ground the town later
+/// builds into is solid through no fault of the router. This tests that
+/// instead of assuming it.
+pub static WORLD_BUILDS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// The z a trunk waypoint should sit at: the standable cell ABOVE that
 /// column's own surface, or — when the column cannot be read — today's
 /// constant street level, unchanged.
@@ -12305,6 +12314,9 @@ pub struct JobBoard {
     /// transient core-solid states (a top-down digger settling into its own
     /// fresh 1-deep pocket) clear in a few ticks and never trip it.
     embed_watch: HashMap<Uid, u32>,
+    /// bastion (2026-09-01): the world's build count when this colonist's
+    /// route was planned, compared against the live count at embed time.
+    route_built_at: HashMap<Uid, u64>,
     /// bastion (2026-08-31): every colonist's position at the PREVIOUS tick
     /// of the embed sweep, so the sweep can report the STEP a body took to
     /// get where it is. Written for every colonist every tick, not only for
@@ -29551,6 +29563,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             );
                                         }
                                     }
+                                    board.route_built_at.insert(
+                                        u,
+                                        WORLD_BUILDS
+                                            .load(core::sync::atomic::Ordering::Relaxed),
+                                    );
                                     board.path_cache.insert(u, (wps, 0, target));
                                 } else {
                                     // → the SEARCH PUMP: enqueue, never
@@ -34438,6 +34455,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             occupant: None,
                         });
                         info!(pos = ?job.pos, "bastion: bed registered (built)");
+                        WORLD_BUILDS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     }
                     // ITEM 27: a completed station registers (Bed pattern).
                     // ITEM 27 GRANULARITY: through `register_cook_station`, so
@@ -35958,6 +35976,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 route_prev_solid,
                             ground_lifts = GROUND_LIFTS
                                 .load(core::sync::atomic::Ordering::Relaxed),
+                            // Did the town build AFTER this route was
+                            // planned? The predicted cause of the scattered
+                            // residual, stated as a number instead of a
+                            // hypothesis.
+                            builds_since_route = WORLD_BUILDS
+                                .load(core::sync::atomic::Ordering::Relaxed)
+                                .saturating_sub(
+                                    board.route_built_at.get(uid).copied().unwrap_or(0),
+                                ),
                                 "bastion EMBED WATCH: colonist WEDGED in \
                                  terrain (persisted a full second) — \
                                  relocated; hunt the writer"
