@@ -1264,6 +1264,20 @@ pub static GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
 pub static CHASER_GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// ★ MEASURED ON REAL TERRAIN TOO (2026-09-01). The original -69% came from
+/// a two-grade FLAT world, which is relief enough to trip the defect but not
+/// a mountain. A matched A/B on a genuine relief site (`chosen_flat=false`,
+/// alt_range 11.3, 4 houses, roster 4) -- same site, same seed, only the
+/// binary differing -- gives:
+///     pre-fix   97 embeds / 18,300 ticks = 53.0 per 10k
+///     post-fix  17 embeds / 19,800 ticks =  8.6 per 10k   (-84%)
+/// The site was reached by shrinking BASTION_ADOPT_RADIUS to 1500 so the
+/// scorer could not reach a flat hamlet: its `flat_bucket` is BINARY
+/// (`alt_range <= 8.0`) and ranks ABOVE capacity, so autofound otherwise
+/// lands on two-house hamlets forever. That ordering exists to protect
+/// pathing on relief, which is the defect this fix addresses -- so the gate
+/// is now a candidate to relax, but NOT on this evidence alone.
+///
 /// The z a trunk waypoint should sit at: the standable cell ABOVE that
 /// column's own surface, or — when the column cannot be read — today's
 /// constant street level, unchanged.
