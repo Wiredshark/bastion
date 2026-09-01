@@ -1352,6 +1352,16 @@ pub static TRUNK_STEEP_SEGMENTS: core::sync::atomic::AtomicU64 =
 /// it. A maximum cannot be hidden by a throttle.
 pub static TRUNK_WORST_DZ: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
+/// Trunk routes discarded because they materialised unwalkable.
+pub static TRUNK_ROUTES_REJECTED: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
+/// The step above which a materialised trunk route is not used at all.
+/// Deliberately LOOSER than the mover's own probe window (2): a trunk is an
+/// approximation and rejecting every mildly steep route would push the whole
+/// town onto the search pump, which is the failure mode to avoid. This
+/// refuses only steps no body could ever take.
+pub const TRUNK_REJECT_DZ: i32 = 6;
 
 /// bastion (2026-08-31): the BASE RATE of a solid previous waypoint across
 /// every router-following colonist, embedded or not — the control for the
@@ -29209,6 +29219,48 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             wps
                                         })
                                     });
+                                // ★ REJECT A ROUTE THAT MATERIALISED
+                                // UNWALKABLE (2026-09-01). Measured
+                                // `worst_ever=22`: the trunk really does
+                                // emit 22-block steps, against EMBED WATCH
+                                // segments of max 21 and mean 14.4. Two
+                                // earlier attempts failed in the WRONG FRAME
+                                // (sim altitude) or on the wrong span (a
+                                // cliff cannot be subdivided); this reads the
+                                // waypoints' OWN heights, where the defect is
+                                // visible.
+                                //
+                                // The trunk is a fast APPROXIMATION whose
+                                // documented fallback is the block-search
+                                // pump, so a route that cannot be walked is
+                                // simply not used — it falls through to the
+                                // existing `else` and the pump paths it
+                                // exactly. No new machinery, and the reject
+                                // is counted so it can never be silent.
+                                let trunked = trunked.filter(|wps: &Vec<Vec3<i32>>| {
+                                    let worst = wps
+                                        .windows(2)
+                                        .map(|w| (w[1].z - w[0].z).abs())
+                                        .max()
+                                        .unwrap_or(0);
+                                    if worst > TRUNK_REJECT_DZ {
+                                        let r = TRUNK_ROUTES_REJECTED.fetch_add(
+                                            1,
+                                            core::sync::atomic::Ordering::Relaxed,
+                                        ) + 1;
+                                        if r.is_power_of_two() {
+                                            info!(
+                                                worst_dz = worst,
+                                                waypoints = wps.len(),
+                                                rejected = r,
+                                                "bastion: TRUNK ROUTE REJECTED — its                                                  waypoints step further than a body can                                                  walk; falling through to the search pump"
+                                            );
+                                        }
+                                        false
+                                    } else {
+                                        true
+                                    }
+                                });
                                 if let Some(wps) = trunked {
                                     // ★ WITNESS THE TRUNK'S OWN SEGMENTS
                                     // (2026-09-01). Two fixes for the 8.6
