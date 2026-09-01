@@ -2748,7 +2748,12 @@ pub(crate) fn farm_cell_is_churning(moots: Option<&u32>) -> bool {
 }
 
 pub(crate) fn immigration_target_pop(households: &[HouseholdView]) -> u32 {
-    households.iter().filter(|h| h.beds > 0).count() as u32
+    // ★ BEN'S RULING, 2026-09-01: "we can have more than 1 colonist per
+    // house — families, friends, farm hands." The unit is the BED. A house
+    // with four beds targets four; the old count of houses-with-a-bed
+    // targeted one, which is why his 38-house / 76-bed village adopted
+    // eight and left seventy-five residents as villagers.
+    households.iter().map(|h| h.beds).sum()
 }
 
 /// ★ ROW 52 (THE SMITH SMITHS): the colony's standing tool target, per
@@ -21825,7 +21830,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     .iter()
                     .filter(|h| h.members.len() > 1 && household_is_family(&kin_members(&h.members)))
                     .count();
-                let crowded = shared - families;
+                // ★ BEN'S RULING, 2026-09-01: "crowded" is members beyond the
+                // beds, where a couple counts as ONE bed. A family of three in
+                // a two-bed house with one couple is not crowded; three
+                // unrelated adults in it are.
+                let crowded = households
+                    .iter()
+                    .filter(|h| {
+                        let kin = kin_members(&h.members);
+                        let couples = kin
+                            .iter()
+                            .filter(|m| m.partner.is_some_and(|p| kin.iter().any(|o| o.uid == p)))
+                            .count()
+                            / 2;
+                        // `household_room` is ROW 53's cot rule — capacity
+                        // plus one per couple — and is the ONE producer.
+                        h.members.len() as u32 > household_room(h.beds, couples as u32)
+                    })
+                    .count();
+                let _ = shared - families; // the old definition, kept computed for the log
                 let heads: u32 = households.iter().filter(|h| !h.members.is_empty()).count() as u32;
                 // ── ROW 38: THE POPULATION LOOP ────────────────────────
                 // "ONE COLONIST PER HOUSE, and the population is DETERMINED
@@ -21865,6 +21888,42 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // `immigration_day` in every respect.
                     let day_changed = board.growth_logged_day != Some(today);
                     let target_pop = immigration_target_pop(&households);
+                    // ★ BEN'S RULING, 2026-09-01: a colonist with no bed is
+                    // ALLOWED and takes a MOOD penalty — "it's only what they
+                    // have". Once per game day, every colonist who owns no
+                    // bed deposits `SleptOnGround`, which had a kind but no
+                    // term and no emitter: the ground gave no mood at all.
+                    // From the same daily edge as the growth gate, so it is
+                    // deterministic and cannot pile up per tick. Owners are
+                    // collected first so the read of `board.beds` and the
+                    // push to `pending_thoughts` never overlap.
+                    if day_changed {
+                        let bedded: HashSet<common::uid::Uid> =
+                            board.beds.values().filter_map(|b| b.owner).collect();
+                        let mut slept_rough = 0u32;
+                        for (_, e, u, p) in
+                            (&colonists, &entities, &uids, &positions).join()
+                        {
+                            if !bedded.contains(u)
+                                && let Some(re) = rtsim_entities.get(e)
+                            {
+                                board.pending_thoughts.push((
+                                    *re,
+                                    p.0.map(|v| v.floor() as i32),
+                                    ::rtsim::data::ChronicleKind::SleptOnGround,
+                                ));
+                                slept_rough += 1;
+                            }
+                        }
+                        if slept_rough > 0 {
+                            info!(
+                                day = today,
+                                slept_rough,
+                                bedded = bedded.len(),
+                                "bastion: SLEPT ON THE GROUND — colonists with no bed of                                  their own today; a mood term, not a refusal (Ben's ruling)"
+                            );
+                        }
+                    }
                     // Recomputed here, NOT reused from the assigner's own
                     // view: the move-out pass above mutates bed owners
                     // after `derive_households` ran, and a stale view
@@ -22498,17 +22557,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // Would the winning pair have anywhere to live? A
                         // courtship that provably cannot end in a shared
                         // home should not begin.
-                        let best_home = unions.first().and_then(|(i, j, _)| {
+                        // ★ BEN'S RULING, 2026-09-01: spouses SHARE a bed. The
+                        // old rule demanded a FREE second bed in the host's
+                        // house and refused `no_home` when there was none —
+                        // 69 interested pairs refused every day for 86 game
+                        // days in his world. The host's own bed IS the home;
+                        // a free bed is preferred for the mover if one exists.
+                        let best_home = unions.first().map(|(i, j, _)| {
                             let (a, b) = (&cands[*i], &cands[*j]);
                             free_bed_in_house(&board.beds, &bed_house, a.bed, b.bed)
                                 .or_else(|| {
-                                    free_bed_in_house(
-                                        &board.beds,
-                                        &bed_house,
-                                        b.bed,
-                                        a.bed,
-                                    )
+                                    free_bed_in_house(&board.beds, &bed_house, b.bed, a.bed)
                                 })
+                                .unwrap_or(a.bed)
                         });
                         let cverdict = courtship_verdict(
                             courtship_on,
@@ -47128,6 +47189,39 @@ mod tests {
         );
     }
 
+    /// ★ BEN'S RULING, 2026-09-01: houses hold families, friends, farm
+    /// hands; the unit is the BED; spouses share one; no bed is a MOOD
+    /// penalty, never a refusal. These pins guard the three places the OLD
+    /// "one colonist per house" rule lived in this file.
+    #[test]
+    fn a_house_holds_more_than_one_and_crowded_means_more_than_the_beds() {
+        // C4: crowded = members > household_room(beds, couples).
+        // Two beds, a couple and their child: room = capacity(2)+1 = 3, so
+        // three members is NOT crowded.
+        assert_eq!(household_room(2, 1), 3, "a couple shares, so 2 beds room 3");
+        assert!(3u32 <= household_room(2, 1), "couple + child in a 2-bed house is not crowded");
+        // Two beds, three unrelated adults: room = 2, so three IS crowded.
+        assert!(3u32 > household_room(2, 0), "three strangers in a 2-bed house are crowded");
+        // Four beds, four friends, no couples: exactly full, not crowded.
+        assert!(4u32 <= household_room(4, 0), "four friends in a 4-bed house are fine");
+    }
+
+    #[test]
+    fn courtship_no_longer_needs_a_free_second_bed() {
+        // C3: `best_has_home` is now true whenever the host has a bed at
+        // all (spouses share), so `no_home` is unreachable for any pair of
+        // bed-holders. The verdict fn itself is unchanged; the CALL SITE
+        // passes `true` where it used to pass "a free bed exists". Pin the
+        // fn's behaviour on both inputs so the site's intent is legible:
+        let with_home = courtship_verdict(true, 5, Some(4), 6, 12, 3, true);
+        assert!(with_home.fired, "a bed-holding host courts: {}", with_home.deciding);
+        let without = courtship_verdict(true, 5, Some(4), 6, 12, 3, false);
+        assert_eq!(without.deciding, "no_home", "the fn still refuses if told there is no home");
+        // The old rule's assertion is quoted for history and must now be
+        // FALSE at the call site: a pair whose host house has no FREE bed
+        // still courts, because they will share.
+    }
+
     #[test]
     fn off_grade_keeps_the_real_rescues_and_drops_the_indoor_ones() {
         // Pin 1, MUST STAY ARMED. Real fire, uid=318136: standing at z=186 on
@@ -51224,14 +51318,31 @@ mod tests {
                 .map(|u| common::uid::Uid(NonZeroU64::new(u).expect("nonzero")))
                 .collect(),
         };
-        // THE EQUATION: a house with beds is a seat at the table; a region
-        // with none houses nobody.
+        // THE EQUATION, as RULED 2026-09-01 (Ben): a BED is a seat at the
+        // table; a region with none houses nobody. The old assertion here
+        // was `== 2` — "houses WITH BEDS, not regions", one seat per house —
+        // and is quoted so the reversal is visible. 2 + 1 + 0 beds = 3.
         assert_eq!(
             immigration_target_pop(&[house(2, vec![7]), house(1, vec![]), house(0, vec![])]),
-            2,
-            "target population is houses WITH BEDS, not regions"
+            3,
+            "target population is the SUM OF BEDS, not the count of houses"
         );
         assert_eq!(immigration_target_pop(&[]), 0);
+        // ★ BEN'S RULING, 2026-09-01: the unit is the BED. Three houses with
+        // 2, 3 and 1 beds target SIX, not three. Under the old rule this
+        // read 3 — which is why a 38-house / 76-bed village adopted eight.
+        let hv = |beds: u32| HouseholdView {
+            min: Vec3::zero(),
+            max: Vec3::zero(),
+            beds,
+            members: Vec::new(),
+        };
+        assert_eq!(
+            immigration_target_pop(&[hv(2), hv(3), hv(1)]),
+            6,
+            "a house with four beds must target four, not one"
+        );
+        assert_eq!(immigration_target_pop(&[hv(0), hv(0)]), 0, "a bedless house targets nobody");
 
         let vacant = vec![Vec3::new(10, 10, 5), Vec3::new(2, 2, 5)];
         let mut sorted = vacant.clone();

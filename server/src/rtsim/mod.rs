@@ -292,8 +292,31 @@ pub(crate) fn bastion_demote_is_ringing(previous_demote_tick: Option<u64>, now: 
 /// a colony of zero is not a colony, and retuning that floor is the DECISIONS
 /// log's row, not this one.
 pub(crate) fn bastion_housing_cap(wanted: usize, houses: usize) -> usize {
-    wanted.min(houses.max(1))
+    // ★ BEN'S RULING, 2026-09-01, superseding "one colonist per house":
+    // "we can have more than 1 colonist per house — families, friends, farm
+    // hands." The unit is the BED. Beds are not registered at founding
+    // (`adopt_beds_surface` needs loaded terrain), so the honest estimate is
+    // the plot count times worldgen's bed count per house, which every
+    // logged adoption reports as `adopted_beds=2`. FALLBACK IS IDENTITY at
+    // BEDS_PER_HOUSE_AT_FOUNDING == 1.
+    //
+    // His flat-map village: 83 residents, 38 houses, 76 beds. The old cap
+    // allowed 38 (and the harness asked for 8); this allows 76.
+    //
+    // The zero-house floor stays exactly ONE: "a colony of zero is not a
+    // colony" was always a floor of one settler, and multiplying it by the
+    // bed count would have made it two — the idempotence pin caught that.
+    if houses == 0 {
+        wanted.min(1)
+    } else {
+        wanted.min(houses * BEDS_PER_HOUSE_AT_FOUNDING)
+    }
 }
+
+/// Worldgen beds per house plot, as every logged `ADOPT-IN-PLACE` reports
+/// (`adopted_beds=2 each`). The founding-time stand-in for the registered
+/// bed count, which does not exist until the town's chunks load.
+pub(crate) const BEDS_PER_HOUSE_AT_FOUNDING: usize = 2;
 
 /// How far a resident is from the nearest house of the town being adopted, as
 /// an INTEGER squared block distance. `i64::MAX` when the town resolved no
@@ -2274,16 +2297,17 @@ mod bastion_adoption_cap_pins {
         //
         // Take the env cap off and the two separate. One colonist per HOUSE is
         // the ruling, and it is a bound on the cap for every env count:
-        let houses_denom = bastion_housing_cap(usize::MAX, HOUSES) as u32;
+        // ★ RULING CHANGED 2026-09-01 (Ben): the unit is the BED, not the
+        // house. The old assertion here read "with no env bound the cap must
+        // be one colonist per house, not per bed slot" — now the WRONG
+        // answer, quoted so the reversal is visible.
+        let beds_denom = bastion_housing_cap(usize::MAX, HOUSES) as u32;
         assert_eq!(
-            houses_denom, HOUSES as u32,
-            "with no env bound the cap must be one colonist per house, not per bed slot"
+            beds_denom,
+            HOUSES as u32 * BEDS_PER_HOUSE_AT_FOUNDING as u32,
+            "with no env bound the cap is one colonist per BED"
         );
-        assert!(
-            houses_denom < HOUSES as u32 * SLOTS_PER_HOUSE,
-            "the bed-slot denominator would seat {} in {HOUSES} houses",
-            HOUSES as u32 * SLOTS_PER_HOUSE
-        );
+        assert!(beds_denom > HOUSES as u32, "a house holds more than one");
         // That is what it would cost, in the witnesses' own terms: with the
         // slot denominator every house is full, so courtship's
         // free_bed_in_house cannot resolve for ANY pair, and the roster sits
@@ -2291,7 +2315,11 @@ mod bastion_adoption_cap_pins {
         let slots_denom = HOUSES as u32 * SLOTS_PER_HOUSE;
         assert!(slots_denom.div_ceil(HOUSES as u32) >= SLOTS_PER_HOUSE);
         assert!(slots_denom > TARGET_POP);
-        assert!(houses_denom.div_ceil(HOUSES as u32) < SLOTS_PER_HOUSE);
+        // ★ RULING CHANGED 2026-09-01: the old line asserted a FREE slot per
+        // house (`div_ceil < SLOTS_PER_HOUSE`) so courtship's
+        // free_bed_in_house could resolve. Spouses now SHARE a bed, so every
+        // bed may be seated and courtship needs no free slot.
+        assert_eq!(beds_denom.div_ceil(HOUSES as u32), SLOTS_PER_HOUSE, "every bed seated");
     }
 
     /// ★ THE HEADROOM IS THE ENV COUNT'S, NOT THE DENOMINATOR'S — stated
@@ -2325,16 +2353,19 @@ mod bastion_adoption_cap_pins {
 
         let houses = 3usize;
         let beds = houses as u32 * SLOTS_PER_HOUSE;
+        // ★ RULING CHANGED 2026-09-01: three houses at two beds seat SIX; the
+        // env count of 8 binds above that, so the cap is 6.
         let pop = bastion_housing_cap(ENV_WANTED, houses) as u32;
-        assert_eq!(pop, 3, "housing binds below the env count here");
+        assert_eq!(pop, 6, "housing binds by BEDS below the env count here");
 
         // The gate this row is about is still reached, robustly.
         let (drive, term, _) = colony_drive_for(FOOD_PER_CAP, 0, beds, pop, ColonyDrive::Grow);
         assert_eq!((drive, term), (ColonyDrive::Expand, "satisfied"));
-        // Courtship still fires: one per house, two slots each.
-        assert!(pop.div_ceil(houses as u32) < SLOTS_PER_HOUSE);
+        // ★ RULING CHANGED 2026-09-01: the old line asserted a free slot per
+        // house so courtship could resolve. Spouses share; every bed seated.
+        assert_eq!(pop.div_ceil(houses as u32), SLOTS_PER_HOUSE, "every bed seated");
         // The roster arms sit exactly AT the ceiling — refusing, correctly.
-        assert_eq!(pop, houses as u32, "one colonist per house IS the ceiling here");
+        assert_eq!(pop, beds, "one colonist per BED is the ceiling here (Ben, 2026-09-01)");
     }
 
     /// PRODUCTION LINE GUARDED: `wanted.min(houses.max(1))` in
@@ -2353,11 +2384,16 @@ mod bastion_adoption_cap_pins {
                      the adoption path are two producers of one number"
                 );
                 assert!(c <= w, "w={w} h={h}: the env count stays an upper bound");
-                assert!(c <= h.max(1), "w={w} h={h}: housing is the denominator");
+                // ★ RULING CHANGED 2026-09-01: the denominator is BEDS —
+                // houses times worldgen's beds per house — with the
+                // zero-house floor of ONE kept exactly as shipped.
+                let ceiling = if h == 0 { 1 } else { h * BEDS_PER_HOUSE_AT_FOUNDING };
+                assert!(c <= ceiling, "w={w} h={h}: beds are the denominator");
             }
         }
         assert_eq!(bastion_housing_cap(ENV_WANTED, HOUSES), 8, "the owner's town");
-        assert_eq!(bastion_housing_cap(8, 3), 3, "three houses, three colonists");
+        // ★ RULING CHANGED 2026-09-01: three houses at two beds each seat six.
+        assert_eq!(bastion_housing_cap(8, 3), 6, "three houses, six beds, six colonists");
         assert_eq!(
             bastion_housing_cap(8, 0),
             1,
@@ -2433,7 +2469,9 @@ mod bastion_adoption_cap_pins {
             bastion_housing_cap(uncapped_want, HOUSES),
         )
         .len();
-        assert_eq!(adopted, HOUSES);
+        // ★ RULING CHANGED 2026-09-01: the cap seats one per BED, so ten
+        // houses adopt twenty. The old line read `assert_eq!(adopted, HOUSES)`.
+        assert_eq!(adopted, HOUSES * BEDS_PER_HOUSE_AT_FOUNDING);
         assert_eq!(
             bastion_settle_plan_capped(adopted, uncapped_want, HOUSES),
             Vec::<usize>::new(),

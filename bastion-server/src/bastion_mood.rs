@@ -307,6 +307,13 @@ mod stack_cap_tests {
         let table2 = ThoughtTable {
             thoughts: [
                 (ChronicleKind::SleptInBed, (0.08f32, 86_400.0f64)),
+                // ★ BEN'S RULING, 2026-09-01: a colonist with no bed is
+                // ALLOWED ("it's only what they have") and takes a MOOD
+                // penalty — a modifier, never a refusal. `SleptOnGround`
+                // already existed as a kind with NO term in this table, so
+                // the ground gave no mood at all; the magnitude mirrors
+                // SleptInBed's and is Ben's number to move.
+                (ChronicleKind::SleptOnGround, (-0.08f32, 86_400.0f64)),
                 (ChronicleKind::Death, (-0.15f32, 172_800.0f64)),
             ]
             .into_iter()
