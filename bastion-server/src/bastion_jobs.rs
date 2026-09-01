@@ -1278,6 +1278,27 @@ pub static CHASER_GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
 /// pathing on relief, which is the defect this fix addresses -- so the gate
 /// is now a candidate to relax, but NOT on this evidence alone.
 ///
+/// ★ THE RESIDUAL AFTER `lift_over_ground` IS A DIFFERENT DEFECT
+/// (2026-09-01). Matched arm, post-routing, 9 embeds at 2.6 per 10k:
+///     writer_site="chaser-pure-glide"  9 of 9
+///     route_prev_solid = TRUE          8 of 9   <- SOLID waypoints again
+///     locations                        9 distinct cells, ONE each
+///     segment |dz|                     mean 0.8, max 3   (gentle)
+/// That is the ORIGINAL signature — a waypoint inside rock — which the
+/// column-height fix removed, and against the measured 12% base rate for
+/// `route_prev_solid` it is the same enrichment. But it is now SCATTERED
+/// (no cell repeats) and the segments are gentle, so it is not the tail of
+/// the concentrated defect below; it is a new row.
+///
+/// UNTESTED HYPOTHESIS, recorded as a hypothesis: this arm BUILDS HOUSES, so
+/// terrain changes under routes computed before the build, and a waypoint
+/// standing on ground that later becomes a wall is solid through no fault of
+/// the router. `path_cache` is only invalidated on target drift (>3 cells),
+/// never on terrain change. DO NOT act on that without measuring — three
+/// hypotheses on the previous residual were built and two reverted, and the
+/// one that worked came from reading the geometry, not from reasoning.
+/// The measurement is cheap: stamp routes with a build counter and compare.
+///
 /// ★ AND THE RESIDUAL IS NOW ONE CELL (2026-09-01). A second post-fix arm
 /// reads 82 embeds at tick 72,300 (11.3 per 10k) against the 0.7 per 10k of
 /// the matched arm — SAME binary, and per-colonist normalisation does not
