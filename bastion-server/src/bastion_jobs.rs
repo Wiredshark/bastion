@@ -11714,6 +11714,12 @@ pub struct JobBoard {
     /// founding. None = fall back to the first stockpile (autofound camps,
     /// pre-anchor saves). Session state.
     pub gathering_anchor: Option<Vec3<i32>>,
+    /// bastion (2026-08-31): the day the housing gate fired, awaiting a site.
+    /// The DECISION is made at the daily gate where roster/houses/vacant are
+    /// known; the SITE is picked where terrain is readable. Same
+    /// producer/drain split ROW 38 uses for births, and for the same reason:
+    /// each half runs where the world it needs is legible.
+    pub pending_house: Option<i64>,
     /// ★ ALARM v1 (Ben: "a method for colonists to sound a alarm and base
     /// that on sound distance radius"): the live cry, `(where, until)`.
     /// Raised at the colony's Defend transition from the first perceiver's
@@ -19689,6 +19695,101 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 .count();
             let mut build_budget =
                 (queue_snapshot.len() * BUILD_GEN_JOBS_PER_COLONIST).saturating_sub(pending_build);
+            // ── THE HOUSE THE TOWN ASKED FOR ───────────────────────
+            // Drain of `pending_house`, set by the daily HOUSING BUILD gate.
+            // The DECISION was made where roster/houses/vacant are legible;
+            // the SITE is picked here, where terrain is.
+            //
+            // Housing does NOT need `queue_build_plan`. A completed
+            // `DesignationKind::Bed` job already registers its slot
+            // ("bastion: bed registered (built)") and `derive_households`
+            // counts Bed REGIONS as households — so placing a Bed
+            // designation on open ground mints a job through the proven
+            // pipeline, a colonist builds it against BUILD_MATERIAL_ITEM,
+            // and `houses` grows. Reusing that path beats inventing a second
+            // one; a second placement path silently lacking what the first
+            // had is a defect this file has already paid for once.
+            if board.pending_house.is_some()
+                && let Some(anchor) = board.gathering_anchor
+            {
+                // Ring outward from the town centre. Deterministic order —
+                // no HashMap iteration, no rng — so the same town always
+                // builds in the same place. F4 is the risk here: a house in
+                // the plaza or on a farm looks worse to a flyover than no
+                // house at all, so the site must be OUTSIDE every existing
+                // designation and off the roads.
+                let mut placed = None;
+                'ring: for r in 4..=16i32 {
+                    for dx in -r..=r {
+                        for dy in -r..=r {
+                            if dx.abs().max(dy.abs()) != r {
+                                continue;
+                            }
+                            let c = Vec2::new(anchor.x + dx, anchor.y + dy);
+                            if board.road_cells.contains(&c)
+                                || board.built_xy.contains(&c)
+                            {
+                                continue;
+                            }
+                            let Some(sz) = column_surface_z(&terrain, c.x, c.y, anchor.z + 32)
+                            else {
+                                continue;
+                            };
+                            let cell = Vec3::new(c.x, c.y, sz + 1);
+                            // Never inside an existing designation: not the
+                            // plaza, not a farm, not another house.
+                            if board
+                                .designated
+                                .iter()
+                                .any(|(reg, _)| reg.contains_point(cell))
+                            {
+                                continue;
+                            }
+                            // Standable and open overhead.
+                            let solid = |q: Vec3<i32>| {
+                                terrain.get(q).is_ok_and(|b| b.is_solid())
+                            };
+                            if solid(cell)
+                                || solid(cell + Vec3::unit_z())
+                                || !solid(cell - Vec3::unit_z())
+                            {
+                                continue;
+                            }
+                            placed = Some(c);
+                            break 'ring;
+                        }
+                    }
+                }
+                match placed {
+                    Some(c) => {
+                        let jobs = board.place_designation_surface(
+                            &terrain,
+                            c,
+                            c,
+                            anchor.z,
+                            common::bastion::ZExtent::default_for(
+                                DesignationKind::Bed,
+                            ),
+                            DesignationKind::Bed,
+                        );
+                        info!(
+                            at = ?c,
+                            jobs = jobs.len(),
+                            day = board.pending_house,
+                            "bastion: ★ THE TOWN BUILDS A HOUSE — a bed is designated on                              open ground; population is what its houses allow, and the town                              can now add one"
+                        );
+                        board.pending_house = None;
+                    },
+                    None => {
+                        // Named, not silent. A refusal that cannot say why
+                        // is indistinguishable from a lane that never ran.
+                        info!(
+                            ?anchor,
+                            "bastion: HOUSE SITE REFUSED — no open, unclaimed, standable                              cell within 16 of the town centre; the intent is kept and                              retried next tick"
+                        );
+                    },
+                }
+            }
             for (zid, cells) in board.plans.iter() {
                 let mut unfilled = 0usize;
                 for pos in cells {
@@ -21573,6 +21674,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             today,
                             None,
                         );
+                        if bv.fired && board.pending_house.is_none() {
+                            board.pending_house = Some(today);
+                        }
                         info!(
                             would_fire = bv.fired,
                             deciding = bv.deciding,
