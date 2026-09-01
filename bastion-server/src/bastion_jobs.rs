@@ -1278,6 +1278,22 @@ pub static CHASER_GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
 /// pathing on relief, which is the defect this fix addresses -- so the gate
 /// is now a candidate to relax, but NOT on this evidence alone.
 ///
+/// ★ AND THE RESIDUAL IS NOW ONE CELL (2026-09-01). A second post-fix arm
+/// reads 82 embeds at tick 72,300 (11.3 per 10k) against the 0.7 per 10k of
+/// the matched arm — SAME binary, and per-colonist normalisation does not
+/// explain it (2.06 vs 0.19 per 10k per colonist). The explanation is
+/// concentration: **80 of those 82 are at ONE cell**, (15165, 15934), and
+/// the signature is unchanged (`chaser-pure-glide` 82 of 82,
+/// `route_prev_solid=false` 81 of 82 — waypoints valid, line through rock).
+///
+/// So the headline -92% describes the GENERAL case honestly, and the
+/// absolute residual is arm-dependent because it is a handful of specific
+/// bad cells rather than a rate. The next row is that cell: dump the terrain
+/// profile around a repeat-offender cell rather than reasoning about the
+/// router again. Note the earlier hotspot finding this rhymes with — 60% of
+/// the ORIGINAL 63,445 embeds sat at ten cells, and that was the shape all
+/// along.
+///
 /// ★ THE RESIDUAL IS A CLIFF, NOT A SAMPLING GAP (2026-09-01, FAILED ROW
 /// RECORDED SO IT IS NOT RETRIED). After this fix the real-terrain residual
 /// is 8.6 embeds per 10k, fully attributed: `writer_site=chaser-pure-glide`
