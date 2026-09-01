@@ -3373,6 +3373,26 @@ pub(crate) struct ImmigrationVerdict {
 /// this failure: a job minted against stock that is not in a stockpile can be
 /// claimed and never fetched, and it blocks a one-at-a-time lane forever.
 ///
+/// ★★ H3 OBSERVED — THE TOWN GREW BECAUSE IT BUILT (2026-09-01). An ADOPTED
+/// real-terrain town, capped one-per-house at founding (roster 4, houses 4,
+/// vacant 0) — the exact configuration that refused `no_home` in the owner's
+/// world for 86 game days:
+///     HOUSING BUILD   fire=true  roster=4 houses=4 vacant=0 stone=192
+///     ★ THE TOWN BUILDS A HOUSE
+///     HOUSING GROWTH  fired=FALSE roster=4 target=4 vacant=0   (before)
+///     HOUSING GROWTH  fired=TRUE  roster=4 target=5 vacant=1   (after)
+///     roster 4 -> 5, held across 25,500 ticks
+///     HOUSEHOLDS houses=5 occupied=4 vacant=1; embeds 0; residual 0
+/// The gate's own before/after inside ONE day is the evidence: the build
+/// raised `target_pop` and opened the vacancy that immigration had been
+/// refusing on. POPULATION EXCEEDED THE FOUNDING HOUSE COUNT — the charter's
+/// GROW horizon, observed rather than argued.
+///
+/// Note the arithmetic this makes plain: `immigration_target_pop` tracks
+/// HOUSES, and adoption sets roster = houses, so an adopted town refuses
+/// `roster_at_target` FOREVER until it builds. Growth was not merely slow
+/// before this row; it was unreachable by construction.
+///
 /// ★ EVIDENCED END TO END (2026-09-01), flat-arena founded colony, 8
 /// colonists in 1 house:
 ///   day=0  fire=false  stone=4   "materials_not_stockpiled"
