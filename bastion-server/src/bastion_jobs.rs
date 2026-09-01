@@ -3270,6 +3270,21 @@ pub(crate) struct ImmigrationVerdict {
 /// this failure: a job minted against stock that is not in a stockpile can be
 /// claimed and never fetched, and it blocks a one-at-a-time lane forever.
 ///
+/// ★ EVIDENCED END TO END (2026-09-01), flat-arena founded colony, 8
+/// colonists in 1 house:
+///   day=0  fire=false  stone=4   "materials_not_stockpiled"
+///   day=1  fire=false  stone=8   "materials_not_stockpiled"
+///   day=2  fire=TRUE   stone=40  "the town needs another roof"
+///   ★ THE TOWN BUILDS A HOUSE  at=(16377,16377,400)  jobs=1
+///   bastion: bed registered (built) pos=(16377,16377,400)
+///   HOUSEHOLDS  houses=1 -> houses=2  occupied=1  VACANT=1
+/// The colony asked for a house, placed it, hauled stone to it, built it,
+/// and its household count rose. `vacant=1` is the number that matters:
+/// a free roof is what `courtship_verdict` refuses on as `no_home` and what
+/// `immigration_verdict` needs to fire, so this is the GROW horizon opening
+/// for the first time. Before this, houses could only ever arrive with an
+/// adopted village.
+///
 /// Deliberately NOT gated on `drive == Expand`. That gate is what deadlocked
 /// the owner's town: the drive sits at Grow precisely while `beds < pop`, so
 /// requiring Expand would refuse to build exactly when housing is short --
