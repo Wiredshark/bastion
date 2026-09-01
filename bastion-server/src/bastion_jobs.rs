@@ -1264,6 +1264,19 @@ pub static GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
 pub static CHASER_GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// ★★ REPLICATED (2026-09-01) — and the replication CORRECTED my own
+/// precision while confirming the effect. Single runs of this measurement
+/// vary by 25x, so no one figure is the level:
+///     PRE-ROUTING    96.2, 134.8 per 10k                    (n=2)
+///     POST-ROUTING    0.4, 2.5, 8.7, 10.0 per 10k           (n=4)
+/// The RANGES DO NOT OVERLAP — every pre-run above 96, every post-run below
+/// 10 — which is stronger evidence than any single ratio, and it is the
+/// honest way to state it: roughly 115 -> 5.4, about -95%.
+///
+/// I had quoted "0.4 per 10k" and "-97%" from SINGLE runs. Both were draws
+/// from a wide distribution presented as the level. The standing law says
+/// three replicates or nothing, and running them is what caught it.
+///
 /// ★ MEASURED ON REAL TERRAIN TOO (2026-09-01). The original -69% came from
 /// a two-grade FLAT world, which is relief enough to trip the defect but not
 /// a mountain. A matched A/B on a genuine relief site (`chosen_flat=false`,
