@@ -543,6 +543,21 @@ impl Route {
     }
 }
 
+/// ★ bastion W3: the search tier a NEW target starts at, by straight-line
+/// distance. Short trips keep the cheap tier (500 iterations); a town
+/// crossing starts at Medium (5,000); a far one at Long (25,000). The
+/// ladder still escalates from the start tier for a target that keeps
+/// failing, and Longest stays the cap.
+pub fn initial_path_length_for(distance: f32) -> PathLength {
+    if distance > 60.0 {
+        PathLength::Long
+    } else if distance > 30.0 {
+        PathLength::Medium
+    } else {
+        PathLength::Small
+    }
+}
+
 #[derive(Default, Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 /// How long the path we're trying to compute should be.
 pub enum PathLength {
@@ -934,7 +949,14 @@ impl Chaser {
             // running on Exhausted partial-path fallback. Retargeting resets
             // the tier along with the search: the ladder still climbs for a
             // target that keeps failing, and only for that target.
-            self.path_length = PathLength::default();
+            //
+            // ★ A FAR TARGET STARTS AT A FAR TIER (bastion W3, 2026-09-02):
+            // a trip re-aimed at a new item or cell on every attempt never
+            // climbs the ladder, so nine hauls stood inside a barn at its
+            // north wall on 500-iteration searches toward items 40-60
+            // blocks away. The start scales with the distance; the ladder
+            // climbs from there.
+            self.path_length = initial_path_length_for(tgt.distance(pos));
         }
         // bastion ledger #178: profile invalidation moved to
         // [`Self::invalidate_on_profile_flip`], which both entries call

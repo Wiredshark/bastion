@@ -50434,6 +50434,20 @@ mod tests {
         assert!(!famine_closes_the_gate(0, 0), "an empty town is never in famine");
     }
 
+    /// ★ W3 pinned: the start tier by distance -- 30 blocks and under is
+    /// Small, 31-60 Medium, over 60 Long; never Longest at the start.
+    /// Planted defect: a flat Small start makes the second assert red.
+    #[test]
+    fn a_far_target_starts_at_a_far_tier() {
+        use common::path::{initial_path_length_for, PathLength as L};
+        assert_eq!(initial_path_length_for(0.0), L::Small);
+        assert_eq!(initial_path_length_for(30.0), L::Small);
+        assert_eq!(initial_path_length_for(31.0), L::Medium);
+        assert_eq!(initial_path_length_for(60.0), L::Medium);
+        assert_eq!(initial_path_length_for(61.0), L::Long);
+        assert_eq!(initial_path_length_for(500.0), L::Long, "never Longest at the start");
+    }
+
     #[test]
     fn a_trunk_waypoint_takes_its_own_columns_height() {
         // The two grades of the measured town. A tile whose ground is at 185
