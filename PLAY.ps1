@@ -49,7 +49,10 @@ param(
     # flattown: chosen_houses=58 flat=true alt_range=0.0, wanted=48 -> 48 settled
     # (the village had no villagers of its own), target_pop=114 (sum of beds),
     # one settler sent for by tick 2,000. That is ONE MINUTE of run.
-    [switch]$NoWait
+    [switch]$NoWait,
+    # Run from a COPY of the pair (e.g. arm-bin) so a long headless arm does not
+    # hold lab-bin's exes open and block the next ship.
+    [string]$BinDir
 )
 
 $ErrorActionPreference = 'Stop'
@@ -330,6 +333,8 @@ if ($NoRaids) { $EnvVars['BASTION_NO_RAIDS'] = '1' }
 # -Pick is the DEFAULT now (see the town block); kept as an accepted switch so
 # an old command line still does exactly what it always did.
 if ($Pick) { $EnvVars['BASTION_ADOPT_WAIT_FOR_MARKER'] = '1' }
+
+if ($BinDir) { $Bin = $BinDir; Write-Host "USING -BinDir $Bin" }
 
 # Fresh userdata, so a test is never confused by a previous colony.
 if (Test-Path $UD) { Remove-Item $UD -Recurse -Force }
