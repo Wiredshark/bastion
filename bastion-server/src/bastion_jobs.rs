@@ -22142,6 +22142,58 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         board.assignments = next;
                         board.assignments_rev += 1;
                     }
+                    // ★ STORAGE CENSUS (Ben, live 2026-09-01: "they stockpile in
+                    // their houses on one little shelf; general stores vs
+                    // private property; spread it out"). Instrument only:
+                    // per stockpile zone, whether it lies inside a house (a
+                    // Bed region -> private) or not (general), its cells, the
+                    // units on the ground inside it, and the most units on
+                    // any one cell. Baseline before S1-S3 (PREREG-storage).
+                    {
+                        let mut general = (0u32, 0u32, 0u32);
+                        let mut private = (0u32, 0u32, 0u32);
+                        for (z, r) in board.stockpiles.iter() {
+                            let cells = ((r.max.x - r.min.x + 1) * (r.max.y - r.min.y + 1)).max(1) as u32;
+                            let mut per_cell: HashMap<(i32, i32), u32> = HashMap::new();
+                            for (pi, ipos) in (&pickup_items, &positions).join() {
+                                let c = ipos.0.map(|e| e.floor() as i32);
+                                if r.contains_point_xy(c) && c.z >= r.min.z - 2 && c.z <= r.max.z + 3 {
+                                    *per_cell.entry((c.x, c.y)).or_insert(0) += pi.item().amount() as u32;
+                                }
+                            }
+                            let units: u32 = per_cell.values().sum();
+                            let max_cell = per_cell.values().copied().max().unwrap_or(0);
+                            let inside_house = board
+                                .designated
+                                .iter()
+                                .any(|(hr, k)| matches!(k, DesignationKind::Bed) && hr.contains_point_xy(r.min));
+                            let kind = if inside_house { "private" } else { "general" };
+                            let t = if inside_house { &mut private } else { &mut general };
+                            t.0 += 1;
+                            t.1 += units;
+                            t.2 = t.2.max(max_cell);
+                            info!(
+                                day = today,
+                                zone = z,
+                                kind,
+                                cells,
+                                units,
+                                max_units_on_one_cell = max_cell,
+                                cells_used = per_cell.len(),
+                                "bastion: STORAGE CENSUS — one stockpile zone, what it holds and how it is spread"
+                            );
+                        }
+                        info!(
+                            day = today,
+                            general_zones = general.0,
+                            general_units = general.1,
+                            general_max_cell = general.2,
+                            private_zones = private.0,
+                            private_units = private.1,
+                            private_max_cell = private.2,
+                            "bastion: STORAGE SUMMARY — general stores vs private shelves (Ben)"
+                        );
+                    }
                     // ★ JOB SEQUENCE CENSUS -- Ben's "job, haul, job, haul"
                     // as a number, per lane per day. `haul_share_pct` is by
                     // CLAIM COUNT (an errand tally, not hours: row 48's
