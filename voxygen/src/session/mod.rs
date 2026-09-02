@@ -785,6 +785,7 @@ impl SessionState {
                         RadialAction::Verb(ContextVerb::SetPolicy),
                         RadialAction::Verb(ContextVerb::Embody),
                         RadialAction::Verb(ContextVerb::ForceAction),
+                        RadialAction::Unassign,
                     ],
                 ));
                 return;
@@ -819,6 +820,11 @@ impl SessionState {
                 // Lead position: deleting the zone you clicked is the most
                 // likely intent when a zone is under the cursor.
                 actions.insert(0, RadialAction::DeleteZone);
+            }
+            // ZONE ASSIGNMENT: with a colonist inspected, a click on a zone
+            // offers to assign them there by hand.
+            if let Some(subject) = self.bastion_inspect_sub.subject() {
+                actions.insert(0, RadialAction::AssignInspected(subject));
             }
             for a in [
                 RadialAction::Verb(ContextVerb::Build),
@@ -3892,6 +3898,16 @@ impl PlayState for SessionState {
                                         for r in rects {
                                             client.bastion_cancel_designation(r);
                                         }
+                                    }
+                                },
+                                crate::hud::bastion::RadialAction::AssignInspected(colonist) => {
+                                    if let common::bastion::ContextTarget::Block(block) = target {
+                                        client.bastion_assign(colonist, Some(block));
+                                    }
+                                },
+                                crate::hud::bastion::RadialAction::Unassign => {
+                                    if let common::bastion::ContextTarget::Entity(uid) = target {
+                                        client.bastion_assign(uid, None);
                                     }
                                 },
                             }

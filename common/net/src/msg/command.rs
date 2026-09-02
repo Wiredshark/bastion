@@ -320,7 +320,8 @@ impl CommandParticipantV1 for super::ClientGeneral {
             | C::BastionApplyInfluence { .. }
             | C::BastionContextAction { .. }
             | C::BastionSpawnColony { .. }
-            | C::BastionCancelDesignation { .. } => A::Journaled(K::ControlAction),
+            | C::BastionCancelDesignation { .. }
+            | C::BastionAssign { .. } => A::Journaled(K::ControlAction),
             C::CreateCharacter { .. }
             | C::DeleteCharacter(_)
             | C::EditCharacter { .. }

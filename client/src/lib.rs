@@ -2044,6 +2044,7 @@ impl Client {
                     | ClientGeneral::BastionContextAction { .. }
                     | ClientGeneral::BastionSpawnColony { .. }
                     | ClientGeneral::BastionCancelDesignation { .. }
+                    | ClientGeneral::BastionAssign { .. }
                     | ClientGeneral::BastionInspect { .. }
                     | ClientGeneral::SetBattleMode(_) => {
                         #[cfg(feature = "tracy")]
@@ -2970,6 +2971,12 @@ impl Client {
     /// bastion (B4): cancel designations in a region (releases claims).
     pub fn bastion_cancel_designation(&mut self, region: common::bastion::Region) {
         self.send_msg(ClientGeneral::BastionCancelDesignation { region });
+    }
+
+    /// bastion (ZONE ASSIGNMENT): assign `colonist` by hand to the zone at
+    /// `at`, or erase the manual entry with `None`.
+    pub fn bastion_assign(&mut self, colonist: common::uid::Uid, at: Option<Vec3<i32>>) {
+        self.send_msg(ClientGeneral::BastionAssign { colonist, at });
     }
 
     pub fn start_spectate_entity(&mut self, entity: EcsEntity) {

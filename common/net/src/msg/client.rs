@@ -243,6 +243,14 @@ pub enum ClientGeneral {
     /// echoed verbatim plus the client's own ClientProjection root over
     /// its replicated bench entities. Observational; never run identity.
     RendererBenchProjectionAck(common::renderer_bench::BenchProjectionAckV1),
+    /// bastion (ZONE ASSIGNMENT, Ben 2026-09-01): assign a colonist BY HAND to
+    /// the work zone containing `at` (Manual, survives the daily auto pass);
+    /// LAST in the enum on purpose: appending keeps every older discriminant.
+    /// `at: None` erases the manual entry and returns the colonist to Auto.
+    BastionAssign {
+        colonist: common::uid::Uid,
+        at: Option<Vec3<i32>>,
+    },
 }
 
 impl ClientMsg {
@@ -292,6 +300,7 @@ impl ClientMsg {
                         | ClientGeneral::BastionContextAction { .. }
                         | ClientGeneral::BastionSpawnColony { .. }
                         | ClientGeneral::BastionCancelDesignation { .. }
+                        | ClientGeneral::BastionAssign { .. }
                         | ClientGeneral::BastionInspect { .. }
                         // W3 renderer-bench: in-session only; spectators
                         // (who have presence) are valid bench observers.

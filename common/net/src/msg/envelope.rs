@@ -1074,6 +1074,7 @@ impl SemanticRouteV1 for ClientGeneral {
             | C::BastionContextAction { .. }
             | C::BastionSpawnColony { .. }
             | C::BastionCancelDesignation { .. }
+            | C::BastionAssign { .. }
             | C::BastionInspect { .. }
             | C::SetBattleMode(_) => SemanticStreamIdV1::InGame,
             C::TerrainChunkRequest { .. } | C::LodZoneRequest { .. } => SemanticStreamIdV1::Terrain,

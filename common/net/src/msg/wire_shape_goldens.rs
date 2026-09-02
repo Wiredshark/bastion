@@ -360,6 +360,12 @@ pub const WIRE_SHAPE_GOLDENS: &[WireShapeGoldenV1] = &[
         variant: "BastionCancelDesignation",
         digest_hex: "sha256:744d534cc11ac7ed083f292af2d313ef6987afc9234be0e003375d6b53fb904d",
     },
+    // ZONE ASSIGNMENT (Ben, 2026-09-01): assign a colonist by hand.
+    WireShapeGoldenV1 {
+        payload_schema: "ClientGeneral",
+        variant: "BastionAssign",
+        digest_hex: "sha256:960841eb2edd2cf25d099c3af80f2abea2c8b836d2094ef9fc5be745292ade3d",
+    },
     WireShapeGoldenV1 {
         payload_schema: "ServerGeneral",
         variant: "Notification",
@@ -903,6 +909,13 @@ mod wire_shape_goldens_v1 {
         }
     }
 
+    fn client_bastion_assign() -> ClientGeneral {
+        ClientGeneral::BastionAssign {
+            colonist: uid(7),
+            at: Some(Vec2::new(3, 4).with_z(5)),
+        }
+    }
+
     fn server_notification() -> ServerGeneral {
         ServerGeneral::Notification(crate::msg::Notification::WaypointSaved {
             location_name: "wsg5".to_owned(),
@@ -1341,6 +1354,7 @@ mod wire_shape_goldens_v1 {
             ("ClientGeneral", "BastionCancelDesignation") => {
                 golden_digest_v1(&client_bastion_cancel_designation())
             },
+            ("ClientGeneral", "BastionAssign") => golden_digest_v1(&client_bastion_assign()),
             ("ServerGeneral", "Notification") => golden_digest_v1(&server_notification()),
             ("ServerGeneral", "FinishedTrade") => golden_digest_v1(&server_finished_trade()),
             ("ServerGeneral", "TimeOfDay") => golden_digest_v1(&server_time_of_day()),
@@ -1413,14 +1427,14 @@ mod wire_shape_goldens_v1 {
     #[test]
     fn coverage_is_all_covered() {
         // W3 renderer-bench: +2 ClientGeneral, +1 ServerGeneral.
-        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 92, "the covered set changed");
+        assert_eq!(WIRE_SHAPE_GOLDENS.len(), 93, "the covered set changed");
         assert_eq!(UNCOVERED_CLIENTGENERAL_V1.len(), 0, "WSG-2 closed this at zero");
         assert_eq!(UNCOVERED_SERVERGENERAL_V1.len(), 0, "WSG-2 closed this at zero");
         let covered_client =
             WIRE_SHAPE_GOLDENS.iter().filter(|g| g.payload_schema == "ClientGeneral").count();
         let covered_server =
             WIRE_SHAPE_GOLDENS.iter().filter(|g| g.payload_schema == "ServerGeneral").count();
-        assert_eq!(covered_client, 39, "every ClientGeneral variant must have a golden");
+        assert_eq!(covered_client, 40, "every ClientGeneral variant must have a golden");
         assert_eq!(covered_server, 53, "every ServerGeneral variant must have a golden");
     }
 
@@ -1494,7 +1508,7 @@ mod wire_shape_goldens_v1 {
 
         assert_eq!(
             count_variants("common/net/src/msg/client.rs", "ClientGeneral"),
-            39, // W3 renderer-bench: Ready + ProjectionAck
+            40, // W3 renderer-bench: Ready + ProjectionAck; ZONE ASSIGNMENT: BastionAssign
             "ClientGeneral gained or lost a variant. Add it to WIRE_SHAPE_GOLDENS or to \
              UNCOVERED_CLIENTGENERAL_V1 — a variant in neither is a message whose shape nothing \
              is watching."

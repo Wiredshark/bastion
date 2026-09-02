@@ -19,6 +19,10 @@ pub enum RadialAction {
     /// rects) — never crosses the wire as a verb; the session sends one
     /// `BastionCancelDesignation` per containing rect.
     DeleteZone,
+    /// ZONE ASSIGNMENT: assign the inspected colonist to the zone under the click.
+    AssignInspected(common::uid::Uid),
+    /// ZONE ASSIGNMENT: erase this colonist's manual assignment.
+    Unassign,
 }
 
 impl RadialAction {
@@ -27,6 +31,8 @@ impl RadialAction {
             RadialAction::Verb(v) => v.label(),
             RadialAction::Influence(k) => k.label(),
             RadialAction::DeleteZone => "Delete zone",
+            RadialAction::AssignInspected(_) => "Assign inspected colonist here",
+            RadialAction::Unassign => "Unassign (back to auto)",
         }
     }
 
@@ -36,6 +42,7 @@ impl RadialAction {
             RadialAction::Verb(v) => v.stubbed(),
             RadialAction::Influence(_) => false,
             RadialAction::DeleteZone => false,
+            RadialAction::AssignInspected(_) | RadialAction::Unassign => false,
         }
     }
 }

@@ -133,6 +133,8 @@ impl Sys {
         // drain (the bastion_spawn deferral pattern; the payload sources —
         // JobBoard, item entities, terrain — can't be read in-join).
         bastion_inspects: &mut Vec<common::comp::bastion::BastionInspectTarget>,
+        // ZONE ASSIGNMENT by hand: (colonist, Some(cell) | None = erase).
+        bastion_assigns: &mut Vec<(common::uid::Uid, Option<Vec3<i32>>)>,
         world: &Arc<World>,
         index: &IndexOwned,
         controller: Option<&mut Controller>,
@@ -599,6 +601,9 @@ impl Sys {
                     common::comp::Content::Plain("Designations cancelled.".to_string()),
                 ))?;
             },
+            ClientGeneral::BastionAssign { colonist, at } => {
+                bastion_assigns.push((colonist, at));
+            },
             ClientGeneral::BastionInspect { target } => {
                 // bastion (UI-4): deferred to the post-join drain — the
                 // reply needs storages the par_join must not touch.
@@ -1024,6 +1029,7 @@ impl<'a> System<'a> for Sys {
                     let mut bastion_spawn = None;
                     let mut bastion_designations = Vec::new();
                     let mut bastion_inspects = Vec::new();
+                    let mut bastion_assigns = Vec::new();
                     let mut terrain_writes = Vec::new();
                     let mut deferred_events = Vec::new();
                     let _ = super::try_recv_all_dispatch(client, 2, SemanticStreamIdV1::InGame, &semantic_metrics, |client, msg| {
@@ -1046,6 +1052,7 @@ impl<'a> System<'a> for Sys {
                             &mut bastion_spawn,
                             &mut bastion_designations,
                             &mut bastion_inspects,
+                            &mut bastion_assigns,
                             &*world,
                             &*index,
                             controller.as_deref_mut(),
@@ -1219,6 +1226,7 @@ impl<'a> System<'a> for Sys {
                         bastion_spawn,
                         bastion_designations,
                         bastion_inspects_update,
+                        bastion_assigns,
                         terrain_writes,
                         deferred_events,
                     )
@@ -1226,10 +1234,11 @@ impl<'a> System<'a> for Sys {
             )
             // NOTE: Would be nice to combine this with the map_init somehow, but I'm not sure if
             // that's possible.
-            .filter(|(_, x, y, z, w, v, d, i, tw, ev)| {
+            .filter(|(_, x, y, z, w, v, d, i, a, tw, ev)| {
                 x.is_some() || y.is_some() || z.is_some() || w.is_some() || v.is_some()
                     || !d.is_empty()
                     || i.is_some()
+                    || !a.is_empty()
                     || !tw.is_empty()
                     || !ev.is_empty()
             })
@@ -1263,6 +1272,7 @@ impl<'a> System<'a> for Sys {
                 bastion_spawn_update,
                 bastion_designation_updates,
                 bastion_inspects_update,
+                bastion_assign_updates,
                 terrain_writes,
                 deferred_events,
             )| {
@@ -2405,6 +2415,50 @@ impl<'a> System<'a> for Sys {
                             let _ =
                                 client.send(ServerGeneral::BastionInspectInfo { target, payload });
                         }
+                    }
+                }
+                // ★ ZONE ASSIGNMENT BY HAND (Ben, 2026-09-01): the clicked cell
+                // resolves to the farm or stockpile zone containing it (by XY,
+                // the frame the zones are painted in); the entry is Manual and
+                // the daily auto pass leaves it alone. No zone under the cell
+                // is a NAMED refusal, never a guess. `None` erases.
+                for (colonist, at) in bastion_assign_updates.drain(..) {
+                    match at {
+                        Some(cell) => {
+                            let zone = job_board
+                                .farms
+                                .iter()
+                                .chain(job_board.stockpiles.iter())
+                                .find(|(_, r)| r.contains_point_xy(cell))
+                                .map(|(z, _)| *z);
+                            match zone {
+                                Some(z) => {
+                                    job_board.assignments.insert(
+                                        colonist,
+                                        (z, bastion_server::bastion_jobs::AssignSource::Manual),
+                                    );
+                                    tracing::info!(
+                                        colonist = colonist.0.get(),
+                                        zone = z,
+                                        ?cell,
+                                        "bastion: ASSIGNED BY HAND — Manual entry set"
+                                    );
+                                },
+                                None => tracing::info!(
+                                    colonist = colonist.0.get(),
+                                    ?cell,
+                                    "bastion: ASSIGN REFUSED — no farm or stockpile zone contains that cell"
+                                ),
+                            }
+                        },
+                        None => {
+                            let had = job_board.assignments.remove(&colonist).is_some();
+                            tracing::info!(
+                                colonist = colonist.0.get(),
+                                had,
+                                "bastion: ASSIGNMENT ERASED BY HAND — back to Auto at the next daily pass"
+                            );
+                        },
                     }
                 }
                 // bastion (B4): apply deferred designation ops to the board.
