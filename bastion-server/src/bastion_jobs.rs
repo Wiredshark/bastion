@@ -22963,10 +22963,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         for (z, r) in board.stockpiles.iter() {
                             let cells = ((r.max.x - r.min.x + 1) * (r.max.y - r.min.y + 1)).max(1) as u32;
                             let mut per_cell: HashMap<(i32, i32), u32> = HashMap::new();
+                            let mut per_cell_def: HashMap<((i32, i32), String), u32> = HashMap::new();
                             for (pi, ipos) in (&pickup_items, &positions).join() {
                                 let c = ipos.0.map(|e| e.floor() as i32);
                                 if r.contains_point_xy(c) && c.z >= r.min.z - 2 && c.z <= r.max.z + 3 {
                                     *per_cell.entry((c.x, c.y)).or_insert(0) += pi.item().amount() as u32;
+                                    if let Some(d) = pi.item().item_definition_id().itemdef_id() {
+                                        *per_cell_def.entry(((c.x, c.y), d.to_string())).or_insert(0) +=
+                                            pi.item().amount() as u32;
+                                    }
                                 }
                             }
                             let units: u32 = per_cell.values().sum();
@@ -22979,6 +22984,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .map(|((x, y), _)| (*x, *y));
                             let centre_xy = ((r.min.x + r.max.x) / 2, (r.min.y + r.max.y) / 2);
                             let max_at_centre = max_cell_at == Some(centre_xy);
+                            // WHAT the stack is: the heaviest def on the heaviest cell.
+                            let max_cell_def = max_cell_at.and_then(|xy| {
+                                per_cell_def
+                                    .iter()
+                                    .filter(|((c, _), _)| *c == xy)
+                                    .max_by_key(|((_, d), n)| (**n, std::cmp::Reverse(d.clone())))
+                                    .map(|((_, d), n)| format!("{d}x{n}"))
+                            });
                             let inside_house = board
                                 .designated
                                 .iter()
@@ -22997,6 +23010,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 max_units_on_one_cell = max_cell,
                                 max_cell_at = ?max_cell_at,
                                 max_at_centre,
+                                max_cell_def = ?max_cell_def,
                                 cells_used = per_cell.len(),
                                 "bastion: STORAGE CENSUS — one stockpile zone, what it holds and how it is spread"
                             );
