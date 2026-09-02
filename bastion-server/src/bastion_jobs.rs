@@ -43192,6 +43192,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             haul_lane_cap(roster_now),
                         );
                         if !demoted.is_empty() {
+                            // The label alone would not move anyone: a colonist the
+                            // top-up promoted carries in_lane(Haul) priorities. Point
+                            // them at the lane they fall back to.
+                            for (e, u) in (&entities, &uids).join() {
+                                if let Some((_, w)) = demoted.iter().find(|(du, _)| du == u)
+                                    && let Some(mut c) = colonists.get_mut(e)
+                                {
+                                    c.0.work_priorities =
+                                        common::bastion::WorkPriorities::in_lane(*w);
+                                }
+                            }
                             for (u, w) in &demoted {
                                 board.professions.insert(*u, *w);
                                 named.retain(|(nu, ..)| nu != u);
