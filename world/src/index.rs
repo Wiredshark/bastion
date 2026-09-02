@@ -187,6 +187,44 @@ impl IndexOwned {
             index: &self.index,
         }
     }
+
+    /// Mutable access to the index itself, if and only if this `IndexOwned` is
+    /// the sole owner of it.
+    ///
+    /// Everything else here hands out `&Index`, because the index is
+    /// conceptually immutable once the world is generated: it is `Arc`-shared
+    /// with every in-flight chunk job precisely so those jobs can read it from
+    /// worker threads without a lock.
+    ///
+    /// The Bastion colony breaks that assumption in one specific way: as the
+    /// town grows, worldgen lays out a new plot *on the site that is already in
+    /// the index*, so that every later reader — pathfinding, the next plot's
+    /// placement search, the engine's own chunk render — sees the new building.
+    /// Copying the site out, mutating it and putting it back is not an option:
+    /// the copy would be stale the moment any other system touched the
+    /// original, and there is nowhere to "put it back" that the readers share.
+    ///
+    /// So the mutation has to happen in place, and the only safe moment to do
+    /// it is a tick when nothing else holds the `Arc`. `Arc::get_mut` is
+    /// exactly that test, and it is a test rather than a wait *on purpose*: a
+    /// `Some` here is a proof that no chunk job is reading the index right now
+    /// (see `server/src/chunk_generator.rs`, which clones the `IndexOwned` into
+    /// every job it dispatches), and a `None` is a proof that one is.
+    ///
+    /// A caller that gets `None` must **defer, not block and not clone** — the
+    /// colony simply tries again next tick, and the town grows a fraction of a
+    /// second later. Blocking here would stall the tick behind chunk
+    /// generation; cloning would silently throw the mutation away.
+    pub fn try_index_mut(&mut self) -> Option<&mut Index> { Arc::get_mut(&mut self.index) }
+
+    /// How many owners the index `Arc` currently has. `1` means
+    /// [`Self::try_index_mut`] will succeed.
+    ///
+    /// This exists so a refusal can carry its own producer: "the index was
+    /// shared" is not actionable, but "the index was shared by 3" says how many
+    /// chunk jobs were in flight, which is what tells a caller whether it is
+    /// waiting on a momentary blip or on a sustained generation storm.
+    pub fn index_strong_count(&self) -> usize { Arc::strong_count(&self.index) }
 }
 
 pub struct Noise {

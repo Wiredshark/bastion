@@ -33,3 +33,10 @@ enum-map = { workspace = true }
 [dev-dependencies]
 # Test-only: construct ordered NpcId (slotmap) keys for the DET-MOOD-003 fixture.
 slotmap = "1.0"
+# Test-only: `WorldSim::generate` takes a `&rayon::ThreadPool`, and the
+# bastion_growth pins build a real world to grow a town in.
+rayon = { workspace = true }
+# Test-only: install a subscriber so the bastion_growth pins actually SHOW the
+# witness line they claim to emit. Without one, `tracing::info!` is a no-op and
+# a witness nobody has ever seen fire is an unverified instrument.
+tracing-subscriber = { workspace = true }

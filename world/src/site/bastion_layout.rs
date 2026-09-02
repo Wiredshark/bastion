@@ -18,6 +18,30 @@
 //!    primitive/fill tree can be sampled position-by-position with no terrain
 //!    write. This is the same shape `world/benches/site.rs` uses.
 //!
+//! # The two halves, and why they are separate
+//!
+//! On the server the `Site` does not live in a variable the caller owns: it
+//! lives inside the world index, behind `IndexOwned`'s `Arc<Index>`. The only
+//! way to mutate it in place is `Arc::get_mut`, which yields a `&mut Index` —
+//! and from that a `&mut Site`. But the *render* half needs an `IndexRef`,
+//! i.e. a `&Index`, at the same time. Holding both at once is exactly what the
+//! borrow checker forbids, and no amount of cloning the site makes it legal
+//! without also making the mutation invisible to the index.
+//!
+//! So the layout is split at the seam where the two borrows differ:
+//!
+//! - [`place_plot_for_colony`] takes `&mut Site` and **no index at all**. It
+//!   does the placement search, generates the plot, inserts it with
+//!   `create_plot` and blits its tiles. It returns a [`PlacedPlot`], which
+//!   borrows nothing.
+//! - [`render_placed_plot`] takes `&Site` + `IndexRef` and does the mock-canvas
+//!   render. It mutates nothing.
+//!
+//! The caller therefore ends the `&mut` borrow before it takes the `&`, and
+//! `bastion-server`'s `bastion_growth::grow_plot` can drive both halves against
+//! one `IndexOwned`. [`layout_plot_for_colony`] is the composition of the two
+//! and is what a caller that already owns its `Site` should use.
+//!
 //! Known limit: only plots that draw themselves through a primitive/fill tree
 //! (`Structure::render_inner`) produce blocks here. `House` and `Workshop` do.
 //! `FarmField` does NOT — it is a per-column overlay on existing terrain — so
@@ -29,7 +53,9 @@
 //! always yields the same plot and the same block list. (The *site state* is
 //! part of the input — laying out two houses in a row is not two identical
 //! houses, because the first one's tiles are occupied by the time the second
-//! one looks.)
+//! one looks.) The rng lives entirely in the placement half; the render half
+//! draws no randomness at all, which is why splitting the two cannot change
+//! the result.
 
 use super::{
     Plot, PlotKind, Site, Structure, aabr_tiles, foreach_plot, plot, reseed,
@@ -65,6 +91,36 @@ pub enum LayoutKind {
     FarmField,
     /// A crafting building. Roadside, like a house.
     Workshop,
+}
+
+/// A plot that has been **placed** on a site but not yet rendered: the tile
+/// grid already has it, `site.plots` already contains it, but no blocks have
+/// been computed for it.
+///
+/// This is the value that crosses the borrow seam described in the module
+/// docs. It deliberately borrows nothing, so a caller can drop its `&mut Site`
+/// (and, on the server, the `&mut Index` that `&mut Site` came out of) before
+/// taking the shared `IndexRef` that [`render_placed_plot`] needs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PlacedPlot {
+    /// The id of the plot that was inserted into `site.plots`.
+    pub plot: Id<Plot>,
+    /// The kind that was requested.
+    pub kind: LayoutKind,
+    /// The plot's footprint in TILE space, as `find_*_aabr` returned it. Kept
+    /// so the render half never has to re-derive it from the world-space aabr
+    /// (and so a caller can reason in the same units the tile grid uses).
+    pub tile_aabr: Aabr<i32>,
+    /// World-space (block) bounds of the plot's tile footprint. `min` is
+    /// inclusive, `max` exclusive, matching `Site::tile_wpos` on the tile aabr.
+    pub aabr_wpos: Aabr<i32>,
+    /// World position of the centre of the door tile, at the plot's altitude.
+    /// `None` for kinds that have no door (a farm field).
+    pub door_wpos: Option<Vec3<i32>>,
+    /// The plot's own altitude, as the generated plot reported it (`house.alt`
+    /// and friends) — the z the door sits at and the z the tiles were blitted
+    /// with as `hard_alt`.
+    pub alt: i32,
 }
 
 /// One plot that worldgen has laid out for the colony, reduced to what a
@@ -121,27 +177,27 @@ fn is_bed_head(block: &Block) -> bool {
         .is_some_and(|s| BED_HEAD_SPRITES.contains(&s))
 }
 
-/// Lay out one new plot of `kind` on `site`, using worldgen's own placement
-/// and generation code, and return the blocks that plot is made of.
+/// **Placement half.** Fit one new plot of `kind` into `site`'s existing tile
+/// grid, generate it, insert it and blit its tiles — and touch no index.
 ///
 /// Returns `None` if worldgen could not find anywhere to put the plot (the
 /// same failure the town generator handles by making another plaza instead).
-/// On `None` the site is left untouched.
+/// On `None` the site is left untouched: the placement search runs entirely
+/// before `create_plot`/`blit_aabr`, so a failed search has spent nothing.
 ///
-/// `land`/`index`/`sim` must all describe the same world: `land` is used by the
-/// plot generators for terrain altitude, and `index` + `sim` build the mock
-/// canvas the plot is rendered against.
-pub fn layout_plot_for_colony(
+/// `land` is used by the plot generators for terrain altitude and must
+/// describe the same world the site was generated on.
+///
+/// This half owns ALL of the randomness: one `ChaChaRng` seeded from `seed`,
+/// used exactly as `Site::generate_city`/`generate_farm` use theirs.
+pub fn place_plot_for_colony(
     site: &mut Site,
     kind: LayoutKind,
     land: &Land,
-    index: IndexRef,
-    sim: &WorldSim,
     seed: u64,
-) -> Option<LaidOutPlot> {
+) -> Option<PlacedPlot> {
     let mut rng = ChaChaRng::seed_from_u64(seed);
 
-    // --- 1. Placement + generation, copied from the town generator ---------
     let (plot_id, tile_aabr, door_tile, alt) = match kind {
         LayoutKind::House => {
             // `Site::generate_city`'s house arm.
@@ -243,12 +299,39 @@ pub fn layout_plot_for_colony(
     };
     let door_wpos = door_tile.map(|t| site.tile_center_wpos(t).with_z(alt));
 
-    // --- 2. Render the plot off-chunk into a block list -------------------
-    let site_ref: &Site = site;
-    let (blocks, beds) = CanvasInfo::with_mock_canvas_info(index, sim, |canvas| {
-        let plot_ref = site_ref.plot(plot_id);
+    Some(PlacedPlot {
+        plot: plot_id,
+        kind,
+        tile_aabr,
+        aabr_wpos,
+        door_wpos,
+        alt,
+    })
+}
+
+/// **Render half.** Turn a plot that is already on `site` into the block list a
+/// builder would have to place, plus the position of every bed head.
+///
+/// Reads only: `site` is shared, and nothing here draws randomness, so calling
+/// this twice on the same `(site, placed)` returns the same thing.
+///
+/// `index` + `sim` build the mock canvas the plot is rendered against and must
+/// describe the same world `site` was generated on.
+///
+/// Blocks come back sorted by (z, y, x) and deduplicated by position — see
+/// [`LaidOutPlot::blocks`] for the full contract, including which plot kinds
+/// legitimately render to nothing.
+pub fn render_placed_plot(
+    site: &Site,
+    placed: &PlacedPlot,
+    index: IndexRef,
+    sim: &WorldSim,
+) -> (Vec<(Vec3<i32>, Block)>, Vec<Vec3<i32>>) {
+    let plot_id = placed.plot;
+    CanvasInfo::with_mock_canvas_info(index, sim, |canvas| {
+        let plot_ref = site.plot(plot_id);
         let (prim_tree, fills, _entities) =
-            foreach_plot!(&plot_ref.kind(), p => p.render_collect(site_ref, canvas));
+            foreach_plot!(&plot_ref.kind(), p => p.render_collect(site, canvas));
 
         // Positions accumulate so that a later fill overwrites an earlier one
         // at the same position, and so that each fill sees the block already
@@ -315,13 +398,46 @@ pub fn layout_plot_for_colony(
             .collect::<Vec<_>>();
 
         (blocks, beds)
-    });
+    })
+}
+
+/// Lay out one new plot of `kind` on `site`, using worldgen's own placement
+/// and generation code, and return the blocks that plot is made of.
+///
+/// This is [`place_plot_for_colony`] followed by [`render_placed_plot`], for
+/// callers that own their `Site` outright and so do not have to break the
+/// `&mut` before taking the `&` (see the module docs). A caller whose `Site`
+/// lives inside an `IndexOwned` cannot use this — it would need `&mut Index`
+/// and `IndexRef` at once — and should drive the two halves itself.
+///
+/// Returns `None` if worldgen could not find anywhere to put the plot (the
+/// same failure the town generator handles by making another plaza instead).
+/// On `None` the site is left untouched.
+///
+/// `land`/`index`/`sim` must all describe the same world: `land` is used by the
+/// plot generators for terrain altitude, and `index` + `sim` build the mock
+/// canvas the plot is rendered against.
+pub fn layout_plot_for_colony(
+    site: &mut Site,
+    kind: LayoutKind,
+    land: &Land,
+    index: IndexRef,
+    sim: &WorldSim,
+    seed: u64,
+) -> Option<LaidOutPlot> {
+    // --- 1. Placement + generation, copied from the town generator ---------
+    let placed = place_plot_for_colony(site, kind, land, seed)?;
+
+    // --- 2. Render the plot off-chunk into a block list -------------------
+    // The `&mut` borrow above has ended; `placed` borrows nothing.
+    let site_ref: &Site = site;
+    let (blocks, beds) = render_placed_plot(site_ref, &placed, index, sim);
 
     Some(LaidOutPlot {
-        plot: plot_id,
-        kind,
-        aabr_wpos,
-        door_wpos,
+        plot: placed.plot,
+        kind: placed.kind,
+        aabr_wpos: placed.aabr_wpos,
+        door_wpos: placed.door_wpos,
         beds,
         blocks,
     })
@@ -539,5 +655,91 @@ mod tests {
             "a farm field must report no door, not a fake one"
         );
         assert!(field.beds.is_empty(), "nobody sleeps in a field");
+    }
+
+    /// The split is only safe if it is a *refactor*: driving the two halves by
+    /// hand must give the colony exactly what the one-call composition gives.
+    ///
+    /// This is the pin that lets `bastion-server`'s `grow_plot` call the halves
+    /// separately (it has to — it cannot hold `&mut Index` and `IndexRef` at
+    /// once) without that being a second, silently-diverging code path. If
+    /// someone later moves an rng draw out of the placement half, or makes the
+    /// render half depend on state the placement half mutated afterwards, this
+    /// test goes red and the two-call server path stops matching the one-call
+    /// path the other two tests actually assert the *quality* of.
+    ///
+    /// Note the two towns are built separately from the same seed rather than
+    /// laying out twice on one site: a plot placed on a site changes the site,
+    /// so the only fair comparison is two identical fresh towns.
+    #[test]
+    fn the_split_layout_equals_the_composed_layout() {
+        let (sim, index) = world();
+        let index_ref = index.as_index_ref();
+        let land = Land::from_sim(&sim);
+        let origin = buildable_origin(&land);
+
+        // Path A: the composed one-call entry point.
+        let mut site_a = town(&land, index_ref, origin, 0xB0_5E_ED);
+        let composed =
+            layout_plot_for_colony(&mut site_a, LayoutKind::House, &land, index_ref, &sim, 7)
+                .expect("the composed path must lay out a house");
+
+        // Path B: the two halves, driven by hand the way the server must.
+        let mut site_b = town(&land, index_ref, origin, 0xB0_5E_ED);
+        let placed = place_plot_for_colony(&mut site_b, LayoutKind::House, &land, 7)
+            .expect("the placement half must place a house");
+        // The `&mut` is over; this is the seam the server needs.
+        let (blocks, beds) = render_placed_plot(&site_b, &placed, index_ref, &sim);
+
+        println!(
+            "composed: plot={:?} blocks={} beds={} door={:?} aabr={:?}\n\
+             split   : plot={:?} blocks={} beds={} door={:?} aabr={:?} tile_aabr={:?} alt={}",
+            composed.plot,
+            composed.blocks.len(),
+            composed.beds.len(),
+            composed.door_wpos,
+            composed.aabr_wpos,
+            placed.plot,
+            blocks.len(),
+            beds.len(),
+            placed.door_wpos,
+            placed.aabr_wpos,
+            placed.tile_aabr,
+            placed.alt,
+        );
+
+        assert_eq!(composed.plot, placed.plot, "the split placed a different plot id");
+        assert_eq!(composed.kind, placed.kind, "the split reported a different kind");
+        assert_eq!(
+            composed.aabr_wpos, placed.aabr_wpos,
+            "the split placed the plot on a different footprint"
+        );
+        assert_eq!(
+            composed.door_wpos, placed.door_wpos,
+            "the split put the door somewhere else"
+        );
+        assert_eq!(
+            composed.blocks.len(),
+            blocks.len(),
+            "the split rendered a different number of blocks"
+        );
+        assert!(
+            composed.blocks == blocks,
+            "the split rendered a different block list"
+        );
+        assert_eq!(composed.beds, beds, "the split rendered different beds");
+        // Guard the guard: a comparison of two empty lists would pass this
+        // test while proving nothing.
+        assert!(
+            blocks.len() >= 100 && !beds.is_empty(),
+            "this test compares nothing unless the house actually rendered; blocks={} beds={}",
+            blocks.len(),
+            beds.len()
+        );
+        assert_eq!(
+            site_a.plots().len(),
+            site_b.plots().len(),
+            "the two paths left the site with different plot counts"
+        );
     }
 }

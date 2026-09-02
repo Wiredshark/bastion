@@ -25,6 +25,9 @@ pub mod bastion_entity_event_log;
 pub mod bastion_flat_arena;
 pub mod bastion_flight_recorder;
 pub mod bastion_founding_preset;
+/// bastion (G1b): grow the colony's town by one worldgen plot, mutating the
+/// live world index in place when — and only when — no chunk job is reading it.
+pub mod bastion_growth;
 /// bastion (INSPECTOR-M1): the modular inspector's server-side section
 /// providers. New file per section; the registry is wildcard-free.
 pub mod bastion_inspector;
