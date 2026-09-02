@@ -4151,6 +4151,8 @@ pub struct ClaimRefusalCensus {
     /// Jobs refused because their cell is condemned (proven unreachable).
     pub condemned: u32,
     pub access_dist: u32,
+    /// ZONE-SCOPED WORK: jobs outside the colonist's zone while it had open work.
+    pub out_of_zone: u32,
     pub eligible: u32,
 }
 
@@ -4168,6 +4170,7 @@ impl ClaimRefusalCensus {
             + self.lane_hold
             + self.condemned
             + self.access_dist
+            + self.out_of_zone
     }
 
     /// CONSERVATION: every considered candidate was either refused for a named
@@ -10951,6 +10954,31 @@ pub(crate) fn assign_zones(
         }
     }
     out
+}
+
+/// ★ ZONE-SCOPED WORK (Ben, live 2026-09-01: "if there's a field or a mine,
+/// the colonist should mine or farm the entire area"). While an assigned
+/// colonist's zone still has open jobs of its lane, the arbiter considers
+/// ONLY jobs inside that zone (by XY); when the zone is worked out, or the
+/// colonist has no assignment, the scope is `None` and nothing changes
+/// (identity). `BASTION_NO_ZONE_SCOPE` switches it off for A/B.
+pub(crate) fn zone_scope(
+    assigned: Option<common::bastion::ZoneId>,
+    lane: Option<common::bastion::WorkType>,
+    zones: &[(common::bastion::ZoneId, Region)],
+    open_jobs: impl Iterator<Item = (Vec3<i32>, common::bastion::WorkType)>,
+) -> Option<Region> {
+    let zone = assigned?;
+    let lane = lane?;
+    let region = zones.iter().find(|(z, _)| *z == zone).map(|(_, r)| *r)?;
+    let mut open_inside = false;
+    for (pos, work) in open_jobs {
+        if work == lane && region.contains_point_xy(pos) {
+            open_inside = true;
+            break;
+        }
+    }
+    open_inside.then_some(region)
 }
 
 #[derive(Default)]
@@ -41123,6 +41151,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 .unwrap_or_default();
             // Highest priority, then lowest score (distance + B5.8's
             // top-down and dispersion shaping).
+            // ★ ZONE-SCOPED WORK (see `zone_scope`): one region, or None.
+            let scope: Option<Region> = if std::env::var_os("BASTION_NO_ZONE_SCOPE").is_some() {
+                None
+            } else {
+                let zones: Vec<(common::bastion::ZoneId, Region)> = board
+                    .farms
+                    .iter()
+                    .chain(board.stockpiles.iter())
+                    .map(|(z, r)| (*z, *r))
+                    .collect();
+                zone_scope(
+                    board.assignments.get(uid).map(|(z, _)| *z),
+                    board.professions.get(uid).copied(),
+                    &zones,
+                    board
+                        .jobs
+                        .values()
+                        .filter(|j| j.claimed_by.is_none())
+                        .map(|j| (j.pos, j.work)),
+                )
+            };
             let mut best: Option<(JobId, u8, f32)> = None;
             for id in board.decision_job_ids() {
                 census.considered += 1;
@@ -41544,6 +41593,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 };
                 if priority == 0 {
                     { census.priority_zero += 1; continue; }
+                }
+                if let Some(r) = scope
+                    && !r.contains_point_xy(job.pos)
+                {
+                    { census.out_of_zone += 1; continue; }
                 }
                 // ★ CONDEMNED CELL: the town proved nobody can reach this
                 // cell — no walker is sent to strand there again.
@@ -42076,6 +42130,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 priority_zero = census.priority_zero,
                 lane_hold = census.lane_hold,
                 access_dist = census.access_dist,
+                out_of_zone = census.out_of_zone,
                 "bastion: claim refusal census"
             );
             // ★ THE SCHEDULE MUST TESTIFY (2026-08-22). Without this, "slept=0"
@@ -47519,6 +47574,25 @@ mod tests {
         assert_eq!(c.get(&u(1)).map(|(_, s)| *s), Some(AssignSource::Auto));
         // Identity: no zones, no entries.
         assert!(assign_zones(&lanes, &[], &none).is_empty());
+    }
+
+    /// ★ ZONE-SCOPED WORK pinned: scope only while the zone has open work of
+    /// the colonist's lane; none without an assignment, a lane, or a zone.
+    #[test]
+    fn zone_scope_holds_while_the_zone_has_open_work_and_lets_go_after() {
+        use common::bastion::WorkType as W;
+        let field = Region { min: Vec3::new(0, 0, 5), max: Vec3::new(9, 9, 5) };
+        let zones = [(7u64, field)];
+        let inside = (Vec3::new(3, 4, 5), W::Farm);
+        let outside = (Vec3::new(30, 4, 5), W::Farm);
+        let r = zone_scope(Some(7), Some(W::Farm), &zones, [outside, inside].into_iter());
+        assert_eq!(r, Some(field), "open farm work inside the field: scoped to it");
+        assert!(r.unwrap().contains_point_xy(Vec3::new(3, 4, 99)), "XY containment, not z");
+        assert_eq!(zone_scope(Some(7), Some(W::Farm), &zones, [outside].into_iter()), None, "the field is worked out: let go");
+        assert_eq!(zone_scope(Some(7), Some(W::Farm), &zones, [(Vec3::new(3, 4, 5), W::Haul)].into_iter()), None, "another lane's work inside does not hold a farmer");
+        assert_eq!(zone_scope(None, Some(W::Farm), &zones, [inside].into_iter()), None, "no assignment: identity");
+        assert_eq!(zone_scope(Some(7), None, &zones, [inside].into_iter()), None, "no lane yet: identity");
+        assert_eq!(zone_scope(Some(8), Some(W::Farm), &zones, [inside].into_iter()), None, "unknown zone: identity");
     }
 
     #[test]
