@@ -77,3 +77,27 @@ Per guard (60 samples each): plaza / entrance / street / elsewhere
 NOT PASSED (1 pass, 1 fail). Held for the third replicate and for the
 wedge probe's reading; no change to the door or the generator is
 justified by this read.
+
+## Third replicate (b2 on 0a1772ddb8, 8-day year, day 2, read 10:36): PASS
+
+| run                  | guards | patrols posted | door refusals | plaza | entrance | street | elsewhere |
+|----------------------|-------:|---------------:|--------------:|------:|---------:|-------:|----------:|
+| 0a1772ddb8 b2 d2     | 3      | 3              | 19,538        | 0%    | 3%       | 66%    | 31%       |
+
+Per guard: 236 -> 0 / 8 / 63 / 28; 58 -> 0 / 1 / 75 / 23; 241 -> 0 / 0 /
+61 / 38. PATROL PASS at the last pass: held_patrol_alive 3 of 3,
+busy_other_job 0, no_leg 0.
+
+- Street + entrance 69%: PASS on the 50% line, the best of the three.
+  Three guards, all on their legs, all above 60% on the street.
+- Door refusals 19,538: the third non-zero reading against one zero.
+
+## Disposition after three replicates
+
+PASS in two of three (53%, 69%) against one fail (17%). The failing
+replicate's guards held live legs and never reached the street; that is
+the walker (PREREG-wedge-probe.md), not the door or the generator. The
+row stands as PASSED with the walker named as the condition under which
+it fails: when the fetch and patrol legs can be wedged, the guard lane
+reads like the eat lane. NOT built: legs pinned to road cells. Open: the
+door's one zero reading (1 of 4) is unexplained and stays open.
