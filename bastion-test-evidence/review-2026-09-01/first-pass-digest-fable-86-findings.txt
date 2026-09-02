@@ -1,0 +1,110 @@
+REVIEW RESULTS: 9   findings total: 86
+  [high] BED-HOUSE CENSUS comment states the RETRACTED growth-jam mechanism as fact, with no retraction beside it  @bastion_jobs.rs:16921
+  [high] Source doc and pin comment say the live trunk rejection was REVERTED; it is shipped and labelled EVIDENCED  @bastion_jobs.rs:1390
+  [high] Seven pre-registrations cited by commit messages live only in a session temp directory; the repo has no scratc  @bastion_jobs.rs:1346
+  [high] Source pin cannot see the par's ARGUMENT: `let food_par = TRADE_FOOD_PAR;` restores the flat par and leaves bo  @bastion_jobs.rs:46868
+  [high] Housing gate pin tests only Grow and Defend; `drive != Grow -> refuse` re-deadlocks every town whose beds >= p  @bastion_jobs.rs:46893
+  [high] Trunk reject filter reads the unloaded-column fallback as a measured height: route acceptance depends on chunk  @bastion_jobs.rs:29503
+  [high] TRUNK_WORST_DZ running max is computed downstream of the reject filter, so it is capped at TRUNK_REJECT_DZ and  @bastion_jobs.rs:29566
+  [high] path_cache has TWO writers (trunk and search pump) but the source asserts one; pump routes carry no producer t  @bastion_jobs.rs:36336
+  [high] GROUND_LIFTS is witnessed only on the EMBED WATCH line — the threshold log of the symptom it removes — and lif  @bastion_jobs.rs:35997
+  [high] Housing gate's material need is never published to the producer: on an unseeded 2-3 colonist town the mine sto  @bastion_jobs.rs:3663
+  [high] STATIC 'evidenced' by a snapshot taken mid-ratchet: the cited moment is the immigration gate declining while t  @bastion_jobs.rs:3534
+  [high] The embed headline's replicate pool (n=2 vs n=6) is quoted without producers: no ticks, no embed counts, no bi  @bastion_jobs.rs:1276
+  [high] PEOPLE WALK measures the `running` flag, but the default mover integrates position at a constant 4.2 regardles  @bastion_jobs.rs:16733
+  [high] food_par_for consumes the ECS-loaded count, the frame its sibling gate ruled wrong  @bastion_jobs.rs:23341
+  [high] Trunk rejection is a roster-scaling load on a fixed 2-step/tick search pump, and the 2 s fill restart re-pays   @bastion_jobs.rs:29509
+  [high] A Bed region outlives its job: three job-death paths leave a permanent phantom 'house' that jams the gate on h  @bastion_jobs.rs:20222
+  [high] HOUSE_PLAN_MATERIAL=20 is 20x what the consumer bills (one unit) and above what the mine generator will ever s  @bastion_jobs.rs:3620
+  [medium] HOUSING BUILD gate still documents and logs itself as 'WITNESS ONLY; nothing is queued yet' four lines after i  @bastion_jobs.rs:22090
+  [medium] The embed measurement history the commits call 'waypoint_z's doc' is attached to lift_over_ground; waypoint_z   @bastion_jobs.rs:1267
+  [medium] Doc comments inserted between an existing doc and its item: immigration_verdict, housing_build_verdict, Housin  @bastion_jobs.rs:3488
+  [medium] TRUNK_REJECT_DZ doc labels an unreplicated single-run '-92% / 0.7 per 10k' as ★ EVIDENCED, and the replication  @bastion_jobs.rs:1488
+  [medium] The ONE-plan-at-a-time guard reads board.plans, which the housing drain never writes  @bastion_jobs.rs:22131
+  [medium] The glide pin's three witness assertions are tautologies: no test increments the counters and two distinct sta  @bastion_jobs.rs:47088
+  [medium] Material pin's `BUILD_MATERIAL_ITEM` needle is satisfied by the witness field, not the filter; the filter can   @bastion_jobs.rs:46946
+  [medium] TRUNK_REJECT_DZ has no pin at all: its degenerate settings (0 or i32::MAX) are green, and the reject filter is  @bastion_jobs.rs:29509
+  [medium] Lift pin never tests the boundary `gz == line_z`; `gz + 1 > line_z` -> `gz > line_z` stays green and produces   @bastion_jobs.rs:46979
+  [medium] Only the VERTICAL threshold is pinned at its boundary; the lateral arm's `>= OFF_GRADE_BLOCKS` can be raised t  @bastion_jobs.rs:47137
+  [medium] Housing gate's two rate guards are dead at the call site; the real one-at-a-time bound is an accident of count  @bastion_jobs.rs:22131
+  [medium] WORLD_BUILDS counts only Bed completions, so `builds_since_route` is blind to the terrain writes the stale-rou  @bastion_jobs.rs:34478
+  [medium] waypoint_z's identity fallback (unreadable column -> street z) has no counter, so on a partially loaded world   @bastion_jobs.rs:29444
+  [medium] HOUSING BUILD gate: the plan_in_flight arm reads board.plans, which the housing lane never writes, so the 'one  @bastion_jobs.rs:22131
+  [medium] Three producers of 'vacant'/'occupied' at three cadences and two definitions, and the BED-HOUSE CENSUS built t  @bastion_jobs.rs:16932
+  [medium] off_grade_verdict's lateral refusal is unwitnessed, and its pre-registered falsifier (census stuck) is structu  @bastion_jobs.rs:38980
+  [medium] lane_share_pct is emitted only on a profession SWITCH, so a colonist whose dominance erodes while the sticky a  @bastion_jobs.rs:42178
+  [medium] WORLD_BUILDS doc says 'bumped by every completed build' but only Bed registration increments it, so builds_sin  @bastion_jobs.rs:34478
+  [medium] `plan_in_flight` reads board.plans, which the house drain never writes; the one-at-a-time bound is enforced on  @bastion_jobs.rs:3650
+  [medium] Trunk rejection's downstream is unwitnessed and self-resetting: the Fill-lane pump drops BudgetExhausted silen  @bastion_jobs.rs:29503
+  [medium] The fail-safe's lateral disarm is silent and its pre-registered falsifier reads an instrument that excludes th  @bastion_jobs.rs:38980
+  [medium] PROFESSIONS: the share witness fires only on a SWITCH, so after day 0 it cannot report a stable colonist's sha  @bastion_jobs.rs:42112
+  [medium] FARMS on real terrain: the retraction replaced the outcome metric (fed) with a stock metric and never reported  @bastion_jobs.rs:33780
+  [medium] DANGER: '27 alarms, 0 deaths' is a null outcome with no witness that any raid reached a colonist, from a stale  @bastion_jobs.rs:16728
+  [medium] The -92% (8.6 -> 0.7 per 10k) still marked '★ EVIDENCED' in the source rests on one or two embed events whose   @bastion_jobs.rs:1490
+  [medium] The flat-arm '-69%' — the figure cited as the charter's PATHING HUMAN evidence — has no recorded run anywhere   @bastion_jobs.rs:1287
+  [medium] The 'only the binary differing' A/Bs differ by the whole branch: pre-routing binaries also lack the housing ga  @bastion_jobs.rs:1289
+  [medium] The stranding fix's pre-registered falsifier (P4) and its teleport-rate re-measurement were never reported; th  @bastion_jobs.rs:1236
+  [medium] WORLD_BUILDS counts only bed registrations, while its doc says 'bumped by every completed build', so `builds_s  @bastion_jobs.rs:34478
+  [medium] The housing-gate pin blesses two arms the live call can never take: `plan_in_flight` is fed `!board.plans.is_e  @bastion_jobs.rs:22125
+  [medium] TRUNK_REJECT_DZ and the steep witness threshold RISE alone against a per-step probe window; the witness that g  @bastion_jobs.rs:29509
+  [medium] The door waypoint is still resolved in the ONE-Z frame while every other waypoint is per-column  @bastion_jobs.rs:29380
+  [medium] waypoint_z's identity fallback returns the known-wrong street z and nothing counts it  @bastion_jobs.rs:1460
+  [medium] WORLD_BUILDS counts only Bed registrations, so builds_since_route cannot refute 'terrain changed under the rou  @bastion_jobs.rs:34478
+  [medium] Trunk materialisation now costs ~335 terrain reads per waypoint, paid in full BEFORE the reject filter, and fi  @bastion_jobs.rs:29459
+  [medium] The only per-tick cost instrument, TICK PROFILE, is unreachable by construction — every hot-loop addition this  @bastion_jobs.rs:42586
+  [medium] HOUSE SITE ring scan re-runs in full every 15 ticks, forever, when it refuses — ~100k terrain reads per firing  @bastion_jobs.rs:20157
+  [medium] A reload replays the built house as a fresh Bed order on top of its own bedroll, loses the bed slot, evicts th  @bastion_jobs.rs:16227
+  [medium] `plan_in_flight` is dead for the only lane that uses it: `board.plans` is never written by the housing drain,   @bastion_jobs.rs:22131
+  [medium] The build gate's `houses` (every Bed region) and immigration's `target_pop` (Bed regions with beds > 0) are di  @bastion_jobs.rs:22129
+  [medium] What the town builds is a bedroll on open ground in a 1-cell region — the code's own roof/field distinction is  @bastion_jobs.rs:20211
+  [low] housing_build_verdict's `last` parameter is always None, so the same_day arm is unreachable dead code  @bastion_jobs.rs:3643
+  [low] lift_over_ground doc still orders the next attempt to 'witness where the |dz|=21 waypoints COME FROM' after th  @bastion_jobs.rs:1374
+  [low] The retracted 'scattered, different signature' block keeps its ★ finding heading and hypothesis with no inline  @bastion_jobs.rs:1301
+  [low] The `SEGMENT_SAMPLES + 2` bound asserts the implementation against its own constant: any value of SEGMENT_SAMP  @bastion_jobs.rs:47013
+  [low] Housing pin's ORDERING assertion is a duplicate; `disabled`/`same_day` arms are dead at the live site and unpi  @bastion_jobs.rs:46927
+  [low] Lift pin's 'stands ON the bump' assertion is one-sided (`>= 419`), and the endpoint-dz assertion checks the te  @bastion_jobs.rs:46991
+  [low] `builds_since_route` fallback is not identity: a missing stamp reads as maximal staleness, and stamps are neve  @bastion_jobs.rs:36006
+  [low] `lift_over_ground` is direction-asymmetric for spans over 8: integer truncation samples different points and b  @bastion_jobs.rs:1412
+  [low] writer_site is read ~30 ticks after entry and is overwritten every tick, so for committed walkers it restates   @bastion_jobs.rs:35976
+  [low] TRUNK_ROUTES_REJECTED has no denominator: nothing counts trunk routes materialised or accepted, so the pre-reg  @bastion_jobs.rs:29510
+  [low] EMBED WATCH carries no tick, so every per-10k-tick embed rate in the session was formed by joining against ano  @bastion_jobs.rs:36008
+  [low] HOUSE SITE REFUSED says 'retried next tick' but runs once per ARBITRATION_INTERVAL, and names no filter, so a   @bastion_jobs.rs:20229
+  [low] HOUSE SITE REFUSED is a permanent, unthrottled refusal: the ring never widens, the intent is never dropped, an  @bastion_jobs.rs:20229
+  [low] housing_build_verdict's `same_day` arm is unreachable: the call site and the pin both pass `last = None`  @bastion_jobs.rs:3643
+  [low] The identity fallbacks in waypoint_z and lift_over_ground are silent, and both resolve the TOPMOST surface, so  @bastion_jobs.rs:1460
+  [low] CONTRACT 'cannot shrink, by construction, and never could' is contradicted by the source's own record of raid   @bastion_jobs.rs:21889
+  [low] HUMAN HOURS on real terrain is evidenced on a stale binary with an inferred denominator; the session's own rea  @bastion_jobs.rs:41905
+  [low] ROUTE-PREV control compares a body-tick rate to an event rate and samples every cache holder including station  @bastion_jobs.rs:35862
+  [low] `food_par_for` takes the ECS colonist count while the housing gate takes the rtsim roster — two frames for 'ro  @bastion_jobs.rs:23346
+  [low] builds_since_route is read without a route and route_built_at is never cleared  @bastion_jobs.rs:36003
+  [low] lift_over_ground samples an integer-truncated line and skips the first and last hop of the glide  @bastion_jobs.rs:1415
+  [low] Endpoint columns and mid-segment samples resolve 'the surface' from two different hints  @bastion_jobs.rs:1416
+  [low] lane_share_pct is emitted only at a naming/switch event, so the reported 90% is a day-0 transition sample, not  @bastion_jobs.rs:42178
+  [low] The housing gate's 'one plan at a time' bound is measured in a lane the housing drain never writes  @bastion_jobs.rs:22131
+  [low] off_grade_verdict's boundary pin asserts a 0.01 precision the live frame cannot deliver  @bastion_jobs.rs:47152
+  [low] Embed sweep computes fire-time-only values and a census-cadence control for every colonist every tick  @bastion_jobs.rs:35849
+  [low] New uid-keyed maps (embed_prev_pos, last_push_site, route_built_at) are insert-only and never shed dead coloni  @bastion_jobs.rs:35835
+  [low] The HOUSING BUILD witness and its block comment still say nothing is queued, the HOUSE SITE REFUSED line misla  @bastion_jobs.rs:22152
+
+RESEARCH RESULTS: 7
+  Q: SETTLEMENT SITE SELECTION: how do colony sims / 4X games trade terrain difficult
+     keys: ['question', 'mechanisms', 'recommendation', 'what_would_falsify', 'judgement_call']
+     recommendation: Borrow Civilization V's start-plot shape (EvaluateCandidatePlot -> meets_minimums -> priority lists -> best-scored fallback), with Civ IV's fraction-based terrain veto and RttR's local-slope relief measure: a CAPACITY FLOOR and a RELIEF CAP as two booleans in front of the existing preference key, and the existing key as the fallback. Concretely, for autofound in `bastion_adopt_sort_key` (lib.rs:80
+  Q: Any-angle pathing on a voxel heightfield: what is the standard mechanism for gua
+     keys: ['question', 'mechanisms', 'recommendation', 'what_would_falsify', 'judgement_call']
+     recommendation: Borrow the Amanatides-Woo / Theta*-Algorithm-6 column walk and drop the sampler. Sampling N points is NOT the standard anywhere in this corpus: Theta* (Appendix A), Lazy Theta*, Minecraft's isDirectPathBetweenPoints and Detour's raycast all enumerate EVERY cell/column/polygon the segment crosses, and the field's stated floor is 'linear in the number of cells' per check — the literature cuts the nu
+  Q: PATH INVALIDATION ON TERRAIN CHANGE: Bastion's per-colonist path_cache (waypoint
+     keys: ['question', 'mechanisms', 'recommendation', 'what_would_falsify', 'judgement_call']
+     recommendation: Borrow RimWorld's `Pawn_PathFollower.NeedNewPath` — per-path revalidation on advance — which is also what Veloren's own `Route::traverse` does with K=2 and which Bastion's path_cache loop currently bypasses. Concretely: in the advance loop at bastion_jobs.rs:29611-29631, whenever `*idx` changes (and additionally on a slow cadence, e.g. every 20 ticks, to catch a build landing on the segment being 
+  Q: SHOULD HUNGER KILL in bastion? Today hunger decays 0.000889/sec (1.0 -> 0 in ~1,
+     keys: ['question', 'mechanisms', 'recommendation', 'what_would_falsify', 'judgement_call']
+     recommendation: THREE COHERENT OPTIONS (the owner picks the terminal state; all three share one mechanism, the post-zero clock, below).  Option A -- LETHAL LADDER (RimWorld/Timberborn/ONI): hunger 0 starts a `starvation` accumulator (~0.02/game hour, symmetric recovery); stages apply -50% work rate (Timberborn) and a growing mood penalty (RimWorld); at 100% (~3 game days after zero) the colonist dies through the 
+  Q: ACTIVITY TALLIES: TIME-HELD VS EVENT COUNTS. How do RimWorld, Dwarf Fortress/DFH
+     keys: ['question', 'mechanisms', 'recommendation', 'what_would_falsify', 'judgement_call']
+     recommendation: Borrow ONI's partition on top of bastion's existing scan sampler. Bastion's lane tally IS the standard shape (instantaneous sampling of the held job at a fixed stride — RimWorld does it at 80 ticks, Altmann calls it scan sampling), so keep it; what is missing is the denominator. In the same `tick.0 % 300 == 0` sweep (bastion_jobs.rs:41660) classify EVERY colonist into exactly one bucket per sample
+  Q: ITEM REACHABILITY AT SCALE: 9,074 fetch failures over 1.5M ticks in the 46-colon
+     keys: ['question', 'mechanisms', 'recommendation', 'what_would_falsify', 'judgement_call']
+     recommendation: Borrow ONI's per-target unreachable verdict with RimWorld's negative-cache semantics — and bastion already owns the store, so the change is a PRODUCER, not a new system: make the fetch watchdog write `board.goal_verdicts.insert(item_cell, tick + GOAL_VERDICT_TTL_TICKS)` (the ITEM's cell, `ipos.floor()`, not `job.pos`) on FETCH BUDGET EXPIRED and on FETCH STALLED, with `BASTION_GOAL_VERDICT` on so 
+  Q: FARMLAND EXPANSION: how do Banished, Manor Lords, Anno, Dwarf Fortress, RimWorld
+     keys: ['question', 'mechanisms', 'recommendation', 'what_would_falsify', 'judgement_call']
+     recommendation: Borrow the Anno/Song-of-Syx projected-balance unit, gated the way bastion already gates houses, with AoE2's labour-saturation precondition. Concretely, at the same daily tick as the house gate: P = rolling 3-game-day mean of crop MATURE/day summed over fields (+ forage EatFrom/day, tagged by producer so it is not double-counted); D = roster × measured EatFrom/day per colonist (the hunger integral 
