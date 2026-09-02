@@ -29380,9 +29380,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             kind = ?job.kind,
                                             feet = ?f,
                                             to_item = ?to_item,
-                                            steer = ?fetch_steer.map(|v| v.map(|e| e.floor() as i32)),
+                                            // The walker's own route (P1b): the first cut read
+                                            // `fetch_steer` here, before the fetch assigns it,
+                                            // and printed None on every probe.
+                                            chaser = ?agent.as_deref().map(|a| a.chaser.diagnostic_snapshot()),
                                             blocks = %layers.join(" | "),
-                                            "bastion: WEDGE PROBE — the blocks around a stalled fetch (north row first, west to east; # solid . air ~ filled ? unloaded)"
+                                            "bastion: WEDGE PROBE — the blocks around a stalled fetch and the walker's route (north row first, west to east; # solid . air ~ filled ? unloaded)"
                                         );
                                     }
                                     if expires {
