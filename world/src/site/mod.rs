@@ -1,3 +1,4 @@
+pub mod bastion_layout;
 pub mod economy;
 mod generation;
 pub mod genstat;
