@@ -8374,6 +8374,72 @@ pub(crate) fn stockpile_drop_cell_impl(
 /// `alt`, so a ground-floor container has ~20 solid blocks under it, while an
 /// upper storey is a ONE-block floor over the open room below — exactly 1.
 /// Any threshold in between rules identically; 3 is far from both edges.
+/// ★ GENERAL STORES vs PRIVATE PROPERTY (Ben, live 2026-09-01: "colonists
+/// stockpile in their houses on one little shelf; there needs to be a
+/// difference between general stores and private property"). A stockpile
+/// zone that lies inside a house (a Bed region) is the household's own; a
+/// painted zone or an adopted barn is the town's. `BASTION_NO_STORE_KINDS`
+/// restores the old behaviour (identity) for an A/B arm.
+pub(crate) fn store_is_private<'a>(
+    r: &Region,
+    houses: impl IntoIterator<Item = &'a Region>,
+) -> bool {
+    houses.into_iter().any(|h| h.contains_point_xy(r.min))
+}
+
+/// The house a colonist belongs to: the Bed region containing their own bed.
+pub(crate) fn household_house<'a>(
+    bed: Option<Vec3<i32>>,
+    houses: impl IntoIterator<Item = &'a Region>,
+) -> Option<Region> {
+    let b = bed?;
+    houses.into_iter().find(|h| h.contains_point_xy(b)).copied()
+}
+
+pub(crate) fn store_kinds_on() -> bool { std::env::var_os("BASTION_NO_STORE_KINDS").is_none() }
+
+/// May this colonist use this store? A general store: anyone. A private
+/// store: only its household. When the town has NO general store, identity
+/// (everyone may use everything) so a shelves-only town keeps working.
+pub(crate) fn store_admits<'a>(
+    r: &Region,
+    houses: &[Region],
+    own_house: Option<Region>,
+    general_exists: bool,
+) -> bool {
+    !store_kinds_on()
+        || !general_exists
+        || !store_is_private(r, houses.iter())
+        || own_house.is_some_and(|h| h.contains_point_xy(r.min))
+}
+
+/// ★ SPREAD STORAGE (Ben: "spread out item storage so it doesn't just stack
+/// on top of each other"). The least-filled standable cell of the zone; the
+/// centre wins ties (so an empty zone still drops at the centre, as before),
+/// otherwise the first cell in row-major order. A 1x1 zone is identity.
+pub(crate) fn stockpile_drop_cell_spread(
+    surface_z: impl Fn(i32, i32, i32) -> Option<i32>,
+    occupancy: impl Fn(i32, i32) -> u32,
+    r: &Region,
+) -> Vec3<i32> {
+    let centre = stockpile_drop_cell_impl(&surface_z, r);
+    let mut cells: Vec<(u32, Vec3<i32>)> = Vec::new();
+    for y in r.min.y..=r.max.y {
+        for x in r.min.x..=r.max.x {
+            if let Some(sz) = surface_z(x, y, r.min.z) {
+                cells.push((occupancy(x, y), Vec3::new(x, y, sz + 1)));
+            }
+        }
+    }
+    let Some(min) = cells.iter().map(|(o, _)| *o).min() else {
+        return centre;
+    };
+    if cells.iter().any(|(o, c)| *o == min && *c == centre) {
+        return centre;
+    }
+    cells.iter().find(|(o, _)| *o == min).map(|(_, c)| *c).unwrap_or(centre)
+}
+
 pub const ADOPTED_CONTAINER_MIN_SOLID_BELOW: i32 = 3;
 
 /// How far down the scan looks. One past the threshold is all the ruling can
@@ -22191,6 +22257,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             private_zones = private.0,
                             private_units = private.1,
                             private_max_cell = private.2,
+                            store_kinds_active = store_kinds_on() && general.0 > 0,
                             "bastion: STORAGE SUMMARY — general stores vs private shelves (Ben)"
                         );
                     }
@@ -24510,9 +24577,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // when the exclusion leaves nothing, because a refusal
                     // and an absence must not render identically.
                     let item_is_food = FOOD_DEFS.contains(&static_def);
+                    let houses: Vec<Region> = board
+                        .designated
+                        .iter()
+                        .filter(|(_, k)| matches!(k, DesignationKind::Bed))
+                        .map(|(r, _)| *r)
+                        .collect();
+                    let general_exists =
+                        board.stockpiles.iter().any(|(_, r)| !store_is_private(r, houses.iter()));
                     let Some(dest) = board
                         .stockpiles
                         .iter()
+                        // STORE KINDS: a town haul (no hauler yet) goes to a general store.
+                        .filter(|(_, r)| store_admits(r, &houses, None, general_exists))
                         .filter(|(z, _)| match board.zone_types.get(z) {
                             Some(common::bastion::ZoneKind::FoodStore) => item_is_food,
                             Some(_) => false,
@@ -24767,9 +24844,36 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         continue;
                     }
                     let cell = pos.0.map(|e| e.floor() as i32);
+                    // STORE KINDS (see `store_admits`): a private shelf takes
+                    // only its own household's deposits when a general store
+                    // exists. SPREAD: the drop cell is the least-filled one.
+                    let houses: Vec<Region> = board
+                        .designated
+                        .iter()
+                        .filter(|(_, k)| matches!(k, DesignationKind::Bed))
+                        .map(|(r, _)| *r)
+                        .collect();
+                    let general_exists =
+                        board.stockpiles.iter().any(|(_, r)| !store_is_private(r, houses.iter()));
+                    let own_bed = board
+                        .beds
+                        .iter()
+                        .find(|(_, slot)| slot.owner == Some(*uid))
+                        .map(|(p, _)| *p);
+                    let own_house = household_house(own_bed, houses.iter());
+                    let occ_map: HashMap<(i32, i32), u32> = {
+                        let mut m = HashMap::new();
+                        for (pi, ip) in (&pickup_items, &positions).join() {
+                            let c = ip.0.map(|e| e.floor() as i32);
+                            *m.entry((c.x, c.y)).or_insert(0) += pi.item().amount() as u32;
+                        }
+                        m
+                    };
+                    let occ = |x: i32, y: i32| occ_map.get(&(x, y)).copied().unwrap_or(0);
                     let Some((dest, drop_cell)) = board
                         .stockpiles
                         .iter()
+                        .filter(|(_, r)| store_admits(r, &houses, own_house, general_exists))
                         .min_by_key(|(_, r)| {
                             let c = (r.min + r.max) / 2;
                             let d = c - cell;
@@ -24777,7 +24881,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         })
                         // Ground, not painted top — see `stockpile_drop_cell`:
                         // max.z above a house snapped the goal onto the ROOF.
-                        .map(|(z, r)| (*z, stockpile_drop_cell(&terrain, r)))
+                        .map(|(z, r)| (*z, stockpile_drop_cell_spread(|x, y, h| column_surface_z(&terrain, x, y, h), &occ, r)))
                     else {
                         continue;
                     };
@@ -33730,7 +33834,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 if let Some((_, r)) =
                                     board.stockpiles.iter().find(|(z, _)| *z == destination)
                                 {
-                                    job.pos = stockpile_drop_cell(&terrain, r);
+                                    let occ_map: HashMap<(i32, i32), u32> = {
+                                        let mut m = HashMap::new();
+                                        for (pi, ip) in (&pickup_items, &positions).join() {
+                                            let c = ip.0.map(|e| e.floor() as i32);
+                                            *m.entry((c.x, c.y)).or_insert(0) += pi.item().amount() as u32;
+                                        }
+                                        m
+                                    };
+                                    job.pos = stockpile_drop_cell_spread(
+                                        |x, y, h| column_surface_z(&terrain, x, y, h),
+                                        |x, y| occ_map.get(&(x, y)).copied().unwrap_or(0),
+                                        r,
+                                    );
                                     job.progress = 0.5;
                                     active.state = ActiveJobState::Traveling;
                                     active.best_dist = f32::MAX;
@@ -41976,6 +42092,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // the eat scan: never reserve a pile a whole-region
                         // exhaust just proved unreachable — unless it is the
                         // only pile there is.
+                        // STORE KINDS: an item on a private shelf is the household's.
+                        let houses_f: Vec<Region> = board
+                            .designated
+                            .iter()
+                            .filter(|(_, k)| matches!(k, DesignationKind::Bed))
+                            .map(|(r, _)| *r)
+                            .collect();
+                        let general_exists_f =
+                            board.stockpiles.iter().any(|(_, r)| !store_is_private(r, houses_f.iter()));
+                        let own_house_f = household_house(
+                            board.beds.iter().find(|(_, sl)| sl.owner == Some(*uid)).map(|(p, _)| *p),
+                            houses_f.iter(),
+                        );
                         let pick_cand = |respect_verdicts: bool| (&pickup_items, &positions, &uids)
                             .join()
                             .filter(|(pi, ipos, iuid)| {
@@ -41988,6 +42117,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             tick.0,
                                         ))
                                     && board.stockpile_at(icell).is_some()
+                                    && board.stockpiles.iter().find(|(_, r)| r.contains_point_xy(icell)).is_none_or(|(_, r)| store_admits(r, &houses_f, own_house_f, general_exists_f))
                                     && board.has_capacity(**iuid, pi.amount())
                                     // ★ ITEM-REACH GATE (flag-gated,
                                     // fail-open): do not RESERVE a pile the
@@ -47780,6 +47910,46 @@ mod tests {
         assert_eq!(reserve_haulers(&prof, &counts, 2), vec![u(2)], "the heaviest non-hauler, lowest uid on a tie");
         assert_eq!(reserve_haulers(&prof, &counts, 3), vec![u(2), u(3)]);
         assert!(!reserve_haulers(&prof, &counts, 4).contains(&u(4)), "never a hauler twice");
+    }
+
+    /// ★ STORE KINDS + SPREAD pinned (Ben, 2026-09-01). Guards
+    /// `store_is_private` / `household_house` / `store_admits` and the
+    /// least-filled drop cell with its tie rule and its 1x1 identity.
+    #[test]
+    fn private_shelves_belong_to_households_and_drops_spread_out() {
+        let house = Region { min: Vec3::new(0, 0, 10), max: Vec3::new(9, 9, 14) };
+        let shelf = Region { min: Vec3::new(3, 3, 12), max: Vec3::new(3, 3, 12) };
+        let barn = Region { min: Vec3::new(30, 30, 10), max: Vec3::new(34, 34, 10) };
+        let houses = [house];
+        assert!(store_is_private(&shelf, houses.iter()));
+        assert!(!store_is_private(&barn, houses.iter()));
+        let mine = household_house(Some(Vec3::new(5, 5, 11)), houses.iter());
+        assert_eq!(mine, Some(house));
+        assert_eq!(household_house(Some(Vec3::new(50, 50, 11)), houses.iter()), None);
+        assert_eq!(household_house(None, houses.iter()), None);
+        // With a general store: the shelf admits its household only; the barn admits all.
+        assert!(store_admits(&shelf, &houses, mine, true));
+        assert!(!store_admits(&shelf, &houses, None, true));
+        assert!(store_admits(&barn, &houses, None, true));
+        // Without any general store: identity, everyone may use the shelf.
+        assert!(store_admits(&shelf, &houses, None, false));
+
+        // Spread: a 3x3 zone whose centre holds 5 units drops elsewhere, first row-major.
+        let zone = Region { min: Vec3::new(0, 0, 5), max: Vec3::new(2, 2, 5) };
+        let flat = |_x: i32, _y: i32, _h: i32| Some(5);
+        let centre_full = |x: i32, y: i32| if (x, y) == (1, 1) { 5 } else { 0 };
+        assert_eq!(stockpile_drop_cell_spread(flat, centre_full, &zone), Vec3::new(0, 0, 6));
+        // All empty: the centre, as before.
+        assert_eq!(stockpile_drop_cell_spread(flat, |_, _| 0, &zone), Vec3::new(1, 1, 6));
+        // Everything but one cell full: that cell.
+        let one_free = |x: i32, y: i32| if (x, y) == (2, 1) { 0 } else { 3 };
+        assert_eq!(stockpile_drop_cell_spread(flat, one_free, &zone), Vec3::new(2, 1, 6));
+        // Unstandable cells are skipped.
+        let hole = |x: i32, y: i32, _h: i32| if (x, y) == (0, 0) { None } else { Some(5) };
+        assert_eq!(stockpile_drop_cell_spread(hole, centre_full, &zone), Vec3::new(1, 0, 6));
+        // 1x1: identity with the old chooser.
+        let one = Region { min: Vec3::new(7, 7, 5), max: Vec3::new(7, 7, 5) };
+        assert_eq!(stockpile_drop_cell_spread(flat, |_, _| 9, &one), stockpile_drop_cell_impl(flat, &one));
     }
 
     #[test]
