@@ -6810,6 +6810,74 @@ pub const FARM_STAGE_SECS: f64 =
     FARM_CYCLE_DAYS * common::resources::DAY / (FARM_GROWTH_MAX - FARM_GROWTH_SOWN) as f64;
 pub const FARM_GROWTH_SOWN: u8 = 1;
 
+/// ★ THE CYCLE IS THE YEAR (Ben, live 2026-09-02: "plant in spring,
+/// harvest in summer, fall stock for winter"). A spring sowing crosses
+/// its stages over spring and summer: this fraction of the year over the
+/// growth stages. Autumn's 1.5x finishes late sowings; winter stops.
+pub const GROW_SEASON_FRACTION: f64 = 0.5;
+pub fn farm_stage_secs(days_in_year: f64) -> f64 {
+    days_in_year * GROW_SEASON_FRACTION * common::resources::DAY
+        / (FARM_GROWTH_MAX - FARM_GROWTH_SOWN) as f64
+}
+
+/// ★ SOW IN SPRING: the season's word on an unsown farm cell. Spring keeps
+/// the per-column verdict (sow once a season); summer waits (a sowing now
+/// would not finish); autumn only breaks unbroken ground for spring;
+/// winter does nothing. `BASTION_NO_SEASON_SOW` restores sowing in any
+/// season.
+pub(crate) fn seasonal_verdict_for(
+    season: common::time::Season,
+    ground_ready: bool,
+    base: SeasonalTillVerdict,
+) -> SeasonalTillVerdict {
+    use common::time::Season as S;
+    if std::env::var_os("BASTION_NO_SEASON_SOW").is_some() {
+        return if ground_ready { base } else { SeasonalTillVerdict::Till };
+    }
+    match season {
+        S::Spring => {
+            if ground_ready {
+                base
+            } else {
+                SeasonalTillVerdict::Till
+            }
+        },
+        S::Summer | S::Winter => SeasonalTillVerdict::Wait,
+        S::Autumn => {
+            if ground_ready {
+                SeasonalTillVerdict::Wait
+            } else {
+                SeasonalTillVerdict::Till
+            }
+        },
+    }
+}
+pub static SOW_REFUSED_BY_SEASON: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+/// ★ STOCK FOR WINTER: from autumn the food par covers the days until the
+/// next harvest window (spring sowings ripen from year phase 0.4); in
+/// winter the days that remain; in spring and early summer the flat par.
+/// Never below the flat par. `DAILY_RAW_UNITS` = 1.6 hunger a day / 0.5 a
+/// raw meal.
+pub const DAILY_RAW_UNITS: f64 = 3.2;
+pub const HARVEST_WINDOW_PHASE: f64 = 0.4;
+pub fn seasonal_food_par(roster: u32, days_in_year: f64, time_of_day: f64) -> u32 {
+    let base = food_par_for(roster);
+    if std::env::var_os("BASTION_NO_WINTER_PAR").is_some() {
+        return base;
+    }
+    let phase = common::time::year_phase(time_of_day, days_in_year);
+    let days_to_window = if phase >= 0.5 {
+        (1.0 + HARVEST_WINDOW_PHASE - phase) * days_in_year
+    } else if phase < HARVEST_WINDOW_PHASE {
+        (HARVEST_WINDOW_PHASE - phase) * days_in_year
+    } else {
+        0.0
+    };
+    let need = (roster as f64 * DAILY_RAW_UNITS * days_to_window).ceil() as u32;
+    need.max(base)
+}
+
 /// ★ AN ADOPTED TOWN HAS BEEN LIVING HERE (2026-09-02). Both flat arms
 /// showed sown=51, MATURE=0 at 2.1 days under the 4-day cycle: every field
 /// started "just sown" on adoption day, so the first harvest is day 4 and
@@ -7586,6 +7654,8 @@ pub fn farm_season_index(time_of_day: f64) -> u64 {
 /// once-per-season till is due.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum SeasonalTillVerdict {
+    /// Not this season: the cell waits (summer / winter, or tilled ground in autumn).
+    Wait,
     SowGrace,
     Sow,
     Till,
@@ -23059,6 +23129,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 "bastion: ASSIGNMENT CENSUS — who works this zone, and who decided (Ben: see it)"
                             );
                         }
+                        {
+                            let diy = common::time::SeasonConfig::current().days_in_year;
+                            let tod = rtsim.rt_state().data().time_of_day.0;
+                            let roster_y = board.professions.len() as u32;
+                            let stock_y = colony_food_stock((&pickup_items, &positions).join(), &board);
+                            let par_y = seasonal_food_par(roster_y, diy, tod);
+                            info!(
+                                day = today,
+                                season = ?farm_season(tod),
+                                day_of_year = common::time::day_of_year(tod, diy),
+                                days_in_year = diy,
+                                stage_secs = farm_stage_secs(diy),
+                                food_stock = stock_y,
+                                food_par = par_y,
+                                days_of_food = stock_y as f64 / (roster_y.max(1) as f64 * DAILY_RAW_UNITS),
+                                sows_refused_by_season = SOW_REFUSED_BY_SEASON.swap(0, core::sync::atomic::Ordering::Relaxed),
+                                "bastion: YEAR CENSUS — the season, the stage length, the stock against the winter (Ben: plant in spring, stock for winter)"
+                            );
+                        }
                         info!(day = today, assigned_auto = auto, assigned_manual = manual, unassigned = lanes.len().saturating_sub(next.len()), zones = zones.len(), "bastion: ASSIGNMENT SUMMARY");
                         board.assignments = next;
                         board.assignments_rev += 1;
@@ -24847,7 +24936,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 .values()
                 .filter(|n| n.bastion_colonist.is_some() && !n.is_dead())
                 .count() as u32;
-            let food_par = food_par_for(roster_now);
+            let food_par = seasonal_food_par(
+                roster_now,
+                common::time::SeasonConfig::current().days_in_year,
+                rtsim.rt_state().data().time_of_day.0,
+            );
             let wants_mission = !mission_live
                 && !trade_price_book.0.is_empty()
                 && food_stock < food_par;
@@ -27042,8 +27135,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // seasons scale the stage interval.
                                     let season =
                                         farm_season(rtsim.rt_state().data().time_of_day.0);
-                                    let stage_secs = season_stage_factor(season)
-                                        .map(|f| FARM_STAGE_SECS * f);
+                                    let stage_secs = season_stage_factor(season).map(|f| {
+                                        farm_stage_secs(common::time::SeasonConfig::current().days_in_year) * f
+                                    });
                                     if stage_secs.is_some_and(|ss| now_tod - last >= ss) {
                                         if let Ok(nb) = crop.with_attr(Growth(g + 1)) {
                                             // Treatment beside outcome, per
@@ -27165,11 +27259,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     let ground_ready = terrain
                                         .get(gpos)
                                         .is_ok_and(|b| b.kind() == BlockKind::Earth);
-                                    let verdict = if ground_ready {
-                                        verdict
-                                    } else {
-                                        SeasonalTillVerdict::Till
-                                    };
+                                    let verdict = seasonal_verdict_for(
+                                        farm_season(rtsim.rt_state().data().time_of_day.0),
+                                        ground_ready,
+                                        verdict,
+                                    );
                                     match verdict {
                                         SeasonalTillVerdict::SowGrace => {
                                             board
@@ -27196,6 +27290,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                     AffordanceClass::OnTopAlways,
                                                 ));
                                             }
+                                        },
+                                        SeasonalTillVerdict::Wait => {
+                                            SOW_REFUSED_BY_SEASON.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                                         },
                                         SeasonalTillVerdict::Till => {
                                             // The once-per-season till, at
@@ -49545,6 +49642,33 @@ mod tests {
         assert!(store_closed(&closed, 7, 1_000 + STORE_CLOSE_TICKS - 1));
         assert!(!store_closed(&closed, 7, 1_000 + STORE_CLOSE_TICKS), "expired: open again");
         assert!(!store_closed(&closed, 8, 1_000), "another zone: open");
+    }
+
+    /// ★ THE YEAR pinned: the stage length scales with the year; sowing
+    /// only in spring (summer waits, autumn tills unbroken ground only,
+    /// winter nothing); the winter par rises from autumn and is never
+    /// below the flat par.
+    #[test]
+    fn the_cycle_is_the_year_sow_in_spring_stock_for_winter() {
+        use common::time::Season as S;
+        let stages = (FARM_GROWTH_MAX - FARM_GROWTH_SOWN) as f64;
+        assert!((farm_stage_secs(160.0) * stages - 80.0 * common::resources::DAY).abs() < 1e-6, "160-day year: 80 days of growth");
+        assert!((farm_stage_secs(8.0) * stages - 4.0 * common::resources::DAY).abs() < 1e-6, "8-day year: 4 days of growth");
+        assert_eq!(seasonal_verdict_for(S::Spring, true, SeasonalTillVerdict::Sow), SeasonalTillVerdict::Sow);
+        assert_eq!(seasonal_verdict_for(S::Spring, false, SeasonalTillVerdict::Sow), SeasonalTillVerdict::Till);
+        assert_eq!(seasonal_verdict_for(S::Summer, true, SeasonalTillVerdict::Sow), SeasonalTillVerdict::Wait);
+        assert_eq!(seasonal_verdict_for(S::Autumn, true, SeasonalTillVerdict::Sow), SeasonalTillVerdict::Wait, "tilled ground waits for spring");
+        assert_eq!(seasonal_verdict_for(S::Autumn, false, SeasonalTillVerdict::Sow), SeasonalTillVerdict::Till, "autumn breaks ground for spring");
+        assert_eq!(seasonal_verdict_for(S::Winter, false, SeasonalTillVerdict::Sow), SeasonalTillVerdict::Wait);
+        let diy = 160.0;
+        let day = common::resources::DAY;
+        let flat = food_par_for(50);
+        assert_eq!(seasonal_food_par(50, diy, 0.45 * diy * day), flat, "late spring: the flat par");
+        let autumn_start = seasonal_food_par(50, diy, 0.5 * diy * day);
+        let midwinter = seasonal_food_par(50, diy, 0.875 * diy * day);
+        let early_spring = seasonal_food_par(50, diy, 0.1 * diy * day);
+        assert!(autumn_start > midwinter && midwinter > early_spring && early_spring > flat, "the par falls as the window nears: {autumn_start} > {midwinter} > {early_spring} > {flat}");
+        assert_eq!(autumn_start, (50.0 * DAILY_RAW_UNITS * 0.9 * diy).ceil() as u32, "autumn: 0.9 year of days to the window");
     }
 
     #[test]

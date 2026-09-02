@@ -90,9 +90,19 @@ impl SeasonConfig {
     /// never a panic.
     pub fn current() -> Self {
         use crate::assets::AssetExt;
-        Self::load("common.season_config")
+        let mut cfg = Self::load("common.season_config")
             .map(|h| *h.read())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        // ★ BASTION_DAYS_IN_YEAR (2026-09-02): a fixture lever so a lab arm
+        // can run a compressed year; the asset is the game's number.
+        if let Some(d) = std::env::var("BASTION_DAYS_IN_YEAR")
+            .ok()
+            .and_then(|v| v.parse::<f64>().ok())
+            .filter(|d| *d >= 4.0)
+        {
+            cfg.days_in_year = d;
+        }
+        cfg
     }
 
     pub fn year_length_secs(&self) -> f64 { crate::resources::DAY * self.days_in_year }
