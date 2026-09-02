@@ -6246,6 +6246,18 @@ pub const FETCH_BUDGET_SECS: f64 = 90.0;
 /// floor. Pinned both ways by `a_wedged_fetch_expires_early_but_a_slow_walk_does_not`.
 pub const FETCH_STALL_SECS: f64 = 15.0;
 
+/// ★ A STALLED EATER KEEPS WALKING (flat arm b1: 70 then 33 eat trips a day
+/// expired by the 15 s stall rule, stalled at z 183-186 on structures,
+/// before the wedge/strike/self-rescue machinery could recover them; the
+/// eat census read 99 minted / 46 meals). A material fetch that stalls
+/// frees its item for others; a meal in a store needs no freeing. An
+/// EatFrom fetch expires only at the full budget. `BASTION_NO_EAT_PATIENCE`
+/// restores the early expiry.
+pub static EAT_STALLS_TOLERATED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+pub(crate) fn fetch_stall_expires(is_eat: bool, stalled: bool, over_budget: bool) -> bool {
+    over_budget || (stalled && !(is_eat && std::env::var_os("BASTION_NO_EAT_PATIENCE").is_none()))
+}
+
 /// Has this fetch stopped moving? Pure so it can be pinned.
 ///
 /// `last` is (position at the last progress mark, time of that mark). Progress
@@ -23124,6 +23136,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 day = today,
                                 eat_minted = EAT_MINTED.swap(0, core::sync::atomic::Ordering::Relaxed),
                                 meals = EAT_MEALS.swap(0, core::sync::atomic::Ordering::Relaxed),
+                                eat_stalls_tolerated = EAT_STALLS_TOLERATED.swap(0, core::sync::atomic::Ordering::Relaxed),
                                 skips = %skips.join(" "),
                                 "bastion: EAT CENSUS — why a hungry colonist did not get a meal today (skip reasons are per scan pass, any need)"
                             );
@@ -29122,16 +29135,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         time.0,
                                     );
                                     board.fetch_progress.insert(active.job, mark);
+                                    let is_eat = matches!(job.kind, common::bastion::JobKind::EatFrom { .. });
+                                    let expires = fetch_stall_expires(is_eat, stalled, time.0 - started > fetch_budget);
+                                    if stalled && !expires {
+                                        EAT_STALLS_TOLERATED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                                    }
                                     if stalled {
                                         tracing::warn!(
                                             job = active.job,
                                             kind = ?job.kind,
                                             feet = ?pos.0.map(|e| e.floor() as i32),
                                             secs = time.0 - mark.1,
+                                            tolerated = !expires,
                                             "bastion: FETCH STALLED — no displacement, expiring                                              early instead of serving the full budget"
                                         );
                                     }
-                                    if stalled || time.0 - started > fetch_budget {
+                                    if expires {
                                         // Release through the SAME field-split
                                         // path the vanished-item branch uses —
                                         // a raw `.remove` leaves
@@ -49308,6 +49327,17 @@ mod tests {
         assert_eq!(supper_severity(0.0, true, 0.7), 0.0, "above the line: identity");
         assert_eq!(supper_severity(0.9, true, 0.05), 0.9, "a graver hunger keeps its own");
         assert!(SUPPER_SEVERITY > 0.0 && SUPPER_SEVERITY <= 1.0);
+    }
+
+    /// ★ EAT PATIENCE pinned: a stalled meal trip does not expire; a stalled
+    /// material fetch does; the budget expires everything.
+    #[test]
+    fn a_stalled_eater_keeps_walking_but_a_stalled_hauler_lets_go() {
+        assert!(!fetch_stall_expires(true, true, false), "an eater's stall is tolerated");
+        assert!(fetch_stall_expires(false, true, false), "a material fetch's stall expires");
+        assert!(fetch_stall_expires(true, false, true), "the budget expires an eater too");
+        assert!(!fetch_stall_expires(true, false, false));
+        assert!(!fetch_stall_expires(false, false, false));
     }
 
     #[test]
