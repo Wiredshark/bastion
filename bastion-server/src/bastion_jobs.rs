@@ -10881,6 +10881,10 @@ pub struct JobSeq {
     pub streak: u32,
     pub max_work_streak: u32,
     pub last_is_haul: Option<bool>,
+    /// Claims made while a zone scope was active, and how many of those
+    /// landed inside the zone (PREREG M2: in_zone_pct).
+    pub scoped: u32,
+    pub in_zone: u32,
 }
 
 impl JobSeq {
@@ -10900,6 +10904,15 @@ impl JobSeq {
             self.max_work_streak = self.max_work_streak.max(self.streak);
         }
         self.last_is_haul = Some(is_haul);
+    }
+
+    pub fn note_zone(&mut self, inside: Option<bool>) {
+        if let Some(i) = inside {
+            self.scoped += 1;
+            if i {
+                self.in_zone += 1;
+            }
+        }
     }
 }
 
@@ -22089,7 +22102,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     {
                         let mut by_lane: HashMap<
                             Option<common::bastion::WorkType>,
-                            (u32, u32, u32, u32, u32),
+                            (u32, u32, u32, u32, u32, u32, u32),
                         > = HashMap::new();
                         for (u, seq) in board.job_seq.iter() {
                             let lane = board.professions.get(u).copied();
@@ -22099,8 +22112,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             e.2 += seq.hauls;
                             e.3 += seq.alternations;
                             e.4 += seq.max_work_streak;
+                            e.5 += seq.scoped;
+                            e.6 += seq.in_zone;
                         }
-                        for (lane, (n, works, hauls, alts, streaks)) in by_lane {
+                        for (lane, (n, works, hauls, alts, streaks, scoped, in_zone)) in by_lane {
                             info!(
                                 day = today,
                                 ?lane,
@@ -22111,6 +22126,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 haul_share_pct = hauls * 100 / (works + hauls).max(1),
                                 mean_alternations = alts as f32 / n.max(1) as f32,
                                 mean_max_work_streak = streaks as f32 / n.max(1) as f32,
+                                scoped_claims = scoped,
+                                in_zone_pct = in_zone * 100 / scoped.max(1),
                                 "bastion: JOB SEQUENCE CENSUS — work->haul->work alternations per lane per day (Ben, live: \"they do a job, haul, do job, haul\")"
                             );
                         }
@@ -41915,12 +41932,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let mut claimed_cell = None;
                 let mut claimed_job_pos = None;
                 // JOB SEQUENCE: read the kind before the mutable borrow below.
-                if let Some(is_haul) = board
+                if let Some((is_haul, jpos)) = board
                     .jobs
                     .get(&job_id)
-                    .map(|j| j.work == common::bastion::WorkType::Haul)
+                    .map(|j| (j.work == common::bastion::WorkType::Haul, j.pos))
                 {
-                    board.job_seq.entry(*uid).or_default().note(is_haul);
+                    let e = board.job_seq.entry(*uid).or_default();
+                    e.note(is_haul);
+                    e.note_zone(scope.map(|r| r.contains_point_xy(jpos)));
                 }
                 if let Some(job) = board.jobs.get_mut(&job_id) {
                     job.claimed_by = Some(*uid);
@@ -47546,6 +47565,12 @@ mod tests {
             w.note(false);
         }
         assert_eq!((w.alternations, w.max_work_streak, w.hauls), (0, 5, 0));
+        // Zone notes: only scoped claims count, and only inside ones score.
+        let mut z = JobSeq::default();
+        for i in [Some(true), Some(false), None, Some(true)] {
+            z.note_zone(i);
+        }
+        assert_eq!((z.scoped, z.in_zone), (3, 2));
     }
 
     /// ★ ZONE ASSIGNMENT pinned: balanced per cell, manual survives, a lane
