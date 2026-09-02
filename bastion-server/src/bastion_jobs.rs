@@ -4058,6 +4058,22 @@ pub(crate) fn haul_admits(is_hauler: bool, hour: u32, backlog_loads: u32, hauler
 pub static HAUL_CLAIMS_GATED: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// ★ EAT CENSUS (2026-09-02): why a hungry colonist did not get a meal.
+/// The need scan's skip reasons were a diagnostic off by default; flat
+/// arm b2 day 2 hour 9 had 15 of 50 starving beside a full barn and
+/// nothing to say why. Every skip site bumps its reason here; EatFrom
+/// mints and meals are counted; one line a day prints them all.
+pub const EAT_SKIP_REASONS: [&str; 11] = ["no_need_below_interrupt", "preempt_cooldown_active", "already_on_need_job", "drive_not_personal", "working_a_food_job", "no_food_found", "curfew", "pending_self_job_struck_out", "no_bed_found", "despondent_not_past_interrupt", "missing_component"];
+pub static EAT_SKIP: [core::sync::atomic::AtomicU64; 11] = [core::sync::atomic::AtomicU64::new(0), core::sync::atomic::AtomicU64::new(0), core::sync::atomic::AtomicU64::new(0), core::sync::atomic::AtomicU64::new(0), core::sync::atomic::AtomicU64::new(0), core::sync::atomic::AtomicU64::new(0), core::sync::atomic::AtomicU64::new(0), core::sync::atomic::AtomicU64::new(0), core::sync::atomic::AtomicU64::new(0), core::sync::atomic::AtomicU64::new(0), core::sync::atomic::AtomicU64::new(0)];
+pub static EAT_MINTED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+pub static EAT_MEALS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+pub fn eat_skip_count(reason: &str) -> bool {
+    if let Some(i) = EAT_SKIP_REASONS.iter().position(|r| *r == reason) {
+        EAT_SKIP[i].fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+    }
+    true
+}
+
 /// ★ A GUARD'S WORK DAY IS THE ROADS (flat arms, three day lines: guards
 /// 60-72% "elsewhere" in work hours, 0-5 patrols a day for 7-8 guards --
 /// the open board handed a guard a haul in the tick after a leg ended,
@@ -23062,6 +23078,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 e.9[k] += seq.travel_by_class[k];
                             }
                         }
+                        {
+                            let skips: Vec<String> = EAT_SKIP_REASONS
+                                .iter()
+                                .zip(EAT_SKIP.iter())
+                                .map(|(r, c)| format!("{r}={}", c.swap(0, core::sync::atomic::Ordering::Relaxed)))
+                                .collect();
+                            info!(
+                                day = today,
+                                eat_minted = EAT_MINTED.swap(0, core::sync::atomic::Ordering::Relaxed),
+                                meals = EAT_MEALS.swap(0, core::sync::atomic::Ordering::Relaxed),
+                                skips = %skips.join(" "),
+                                "bastion: EAT CENSUS — why a hungry colonist did not get a meal today (skip reasons are per scan pass, any need)"
+                            );
+                        }
                         info!(
                             day = today,
                             haul_claims_gated =
@@ -27368,7 +27398,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     positions.get(entity),
                     needs_storage.get(entity),
                 ) else {
-                    if need_skip_diag {
+                    if eat_skip_count("missing_component") && need_skip_diag {
                         info!(colonist = %uid, "NEED-SKIP-DIAG reason=missing_component");
                     }
                     continue;
@@ -27434,7 +27464,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         rest_interrupt,
                         hunger_interrupt,
                     ) {
-                        if need_skip_diag {
+                        if eat_skip_count("despondent_not_past_interrupt") && need_skip_diag {
                             info!(
                                 colonist = %uid,
                                 rest = needs.rest,
@@ -27969,7 +27999,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             arb.pending_self_job = None;
                         }
                     }
-                    if need_skip_diag {
+                    if eat_skip_count("no_need_below_interrupt") && need_skip_diag {
                         info!(
                             colonist = %uid,
                             rest = needs.rest,
@@ -28002,7 +28032,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 ) {
                     let until = board.preempt_cooldown.get(uid).copied().unwrap_or(0.0);
                     let set_at = until - PREEMPT_COOLDOWN_SECS;
-                    if need_skip_diag {
+                    if eat_skip_count("preempt_cooldown_active") && need_skip_diag {
                         info!(
                             colonist = %uid,
                             until,
@@ -28041,7 +28071,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             ) && !eat_is_most_urgent)
                     })
                 }) {
-                    if need_skip_diag {
+                    if eat_skip_count("already_on_need_job") && need_skip_diag {
                         info!(colonist = %uid, "NEED-SKIP-DIAG reason=already_on_need_job");
                     }
                     continue;
@@ -28066,7 +28096,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     .get(entity)
                     .is_some_and(|a| a.current == comp::bastion::Drive::Personal)
                 {
-                    if need_skip_diag {
+                    if eat_skip_count("drive_not_personal") && need_skip_diag {
                         info!(colonist = %uid, "NEED-SKIP-DIAG reason=drive_not_personal");
                     }
                     continue;
@@ -28167,7 +28197,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 }
                             }
                             struck_out = true;
-                            if need_skip_diag {
+                            if eat_skip_count("pending_self_job_struck_out") && need_skip_diag {
                                 info!(colonist = %uid, kind = "eat", "NEED-SKIP-DIAG reason=pending_self_job_struck_out");
                             }
                             continue 'candidates;
@@ -28269,7 +28299,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         || j.kind.is(DesignationKind::Farm)
                                 });
                             if on_imminent_food && pack_def.is_none() {
-                                if need_skip_diag {
+                                if eat_skip_count("working_a_food_job") && need_skip_diag {
                                     info!(
                                         colonist = %uid,
                                         "NEED-SKIP-DIAG reason=working_a_food_job"
@@ -28419,7 +28449,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     );
                                 }
                                 if night_now && !at_home {
-                                    if need_skip_diag {
+                                    if eat_skip_count("curfew") && need_skip_diag {
                                         info!(
                                             colonist = %uid,
                                             "bastion: NEED-SKIP curfew — night hunger holds until dawn"
@@ -28455,7 +28485,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 preempt_pending.push((
                                     entity,
                                     *uid,
-                                    PendingNeed::Eat(item, rid, ipos, def),
+                                    { EAT_MINTED.fetch_add(1, core::sync::atomic::Ordering::Relaxed); PendingNeed::Eat(item, rid, ipos, def) },
                                 ));
                                 serviced = true;
                                 break 'candidates;
@@ -28553,7 +28583,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 arb.pending_self_job = None;
                             }
                             struck_out = true;
-                            if need_skip_diag {
+                            if eat_skip_count("pending_self_job_struck_out") && need_skip_diag {
                                 info!(colonist = %uid, kind = "rest", "NEED-SKIP-DIAG reason=pending_self_job_struck_out");
                             }
                             continue 'candidates;
@@ -28598,7 +28628,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // No bed anywhere: not a dead-end target,
                             // there was never one — try the next
                             // candidate.
-                            if need_skip_diag {
+                            if eat_skip_count("no_bed_found") && need_skip_diag {
                                 info!(colonist = %uid, "NEED-SKIP-DIAG reason=no_bed_found");
                             }
                             continue 'candidates;
@@ -28859,6 +28889,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 && let Some(needs) = needs_storage.get_mut(entity)
             {
                 let before = needs.hunger;
+                EAT_MEALS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                 needs.hunger = (needs.hunger + food_restore_for(def)).min(1.0);
                 board.b5_eat_completions_distinct.insert(uid);
                 info!(
@@ -34004,6 +34035,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 info!(kind = "EatFrom", "bastion SELFJOB-COMPLETED-DIAG");
                             }
                             if let Some(needs) = needs_storage.get_mut(entity) {
+                                EAT_MEALS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                                 needs.hunger =
                                     (needs.hunger + food_restore_for(eaten_def)).min(1.0);
                             }
@@ -34113,6 +34145,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     info!(kind = "EatFrom", "bastion SELFJOB-COMPLETED-DIAG");
                                 }
                                 if let Some(needs) = needs_storage.get_mut(entity) {
+                                    EAT_MEALS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                                     needs.hunger =
                                         (needs.hunger + food_restore_for(&eaten_def)).min(1.0);
                                 }
