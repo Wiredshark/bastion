@@ -1565,6 +1565,16 @@ pub(crate) fn assist_outranks_rival_writes<E: PartialEq + Copy>(
     dropped
 }
 
+/// ★ D1c (2026-09-02): on an alarm, only a POSTED militia member is exempt
+/// from the shelter — a Guard job on the board (the muster's squad this
+/// cry, or a standing post). The muster posts a squad no larger than the
+/// threat (two for two raiders); the shelter loop used to skip everyone
+/// with a Guard priority of 4+ instead, so 14 of 16 such colonists on arm
+/// b1 neither fought nor went indoors (civilians indoors 62%, bar 80%).
+pub(crate) fn alarm_exempts_from_shelter(kind: &common::bastion::JobKind) -> bool {
+    matches!(kind, common::bastion::JobKind::Guard { .. })
+}
+
 /// Would the search-gap bridge's override be walking a body INTO ROCK?
 ///
 /// The surface probe refuses for two reasons and the override used to treat
@@ -22533,19 +22543,25 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // D1b: civilians already home in bed at the cry (skipped
                         // below); 'civilians indoors' = sheltered + already_home.
                         let mut already_home = 0u32;
+                        let mut militia_posted = 0u32;
                         let mut out_of_earshot = 0u32;
                         let mut civ: Vec<(u64, specs::Entity, Vec3<i32>)> = Vec::new();
                         for (ent, c, p) in (&entities, &colonists, &positions).join() {
-                            if c.0.work_priorities.get(common::bastion::WorkType::Guard) >= 4
-                                && !uids.get(ent).is_some_and(|u| {
-                                    board
-                                        .muster_bench
-                                        .get(u)
-                                        .is_some_and(|until| time.0 < *until)
-                                })
-                            {
-                                continue; // FIT militia runs TOWARD it; the
-                                          // benched hide like anyone else.
+                            // ★ D1c: only a POSTED militia member runs TOWARD
+                            // it — a Guard job on the board (the muster's
+                            // squad this cry, or a standing post). The
+                            // muster's squad cap left 14 of 16 high-priority
+                            // colonists unposted and this predicate used to
+                            // skip them by priority too: neither fighting
+                            // nor indoors (civilians indoors read 62%).
+                            if active_jobs.get(ent).is_some_and(|aj| {
+                                board
+                                    .jobs
+                                    .get(&aj.job)
+                                    .is_some_and(|j| alarm_exempts_from_shelter(&j.kind))
+                            }) {
+                                militia_posted += 1;
+                                continue;
                             }
                             let feet = p.0.map(|e| e.floor() as i32);
                             if (feet.xy() - cry_pos.xy()).map(|e| e as f32).magnitude()
@@ -22654,6 +22670,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             workers_preempted = skipped_working,
                             shelter_jobs,
                             already_home,
+                            militia_posted,
                             skipped_bedless,
                             out_of_earshot,
                             "bastion: ★ ALARM RAISED — a colonist cried out and the town heard it"
@@ -29595,8 +29612,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         // west to east (# solid, . air, ~ filled-not-solid,
                                         // ? unloaded), and the way to the item.
                                         let f = pos.0.map(|e| e.floor() as i32);
-                                        let mut layers: Vec<String> = Vec::with_capacity(4);
-                                        for dz in -1i32..=2 {
+                                        // ★ W6a: to z+3, so the cell ABOVE a two-up
+                                        // route head (the assist's ceiling test) is on
+                                        // the map.
+                                        let mut layers: Vec<String> = Vec::with_capacity(5);
+                                        for dz in -1i32..=3 {
                                             let mut rows: Vec<String> = Vec::with_capacity(5);
                                             for dy in (-2i32..=2).rev() {
                                                 let mut row = String::with_capacity(5);
@@ -29625,6 +29645,41 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 (common::path::PathLength::Longest, common::path::PathState::Exhausted)
                                             )
                                         });
+                                        // ★ W6a: the assist's own eligibility, refusal by
+                                        // refusal, for THIS head -- so a stall at a
+                                        // promised climb says whether the assist could
+                                        // ever have taken it. Mirrors the MOVE ASSIST
+                                        // filters; a drift between the two is itself a
+                                        // finding.
+                                        let assist_why = match snap.as_ref().and_then(|sn| sn.route_head) {
+                                            None => "no_head",
+                                            Some(h) => {
+                                                let d = h - f;
+                                                let solid = |q: Vec3<i32>| {
+                                                    terrain.get(q).map(|b| b.is_solid()).unwrap_or(true)
+                                                };
+                                                if d.xy().map(|e| e.abs()).reduce_max() > 2 || d.z.abs() > 3 {
+                                                    "head_far"
+                                                } else if d.xy() == Vec2::zero() && d.z == 0 {
+                                                    "head_is_feet"
+                                                } else if solid(h) {
+                                                    "head_solid"
+                                                } else if solid(h + Vec3::unit_z()) {
+                                                    "ceiling_solid"
+                                                } else if !solid(h - Vec3::unit_z()) {
+                                                    "no_floor"
+                                                } else if uids
+                                                    .get(entity)
+                                                    .is_some_and(|u| board.path_cache.contains_key(u))
+                                                {
+                                                    "committed_walker"
+                                                } else if d.z >= 2 {
+                                                    "eligible_climb"
+                                                } else {
+                                                    "eligible"
+                                                }
+                                            },
+                                        };
                                         info!(
                                             job = active.job,
                                             kind = ?job.kind,
@@ -29636,6 +29691,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             chaser = ?snap,
                                             tier = ?tier,
                                             top_tier_exhausted,
+                                            assist_why,
                                             blocks = %layers.join(" | "),
                                             "bastion: WEDGE PROBE — the blocks around a stalled fetch and the walker's route (north row first, west to east; # solid . air ~ filled ? unloaded)"
                                         );
@@ -33392,11 +33448,28 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 board.assist_repeats.saturating_add(1);
                                             let n = board.assist_repeats;
                                             if n <= 16 || n.is_power_of_two() {
+                                                // ★ W4b: name the writer. The
+                                                // body's cell now against the
+                                                // promised one; the mover's
+                                                // last push site for this body
+                                                // ("assist-wins" = the drain
+                                                // wrote the promised cell last,
+                                                // so whatever moved it back is
+                                                // outside the drain); the
+                                                // marker; the physics state.
+                                                let feet_now = pos.0.map(|e| e.floor() as i32);
                                                 info!(
                                                     colonist = u,
                                                     ?head,
                                                     class,
                                                     repeats = n,
+                                                    ?feet_now,
+                                                    delta = ?(feet_now - head),
+                                                    last_push_site = ?board.last_push_site.get(&Uid(std::num::NonZeroU64::new(u).expect("uid nonzero"))),
+                                                    marker = kinematic_travels.contains(entity),
+                                                    on_ground = physics_states.get(entity).is_some_and(|p| p.on_ground.is_some()),
+                                                    vel = ?velocities.get(entity).map(|v| v.0),
+                                                    stance = ?char_states.get(entity),
                                                     "bastion: MOVE ASSIST DID NOT STICK — the same cell promised to the same body again within 5 s; a rival writer undid the move"
                                                 );
                                             }
@@ -52420,6 +52493,33 @@ mod tests {
             gathering_spot(anchor, 12),
             gathering_spot(anchor, 0),
             "the 13th villager seats the outer ring, not somebody's bench"
+        );
+    }
+
+    /// ★ D1c pinned: exempt from the alarm's shelter only while on a Guard
+    /// job (posted or standing); a shelter job or a rest is no exemption,
+    /// whatever the guard priority (there is no priority in the predicate
+    /// to exempt by any more). Planted defect: `true` for every kind — the
+    /// second and third asserts go red.
+    #[test]
+    fn only_a_posted_militia_member_is_exempt_from_the_shelter() {
+        let mut b = JobBoard::default();
+        let uid = Uid(NonZeroU64::new(7).unwrap());
+        let posted = b.insert_auto_guard_job(Vec3::new(10, 10, 181), uid);
+        let sheltering = b.insert_shelter_job(Vec3::new(20, 20, 181), 900.0, uid);
+        assert!(
+            alarm_exempts_from_shelter(&b.jobs.get(&posted).unwrap().kind),
+            "a posted guard runs toward the cry"
+        );
+        assert!(
+            !alarm_exempts_from_shelter(&b.jobs.get(&sheltering).unwrap().kind),
+            "a sheltering colonist is not militia"
+        );
+        assert!(
+            !alarm_exempts_from_shelter(&common::bastion::JobKind::RestAt {
+                bed_pos: Vec3::new(20, 20, 181)
+            }),
+            "a rest is not an exemption"
         );
     }
 
