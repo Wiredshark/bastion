@@ -12869,6 +12869,9 @@ pub struct JobBoard {
     /// strike tick) from shunned targets inside it, and the closure expiry.
     pub store_stall_strikes: HashMap<common::bastion::ZoneId, (u32, u64)>,
     pub closed_stores: HashMap<common::bastion::ZoneId, u64>,
+    /// Fetch jobs whose stall has been logged once (the tolerated stall
+    /// would otherwise warn every tick).
+    pub fetch_stall_warned: HashSet<JobId>,
     /// AUTO PATROL jobs minted by the generator (uid -> job), released at
     /// shift end; a stale entry (the muster replaced the job) is dropped.
     pub auto_patrols: HashMap<common::uid::Uid, JobId>,
@@ -17753,9 +17756,23 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .map(|(e, u, _)| (e, *u))
                                 .collect();
                             guards.sort_by_key(|(_, u)| u.0.get());
+                            let (mut pp_busy, mut pp_held, mut pp_held_alive, mut pp_noleg, mut pp_posted) =
+                                (0u32, 0u32, 0u32, 0u32, 0u32);
+                            let pp_total = guards.len();
                             for (k, (e, u)) in guards.into_iter().enumerate() {
-                                if active_jobs.get(e).is_some() || board.auto_patrols.contains_key(&u) {
+                                if let Some(id) = board.auto_patrols.get(&u) {
+                                    pp_held += 1;
+                                    if board.jobs.contains_key(id) {
+                                        pp_held_alive += 1;
+                                    }
                                     continue;
+                                }
+                                if active_jobs.get(e).is_some() {
+                                    pp_busy += 1;
+                                    continue;
+                                }
+                                if patrol_leg(k, &entrances, plaza).is_none() {
+                                    pp_noleg += 1;
                                 }
                                 let Some((a, b)) = patrol_leg(k, &entrances, plaza) else {
                                     continue;
@@ -17777,6 +17794,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     ?far,
                                     entrances = entrances.len(),
                                     "bastion: PATROL POSTED — a guard walks a leg between two entrances (Ben)"
+                                );
+                                pp_posted += 1;
+                            }
+                            // ★ PATROL PASS census (throttled): which gate held each guard back.
+                            if tick.0 % 3000 == 0 {
+                                info!(
+                                    guards = pp_total,
+                                    busy_other_job = pp_busy,
+                                    held_on_patrol = pp_held,
+                                    held_patrol_alive = pp_held_alive,
+                                    no_leg = pp_noleg,
+                                    posted_now = pp_posted,
+                                    entrances = entrances.len(),
+                                    "bastion: PATROL PASS — the generator's gates this pass"
                                 );
                             }
                         }
@@ -29180,10 +29211,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     board.fetch_progress.insert(active.job, mark);
                                     let is_eat = matches!(job.kind, common::bastion::JobKind::EatFrom { .. });
                                     let expires = fetch_stall_expires(is_eat, stalled, time.0 - started > fetch_budget);
-                                    if stalled && !expires {
+                                    let first_stall = stalled && board.fetch_stall_warned.insert(active.job);
+                                    if first_stall && !expires {
                                         EAT_STALLS_TOLERATED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                                     }
-                                    if stalled {
+                                    if first_stall {
                                         tracing::warn!(
                                             job = active.job,
                                             kind = ?job.kind,
@@ -29194,6 +29226,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         );
                                     }
                                     if expires {
+                                        board.fetch_stall_warned.remove(&active.job);
                                         // ★ A STALLED TARGET IS SHUNNED (see `STALLED_TARGET_SHUN_TICKS`).
                                         if std::env::var_os("BASTION_NO_TARGET_SHUN").is_none() {
                                             let shun_cell = ip.map(|e| e.floor() as i32);
