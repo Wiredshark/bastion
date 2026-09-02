@@ -4058,6 +4058,17 @@ pub(crate) fn haul_admits(is_hauler: bool, hour: u32, backlog_loads: u32, hauler
 pub static HAUL_CLAIMS_GATED: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// ★ A GUARD'S WORK DAY IS THE ROADS (flat arms, three day lines: guards
+/// 60-72% "elsewhere" in work hours, 0-5 patrols a day for 7-8 guards --
+/// the open board handed a guard a haul in the tick after a leg ended,
+/// before the generator's next pass). In the Work block, with at least
+/// two entrances to walk between, a Guard-lane colonist claims only
+/// Guard work. `BASTION_NO_GUARD_DOOR` opens it.
+pub(crate) fn guard_door_shuts(is_guard: bool, job_is_guard: bool, work_block: bool, entrances: usize) -> bool {
+    is_guard && !job_is_guard && work_block && entrances >= 2
+}
+pub static GUARD_DOOR_SHUT: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 /// ★ DEDICATED HAULERS (Ben, live 2026-09-01: "we should have dedicated
 /// haulers"). How many the town keeps in the Haul lane: one per
 /// `COLONISTS_PER_HAULER`, and at least one once the roster reaches
@@ -12769,6 +12780,9 @@ pub struct JobBoard {
     /// AUTO PATROL jobs minted by the generator (uid -> job), released at
     /// shift end; a stale entry (the muster replaced the job) is dropped.
     pub auto_patrols: HashMap<common::uid::Uid, JobId>,
+    /// ★ THE GUARD DOOR: how many entrances the patrol generator found on
+    /// its last pass; the door shuts only with two or more to walk between.
+    pub patrol_entrances: usize,
     /// ZONE ASSIGNMENT: colonist -> (zone, who set it). See `assign_zones`.
     pub assignments: HashMap<common::uid::Uid, (common::bastion::ZoneId, AssignSource)>,
     /// Bumped on every change to `assignments`; the in-game message system
@@ -17635,6 +17649,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             }
                         } else {
                             let entrances = town_entrances(&board.road_cells, board.settlement_bounds);
+                            board.patrol_entrances = entrances.len();
                             let plaza = board.gathering_anchor.map(|a| a.xy());
                             let hint_z = board.gathering_anchor.map(|a| a.z).unwrap_or(0);
                             let mut guards: Vec<(specs::Entity, common::uid::Uid)> = (&entities, &uids, &colonists)
@@ -23009,6 +23024,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             day = today,
                             guards = board.guard_census.len(),
                             patrols_posted = PATROLS_POSTED.swap(0, core::sync::atomic::Ordering::Relaxed),
+                            guard_door_shut = GUARD_DOOR_SHUT.swap(0, core::sync::atomic::Ordering::Relaxed),
                             road_cells = board.road_cells.len(),
                             bounds = ?board.settlement_bounds,
                             entrances = entrances.len(),
@@ -42115,6 +42131,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             .values()
             .filter(|w| **w == common::bastion::WorkType::Haul)
             .count();
+        let guard_door_cfg = std::env::var_os("BASTION_NO_GUARD_DOOR").is_none();
+        let hour_claim = hour_of_day(rtsim.rt_state().data().time_of_day.0);
         for (entity, uid) in claim_order {
             census.colonists_seen += 1;
             let uid = &uid;
@@ -42682,6 +42700,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     )
                 {
                     HAUL_CLAIMS_GATED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    0
+                } else {
+                    priority
+                };
+                // ★ THE GUARD DOOR (see `guard_door_shuts`).
+                let priority = if priority > 0
+                    && guard_door_cfg
+                    && guard_door_shuts(
+                        board.professions.get(uid).copied() == Some(common::bastion::WorkType::Guard),
+                        job.work == common::bastion::WorkType::Guard,
+                        matches!(
+                            colonist_schedule_block(&board.night_watch, Some(uid), hour_claim),
+                            ScheduleBlock::Work
+                        ),
+                        board.patrol_entrances,
+                    )
+                {
+                    GUARD_DOOR_SHUT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     0
                 } else {
                     priority
@@ -49163,6 +49199,20 @@ mod tests {
         assert_eq!(supper_interrupt(0.2, true), SUPPER_LINE);
         assert_eq!(supper_interrupt(0.2, false), 0.2);
         assert_eq!(supper_interrupt(0.7, true), 0.7, "a higher personal interrupt stays");
+    }
+
+    /// ★ THE GUARD DOOR pinned: shut for a guard's non-Guard job in the Work
+    /// block with two entrances; open for Guard jobs, for non-guards,
+    /// outside the block, and with fewer than two entrances.
+    #[test]
+    fn the_guard_door_shuts_only_in_work_hours_with_entrances() {
+        assert!(guard_door_shuts(true, false, true, 2), "a guard, a haul, work hours, two gates: shut");
+        assert!(guard_door_shuts(true, false, true, 4));
+        assert!(!guard_door_shuts(true, true, true, 2), "Guard work passes");
+        assert!(!guard_door_shuts(false, false, true, 2), "not a guard: open");
+        assert!(!guard_door_shuts(true, false, false, 2), "off shift: open");
+        assert!(!guard_door_shuts(true, false, true, 1), "one entrance: nothing to walk between");
+        assert!(!guard_door_shuts(true, false, true, 0));
     }
 
     #[test]
