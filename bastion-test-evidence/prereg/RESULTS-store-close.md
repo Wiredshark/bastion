@@ -40,3 +40,12 @@ short of the fourth store, (7636, 6352) 15 blocks west of the barn's
 food; earlier stalls sat on structures at z 183-186. That is the walker
 row (pathing: doors, paths, climbing priced), and it needs a looking
 sweep with a client -- counters cannot say what the walker meets there.
+
+## S6c read (b2 on c3b30ac4db, day 1, 09:09): closing opt-in, shun alone
+
+eat jobs 47, meals 46 (98%); EatFrom expiries 16; STORE CLOSED 0; STORE
+WOULD CLOSE 8, all on zone 39 (the unenterable store) but spread over
+four different 4-block spots -- the spot-keyed rule would not even have
+fired here, which is one more reason it is a witness and not a switch.
+Stores 576 units, heaviest cell 69; evening starving 0-3. The best day
+measured so far: this is the pair shipped to lab-bin at 09:08.
