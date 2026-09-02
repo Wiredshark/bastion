@@ -29471,13 +29471,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 bans.remove(0);
                                             }
                                             board.fetch_progress.remove(&active.job);
+                                            // W2b: the retained route outlives the profile change;
+                                            // drop it so the next chase searches under the ban.
+                                            let route_dropped = if let Some(a) = agent.as_deref_mut() {
+                                                a.chaser.drop_route();
+                                                true
+                                            } else {
+                                                false
+                                            };
                                             info!(
                                                 job = active.job,
                                                 colonist = uids.get(entity).map(|u| u.0.get()),
                                                 feet = ?f,
                                                 head = ?sn.route_head,
                                                 ahead = ?sn.route_ahead,
-                                                "bastion: CLIMB BANNED (fetch) — the route's next node was a climb the body never makes; the next search goes another way"
+                                                route_dropped,
+                                                "bastion: CLIMB BANNED (fetch) — the route's next node was a climb the body never makes; the route is dropped and the next search goes another way"
                                             );
                                         }
                                         // ★ AN UNREACHABLE STORE IS WITHDRAWN ON THE SEARCH'S WORD

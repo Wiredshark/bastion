@@ -990,6 +990,18 @@ impl Chaser {
     /// behavior.
     pub fn needs_search(&self) -> bool { self.route.is_none() }
 
+    /// bastion (W2b, 2026-09-02): forget the retained route and the
+    /// retained search so the next `chase` searches again under the
+    /// CURRENT traversal profile. A climb ban recorded mid-route changes
+    /// the profile key, which invalidates a retained search but never a
+    /// retained route: the walker kept following the partial path up the
+    /// banned roof edge. The budget tier restarts at Small.
+    pub fn drop_route(&mut self) {
+        self.route = None;
+        self.astar = None;
+        self.path_length = Default::default();
+    }
+
     /// Test-only: the stored route's nodes (ledger #178 falsifier surface).
     #[cfg(test)]
     fn route_nodes(&self) -> Option<Vec<Vec3<i32>>> {
