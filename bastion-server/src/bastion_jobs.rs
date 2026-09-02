@@ -17562,32 +17562,78 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .unwrap_or(pos);
                     *delivered_occ.entry((pos.x, pos.y)).or_insert(0) += count as u32;
                     if terrain.get(pos).is_ok() {
-                        for i in 0..count {
-                            item_drop_emitter.emit(CreateItemDropEvent {
-                                pos: comp::Pos(
-                                    pos.map(|e| e as f32)
-                                        + Vec3::new(
-                                            0.5 + (i % 2) as f32,
-                                            0.5 + ((i / 2) % 2) as f32,
-                                            1.0,
-                                        ),
-                                ),
-                                vel: comp::Vel(Vec3::zero()),
-                                ori: comp::Ori::default(),
-                                item: comp::PickupItem::new(
-                                    comp::Item::new_from_asset_expect(&def),
-                                    *program_time,
-                                    true,
-                                ),
-                                loot_owner: None,
-                                persistent: true,
-                            });
+                        // ★ S4b: the founding stock lands in chunks of DEPOSIT_CELL_CAP,
+                        // each on its own spread-chosen cell (the S8 rule for runs).
+                        // 64 single mushrooms on one cell merged into the barn's
+                        // heaviest stack on three S8 replicates. Stackable defs above
+                        // the cap only; `BASTION_NO_DEPOSIT_SPLIT` restores the drop.
+                        let mut cells: Vec<String> = Vec::new();
+                        let chunked = std::env::var_os("BASTION_NO_DEPOSIT_SPLIT").is_none()
+                            && target.is_some()
+                            && count as u32 > DEPOSIT_CELL_CAP
+                            && {
+                                let mut probe = comp::Item::new_from_asset_expect(&def);
+                                probe.set_amount(DEPOSIT_CELL_CAP).is_ok()
+                            };
+                        if let (true, Some(r)) = (chunked, target) {
+                            let mut occ: HashMap<(i32, i32), u32> = delivered_occ.clone();
+                            for (pi, ipos) in (&pickup_items, &positions).join() {
+                                let c = ipos.0.map(|e| e.floor() as i32);
+                                if r.contains_point_xy(c) {
+                                    *occ.entry((c.x, c.y)).or_insert(0) += pi.item().amount() as u32;
+                                }
+                            }
+                            for chunk in deposit_chunks(count as u32, DEPOSIT_CELL_CAP) {
+                                let cell = stockpile_drop_cell_spread(
+                                    |x, y, h| column_surface_z(&terrain, x, y, h),
+                                    |x, y| occ.get(&(x, y)).copied().unwrap_or(0),
+                                    r,
+                                );
+                                let mut it = comp::Item::new_from_asset_expect(&def);
+                                if it.set_amount(chunk).is_err() {
+                                    continue;
+                                }
+                                item_drop_emitter.emit(CreateItemDropEvent {
+                                    pos: comp::Pos(cell.map(|e| e as f32) + Vec3::new(0.5, 0.5, 1.0)),
+                                    vel: comp::Vel(Vec3::zero()),
+                                    ori: comp::Ori::default(),
+                                    item: comp::PickupItem::new(it, *program_time, true),
+                                    loot_owner: None,
+                                    persistent: true,
+                                });
+                                *occ.entry((cell.x, cell.y)).or_insert(0) += chunk;
+                                *delivered_occ.entry((cell.x, cell.y)).or_insert(0) += chunk;
+                                cells.push(format!("{}:{}:{}", cell.x, cell.y, chunk));
+                            }
+                        } else {
+                            for i in 0..count {
+                                item_drop_emitter.emit(CreateItemDropEvent {
+                                    pos: comp::Pos(
+                                        pos.map(|e| e as f32)
+                                            + Vec3::new(
+                                                0.5 + (i % 2) as f32,
+                                                0.5 + ((i / 2) % 2) as f32,
+                                                1.0,
+                                            ),
+                                    ),
+                                    vel: comp::Vel(Vec3::zero()),
+                                    ori: comp::Ori::default(),
+                                    item: comp::PickupItem::new(
+                                        comp::Item::new_from_asset_expect(&def),
+                                        *program_time,
+                                        true,
+                                    ),
+                                    loot_owner: None,
+                                    persistent: true,
+                                });
+                            }
                         }
                         info!(
                             ?pos,
                             def = %def,
                             count,
                             store = store_kind,
+                            cells = %cells.join(" "),
                             "bastion: deferred seed items DELIVERED (chunk loaded) — into the town's store, not one household's shelf"
                         );
                     } else {
