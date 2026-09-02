@@ -4072,6 +4072,7 @@ pub(crate) fn cap_haul_lane(
     incumbents: &HashMap<common::uid::Uid, common::bastion::WorkType>,
     lane_counts: &HashMap<(common::uid::Uid, common::bastion::WorkType), u32>,
     cap: usize,
+    neediest: Option<common::bastion::WorkType>,
 ) -> Vec<(common::uid::Uid, common::bastion::WorkType)> {
     use common::bastion::WorkType as W;
     let mut haulers: Vec<(u32, u64, common::uid::Uid)> = named
@@ -4094,12 +4095,32 @@ pub(crate) fn cap_haul_lane(
                 .max_by_key(|((_, w), c)| (**c, format!("{w:?}")))
                 .map(|((_, w), _)| *w),
         };
-        if let Some(w) = fallback {
+        // ★ A surplus hauler with nothing to fall back on goes where the
+        // town's work is (flat arms b1/b2 day 1: 21 and 2 stayed haulers).
+        if let Some(w) = fallback.or(neediest) {
             out.push((u, w));
         }
     }
     out.sort_by_key(|(u, _)| u.0.get());
     out
+}
+
+/// ★ THE NEEDIEST LANE: the non-Haul lane with the most OPEN work per
+/// named colonist (open / (named + 1)); None when no lane has open work.
+/// Deterministic: ties break on the lane's name.
+pub(crate) fn neediest_lane(
+    open_by_lane: &HashMap<common::bastion::WorkType, u32>,
+    named_by_lane: &HashMap<common::bastion::WorkType, u32>,
+) -> Option<common::bastion::WorkType> {
+    open_by_lane
+        .iter()
+        .filter(|(w, n)| **w != common::bastion::WorkType::Haul && **n > 0)
+        .map(|(w, n)| {
+            let named = named_by_lane.get(w).copied().unwrap_or(0);
+            (((*n as f64 / (named as f64 + 1.0) * 1000.0) as i64, std::cmp::Reverse(format!("{w:?}"))), *w)
+        })
+        .max_by_key(|(k, _)| k.clone())
+        .map(|(_, w)| w)
 }
 
 pub(crate) fn haulers_needed(roster: usize) -> usize {
@@ -43563,11 +43584,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 (*u, *w, board.lane_counts.get(&(*u, *w)).copied().unwrap_or(0))
                             })
                             .collect();
+                        let mut open_by_lane: HashMap<common::bastion::WorkType, u32> = HashMap::new();
+                        for j in board.jobs.values().filter(|j| j.claimed_by.is_none()) {
+                            *open_by_lane.entry(j.work).or_insert(0) += 1;
+                        }
+                        let mut named_by_lane: HashMap<common::bastion::WorkType, u32> = HashMap::new();
+                        for w in board.professions.values() {
+                            *named_by_lane.entry(*w).or_insert(0) += 1;
+                        }
+                        let neediest = neediest_lane(&open_by_lane, &named_by_lane);
                         let demoted = cap_haul_lane(
                             &all_haul,
                             &incumbents,
                             &board.lane_counts,
                             haul_lane_cap(roster_now),
+                            neediest,
                         );
                         if !demoted.is_empty() {
                             // The label alone would not move anyone: a colonist the
@@ -43591,6 +43622,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 roster = roster_now,
                                 cap = haul_lane_cap(roster_now),
                                 was_haul = all_haul.len(),
+                                after_haul = all_haul.len().saturating_sub(demoted.len()),
+                                neediest = ?neediest,
                                 demoted = ?demoted.iter().map(|(u, w)| format!("{}:{:?}", u.0.get(), w)).collect::<Vec<_>>(),
                                 "bastion: HAUL LANE CEILING — a town of haulers is not a town; surplus haulers keep their trade"
                             );
@@ -48838,12 +48871,24 @@ mod tests {
         let mut lc = HashMap::new();
         lc.insert((u(3), W::Cook), 4u32);
         lc.insert((u(3), W::Mine), 2);
-        let d = cap_haul_lane(&named, &inc, &lc, 1);
+        let d = cap_haul_lane(&named, &inc, &lc, 1, None);
         assert_eq!(d, vec![(u(2), W::Farm), (u(3), W::Cook)], "weakest first: 2 keeps Farm, 3 takes its best other lane; 1 stays the hauler");
-        assert!(cap_haul_lane(&named, &inc, &lc, 3).is_empty(), "at the cap: identity");
+        assert!(cap_haul_lane(&named, &inc, &lc, 3, None).is_empty(), "at the cap: identity");
         // Nothing to fall back on: stays a hauler (not in the output).
-        let d2 = cap_haul_lane(&[(u(5), W::Haul, 1), (u(6), W::Haul, 2)], &HashMap::new(), &HashMap::new(), 1);
+        let d2 = cap_haul_lane(&[(u(5), W::Haul, 1), (u(6), W::Haul, 2)], &HashMap::new(), &HashMap::new(), 1, None);
         assert!(d2.is_empty());
+        // ★ The last resort: the neediest lane takes the surplus.
+        let d3 = cap_haul_lane(&[(u(5), W::Haul, 1), (u(6), W::Haul, 2)], &HashMap::new(), &HashMap::new(), 1, Some(W::Mine));
+        assert_eq!(d3, vec![(u(5), W::Mine)], "nothing to fall back on: the neediest lane");
+        let mut open = HashMap::new();
+        open.insert(W::Farm, 40u32);
+        open.insert(W::Mine, 12);
+        open.insert(W::Haul, 99);
+        let mut named = HashMap::new();
+        named.insert(W::Farm, 9u32);
+        named.insert(W::Mine, 0);
+        assert_eq!(neediest_lane(&open, &named), Some(W::Mine), "12 open per 0 named beats 40 per 9; Haul never");
+        assert_eq!(neediest_lane(&HashMap::new(), &named), None, "no open work: no lane");
     }
 
     /// ★ STAGGERED FIRST NEEDS pinned: in bounds, deterministic, distinct
