@@ -4681,6 +4681,7 @@ pub(crate) fn job_kind_label(kind: &common::bastion::JobKind) -> &'static str {
         common::bastion::JobKind::Despond { .. } => "Despond",
         common::bastion::JobKind::Recreate { .. } => "Recreate",
         common::bastion::JobKind::Shelter { .. } => "Shelter",
+        common::bastion::JobKind::Guard { patrol_to: Some(_), .. } => "Patrol",
         common::bastion::JobKind::Guard { .. } => "Guard",
     }
 }
