@@ -11116,7 +11116,13 @@ pub struct JobSeq {
     /// landed inside the zone (PREREG M2: in_zone_pct).
     pub scoped: u32,
     pub in_zone: u32,
+    /// TRAVEL between claims: blocks from the feet to each claimed job, and
+    /// how many claims were farther than FAR_CLAIM_BLOCKS.
+    pub travel_blocks: f32,
+    pub far_claims: u32,
 }
+
+pub const FAR_CLAIM_BLOCKS: f32 = 30.0;
 
 impl JobSeq {
     pub fn note(&mut self, is_haul: bool) {
@@ -11135,6 +11141,13 @@ impl JobSeq {
             self.max_work_streak = self.max_work_streak.max(self.streak);
         }
         self.last_is_haul = Some(is_haul);
+    }
+
+    pub fn note_travel(&mut self, blocks: f32) {
+        self.travel_blocks += blocks;
+        if blocks > FAR_CLAIM_BLOCKS {
+            self.far_claims += 1;
+        }
     }
 
     pub fn note_zone(&mut self, inside: Option<bool>) {
@@ -22547,7 +22560,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     {
                         let mut by_lane: HashMap<
                             Option<common::bastion::WorkType>,
-                            (u32, u32, u32, u32, u32, u32, u32),
+                            (u32, u32, u32, u32, u32, u32, u32, f32, u32),
                         > = HashMap::new();
                         for (u, seq) in board.job_seq.iter() {
                             let lane = board.professions.get(u).copied();
@@ -22559,8 +22572,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             e.4 += seq.max_work_streak;
                             e.5 += seq.scoped;
                             e.6 += seq.in_zone;
+                            e.7 += seq.travel_blocks;
+                            e.8 += seq.far_claims;
                         }
-                        for (lane, (n, works, hauls, alts, streaks, scoped, in_zone)) in by_lane {
+                        for (lane, (n, works, hauls, alts, streaks, scoped, in_zone, travel, far)) in by_lane {
                             info!(
                                 day = today,
                                 ?lane,
@@ -22573,6 +22588,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 mean_max_work_streak = streaks as f32 / n.max(1) as f32,
                                 scoped_claims = scoped,
                                 in_zone_pct = in_zone * 100 / scoped.max(1),
+                                mean_travel_blocks_per_claim = travel / (works + hauls).max(1) as f32,
+                                far_claim_pct = far * 100 / (works + hauls).max(1),
                                 "bastion: JOB SEQUENCE CENSUS — work->haul->work alternations per lane per day (Ben, live: \"they do a job, haul, do job, haul\")"
                             );
                         }
@@ -42463,6 +42480,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let e = board.job_seq.entry(*uid).or_default();
                     e.note(is_haul);
                     e.note_zone(scope.map(|r| r.contains_point_xy(jpos)));
+                    e.note_travel(pos.0.xy().distance(jpos.xy().map(|v| v as f32)));
                 }
                 if let Some(job) = board.jobs.get_mut(&job_id) {
                     job.claimed_by = Some(*uid);
@@ -48131,6 +48149,11 @@ mod tests {
             z.note_zone(i);
         }
         assert_eq!((z.scoped, z.in_zone), (3, 2));
+        let mut t = JobSeq::default();
+        t.note_travel(FAR_CLAIM_BLOCKS + 1.0);
+        t.note_travel(5.0);
+        assert_eq!(t.far_claims, 1);
+        assert!((t.travel_blocks - (FAR_CLAIM_BLOCKS + 6.0)).abs() < 1e-3);
     }
 
     /// ★ ZONE ASSIGNMENT pinned: balanced per cell, manual survives, a lane
