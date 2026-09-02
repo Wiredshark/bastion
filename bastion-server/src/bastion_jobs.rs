@@ -11120,6 +11120,8 @@ pub struct JobSeq {
     /// how many claims were farther than FAR_CLAIM_BLOCKS.
     pub travel_blocks: f32,
     pub far_claims: u32,
+    /// Travel by destination class: [work, haul/deposit, eat, leisure].
+    pub travel_by_class: [f32; 4],
 }
 
 pub const FAR_CLAIM_BLOCKS: f32 = 30.0;
@@ -11147,6 +11149,13 @@ impl JobSeq {
         self.travel_blocks += blocks;
         if blocks > FAR_CLAIM_BLOCKS {
             self.far_claims += 1;
+        }
+    }
+
+    /// `class`: 0 work, 1 haul/deposit, 2 eat, 3 leisure.
+    pub fn note_travel_class(&mut self, class: usize, blocks: f32) {
+        if let Some(t) = self.travel_by_class.get_mut(class.min(3)) {
+            *t += blocks;
         }
     }
 
@@ -22560,7 +22569,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     {
                         let mut by_lane: HashMap<
                             Option<common::bastion::WorkType>,
-                            (u32, u32, u32, u32, u32, u32, u32, f32, u32),
+                            (u32, u32, u32, u32, u32, u32, u32, f32, u32, [f32; 4]),
                         > = HashMap::new();
                         for (u, seq) in board.job_seq.iter() {
                             let lane = board.professions.get(u).copied();
@@ -22574,8 +22583,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             e.6 += seq.in_zone;
                             e.7 += seq.travel_blocks;
                             e.8 += seq.far_claims;
+                            for k in 0..4 {
+                                e.9[k] += seq.travel_by_class[k];
+                            }
                         }
-                        for (lane, (n, works, hauls, alts, streaks, scoped, in_zone, travel, far)) in by_lane {
+                        for (lane, (n, works, hauls, alts, streaks, scoped, in_zone, travel, far, by_class)) in by_lane {
                             info!(
                                 day = today,
                                 ?lane,
@@ -22590,6 +22602,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 in_zone_pct = in_zone * 100 / scoped.max(1),
                                 mean_travel_blocks_per_claim = travel / (works + hauls).max(1) as f32,
                                 far_claim_pct = far * 100 / (works + hauls).max(1),
+                                travel_pct_work = (by_class[0] * 100.0 / travel.max(1.0)) as u32,
+                                travel_pct_haul = (by_class[1] * 100.0 / travel.max(1.0)) as u32,
+                                travel_pct_eat = (by_class[2] * 100.0 / travel.max(1.0)) as u32,
+                                travel_pct_leisure = (by_class[3] * 100.0 / travel.max(1.0)) as u32,
                                 "bastion: JOB SEQUENCE CENSUS — work->haul->work alternations per lane per day (Ben, live: \"they do a job, haul, do job, haul\")"
                             );
                         }
@@ -42472,15 +42488,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 let mut claimed_cell = None;
                 let mut claimed_job_pos = None;
                 // JOB SEQUENCE: read the kind before the mutable borrow below.
-                if let Some((is_haul, jpos)) = board
-                    .jobs
-                    .get(&job_id)
-                    .map(|j| (j.work == common::bastion::WorkType::Haul, j.pos))
-                {
+                if let Some((is_haul, jpos, class)) = board.jobs.get(&job_id).map(|j| {
+                    let class = match j.kind {
+                        common::bastion::JobKind::DepositRun { .. }
+                        | common::bastion::JobKind::Haul { .. } => 1usize,
+                        common::bastion::JobKind::EatFrom { .. } => 2,
+                        common::bastion::JobKind::Recreate { .. } => 3,
+                        _ => 0,
+                    };
+                    (j.work == common::bastion::WorkType::Haul, j.pos, class)
+                }) {
                     let e = board.job_seq.entry(*uid).or_default();
                     e.note(is_haul);
                     e.note_zone(scope.map(|r| r.contains_point_xy(jpos)));
-                    e.note_travel(pos.0.xy().distance(jpos.xy().map(|v| v as f32)));
+                    let blocks = pos.0.xy().distance(jpos.xy().map(|v| v as f32));
+                    e.note_travel(blocks);
+                    e.note_travel_class(class, blocks);
                 }
                 if let Some(job) = board.jobs.get_mut(&job_id) {
                     job.claimed_by = Some(*uid);
@@ -48154,6 +48177,9 @@ mod tests {
         t.note_travel(5.0);
         assert_eq!(t.far_claims, 1);
         assert!((t.travel_blocks - (FAR_CLAIM_BLOCKS + 6.0)).abs() < 1e-3);
+        t.note_travel_class(1, 10.0);
+        t.note_travel_class(9, 1.0);
+        assert_eq!(t.travel_by_class, [0.0, 10.0, 0.0, 1.0], "class clamps to leisure");
     }
 
     /// ★ ZONE ASSIGNMENT pinned: balanced per cell, manual survives, a lane
