@@ -8458,18 +8458,58 @@ pub(crate) fn town_entrances(
     let Some((lo, hi)) = bounds else {
         return Vec::new();
     };
-    let mut edge: Vec<Vec2<i32>> = roads
+    let inside: Vec<Vec2<i32>> = roads
         .iter()
         .copied()
         .filter(|c| c.x >= lo.x && c.x <= hi.x && c.y >= lo.y && c.y <= hi.y)
-        .filter(|c| {
-            c.x - lo.x <= ENTRANCE_EDGE_BAND
-                || hi.x - c.x <= ENTRANCE_EDGE_BAND
-                || c.y - lo.y <= ENTRANCE_EDGE_BAND
-                || hi.y - c.y <= ENTRANCE_EDGE_BAND
-        })
         .collect();
+    if inside.is_empty() {
+        return Vec::new();
+    }
+    // ★ WHERE THE ROADS REACH FARTHEST (2026-09-02, after the first arm found
+    // ZERO entrances -- the PREREG's own falsifier). The bounds carry a
+    // 24-block margin and a generated village's roads end at its last
+    // house, so nothing sat in the edge band. The town's entrances are the
+    // road network's extremes: the farthest road cell west, east, south and
+    // north, plus any cell that does reach the edge band. Deterministic:
+    // ties resolve by (y, x).
+    let mut edge: Vec<Vec2<i32>> = Vec::new();
+    let mut sorted = inside.clone();
+    sorted.sort_by_key(|c| (c.y, c.x));
+    let extreme = |key: &dyn Fn(&Vec2<i32>) -> i32, want_max: bool| -> Option<Vec2<i32>> {
+        let mut best: Option<Vec2<i32>> = None;
+        for c in &sorted {
+            let better = match best {
+                None => true,
+                Some(b) => {
+                    if want_max { key(c) > key(&b) } else { key(c) < key(&b) }
+                },
+            };
+            if better {
+                best = Some(*c);
+            }
+        }
+        best
+    };
+    for c in [
+        extreme(&|c| c.x, false),
+        extreme(&|c| c.x, true),
+        extreme(&|c| c.y, false),
+        extreme(&|c| c.y, true),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        edge.push(c);
+    }
+    edge.extend(sorted.iter().copied().filter(|c| {
+        c.x - lo.x <= ENTRANCE_EDGE_BAND
+            || hi.x - c.x <= ENTRANCE_EDGE_BAND
+            || c.y - lo.y <= ENTRANCE_EDGE_BAND
+            || hi.y - c.y <= ENTRANCE_EDGE_BAND
+    }));
     edge.sort_by_key(|c| (c.y, c.x));
+    edge.dedup();
     let mut posts: Vec<Vec2<i32>> = Vec::new();
     for c in edge {
         if posts.iter().all(|p| (p.x - c.x).abs() + (p.y - c.y).abs() >= ENTRANCE_MIN_APART) {
@@ -22488,6 +22528,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             day = today,
                             guards = board.guard_census.len(),
                             patrols_posted = PATROLS_POSTED.swap(0, core::sync::atomic::Ordering::Relaxed),
+                            road_cells = board.road_cells.len(),
+                            bounds = ?board.settlement_bounds,
                             entrances = entrances.len(),
                             entrance_posts = ?entrances,
                             plaza_pct = tot.0 * 100 / n,
@@ -48210,6 +48252,17 @@ mod tests {
         }
         assert!(e.windows(2).all(|w| (w[0].y, w[0].x) <= (w[1].y, w[1].x)), "deterministic order");
         assert!(town_entrances(&roads, None).is_empty(), "no bounds: identity");
+        // A village whose roads end well inside a margined box (the real case):
+        // the road's far ends are the entrances, not the box edge.
+        let mut short = std::collections::HashSet::new();
+        for i in 20..=40 {
+            short.insert(Vec2::new(30, i));
+            short.insert(Vec2::new(i, 30));
+        }
+        let e2 = town_entrances(&short, Some((Vec2::new(0, 0), Vec2::new(60, 60))));
+        assert_eq!(e2.len(), 4, "the four road ends: {e2:?}");
+        assert!(e2.contains(&Vec2::new(20, 30)) && e2.contains(&Vec2::new(40, 30)));
+        assert!(e2.contains(&Vec2::new(30, 20)) && e2.contains(&Vec2::new(30, 40)));
         assert!(town_entrances(&std::collections::HashSet::new(), bounds).is_empty(), "no roads: none");
         // Buckets: plaza first, then entrance, then street, then elsewhere.
         let plaza = Some(Vec2::new(30, 30));
