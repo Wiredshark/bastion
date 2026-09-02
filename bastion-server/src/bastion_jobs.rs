@@ -25145,6 +25145,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             let c = ip.0.map(|e| e.floor() as i32);
                             *m.entry((c.x, c.y)).or_insert(0) += pi.item().amount() as u32;
                         }
+                        // In flight counts too: a run already heading for a
+                        // cell fills it before the next chooser looks (day 1
+                        // on the arm: 88 units on one cell of a 2,304-cell
+                        // store, from runs minted in the same pass).
+                        for j in board.jobs.values() {
+                            if matches!(
+                                j.kind,
+                                common::bastion::JobKind::DepositRun { .. }
+                                    | common::bastion::JobKind::Haul { .. }
+                            ) && j.claimed_by.is_some()
+                            {
+                                *m.entry((j.pos.x, j.pos.y)).or_insert(0) += HAUL_CHAIN_MAX_LOAD;
+                            }
+                        }
                         m
                     };
                     let occ = |x: i32, y: i32| occ_map.get(&(x, y)).copied().unwrap_or(0);
@@ -34118,6 +34132,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             let c = ip.0.map(|e| e.floor() as i32);
                                             *m.entry((c.x, c.y)).or_insert(0) += pi.item().amount() as u32;
                                         }
+                                        // Ground only here: `job` holds `board.jobs` mutably
+                                        // and this retarget runs one haul at a time at completion.
                                         m
                                     };
                                     job.pos = stockpile_drop_cell_spread(
