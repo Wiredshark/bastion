@@ -22361,6 +22361,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // from here. `growth_logged_day` is the sibling of
                     // `immigration_day` in every respect.
                     let day_changed = board.growth_logged_day != Some(today);
+                    // ★ THE DAILY CENSUSES RUN ONCE A DAY (2026-09-02 00:05).
+                    // They were inserted between `let day_changed` and the
+                    // `if day_changed` below and fired every arbitration
+                    // pass for the first ten minutes they existed -- a
+                    // JOB SEQUENCE census that resets itself every ten
+                    // seconds counts nothing. The arm's monitor saw it.
+                    if day_changed {
                     // ★ ZONE ASSIGNMENT (daily): farms take the Farm lane,
                     // stockpiles take the Haul lane; Manual entries survive.
                     // Mine designations carry no ZoneId yet and are not
@@ -22528,6 +22535,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             );
                         }
                         board.job_seq.clear();
+                    }
                     }
                     let target_pop = immigration_target_pop(&households);
                     // ★ BEN'S RULING, 2026-09-01: a colonist with no bed is
@@ -25085,12 +25093,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .collect();
                     let general_exists =
                         board.stockpiles.iter().any(|(_, r)| !store_is_private(r, houses.iter()));
-                    let own_bed = board
-                        .beds
-                        .iter()
-                        .find(|(_, slot)| slot.owner == Some(*uid))
-                        .map(|(p, _)| *p);
-                    let own_house = household_house(own_bed, houses.iter());
+                    // Surplus goes to the town's stores: the household's own
+                    // shelf is private property, not a deposit target (the
+                    // first arm filled shelves to 195 units while general
+                    // stores sat at 0 when the own-shelf exception stood).
                     let occ_map: HashMap<(i32, i32), u32> = {
                         let mut m = HashMap::new();
                         for (pi, ip) in (&pickup_items, &positions).join() {
@@ -25103,7 +25109,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let Some((dest, drop_cell)) = board
                         .stockpiles
                         .iter()
-                        .filter(|(_, r)| store_admits(r, &houses, own_house, general_exists))
+                        .filter(|(_, r)| store_admits(r, &houses, None, general_exists))
                         .min_by_key(|(_, r)| {
                             let c = (r.min + r.max) / 2;
                             let d = c - cell;
