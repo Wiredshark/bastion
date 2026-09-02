@@ -1387,8 +1387,9 @@ pub static CHASER_GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
 /// Both endpoints are walkable. Interpolating 5.3/6 along gives z=417.88,
 /// which is where it stops — so the ground at the MIDDLE is above the line.
 ///
-/// Two earlier fixes could not see this and were reverted: the subdivider
-/// triggered on endpoint |dz| > 2, the trunk rejection on |dz| > 6, and here
+/// Two earlier gates could not see this: the subdivider (REVERTED) triggered
+/// on endpoint |dz| > 2; the trunk rejection on |dz| > 6 (still LIVE -- it was
+/// never reverted, whatever an earlier draft of this sentence said); and here
 /// dz is ONE. Both judged the ENDPOINTS; neither sampled BETWEEN them. That
 /// is Theta*'s line-of-sight test, which this router has never had.
 ///
@@ -16947,12 +16948,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         running,
                         "bastion EXPERIENCE census (engaged = has a job and is not stuck;                          `working` EXCLUDES travel, so hauling reads as `moving`;                          `stuck` = wedged >5s at speed~0, `slowed` = transient dip,                          also inside `moving`)"
                     );
-                    // ★ WHOSE BED IS OUTSIDE A HOUSE? (2026-09-01) The
-                    // growth ratchet jams because five colonists hold beds
-                    // while only four households read occupied and shared=0
-                    // -- one colonist's bed maps to NO household, so its
-                    // house stays `vacant` and the build gate refuses "a
-                    // house already stands empty" forever.
+                    // ★ WHOSE BED IS OUTSIDE A HOUSE? (2026-09-01)
+                    // ⚠ RETRACTED THE SAME DAY (see the doc on
+                    // `housing_build_verdict`): the reading that first
+                    // motivated this census -- "the growth ratchet jams
+                    // because five colonists hold beds while only four
+                    // households read occupied, so the gate refuses forever"
+                    // -- came from a 0.47-day sample of a ONCE-PER-DAY gate
+                    // and is withdrawn. What stands is the MEASUREMENT:
+                    // one colonist's bed maps to NO household, and that gap
+                    // is what the lines below count.
                     //
                     // `derive_households` SKIPS a bed outside every Bed
                     // region (`continue`), and nothing has ever reported how
@@ -22232,7 +22237,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             plans_in_flight = board.plans.len(),
                             drive = ?board.colony_drive.0,
                             day = today,
-                            "bastion: HOUSING BUILD — whether the town would start a house                              today, and what stops it (WITNESS ONLY; nothing is queued yet)"
+                            "bastion: HOUSING BUILD — whether the town would start a house                              today, and what stops it (a passing verdict QUEUES the plan via queue_build_plan)"
                         );
                     }
                     // ── ROW 53: THE COURTING DAY ───────────────────────
@@ -23437,7 +23442,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // witness — the same discipline the treeline row imposed on
             // `wood`: a second producer of the gate's own question is how a
             // wrong diagnosis gets published.
-            let food_par = food_par_for(colonists.count() as u32);
+            // ★ THE PAR IS SIZED BY THE POPULATION, NOT BY WHO IS LOADED.
+            // `colonists.count()` is the ECS join -- the colonists whose chunks
+            // a client happens to have loaded. The housing gate and the
+            // immigration gate size themselves by the persistent rtsim roster
+            // for exactly the reason given at their site; a par that read the
+            // ECS instead undercounted a 46-colonist town to whatever the
+            // client's view distance admitted (TWO FRAMES COMPARED AS ONE; a
+            // review found the sibling gates disagreeing, 2026-09-01).
+            let roster_now = rtsim
+                .rt_state()
+                .data()
+                .npcs
+                .values()
+                .filter(|n| n.bastion_colonist.is_some() && !n.is_dead())
+                .count() as u32;
+            let food_par = food_par_for(roster_now);
             let wants_mission = !mission_live
                 && !trade_price_book.0.is_empty()
                 && food_stock < food_par;
@@ -29605,6 +29625,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         .map(|w| (w[1].z - w[0].z).abs())
                                         .max()
                                         .unwrap_or(0);
+                                    // ★ RECORD BEFORE YOU REJECT. The running
+                                    // max below the filter sees only ACCEPTED
+                                    // routes, so once TRUNK_REJECT_DZ existed
+                                    // the witness could never exceed it -- a
+                                    // 22-block step was rejected and then
+                                    // reported as "worst 6" (review, 2026-09-01).
+                                    TRUNK_WORST_DZ.fetch_max(
+                                        worst as u64,
+                                        core::sync::atomic::Ordering::Relaxed,
+                                    );
                                     if worst > TRUNK_REJECT_DZ {
                                         let r = TRUNK_ROUTES_REJECTED.fetch_add(
                                             1,
