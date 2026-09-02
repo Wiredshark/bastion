@@ -7313,6 +7313,20 @@ pub(crate) fn supper_hour(
             || matches!(block(hour + 2), ScheduleBlock::Sleep))
 }
 
+/// ★ SUPPER HAS WEIGHT (flat arm b1 on 563f67b2f7, evening 1: 22 supper
+/// preempts, starving 1 -> 7 by hour 23). A hunger just under the supper
+/// line has a severity near zero, and the arbitration's leisure drive
+/// outranks it, so the colonist stayed on the plaza. In supper hours a
+/// hunger under the line carries at least this severity.
+pub const SUPPER_SEVERITY: f32 = 0.5;
+pub(crate) fn supper_severity(sev: f32, supper: bool, hunger: f32) -> f32 {
+    if supper && hunger < SUPPER_LINE && std::env::var_os("BASTION_NO_SUPPER").is_none() {
+        sev.max(SUPPER_SEVERITY)
+    } else {
+        sev
+    }
+}
+
 pub(crate) fn supper_interrupt(base: f32, supper: bool) -> f32 {
     if supper && std::env::var_os("BASTION_NO_SUPPER").is_none() {
         base.max(SUPPER_LINE)
@@ -26358,6 +26372,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 ),
                                 healths.get(entity).map(|h| h.fraction()).unwrap_or(1.0),
                             );
+                            let supper_now_arb = supper_hour(
+                                &board.night_watch,
+                                uids.get(entity),
+                                hour_of_day(rtsim.rt_state().data().time_of_day.0),
+                            );
                             let hunger_interrupt = supper_interrupt(
                                 comp::bastion::stagger_interrupt(
                                     mood_cfg.hunger.interrupt,
@@ -26365,11 +26384,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     consc,
                                     neur,
                                 ),
-                                supper_hour(
-                                    &board.night_watch,
-                                    uids.get(entity),
-                                    hour_of_day(rtsim.rt_state().data().time_of_day.0),
-                                ),
+                                supper_now_arb,
                             );
                             let rest_sev = if needs.rest < rest_interrupt {
                                 1.0 - needs.rest / rest_interrupt.max(f32::EPSILON)
@@ -26381,6 +26396,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             } else {
                                 0.0
                             };
+                            // ★ SUPPER HAS WEIGHT (see `supper_severity`).
+                            let hunger_sev = supper_severity(hunger_sev, supper_now_arb, needs.hunger);
                             // ★ RECREATION JOINS SEVERITY (found live,
                             // 2026-08-23: three multi-day soaks with
                             // recreate=0 — BOTH recreation triggers sat in
@@ -49260,6 +49277,18 @@ mod tests {
         assert!(!guard_door_shuts(true, false, false, 2), "off shift: open");
         assert!(!guard_door_shuts(true, false, true, 1), "one entrance: nothing to walk between");
         assert!(!guard_door_shuts(true, false, true, 0));
+    }
+
+    /// ★ SUPPER SEVERITY pinned: under the line in supper hours the
+    /// severity is at least the floor; outside supper hours, or above the
+    /// line, it is identity; a graver hunger keeps its own severity.
+    #[test]
+    fn supper_severity_floors_only_under_the_line_in_supper_hours() {
+        assert_eq!(supper_severity(0.08, true, 0.55), SUPPER_SEVERITY, "just under the line: the floor");
+        assert_eq!(supper_severity(0.08, false, 0.55), 0.08, "not supper: identity");
+        assert_eq!(supper_severity(0.0, true, 0.7), 0.0, "above the line: identity");
+        assert_eq!(supper_severity(0.9, true, 0.05), 0.9, "a graver hunger keeps its own");
+        assert!(SUPPER_SEVERITY > 0.0 && SUPPER_SEVERITY <= 1.0);
     }
 
     #[test]
