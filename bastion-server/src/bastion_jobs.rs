@@ -7263,6 +7263,37 @@ pub const PREEMPT_COOLDOWN_SECS: f64 = 60.0;
 /// block. `BASTION_NO_SLEEP_METABOLISM` restores the flat rate.
 pub const SLEEP_METABOLISM: f32 = 0.5;
 
+/// ★ SUPPER BEFORE CURFEW (flat arm b1 on the night stage: 4 night meals
+/// at home all night because most shelves hold no food; 7 starving at
+/// dawn). In the two hours before a colonist's OWN Sleep block the hunger
+/// interrupt rises to this line, so a colonist who would cross the
+/// interrupt overnight eats at the store while the town is awake:
+/// 0.6 - 0.27 (an 8-hour night at half burn) = 0.33 > 0.2 by construction.
+/// `BASTION_NO_SUPPER` restores the flat interrupt.
+pub const SUPPER_LINE: f32 = 0.6;
+
+/// True in the two hours before this colonist's Sleep block (and not in
+/// it): the town's 20-21 on the default schedule, a night watchman's own
+/// evening on his.
+pub(crate) fn supper_hour(
+    night_watch: &HashSet<common::uid::Uid>,
+    uid: Option<&common::uid::Uid>,
+    hour: u32,
+) -> bool {
+    let block = |h: u32| colonist_schedule_block(night_watch, uid, h % 24);
+    !matches!(block(hour), ScheduleBlock::Sleep)
+        && (matches!(block(hour + 1), ScheduleBlock::Sleep)
+            || matches!(block(hour + 2), ScheduleBlock::Sleep))
+}
+
+pub(crate) fn supper_interrupt(base: f32, supper: bool) -> f32 {
+    if supper && std::env::var_os("BASTION_NO_SUPPER").is_none() {
+        base.max(SUPPER_LINE)
+    } else {
+        base
+    }
+}
+
 /// ★ NIGHT HUNGER IS MET AT HOME: the house the colonist sleeps in (its
 /// bed's house), the only place its night food scan may look. The curfew
 /// (the night-massacre autopsy) keeps everyone indoors; eating from one's
@@ -26267,11 +26298,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 ),
                                 healths.get(entity).map(|h| h.fraction()).unwrap_or(1.0),
                             );
-                            let hunger_interrupt = comp::bastion::stagger_interrupt(
-                                mood_cfg.hunger.interrupt,
-                                &colonist.0.values,
-                                consc,
-                                neur,
+                            let hunger_interrupt = supper_interrupt(
+                                comp::bastion::stagger_interrupt(
+                                    mood_cfg.hunger.interrupt,
+                                    &colonist.0.values,
+                                    consc,
+                                    neur,
+                                ),
+                                supper_hour(
+                                    &board.night_watch,
+                                    uids.get(entity),
+                                    hour_of_day(rtsim.rt_state().data().time_of_day.0),
+                                ),
                             );
                             let rest_sev = if needs.rest < rest_interrupt {
                                 1.0 - needs.rest / rest_interrupt.max(f32::EPSILON)
@@ -27360,11 +27398,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         consc,
                         neur,
                     );
-                    let hunger_interrupt = comp::bastion::stagger_interrupt(
-                        mood_cfg.hunger.interrupt,
-                        &colonist.0.values,
-                        consc,
-                        neur,
+                    let supper_now = supper_hour(
+                        &board.night_watch,
+                        uids.get(entity),
+                        hour_of_day(rtsim.rt_state().data().time_of_day.0),
+                    );
+                    let hunger_interrupt = supper_interrupt(
+                        comp::bastion::stagger_interrupt(
+                            mood_cfg.hunger.interrupt,
+                            &colonist.0.values,
+                            consc,
+                            neur,
+                        ),
+                        supper_now,
                     );
                     if !despond_carve_out_past_interrupt(
                         needs.rest,
@@ -28383,6 +28429,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // EatFrom into auto-access).
                                     item_pos = ?ipos,
                                     feet = ?pos.0.map(|e| e.floor() as i32),
+                                    supper = supper_hour(
+                                        &board.night_watch,
+                                        uids.get(entity),
+                                        hour_of_day(rtsim.rt_state().data().time_of_day.0),
+                                    ),
                                     "bastion: need preempt — hunger below interrupt"
                                 );
                                 preempt_pending.push((
@@ -49088,6 +49139,30 @@ mod tests {
         let next = assign_zones(&lanes, &zones, &HashMap::new());
         assert_eq!(next.get(&u(7)).map(|(z, _)| *z), Some(2), "the miner takes the mine");
         assert_eq!(next.get(&u(8)).map(|(z, _)| *z), Some(1), "the farmer takes the field");
+    }
+
+    /// ★ SUPPER LINE pinned: only the two hours before one's own Sleep
+    /// block raise the line; a night watchman's line rises before HIS
+    /// sleep, not the town's; above the line the interrupt is identity.
+    #[test]
+    fn supper_line_applies_only_in_the_two_hours_before_sleep() {
+        let u = |n: u64| common::uid::Uid(std::num::NonZeroU64::new(n).expect("nonzero"));
+        let none = HashSet::new();
+        let day = u(1);
+        assert!(supper_hour(&none, Some(&day), 20), "hour 20: two before the town's 22");
+        assert!(supper_hour(&none, Some(&day), 21));
+        assert!(!supper_hour(&none, Some(&day), 19), "three hours out: no");
+        assert!(!supper_hour(&none, Some(&day), 22), "already asleep: no");
+        assert!(!supper_hour(&none, Some(&day), 12));
+        let mut watch = HashSet::new();
+        watch.insert(u(2));
+        let night = u(2);
+        assert!(!supper_hour(&watch, Some(&night), 21), "the watchman works at night: no supper at 21");
+        let w_hours: Vec<u32> = (0..24).filter(|h| supper_hour(&watch, Some(&night), *h)).collect();
+        assert!(!w_hours.is_empty() && !w_hours.contains(&21), "his supper precedes HIS sleep: {w_hours:?}");
+        assert_eq!(supper_interrupt(0.2, true), SUPPER_LINE);
+        assert_eq!(supper_interrupt(0.2, false), 0.2);
+        assert_eq!(supper_interrupt(0.7, true), 0.7, "a higher personal interrupt stays");
     }
 
     #[test]
