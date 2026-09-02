@@ -8061,6 +8061,17 @@ pub fn route_head_is_a_climb(feet: Vec3<i32>, head: Option<Vec3<i32>>) -> bool {
     head.is_some_and(|h| h.z - feet.z >= 2)
 }
 
+/// ★ AN UNREACHABLE STORE IS WITHDRAWN ON THE SEARCH'S WORD (W1,
+/// 2026-09-02). True when a search was made for the target (a route
+/// target exists), found NO path (`PathState::None`), and left no route
+/// node to walk (an empty route) -- the search's own verdict, not a
+/// stall's. An Exhausted search (a partial path) is not this: it may be
+/// the budget. A None with a head is not this either: something remains
+/// to walk.
+pub fn search_says_unreachable(state: common::path::PathState, has_head: bool, has_target: bool) -> bool {
+    matches!(state, common::path::PathState::None) && !has_head && has_target
+}
+
 /// ★ THE VAULT'S OWN CLOCK (contract-window evidence: 79 vaults for one
 /// farmer, each behind the full 10s STUCK_TIMEOUT — walk-freeze-pop on
 /// repeat). A strictly-verified vault (waist-high solid sprite, promised
@@ -12987,6 +12998,11 @@ pub struct JobBoard {
     /// ★ RECENT DROPS: cells a deposit re-aim just chose (load, tick), counted
     /// as occupancy for RECENT_DROP_TICKS so simultaneous arrivals spread.
     pub recent_drops: HashMap<(i32, i32), (u32, u64)>,
+    /// ★ W1: per-store strikes from fetches whose search found NO path
+    /// (path_state None, empty route); three in the window withdraw the
+    /// store (`closed_stores`) on the search's word. Keyed like the stall
+    /// strikes with a zero spot, so `store_strike` serves both.
+    pub store_unreachable_strikes: HashMap<(common::bastion::ZoneId, Vec2<i32>), (u32, u64)>,
     /// AUTO PATROL jobs minted by the generator (uid -> job), released at
     /// shift end; a stale entry (the muster replaced the job) is dropped.
     pub auto_patrols: HashMap<common::uid::Uid, JobId>,
@@ -28638,6 +28654,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // ★ ITEM-REACH GATE (flag-gated): a meal
                                     // in another walking component is a 90s
                                     // wall-press, not food. Fail-open.
+                                    && !board.stockpile_at(icell).is_some_and(|z| store_closed(&board.closed_stores, z, tick.0))
                                     && !item_reach_refused(
                                         board.component_labels.as_ref(),
                                         board.labels_prev_cells,
@@ -29371,7 +29388,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     );
                                     board.fetch_progress.insert(active.job, mark);
                                     let is_eat = matches!(job.kind, common::bastion::JobKind::EatFrom { .. });
-                                    let expires = fetch_stall_expires(is_eat, stalled, time.0 - started > fetch_budget);
+                                    let mut expires = fetch_stall_expires(is_eat, stalled, time.0 - started > fetch_budget);
                                     let first_stall = stalled && board.fetch_stall_warned.insert(active.job);
                                     if first_stall && !expires {
                                         EAT_STALLS_TOLERATED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
@@ -29461,6 +29478,43 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 head = ?sn.route_head,
                                                 ahead = ?sn.route_ahead,
                                                 "bastion: CLIMB BANNED (fetch) — the route's next node was a climb the body never makes; the next search goes another way"
+                                            );
+                                        }
+                                        // ★ AN UNREACHABLE STORE IS WITHDRAWN ON THE SEARCH'S WORD
+                                        // (W1): a search that found no path at all ends the fetch
+                                        // now (no patience for an empty route) and strikes the
+                                        // store; three strikes withdraw it from every chooser for
+                                        // STORE_CLOSE_TICKS. `BASTION_NO_UNREACHABLE_STORE` restores
+                                        // the old path.
+                                        if std::env::var_os("BASTION_NO_UNREACHABLE_STORE").is_none()
+                                            && let Some(sn) = snap.as_ref()
+                                            && search_says_unreachable(sn.path_state, sn.route_head.is_some(), sn.route_target.is_some())
+                                        {
+                                            let cell = ip.map(|e| e.floor() as i32);
+                                            // `job` holds board.jobs mutably: read the disjoint field.
+                                            let zone = board
+                                                .stockpiles
+                                                .iter()
+                                                .find(|(_, r)| r.contains_point_xy(cell))
+                                                .map(|(z, _)| *z);
+                                            expires = true;
+                                            if let Some(zone) = zone {
+                                                if store_strike(&mut board.store_unreachable_strikes, (zone, Vec2::zero()), tick.0) {
+                                                    board.closed_stores.insert(zone, tick.0 + STORE_CLOSE_TICKS);
+                                                    info!(
+                                                        zone,
+                                                        cell = ?cell,
+                                                        until_tick = tick.0 + STORE_CLOSE_TICKS,
+                                                        "bastion: STORE UNREACHABLE — withdrawn from the choosers on the search's word (no path, three fetches in the window)"
+                                                    );
+                                                }
+                                            }
+                                            info!(
+                                                job = active.job,
+                                                kind = ?job.kind,
+                                                zone = ?zone,
+                                                cell = ?cell,
+                                                "bastion: FETCH UNREACHABLE — the search found no path and no route node; released now, not after the stall clock"
                                             );
                                         }
                                     }
@@ -37037,6 +37091,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .is_some_and(|d| FOOD_DEFS.contains(&d))
                         && board.has_capacity(**iuid, pi.amount())
                         && !goal_verdict_blocks(&board.goal_verdicts, icell, tick.0)
+                        && !board.stockpile_at(icell).is_some_and(|z| store_closed(&board.closed_stores, z, tick.0))
                         && board
                             .stockpiles
                             .iter()
@@ -43609,6 +43664,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // claimant's component cannot reach — a
                                     // doomed reservation is a 90s wall-press
                                     // plus a withheld item.
+                                    && !board.stockpile_at(icell).is_some_and(|z| store_closed(&board.closed_stores, z, tick.0))
                                     && !item_reach_refused(
                                         board.component_labels.as_ref(),
                                         board.labels_prev_cells,
@@ -49935,6 +49991,25 @@ mod tests {
         assert!(!route_head_is_a_climb(feet, Some(Vec3::new(7749, 6328, 181))), "flat");
         assert!(!route_head_is_a_climb(feet, Some(Vec3::new(7749, 6328, 179))), "a drop");
         assert!(!route_head_is_a_climb(feet, None), "no route");
+    }
+
+    /// ★ W1 pinned: only a search that found NO path, left NO route node
+    /// and HAD a target says unreachable; Exhausted (the budget) and a
+    /// None with a head (something to walk) do not. Planted defect:
+    /// treating Exhausted as unreachable would withdraw every store 40
+    /// blocks away and the second assert goes red.
+    #[test]
+    fn only_a_search_with_no_path_and_no_node_says_unreachable() {
+        use common::path::PathState as P;
+        assert!(search_says_unreachable(P::None, false, true));
+        assert!(!search_says_unreachable(P::Exhausted, false, true), "the budget is not a verdict");
+        assert!(!search_says_unreachable(P::None, true, true), "a node remains to walk");
+        assert!(!search_says_unreachable(P::None, false, false), "no search was made");
+        assert!(!search_says_unreachable(P::Pending, false, true));
+        let mut strikes = HashMap::new();
+        assert!(!store_strike(&mut strikes, (45, Vec2::zero()), 100));
+        assert!(!store_strike(&mut strikes, (45, Vec2::zero()), 200));
+        assert!(store_strike(&mut strikes, (45, Vec2::zero()), 300), "the third strike withdraws");
     }
 
     #[test]
