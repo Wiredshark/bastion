@@ -7592,16 +7592,21 @@ impl Server {
                                 // TOO (Ben, 2026-08-23): spawning the env
                                 // count into a village with two houses is the
                                 // exact overcrowding he called out — the
-                                // fallback caps at one colonist per house,
-                                // floor 1, same rule as adoption proper.
+                                // fallback caps by the SAME rule as adoption
+                                // proper. Since Ben's beds ruling (2026-09-01,
+                                // 8dc377803e) that rule is two beds per house
+                                // at founding, floor 1 — it was still "one per
+                                // house" here until a review read this line.
                                 let houses = plots
                                     .iter()
                                     .filter(|(k, _, _)| {
                                         matches!(k, common::bastion::DesignationKind::Bed)
                                     })
                                     .count();
-                                let n_eff =
-                                    (n as usize).min(houses.max(1)) as u8;
+                                let n_eff = crate::rtsim::bastion_housing_cap(
+                                    n as usize,
+                                    houses,
+                                ) as u8;
                                 tracing::warn!(
                                     houses,
                                     n_eff,

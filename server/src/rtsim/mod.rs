@@ -1095,7 +1095,7 @@ impl RtSim {
             left_as_npcs = roll.left_as_npcs,
             capped = roll.left_as_npcs > 0,
             ?site_id,
-            "bastion: ADOPT-A-TOWN HOUSING CAP — one colonist per house (Ben's ruling), now              BINDING on the town's own residents; those not adopted stay ordinary              villagers, untouched"
+            "bastion: ADOPT-A-TOWN HOUSING CAP — two beds per house at founding (Ben's BEDS ruling, 2026-09-01; one-per-house is superseded), BINDING on the town's own residents; those not adopted stay ordinary              villagers, untouched"
         );
 
         // ★ THE ARCHITECT WILL NEVER FILL THIS VILLAGE, SO FILL IT OURSELVES
