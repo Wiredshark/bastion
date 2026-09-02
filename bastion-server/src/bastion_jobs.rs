@@ -22412,6 +22412,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         let mut sheltered = 0u32;
                         let mut skipped_working = 0u32;
                         let mut skipped_bedless = 0u32;
+                        // D1b: civilians already home in bed at the cry (skipped
+                        // below); 'civilians indoors' = sheltered + already_home.
+                        let mut already_home = 0u32;
                         let mut out_of_earshot = 0u32;
                         let mut civ: Vec<(u64, specs::Entity, Vec3<i32>)> = Vec::new();
                         for (ent, c, p) in (&entities, &colonists, &positions).join() {
@@ -22469,6 +22472,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     )
                                 })
                             }) {
+                                already_home += 1;
                                 continue;
                             }
                             if let Some(u) = uids.get(ent) {
@@ -22531,6 +22535,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // skipped_working, read as "left at work".
                             workers_preempted = skipped_working,
                             shelter_jobs,
+                            already_home,
                             skipped_bedless,
                             out_of_earshot,
                             "bastion: ★ ALARM RAISED — a colonist cried out and the town heard it"
