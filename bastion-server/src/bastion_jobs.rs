@@ -8861,6 +8861,11 @@ pub(crate) fn founding_stock_store<'a>(
 /// cell was CONDEMNED as unreachable and 70 eat trips stalled beneath it).
 /// A spread cell may sit at most this many blocks above the zone floor.
 pub const SPREAD_MAX_RISE: i32 = 0;
+/// ★ THE DEPOSIT RE-AIM REMEMBERS RECENT DROPS (b1 day 1 on c3b30ac4db:
+/// 225 units on one barn cell while 29 cells were in use -- arrivals in
+/// the same window all re-picked the same emptiest cell from ground items
+/// alone). A chosen cell counts as occupied by its load for this long.
+pub const RECENT_DROP_TICKS: u64 = 600;
 
 pub(crate) fn stockpile_drop_cell_spread(
     surface_z: impl Fn(i32, i32, i32) -> Option<i32>,
@@ -12948,6 +12953,9 @@ pub struct JobBoard {
     /// Fetch jobs whose stall has been logged once (the tolerated stall
     /// would otherwise warn every tick).
     pub fetch_stall_warned: HashSet<JobId>,
+    /// ★ RECENT DROPS: cells a deposit re-aim just chose (load, tick), counted
+    /// as occupancy for RECENT_DROP_TICKS so simultaneous arrivals spread.
+    pub recent_drops: HashMap<(i32, i32), (u32, u64)>,
     /// AUTO PATROL jobs minted by the generator (uid -> job), released at
     /// shift end; a stale entry (the muster replaced the job) is dropped.
     pub auto_patrols: HashMap<common::uid::Uid, JobId>,
@@ -34999,8 +35007,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             let c = ip.0.map(|e| e.floor() as i32);
                                             *m.entry((c.x, c.y)).or_insert(0) += pi.item().amount() as u32;
                                         }
-                                        // Ground only here: `job` holds `board.jobs` mutably
-                                        // and this retarget runs one haul at a time at completion.
+                                        // `job` holds `board.jobs` mutably, so the in-flight
+                                        // jobs cannot be read here; the recent drops can
+                                        // (a disjoint field): loads just aimed at a cell count.
+                                        for ((x, y), (n, t)) in board.recent_drops.iter() {
+                                            if tick.0.saturating_sub(*t) <= RECENT_DROP_TICKS {
+                                                *m.entry((*x, *y)).or_insert(0) += *n;
+                                            }
+                                        }
                                         m
                                     };
                                     job.pos = stockpile_drop_cell_spread(
@@ -35008,6 +35022,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         |x, y| occ_map.get(&(x, y)).copied().unwrap_or(0),
                                         r,
                                     );
+                                    board
+                                        .recent_drops
+                                        .insert((job.pos.x, job.pos.y), (HAUL_CHAIN_MAX_LOAD, tick.0));
+                                    if board.recent_drops.len() > 4096 {
+                                        let now = tick.0;
+                                        board.recent_drops.retain(|_, (_, t)| now.saturating_sub(*t) <= RECENT_DROP_TICKS);
+                                    }
                                     job.progress = 0.5;
                                     active.state = ActiveJobState::Traveling;
                                     active.best_dist = f32::MAX;
