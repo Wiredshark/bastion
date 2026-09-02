@@ -29441,6 +29441,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         }
                                         let to_item = ip.map(|e| e.floor() as i32) - f;
                                         let snap = agent.as_deref().map(|a| a.chaser.diagnostic_snapshot());
+                                        // P1c: the tier the search exhausted at. Longest runs
+                                        // 75,000 iterations in total; exhausted THERE means the
+                                        // target is unreachable by the move set, not by the budget.
+                                        let tier = agent.as_deref().map(|a| a.chaser.state().0);
+                                        let top_tier_exhausted = agent.as_deref().is_some_and(|a| {
+                                            matches!(
+                                                a.chaser.state(),
+                                                (common::path::PathLength::Longest, common::path::PathState::Exhausted)
+                                            )
+                                        });
                                         info!(
                                             job = active.job,
                                             kind = ?job.kind,
@@ -29450,6 +29460,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             // `fetch_steer` here, before the fetch assigns it,
                                             // and printed None on every probe.
                                             chaser = ?snap,
+                                            tier = ?tier,
+                                            top_tier_exhausted,
                                             blocks = %layers.join(" | "),
                                             "bastion: WEDGE PROBE — the blocks around a stalled fetch and the walker's route (north row first, west to east; # solid . air ~ filled ? unloaded)"
                                         );

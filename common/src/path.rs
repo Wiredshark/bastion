@@ -999,7 +999,11 @@ impl Chaser {
     pub fn drop_route(&mut self) {
         self.route = None;
         self.astar = None;
-        self.path_length = Default::default();
+        // The tier is kept (P1c, 2026-09-02): resetting it to Small made
+        // every re-search after a climb ban the shortest, most
+        // heuristic-pulled partial path again -- the same stair, ten
+        // times for one job. The next search starts where the last one
+        // left off and escalates from there.
     }
 
     /// Test-only: the stored route's nodes (ledger #178 falsifier surface).
