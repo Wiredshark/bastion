@@ -81,11 +81,16 @@ if ((Test-Path "$LabBin\veloren-server-cli.exe") -and
     (Test-Path $labMarker)) {
     $tgtSrv = Get-Item "$Bin\veloren-server-cli.exe" -ErrorAction SilentlyContinue
     $labSrv = Get-Item "$LabBin\veloren-server-cli.exe"
-    if (($null -eq $tgtSrv) -or ($labSrv.LastWriteTime -gt $tgtSrv.LastWriteTime)) {
+    # ★ THE RELEASED PAIR ALWAYS WINS (2026-09-01 22:15). target\ is the
+    # workshop: a build chain writes its server and its client MINUTES apart,
+    # so "target is newer" was exactly the moment target was a skewed pair.
+    # Ben hit the refusal (8.2 min skew) one minute before the shipper landed
+    # a consistent pair in lab-bin. With a PAIR-OK present, lab-bin is used.
+    if (($null -eq $tgtSrv) -or ($labSrv.LastWriteTime -gt $tgtSrv.LastWriteTime) -or (Test-Path $labMarker)) {
         Write-Host ''
-        Write-Host 'USING lab-bin PAIR - target\no_overflow is stale (a running game held'
-        Write-Host 'its exes during the last rebuild). This pair was harvested from the'
-        Write-Host 'same build and content-verified:'
+        Write-Host 'USING lab-bin PAIR - the released pair (PAIR-OK) always wins over'
+        Write-Host 'target\no_overflow, the workshop, which is built one half at a time.'
+        Write-Host 'This pair was staged from ONE commit and content-verified:'
         Get-Content $labMarker | ForEach-Object { Write-Host ("  " + $_) }
         Write-Host ''
         $Bin = $LabBin
