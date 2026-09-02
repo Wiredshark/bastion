@@ -13477,6 +13477,47 @@ pub struct JobBoard {
     /// queue time on purpose — re-resolving surfaces after partial builds
     /// would shift the target under the plan.
     pub plans: Vec<(common::bastion::ZoneId, Vec<Vec3<i32>>)>,
+    // ★ G1c ─────────────────────────────────────────────────────────────
+    /// bastion (G1c): the worldgen plots the colony has ordered and is
+    /// building, one entry per live `plans` id. Session state (G1d owns
+    /// persistence): a restart loses the plan and the half-built house stands
+    /// as terrain, which is the same thing that happens to a bedroll plan
+    /// today.
+    pub plot_plans: Vec<crate::bastion_plot_build::PlotPlan>,
+    /// bastion (G1c): per-cell TARGET blocks for plot plans — what the Build
+    /// completion must place at that cell, and what the retire predicate
+    /// compares terrain against.
+    ///
+    /// It lives on the board rather than on the `Job` on purpose: `Job` is a
+    /// WIRE type (`common::bastion::Job`) and adding a `Block` to it would
+    /// widen every job on the network for a field that ~none of them use.
+    /// Same side-table shape as `chop_fell_sets` and the `BedSlot` table.
+    /// An entry is removed when its block is placed.
+    pub plot_blocks: HashMap<Vec3<i32>, common::terrain::Block>,
+    /// bastion (G1c): a house the daily gate asked for, awaiting worldgen —
+    /// `(kind, the game day it was asked for, refusals so far today)`. The
+    /// per-tick fulfil step drains it; `NoRoom` bumps the refusal count and
+    /// retries next tick with a fresh seed (G1b: a refusal is per-seed, not
+    /// saturation), and the count is what
+    /// `bastion_plot_build::HOUSE_NO_ROOM_RETRIES_PER_DAY` bounds.
+    pub plot_request: Option<(world::site::bastion_layout::LayoutKind, i64, u32)>,
+    /// bastion (G1c): how many worldgen plots the colony has finished and
+    /// registered. Telemetry; never gates.
+    pub plots_built: u32,
+    /// bastion (G1c): the worldgen site this colony lives on — the `Id<Site>`
+    /// `grow_plot` grows new plots into.
+    ///
+    /// NOT recorded by adoption: `bastion_adoptable_town_plots` iterates
+    /// `index.sites.iter()` and drops the id (`filter_map(|(_, site)| ..)`),
+    /// returning owned geometry so the founding sequence can release its
+    /// `IndexRef` borrow. Rather than widen that already 8-wide return tuple
+    /// through the worldgen-gated founding path, the id is resolved HERE from
+    /// the live index by containment — the site whose `bounds()` holds the
+    /// colony's anchor — and cached. That also covers the founded (never
+    /// adopted) colony, which adoption would never have recorded at all.
+    /// `None` = resolved to nothing yet, and the drain keeps the bedroll path.
+    pub colony_site: Option<common::store::Id<world::site::Site>>,
+    // ───────────────────────────────────────────────────────────────────
     /// bastion (AUTON-1): the mine generator's z-slab cursor — one slab of
     /// the scan volume per firing; session-state (a reboot rescans, which
     /// is idempotent by the dedupe).
@@ -16719,6 +16760,33 @@ fn mine_readback_diag() -> bool {
         .get_or_init(|| std::env::var_os("BASTION_MINE_READBACK_DIAG").is_some())
 }
 
+/// ★ G1c: consecutive `IndexShared` deferrals of the live house request.
+///
+/// LOG SAMPLING ONLY. Nothing in the simulation reads it, nothing branches on
+/// it, and it is reset by every non-deferral outcome — it exists so that a
+/// colony whose index is permanently shared leaves a trail that grows at
+/// `log2` instead of thirty identical lines a second. A determinism-relevant
+/// counter would have to live on the board; this one deliberately must not,
+/// because a witness's own cadence is not part of the world.
+static PLOT_DEFERRALS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+/// ★ G1c: THE IDENTITY FALLBACK. With `BASTION_NO_WORLDGEN_PLOTS` set, the
+/// housing drain takes the pre-G1c bedroll path and no plot is ever requested
+/// — the row is off and behaviour is exactly today's. The DECISION itself is
+/// `bastion_plot_build::drain_takes_the_plot_path`, which is pinned; this is
+/// only the environment read that feeds it.
+/// ★ G1c FIXTURE lever (2026-09-02): request a worldgen house whenever none is
+/// in flight, ignoring the daily housing gate. Absent = today's behaviour.
+fn force_plot_request() -> bool {
+    static FORCE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *FORCE.get_or_init(|| std::env::var_os("BASTION_FORCE_PLOT_REQUEST").is_some())
+}
+
+fn no_worldgen_plots() -> bool {
+    static NO_WORLDGEN_PLOTS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *NO_WORLDGEN_PLOTS.get_or_init(|| std::env::var_os("BASTION_NO_WORLDGEN_PLOTS").is_some())
+}
+
 /// bastion (#93): the HOSTILE PROXIMITY CENSUS gate.
 ///
 /// ARC 3 items 14 and 15 are both blocked on one unmeasured fact — no run has
@@ -17221,6 +17289,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // (coefficient 720, a game day of 120 sim-seconds), where
                 // the literal was wrong by a factor of fifteen.
                 ReadExpect<'a, common::shared_server_config::ServerConstants>,
+                // ★ G1c: the live world index and the world it was generated
+                // from — what `bastion_growth::grow_plot` needs to add a plot
+                // to the colony's town in place.
+                //
+                // `Option<_>`, not `WriteExpect`/`ReadExpect`, and that is
+                // load-bearing rather than defensive: on a NON-WORLDGEN build
+                // the server inserts `bastion_server::test_world::IndexOwned`
+                // under this name (server/src/lib.rs:160), a DIFFERENT type,
+                // so `world::IndexOwned` genuinely is absent there and an
+                // `Expect` would panic the whole job system on boot. `None`
+                // is the honest answer for that build, and the plot lane
+                // simply never runs — which is correct, because a stub world
+                // has no sites to grow plots on.
+                Option<specs::Write<'a, world::IndexOwned>>,
+                Option<Read<'a, std::sync::Arc<world::World>>>,
             ),
         ),
     );
@@ -17297,6 +17380,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     trade_price_book,
                     mut divine_favor,
                     server_constants,
+                    mut world_index,
+                    world_arc,
                 ),
             ),
         ): Self::SystemData,
@@ -17347,6 +17432,259 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     lands = (post == Some(e.expected)),
                     "bastion: mine readback"
                 );
+            }
+        }
+
+        // ── ★ G1c: THE COLONY BUILDS THE WORLDGEN HOUSE IT ASKED FOR ─────
+        //
+        // PER TICK, not on the arbitration cadence, and that is the whole
+        // reason this block sits up here instead of beside the housing drain.
+        // `grow_plot`'s healthy refusal is `IndexShared`: the world index is
+        // mutable only on a tick with NO chunk job holding a clone of it, so
+        // the question "is it free?" is a per-tick fact. Asking once every
+        // ARBITRATION_INTERVAL ticks would multiply the wait for a free tick
+        // by that interval for no gain whatsoever. A tick with no request and
+        // a resolved site costs two `Option` checks.
+        {
+            use crate::bastion_plot_build as plotb;
+
+            // ── (a) WHICH SITE IS THIS COLONY'S TOWN ──────────────────
+            // Resolved here rather than recorded at adoption, because
+            // adoption does not have it: `bastion_adoptable_town_plots`
+            // iterates `index.sites.iter()` and drops the id
+            // (`filter_map(|(_, site)| ..)`), returning owned geometry
+            // precisely so the founding sequence can release its `IndexRef`
+            // before it mutates the server. Resolving from the anchor also
+            // covers the colony adoption never touched at all — a founding
+            // that happened to land inside a village.
+            //
+            // Cached once, retried at a low cadence while unresolved (this is
+            // a scan of every site in the world; it must not run 30× a
+            // second forever on a colony that stands on none).
+            if board.colony_site.is_none()
+                && tick.0 % (ARBITRATION_INTERVAL as u64 * 4) == 7
+                && let Some(index) = world_index.as_deref()
+            {
+                let anchor = board.gathering_anchor.or_else(|| {
+                    board
+                        .beds
+                        .keys()
+                        .copied()
+                        .min_by_key(|c| (c.x, c.y, c.z))
+                        .or_else(|| {
+                            board
+                                .stockpiles
+                                .iter()
+                                .map(|(_, r)| r.min)
+                                .min_by_key(|c| (c.x, c.y, c.z))
+                        })
+                });
+                if let Some(anchor) = anchor {
+                    let index_ref = index.as_index_ref();
+                    // CONTAINMENT, not nearest. "The nearest site" to a
+                    // colony founded in open wilderness is a village a
+                    // thousand blocks away, and growing the colony's houses
+                    // there would put its own new homes out of sight of it.
+                    // A colony grows the town it STANDS IN or it grows
+                    // nothing. Deterministic: the store iterates in insertion
+                    // order and the tie-break is the smallest footprint, so a
+                    // hamlet nested inside a larger site's bounds still wins
+                    // its own plots — no HashMap order, no rng, no clock.
+                    let mut best: Option<(i64, common::store::Id<world::site::Site>)> = None;
+                    let mut sites_seen = 0usize;
+                    for (id, site) in index_ref.sites.iter() {
+                        sites_seen += 1;
+                        let b = site.bounds();
+                        let inside = anchor.x >= b.min.x
+                            && anchor.x < b.max.x
+                            && anchor.y >= b.min.y
+                            && anchor.y < b.max.y;
+                        if !inside {
+                            continue;
+                        }
+                        let area =
+                            (b.max.x - b.min.x) as i64 * (b.max.y - b.min.y) as i64;
+                        let better = match best {
+                            Some((a, _)) => area < a,
+                            None => true,
+                        };
+                        if better {
+                            best = Some((area, id));
+                        }
+                    }
+                    match best {
+                        Some((area, id)) => {
+                            board.colony_site = Some(id);
+                            info!(
+                                site = ?id,
+                                ?anchor,
+                                footprint_area = area,
+                                sites_seen,
+                                "bastion: COLONY SITE RESOLVED — the colony stands in this \
+                                 worldgen town, and new plots grow into it"
+                            );
+                        },
+                        // Named, not silent. A founded colony on open ground
+                        // legitimately has no site; that is a fact about the
+                        // world, and the bedroll path keeps working. But it
+                        // must be distinguishable from a lane that never ran.
+                        None => info!(
+                            ?anchor,
+                            sites_seen,
+                            "bastion: COLONY SITE UNRESOLVED — the colony's anchor is inside \
+                             no worldgen site, so houses stay on the bedroll path"
+                        ),
+                    }
+                }
+            }
+
+            // ── (b) FULFIL THE HOUSE REQUEST ──────────────────────────
+            if let Some((kind, day, refusals)) = board.plot_request
+                && let Some(site) = board.colony_site
+                && let Some(world) = world_arc.as_deref()
+                && let Some(index) = world_index.as_deref_mut()
+            {
+                let seed = plotb::next_house_seed(day, board.plot_plans.len(), refusals);
+                match crate::bastion_growth::grow_plot(index, world.sim(), site, kind, seed) {
+                    Ok(grown) => {
+                        PLOT_DEFERRALS.store(0, core::sync::atomic::Ordering::Relaxed);
+                        let total = grown.blocks.len();
+                        // BUILD ONLY WHAT SHOWS: the plot is already in the
+                        // index, so anything the terrain already holds is
+                        // finished before it starts, and an underground
+                        // foundation course is work nobody can ever see.
+                        let (cells, skipped_underground, skipped_unchanged) =
+                            plotb::visible_cells(&grown.blocks, |p| {
+                                terrain.get(p).ok().copied()
+                            });
+                        let plan_id = board.next_zone;
+                        board.next_zone += 1;
+                        let mut z_lo = i32::MAX;
+                        let mut z_hi = i32::MIN;
+                        let mut cell_positions = Vec::with_capacity(cells.len());
+                        for (pos, block) in cells {
+                            z_lo = z_lo.min(pos.z);
+                            z_hi = z_hi.max(pos.z);
+                            board.plot_blocks.insert(pos, block);
+                            cell_positions.push(pos);
+                        }
+                        let queued = cell_positions.len();
+                        // The plan the EXISTING build generator drains — one
+                        // pipeline, not a second one. Cells are frozen at
+                        // queue time, exactly like `queue_build_plan`.
+                        board.plans.push((plan_id, cell_positions));
+                        if queued > 0 {
+                            // ...and, like `queue_build_plan`, the footprint
+                            // joins the claim mask so access carving may
+                            // serve it and the bedroll ring scan will not
+                            // drop a bed inside the new house.
+                            board.designated.push((
+                                Region {
+                                    min: Vec3::new(
+                                        grown.placed.aabr_wpos.min.x,
+                                        grown.placed.aabr_wpos.min.y,
+                                        z_lo,
+                                    ),
+                                    max: Vec3::new(
+                                        grown.placed.aabr_wpos.max.x - 1,
+                                        grown.placed.aabr_wpos.max.y - 1,
+                                        z_hi,
+                                    ),
+                                },
+                                DesignationKind::Build,
+                            ));
+                        }
+                        board.plot_plans.push(plotb::PlotPlan {
+                            id: plan_id,
+                            site,
+                            kind,
+                            aabr_wpos: grown.placed.aabr_wpos,
+                            door: grown.placed.door_wpos,
+                            beds: grown.beds.clone(),
+                            total,
+                            registered: false,
+                            queued_day: day,
+                        });
+                        board.plot_request = None;
+                        info!(
+                            plan = plan_id,
+                            kind = ?kind,
+                            aabr = ?grown.placed.aabr_wpos,
+                            door = ?grown.placed.door_wpos,
+                            beds = grown.beds.len(),
+                            blocks = total,
+                            cells = queued,
+                            skipped_underground,
+                            skipped_unchanged,
+                            no_stone_bill = true,
+                            seed,
+                            day,
+                            outcome = ?plotb::HouseRequestOutcome::Grown,
+                            "bastion: PLOT PLAN QUEUED — the colonists will build what shows"
+                        );
+                    },
+                    // NOT AN ERROR, and not a reason to give up: the index is
+                    // being read by a chunk job this tick. Nothing was spent
+                    // (`grow_plot` refuses before it looks anything up), the
+                    // request stays, and the next tick asks again.
+                    Err(crate::bastion_growth::GrowRefusal::IndexShared { strong_count }) => {
+                        // Sampled at powers of two so a permanently shared
+                        // index leaves a trail that GROWS SLOWLY instead of
+                        // 30 identical lines a second — the difference
+                        // between an instrument and a flood.
+                        let n = PLOT_DEFERRALS
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed)
+                            + 1;
+                        if n.is_power_of_two() {
+                            info!(
+                                strong_count,
+                                deferrals = n,
+                                day,
+                                outcome = ?plotb::HouseRequestOutcome::Deferred,
+                                "bastion: PLOT REQUEST DEFERRED — the world index is being read \
+                                 this tick; the request stands and retries next tick"
+                            );
+                        }
+                    },
+                    // PER-SEED, NOT SATURATION (G1b measured it: 200 seeds on
+                    // one town grew 11 houses, and 9 of the 11 came AFTER the
+                    // first refusal). Retry next tick with a fresh seed.
+                    Err(crate::bastion_growth::GrowRefusal::NoRoom) => {
+                        PLOT_DEFERRALS.store(0, core::sync::atomic::Ordering::Relaxed);
+                        let refusals = refusals + 1;
+                        match plotb::no_room_outcome(refusals) {
+                            plotb::HouseRequestOutcome::GaveUp { refusals } => {
+                                board.plot_request = None;
+                                info!(
+                                    refusals,
+                                    day,
+                                    site = ?site,
+                                    "bastion: HOUSE REQUEST GAVE UP TODAY — worldgen found no \
+                                     roadside room in N seeds"
+                                );
+                            },
+                            _ => {
+                                board.plot_request = Some((kind, day, refusals));
+                            },
+                        }
+                    },
+                    // A stale id: the site this colony was resolved onto is
+                    // no longer in the index. Drop BOTH the id and the
+                    // request rather than retrying a lookup that cannot
+                    // succeed; the resolver above will find the town again if
+                    // there is one.
+                    Err(crate::bastion_growth::GrowRefusal::NoSuchSite) => {
+                        PLOT_DEFERRALS.store(0, core::sync::atomic::Ordering::Relaxed);
+                        board.colony_site = None;
+                        board.plot_request = None;
+                        info!(
+                            site = ?site,
+                            day,
+                            "bastion: PLOT REQUEST DROPPED — the colony's site id names no site \
+                             in this index; the site will be re-resolved"
+                        );
+                    },
+                }
             }
         }
 
@@ -21576,7 +21914,46 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             .min_by_key(|c| (c.x, c.y, c.z))
                     })
             });
-            if board.pending_house.is_some()
+            // ★ G1c: THE HOUSE THE TOWN ASKED FOR IS A WORLDGEN HOUSE.
+            // The bedroll below is a single designated cell — the town's
+            // "house" was one bed on open ground, which is why a flyover
+            // never saw the colony build anything. Ask worldgen for a real
+            // plot instead: the request is recorded here (where the day is
+            // known) and fulfilled by the per-tick step (where the world
+            // index is), the same producer/drain split the pending_house
+            // intent itself uses. The bedroll path stays reachable and is
+            // BYTE-IDENTICAL behaviour under BASTION_NO_WORLDGEN_PLOTS.
+            // ★ G1c FIXTURE: BASTION_FORCE_PLOT_REQUEST asks for a house whenever
+            // none is in flight (the flat lab's 58 houses never trip the gate).
+            if (board.pending_house.is_some() || force_plot_request())
+                && crate::bastion_plot_build::drain_takes_the_plot_path(
+                    no_worldgen_plots(),
+                    board.colony_site.is_some(),
+                    // UNREGISTERED, not merely present: `plot_plans` keeps a
+                    // record of every house the colony has built (G1d
+                    // persists it), so `is_empty()` would be true exactly
+                    // once and the town would build one house, ever.
+                    board.plot_plans.iter().any(|p| !p.registered),
+                    board.plot_request.is_some(),
+                )
+            {
+                // `take()` and not a clear: the intent MOVES into the plot
+                // request, so exactly one of the two is live at any time and
+                // the two paths can never both fire for one day's house.
+                let day = board.pending_house.take().unwrap_or(0);
+                board.plot_request = Some((
+                    world::site::bastion_layout::LayoutKind::House,
+                    day,
+                    0,
+                ));
+                info!(
+                    day,
+                    site = ?board.colony_site,
+                    plots_built = board.plots_built,
+                    "bastion: ★ G1c HOUSE REQUESTED FROM WORLDGEN — the town asks its own \
+                     site for a plot; the colonists will build what worldgen lays out"
+                );
+            } else if board.pending_house.is_some()
                 && let Some(anchor) = house_anchor
             {
                 // Ring outward from the town centre. Deterministic order —
@@ -21694,7 +22071,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // retired into `built_xy`) on cells nobody could read.
                     // The Build job minted for it survives the (fixed)
                     // sweeps and loads the chunk by walking there.
-                    let filled = terrain.get(*pos).ok().is_some_and(|b| b.is_filled());
+                    // ★ G1c: a plan cell that carries a worldgen TARGET is
+                    // done when it MATCHES that target, not when it is solid.
+                    // A bed, a door, a window and a lantern are all AIR
+                    // blocks carrying a sprite, so under `is_filled()` a plot
+                    // plan could never retire — the house would be built and
+                    // then never registered as a house. Cells with no target
+                    // (every plan that exists today) keep the old rule
+                    // byte-for-byte; see `plot_cell_is_done`.
+                    let filled = crate::bastion_plot_build::plot_cell_is_done(
+                        terrain.get(*pos).ok().copied(),
+                        board.plot_blocks.get(pos).copied(),
+                    );
                     if filled {
                         continue;
                     }
@@ -21732,6 +22120,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             for pos in build_new {
                 let id = board.next_id;
                 board.next_id += 1;
+                // ★ G1c: A WORLDGEN HOUSE IS NOT PAID FOR IN SINGLE STONES.
+                // Every Build job bills `BUILD_MATERIAL_ITEM` (one stone per
+                // cell), which is right for a player-painted platform and
+                // absurd for a plot: a house is several hundred cells of
+                // plank, thatch, glass and sprite, so billing it in stone
+                // would park the whole plan behind a mine order for material
+                // it does not even use, and the colony would stand idle
+                // exactly the way F13 measured. A plot cell therefore carries
+                // NO required_item — the fetch contract, the material-haul
+                // and the completion consume all key off that one field, so
+                // clearing it at the mint is the whole change (nothing
+                // downstream needs a second flag to read). Costing a worldgen
+                // plot properly is a later row's job, not a stone tax now.
+                let plot_cell = board.plot_blocks.contains_key(&pos);
                 board.jobs.insert(id, Job {
                     player_ordered: false,
                     kind: common::bastion::JobKind::Designated(DesignationKind::Build),
@@ -21742,7 +22144,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     suspended_for: None,
                     unreachable: false,
                     progress: 0.0,
-                    required_item: Some(BUILD_MATERIAL_ITEM),
+                    // ★ G1c: no stone bill for a worldgen plot cell.
+                    required_item: (!plot_cell).then_some(BUILD_MATERIAL_ITEM),
                     needs_materials: false,
                     carve_attempted: false,
                     is_access: false,
@@ -21772,6 +22175,90 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     plans = retired.len(),
                     "bastion: build plan(s) complete (AUTON-1)"
                 );
+                // ★ G1c: A RETIRED PLOT PLAN IS A HOUSE THAT STANDS — say so,
+                // and register it for the household census, ONCE.
+                //
+                // ONE-SHOT, and the flag is the whole point: a bed is a
+                // resource nothing re-adds, so a second registration would
+                // push a second Bed REGION over the same footprint and
+                // `derive_households` would count one house twice — the town
+                // would believe it had beds it does not have and open the
+                // immigration gate on them.
+                //
+                // REGISTERED THROUGH ADOPTION'S OWN PATH
+                // (`adopt_beds_surface`), not a second copy of it: that
+                // function records the Bed region `derive_households` reads
+                // as a house AND scans the footprint for every furniture
+                // sprite inside it — bed heads become `BedKind::Frame` slots,
+                // the hearth becomes a cook station, containers become
+                // stockpile zones. A worldgen house is furnished exactly like
+                // an adopted one, because it IS one; the only difference is
+                // that the colony built it. (Two scans that must agree is the
+                // drift this file has already paid for once — see
+                // `adopt_furniture_surface`'s own doc.)
+                let today_g1c = (rtsim.rt_state().data().time_of_day.0
+                    / common::resources::DAY)
+                    .floor() as i64;
+                let ready: Vec<(usize, Vec2<i32>, Vec2<i32>, i32, usize, i64, u64)> = board
+                    .plot_plans
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, p)| !p.registered && retired.contains(&p.id))
+                    .map(|(i, p)| {
+                        // `aabr_wpos` is min-inclusive / max-EXCLUSIVE (the
+                        // layout's convention, carried through unchanged), and
+                        // the surface scan wants an inclusive max.
+                        let min_xy = p.aabr_wpos.min;
+                        let max_xy = p.aabr_wpos.max - 1;
+                        // The z the column-surface scan measures from: the
+                        // plot's own floor. A bed head is the most literal
+                        // witness of it; the door is the fallback (both sit at
+                        // the plot's altitude).
+                        let hint_z = p
+                            .beds
+                            .iter()
+                            .map(|b| b.z)
+                            .min()
+                            .or(p.door.map(|d| d.z))
+                            .unwrap_or(0);
+                        (i, min_xy, max_xy, hint_z, p.beds.len(), p.queued_day, p.id)
+                    })
+                    .collect();
+                for (idx, min_xy, max_xy, hint_z, laid_beds, queued_day, plan_id) in ready {
+                    let beds_before = board.beds.len();
+                    let houses_before = board
+                        .designated
+                        .iter()
+                        .filter(|(_, k)| matches!(k, DesignationKind::Bed))
+                        .count();
+                    let _ = board.adopt_beds_surface(&terrain, min_xy, max_xy, hint_z);
+                    board.plot_plans[idx].registered = true;
+                    board.plots_built += 1;
+                    let beds_registered = board.beds.len().saturating_sub(beds_before);
+                    let houses = board
+                        .designated
+                        .iter()
+                        .filter(|(_, k)| matches!(k, DesignationKind::Bed))
+                        .count();
+                    info!(
+                        plan = plan_id,
+                        beds_laid_out = laid_beds,
+                        // TREATMENT BESIDE OUTCOME: what worldgen put in the
+                        // house, and what the census can actually see. The two
+                        // disagreeing is a real finding (an unloaded column,
+                        // or a bed sprite family the scan does not know), and
+                        // it must be legible without a second run.
+                        beds_registered,
+                        houses_before,
+                        houses,
+                        days_taken = today_g1c - queued_day,
+                        plots_built = board.plots_built,
+                        ?min_xy,
+                        ?max_xy,
+                        hint_z,
+                        "bastion: PLOT BUILT — a worldgen house stands and its beds are registered"
+                    );
+                }
             }
             // MINE: dig only what the plan still owes. Supply counts every
             // stone that will eventually serve a build — loose/piled
@@ -23990,6 +24477,78 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             day = today,
                             "bastion: HOUSING BUILD — whether the town would start a house                              today, and what stops it (a passing verdict QUEUES the plan via queue_build_plan)"
                         );
+                    }
+                    // ★ G1c: WHAT THE COLONISTS ARE ACTUALLY BUILDING.
+                    // One line per unfinished worldgen plot, once a game day.
+                    // A house takes days; without this the only two events
+                    // the log carries are QUEUED and BUILT, and a plot that
+                    // stalls in between is indistinguishable from one that is
+                    // progressing slowly — which is precisely the didn't/
+                    // couldn't ambiguity this project keeps paying for.
+                    if day_changed {
+                        for plan in board.plot_plans.iter().filter(|p| !p.registered) {
+                            // Remaining is measured with THE SAME INSTRUMENT
+                            // the retirement uses — `plot_cell_is_done`
+                            // against terrain — and deliberately not with the
+                            // cheaper `plot_blocks.contains_key`. The two
+                            // disagree exactly where it matters: a cell the
+                            // engine's own chunk render painted was never
+                            // served by a Build job, so it keeps its
+                            // `plot_blocks` entry while the terrain already
+                            // holds it. Reporting progress in one frame and
+                            // retiring in another is how a plan reads
+                            // "3 remaining" on the same day it completes.
+                            let (queued, remaining) = board
+                                .plans
+                                .iter()
+                                .find(|(zid, _)| *zid == plan.id)
+                                .map(|(_, cells)| {
+                                    (
+                                        cells.len(),
+                                        cells
+                                            .iter()
+                                            .filter(|c| {
+                                                !crate::bastion_plot_build::plot_cell_is_done(
+                                                    terrain.get(**c).ok().copied(),
+                                                    board.plot_blocks.get(*c).copied(),
+                                                )
+                                            })
+                                            .count(),
+                                    )
+                                })
+                                .unwrap_or((0, 0));
+                            // Builders = Build jobs CLAIMED inside this
+                            // plot's footprint. Zero with cells remaining is
+                            // the finding: the house is stalled, not slow.
+                            let builders = board
+                                .jobs
+                                .values()
+                                .filter(|j| {
+                                    j.kind.is(DesignationKind::Build)
+                                        && j.claimed_by.is_some()
+                                        && j.pos.x >= plan.aabr_wpos.min.x
+                                        && j.pos.x < plan.aabr_wpos.max.x
+                                        && j.pos.y >= plan.aabr_wpos.min.y
+                                        && j.pos.y < plan.aabr_wpos.max.y
+                                })
+                                .count();
+                            info!(
+                                plan = plan.id,
+                                kind = ?plan.kind,
+                                // The house's own denominator (every block
+                                // worldgen laid out) beside the colony's
+                                // (only the cells that show).
+                                total = plan.total,
+                                queued,
+                                placed = plan.total.saturating_sub(remaining),
+                                remaining,
+                                builders,
+                                beds = plan.beds.len(),
+                                queued_day = plan.queued_day,
+                                day = today,
+                                "bastion: BUILD PROGRESS"
+                            );
+                        }
                     }
                     // ── ROW 53: THE COURTING DAY ───────────────────────
                     // Beside immigration and births, on the same daily
@@ -36852,7 +37411,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // B-AG5-CORE: THE completion edit lives in
                     // bastion_actions (None = no terrain edit for this
                     // kind — same continue semantics as before).
-                    let Some(new_block) = crate::bastion_actions::completion_block(job.kind) else {
+                    // ★ G1c: a plot cell places the block WORLDGEN chose for
+                    // it — a plank wall, a thatch roof, a window, a bed
+                    // sprite — instead of the generic grey rock every Build
+                    // completion places. `remove` and not `get`: the target
+                    // is consumed at the placement, so the cell leaves the
+                    // side table the moment it is served (a cancelled or
+                    // re-minted job then behaves like any other Build cell,
+                    // and the table cannot outlive its plan).
+                    let Some(new_block) = board
+                        .plot_blocks
+                        .remove(&job.pos)
+                        .or_else(|| crate::bastion_actions::completion_block(job.kind))
+                    else {
                         continue;
                     };
                     // THE NEXT-TICK READBACK push (READBACK-PREREG.md). The
@@ -49623,7 +50194,9 @@ mod tests {
             .split("bastion: HOUSING BUILD")
             .next()
             .expect("the HOUSING BUILD witness must exist");
-        let tail = &witness[witness.len().saturating_sub(2000)..];
+        // 4096, not 2000 (2026-09-02): the count moved 2,864 chars up as the gate
+        // grew; the pin had been red for days behind the filtered test runs.
+        let tail = &witness[witness.len().saturating_sub(4096)..];
         assert!(
             tail.contains("BUILD_MATERIAL_ITEM"),
             "the gate must count the def the CONSUMER bills, read from the              consumer's own constant"

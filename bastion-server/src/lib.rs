@@ -36,6 +36,11 @@ pub mod bastion_mood;
 pub mod bastion_recipes;
 pub mod bastion_path;
 pub mod bastion_piles;
+/// bastion (G1c): turn a grown worldgen plot into work the colony's existing
+/// Build pipeline can do — which cells are worth building, when one is
+/// finished, and what to do when worldgen refuses. Pure; the wiring lives at
+/// the `// ★ G1c` marks in `bastion_jobs`.
+pub mod bastion_plot_build;
 pub mod bastion_renderer_bench;
 pub mod bastion_traversal;
 pub mod bastion_tick_cost;

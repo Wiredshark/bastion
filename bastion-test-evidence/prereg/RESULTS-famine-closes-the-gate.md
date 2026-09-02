@@ -45,8 +45,29 @@ days_of_food 2.7-2.9 through autumn; its days 6-7 (bkow4y0te's day-7
 read) are the real test of the gate closing for days and re-opening in
 spring. b3 stops after its day-2 read.
 
+## The day-2 famine on b3 (read 17:33): the bar itself, one replicate
+
+| day | season | food_stock | days_of_food | HOUSING GROWTH deciding | roster at the day line and 15:00 |
+|----:|--------|-----------:|-------------:|-------------------------|----------------------------------|
+| 0   | Spring | 8          | 0.05         | famine, then "a house stands empty" after the harvest | 48 -> 49 |
+| 1   | Spring | 511        | 3.26         | a house stands empty     | 49 -> 50 |
+| 2   | Summer | 286        | 1.79         | famine                   | 50 -> 50 |
+
+On the first day whose day line read under 2.0 days of food (day 2,
+1.79) the gate's daily decision was "famine" and the roster did not
+grow through 15:00 (tick 72,300). The pre-registered PASS condition
+holds on this replicate. The control (b2, seeded 64) read 3.27 days on
+day 2 and drew its third settler. Starving on b3 peaked at 16 on day 2
+— the terrace wedge (W6), not the stock.
+
+Instrument hygiene: SETTLER GATE CLOSED printed 1,207 lines in two days
+(one per gate pass while closed). It should print on the transition
+and once per day line, not per pass (F1b, queued).
+
 ## Disposition
 
-Mechanism PASS on a short famine; the multi-day bar is deferred to the
-winter read. Not evidenced: a famine on real terrain (Ben's world has
-18 fields for 9 people).
+Mechanism PASS on the short famine and on the one multi-day replicate
+(day 2). Three replicates or nothing: two more famine days are needed
+before the bar is called; the winter read on b2 (days 6-7) is the
+next. Not evidenced: a famine on real terrain (Ben's world has 18
+fields for 9 people).
