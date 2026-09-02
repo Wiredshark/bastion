@@ -21,9 +21,9 @@ contains (7672, 6426); its zone id changes per boot (45, 44, 38, 44).
   before). The barn and the store at (7776-7780, 6356) were not named on
   any boot; the withdrawal is STORE_CLOSE_TICKS (one game day) and
   reopens.
-- The eat-census bar (meals / eat_minted not below 47 / 56) is read at
-  the day-1 line, which lands after the boot's restart; it is taken from
-  the saved log and appended here when read.
+- The eat-census bar: the P1c boot's day-1 EAT CENSUS read 45 eat jobs,
+  46 meals, 18 stalls tolerated, 34 targets shunned (the bar: meals over
+  jobs not below 47 / 56); evening starving 0-2. PASS.
 - The fetches that reached the "no path" verdict did so at tier Small
   (500 iterations): a raised terrace with no ground way in is decided
   cheaply; the withdrawal spares the walkers the 15 s stall each and the
