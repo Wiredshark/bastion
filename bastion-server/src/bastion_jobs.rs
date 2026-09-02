@@ -23013,10 +23013,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 in_zone_pct = in_zone * 100 / scoped.max(1),
                                 mean_travel_blocks_per_claim = travel / (works + hauls).max(1) as f32,
                                 far_claim_pct = far * 100 / (works + hauls).max(1),
-                                travel_pct_work = (by_class[0] * 100.0 / travel.max(1.0)) as u32,
-                                travel_pct_haul = (by_class[1] * 100.0 / travel.max(1.0)) as u32,
-                                travel_pct_eat = (by_class[2] * 100.0 / travel.max(1.0)) as u32,
-                                travel_pct_leisure = (by_class[3] * 100.0 / travel.max(1.0)) as u32,
+                                travel_share_work_pct = (by_class[0] * 100.0 / travel.max(1.0)) as u32,
+                                travel_share_haul_pct = (by_class[1] * 100.0 / travel.max(1.0)) as u32,
+                                travel_share_eat_pct = (by_class[2] * 100.0 / travel.max(1.0)) as u32,
+                                travel_share_leisure_pct = (by_class[3] * 100.0 / travel.max(1.0)) as u32,
                                 "bastion: JOB SEQUENCE CENSUS — work->haul->work alternations per lane per day (Ben, live: \"they do a job, haul, do job, haul\")"
                             );
                         }
