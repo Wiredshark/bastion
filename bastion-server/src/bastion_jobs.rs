@@ -13090,6 +13090,9 @@ pub struct JobBoard {
     /// ASSIST_REPEAT_WINDOW_TICKS means a rival writer undid the move).
     pub assist_last: HashMap<u64, (Vec3<i32>, u64)>,
     pub assist_repeats: u32,
+    /// ★ W7a: the job target at each body's last assist — a repeat with a
+    /// different target is a re-aim, not a rival writer.
+    pub assist_last_target: HashMap<u64, Vec3<i32>>,
     /// ★ BUILDING PURPOSES (Ben: "every building needs to be labeled for
     /// its purpose and uses for the colonists"). The adopted town's
     /// non-residential buildings, registered at founding from worldgen's
@@ -34056,6 +34059,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             tick.0,
                                         );
                                         board.assist_last.insert(u, (head, tick.0));
+                                        board.assist_last_target.insert(u, job.pos);
                                         if repeat {
                                             board.assist_repeats =
                                                 board.assist_repeats.saturating_add(1);
@@ -34071,6 +34075,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 // outside the drain); the
                                                 // marker; the physics state.
                                                 let feet_now = pos.0.map(|e| e.floor() as i32);
+                                                // ★ W7a: what the chaser holds NOW, and
+                                                // whether the job re-aimed since the
+                                                // last assist on this body.
+                                                let snap_now = agent
+                                                    .as_deref()
+                                                    .map(|a| a.chaser.diagnostic_snapshot());
+                                                let retargeted = board
+                                                    .assist_last_target
+                                                    .get(&u)
+                                                    .is_some_and(|t| *t != job.pos);
                                                 info!(
                                                     colonist = u,
                                                     ?head,
@@ -34078,6 +34092,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                     repeats = n,
                                                     ?feet_now,
                                                     delta = ?(feet_now - head),
+                                                    route_head_now = ?snap_now.as_ref().and_then(|s| s.route_head),
+                                                    search_target_now = ?snap_now.as_ref().and_then(|s| s.last_search_target),
+                                                    path_state_now = ?snap_now.as_ref().map(|s| s.path_state),
+                                                    job_target = ?job.pos,
+                                                    retargeted,
                                                     last_push_site = ?board.last_push_site.get(&Uid(std::num::NonZeroU64::new(u).expect("uid nonzero"))),
                                                     marker = kinematic_travels.contains(entity),
                                                     on_ground = physics_states.get(entity).is_some_and(|p| p.on_ground.is_some()),
