@@ -21,10 +21,21 @@ roster 49) on pair b260c71a0c, booted 17:49; the boot's first raid at
 The second cry (out of earshot 25, sheltered 18, posted 4) came from a
 different cry position; its counters also sum to 49.
 
+## Replicate 2 (the G1c boot on 3249b9116e, first raid, three cries, read 18:25)
+
+| cry | sheltered | already home | posted | out of earshot | sum | indoors |
+|----:|----------:|-------------:|-------:|---------------:|----:|--------:|
+| 1   | 18        | 1            | 2      | 28             | 49  | 100%    |
+| 2   | 32        | 8            | 2      | 7              | 49  | 100%    |
+| 3   | 20        | 4            | 2      | 23             | 49  | 100%    |
+
+Musters 6, downed 0, doors: 1 fight, 0 gave way (D2's second replicate:
+none in two boots against four at 10.03 s before).
+
 ## Disposition
 
-PASS on every pre-registered bar, one replicate (three or nothing: the
-next two raid-arm boots carry the same line). The mechanism named by
+PASS on every pre-registered bar, two replicates (a third comes free
+with the next raid-arm boot). The mechanism named by
 the D1b read was the whole story: the muster's squad cap left the
 unposted high-priority colonists in a gap between "fighting" and
 "indoors"; closing the gap moved 16 people indoors. Not evidenced:

@@ -280,8 +280,15 @@ pub enum ServerInitStage {
 pub struct Server {
     state: State,
     world: Arc<World>,
-    index: IndexOwned,
-
+    // ★ NO `index: IndexOwned` FIELD. It used to live here, and being a
+    // PERMANENT second owner of the index `Arc` it made
+    // `IndexOwned::try_index_mut` fail forever on a live server, which in turn
+    // made `bastion_growth::grow_plot` refuse every tick with
+    // `IndexShared { strong_count: 2 }`. The single owner at rest is the ECS
+    // resource `world::IndexOwned`; fetch it with
+    // `self.state.ecs().read_resource::<IndexOwned>()` (or `write_resource`
+    // for the colors hot-reload), and keep the guard no longer than the borrow
+    // checker needs.
     connection_handler: ConnectionHandler,
 
     runtime: Arc<Runtime>,
@@ -1031,7 +1038,32 @@ impl Server {
         let world = Arc::new(world);
         state.ecs_mut().insert(Arc::clone(&world));
         state.ecs_mut().insert(lod);
-        state.ecs_mut().insert(index.clone());
+        // ★ THE ECS RESOURCE IS THE SOLE OWNER OF THE INDEX ARC AT REST.
+        //
+        // This used to be `insert(index.clone())`, with `Server` keeping the
+        // other half in an `index: IndexOwned` field. That field was a
+        // PERMANENT second owner of the `Arc<Index>`, so
+        // `IndexOwned::try_index_mut` (`Arc::get_mut`) could never succeed on
+        // a live server and `bastion_growth::grow_plot` refused on EVERY tick
+        // with `IndexShared { strong_count: 2 }` — 272 refusals in the first
+        // minute of a boot. The index is MOVED in here (no clone) and every
+        // former `self.index` use now fetches it back out of the ECS, so
+        // exactly one permanent owner remains. The only other strong
+        // references are the transient clones `ChunkGenerator` hands to
+        // in-flight chunk jobs — which is precisely what a `None` from
+        // `try_index_mut` is supposed to mean.
+        state.ecs_mut().insert(index);
+        {
+            // The pin a log read can check: this must print 1.
+            let strong_count = state
+                .ecs()
+                .read_resource::<IndexOwned>()
+                .index_strong_count();
+            info!(
+                strong_count,
+                "bastion: WORLD INDEX OWNERSHIP — the ECS resource is the sole owner at rest"
+            );
+        }
 
         // Set starting time for the server.
         state.ecs_mut().write_resource::<TimeOfDay>().0 = settings.world.start_time;
@@ -1159,16 +1191,23 @@ impl Server {
         // Init rtsim, loading it from disk if possible
         #[cfg(feature = "worldgen")]
         {
-            match rtsim::RtSim::new(
-                &settings.world,
-                settings.world_seed,
-                index.as_index_ref(),
-                &world,
-                data_dir.to_owned(),
-                map_geometry_root,
-                worldgen_protocol_root,
-                content_protocol_root,
-            ) {
+            // The index now lives in the ECS (see the ownership note at the
+            // insert site), so it is fetched here and the read guard is
+            // dropped before the match arms touch `state` mutably.
+            let rtsim_init = {
+                let index = state.ecs().read_resource::<IndexOwned>();
+                rtsim::RtSim::new(
+                    &settings.world,
+                    settings.world_seed,
+                    index.as_index_ref(),
+                    &world,
+                    data_dir.to_owned(),
+                    map_geometry_root,
+                    worldgen_protocol_root,
+                    content_protocol_root,
+                )
+            };
+            match rtsim_init {
                 Ok(rtsim) => {
                     state.ecs_mut().insert(rtsim.state().data().time_of_day);
                     state.ecs_mut().insert(rtsim);
@@ -1184,7 +1223,6 @@ impl Server {
         let mut this = Self {
             state,
             world,
-            index,
             connection_handler,
             runtime,
 
@@ -1959,12 +1997,17 @@ impl Server {
                 .unwrap_or(1);
             #[allow(non_snake_case)]
             let COLONY_PRESENCE_VIEW_DISTANCE: u32 = colony_presence_vd;
+            // `create_colony_presence` takes `&mut self.state`, so an ECS read
+            // guard cannot be held across the call: take a transient clone
+            // (the same kind every dispatched chunk job gets) and let the
+            // guard drop on the same statement.
+            let index = IndexOwned::clone(&self.state.ecs().read_resource::<IndexOwned>());
             self.state
                 .create_colony_presence(
                     comp::Pos(wpos),
                     COLONY_PRESENCE_VIEW_DISTANCE,
                     &self.world,
-                    &self.index,
+                    &index,
                 )
                 .build();
         }
@@ -2877,6 +2920,12 @@ impl Server {
         use common::terrain::CoordinateConversions;
         let center = center_wpos.as_::<i32>().wpos_to_cpos();
         let mut generated = 0;
+        // The index lives in the ECS now. Everything in this loop borrows
+        // `self.state` shared (specs resources use interior mutability), and
+        // no other resource fetched below is `IndexOwned`, so one guard for
+        // the whole loop is safe both to the borrow checker and to specs'
+        // runtime borrow tracking.
+        let index = self.state.ecs().read_resource::<IndexOwned>();
         for dy in -chunk_radius..=chunk_radius {
             for dx in -chunk_radius..=chunk_radius {
                 let key = center + Vec2::new(dx, dy);
@@ -2899,7 +2948,7 @@ impl Server {
                 .ok_or(())
                 .or_else(|()| {
                     self.world.generate_chunk(
-                        self.index.as_index_ref(),
+                        index.as_index_ref(),
                         key,
                         None,
                         // NOTE: despite the name, this closure means
@@ -2946,10 +2995,14 @@ impl Server {
         seed: u32,
     ) -> Result<(bastion_assets::LoadedAsset, bastion_assets::PlacementReport), String> {
         let loaded = bastion_assets::load_asset(entry, open_variant)?;
+        // `place_structure` takes `&mut self.state`, which rules out holding
+        // an ECS read guard across it — transient clone, guard dropped on the
+        // same statement.
+        let index = IndexOwned::clone(&self.state.ecs().read_resource::<IndexOwned>());
         let report = bastion_assets::place_structure(
             &mut self.state,
             &self.world,
-            self.index.as_index_ref(),
+            index.as_index_ref(),
             &loaded,
             origin,
             seed,
@@ -3416,13 +3469,13 @@ impl Server {
         let Some((actor, wpos)) = resolved else {
             return false;
         };
-        let index = self.index.as_index_ref();
+        let index_res = self.state.ecs().read_resource::<IndexOwned>();
         self.state
             .ecs()
             .write_resource::<crate::rtsim::RtSim>()
             .hook_pickup_owned_sprite(
                 &self.world,
-                index,
+                index_res.as_index_ref(),
                 common::terrain::sprite::SpriteKind::Crate,
                 wpos,
                 actor,
@@ -5943,6 +5996,7 @@ impl Server {
     pub fn chat_cache(&self) -> &ChatCache { &self.chat_cache }
 
     fn parse_locations(&self, character_list_data: &mut [CharacterItem]) {
+        let index = self.state.ecs().read_resource::<IndexOwned>();
         character_list_data.iter_mut().for_each(|c| {
             let name = c
                 .location
@@ -5954,7 +6008,7 @@ impl Server {
                 })
                 .and_then(|wpos| {
                     self.world
-                        .get_location_name(self.index.as_index_ref(), wpos.xy().as_::<i32>())
+                        .get_location_name(index.as_index_ref(), wpos.xy().as_::<i32>())
                 });
             c.location = name;
         });
@@ -6729,10 +6783,17 @@ impl Server {
             // reloaded. Note that all of these assignments are no-ops, so the
             // only work we do here on the fast path is perform a relaxed read on an atomic.
             // boolean.
-            let index = &mut self.index;
-            let world = &mut self.world;
-            let ecs = self.state.ecs_mut();
+            let world = &self.world;
+            // Shared `ecs()`, not `ecs_mut()`: the index is an ECS resource
+            // now, so this scope needs several concurrent resource fetches out
+            // of the same `&specs::World` (specs gives each one its own
+            // runtime borrow). `IndexOwned` is taken as a WRITE because
+            // `reload_if_changed` needs `&mut IndexOwned` to re-cache the
+            // reloaded colors/features handles; no other fetch here is
+            // `IndexOwned`, so the runtime borrows do not collide.
+            let ecs = self.state.ecs();
             let slow_jobs = ecs.write_resource::<SlowJobPool>();
+            let mut index = ecs.write_resource::<IndexOwned>();
 
             index.reload_if_changed(|index| {
                 let mut chunk_generator = ecs.write_resource::<ChunkGenerator>();
@@ -7096,8 +7157,11 @@ impl Server {
         // let rand_pos = world_dims_blocks.map(|e| e as i32).map(|e| e / 2 +
         // rng.random_range(-e/2..e/2 + 1));
         let pos = comp::Pos(Vec3::from(world_dims_blocks.map(|e| e as f32 / 2.0)));
+        // `create_persister` takes `&mut self.state`; transient clone, guard
+        // dropped on the same statement (see `create_colony_presence`).
+        let index = IndexOwned::clone(&self.state.ecs().read_resource::<IndexOwned>());
         self.state
-            .create_persister(pos, view_distance, &self.world, &self.index)
+            .create_persister(pos, view_distance, &self.world, &index)
             .build();
     }
 
@@ -7877,8 +7941,9 @@ impl Server {
                  creation, else spawn"
             );
             let player_chose = chosen.is_some() || picked.is_some();
+            let index = self.state.ecs().read_resource::<IndexOwned>();
             let (town_origin, plots, plaza, roads, walls, interiors, tile_graph, buildings) = Self::bastion_adoptable_town_plots(
-                self.index.as_index_ref(),
+                index.as_index_ref(),
                 self.world.sim(),
                 near,
                 player_chose,
@@ -8057,6 +8122,7 @@ impl Server {
                 let rtsim = ecs.read_resource::<rtsim::RtSim>();
                 let mut chunk_generator = ecs.write_resource::<ChunkGenerator>();
                 let mut pinned = ecs.write_resource::<bastion_jobs::BastionForceLoaded>();
+                let index = ecs.read_resource::<IndexOwned>();
                 let time = (
                     *ecs.read_resource::<TimeOfDay>(),
                     (*ecs.read_resource::<Calendar>()).clone(),
@@ -8076,7 +8142,7 @@ impl Server {
                         &slow_jobs,
                         Arc::clone(&self.world),
                         &rtsim,
-                        self.index.clone(),
+                        IndexOwned::clone(&index),
                         time.clone(),
                     );
                 }
@@ -8756,7 +8822,8 @@ impl Server {
             let ecs = self.state.ecs();
             let rtsim = ecs.read_resource::<rtsim::RtSim>();
             let data = rtsim.state().data();
-            let index = self.index.as_index_ref();
+            let index_res = ecs.read_resource::<IndexOwned>();
+            let index = index_res.as_index_ref();
             data.sites
                 .iter()
                 .filter_map(|(_, site)| {

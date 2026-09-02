@@ -1408,11 +1408,15 @@ fn resolve_site(
         return Ok((ws, None));
     }
 
+    // The index is an ECS resource, not a `Server` field (see the ownership
+    // note at its insert site in `lib.rs`): the guard is scoped to the lookup,
+    // which returns owned ids.
+    let index = server.state.ecs().read_resource::<world::IndexOwned>();
+
     if let Some(plot_name) = key.strip_prefix("plot:") {
         use rand::seq::IteratorRandom;
         let plot_name = plot_name.to_lowercase();
-        return server
-            .index
+        return index
             .sites
             .iter()
             .flat_map(|(id, site)| {
@@ -1427,8 +1431,7 @@ fn resolve_site(
             });
     }
 
-    server
-        .index
+    index
         .sites
         .iter()
         .find(|(_, site)| site.name() == Some(key))
@@ -1448,18 +1451,22 @@ fn handle_site(
 ) -> CmdResult<()> {
     if let (Some(dest_name), dismount_volume) = parse_cmd_args!(args, String, bool) {
         let (site, plot) = resolve_site(server, &dest_name)?;
-        let site = server.index.sites.get(site);
-        let site_pos = if let Some(plot) = plot {
-            let plot = site.plots.get(plot);
-            site.tile_center_wpos(plot.root_tile())
-        } else {
-            site.origin
-        };
+        // Scoped: `position_mut_reposition` below takes `&mut server.state`,
+        // so the ECS read guard on the index cannot outlive this block.
+        let site_pos = {
+            let index = server.state.ecs().read_resource::<world::IndexOwned>();
+            let site = index.sites.get(site);
+            let site_pos = if let Some(plot) = plot {
+                let plot = site.plots.get(plot);
+                site.tile_center_wpos(plot.root_tile())
+            } else {
+                site.origin
+            };
 
-        let site_pos =
             server
                 .world
-                .find_accessible_pos(server.index.as_index_ref(), site_pos, false);
+                .find_accessible_pos(index.as_index_ref(), site_pos, false)
+        };
 
         server.state.position_mut_reposition(
             target,
@@ -3865,9 +3872,17 @@ fn handle_set_waypoint(
 ) -> CmdResult<()> {
     let pos = position(server, target, "target")?;
     let time = *server.state.mut_resource::<Time>();
-    let location_name = server
-        .world()
-        .get_location_name(server.index.as_index_ref(), pos.0.xy().as_::<i32>());
+    // Scoped: `insert_or_replace_component` below takes `&mut Server`, so the
+    // ECS read guard on the index must not outlive the lookup. `crate::
+    // IndexOwned` rather than `world::IndexOwned` because this command is NOT
+    // worldgen-gated — on the stub build the alias is
+    // `bastion_server::test_world::IndexOwned`, which is what the ECS holds.
+    let location_name = {
+        let index = server.state.ecs().read_resource::<crate::IndexOwned>();
+        server
+            .world()
+            .get_location_name(index.as_index_ref(), pos.0.xy().as_::<i32>())
+    };
 
     insert_or_replace_component(
         server,
@@ -4544,6 +4559,11 @@ fn handle_debug_column(
 ) -> CmdResult<()> {
     let sim = server.world.sim();
     let calendar = (*server.state.ecs().read_resource::<Calendar>()).clone();
+    // Hoisted out of the closure below (the index is an ECS resource now, not
+    // a `Server` field), and declared BEFORE `sampler` on purpose: `sampler`'s
+    // type is parameterised by the `IndexRef<'_>` it is sampled with, so the
+    // guard has to outlive it and locals drop in reverse declaration order.
+    let index = server.state.ecs().read_resource::<world::IndexOwned>();
     let sampler = server.world.sample_columns();
     let wpos = if let (Some(x), Some(y)) = parse_cmd_args!(args, i32, i32) {
         Vec2::new(x, y)
@@ -4564,7 +4584,7 @@ fn handle_debug_column(
         let spawn_rate = sim.get_interpolated(wpos, |chunk| chunk.spawn_rate)?;
         let chunk_pos = wpos.wpos_to_cpos();
         let chunk = sim.get(chunk_pos)?;
-        let col = sampler.get((wpos, server.index.as_index_ref(), Some(calendar)))?;
+        let col = sampler.get((wpos, index.as_index_ref(), Some(calendar)))?;
         let gradient = sim.get_gradient_approx(chunk_pos)?;
         let downhill = chunk.downhill;
         let river = &chunk.river;

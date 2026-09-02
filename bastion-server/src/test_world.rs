@@ -35,6 +35,12 @@ impl IndexOwned {
     }
 
     pub fn as_index_ref(&self) -> IndexRef<'_> { IndexRef(self) }
+
+    /// Mirrors [`world::IndexOwned::index_strong_count`] so the server's
+    /// boot-time index-ownership witness compiles on the non-worldgen build
+    /// too. There is no `Arc<Index>` here — the stub index is a unit struct —
+    /// so the honest answer is the one the real one gives at rest.
+    pub fn index_strong_count(&self) -> usize { 1 }
 }
 
 impl World {

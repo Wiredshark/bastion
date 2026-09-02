@@ -204,8 +204,20 @@ pub fn grow_plot(
 
 /// Log every refusal on the way out, so a colony that never grows leaves a
 /// trail saying which of the three reasons it was.
+/// IndexShared is the expected, healthy refusal on a busy tick; it is sampled at
+/// powers of two (15,603 lines in ten minutes on the first live boot). The other
+/// refusals are rare and print every time.
+static INDEX_SHARED_REFUSALS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 fn refuse(refusal: GrowRefusal) -> GrowRefusal {
-    tracing::info!(refusal = ?refusal, "bastion: PLOT LAYOUT REFUSED");
+    if let GrowRefusal::IndexShared { .. } = refusal {
+        let n = INDEX_SHARED_REFUSALS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+        if n.is_power_of_two() {
+            tracing::info!(refusal = ?refusal, refusals_so_far = n, "bastion: PLOT LAYOUT REFUSED");
+        }
+    } else {
+        tracing::info!(refusal = ?refusal, "bastion: PLOT LAYOUT REFUSED");
+    }
     refusal
 }
 

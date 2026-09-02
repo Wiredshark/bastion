@@ -130,6 +130,12 @@ pub(super) fn handle_process_trade_action(
                     let mut prices = None;
                     #[cfg(not(feature = "worldgen"))]
                     let prices = None;
+                    // The index is an ECS resource, not a `Server` field (see
+                    // the ownership note at its insert site in `lib.rs`).
+                    // Every use of `server` in this block is a shared borrow,
+                    // so one read guard covers both price lookups below.
+                    #[cfg(feature = "worldgen")]
+                    let index = server.state.ecs().read_resource::<IndexOwned>();
                     let agents = server.state.ecs().read_storage::<Agent>();
                     // sadly there is no map and collect on arrays
                     for i in 0..2 {
@@ -150,7 +156,7 @@ pub(super) fn handle_process_trade_action(
                                     agents
                                         .get(e)
                                         .and_then(|a| a.behavior.trade_site())
-                                        .and_then(|id| server.index.get_site_prices(id))
+                                        .and_then(|id| index.get_site_prices(id))
                                 });
                             }
                         }
@@ -169,7 +175,7 @@ pub(super) fn handle_process_trade_action(
                             #[cfg(feature = "worldgen")]
                             notify_agent_prices(
                                 server.state.ecs().write_storage::<Agent>(),
-                                &server.index,
+                                &index,
                                 e,
                                 AgentEvent::UpdatePendingTrade(Box::new((
                                     trade_id,
