@@ -4044,8 +4044,16 @@ pub(crate) const HAUL_CHAIN_MAX_LOAD: u32 = 16;
 pub const HAUL_BACKLOG_LOADS: u32 = HAUL_CHAIN_MAX_LOAD;
 /// The Work block is 8..=15 (`default_schedule_block`); 15 is shift end.
 pub const LAST_WORK_HOUR: u32 = 15;
-pub(crate) fn haul_admits(is_hauler: bool, hour: u32, backlog_loads: u32) -> bool {
-    is_hauler || hour % 24 == LAST_WORK_HOUR || backlog_loads >= HAUL_BACKLOG_LOADS
+/// ★ THE GATE OPENS WHEN NOBODY IS A HAULER (flat arm b1 day 1: 44,466
+/// refusals, 13 hauls -- no profession is named on the first day, so
+/// every colonist was a "non-hauler" and the stores were fed by nobody).
+/// With `haulers_named == 0` the gate is identity; it bites only once
+/// haulers exist to do the work.
+pub(crate) fn haul_admits(is_hauler: bool, hour: u32, backlog_loads: u32, haulers_named: usize) -> bool {
+    is_hauler
+        || haulers_named == 0
+        || hour % 24 == LAST_WORK_HOUR
+        || backlog_loads >= HAUL_BACKLOG_LOADS
 }
 pub static HAUL_CLAIMS_GATED: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
@@ -42051,6 +42059,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             (common::uid::Uid, common::bastion::WorkType),
             u32,
         > = HashMap::new();
+        let haulers_named = board
+            .professions
+            .values()
+            .filter(|w| **w == common::bastion::WorkType::Haul)
+            .count();
         for (entity, uid) in claim_order {
             census.colonists_seen += 1;
             let uid = &uid;
@@ -42614,6 +42627,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             == Some(common::bastion::WorkType::Haul),
                         hour_of_day(rtsim.rt_state().data().time_of_day.0),
                         board.haul_backlog_loads,
+                        haulers_named,
                     )
                 {
                     HAUL_CLAIMS_GATED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
@@ -49008,13 +49022,14 @@ mod tests {
     /// a full chain admits; a hauler is admitted whatever the clock says.
     #[test]
     fn the_haul_gate_admits_at_shift_end_or_a_full_backlog_or_for_haulers() {
-        assert!(!haul_admits(false, LAST_WORK_HOUR - 1, 0), "mid-shift, no backlog: stay on the work");
-        assert!(haul_admits(false, LAST_WORK_HOUR, 0), "shift end admits");
-        assert!(!haul_admits(false, 10, HAUL_BACKLOG_LOADS - 1), "one short of a chain refuses");
-        assert!(haul_admits(false, 10, HAUL_BACKLOG_LOADS), "a full chain admits");
-        assert!(haul_admits(true, 10, 0), "a hauler hauls any time");
-        assert!(!haul_admits(false, LAST_WORK_HOUR + 24 + 1, 0), "the hour wraps");
-        assert!(haul_admits(false, LAST_WORK_HOUR + 24, 0), "the hour wraps");
+        assert!(!haul_admits(false, LAST_WORK_HOUR - 1, 0, 3), "mid-shift, no backlog: stay on the work");
+        assert!(haul_admits(false, LAST_WORK_HOUR - 1, 0, 0), "nobody named Haul: everyone may haul (identity)");
+        assert!(haul_admits(false, LAST_WORK_HOUR, 0, 3), "shift end admits");
+        assert!(!haul_admits(false, 10, HAUL_BACKLOG_LOADS - 1, 3), "one short of a chain refuses");
+        assert!(haul_admits(false, 10, HAUL_BACKLOG_LOADS, 3), "a full chain admits");
+        assert!(haul_admits(true, 10, 0, 3), "a hauler hauls any time");
+        assert!(!haul_admits(false, LAST_WORK_HOUR + 24 + 1, 0, 3), "the hour wraps");
+        assert!(haul_admits(false, LAST_WORK_HOUR + 24, 0, 3), "the hour wraps");
     }
 
     /// ★ FOUNDING STOCK HOLD pinned: holds with no stockpile, holds while
