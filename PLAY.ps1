@@ -348,8 +348,32 @@ if ($NoWait) { Remove-Item -Path 'Env:BASTION_ADOPT_WAIT_FOR_MARKER' -ErrorActio
 # and refuse to continue silently if the splice missed.
 if ($Port -ne 14004) {
     $SP = Join-Path $UD 'server\server_config\settings.ron'
-    $ptxt = (Get-Content $SP -Raw) -replace ':14004"', ":$Port`""
+    # The QUERY server (default 14006) must move too, or a side arm's query
+    # port collides with the owner's: 16:26, Ben's boot logged "Query server
+    # stopped unexpectedly: AddrInUse" against the arm on 14104.
+    $QPort = $Port + 2
+    $ptxt = (Get-Content $SP -Raw) -replace ':14004"', ":$Port`"" -replace ':14006"', ":$QPort`""
     [System.IO.File]::WriteAllText($SP, $ptxt, (New-Object System.Text.UTF8Encoding $false))
+    # The WEB port (default 14005, server-cli/settings.ron) must move as well:
+    # the server PANICS if it cannot bind it ("can't bind to web-port"), and on
+    # 2026-09-01 16:26 a side arm holding 14005 killed Ben's boot at READY.
+    # server-cli only writes a template; the real file is ours to write.
+    $SC = Join-Path $UD 'server-cli\settings.ron'
+    $WPort = $Port + 1
+    $wtxt = @"
+(
+    update_shutdown_grace_period_secs: 120,
+    update_shutdown_message: "The server is restarting for an update",
+    web_address: "127.0.0.1:$WPort",
+    web_chat_secret: None,
+    ui_api_secret: None,
+    shutdown_signals: [],
+)
+"@
+    [System.IO.File]::WriteAllText($SC, $wtxt, (New-Object System.Text.UTF8Encoding $false))
+    if (-not (Select-String -Path $SC -Pattern ":$WPort`"" -Quiet)) {
+        Write-Host "web port splice FAILED in $SC - not booting on the owner's web port"; exit 1
+    }
     if (-not (Select-String -Path $SP -Pattern ":$Port`"" -Quiet)) {
         Write-Host "port splice FAILED in $SP - not booting on the wrong port"; exit 1
     }
