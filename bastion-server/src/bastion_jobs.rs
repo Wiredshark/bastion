@@ -29336,6 +29336,45 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             "bastion: FETCH STALLED — no displacement, expiring                                              early instead of serving the full budget"
                                         );
                                     }
+                                    if first_stall {
+                                        // ★ WEDGE PROBE (2026-09-02): what the walker meets. 111 of
+                                        // 143 eat stalls on b2's second day stood on one spot,
+                                        // (7748, 6328, 181), 40 blocks short of the store; the
+                                        // rescue paths are gated off during a fetch and counters
+                                        // cannot say what is there. Once per job: the blocks
+                                        // around the feet, floor to head+1, north row first,
+                                        // west to east (# solid, . air, ~ filled-not-solid,
+                                        // ? unloaded), and the way to the item.
+                                        let f = pos.0.map(|e| e.floor() as i32);
+                                        let mut layers: Vec<String> = Vec::with_capacity(4);
+                                        for dz in -1i32..=2 {
+                                            let mut rows: Vec<String> = Vec::with_capacity(5);
+                                            for dy in (-2i32..=2).rev() {
+                                                let mut row = String::with_capacity(5);
+                                                for dx in -2i32..=2 {
+                                                    let q = Vec3::new(f.x + dx, f.y + dy, f.z + dz);
+                                                    row.push(match terrain.get(q) {
+                                                        Ok(b) if b.is_solid() => '#',
+                                                        Ok(b) if b.is_filled() => '~',
+                                                        Ok(_) => '.',
+                                                        Err(_) => '?',
+                                                    });
+                                                }
+                                                rows.push(row);
+                                            }
+                                            layers.push(format!("z{:+}:{}", dz, rows.join("/")));
+                                        }
+                                        let to_item = ip.map(|e| e.floor() as i32) - f;
+                                        info!(
+                                            job = active.job,
+                                            kind = ?job.kind,
+                                            feet = ?f,
+                                            to_item = ?to_item,
+                                            steer = ?fetch_steer.map(|v| v.map(|e| e.floor() as i32)),
+                                            blocks = %layers.join(" | "),
+                                            "bastion: WEDGE PROBE — the blocks around a stalled fetch (north row first, west to east; # solid . air ~ filled ? unloaded)"
+                                        );
+                                    }
                                     if expires {
                                         board.fetch_stall_warned.remove(&active.job);
                                         // ★ A STALLED TARGET IS SHUNNED (see `STALLED_TARGET_SHUN_TICKS`).
