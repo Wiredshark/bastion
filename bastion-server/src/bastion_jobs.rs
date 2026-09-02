@@ -36657,19 +36657,50 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // rather than inline. A colonist keeps its claim across the re-aim —
         // releasing was costing a whole 60s preempt window per moved meal.
         for (job_id, feet) in eat_retargets.drain(..) {
+            // ★ The re-aim honours the same rules as the first aim (R1): the
+            // claimant's household admission (store kinds) and, in the Sleep
+            // block, only the claimant's own house (the curfew). ("retarget honours admission")
+            let claimant = board.jobs.get(&job_id).and_then(|j| j.claimed_by);
+            let houses_r: Vec<Region> = board
+                .designated
+                .iter()
+                .filter(|(_, k)| matches!(k, DesignationKind::Bed))
+                .map(|(r, _)| *r)
+                .collect();
+            let general_r = board.stockpiles.iter().any(|(_, r)| !store_is_private(r, houses_r.iter()));
+            let own_house_r = claimant.and_then(|u| {
+                household_house(
+                    board.beds.iter().find(|(_, sl)| sl.owner == Some(u)).map(|(p, _)| *p),
+                    houses_r.iter(),
+                )
+            });
+            let night_r = claimant.is_some_and(|u| {
+                matches!(
+                    colonist_schedule_block(
+                        &board.night_watch,
+                        Some(&u),
+                        hour_of_day(rtsim.rt_state().data().time_of_day.0)
+                    ),
+                    ScheduleBlock::Sleep
+                )
+            });
+            let night_home_r = if night_r { claimant.and_then(|u| night_home_of(&board, u)) } else { None };
             let next = (&pickup_items, &positions, &uids)
                 .join()
                 .filter(|(pi, ipos, iuid)| {
+                    let icell = ipos.0.map(|e| e.floor() as i32);
                     pi.item()
                         .item_definition_id()
                         .itemdef_id()
                         .is_some_and(|d| FOOD_DEFS.contains(&d))
                         && board.has_capacity(**iuid, pi.amount())
-                        && !goal_verdict_blocks(
-                            &board.goal_verdicts,
-                            ipos.0.map(|e| e.floor() as i32),
-                            tick.0,
-                        )
+                        && !goal_verdict_blocks(&board.goal_verdicts, icell, tick.0)
+                        && board
+                            .stockpiles
+                            .iter()
+                            .find(|(_, r)| r.contains_point_xy(icell))
+                            .is_none_or(|(_, r)| store_admits(r, &houses_r, own_house_r, general_r))
+                        && (!night_r || night_home_r.is_some_and(|h| h.contains_point_xy(icell)))
                 })
                 .min_by_key(|(_, ipos, iuid)| {
                     let c = ipos.0.map(|e| e.floor() as i32) - feet;
