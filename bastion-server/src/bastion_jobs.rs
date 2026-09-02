@@ -8746,7 +8746,7 @@ pub(crate) fn stockpile_drop_cell_spread(
     for y in r.min.y..=r.max.y {
         for x in r.min.x..=r.max.x {
             if let Some(sz) = surface_z(x, y, r.min.z)
-                && sz + 1 <= r.min.z + SPREAD_MAX_RISE
+                && sz + 1 <= centre.z + SPREAD_MAX_RISE
             {
                 cells.push((occupancy(x, y), Vec3::new(x, y, sz + 1)));
             }
@@ -48998,8 +48998,12 @@ mod tests {
         assert_eq!(stockpile_drop_cell_spread(crate_top, centre_full, &zone), Vec3::new(1, 0, 6), "the crate top is not a drop cell");
         let step = |x: i32, y: i32, _h: i32| if (x, y) == (0, 0) { Some(5) } else { Some(5) };
         assert_eq!(stockpile_drop_cell_spread(step, centre_full, &zone), Vec3::new(0, 0, 6), "floor level: unchanged");
+        // A uniformly raised zone is its own floor: it spreads like a flat one.
         let all_raised = |_x: i32, _y: i32, _h: i32| Some(8);
-        assert_eq!(stockpile_drop_cell_spread(all_raised, centre_full, &zone), stockpile_drop_cell_impl(&all_raised, &zone), "no floor cell at all: the old centre chooser");
+        assert_eq!(stockpile_drop_cell_spread(all_raised, centre_full, &zone), Vec3::new(0, 0, 9), "a uniformly raised zone spreads at its own level");
+        // A zone whose min.z lies BELOW its built floor (the barn) still spreads: the reference is the centre cell.
+        let sunk = Region { min: Vec3::new(0, 0, 1), max: Vec3::new(2, 2, 1) };
+        assert_eq!(stockpile_drop_cell_spread(flat, centre_full, &sunk), Vec3::new(0, 0, 6), "min.z below the floor: the floor cells still count");
         // 1x1: identity with the old chooser.
         let one = Region { min: Vec3::new(7, 7, 5), max: Vec3::new(7, 7, 5) };
         assert_eq!(stockpile_drop_cell_spread(flat, |_, _| 9, &one), stockpile_drop_cell_impl(flat, &one));
