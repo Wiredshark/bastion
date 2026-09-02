@@ -8866,6 +8866,26 @@ pub const SPREAD_MAX_RISE: i32 = 0;
 /// the same window all re-picked the same emptiest cell from ground items
 /// alone). A chosen cell counts as occupied by its load for this long.
 pub const RECENT_DROP_TICKS: u64 = 600;
+/// ★ A DEPOSIT RUN SPREADS ITS OWN BAG (S8, 2026-09-02). The barn's
+/// 157-unit cell on b1 was single forage deposits of 144, 127, 79, 55
+/// units: `deposit_all_of` drops every slot of a def at ONE cell, and no
+/// cell chooser can split one drop. A run now deposits in chunks of this
+/// many units, each chunk on its own spread-chosen cell -- the hauler's
+/// chain load, one number for "what one cell takes from one trip".
+pub const DEPOSIT_CELL_CAP: u32 = HAUL_CHAIN_MAX_LOAD;
+/// The chunk sizes a bag of `amount` is deposited in (each <= `cap`,
+/// summing to `amount`; a zero cap is treated as 1 so it cannot loop).
+pub fn deposit_chunks(amount: u32, cap: u32) -> Vec<u32> {
+    let cap = cap.max(1);
+    let mut out = Vec::with_capacity((amount / cap + 1) as usize);
+    let mut rest = amount;
+    while rest > 0 {
+        let c = rest.min(cap);
+        out.push(c);
+        rest -= c;
+    }
+    out
+}
 
 pub(crate) fn stockpile_drop_cell_spread(
     surface_z: impl Fn(i32, i32, i32) -> Option<i32>,
@@ -34838,15 +34858,98 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // FAILING. BTreeSet ⇒ lexical order, never a
                                 // hash seed.
                                 let mut moved: Vec<String> = Vec::new();
+                                // ★ A DEPOSIT RUN SPREADS ITS OWN BAG (S8): chunks of
+                                // DEPOSIT_CELL_CAP, each on its own spread-chosen cell
+                                // over a local occupancy map (ground items in the zone,
+                                // the recent drops, the chunks this run has placed).
+                                // `BASTION_NO_DEPOSIT_SPLIT` restores the single drop.
+                                let mut cells: Vec<String> = Vec::new();
+                                let split_on = std::env::var_os("BASTION_NO_DEPOSIT_SPLIT").is_none();
+                                let zone_region = board
+                                    .stockpiles
+                                    .iter()
+                                    .find(|(z, _)| *z == destination)
+                                    .map(|(_, r)| *r);
+                                let mut occ_map: HashMap<(i32, i32), u32> = HashMap::new();
+                                if let (true, Some(r)) = (split_on, zone_region.as_ref()) {
+                                    for (pi, ip) in (&pickup_items, &positions).join() {
+                                        let c = ip.0.map(|e| e.floor() as i32);
+                                        if r.contains_point_xy(c) {
+                                            *occ_map.entry((c.x, c.y)).or_insert(0) += pi.item().amount() as u32;
+                                        }
+                                    }
+                                    for ((x, y), (n, t)) in board.recent_drops.iter() {
+                                        if tick.0.saturating_sub(*t) <= RECENT_DROP_TICKS {
+                                            *occ_map.entry((*x, *y)).or_insert(0) += *n;
+                                        }
+                                    }
+                                }
                                 if let Some(mut inv) = inventories.get_mut(entity) {
                                     for def in &defs {
-                                        let n = crate::bastion_actions::deposit_all_of(
-                                            &mut inv,
-                                            def,
-                                            job.pos,
-                                            &mut item_drop_emitter,
-                                            *program_time,
-                                        );
+                                        let n = match (split_on, zone_region.as_ref()) {
+                                            (true, Some(r)) => {
+                                                let mut placed = 0u32;
+                                                let slots: Vec<_> = inv
+                                                    .slots_with_id()
+                                                    .filter_map(|(slot, i)| {
+                                                        i.as_ref()
+                                                            .is_some_and(|i| i.item_definition_id().itemdef_id() == Some(def.as_str()))
+                                                            .then_some(slot)
+                                                    })
+                                                    .collect();
+                                                for slot in slots {
+                                                    let Some(item_out) = inv.remove(slot) else { continue };
+                                                    let amount = item_out.amount();
+                                                    // Split only a stackable stack above the cap, and only
+                                                    // when a fresh chunk can be made; otherwise the stack
+                                                    // drops whole (identity kept, no unit duplicated).
+                                                    let can_split = item_out.is_stackable() && amount > DEPOSIT_CELL_CAP && {
+                                                        let mut probe = comp::Item::new_from_asset_expect(def);
+                                                        probe.set_amount(DEPOSIT_CELL_CAP).is_ok()
+                                                    };
+                                                    let chunks = if can_split { deposit_chunks(amount, DEPOSIT_CELL_CAP) } else { vec![amount] };
+                                                    let mut whole = Some(item_out);
+                                                    for chunk in chunks {
+                                                        let cell = stockpile_drop_cell_spread(
+                                                            |x, y, h| column_surface_z(&terrain, x, y, h),
+                                                            |x, y| occ_map.get(&(x, y)).copied().unwrap_or(0),
+                                                            r,
+                                                        );
+                                                        let item = if can_split {
+                                                            let mut it = comp::Item::new_from_asset_expect(def);
+                                                            if it.set_amount(chunk).is_err() {
+                                                                continue;
+                                                            }
+                                                            it
+                                                        } else {
+                                                            let Some(w) = whole.take() else { continue };
+                                                            w
+                                                        };
+                                                        let n = item.amount();
+                                                        item_drop_emitter.emit(CreateItemDropEvent {
+                                                            pos: comp::Pos(cell.map(|e| e as f32) + Vec3::new(0.5, 0.5, 1.0)),
+                                                            vel: comp::Vel(Vec3::zero()),
+                                                            ori: comp::Ori::default(),
+                                                            item: comp::PickupItem::new(item, *program_time, true),
+                                                            loot_owner: None,
+                                                            persistent: true,
+                                                        });
+                                                        *occ_map.entry((cell.x, cell.y)).or_insert(0) += n;
+                                                        board.recent_drops.insert((cell.x, cell.y), (n, tick.0));
+                                                        cells.push(format!("{}:{}:{}", cell.x, cell.y, n));
+                                                        placed += n;
+                                                    }
+                                                }
+                                                placed
+                                            },
+                                            _ => crate::bastion_actions::deposit_all_of(
+                                                &mut inv,
+                                                def,
+                                                job.pos,
+                                                &mut item_drop_emitter,
+                                                *program_time,
+                                            ),
+                                        };
                                         total += n;
                                         moved.push(format!("{def}={n}"));
                                     }
@@ -34857,6 +34960,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     defs = defs.len(),
                                     amount = total,
                                     moved = %moved.join(" "),
+                                    dest = ?job.pos,
+                                    cells = %cells.join(" "),
                                     "bastion: forage deposited"
                                 );
                             }
@@ -49742,6 +49847,24 @@ mod tests {
         let early_spring = seasonal_food_par(50, diy, 0.1 * diy * day);
         assert!(autumn_start > midwinter && midwinter > early_spring && early_spring > flat, "the par falls as the window nears: {autumn_start} > {midwinter} > {early_spring} > {flat}");
         assert_eq!(autumn_start, (50.0 * DAILY_RAW_UNITS * 0.9 * diy).ceil() as u32, "autumn: 0.9 year of days to the window");
+    }
+
+    /// ★ S8 pinned: a bag is deposited in chunks no larger than the cap,
+    /// summing to the bag (144 -> nine 16s; 5 -> one 5; 0 -> none); the
+    /// cap is the hauler's chain load. Planted defect: a cap of u32::MAX
+    /// makes one chunk of 144 and this pin red.
+    #[test]
+    fn a_bag_is_deposited_in_chunks_no_larger_than_the_cap() {
+        assert_eq!(DEPOSIT_CELL_CAP, HAUL_CHAIN_MAX_LOAD);
+        let c = deposit_chunks(144, 16);
+        assert_eq!(c.len(), 9, "144 units in nine cells: {c:?}");
+        assert!(c.iter().all(|&n| n <= 16 && n > 0));
+        assert_eq!(c.iter().sum::<u32>(), 144);
+        assert_eq!(deposit_chunks(5, 16), vec![5]);
+        assert_eq!(deposit_chunks(17, 16), vec![16, 1]);
+        assert!(deposit_chunks(0, 16).is_empty());
+        assert_eq!(deposit_chunks(3, 0), vec![1, 1, 1], "a zero cap cannot loop");
+        assert_eq!(deposit_chunks(144, u32::MAX).len(), 1, "the planted defect: no cap, one cell");
     }
 
     #[test]
