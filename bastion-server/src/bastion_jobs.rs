@@ -8888,6 +8888,41 @@ pub const SPREAD_MAX_RISE: i32 = 0;
 /// the same window all re-picked the same emptiest cell from ground items
 /// alone). A chosen cell counts as occupied by its load for this long.
 pub const RECENT_DROP_TICKS: u64 = 600;
+
+/// ★ ROOFS ARE NOT ROUTES, INCLUDING THE EAVES (W5, 2026-09-02). The
+/// founding's interior set comes from TILE footprints; Veloren's houses
+/// overhang their tiles, and the roof-stair that every wedged fetch on
+/// arm b1 climbed sits four blocks outside its house's tile, unseen by
+/// the interior surcharge and the landing rule. The set is dilated by
+/// this many columns at founding, road columns excluded (the surcharge
+/// would otherwise price the street beside every house).
+pub const EAVES_MARGIN: i32 = 4;
+pub fn dilate_columns(
+    cells: &std::collections::HashSet<Vec2<i32>>,
+    margin: i32,
+    exclude: &std::collections::HashSet<Vec2<i32>>,
+) -> std::collections::HashSet<Vec2<i32>> {
+    if margin <= 0 {
+        return cells.clone();
+    }
+    let mut out: std::collections::HashSet<Vec2<i32>> = std::collections::HashSet::with_capacity(cells.len() * 2);
+    for c in cells {
+        for dx in -margin..=margin {
+            for dy in -margin..=margin {
+                let q = *c + Vec2::new(dx, dy);
+                if !exclude.contains(&q) {
+                    out.insert(q);
+                }
+            }
+        }
+    }
+    // The original cells stay even when a road runs through a building
+    // tile (a gatehouse): the tile's own word wins over the exclusion.
+    for c in cells {
+        out.insert(*c);
+    }
+    out
+}
 /// ★ A DEPOSIT RUN SPREADS ITS OWN BAG (S8, 2026-09-02). The barn's
 /// 157-unit cell on b1 was single forage deposits of 144, 127, 79, 55
 /// units: `deposit_all_of` drops every slot of a def at ONE cell, and no
@@ -50039,6 +50074,28 @@ mod tests {
         assert!(!store_strike(&mut strikes, (45, Vec2::zero()), 100));
         assert!(!store_strike(&mut strikes, (45, Vec2::zero()), 200));
         assert!(store_strike(&mut strikes, (45, Vec2::zero()), 300), "the third strike withdraws");
+    }
+
+    /// ★ W5 pinned: a one-cell set dilated by 1 is the 3x3 around it; a
+    /// road column inside the margin is not added; margin 0 is the
+    /// identity; the tile's own cells stay even on a road. Planted defect:
+    /// not excluding roads puts (1, 0) in the set and the third assert
+    /// goes red.
+    #[test]
+    fn the_eaves_join_the_interior_set_but_the_street_does_not() {
+        let mut cells = std::collections::HashSet::new();
+        cells.insert(Vec2::new(0, 0));
+        let none = std::collections::HashSet::new();
+        assert_eq!(dilate_columns(&cells, 1, &none).len(), 9);
+        assert_eq!(dilate_columns(&cells, 0, &none), cells, "margin 0 is the identity");
+        let mut road = std::collections::HashSet::new();
+        road.insert(Vec2::new(1, 0));
+        let d = dilate_columns(&cells, 1, &road);
+        assert!(!d.contains(&Vec2::new(1, 0)), "the street is not an interior");
+        assert_eq!(d.len(), 8);
+        road.insert(Vec2::new(0, 0));
+        assert!(dilate_columns(&cells, 1, &road).contains(&Vec2::new(0, 0)), "the tile's own cell stays");
+        assert_eq!(dilate_columns(&cells, EAVES_MARGIN, &none).len(), 81);
     }
 
     #[test]

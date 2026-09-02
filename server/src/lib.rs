@@ -8448,10 +8448,22 @@ impl Server {
                 }
             }
         }
+        // ★ ROOFS ARE NOT ROUTES, INCLUDING THE EAVES (W5): the tile
+        // footprint misses the overhang; dilate by EAVES_MARGIN, roads
+        // excluded. `BASTION_NO_EAVES` keeps the tile set.
+        let interior_columns_tile = interiors.len();
+        let eaves = if std::env::var_os("BASTION_NO_EAVES").is_some() {
+            0
+        } else {
+            bastion_server::bastion_jobs::EAVES_MARGIN
+        };
+        let interiors = bastion_server::bastion_jobs::dilate_columns(&interiors, eaves, &roads);
         tracing::info!(
             wall_margin_columns = walls.len(),
-            interior_columns = interiors.len(),
-            "bastion: ADOPT-A-TOWN wall-margin map ingested (columns hugging building tiles)"
+            interior_columns = interior_columns_tile,
+            interior_columns_dilated = interiors.len(),
+            eaves_margin = eaves,
+            "bastion: ADOPT-A-TOWN wall-margin map ingested (columns hugging building tiles; the eaves join the interiors)"
         );
         // ★ TILE-TRUNK ROUTING ingest (Ben's research order): vanilla's
         // no-stuck secret is the tile graph — export it. Cost classes port
