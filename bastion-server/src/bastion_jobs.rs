@@ -8576,6 +8576,21 @@ pub(crate) fn store_admits<'a>(
 /// from a private shelf). The seed delivery goes to the first GENERAL store
 /// when one exists; only a town with no general store at all falls back to
 /// its first stockpile, as before.
+/// ★ THE FOUNDING STOCK WAITS FOR THE BARN (flat arm b1 on f5f18c6734:
+/// DELIVERED store="private" -- the in-house containers register before
+/// the barns, which arrive through the deferred adoption drain). Hold the
+/// delivery while there is no stockpile at all, or while adoption is still
+/// placing plots and no general store exists yet; never past the timeout.
+pub const FOUNDING_STOCK_HOLD_TICKS: u64 = 3_000;
+pub(crate) fn founding_stock_holds(
+    stockpiles_empty: bool,
+    general_exists: bool,
+    adoption_placing: bool,
+    expired: bool,
+) -> bool {
+    !expired && (stockpiles_empty || (!general_exists && adoption_placing))
+}
+
 pub(crate) fn founding_stock_store<'a>(
     stockpiles: &'a [(common::bastion::ZoneId, Region)],
     houses: &[Region],
@@ -12661,6 +12676,9 @@ pub struct JobBoard {
     /// first-day sows are staggered.
     pub adopted_farm_plots: Vec<(Vec2<i32>, Vec2<i32>)>,
     pub adopted_stagger_until: Option<f64>,
+    /// ★ THE FOUNDING STOCK WAITS FOR THE BARN: the tick the seed delivery
+    /// first held; the hold expires `FOUNDING_STOCK_HOLD_TICKS` later.
+    pub founding_hold_since: Option<u64>,
     /// AUTO PATROL jobs minted by the generator (uid -> job), released at
     /// shift end; a stale entry (the muster replaced the job) is dropped.
     pub auto_patrols: HashMap<common::uid::Uid, JobId>,
@@ -17070,14 +17088,31 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // still pending and no zone exists yet, HOLD — the
                     // zone is coming; founded presets register instantly
                     // so flat-arena legs never wait.
-                    if board.stockpiles.is_empty()
-                        && !board.pending_adopt_surface.is_empty()
-                    {
+                    let houses_h: Vec<Region> = board
+                        .designated
+                        .iter()
+                        .filter(|(_, k)| matches!(k, DesignationKind::Bed))
+                        .map(|(r, _)| *r)
+                        .collect();
+                    let general_yet =
+                        board.stockpiles.iter().any(|(_, r)| !store_is_private(r, houses_h.iter()));
+                    let adoption_placing = !board.pending_adopt_surface.is_empty();
+                    let hold_since = *board.founding_hold_since.get_or_insert(tick.0);
+                    let expired = tick.0.saturating_sub(hold_since) >= FOUNDING_STOCK_HOLD_TICKS;
+                    if founding_stock_holds(
+                        board.stockpiles.is_empty(),
+                        general_yet,
+                        adoption_placing,
+                        expired,
+                    ) {
                         if tick.0 % 300 == 0 {
                             info!(
                                 ?pos,
                                 def = %def,
-                                "bastion: deferred seed items HOLDING for zone registration"
+                                general_yet,
+                                adoption_placing,
+                                held_ticks = tick.0.saturating_sub(hold_since),
+                                "bastion: deferred seed items HOLDING for the town's general store"
                             );
                         }
                         still_waiting.push((pos, def, count));
@@ -48794,6 +48829,20 @@ mod tests {
         assert!(haul_admits(true, 10, 0), "a hauler hauls any time");
         assert!(!haul_admits(false, LAST_WORK_HOUR + 24 + 1, 0), "the hour wraps");
         assert!(haul_admits(false, LAST_WORK_HOUR + 24, 0), "the hour wraps");
+    }
+
+    /// ★ FOUNDING STOCK HOLD pinned: holds with no stockpile, holds while
+    /// adoption still places and no barn exists, delivers once a barn
+    /// exists, delivers when adoption is done even without a barn, and
+    /// never holds past the timeout.
+    #[test]
+    fn the_founding_stock_waits_for_the_barn_but_not_forever() {
+        assert!(founding_stock_holds(true, false, true, false), "nothing registered yet");
+        assert!(founding_stock_holds(false, false, true, false), "only house chests so far, barns pending");
+        assert!(!founding_stock_holds(false, true, true, false), "a barn exists: deliver");
+        assert!(!founding_stock_holds(false, false, false, false), "adoption done, no barn at all: deliver to what there is");
+        assert!(!founding_stock_holds(true, false, true, true), "timeout: deliver regardless");
+        assert!(FOUNDING_STOCK_HOLD_TICKS >= 600 && FOUNDING_STOCK_HOLD_TICKS <= 54_000);
     }
 
     #[test]
