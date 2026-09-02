@@ -6254,6 +6254,16 @@ pub const FETCH_STALL_SECS: f64 = 15.0;
 /// EatFrom fetch expires only at the full budget. `BASTION_NO_EAT_PATIENCE`
 /// restores the early expiry.
 pub static EAT_STALLS_TOLERATED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+/// ★ A STALLED TARGET IS SHUNNED (flat arm b2 on a900163959, day 1: 41 of
+/// 54 stalled eat trips stopped at one spot, 25 blocks short of one pile
+/// inside a store the town cannot enter; the chooser picks the nearest
+/// pile by straight line and re-picked it every time). On a fetch expiry
+/// the target cell receives a goal verdict -- the map the choosers already
+/// honour in pass 1 and ignore fail-open in pass 2 -- for this long.
+/// `BASTION_NO_TARGET_SHUN` records nothing.
+pub const STALLED_TARGET_SHUN_TICKS: u64 = 13_500;
+pub static TARGETS_SHUNNED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 pub(crate) fn fetch_stall_expires(is_eat: bool, stalled: bool, over_budget: bool) -> bool {
     over_budget || (stalled && !(is_eat && std::env::var_os("BASTION_NO_EAT_PATIENCE").is_none()))
 }
@@ -23137,6 +23147,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 eat_minted = EAT_MINTED.swap(0, core::sync::atomic::Ordering::Relaxed),
                                 meals = EAT_MEALS.swap(0, core::sync::atomic::Ordering::Relaxed),
                                 eat_stalls_tolerated = EAT_STALLS_TOLERATED.swap(0, core::sync::atomic::Ordering::Relaxed),
+                                targets_shunned = TARGETS_SHUNNED.swap(0, core::sync::atomic::Ordering::Relaxed),
                                 skips = %skips.join(" "),
                                 "bastion: EAT CENSUS — why a hungry colonist did not get a meal today (skip reasons are per scan pass, any need)"
                             );
@@ -29151,6 +29162,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         );
                                     }
                                     if expires {
+                                        // ★ A STALLED TARGET IS SHUNNED (see `STALLED_TARGET_SHUN_TICKS`).
+                                        if std::env::var_os("BASTION_NO_TARGET_SHUN").is_none() {
+                                            let shun_cell = ip.map(|e| e.floor() as i32);
+                                            board.goal_verdicts.insert(shun_cell, tick.0 + STALLED_TARGET_SHUN_TICKS);
+                                            TARGETS_SHUNNED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                                            info!(
+                                                job = active.job,
+                                                kind = ?job.kind,
+                                                cell = ?shun_cell,
+                                                until_tick = tick.0 + STALLED_TARGET_SHUN_TICKS,
+                                                stalled,
+                                                "bastion: STALLED TARGET SHUNNED — the choosers skip this cell until the verdict expires"
+                                            );
+                                        }
                                         // Release through the SAME field-split
                                         // path the vanished-item branch uses —
                                         // a raw `.remove` leaves
@@ -36542,12 +36567,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         for (job_id, feet) in eat_retargets.drain(..) {
             let next = (&pickup_items, &positions, &uids)
                 .join()
-                .filter(|(pi, _, iuid)| {
+                .filter(|(pi, ipos, iuid)| {
                     pi.item()
                         .item_definition_id()
                         .itemdef_id()
                         .is_some_and(|d| FOOD_DEFS.contains(&d))
                         && board.has_capacity(**iuid, pi.amount())
+                        && !goal_verdict_blocks(
+                            &board.goal_verdicts,
+                            ipos.0.map(|e| e.floor() as i32),
+                            tick.0,
+                        )
                 })
                 .min_by_key(|(_, ipos, iuid)| {
                     let c = ipos.0.map(|e| e.floor() as i32) - feet;
@@ -49338,6 +49368,21 @@ mod tests {
         assert!(fetch_stall_expires(true, false, true), "the budget expires an eater too");
         assert!(!fetch_stall_expires(true, false, false));
         assert!(!fetch_stall_expires(false, false, false));
+    }
+
+    /// ★ STALLED TARGET SHUN pinned: a shunned cell blocks pass 1 until its
+    /// expiry and not after; the shun outlasts a full fetch budget so the
+    /// same colonist cannot re-pick the cell on its next preempt.
+    #[test]
+    fn a_shunned_target_blocks_until_its_verdict_expires() {
+        let mut v: HashMap<Vec3<i32>, u64> = HashMap::new();
+        let cell = Vec3::new(7768, 6340, 183);
+        v.insert(cell, 1_000 + STALLED_TARGET_SHUN_TICKS);
+        assert!(goal_verdict_blocks_impl(&v, cell, 1_000, true), "just shunned: blocked");
+        assert!(goal_verdict_blocks_impl(&v, cell, 1_000 + STALLED_TARGET_SHUN_TICKS - 1, true), "still blocked");
+        assert!(!goal_verdict_blocks_impl(&v, cell, 1_000 + STALLED_TARGET_SHUN_TICKS, true), "expired: open again");
+        assert!(!goal_verdict_blocks_impl(&v, Vec3::new(1, 1, 1), 1_000, true), "another cell: open");
+        assert!(STALLED_TARGET_SHUN_TICKS as f64 > FETCH_BUDGET_SECS * 30.0, "the shun outlasts a fetch budget (30 ticks a second)");
     }
 
     #[test]
