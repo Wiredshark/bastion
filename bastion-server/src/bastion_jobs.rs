@@ -4042,6 +4042,51 @@ pub(crate) const HAUL_CHAIN_MAX_LOAD: u32 = 16;
 /// until Ben names his. `BASTION_NO_DEDICATED_HAULERS` = identity.
 pub const COLONISTS_PER_HAULER: usize = 6;
 pub const HAULER_MIN_ROSTER: usize = 4;
+/// ★ THE HAUL LANE HAS A CEILING (flat arm b1, day 2: 16 of 29 named Haul).
+/// max(2, roster / 4) -- a number of taste until Ben names another; the
+/// floor (`haulers_needed`) is below it by construction.
+pub const HAUL_LANE_DIVISOR: usize = 4;
+pub(crate) fn haul_lane_cap(roster: usize) -> usize { (roster / HAUL_LANE_DIVISOR).max(2) }
+
+/// Trim today's Haul names to the cap: the weakest Haul counts fall back
+/// to their incumbent trade (if not Haul), else to their best other lane
+/// (from `lane_counts`), else stay Haul. Returns the replacements
+/// (uid, lane) to apply; deterministic (count, then uid).
+pub(crate) fn cap_haul_lane(
+    named: &[(common::uid::Uid, common::bastion::WorkType, u32)],
+    incumbents: &HashMap<common::uid::Uid, common::bastion::WorkType>,
+    lane_counts: &HashMap<(common::uid::Uid, common::bastion::WorkType), u32>,
+    cap: usize,
+) -> Vec<(common::uid::Uid, common::bastion::WorkType)> {
+    use common::bastion::WorkType as W;
+    let mut haulers: Vec<(u32, u64, common::uid::Uid)> = named
+        .iter()
+        .filter(|(_, w, _)| *w == W::Haul)
+        .map(|(u, _, c)| (*c, u.0.get(), *u))
+        .collect();
+    if haulers.len() <= cap {
+        return Vec::new();
+    }
+    haulers.sort();
+    let surplus = haulers.len() - cap;
+    let mut out = Vec::new();
+    for (_, _, u) in haulers.into_iter().take(surplus) {
+        let fallback = match incumbents.get(&u) {
+            Some(w) if *w != W::Haul => Some(*w),
+            _ => lane_counts
+                .iter()
+                .filter(|((uu, w), _)| *uu == u && *w != W::Haul)
+                .max_by_key(|((_, w), c)| (**c, format!("{w:?}")))
+                .map(|((_, w), _)| *w),
+        };
+        if let Some(w) = fallback {
+            out.push((u, w));
+        }
+    }
+    out.sort_by_key(|(u, _)| u.0.get());
+    out
+}
+
 pub(crate) fn haulers_needed(roster: usize) -> usize {
     if roster < HAULER_MIN_ROSTER {
         0
@@ -43106,6 +43151,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             tops.insert(u, (w, c));
                         }
                     }
+                    let incumbents: HashMap<common::uid::Uid, common::bastion::WorkType> =
+                        board.professions.clone();
                     let mut named: Vec<(common::uid::Uid, common::bastion::WorkType, u32)> =
                         Vec::new();
                     for (u, (w, c)) in tops {
@@ -43124,6 +43171,40 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         if switch {
                             board.professions.insert(u, w);
                             named.push((u, w, c));
+                        }
+                    }
+                    // ★ HAUL LANE CEILING (see `cap_haul_lane`), applied to the
+                    // whole lane, not only today's switches.
+                    if std::env::var_os("BASTION_NO_HAUL_CAP").is_none() {
+                        let roster_now = board.professions.len();
+                        let all_haul: Vec<(common::uid::Uid, common::bastion::WorkType, u32)> = board
+                            .professions
+                            .iter()
+                            .filter(|(_, w)| **w == common::bastion::WorkType::Haul)
+                            .map(|(u, w)| {
+                                (*u, *w, board.lane_counts.get(&(*u, *w)).copied().unwrap_or(0))
+                            })
+                            .collect();
+                        let demoted = cap_haul_lane(
+                            &all_haul,
+                            &incumbents,
+                            &board.lane_counts,
+                            haul_lane_cap(roster_now),
+                        );
+                        if !demoted.is_empty() {
+                            for (u, w) in &demoted {
+                                board.professions.insert(*u, *w);
+                                named.retain(|(nu, ..)| nu != u);
+                                named.push((*u, *w, board.lane_counts.get(&(*u, *w)).copied().unwrap_or(0)));
+                            }
+                            info!(
+                                day = today,
+                                roster = roster_now,
+                                cap = haul_lane_cap(roster_now),
+                                was_haul = all_haul.len(),
+                                demoted = ?demoted.iter().map(|(u, w)| format!("{}:{:?}", u.0.get(), w)).collect::<Vec<_>>(),
+                                "bastion: HAUL LANE CEILING — a town of haulers is not a town; surplus haulers keep their trade"
+                            );
                         }
                     }
                     // ★ DEDICATED HAULERS: top the Haul lane up to its share and
@@ -48349,6 +48430,31 @@ mod tests {
         assert_eq!(patrol_leg(0, &e[..1], plaza), Some((e[0], plaza.unwrap())), "one entrance: to the plaza");
         assert_eq!(patrol_leg(0, &e[..1], None), None);
         assert_eq!(patrol_leg(0, &[], plaza), None, "no entrances: identity");
+    }
+
+    /// ★ HAUL LANE CEILING pinned: the weakest haulers fall back to their
+    /// incumbent trade, then their best other lane; identity at or under
+    /// the cap; the cap's floor of two.
+    #[test]
+    fn the_haul_lane_ceiling_demotes_the_weakest_to_their_trade() {
+        use common::bastion::WorkType as W;
+        let u = |n: u64| common::uid::Uid(std::num::NonZeroU64::new(n).expect("nonzero"));
+        assert_eq!(haul_lane_cap(3), 2, "floor of two");
+        assert_eq!(haul_lane_cap(29), 7);
+        assert!(haulers_needed(29) <= haul_lane_cap(29), "floor under ceiling");
+        let named = [(u(1), W::Haul, 9), (u(2), W::Haul, 3), (u(3), W::Haul, 5), (u(4), W::Farm, 8)];
+        let mut inc = HashMap::new();
+        inc.insert(u(2), W::Farm);
+        inc.insert(u(3), W::Haul);
+        let mut lc = HashMap::new();
+        lc.insert((u(3), W::Cook), 4u32);
+        lc.insert((u(3), W::Mine), 2);
+        let d = cap_haul_lane(&named, &inc, &lc, 1);
+        assert_eq!(d, vec![(u(2), W::Farm), (u(3), W::Cook)], "weakest first: 2 keeps Farm, 3 takes its best other lane; 1 stays the hauler");
+        assert!(cap_haul_lane(&named, &inc, &lc, 3).is_empty(), "at the cap: identity");
+        // Nothing to fall back on: stays a hauler (not in the output).
+        let d2 = cap_haul_lane(&[(u(5), W::Haul, 1), (u(6), W::Haul, 2)], &HashMap::new(), &HashMap::new(), 1);
+        assert!(d2.is_empty());
     }
 
     #[test]
