@@ -56,8 +56,17 @@ in-house containers register before the barns (deferred drain). The hold
 fix (27f1e06f69, FOUNDING_STOCK_HOLD_TICKS 3,000) is in the haul-gate
 stage; its read is pending.
 
+### L, second read (03:13, b1 on 27f1e06f69): PASS
+
+The day-0 STORAGE SUMMARY showed private_units=0 (the delivery was held
+while adoption placed its plots); then all four founding items logged
+`store="general"` at one barn cell (7665, 6365): wheat seeds 8, mushrooms
+64, stones 64, wood 32. The hold released once a general store existed,
+well inside its 3,000-tick timeout.
+
 ## Not evidenced
 
 - The day-2+ fed floor with the night rows on (pending the night stage).
-- L's second read (store="general") on the haul-gate stage.
+- L on Ben's own town (a different plot order could still register a
+  barn last; the timeout then delivers to what exists and says so).
 - A2 on Ben's own adopted town (real terrain, real session).
