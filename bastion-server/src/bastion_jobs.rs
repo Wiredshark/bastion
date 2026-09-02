@@ -3725,8 +3725,21 @@ pub(crate) fn housing_build_verdict(
     }
 }
 
+/// ★ A FAMINE CLOSES THE GATE (Ben, live 2026-09-02: "yes"). The
+/// compressed-year arm grew 49 -> 59 while 43 of them starved, because
+/// the settler gate read beds, drive and target only. A town that cannot
+/// feed the people it has takes no more: famine = drawable food under
+/// this many days for the roster (the winter-par frame, 3.2 raw units a
+/// head a day). The number is mine until Ben names one; Banished closes
+/// its border the same way. Empty towns are never in famine.
+pub const FAMINE_DAYS_OF_FOOD: f64 = 2.0;
+pub fn famine_closes_the_gate(food_stock: u32, roster: u32) -> bool {
+    roster > 0 && (food_stock as f64) < roster as f64 * DAILY_RAW_UNITS * FAMINE_DAYS_OF_FOOD
+}
+
 pub(crate) fn immigration_verdict(
     enabled: bool,
+    famine: bool,
     drive: common::bastion::ColonyDrive,
     roster: u32,
     target_pop: u32,
@@ -3740,6 +3753,9 @@ pub(crate) fn immigration_verdict(
     }
     if last == Some(today) {
         return no("same_day");
+    }
+    if famine {
+        return no("famine");
     }
     if drive != common::bastion::ColonyDrive::Expand {
         return no("drive_not_expand");
@@ -23640,8 +23656,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .values()
                         .filter(|n| n.bastion_colonist.is_some() && !n.is_dead())
                         .count() as u32;
+                    // ★ A FAMINE CLOSES THE GATE (F1): the drawable stock against
+                    // the roster's days. `BASTION_NO_FAMINE_GATE` restores the
+                    // beds-only gate.
+                    let famine_stock = colony_food_stock((&pickup_items, &positions).join(), &board);
+                    let famine = std::env::var_os("BASTION_NO_FAMINE_GATE").is_none()
+                        && famine_closes_the_gate(famine_stock, roster);
+                    if famine {
+                        info!(
+                            day = today,
+                            roster,
+                            food_stock = famine_stock,
+                            days_of_food = famine_stock as f64 / (roster.max(1) as f64 * DAILY_RAW_UNITS),
+                            "bastion: SETTLER GATE CLOSED — famine: the town cannot feed the people it has, so it takes no more (Ben)"
+                        );
+                    }
                     let verdict = immigration_verdict(
                         std::env::var_os("BASTION_NO_IMMIGRATION").is_none(),
+                        famine,
                         board.colony_drive.0,
                         roster,
                         target_pop,
@@ -50345,6 +50377,26 @@ mod tests {
         );
     }
 
+    /// ★ F1 pinned: a famine closes the gate before drive, target or a
+    /// vacant house are consulted; the famine line is two days of food
+    /// for the roster; an empty town is never in famine. Planted defect:
+    /// a threshold of 0 days never closes the gate and the first assert
+    /// goes red.
+    #[test]
+    fn a_famine_closes_the_settler_gate() {
+        use common::bastion::ColonyDrive as D;
+        let sorted = vec![Vec3::new(1, 2, 3)];
+        assert_eq!(
+            immigration_verdict(true, true, D::Expand, 3, 4, &sorted, 9, Some(8)).deciding,
+            "famine"
+        );
+        assert!(immigration_verdict(true, false, D::Expand, 3, 4, &sorted, 9, Some(8)).fired);
+        assert!(famine_closes_the_gate(0, 50), "no food is a famine");
+        assert!(famine_closes_the_gate(319, 50), "under two days (320) is a famine");
+        assert!(!famine_closes_the_gate(320, 50), "two days is not");
+        assert!(!famine_closes_the_gate(0, 0), "an empty town is never in famine");
+    }
+
     #[test]
     fn a_trunk_waypoint_takes_its_own_columns_height() {
         // The two grades of the measured town. A tile whose ground is at 185
@@ -54582,50 +54634,50 @@ mod tests {
 
         // POSITIVE: thriving town, empty house, new day → one settler, at
         // the lowest sorted cell (order-independent).
-        let v = immigration_verdict(true, D::Expand, 3, 4, &sorted, 9, Some(8));
+        let v = immigration_verdict(true, false, D::Expand, 3, 4, &sorted, 9, Some(8));
         assert!(v.fired, "a thriving town with an empty house draws a settler");
         assert_eq!(v.target, Some(Vec3::new(2, 2, 5)), "deterministic target");
 
         // EVERY REFUSAL, NAMED — the daily witness prints these, so a
         // silent no-op and a correct decline can never look alike.
         assert_eq!(
-            immigration_verdict(false, D::Expand, 3, 4, &sorted, 9, Some(8)).deciding,
+            immigration_verdict(false, false, D::Expand, 3, 4, &sorted, 9, Some(8)).deciding,
             "disabled"
         );
         assert_eq!(
-            immigration_verdict(true, D::Expand, 3, 4, &sorted, 9, Some(9)).deciding,
+            immigration_verdict(true, false, D::Expand, 3, 4, &sorted, 9, Some(9)).deciding,
             "same_day",
             "one arrival per game day, latched"
         );
         for d in [D::Grow, D::Sustain, D::Defend] {
-            let r = immigration_verdict(true, d, 3, 4, &sorted, 9, Some(8));
+            let r = immigration_verdict(true, false, d, 3, 4, &sorted, 9, Some(8));
             assert!(!r.fired, "{d:?} must not grow the town");
             assert_eq!(r.deciding, "drive_not_expand");
         }
         assert_eq!(
-            immigration_verdict(true, D::Expand, 4, 4, &sorted, 9, Some(8)).deciding,
+            immigration_verdict(true, false, D::Expand, 4, 4, &sorted, 9, Some(8)).deciding,
             "roster_at_target",
             "full houses mean no room — the ruling's own ceiling"
         );
         assert_eq!(
-            immigration_verdict(true, D::Expand, 9, 4, &sorted, 9, Some(8)).deciding,
+            immigration_verdict(true, false, D::Expand, 9, 4, &sorted, 9, Some(8)).deciding,
             "roster_at_target",
             "over target (a house lost) still refuses, never underflows"
         );
         assert_eq!(
-            immigration_verdict(true, D::Expand, 3, 4, &[], 9, Some(8)).deciding,
+            immigration_verdict(true, false, D::Expand, 3, 4, &[], 9, Some(8)).deciding,
             "no_vacant_house"
         );
         // FALLBACK IS IDENTITY: disabled refuses every case that would
         // otherwise fire — asserted, not assumed.
         for day_last in [None, Some(8)] {
             assert!(
-                !immigration_verdict(false, D::Expand, 0, 9, &sorted, 9, day_last).fired,
+                !immigration_verdict(false, false, D::Expand, 0, 9, &sorted, 9, day_last).fired,
                 "with the feature off, nothing can arrive"
             );
         }
         // Day 0 is a real day, not "already fired".
-        assert!(immigration_verdict(true, D::Expand, 0, 1, &sorted, 0, None).fired);
+        assert!(immigration_verdict(true, false, D::Expand, 0, 1, &sorted, 0, None).fired);
     }
 
     /// ROW 36b: the evening palette is weighted as designed, deterministic

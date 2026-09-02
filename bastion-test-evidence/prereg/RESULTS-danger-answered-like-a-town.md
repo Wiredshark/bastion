@@ -62,3 +62,24 @@ built: a raider-fate witness; a door strength. JUDGEMENT FOR BEN: how
 long should a barred door hold against two raiders, and should it depend
 on the door (a house door versus a gate) rather than a timer? That is a
 number of taste, not measurement.
+
+## D1b read (2026-09-02 15:12): the already-home are on the line, and the bar FAILS
+
+Arm b1 on 9b42974b7e (S4b, carrying D1b), the boot's first raid at
+18:00, roster 49, militia 0 on the line (guards=0 at the day-0 summary):
+
+| sheltered | of them workers preempted | already home | out of earshot | unaccounted |
+|----------:|--------------------------:|-------------:|---------------:|------------:|
+| 24        | 22                        | 2            | 7              | 16          |
+
+Civilians indoors = sheltered + already home = 26. Of the 42 in earshot
+that is 62%; of the 49 roster, 53%. The pre-registered bar (>= 80% of
+the non-militia roster within 30 s) FAILS on this replicate — and the
+line still cannot say why: 16 colonists in earshot are neither
+sheltered, nor already home, nor out of earshot, and no counter names
+them. The D1 reading ("19 were skipped as already home") was wrong by
+17: only 2 were already home. What the other 16 were doing at 18:00 —
+eating, asleep, on a need job, walking to a seat — is the next
+instrument row (D1c: every skip branch of the alarm loop counted on the
+line), before any behaviour changes. Ben's ruling stands: doors hold 60
+s from D2 onward; the door timer is not this row.
