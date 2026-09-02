@@ -6276,12 +6276,18 @@ pub const STORE_CLOSE_STRIKES: u32 = 3;
 pub const STORE_CLOSE_TICKS: u64 = 54_000;
 /// Records a strike against `zone`; returns true when the zone has just
 /// reached the closing count (strikes older than the shun window reset).
+/// ★ THE STRIKE IS THE SPOT (S6b): the S6 pair closed three stores in a
+/// day, the main barn among them -- any busy store collects three
+/// stalled trips a day from walkers wedged elsewhere. The unenterable
+/// store's signature was 41 stalls on ONE 4-block spot, 25 blocks short.
+/// A strike is keyed by (zone, the stall spot / 4); three at the same
+/// spot close the zone.
 pub(crate) fn store_strike(
-    strikes: &mut HashMap<common::bastion::ZoneId, (u32, u64)>,
-    zone: common::bastion::ZoneId,
+    strikes: &mut HashMap<(common::bastion::ZoneId, Vec2<i32>), (u32, u64)>,
+    key: (common::bastion::ZoneId, Vec2<i32>),
     now: u64,
 ) -> bool {
-    let e = strikes.entry(zone).or_insert((0, now));
+    let e = strikes.entry(key).or_insert((0, now));
     if now.saturating_sub(e.1) > STALLED_TARGET_SHUN_TICKS {
         *e = (0, now);
     }
@@ -8784,7 +8790,7 @@ pub(crate) fn founding_stock_store<'a>(
 /// founding mushrooms landed at z+2 on a crate top inside the barn; the
 /// cell was CONDEMNED as unreachable and 70 eat trips stalled beneath it).
 /// A spread cell may sit at most this many blocks above the zone floor.
-pub const SPREAD_MAX_RISE: i32 = 1;
+pub const SPREAD_MAX_RISE: i32 = 0;
 
 pub(crate) fn stockpile_drop_cell_spread(
     surface_z: impl Fn(i32, i32, i32) -> Option<i32>,
@@ -12867,7 +12873,7 @@ pub struct JobBoard {
     pub founding_hold_since: Option<u64>,
     /// ★ A STORE THE TOWN CANNOT ENTER IS CLOSED: per zone, (strikes, last
     /// strike tick) from shunned targets inside it, and the closure expiry.
-    pub store_stall_strikes: HashMap<common::bastion::ZoneId, (u32, u64)>,
+    pub store_stall_strikes: HashMap<(common::bastion::ZoneId, Vec2<i32>), (u32, u64)>,
     pub closed_stores: HashMap<common::bastion::ZoneId, u64>,
     /// Fetch jobs whose stall has been logged once (the tolerated stall
     /// would otherwise warn every tick).
@@ -29243,7 +29249,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                             && shun_cell.z <= r.max.z + 3
                                                     })
                                                     .map(|(id, _)| *id)
-                                                && store_strike(&mut board.store_stall_strikes, zone, tick.0)
+                                                && store_strike(&mut board.store_stall_strikes, (zone, pos.0.xy().map(|e| (e.floor() as i32).div_euclid(4))), tick.0)
                                             {
                                                 board.closed_stores.insert(zone, tick.0 + STORE_CLOSE_TICKS);
                                                 tracing::warn!(
@@ -49476,15 +49482,21 @@ mod tests {
     /// its expiry and open after.
     #[test]
     fn three_strikes_in_the_window_close_a_store_and_it_reopens_on_expiry() {
+        let spot = Vec2::new(1937, 1582);
         let mut strikes = HashMap::new();
-        assert!(!store_strike(&mut strikes, 7, 100));
-        assert!(!store_strike(&mut strikes, 7, 200));
-        assert!(store_strike(&mut strikes, 7, 300), "the third strike closes");
-        assert!(!store_strike(&mut strikes, 7, 400), "a fourth does not re-fire");
+        assert!(!store_strike(&mut strikes, (7, spot), 100));
+        assert!(!store_strike(&mut strikes, (7, spot), 200));
+        assert!(store_strike(&mut strikes, (7, spot), 300), "the third strike on the same spot closes");
+        assert!(!store_strike(&mut strikes, (7, spot), 400), "a fourth does not re-fire");
+        // ★ Three stalls on three different spots are three wedged walkers, not a blocked store.
+        let mut scattered = HashMap::new();
+        assert!(!store_strike(&mut scattered, (8, Vec2::new(1, 1)), 100));
+        assert!(!store_strike(&mut scattered, (8, Vec2::new(2, 2)), 200));
+        assert!(!store_strike(&mut scattered, (8, Vec2::new(3, 3)), 300), "scattered stalls never close");
         let mut fresh = HashMap::new();
-        assert!(!store_strike(&mut fresh, 9, 100));
-        assert!(!store_strike(&mut fresh, 9, 100 + STALLED_TARGET_SHUN_TICKS + 1), "outside the window: the count starts over");
-        assert!(!store_strike(&mut fresh, 9, 100 + STALLED_TARGET_SHUN_TICKS + 2), "two since the reset: not yet");
+        assert!(!store_strike(&mut fresh, (9, spot), 100));
+        assert!(!store_strike(&mut fresh, (9, spot), 100 + STALLED_TARGET_SHUN_TICKS + 1), "outside the window: the count starts over");
+        assert!(!store_strike(&mut fresh, (9, spot), 100 + STALLED_TARGET_SHUN_TICKS + 2), "two since the reset: not yet");
         let mut closed = HashMap::new();
         closed.insert(7u64, 1_000 + STORE_CLOSE_TICKS);
         assert!(store_closed(&closed, 7, 1_000));
