@@ -347,6 +347,15 @@ if (Test-Path $UD) { Remove-Item $UD -Recurse -Force }
 $env:VELOREN_USERDATA = $UD
 $env:VELOREN_ASSETS   = Join-Path $WT 'assets'
 foreach ($k in $EnvVars.Keys) { Set-Item -Path "Env:$k" -Value $EnvVars[$k] }
+# ★ BASTION_OVERRIDE_<NAME> (2026-09-02, the famine arm): a caller that
+# already exported BASTION_OVERRIDE_SEED_FOOD=8 wants THAT value to reach
+# the server, but the mode block above sets every lever unconditionally.
+# Only acts when such a variable exists; a plain play session sees nothing.
+foreach ($o in (Get-ChildItem Env: | Where-Object { $_.Name -like 'BASTION_OVERRIDE_*' })) {
+    $k = 'BASTION_' + $o.Name.Substring('BASTION_OVERRIDE_'.Length)
+    Set-Item -Path "Env:$k" -Value $o.Value
+    Write-Host "override: $k=$($o.Value) (from $($o.Name))"
+}
 # The server tests PRESENCE of this variable (var_os(..).is_some()), so '0' still
 # waits: -NoWait must REMOVE it.
 if ($NoWait) { Remove-Item -Path 'Env:BASTION_ADOPT_WAIT_FOR_MARKER' -ErrorAction SilentlyContinue }
