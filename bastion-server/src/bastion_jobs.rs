@@ -1527,6 +1527,34 @@ pub static ROUTE_PREV_SOLID_ALL: core::sync::atomic::AtomicU64 =
 pub static ROUTE_PREV_CLEAR_ALL: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// ★ W6 (2026-09-02): may this assist class act at all? A committed (trunk)
+/// walker has one owner and gets no assist -- EXCEPT a promised climb, which
+/// the trunk itself asked for (a waypoint two up). Vanilla travel gets none.
+/// With the scramble assist off (BASTION_NO_SCRAMBLE_ASSIST) this is today's
+/// rule exactly.
+pub(crate) fn assist_allowed_for(
+    class: &str,
+    committed_walker: bool,
+    vanilla_travel: bool,
+    scramble_assist_on: bool,
+) -> bool {
+    if vanilla_travel {
+        return false;
+    }
+    if committed_walker {
+        return scramble_assist_on && class == "climb";
+    }
+    true
+}
+
+/// ★ W6: which classes fire at the hop clock (VAULT_TIMEOUT, 1.5 s) rather than
+/// the full stall clock (10 s): a vault, a step -- and, with the scramble
+/// assist on, a promised climb. A descend keeps the long clock (a body about
+/// to land a drop must not be yanked).
+pub(crate) fn assist_is_a_hop(class: &str, scramble_assist_on: bool) -> bool {
+    class == "vault" || class == "step" || (scramble_assist_on && class == "climb")
+}
+
 /// ★ W4 (2026-09-02): the window inside which the same cell promised to the
 /// same body again is a FAILED assist, not a new one (5 s at 30 tps).
 pub(crate) const ASSIST_REPEAT_WINDOW_TICKS: u64 = 150;
@@ -11966,6 +11994,9 @@ pub struct JobBoard {
     /// count, which is the true cap — documented here rather than
     /// hidden.
     pub immigration_day: Option<i64>,
+    /// ★ F1b: (day, closed) the SETTLER GATE CLOSED witness last printed for —
+    /// it prints on the transition and once per day, not once per gate pass.
+    pub famine_logged: Option<(i64, bool)>,
     /// ROW 50 (review rank 12): the last game-day the HOUSING GROWTH
     /// witness printed, so a witness that calls itself daily is daily.
     pub growth_logged_day: Option<i64>,
@@ -24176,14 +24207,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let famine_stock = colony_food_stock((&pickup_items, &positions).join(), &board);
                     let famine = std::env::var_os("BASTION_NO_FAMINE_GATE").is_none()
                         && famine_closes_the_gate(famine_stock, roster);
-                    if famine {
-                        info!(
-                            day = today,
-                            roster,
-                            food_stock = famine_stock,
-                            days_of_food = famine_stock as f64 / (roster.max(1) as f64 * DAILY_RAW_UNITS),
-                            "bastion: SETTLER GATE CLOSED — famine: the town cannot feed the people it has, so it takes no more (Ben)"
-                        );
+                    // ★ F1b: on the transition and once per day, not per pass
+                    // (1,207 lines in two days on the famine arm).
+                    if board.famine_logged != Some((today, famine)) {
+                        board.famine_logged = Some((today, famine));
+                        if famine {
+                            info!(
+                                day = today,
+                                roster,
+                                food_stock = famine_stock,
+                                days_of_food = famine_stock as f64 / (roster.max(1) as f64 * DAILY_RAW_UNITS),
+                                "bastion: SETTLER GATE CLOSED — famine: the town cannot feed the people it has, so it takes no more (Ben)"
+                            );
+                        } else if today >= 0 {
+                            info!(
+                                day = today,
+                                roster,
+                                food_stock = famine_stock,
+                                days_of_food = famine_stock as f64 / (roster.max(1) as f64 * DAILY_RAW_UNITS),
+                                "bastion: SETTLER GATE OPEN — the town can feed its people again"
+                            );
+                        }
                     }
                     let verdict = immigration_verdict(
                         std::env::var_os("BASTION_NO_IMMIGRATION").is_none(),
@@ -33907,12 +33951,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 && uids.get(entity).is_some_and(|u| {
                                     board.path_cache.contains_key(u)
                                 });
-                            let assist = assist
-                                .filter(|_| !committed_walker && !vanilla_travel_on());
+                            // ★ W6 A PROMISED SCRAMBLE IS TAKEN: a promised,
+                            // standable, adjacent two-up head is a climb the
+                            // router priced and the body must take -- at the
+                            // hop clock, committed walker or not. Today's
+                            // gating (climb waits 10 s; no assist for a trunk
+                            // walker) left 209 of 228 stalls on b2 under one
+                            // terrace step while 25 of 50 starved.
+                            let scramble_assist_on =
+                                std::env::var_os("BASTION_NO_SCRAMBLE_ASSIST").is_none();
+                            let assist = assist.filter(|(_, class, _)| {
+                                assist_allowed_for(class, committed_walker, vanilla_travel_on(), scramble_assist_on)
+                            });
                             let vault_ready = assist
                                 .as_ref()
                                 .is_some_and(|(_, class, _)| {
-                                    *class == "vault" || *class == "step"
+                                    assist_is_a_hop(class, scramble_assist_on)
                                 })
                                 && active.stuck_time > VAULT_TIMEOUT;
                             // ★ INTENTIONAL STILLNESS IS NOT A STALL
@@ -50965,6 +51019,24 @@ mod tests {
         road.insert(Vec2::new(0, 0));
         assert!(dilate_columns(&cells, 1, &road).contains(&Vec2::new(0, 0)), "the tile's own cell stays");
         assert_eq!(dilate_columns(&cells, EAVES_MARGIN, &none).len(), 81);
+    }
+
+    /// ★ W6 pinned: a promised climb is a hop (fires at the hop clock) and is
+    /// allowed for a committed walker; a descend is not a hop; with the
+    /// scramble assist OFF the rules are today's exactly. Planted defect:
+    /// drop the climb arms -- the first two asserts go red.
+    #[test]
+    fn a_promised_scramble_is_taken_like_a_vault() {
+        assert!(assist_is_a_hop("climb", true), "a promised climb is a hop");
+        assert!(assist_allowed_for("climb", true, false, true), "a committed walker takes its promised climb");
+        assert!(!assist_is_a_hop("descend", true), "a descend keeps the long clock");
+        assert!(!assist_allowed_for("step", true, false, true), "a committed walker still gets no step assist");
+        assert!(!assist_allowed_for("climb", false, true, true), "vanilla travel gets nothing");
+        // identity: the switch off is today's gating
+        assert!(!assist_is_a_hop("climb", false), "off: a climb waits the full clock");
+        assert!(!assist_allowed_for("climb", true, false, false), "off: a committed walker gets no assist");
+        assert!(assist_is_a_hop("vault", false) && assist_is_a_hop("step", false), "off: vault and step unchanged");
+        assert!(assist_allowed_for("vault", false, false, false), "off: a free walker is assisted as before");
     }
 
     /// ★ W4 pinned: the assist drops every rival write for ITS body and
