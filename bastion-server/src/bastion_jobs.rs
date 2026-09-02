@@ -8499,6 +8499,23 @@ pub(crate) fn store_admits<'a>(
 /// on top of each other"). The least-filled standable cell of the zone; the
 /// centre wins ties (so an empty zone still drops at the centre, as before),
 /// otherwise the first cell in row-major order. A 1x1 zone is identity.
+/// ★ THE FOUNDING STOCK BELONGS TO THE TOWN (flat arm b2, day 0: zone 0 =
+/// the adopted in-place container inside a house, `kind="private"`, holding
+/// all 126 delivered units; the fetch filter lets only that household draw
+/// from a private shelf). The seed delivery goes to the first GENERAL store
+/// when one exists; only a town with no general store at all falls back to
+/// its first stockpile, as before.
+pub(crate) fn founding_stock_store<'a>(
+    stockpiles: &'a [(common::bastion::ZoneId, Region)],
+    houses: &[Region],
+) -> Option<&'a Region> {
+    stockpiles
+        .iter()
+        .find(|(_, r)| !store_is_private(r, houses.iter()))
+        .or_else(|| stockpiles.first())
+        .map(|(_, r)| r)
+}
+
 pub(crate) fn stockpile_drop_cell_spread(
     surface_z: impl Fn(i32, i32, i32) -> Option<i32>,
     occupancy: impl Fn(i32, i32) -> u32,
@@ -16984,12 +17001,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // its center — the adopted town's zone registered 36
                     // blocks from the founding origin and origin-dropped
                     // seeds sat outside every census forever.
-                    let pos = board
-                        .stockpiles
-                        .first()
+                    // ★ FOUNDING STOCK TO THE TOWN'S STORE, not the first
+                    // household's shelf (see `founding_stock_store`).
+                    let houses_d: Vec<Region> = board
+                        .designated
+                        .iter()
+                        .filter(|(_, k)| matches!(k, DesignationKind::Bed))
+                        .map(|(r, _)| *r)
+                        .collect();
+                    let target = founding_stock_store(&board.stockpiles, &houses_d);
+                    let store_kind = target
+                        .map(|r| if store_is_private(r, houses_d.iter()) { "private" } else { "general" })
+                        .unwrap_or("origin");
+                    let pos = target
                         // Ground, not painted top (`stockpile_drop_cell`) —
                         // seeds rained from the box top could land on a roof.
-                        .map(|(_, r)| stockpile_drop_cell(&terrain, r))
+                        .map(|r| stockpile_drop_cell(&terrain, r))
                         .unwrap_or(pos);
                     if terrain.get(pos).is_ok() {
                         for i in 0..count {
@@ -17017,7 +17044,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             ?pos,
                             def = %def,
                             count,
-                            "bastion: deferred seed items DELIVERED (chunk loaded)"
+                            store = store_kind,
+                            "bastion: deferred seed items DELIVERED (chunk loaded) — into the town's store, not one household's shelf"
                         );
                     } else {
                         if tick.0 % 300 == 0 {
@@ -48596,6 +48624,23 @@ mod tests {
         }
         assert!(seen.len() >= 10, "spread over stages: {} distinct", seen.len());
         assert!(seen.contains(&FARM_GROWTH_MAX), "some field is ready on day one");
+    }
+
+    /// ★ FOUNDING STOCK STORE pinned: a general store wins over a private
+    /// shelf that registered first; with no general store, the first
+    /// stockpile as before; nothing with no stockpiles.
+    #[test]
+    fn the_founding_stock_goes_to_a_general_store_when_one_exists() {
+        let z = |n: u64| n as common::bastion::ZoneId;
+        let house = Region { min: Vec3::new(0, 0, 0), max: Vec3::new(9, 9, 5) };
+        let shelf = Region { min: Vec3::new(4, 4, 1), max: Vec3::new(4, 4, 1) };
+        let barn = Region { min: Vec3::new(30, 30, 0), max: Vec3::new(35, 35, 0) };
+        let houses = vec![house];
+        let both = vec![(z(0), shelf), (z(1), barn)];
+        assert_eq!(founding_stock_store(&both, &houses).map(|r| r.min), Some(barn.min), "the barn, not the first-registered shelf");
+        let only_shelf = vec![(z(0), shelf)];
+        assert_eq!(founding_stock_store(&only_shelf, &houses).map(|r| r.min), Some(shelf.min), "no general store: the first, as before");
+        assert!(founding_stock_store(&[], &houses).is_none());
     }
 
     #[test]

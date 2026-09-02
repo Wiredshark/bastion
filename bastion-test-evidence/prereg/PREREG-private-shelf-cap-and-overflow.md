@@ -1,7 +1,11 @@
 # PREREG — a private shelf holds a household's kit, not the town's harvest
 
-Written 2026-09-02 02:40, before the build. Source: flat arm b2 (staged pair
-5836a476ca), STORAGE CENSUS day=1.
+Written 2026-09-02 01:20, before the build. Source: flat arm b2 (staged pair
+5836a476ca), STORAGE CENSUS day=1. (Amended 01:40: zone 0, the 101-unit
+"private" shelf, turned out to be the adopted in-place container that
+receives the FOUNDING STOCK -- see the founding-stock-store row. The cap
+row stands for the household shelves proper; its day-1 figures must be
+re-read on a stage where the founding stock lands in a general store.)
 
 ## What the arm showed
 
