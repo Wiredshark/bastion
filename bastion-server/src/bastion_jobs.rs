@@ -8440,6 +8440,67 @@ pub(crate) fn stockpile_drop_cell_spread(
     cells.iter().find(|(o, _)| *o == min).map(|(_, c)| *c).unwrap_or(centre)
 }
 
+/// ★ GUARDS PATROL (Ben, live 2026-09-01: "guards need to patrol the
+/// streets and the entrances to the town, not just sit in the town
+/// centers"). The town's ENTRANCES: road cells within `ENTRANCE_EDGE_BAND`
+/// of the settlement bounds' edge, thinned so posts sit at least
+/// `ENTRANCE_MIN_APART` blocks apart, in a deterministic (y, x) order, at
+/// most `ENTRANCE_MAX_POSTS`. No bounds or no roads: no entrances
+/// (identity; the census says so).
+pub const ENTRANCE_EDGE_BAND: i32 = 3;
+pub const ENTRANCE_MIN_APART: i32 = 12;
+pub const ENTRANCE_MAX_POSTS: usize = 8;
+pub(crate) fn town_entrances(
+    roads: &std::collections::HashSet<Vec2<i32>>,
+    bounds: Option<(Vec2<i32>, Vec2<i32>)>,
+) -> Vec<Vec2<i32>> {
+    let Some((lo, hi)) = bounds else {
+        return Vec::new();
+    };
+    let mut edge: Vec<Vec2<i32>> = roads
+        .iter()
+        .copied()
+        .filter(|c| c.x >= lo.x && c.x <= hi.x && c.y >= lo.y && c.y <= hi.y)
+        .filter(|c| {
+            c.x - lo.x <= ENTRANCE_EDGE_BAND
+                || hi.x - c.x <= ENTRANCE_EDGE_BAND
+                || c.y - lo.y <= ENTRANCE_EDGE_BAND
+                || hi.y - c.y <= ENTRANCE_EDGE_BAND
+        })
+        .collect();
+    edge.sort_by_key(|c| (c.y, c.x));
+    let mut posts: Vec<Vec2<i32>> = Vec::new();
+    for c in edge {
+        if posts.iter().all(|p| (p.x - c.x).abs() + (p.y - c.y).abs() >= ENTRANCE_MIN_APART) {
+            posts.push(c);
+            if posts.len() >= ENTRANCE_MAX_POSTS {
+                break;
+            }
+        }
+    }
+    posts
+}
+
+/// Where a guard is right now, for the GUARD CENSUS: the plaza, an
+/// entrance, a street, or elsewhere (first match in that order).
+pub(crate) fn guard_bucket(
+    xy: Vec2<i32>,
+    plaza: Option<Vec2<i32>>,
+    entrances: &[Vec2<i32>],
+    roads: &std::collections::HashSet<Vec2<i32>>,
+) -> u8 {
+    let near = |a: Vec2<i32>, b: Vec2<i32>, d: i32| (a.x - b.x).abs() <= d && (a.y - b.y).abs() <= d;
+    if plaza.is_some_and(|p| near(xy, p, 12)) {
+        0
+    } else if entrances.iter().any(|e| near(xy, *e, 8)) {
+        1
+    } else if roads.contains(&xy) {
+        2
+    } else {
+        3
+    }
+}
+
 pub const ADOPTED_CONTAINER_MIN_SOLID_BELOW: i32 = 3;
 
 /// How far down the scan looks. One past the threshold is all the ruling can
@@ -12306,6 +12367,9 @@ pub struct JobBoard {
     pub pending_house: Option<i64>,
     /// JOB SEQUENCE records for the current game day (see `JobSeq`).
     pub job_seq: HashMap<common::uid::Uid, JobSeq>,
+    /// GUARD CENSUS samples for the current game day: uid -> (plaza,
+    /// entrance, street, elsewhere) counts during the Work block.
+    pub guard_census: HashMap<common::uid::Uid, (u32, u32, u32, u32)>,
     /// ZONE ASSIGNMENT: colonist -> (zone, who set it). See `assign_zones`.
     pub assignments: HashMap<common::uid::Uid, (common::bastion::ZoneId, AssignSource)>,
     /// Bumped on every change to `assignments`; the in-game message system
@@ -16991,6 +17055,30 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // ALARM path, "civilian DROPS WORK and runs home") and
                     // cleared by the all-clear, so zero at peace is the
                     // criterion PASSING rather than the witness sleeping.
+                    // ★ GUARD CENSUS sample (Ben: "guards sit in the town
+                    // centers"): where each Guard-lane colonist is, during
+                    // the Work block only.
+                    {
+                        let hour = hour_of_day(rtsim.rt_state().data().time_of_day.0);
+                        if matches!(default_schedule_block(hour), ScheduleBlock::Work) {
+                            let entrances = town_entrances(&board.road_cells, board.settlement_bounds);
+                            let plaza = board.gathering_anchor.map(|a| a.xy());
+                            let roads = board.road_cells.clone();
+                            for (_, u, p) in (&colonists, &uids, &positions).join() {
+                                if board.professions.get(u).copied() != Some(common::bastion::WorkType::Guard) {
+                                    continue;
+                                }
+                                let xy = p.0.xy().map(|e| e.floor() as i32);
+                                let e = board.guard_census.entry(*u).or_default();
+                                match guard_bucket(xy, plaza, &entrances, &roads) {
+                                    0 => e.0 += 1,
+                                    1 => e.1 += 1,
+                                    2 => e.2 += 1,
+                                    _ => e.3 += 1,
+                                }
+                            }
+                        }
+                    }
                     let mut running = 0u32;
                     let (mut fed, mut rested, mut total) = (0u32, 0u32, 0u32);
                     // ★ ITEM 36 (2026-08-21): DOWNED colonists, surfaced.
@@ -22260,6 +22348,42 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             store_kinds_active = store_kinds_on() && general.0 > 0,
                             "bastion: STORAGE SUMMARY — general stores vs private shelves (Ben)"
                         );
+                    }
+                    // ★ GUARD CENSUS (daily): per guard, the share of Work-block
+                    // samples at the plaza / an entrance / a street / elsewhere.
+                    {
+                        let entrances = town_entrances(&board.road_cells, board.settlement_bounds);
+                        let mut tot = (0u32, 0u32, 0u32, 0u32);
+                        for (u, (pl, en, st, el)) in board.guard_census.iter() {
+                            let n = (pl + en + st + el).max(1);
+                            info!(
+                                day = today,
+                                guard = u.0.get(),
+                                samples = n,
+                                plaza_pct = pl * 100 / n,
+                                entrance_pct = en * 100 / n,
+                                street_pct = st * 100 / n,
+                                elsewhere_pct = el * 100 / n,
+                                "bastion: GUARD CENSUS — where this guard spent the work day"
+                            );
+                            tot.0 += pl;
+                            tot.1 += en;
+                            tot.2 += st;
+                            tot.3 += el;
+                        }
+                        let n = (tot.0 + tot.1 + tot.2 + tot.3).max(1);
+                        info!(
+                            day = today,
+                            guards = board.guard_census.len(),
+                            entrances = entrances.len(),
+                            entrance_posts = ?entrances,
+                            plaza_pct = tot.0 * 100 / n,
+                            entrance_pct = tot.1 * 100 / n,
+                            street_pct = tot.2 * 100 / n,
+                            elsewhere_pct = tot.3 * 100 / n,
+                            "bastion: GUARD SUMMARY — the Guard lane's work day, before patrols (Ben)"
+                        );
+                        board.guard_census.clear();
                     }
                     // ★ JOB SEQUENCE CENSUS -- Ben's "job, haul, job, haul"
                     // as a number, per lane per day. `haul_share_pct` is by
@@ -47950,6 +48074,37 @@ mod tests {
         // 1x1: identity with the old chooser.
         let one = Region { min: Vec3::new(7, 7, 5), max: Vec3::new(7, 7, 5) };
         assert_eq!(stockpile_drop_cell_spread(flat, |_, _| 9, &one), stockpile_drop_cell_impl(flat, &one));
+    }
+
+    /// ★ GUARDS PATROL, the instrument pinned: entrances are road cells at
+    /// the bounds' edge, thinned and ordered; none without bounds or roads.
+    #[test]
+    fn town_entrances_are_road_cells_at_the_edge_thinned_and_ordered() {
+        let mut roads = std::collections::HashSet::new();
+        // A cross of roads through a 60x60 town: x = 30 and y = 30.
+        for i in 0..=60 {
+            roads.insert(Vec2::new(30, i));
+            roads.insert(Vec2::new(i, 30));
+        }
+        let bounds = Some((Vec2::new(0, 0), Vec2::new(60, 60)));
+        let e = town_entrances(&roads, bounds);
+        assert_eq!(e.len(), 4, "a cross leaves the box at four places: {e:?}");
+        for a in &e {
+            for b in &e {
+                if a != b {
+                    assert!((a.x - b.x).abs() + (a.y - b.y).abs() >= ENTRANCE_MIN_APART);
+                }
+            }
+        }
+        assert!(e.windows(2).all(|w| (w[0].y, w[0].x) <= (w[1].y, w[1].x)), "deterministic order");
+        assert!(town_entrances(&roads, None).is_empty(), "no bounds: identity");
+        assert!(town_entrances(&std::collections::HashSet::new(), bounds).is_empty(), "no roads: none");
+        // Buckets: plaza first, then entrance, then street, then elsewhere.
+        let plaza = Some(Vec2::new(30, 30));
+        assert_eq!(guard_bucket(Vec2::new(31, 29), plaza, &e, &roads), 0);
+        assert_eq!(guard_bucket(e[0] + Vec2::new(1, 0), plaza, &e, &roads), 1);
+        assert_eq!(guard_bucket(Vec2::new(30, 15), plaza, &e, &roads), 2);
+        assert_eq!(guard_bucket(Vec2::new(5, 50), plaza, &e, &roads), 3);
     }
 
     #[test]
