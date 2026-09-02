@@ -6094,7 +6094,30 @@ impl Server {
                     // behaviour is opt-in (PLAY.ps1 sets it).
                     let wait_for_marker = std::env::var_os("BASTION_ADOPT_WAIT_FOR_MARKER")
                         .is_some();
-                    let blocked_on_marker = if wait_for_marker && dtick >= 30 {
+                    // ★ THE WAIT HAS A CEILING (2026-09-01 22:55). Ben booted
+                    // twice tonight and flew over an empty world for 27 and 90
+                    // minutes: the choice is a middle-click on the map that an
+                    // existing character never gets prompted for. The wait is
+                    // still his ruling; after ADOPT_WAIT_TIMEOUT_TICKS the
+                    // town founds itself at the best site and SAYS SO in chat.
+                    const ADOPT_WAIT_TIMEOUT_TICKS: u64 = 18_000; // 10 min at 30 TPS
+                    if wait_for_marker && dtick == ADOPT_WAIT_TIMEOUT_TICKS {
+                        tracing::warn!(
+                            dtick,
+                            "bastion: ADOPT-A-TOWN — no town chosen in 10 minutes; founding at the best site"
+                        );
+                        self.state.notify_players(ServerGeneral::server_msg(
+                            comp::ChatType::CommandInfo,
+                            common::comp::Content::Plain(
+                                "BASTION: no town was chosen in 10 minutes — founding the colony at the best site now."
+                                    .to_string(),
+                            ),
+                        ));
+                    }
+                    let blocked_on_marker = if wait_for_marker
+                        && dtick >= 30
+                        && dtick < ADOPT_WAIT_TIMEOUT_TICKS
+                    {
                         let has_marker = {
                             let ecs = self.state.ecs();
                             // ★ THE SELECT-STARTING-AREA SCREEN COUNTS AS THE
@@ -6142,6 +6165,15 @@ impl Server {
                             // getting a squatter camp. The Select Starting Area
                             // screen now counts as the choice, so it is named
                             // FIRST and the marker is named as the override.
+                            // Tell the PLAYER, not just the log: the discoverable
+                            // path is the map's middle-click.
+                            self.state.notify_players(ServerGeneral::server_msg(
+                                comp::ChatType::CommandInfo,
+                                common::comp::Content::Plain(
+                                    "BASTION: no town chosen yet — open the map (M) and MIDDLE-CLICK a town to found the colony there. It founds itself at the best site after 10 minutes."
+                                        .to_string(),
+                                ),
+                            ));
                             tracing::info!(
                                 dtick,
                                 "bastion: ADOPT-A-TOWN is WAITING for you to CHOOSE A TOWN — pick \
