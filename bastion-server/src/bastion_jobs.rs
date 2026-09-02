@@ -8730,6 +8730,12 @@ pub(crate) fn founding_stock_store<'a>(
         .map(|(_, r)| r)
 }
 
+/// ★ THE SPREAD DROPS AT FLOOR LEVEL (flat arm b1 on 6ee29a1817: the
+/// founding mushrooms landed at z+2 on a crate top inside the barn; the
+/// cell was CONDEMNED as unreachable and 70 eat trips stalled beneath it).
+/// A spread cell may sit at most this many blocks above the zone floor.
+pub const SPREAD_MAX_RISE: i32 = 1;
+
 pub(crate) fn stockpile_drop_cell_spread(
     surface_z: impl Fn(i32, i32, i32) -> Option<i32>,
     occupancy: impl Fn(i32, i32) -> u32,
@@ -8739,7 +8745,9 @@ pub(crate) fn stockpile_drop_cell_spread(
     let mut cells: Vec<(u32, Vec3<i32>)> = Vec::new();
     for y in r.min.y..=r.max.y {
         for x in r.min.x..=r.max.x {
-            if let Some(sz) = surface_z(x, y, r.min.z) {
+            if let Some(sz) = surface_z(x, y, r.min.z)
+                && sz + 1 <= r.min.z + SPREAD_MAX_RISE
+            {
                 cells.push((occupancy(x, y), Vec3::new(x, y, sz + 1)));
             }
         }
@@ -48985,6 +48993,13 @@ mod tests {
         // Unstandable cells are skipped.
         let hole = |x: i32, y: i32, _h: i32| if (x, y) == (0, 0) { None } else { Some(5) };
         assert_eq!(stockpile_drop_cell_spread(hole, centre_full, &zone), Vec3::new(1, 0, 6));
+        // ★ A raised cell (a crate top two blocks up) is skipped; one block up is fine.
+        let crate_top = |x: i32, y: i32, _h: i32| if (x, y) == (0, 0) { Some(7) } else { Some(5) };
+        assert_eq!(stockpile_drop_cell_spread(crate_top, centre_full, &zone), Vec3::new(1, 0, 6), "the crate top is not a drop cell");
+        let step = |x: i32, y: i32, _h: i32| if (x, y) == (0, 0) { Some(5) } else { Some(5) };
+        assert_eq!(stockpile_drop_cell_spread(step, centre_full, &zone), Vec3::new(0, 0, 6), "floor level: unchanged");
+        let all_raised = |_x: i32, _y: i32, _h: i32| Some(8);
+        assert_eq!(stockpile_drop_cell_spread(all_raised, centre_full, &zone), stockpile_drop_cell_impl(&all_raised, &zone), "no floor cell at all: the old centre chooser");
         // 1x1: identity with the old chooser.
         let one = Region { min: Vec3::new(7, 7, 5), max: Vec3::new(7, 7, 5) };
         assert_eq!(stockpile_drop_cell_spread(flat, |_, _| 9, &one), stockpile_drop_cell_impl(flat, &one));
