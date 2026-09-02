@@ -8501,6 +8501,26 @@ pub(crate) fn guard_bucket(
     }
 }
 
+/// ★ AUTO PATROL (Ben): which leg guard number `k` walks. With n >= 2
+/// entrances, leg k%n runs entrance k%n -> entrance (k+1)%n, so g guards
+/// cover g legs and every entrance is an end of at least one leg when
+/// g >= n. With one entrance the leg is entrance -> plaza. None without
+/// entrances (identity: the guard stays an idle colonist, as before).
+pub(crate) fn patrol_leg(
+    k: usize,
+    entrances: &[Vec2<i32>],
+    plaza: Option<Vec2<i32>>,
+) -> Option<(Vec2<i32>, Vec2<i32>)> {
+    match entrances.len() {
+        0 => None,
+        1 => plaza.map(|p| (entrances[0], p)),
+        n => Some((entrances[k % n], entrances[(k + 1) % n])),
+    }
+}
+
+pub static PATROLS_POSTED: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 pub const ADOPTED_CONTAINER_MIN_SOLID_BELOW: i32 = 3;
 
 /// How far down the scan looks. One past the threshold is all the ruling can
@@ -12370,6 +12390,9 @@ pub struct JobBoard {
     /// GUARD CENSUS samples for the current game day: uid -> (plaza,
     /// entrance, street, elsewhere) counts during the Work block.
     pub guard_census: HashMap<common::uid::Uid, (u32, u32, u32, u32)>,
+    /// AUTO PATROL jobs minted by the generator (uid -> job), released at
+    /// shift end; a stale entry (the muster replaced the job) is dropped.
+    pub auto_patrols: HashMap<common::uid::Uid, JobId>,
     /// ZONE ASSIGNMENT: colonist -> (zone, who set it). See `assign_zones`.
     pub assignments: HashMap<common::uid::Uid, (common::bastion::ZoneId, AssignSource)>,
     /// Bumped on every change to `assignments`; the in-game message system
@@ -15010,6 +15033,20 @@ impl JobBoard {
     /// STAFFED — `is_labor_hold_self_job` marks Guard a self-job, so the open
     /// claim loop never offers it, exactly like RestAt/EatFrom. A self-job is
     /// born claimed; the caller inserts the ActiveJob comp (the B7-2 shape).
+    /// AUTO PATROL: a two-point Guard job (post <-> far) the existing patrol
+    /// leg machinery walks back and forth; Fight mode, so a patrolling guard
+    /// engages what it meets.
+    pub fn insert_auto_patrol_job(&mut self, post: Vec3<i32>, far: Vec3<i32>, uid: Uid) -> JobId {
+        let id = self.insert_auto_guard_job(post, uid);
+        if let Some(j) = self.jobs.get_mut(&id)
+            && let common::bastion::JobKind::Guard { patrol_to, .. } = &mut j.kind
+        {
+            *patrol_to = (far != post).then_some(far);
+        }
+        self.auto_patrols.insert(uid, id);
+        id
+    }
+
     pub fn insert_auto_guard_job(&mut self, post: Vec3<i32>, uid: Uid) -> JobId {
         let id = self.next_id;
         self.next_id += 1;
@@ -17076,6 +17113,73 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     2 => e.2 += 1,
                                     _ => e.3 += 1,
                                 }
+                            }
+                        }
+                    }
+                    // ★ AUTO PATROL generator (Ben: "guards need to patrol the
+                    // streets and the entrances"). Work block: every idle
+                    // Guard-lane colonist without an auto patrol gets a leg
+                    // between consecutive entrances; off the block, our
+                    // patrol jobs are released (evenings social, nights in
+                    // bed). The muster replaces a held job on its own, which
+                    // shows up here as a stale entry and is dropped.
+                    if std::env::var_os("BASTION_NO_PATROL").is_none() {
+                        let hour = hour_of_day(rtsim.rt_state().data().time_of_day.0);
+                        let work = matches!(default_schedule_block(hour), ScheduleBlock::Work);
+                        let stale: Vec<common::uid::Uid> = board
+                            .auto_patrols
+                            .iter()
+                            .filter(|(_, id)| !board.jobs.contains_key(*id))
+                            .map(|(u, _)| *u)
+                            .collect();
+                        for u in stale {
+                            board.auto_patrols.remove(&u);
+                        }
+                        if !work {
+                            let ending: Vec<(common::uid::Uid, JobId)> =
+                                board.auto_patrols.drain().collect();
+                            for (u, id) in ending {
+                                board.remove_job(id);
+                                info!(guard = u.0.get(), job = id, "bastion: PATROL ENDED — shift over");
+                            }
+                        } else {
+                            let entrances = town_entrances(&board.road_cells, board.settlement_bounds);
+                            let plaza = board.gathering_anchor.map(|a| a.xy());
+                            let hint_z = board.gathering_anchor.map(|a| a.z).unwrap_or(0);
+                            let mut guards: Vec<(specs::Entity, common::uid::Uid)> = (&entities, &uids, &colonists)
+                                .join()
+                                .filter(|(_, u, _)| {
+                                    board.professions.get(*u).copied()
+                                        == Some(common::bastion::WorkType::Guard)
+                                })
+                                .map(|(e, u, _)| (e, *u))
+                                .collect();
+                            guards.sort_by_key(|(_, u)| u.0.get());
+                            for (k, (e, u)) in guards.into_iter().enumerate() {
+                                if active_jobs.get(e).is_some() || board.auto_patrols.contains_key(&u) {
+                                    continue;
+                                }
+                                let Some((a, b)) = patrol_leg(k, &entrances, plaza) else {
+                                    continue;
+                                };
+                                let cell = |xy: Vec2<i32>| {
+                                    let z = column_surface_z(&terrain, xy.x, xy.y, hint_z)
+                                        .map(|s| s + 1)
+                                        .unwrap_or(hint_z);
+                                    Vec3::new(xy.x, xy.y, z)
+                                };
+                                let (post, far) = (cell(a), cell(b));
+                                let id = board.insert_auto_patrol_job(post, far, u);
+                                PATROLS_POSTED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                                info!(
+                                    guard = u.0.get(),
+                                    job = id,
+                                    leg = k,
+                                    ?post,
+                                    ?far,
+                                    entrances = entrances.len(),
+                                    "bastion: PATROL POSTED — a guard walks a leg between two entrances (Ben)"
+                                );
                             }
                         }
                     }
@@ -22375,6 +22479,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         info!(
                             day = today,
                             guards = board.guard_census.len(),
+                            patrols_posted = PATROLS_POSTED.swap(0, core::sync::atomic::Ordering::Relaxed),
                             entrances = entrances.len(),
                             entrance_posts = ?entrances,
                             plaza_pct = tot.0 * 100 / n,
@@ -48105,6 +48210,20 @@ mod tests {
         assert_eq!(guard_bucket(e[0] + Vec2::new(1, 0), plaza, &e, &roads), 1);
         assert_eq!(guard_bucket(Vec2::new(30, 15), plaza, &e, &roads), 2);
         assert_eq!(guard_bucket(Vec2::new(5, 50), plaza, &e, &roads), 3);
+    }
+
+    /// ★ AUTO PATROL legs pinned: wrap by guard number, one entrance goes to
+    /// the plaza, no entrances = None (identity).
+    #[test]
+    fn patrol_legs_wrap_the_entrances_and_fall_back_to_the_plaza() {
+        let e = [Vec2::new(0, 30), Vec2::new(30, 0), Vec2::new(60, 30)];
+        let plaza = Some(Vec2::new(30, 30));
+        assert_eq!(patrol_leg(0, &e, plaza), Some((e[0], e[1])));
+        assert_eq!(patrol_leg(2, &e, plaza), Some((e[2], e[0])), "the last leg wraps");
+        assert_eq!(patrol_leg(4, &e, plaza), Some((e[1], e[2])), "guard numbers wrap");
+        assert_eq!(patrol_leg(0, &e[..1], plaza), Some((e[0], plaza.unwrap())), "one entrance: to the plaza");
+        assert_eq!(patrol_leg(0, &e[..1], None), None);
+        assert_eq!(patrol_leg(0, &[], plaza), None, "no entrances: identity");
     }
 
     #[test]
