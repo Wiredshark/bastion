@@ -4462,10 +4462,42 @@ pub fn stockpile_has_material<'a>(
 /// sentence above sent a colony of 46 into Sustain with `food_per_cap=0.0`
 /// while its people carried their dinner. Use [`colony_food_total`] for
 /// "can we eat", this for "what have we stored".
+/// ★ GENERATOR AND CONSUMER MUST AGREE (flat arm b2, day 1: food_stock=101
+/// while fed=1 of 49 -- the 101 sat on a private shelf only one household
+/// could fetch from). A stockpile cell counts as the TOWN's stock only if a
+/// colonist from another household could draw from it: the fetch filter's
+/// own rule, `store_admits` with no household of its own. With no general
+/// store at all (or store kinds off) every stockpile counts, as before.
+pub(crate) fn town_can_draw(
+    board: &JobBoard,
+    cell: Vec3<i32>,
+    houses: &[Region],
+    general_exists: bool,
+) -> bool {
+    board
+        .stockpiles
+        .iter()
+        .find(|(_, r)| r.contains_point_xy(cell))
+        .is_some_and(|(_, r)| store_admits(r, houses, None, general_exists))
+}
+
+fn town_store_frame(board: &JobBoard) -> (Vec<Region>, bool) {
+    let houses: Vec<Region> = board
+        .designated
+        .iter()
+        .filter(|(_, k)| matches!(k, DesignationKind::Bed))
+        .map(|(r, _)| *r)
+        .collect();
+    let general_exists = board.stockpiles.iter().any(|(_, r)| !store_is_private(r, houses.iter()));
+    (houses, general_exists)
+}
+
+/// Food on stockpile cells the town can draw from (see `town_can_draw`).
 pub fn colony_food_stock<'a>(
     items: impl IntoIterator<Item = (&'a PickupItem, &'a comp::Pos)>,
     board: &JobBoard,
 ) -> u32 {
+    let (houses, general_exists) = town_store_frame(board);
     let mut food_stock: u32 = 0;
     for (item, pos) in items {
         let item_def_id = item.item().item_definition_id();
@@ -4476,11 +4508,35 @@ pub fn colony_food_stock<'a>(
             continue;
         }
         let cell = pos.0.map(|e| e.floor() as i32);
-        if board.stockpile_at(cell).is_some() {
+        if town_can_draw(board, cell, &houses, general_exists) {
             food_stock += item.amount() as u32;
         }
     }
     food_stock
+}
+
+/// Food on stockpile cells the town CANNOT draw from (private shelves while
+/// a general store exists) -- the witness for a larder locked in a house.
+pub fn colony_food_locked<'a>(
+    items: impl IntoIterator<Item = (&'a PickupItem, &'a comp::Pos)>,
+    board: &JobBoard,
+) -> u32 {
+    let (houses, general_exists) = town_store_frame(board);
+    let mut locked: u32 = 0;
+    for (item, pos) in items {
+        let item_def_id = item.item().item_definition_id();
+        let Some(def) = item_def_id.itemdef_id() else {
+            continue;
+        };
+        if !FOOD_DEFS.contains(&def) {
+            continue;
+        }
+        let cell = pos.0.map(|e| e.floor() as i32);
+        if board.stockpile_at(cell).is_some() && !town_can_draw(board, cell, &houses, general_exists) {
+            locked += item.amount() as u32;
+        }
+    }
+    locked
 }
 
 /// bastion (2026-08-21, found by a 141-game-day play session): the food the
@@ -17181,6 +17237,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 // number that decides the colony is dead, rather than a
                 // second copy of it that agrees only until someone edits one.
                 let food_stock = colony_food_stock((&pickup_items, &positions).join(), &board);
+                let food_locked = colony_food_locked((&pickup_items, &positions).join(), &board);
                 // ITEM8-V4: the b5 heartbeat port (Fable-ruled) -- splits =
                 // b5_split_off_one_fired, the precondition witness for the
                 // split_off_one crash fix's own registered prediction (its
@@ -17193,6 +17250,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 info!(
                     tick = tick.0,
                     food_stock,
+                    food_locked,
                     splits = board.b5_split_off_one_fired,
                     claim_expiry_releases = board.claim_expiry_releases,
                     designated_sweep_reaps = board.designated_sweep_reaps,
@@ -48641,6 +48699,29 @@ mod tests {
         let only_shelf = vec![(z(0), shelf)];
         assert_eq!(founding_stock_store(&only_shelf, &houses).map(|r| r.min), Some(shelf.min), "no general store: the first, as before");
         assert!(founding_stock_store(&[], &houses).is_none());
+    }
+
+    /// ★ THE PAR COUNTS ONLY WHAT THE TOWN CAN DRAW pinned: a cell on a
+    /// private shelf is not town stock while a general store exists; the
+    /// barn's cell is; with only the shelf, the shelf counts (identity).
+    #[test]
+    fn town_stock_counts_only_cells_the_town_can_draw_from() {
+        let house = Region { min: Vec3::new(0, 0, 0), max: Vec3::new(9, 9, 5) };
+        let shelf = Region { min: Vec3::new(4, 4, 1), max: Vec3::new(4, 4, 1) };
+        let barn = Region { min: Vec3::new(30, 30, 0), max: Vec3::new(35, 35, 0) };
+        let mut board = JobBoard::default();
+        board.designated.push((house, DesignationKind::Bed));
+        board.stockpiles.push((0, shelf));
+        board.stockpiles.push((1, barn));
+        let (houses, general) = town_store_frame(&board);
+        assert!(general);
+        assert!(!town_can_draw(&board, Vec3::new(4, 4, 2), &houses, general), "the shelf is one household's");
+        assert!(town_can_draw(&board, Vec3::new(32, 31, 1), &houses, general), "the barn is the town's");
+        assert!(!town_can_draw(&board, Vec3::new(100, 100, 1), &houses, general), "not a stockpile at all");
+        board.stockpiles.pop();
+        let (houses, general) = town_store_frame(&board);
+        assert!(!general);
+        assert!(town_can_draw(&board, Vec3::new(4, 4, 2), &houses, general), "no general store: the shelf counts, as before");
     }
 
     #[test]
