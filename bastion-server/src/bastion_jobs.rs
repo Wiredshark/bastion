@@ -13003,6 +13003,10 @@ pub struct JobBoard {
     /// store (`closed_stores`) on the search's word. Keyed like the stall
     /// strikes with a zero spot, so `store_strike` serves both.
     pub store_unreachable_strikes: HashMap<(common::bastion::ZoneId, Vec2<i32>), (u32, u64)>,
+    /// ★ Y3c: the farm cells whose sowing the season refused today (a
+    /// SET, so the census counts cells, not scan passes -- the pass
+    /// counter read 21.8 million on one summer day). Cleared at the census.
+    pub sow_refused_cells: HashSet<Vec3<i32>>,
     /// AUTO PATROL jobs minted by the generator (uid -> job), released at
     /// shift end; a stale entry (the muster replaced the job) is dropped.
     pub auto_patrols: HashMap<common::uid::Uid, JobId>,
@@ -23209,6 +23213,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 .count() as u32;
                             let stock_y = colony_food_stock((&pickup_items, &positions).join(), &board);
                             let par_y = seasonal_food_par(roster_y, diy, tod);
+                            let sow_cells_refused = board.sow_refused_cells.len() as u64;
+                            board.sow_refused_cells.clear();
                             info!(
                                 day = today,
                                 season = ?farm_season(tod),
@@ -23218,7 +23224,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 food_stock = stock_y,
                                 food_par = par_y,
                                 days_of_food = stock_y as f64 / (roster_y.max(1) as f64 * DAILY_RAW_UNITS),
-                                sows_refused_by_season = SOW_REFUSED_BY_SEASON.swap(0, core::sync::atomic::Ordering::Relaxed),
+                                sows_refused_by_season = sow_cells_refused,
+                                sow_refusal_passes = SOW_REFUSED_BY_SEASON.swap(0, core::sync::atomic::Ordering::Relaxed),
                                 "bastion: YEAR CENSUS — the season, the stage length, the stock against the winter (Ben: plant in spring, stock for winter)"
                             );
                         }
@@ -27367,6 +27374,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         },
                                         SeasonalTillVerdict::Wait => {
                                             SOW_REFUSED_BY_SEASON.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                                            board.sow_refused_cells.insert(cpos);
                                         },
                                         SeasonalTillVerdict::Till => {
                                             // The once-per-season till, at
