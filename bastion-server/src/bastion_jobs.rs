@@ -17166,6 +17166,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             if !pending_seed_items.0.is_empty() {
                 let pending = std::mem::take(&mut pending_seed_items.0);
                 let mut still_waiting = Vec::new();
+                // ★ THE FOUNDING STOCK SPREADS TOO: this pass's own deliveries count
+                // as occupancy, so four items do not all pick the same empty cell.
+                let mut delivered_occ: HashMap<(i32, i32), u32> = HashMap::new();
                 for (pos, def, count) in pending {
                     // RACE FIX (chain15): the origin chunk loads BEFORE the
                     // adopted zone's plot corners, so retargeting at
@@ -17224,8 +17227,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let pos = target
                         // Ground, not painted top (`stockpile_drop_cell`) —
                         // seeds rained from the box top could land on a roof.
-                        .map(|r| stockpile_drop_cell(&terrain, r))
+                        .map(|r| {
+                            let mut occ: HashMap<(i32, i32), u32> = delivered_occ.clone();
+                            for (pi, ipos) in (&pickup_items, &positions).join() {
+                                let c = ipos.0.map(|e| e.floor() as i32);
+                                if r.contains_point_xy(c) {
+                                    *occ.entry((c.x, c.y)).or_insert(0) += pi.item().amount() as u32;
+                                }
+                            }
+                            stockpile_drop_cell_spread(
+                                |x, y, h| column_surface_z(&terrain, x, y, h),
+                                |x, y| occ.get(&(x, y)).copied().unwrap_or(0),
+                                r,
+                            )
+                        })
                         .unwrap_or(pos);
+                    *delivered_occ.entry((pos.x, pos.y)).or_insert(0) += count as u32;
                     if terrain.get(pos).is_ok() {
                         for i in 0..count {
                             item_drop_emitter.emit(CreateItemDropEvent {
