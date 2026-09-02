@@ -2459,7 +2459,17 @@ pub(crate) fn split_cry_clusters(
 /// gives way — the window 663 died short of, twice (rounds 42 + 48,
 /// same scripted raid: alarm and muster both correct, militia seconds
 /// late). Ten seconds is the muster's measured arrival scale.
-pub(crate) const DOOR_FIGHT_SECS: f64 = 10.0;
+/// ★ A BARRED DOOR HOLDS LONGER (Ben, live 2026-09-02: "should be
+/// longer; we should later have door type/quality and the colonist's
+/// skill at barring; I'll let you choose the length"). The three
+/// first-raids read on 2026-09-02 saw every door open after exactly ten
+/// seconds while two militia were 140-200 blocks away. Sixty sim-seconds
+/// (about 48 game-minutes on the rotated clock) is the BASE: a muster
+/// that starts 150 blocks off at walk speed arrives inside it. Door type
+/// and quality (a gate > a house door > a shed) and the barring
+/// colonist's skill will MULTIPLY this base; until they exist both
+/// factors are 1.
+pub(crate) const DOOR_FIGHT_SECS: f64 = 60.0;
 
 /// ROW 29: whether the door holds this tick — pure for pins. Every gate
 /// must pass: there IS a door at the hostile's feet, someone shelters
