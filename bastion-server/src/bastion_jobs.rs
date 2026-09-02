@@ -6626,6 +6626,42 @@ pub const FARM_CYCLE_DAYS: f64 = 4.0;
 pub const FARM_STAGE_SECS: f64 =
     FARM_CYCLE_DAYS * common::resources::DAY / (FARM_GROWTH_MAX - FARM_GROWTH_SOWN) as f64;
 pub const FARM_GROWTH_SOWN: u8 = 1;
+
+/// ★ AN ADOPTED TOWN HAS BEEN LIVING HERE (2026-09-02). Both flat arms
+/// showed sown=51, MATURE=0 at 2.1 days under the 4-day cycle: every field
+/// started "just sown" on adoption day, so the first harvest is day 4 and
+/// 49 mouths eat the seed larder first. During the first game day after
+/// adoption, a sow on an adopted farm plot starts at a stage drawn from a
+/// hash of its cell, uniform over SOWN..=MAX (a field at every stage, as a
+/// lived-in village has), so harvests roll from the first day. Deterministic
+/// by cell; identity (SOWN) outside the window, outside adopted plots, or
+/// under `BASTION_NO_ADOPT_STAGGER`.
+pub fn adopted_sow_stage(
+    cell: Vec3<i32>,
+    plots: &[(Vec2<i32>, Vec2<i32>)],
+    until: Option<f64>,
+    now: f64,
+) -> u8 {
+    if std::env::var_os("BASTION_NO_ADOPT_STAGGER").is_some() {
+        return FARM_GROWTH_SOWN;
+    }
+    let in_window = until.is_some_and(|u| now < u);
+    let on_plot = plots
+        .iter()
+        .any(|(mn, mx)| cell.x >= mn.x && cell.x <= mx.x && cell.y >= mn.y && cell.y <= mx.y);
+    if !in_window || !on_plot {
+        return FARM_GROWTH_SOWN;
+    }
+    let packed = ((cell.x as i64 & 0x1F_FFFF) << 42)
+        | ((cell.y as i64 & 0x1F_FFFF) << 21)
+        | (cell.z as i64 & 0x1F_FFFF);
+    let mut z = (packed as u64).wrapping_add(0x9E37_79B9_7F4A_7C15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^= z >> 31;
+    let span = (FARM_GROWTH_MAX - FARM_GROWTH_SOWN + 1) as u64;
+    FARM_GROWTH_SOWN + (z % span) as u8
+}
 pub const FARM_GROWTH_MAX: u8 = 15;
 
 /// bastion (frame audit, 2026-08-29): what a MATURE `WheatYellow` cell pays
@@ -12528,6 +12564,13 @@ pub struct JobBoard {
     /// GUARD CENSUS samples for the current game day: uid -> (plaza,
     /// entrance, street, elsewhere) counts during the Work block.
     pub guard_census: HashMap<common::uid::Uid, (u32, u32, u32, u32)>,
+    /// ★ ADOPTION REALISM (2026-09-02): the adopted town's farm plots (XY
+    /// bounds) and the end of the first-day window in which a sow on one of
+    /// them starts at a hashed stage (`adopted_sow_stage`). Set once at the
+    /// adoption hand-off; a restart carries neither, so only genuine
+    /// first-day sows are staggered.
+    pub adopted_farm_plots: Vec<(Vec2<i32>, Vec2<i32>)>,
+    pub adopted_stagger_until: Option<f64>,
     /// AUTO PATROL jobs minted by the generator (uid -> job), released at
     /// shift end; a stale entry (the muster replaced the job) is dropped.
     pub auto_patrols: HashMap<common::uid::Uid, JobId>,
@@ -34673,9 +34716,21 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         )
                                     })
                                     .unwrap_or_else(CropPlan::fallback);
-                                if let Ok(nb) =
-                                    Block::air(plan.crop).with_attr(Growth(FARM_GROWTH_SOWN))
-                                {
+                                let sow_now = rtsim.rt_state().data().time_of_day.0;
+                                let sow_stage = adopted_sow_stage(
+                                    job.pos,
+                                    &board.adopted_farm_plots,
+                                    board.adopted_stagger_until,
+                                    sow_now,
+                                );
+                                if sow_stage > FARM_GROWTH_SOWN {
+                                    info!(
+                                        pos = ?job.pos,
+                                        stage = sow_stage,
+                                        "bastion: ADOPTED FIELD SOWN AT A LIVED-IN STAGE — the town was here before you"
+                                    );
+                                }
+                                if let Ok(nb) = Block::air(plan.crop).with_attr(Growth(sow_stage)) {
                                     block_change.set(job.pos, nb);
                                     let ck = (job.pos.x, job.pos.y, job.pos.z);
                                     board.farm_growth.insert(ck, rtsim.rt_state().data().time_of_day.0);
@@ -48517,6 +48572,30 @@ mod tests {
         assert!(lows > 40 && lows < 160, "spread, not clumped: {lows} of 200 below 0.8");
         let z = staggered_initial_needs(0);
         assert_eq!(z.hunger, 1.0, "uid 0: identity (full)");
+    }
+
+    /// ★ STAGGERED FIELDS pinned: identity outside the window / plot / under
+    /// the switch; inside, deterministic, within SOWN..=MAX, and spread over
+    /// at least ten distinct stages across a 12x12 plot.
+    #[test]
+    fn a_first_day_sow_on_an_adopted_plot_starts_at_a_hashed_stage() {
+        let plots = vec![(Vec2::new(100, 100), Vec2::new(111, 111))];
+        let c = Vec3::new(105, 107, 40);
+        assert_eq!(adopted_sow_stage(c, &plots, None, 10.0), FARM_GROWTH_SOWN, "no window: identity");
+        assert_eq!(adopted_sow_stage(c, &plots, Some(5.0), 10.0), FARM_GROWTH_SOWN, "window over: identity");
+        assert_eq!(adopted_sow_stage(Vec3::new(50, 50, 40), &plots, Some(99.0), 10.0), FARM_GROWTH_SOWN, "off the plot: identity");
+        let a = adopted_sow_stage(c, &plots, Some(99.0), 10.0);
+        assert_eq!(a, adopted_sow_stage(c, &plots, Some(99.0), 20.0), "deterministic by cell, not time");
+        let mut seen = std::collections::HashSet::new();
+        for x in 100..=111 {
+            for y in 100..=111 {
+                let st = adopted_sow_stage(Vec3::new(x, y, 40), &plots, Some(99.0), 10.0);
+                assert!((FARM_GROWTH_SOWN..=FARM_GROWTH_MAX).contains(&st), "{x},{y}: {st}");
+                seen.insert(st);
+            }
+        }
+        assert!(seen.len() >= 10, "spread over stages: {} distinct", seen.len());
+        assert!(seen.contains(&FARM_GROWTH_MAX), "some field is ready on day one");
     }
 
     #[test]

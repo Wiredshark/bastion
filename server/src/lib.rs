@@ -7571,10 +7571,30 @@ impl Server {
                         // search prices walk edges onto these columns at
                         // half, so routes follow the streets.
                         if let Some((asp, _, _, _, roads, walls, interiors, tile_graph, buildings)) = adoption.as_ref() {
+                            let adopt_tod = self
+                                .state
+                                .ecs()
+                                .read_resource::<common::resources::TimeOfDay>()
+                                .0;
                             let mut board = self
                                 .state
                                 .ecs_mut()
                                 .write_resource::<bastion_jobs::JobBoard>();
+                            // ★ ADOPTION REALISM: the adopted farm plots and the
+                            // first-day window in which their sows start at a
+                            // lived-in stage (see `adopted_sow_stage`). The board's
+                            // farms at this moment are exactly adoption's.
+                            board.adopted_farm_plots = board
+                                .farms
+                                .iter()
+                                .map(|(_, r)| (r.min.xy(), r.max.xy()))
+                                .collect();
+                            board.adopted_stagger_until = Some(adopt_tod + common::resources::DAY);
+                            tracing::info!(
+                                plots = board.adopted_farm_plots.len(),
+                                until = ?board.adopted_stagger_until,
+                                "bastion: ADOPTED FIELDS ARMED — first-day sows start at a lived-in stage"
+                            );
                             board.road_cells = std::sync::Arc::new(roads.clone());
                             board.wall_margin_cells = std::sync::Arc::new(walls.clone());
                             board.interior_cells = std::sync::Arc::new(interiors.clone());
