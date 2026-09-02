@@ -6264,6 +6264,34 @@ pub static EAT_STALLS_TOLERATED: core::sync::atomic::AtomicU64 = core::sync::ato
 /// `BASTION_NO_TARGET_SHUN` records nothing.
 pub const STALLED_TARGET_SHUN_TICKS: u64 = 13_500;
 pub static TARGETS_SHUNNED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+/// ★ A STORE THE TOWN CANNOT ENTER IS CLOSED (flat arms b1 and b2 on
+/// a900163959: the fourth general store took deposits nobody could draw --
+/// 79 mushrooms on one cell -- while 25-41 eat trips a day stalled 25
+/// blocks short of it). Three shunned targets inside one zone within the
+/// shun window close it to deposits for this long; the choosers skip a
+/// closed zone; it reopens when the closure expires (the town may have
+/// built a door by then). `BASTION_NO_STORE_CLOSE` never closes.
+pub const STORE_CLOSE_STRIKES: u32 = 3;
+pub const STORE_CLOSE_TICKS: u64 = 54_000;
+/// Records a strike against `zone`; returns true when the zone has just
+/// reached the closing count (strikes older than the shun window reset).
+pub(crate) fn store_strike(
+    strikes: &mut HashMap<common::bastion::ZoneId, (u32, u64)>,
+    zone: common::bastion::ZoneId,
+    now: u64,
+) -> bool {
+    let e = strikes.entry(zone).or_insert((0, now));
+    if now.saturating_sub(e.1) > STALLED_TARGET_SHUN_TICKS {
+        *e = (0, now);
+    }
+    e.0 += 1;
+    e.1 = now;
+    e.0 == STORE_CLOSE_STRIKES
+}
+pub(crate) fn store_closed(closed: &HashMap<common::bastion::ZoneId, u64>, zone: common::bastion::ZoneId, now: u64) -> bool {
+    closed.get(&zone).is_some_and(|until| *until > now)
+}
 pub(crate) fn fetch_stall_expires(is_eat: bool, stalled: bool, over_budget: bool) -> bool {
     over_budget || (stalled && !(is_eat && std::env::var_os("BASTION_NO_EAT_PATIENCE").is_none()))
 }
@@ -12837,6 +12865,10 @@ pub struct JobBoard {
     /// ★ THE FOUNDING STOCK WAITS FOR THE BARN: the tick the seed delivery
     /// first held; the hold expires `FOUNDING_STOCK_HOLD_TICKS` later.
     pub founding_hold_since: Option<u64>,
+    /// ★ A STORE THE TOWN CANNOT ENTER IS CLOSED: per zone, (strikes, last
+    /// strike tick) from shunned targets inside it, and the closure expiry.
+    pub store_stall_strikes: HashMap<common::bastion::ZoneId, (u32, u64)>,
+    pub closed_stores: HashMap<common::bastion::ZoneId, u64>,
     /// AUTO PATROL jobs minted by the generator (uid -> job), released at
     /// shift end; a stale entry (the muster replaced the job) is dropped.
     pub auto_patrols: HashMap<common::uid::Uid, JobId>,
@@ -25476,7 +25508,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         .stockpiles
                         .iter()
                         // STORE KINDS: a town haul (no hauler yet) goes to a general store.
-                        .filter(|(_, r)| store_admits(r, &houses, None, general_exists))
+                        .filter(|(z, r)| store_admits(r, &houses, None, general_exists) && !store_closed(&board.closed_stores, *z, tick.0))
                         .filter(|(z, _)| match board.zone_types.get(z) {
                             Some(common::bastion::ZoneKind::FoodStore) => item_is_food,
                             Some(_) => false,
@@ -25772,7 +25804,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     let Some((dest, drop_cell)) = board
                         .stockpiles
                         .iter()
-                        .filter(|(_, r)| store_admits(r, &houses, None, general_exists))
+                        .filter(|(z, r)| store_admits(r, &houses, None, general_exists) && !store_closed(&board.closed_stores, *z, tick.0))
                         .min_by_key(|(_, r)| {
                             let c = (r.min + r.max) / 2;
                             let d = c - cell;
@@ -29167,6 +29199,27 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             let shun_cell = ip.map(|e| e.floor() as i32);
                                             board.goal_verdicts.insert(shun_cell, tick.0 + STALLED_TARGET_SHUN_TICKS);
                                             TARGETS_SHUNNED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                                            if std::env::var_os("BASTION_NO_STORE_CLOSE").is_none()
+                                                // (a field lookup, not `stockpile_at`: `job` holds `board.jobs`)
+                                                && let Some(zone) = board
+                                                    .stockpiles
+                                                    .iter()
+                                                    .find(|(_, r)| {
+                                                        r.contains_point_xy(shun_cell)
+                                                            && shun_cell.z >= r.min.z - 2
+                                                            && shun_cell.z <= r.max.z + 3
+                                                    })
+                                                    .map(|(id, _)| *id)
+                                                && store_strike(&mut board.store_stall_strikes, zone, tick.0)
+                                            {
+                                                board.closed_stores.insert(zone, tick.0 + STORE_CLOSE_TICKS);
+                                                tracing::warn!(
+                                                    zone,
+                                                    cell = ?shun_cell,
+                                                    until_tick = tick.0 + STORE_CLOSE_TICKS,
+                                                    "bastion: STORE CLOSED — the town cannot reach its cells; no deposits until it reopens"
+                                                );
+                                            }
                                             info!(
                                                 job = active.job,
                                                 kind = ?job.kind,
@@ -49383,6 +49436,28 @@ mod tests {
         assert!(!goal_verdict_blocks_impl(&v, cell, 1_000 + STALLED_TARGET_SHUN_TICKS, true), "expired: open again");
         assert!(!goal_verdict_blocks_impl(&v, Vec3::new(1, 1, 1), 1_000, true), "another cell: open");
         assert!(STALLED_TARGET_SHUN_TICKS as f64 > FETCH_BUDGET_SECS * 30.0, "the shun outlasts a fetch budget (30 ticks a second)");
+    }
+
+    /// ★ STORE CLOSE pinned: the third strike within the window closes; a
+    /// strike after the window starts over; a closed zone is closed until
+    /// its expiry and open after.
+    #[test]
+    fn three_strikes_in_the_window_close_a_store_and_it_reopens_on_expiry() {
+        let mut strikes = HashMap::new();
+        assert!(!store_strike(&mut strikes, 7, 100));
+        assert!(!store_strike(&mut strikes, 7, 200));
+        assert!(store_strike(&mut strikes, 7, 300), "the third strike closes");
+        assert!(!store_strike(&mut strikes, 7, 400), "a fourth does not re-fire");
+        let mut fresh = HashMap::new();
+        assert!(!store_strike(&mut fresh, 9, 100));
+        assert!(!store_strike(&mut fresh, 9, 100 + STALLED_TARGET_SHUN_TICKS + 1), "outside the window: the count starts over");
+        assert!(!store_strike(&mut fresh, 9, 100 + STALLED_TARGET_SHUN_TICKS + 2), "two since the reset: not yet");
+        let mut closed = HashMap::new();
+        closed.insert(7u64, 1_000 + STORE_CLOSE_TICKS);
+        assert!(store_closed(&closed, 7, 1_000));
+        assert!(store_closed(&closed, 7, 1_000 + STORE_CLOSE_TICKS - 1));
+        assert!(!store_closed(&closed, 7, 1_000 + STORE_CLOSE_TICKS), "expired: open again");
+        assert!(!store_closed(&closed, 8, 1_000), "another zone: open");
     }
 
     #[test]
