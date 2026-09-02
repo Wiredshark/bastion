@@ -12780,6 +12780,11 @@ pub struct JobBoard {
     /// footprints (the stockpiles shape); the farm pass reads cell state
     /// inside them and generates till/sow/harvest jobs forever.
     pub farms: Vec<(common::bastion::ZoneId, Region)>,
+    /// ★ MINES AND WOODLOTS ARE ZONES (2026-09-02, Ben: "the colonist should
+    /// mine or farm the entire area"): a Mine or Chop designation registers
+    /// here with its lane, from the same `next_zone` counter as farms, and
+    /// takes assignees, scope, a census line and an inspector row like one.
+    pub work_zones: Vec<(common::bastion::ZoneId, Region, common::bastion::WorkType)>,
     /// bastion (FARM-PAINT, row 2026-08-08): the real ground z per
     /// (x,y) column of a registered farm plot, resolved ONCE at
     /// registration via [`column_surface_z`] against the painted
@@ -13547,6 +13552,18 @@ impl JobBoard {
         // flat-mode from, so this calls the relative-mode half
         // directly rather than constructing a dummy ZExtent to route
         // through the dispatcher for no benefit).
+        if matches!(kind, DesignationKind::Mine | DesignationKind::Chop) {
+            let id = self.next_zone;
+            self.next_zone += 1;
+            self.work_zones.push((id, region, work));
+            info!(
+                zone = id,
+                ?kind,
+                lane = ?work,
+                ?region,
+                "bastion: WORK ZONE registered — a mine or woodlot takes assignees and scope like a farm"
+            );
+        }
         if kind == DesignationKind::Farm {
             let id = self.next_zone;
             self.next_zone += 1;
@@ -14782,6 +14799,15 @@ impl JobBoard {
         // left (eviction lives in the farm pass, which iterates `farms`), and
         // a REPAINTED plot on the same ground would inherit a stale surface z
         // and a stale growth clock.
+        self.work_zones = std::mem::take(&mut self.work_zones)
+            .into_iter()
+            .flat_map(|(id, r, w)| {
+                if !r.intersects(&region) {
+                    return vec![(id, r, w)];
+                }
+                r.subtract(&region).into_iter().map(|p| (id, p, w)).collect::<Vec<_>>()
+            })
+            .collect();
         let farms_before: usize = self.farms.len();
         let mut farms_shrunk = 0u32;
         self.farms = std::mem::take(&mut self.farms)
@@ -15474,6 +15500,18 @@ impl JobBoard {
                 r.contains_point_xy(cell) && cell.z >= r.min.z - 2 && cell.z <= r.max.z + 3
             })
             .map(|(id, _)| *id)
+    }
+
+    /// Every assignable zone's region: farms, stockpiles, and the work
+    /// zones (mines, woodlots). The one slice the scope, the manual
+    /// assign resolver and the assignments broadcast share.
+    pub fn zone_regions_all(&self) -> Vec<(common::bastion::ZoneId, Region)> {
+        self.farms
+            .iter()
+            .chain(self.stockpiles.iter())
+            .map(|(z, r)| (*z, *r))
+            .chain(self.work_zones.iter().map(|(z, r, _)| (*z, *r)))
+            .collect()
     }
 
     pub fn zone_region(&self, id: common::bastion::ZoneId) -> Option<Region> {
@@ -22774,6 +22812,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         for (z, r) in board.stockpiles.iter() {
                             let c = ((r.max.x - r.min.x + 1) * (r.max.y - r.min.y + 1)).max(1) as usize;
                             zones.push((*z, common::bastion::WorkType::Haul, c));
+                        }
+                        for (z, r, w) in board.work_zones.iter() {
+                            let c = ((r.max.x - r.min.x + 1) * (r.max.y - r.min.y + 1)).max(1) as usize;
+                            zones.push((*z, *w, c));
                         }
                         let lanes: Vec<(common::uid::Uid, common::bastion::WorkType)> =
                             board.professions.iter().map(|(u, w)| (*u, *w)).collect();
@@ -42080,10 +42122,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 None
             } else {
                 let zones: Vec<(common::bastion::ZoneId, Region)> = board
-                    .farms
-                    .iter()
-                    .chain(board.stockpiles.iter())
-                    .map(|(z, r)| (*z, *r))
+                    .zone_regions_all()
+                    .into_iter()
                     .collect();
                 zone_scope(
                     board.assignments.get(uid).map(|(z, _)| *z),
@@ -48940,6 +48980,27 @@ mod tests {
         assert_eq!(night_home_of(&board, u(7)).map(|r| r.min), Some(house.min), "the bed's house");
         assert!(night_home_of(&board, u(8)).is_none(), "no bed: no night home");
         assert!(SLEEP_METABOLISM > 0.0 && SLEEP_METABOLISM < 1.0);
+    }
+
+    /// ★ WORK ZONES pinned: a mine is in the shared zone slice, and the
+    /// daily assignment hands a Mine-lane colonist the mine (not the farm).
+    #[test]
+    fn a_mine_is_a_zone_and_the_miner_is_assigned_to_it() {
+        use common::bastion::WorkType as W;
+        let u = |n: u64| common::uid::Uid(std::num::NonZeroU64::new(n).expect("nonzero"));
+        let field = Region { min: Vec3::new(0, 0, 0), max: Vec3::new(9, 9, 0) };
+        let mine = Region { min: Vec3::new(40, 40, 0), max: Vec3::new(45, 45, 3) };
+        let mut board = JobBoard::default();
+        board.farms.push((1, field));
+        board.work_zones.push((2, mine, W::Mine));
+        let all = board.zone_regions_all();
+        assert!(all.iter().any(|(z, r)| *z == 2 && r.min == mine.min), "the mine is in the shared slice");
+        assert_eq!(all.len(), 2);
+        let zones = [(1u64, W::Farm, 100usize), (2, W::Mine, 36)];
+        let lanes = [(u(7), W::Mine), (u(8), W::Farm)];
+        let next = assign_zones(&lanes, &zones, &HashMap::new());
+        assert_eq!(next.get(&u(7)).map(|(z, _)| *z), Some(2), "the miner takes the mine");
+        assert_eq!(next.get(&u(8)).map(|(z, _)| *z), Some(1), "the farmer takes the field");
     }
 
     #[test]

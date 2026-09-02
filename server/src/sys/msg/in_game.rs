@@ -2426,11 +2426,10 @@ impl<'a> System<'a> for Sys {
                     match at {
                         Some(cell) => {
                             let zone = job_board
-                                .farms
-                                .iter()
-                                .chain(job_board.stockpiles.iter())
+                                .zone_regions_all()
+                                .into_iter()
                                 .find(|(_, r)| r.contains_point_xy(cell))
-                                .map(|(z, _)| *z);
+                                .map(|(z, _)| z);
                             match zone {
                                 Some(z) => {
                                     job_board.assignments.insert(
@@ -2643,12 +2642,11 @@ impl<'a> System<'a> for Sys {
                     .iter()
                     .filter_map(|(u, (z, src))| {
                         job_board
-                            .farms
-                            .iter()
-                            .chain(job_board.stockpiles.iter())
+                            .zone_regions_all()
+                            .into_iter()
                             .find(|(zz, _)| zz == z)
                             .map(|(_, r)| {
-                                (*u, *r, *src == bastion_server::bastion_jobs::AssignSource::Manual)
+                                (*u, r, *src == bastion_server::bastion_jobs::AssignSource::Manual)
                             })
                     })
                     .collect();
