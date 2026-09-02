@@ -3537,7 +3537,10 @@ pub(crate) struct ImmigrationVerdict {
 /// The `occupied=4` in the HOUSEHOLDS witness is a STALER SAMPLE from a
 /// different cadence, not a disagreement about who lives where.
 ///
-/// ★★ ANSWERED (2026-09-01): GROWTH SUSTAINS. The arm carried past the day
+/// ★ ANSWERED FROM TWO DATA POINTS (2026-09-01; was badged ★★ -- downgraded by the
+/// review the same day until two more replicate arms carry to day 3-4; the same
+/// mechanism already yielded one retracted single-point reading): GROWTH SUSTAINS.
+/// The arm carried past the day
 /// boundary shows the ratchet turning twice:
 ///     day=0  HOUSING BUILD  fire=true  roster=4 houses=4 vacant=0
 ///            HOUSING GROWTH fired=true roster=4 target=5 vacant=1
@@ -16991,6 +16994,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         let total = solid + clear;
                         info!(
                             tick = tick.0,
+                            ground_lifts = GROUND_LIFTS.load(core::sync::atomic::Ordering::Relaxed),
+                            world_builds = WORLD_BUILDS.load(core::sync::atomic::Ordering::Relaxed),
                             route_prev_solid = solid,
                             route_prev_clear = clear,
                             pct_solid = if total > 0 {
@@ -20242,6 +20247,19 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         // `place_designation` takes the region verbatim, so
                         // there is no second surface resolution to disagree
                         // with the first.
+                        // ★ ROW A2 INSTRUMENT (review 2026-09-01). The ring
+                        // scan above rejects a cell INSIDE a painted region by
+                        // exact 3-D containment, against whatever z the painter's
+                        // camera happened to use; by XY alone the same cell may
+                        // sit squarely inside a farm or the plaza. Counted here,
+                        // before the change: pre-registered PASS is 0.
+                        let inside_painted_xy = board
+                            .designated
+                            .iter()
+                            .filter(|(reg, k)| {
+                                !matches!(k, DesignationKind::Bed) && reg.contains_point_xy(cell)
+                            })
+                            .count();
                         let jobs = board.place_designation(
                             &terrain,
                             Region { min: cell, max: cell },
@@ -20250,6 +20268,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         info!(
                             at = ?cell,
                             jobs = jobs.len(),
+                            inside_painted_xy,
                             day = board.pending_house,
                             "bastion: ★ THE TOWN BUILDS A HOUSE — a bed is designated on                              open ground; population is what its houses allow, and the town                              can now add one"
                         );
@@ -22175,15 +22194,18 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // permanently whatever village was adopted -- 10 in the
                     // owner's town, 2 in both autofounds.
                     //
-                    // This is the WITNESS half, shipped first and alone on
-                    // purpose. A lane that silently never fires looks
+                    // This WAS the witness half, shipped first and alone on
+                    // purpose: a lane that silently never fires looks
                     // exactly like one that correctly declines, and the
                     // measurement it produces -- how often the gate WOULD
                     // fire, and what actually stops it -- is what the site
-                    // selector should be designed against. Building the
-                    // selector first would be designing against a guess.
-                    // Nothing is queued here; there is no intent to drain
-                    // and therefore no lane without a consumer.
+                    // selector was designed against.
+                    // ⚠ NO LONGER WITNESS-ONLY. A passing verdict sets
+                    // `board.pending_house` below and the housing drain
+                    // places the designation; the sentence that used to end
+                    // this paragraph ("nothing is queued here") survived two
+                    // corrections of its sibling log line (a HALF-APPLIED
+                    // FIX HIDES BEHIND ITS SIBLING; review, 2026-09-01).
                     if day_changed {
                         // The material the CONSUMER bills, read from the
                         // consumer's own constant — not a second copy of it.
@@ -22210,6 +22232,29 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             })
                             .map(|(pi, _)| pi.item().amount() as u32)
                             .sum::<u32>();
+                        // ★ ROW A INSTRUMENT (review 2026-09-01). The
+                        // one-at-a-time guard below reads `board.plans`, a
+                        // queue the housing drain never writes (it calls
+                        // place_designation directly), so what it is meant
+                        // to bound -- houses ordered but not yet built -- is
+                        // counted here in the lane's own terms: Bed JOBS in
+                        // flight, and Bed REGIONS with no bed slot inside.
+                        // Pre-registered: at most 1 at any witness tick
+                        // across three day boundaries with stone on hand;
+                        // 2+ means the guard is dead and a real one is due.
+                        let bed_jobs_in_flight = board
+                            .jobs
+                            .values()
+                            .filter(|j| j.kind.is(DesignationKind::Bed))
+                            .count();
+                        let unbuilt_bed_regions = board
+                            .designated
+                            .iter()
+                            .filter(|(r, k)| {
+                                matches!(k, DesignationKind::Bed)
+                                    && !board.beds.keys().any(|p| r.contains_point(*p))
+                            })
+                            .count();
                         let bv = housing_build_verdict(
                             true,
                             board.colony_drive.0,
@@ -22235,6 +22280,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             material_needed = HOUSE_PLAN_MATERIAL,
                             material_def = common::bastion::BUILD_MATERIAL_ITEM,
                             plans_in_flight = board.plans.len(),
+                            bed_jobs_in_flight,
+                            unbuilt_bed_regions,
                             drive = ?board.colony_drive.0,
                             day = today,
                             "bastion: HOUSING BUILD — whether the town would start a house                              today, and what stops it (a passing verdict QUEUES the plan via queue_build_plan)"
@@ -34581,6 +34628,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         });
                     }
                     block_change.set(job.pos, new_block);
+                    // ★ EVERY completed build edits the world, so every one
+                    // bumps WORLD_BUILDS -- it was bumped for Beds only, so
+                    // `builds_since_route` could not see a Mine or a Build
+                    // landing on a cached route (review 2026-09-01).
+                    WORLD_BUILDS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     // B5.8: a player-built ladder line registers as an
                     // access anchor too (one per column — XY dedupe), so
                     // staged routing finds it.
@@ -34604,7 +34656,6 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             occupant: None,
                         });
                         info!(pos = ?job.pos, "bastion: bed registered (built)");
-                        WORLD_BUILDS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
                     }
                     // ITEM 27: a completed station registers (Bed pattern).
                     // ITEM 27 GRANULARITY: through `register_cook_station`, so
