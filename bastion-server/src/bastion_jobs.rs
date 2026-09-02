@@ -7228,6 +7228,33 @@ pub const FOUNDING_SEED_STOCK: u32 = 8;
 pub const BREAKDOWN_PHYSIOLOGY_FLOOR: f32 = 0.3;
 pub const PREEMPT_COOLDOWN_SECS: f64 = 60.0;
 
+/// ★ A SLEEPER BURNS LESS (flat arm b2, 2026-09-02): a raw meal restores
+/// 0.5 and a night burns 0.53, so supper is gone by hour 2. Needs decay at
+/// this fraction of the waking rate while the colonist is in its Sleep
+/// block. `BASTION_NO_SLEEP_METABOLISM` restores the flat rate.
+pub const SLEEP_METABOLISM: f32 = 0.5;
+
+/// ★ NIGHT HUNGER IS MET AT HOME: the house the colonist sleeps in (its
+/// bed's house), the only place its night food scan may look. The curfew
+/// (the night-massacre autopsy) keeps everyone indoors; eating from one's
+/// own shelf breaks no curfew. `BASTION_NO_NIGHT_LARDER` -> None (identity:
+/// the curfew skips every pile, as before).
+pub(crate) fn night_home_of(board: &JobBoard, uid: common::uid::Uid) -> Option<Region> {
+    if std::env::var_os("BASTION_NO_NIGHT_LARDER").is_some() {
+        return None;
+    }
+    let houses: Vec<Region> = board
+        .designated
+        .iter()
+        .filter(|(_, k)| matches!(k, DesignationKind::Bed))
+        .map(|(r, _)| *r)
+        .collect();
+    household_house(
+        board.beds.iter().find(|(_, sl)| sl.owner == Some(uid)).map(|(p, _)| *p),
+        houses.iter(),
+    )
+}
+
 /// bastion (ITEM 29): the leg-ahead cursor for a detour path — the farthest
 /// node at or after `from` still within [`DETOUR_LEG`] of `wps[from]`.
 ///
@@ -17192,10 +17219,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             // idle colonists. `decay_join_count` is the guard that would have
             // caught it, and it must not move.
             let mut recreate_restored: u32 = 0;
-            for (_, needs, active) in
-                (&colonists, &mut needs_storage, active_jobs.maybe()).join()
+            // ★ A SLEEPER BURNS LESS (see `SLEEP_METABOLISM`).
+            let hour_now_decay = hour_of_day(rtsim.rt_state().data().time_of_day.0);
+            let sleep_metabolism_on = std::env::var_os("BASTION_NO_SLEEP_METABOLISM").is_none();
+            for (decay_entity, _, needs, active) in
+                (&entities, &colonists, &mut needs_storage, active_jobs.maybe()).join()
             {
-                comp::bastion::decay_needs(needs, dt.0, &mood_cfg);
+                let asleep = sleep_metabolism_on
+                    && matches!(
+                        colonist_schedule_block(
+                            &board.night_watch,
+                            uids.get(decay_entity),
+                            hour_now_decay
+                        ),
+                        ScheduleBlock::Sleep
+                    );
+                comp::bastion::decay_needs(
+                    needs,
+                    if asleep { dt.0 * SLEEP_METABOLISM } else { dt.0 },
+                    &mood_cfg,
+                );
                 // ★ COLLAPSE FROM EXHAUSTION (researched, Ben's hard rule:
                 // adversarial research after a failure, and prefer the
                 // well-trodden solution).
@@ -28073,11 +28116,26 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             // never starve the protectee, so a colonist whose
                             // only food is verdict-blocked still tries the
                             // least-bad one.
+                            // ★ NIGHT HUNGER IS MET AT HOME: in the Sleep block the
+                            // scan sees only piles inside this colonist's own house.
+                            let night_now = matches!(
+                                colonist_schedule_block(
+                                    &board.night_watch,
+                                    uids.get(entity),
+                                    hour_of_day(rtsim.rt_state().data().time_of_day.0)
+                                ),
+                                ScheduleBlock::Sleep
+                            );
+                            let night_home = if night_now { night_home_of(&board, *uid) } else { None };
+                            let night_ok = |c: Vec3<i32>| {
+                                !night_now || night_home.is_some_and(|h| h.contains_point_xy(c))
+                            };
                             let pick_food = |respect_verdicts: bool| (&pickup_items, &positions, &uids)
                                 .join()
                                 .filter(|(pi, ipos, iuid)| {
                                     let icell = ipos.0.map(|e| e.floor() as i32);
-                                    (!respect_verdicts
+                                    (night_ok(icell) || night_home.is_none())
+                                    && (!respect_verdicts
                                         || !goal_verdict_blocks(
                                             &board.goal_verdicts,
                                             icell,
@@ -28175,16 +28233,15 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 // ran above — or endures until dawn; the
                                 // town does not send anyone out for a
                                 // mushroom at 3am.)
-                                if matches!(
-                                    colonist_schedule_block(
-                                        &board.night_watch,
-                                        uids.get(entity),
-                                        hour_of_day(
-                                            rtsim.rt_state().data().time_of_day.0
-                                        )
-                                    ),
-                                    ScheduleBlock::Sleep
-                                ) {
+                                let at_home = night_home.is_some_and(|h| h.contains_point_xy(ipos));
+                                if night_now && at_home {
+                                    info!(
+                                        colonist = %uid,
+                                        pile = ?ipos,
+                                        "bastion: NIGHT MEAL AT HOME — hunger met from the household shelf, nobody walks out"
+                                    );
+                                }
+                                if night_now && !at_home {
                                     if need_skip_diag {
                                         info!(
                                             colonist = %uid,
@@ -48843,6 +48900,29 @@ mod tests {
         assert!(!founding_stock_holds(false, false, false, false), "adoption done, no barn at all: deliver to what there is");
         assert!(!founding_stock_holds(true, false, true, true), "timeout: deliver regardless");
         assert!(FOUNDING_STOCK_HOLD_TICKS >= 600 && FOUNDING_STOCK_HOLD_TICKS <= 54_000);
+    }
+
+    /// ★ NIGHT HUNGER AT HOME pinned: a colonist's night home is its bed's
+    /// house; a colonist with no bed has none; the sleep metabolism is a
+    /// genuine fraction. (The env identity switch is exercised by the
+    /// storage-kinds pins' pattern; not repeated here.)
+    #[test]
+    fn a_night_home_is_the_house_of_ones_bed() {
+        let u = |n: u64| common::uid::Uid(std::num::NonZeroU64::new(n).expect("nonzero"));
+        let house = Region { min: Vec3::new(0, 0, 0), max: Vec3::new(9, 9, 5) };
+        let mut board = JobBoard::default();
+        board.designated.push((house, DesignationKind::Bed));
+        board.beds.insert(
+            Vec3::new(3, 3, 1),
+            common::bastion::BedSlot {
+                kind: common::bastion::BedKind::Frame,
+                owner: Some(u(7)),
+                occupant: None,
+            },
+        );
+        assert_eq!(night_home_of(&board, u(7)).map(|r| r.min), Some(house.min), "the bed's house");
+        assert!(night_home_of(&board, u(8)).is_none(), "no bed: no night home");
+        assert!(SLEEP_METABOLISM > 0.0 && SLEEP_METABOLISM < 1.0);
     }
 
     #[test]
