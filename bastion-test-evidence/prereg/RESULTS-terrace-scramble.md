@@ -47,6 +47,46 @@ controls, and the honest baseline for W6 alone is the D1c-pair boot
   that advanced past its nearest node; not an assist problem (the next
   probe class to read: W8).
 
-## The W6 read
+## The W6 read (arm b2 on 552cac9f76, booted 18:39, cut at day-1 15:00; read 19:30)
 
-(pending: arm b2 on 552cac9f76, restarted 18:38, cut at day-1 15:00)
+| by day-1 15:00                 | control (D1c boot) | W6 boot | bar            |
+|--------------------------------|-------------------:|--------:|----------------|
+| probes                         | 72                 | 132     | <= 60  FAIL    |
+| probes at the terrace cell     | 22                 | 36      | <= 20  FAIL    |
+| EatFrom probes                 | 37                 | 66      | <= 15  FAIL    |
+| starving at the cut / max      | 2 / 7              | 3 / 11  | <= 3  PASS (at the cut) |
+| climb assists                  | 1                  | 4       | --             |
+| step assists                   | 21                 | 185     | --  (9x)       |
+| vault assists                  | 21                 | 18      | --             |
+| DID NOT STICK (step)           | 13                 | 16      | --             |
+| climb bans                     | 31                 | 48      | --             |
+| embed / net events             | 1,055              | 2,036   | not above control  FAIL |
+| assist-apply position writes   | 56                 | 221     | --             |
+| shuns                          | 93                 | 144     | --             |
+| store deposits                 | 120                | 127     | --             |
+| panics                         | 0                  | 0       | 0  PASS        |
+
+`assist_why` at the terrace is unchanged in shape (eligible_climb 37,
+committed_walker 17): the head is eligible and the climb assist still
+does not fire (4 all day). The mechanism named by this read: the
+assist's clock is `active.stuck_time`, which only accrues while the
+mover pushes nothing; at the foot of the step the chaser's override
+glide bumps the body a fraction of a block every tick, `displaced`
+resets the clock, and 1.5 s never elapses — the hop clock W6 lowered is
+a clock the terrace never winds. The probe's own watcher (no NET
+displacement over its window) is the clock that does fire there.
+
+The step surge (21 -> 185) and the embed count (1,055 -> 2,036) are
+either W6's doing or replicate variance (counts vary 2-3x). The same
+pair is re-run on b2 with BASTION_NO_SCRAMBLE_ASSIST=1 (the identity
+switch) as the matched control; if the surge persists with the switch
+on, it is not W6's.
+
+## Disposition (one replicate)
+
+W6 FAILED its probe, terrace and embed bars and left the climb assist
+unfired; the design's clock was wrong, not its arms. Next: W6-B — take
+a promised, standable, adjacent two-up head from the STALL WATCHER's
+clock (first_stall), where the probe already proves the body is not
+advancing, rather than from the assist's stuck_time. The switch-on
+control read decides whether the step/embed surge is W6's.

@@ -22098,6 +22098,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             }
             for (zid, cells) in board.plans.iter() {
                 let mut unfilled = 0usize;
+                // ★ G1c-b: only a cell WITHOUT a plot target bills stone; a
+                // worldgen house's cells do not (1,909 of them read as stone
+                // owed on the first live boot, and the miners went digging).
+                let mut unfilled_stone = 0usize;
                 for pos in cells {
                     // Unloaded-read policy (deliberate, FAIL-OPEN on the
                     // retirement axis): an unseen plan cell counts as
@@ -22121,6 +22125,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         continue;
                     }
                     unfilled += 1;
+                    if !board.plot_blocks.contains_key(pos) {
+                        unfilled_stone += 1;
+                    }
                     // TASK #56 (chop/build reachability gate, 2026-07-30):
                     // Build DELIBERATELY NOT gated here -- Fable's catch,
                     // and the reasoning still holds even though Chop's own
@@ -22149,7 +22156,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 if unfilled == 0 {
                     retired.push(*zid);
                 }
-                demand += unfilled;
+                demand += unfilled_stone;
             }
             for pos in build_new {
                 let id = board.next_id;

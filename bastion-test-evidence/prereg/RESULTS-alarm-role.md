@@ -32,10 +32,24 @@ different cry position; its counters also sum to 49.
 Musters 6, downed 0, doors: 1 fight, 0 gave way (D2's second replicate:
 none in two boots against four at 10.03 s before).
 
+## Replicate 3 (the OWN boot on 21ab563470, first raid, two cries, read 19:21)
+
+| cry | sheltered | already home | posted | out of earshot | sum | indoors |
+|----:|----------:|-------------:|-------:|---------------:|----:|--------:|
+| 1   | 37        | 9            | 2      | 1              | 49  | 100%    |
+| 2   | 26        | 11           | 2      | 10             | 49  | 100%    |
+
+Musters 4, downed 0, doors: 0 fights, 0 gave way.
+
 ## Disposition
 
-PASS on every pre-registered bar, two replicates (a third comes free
-with the next raid-arm boot). The mechanism named by
+PASS on every pre-registered bar on three replicates (three boots,
+seven cries: every counter sums to the roster, indoors 100% each time,
+posted 2 each time, downed 0). Doors across the same three boots: 2
+fights, 0 gave way (D2's three replicates against four give-ways at
+10.03 s before). The danger row's remaining unevidenced piece is a
+raider-fate witness (whether the militia won or the raiders left) and
+Ben's world. The mechanism named by
 the D1b read was the whole story: the muster's squad cap left the
 unposted high-priority colonists in a gap between "fighting" and
 "indoors"; closing the gap moved 16 people indoors. Not evidenced:
