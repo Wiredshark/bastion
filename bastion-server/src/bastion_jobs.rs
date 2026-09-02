@@ -4035,6 +4035,43 @@ pub(crate) const HAUL_CHAIN_RADIUS: f32 = 12.0;
 /// conservative, they deposit with the rest either way).
 pub(crate) const HAUL_CHAIN_MAX_LOAD: u32 = 16;
 
+/// ★ DEDICATED HAULERS (Ben, live 2026-09-01: "we should have dedicated
+/// haulers"). How many the town keeps in the Haul lane: one per
+/// `COLONISTS_PER_HAULER`, and at least one once the roster reaches
+/// `HAULER_MIN_ROSTER`. Both numbers are taste, not measurement -- assumed
+/// until Ben names his. `BASTION_NO_DEDICATED_HAULERS` = identity.
+pub const COLONISTS_PER_HAULER: usize = 6;
+pub const HAULER_MIN_ROSTER: usize = 4;
+pub(crate) fn haulers_needed(roster: usize) -> usize {
+    if roster < HAULER_MIN_ROSTER {
+        0
+    } else {
+        (roster / COLONISTS_PER_HAULER).max(1)
+    }
+}
+
+/// Who becomes a hauler when the town is short: the non-haulers who already
+/// haul the MOST (by time-held lane count), deterministic by uid on ties.
+/// Never demotes an existing hauler; identity when the share is met.
+pub(crate) fn reserve_haulers(
+    professions: &HashMap<common::uid::Uid, common::bastion::WorkType>,
+    lane_counts: &HashMap<(common::uid::Uid, common::bastion::WorkType), u32>,
+    needed: usize,
+) -> Vec<common::uid::Uid> {
+    use common::bastion::WorkType as W;
+    let have = professions.values().filter(|w| **w == W::Haul).count();
+    if have >= needed {
+        return Vec::new();
+    }
+    let mut cands: Vec<(u32, u64, common::uid::Uid)> = professions
+        .iter()
+        .filter(|(_, w)| **w != W::Haul)
+        .map(|(u, _)| (lane_counts.get(&(*u, W::Haul)).copied().unwrap_or(0), u.0.get(), *u))
+        .collect();
+    cands.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    cands.into_iter().take(needed - have).map(|(_, _, u)| u).collect()
+}
+
 /// ROW 20 (micro-haul treadmill): can job `j` EXTEND the load a hauler is
 /// already carrying? The unit of a haul is the LOAD, not the item — DF
 /// (bins/wheelbarrows), RimWorld (carry capacity), Song of Syx (carry
@@ -42572,6 +42609,43 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             named.push((u, w, c));
                         }
                     }
+                    // ★ DEDICATED HAULERS: top the Haul lane up to its share and
+                    // point the promoted colonists' priorities at hauling.
+                    if std::env::var_os("BASTION_NO_DEDICATED_HAULERS").is_none() {
+                        let roster_now = board.professions.len();
+                        let promoted = reserve_haulers(
+                            &board.professions,
+                            &board.lane_counts,
+                            haulers_needed(roster_now),
+                        );
+                        if !promoted.is_empty() {
+                            for (e, u) in (&entities, &uids).join() {
+                                if promoted.contains(u)
+                                    && let Some(mut c) = colonists.get_mut(e)
+                                {
+                                    c.0.work_priorities = common::bastion::WorkPriorities::in_lane(
+                                        common::bastion::WorkType::Haul,
+                                    );
+                                }
+                            }
+                            for u in &promoted {
+                                board.professions.insert(*u, common::bastion::WorkType::Haul);
+                                let c = board
+                                    .lane_counts
+                                    .get(&(*u, common::bastion::WorkType::Haul))
+                                    .copied()
+                                    .unwrap_or(0);
+                                named.push((*u, common::bastion::WorkType::Haul, c));
+                            }
+                            info!(
+                                day = today,
+                                roster = roster_now,
+                                needed = haulers_needed(roster_now),
+                                promoted = ?promoted.iter().map(|u| u.0.get()).collect::<Vec<_>>(),
+                                "bastion: DEDICATED HAULERS — the Haul lane topped up to its share (Ben)"
+                            );
+                        }
+                    }
                     named.sort_by_key(|(u, ..)| u.0.get());
                     for (u, w, c) in named {
                         // ★ DOES THIS COLONIST SPEND THEIR HOURS IN THE LANE
@@ -47628,6 +47702,32 @@ mod tests {
         assert_eq!(zone_scope(None, Some(W::Farm), &zones, [inside].into_iter()), None, "no assignment: identity");
         assert_eq!(zone_scope(Some(7), None, &zones, [inside].into_iter()), None, "no lane yet: identity");
         assert_eq!(zone_scope(Some(8), Some(W::Farm), &zones, [inside].into_iter()), None, "unknown zone: identity");
+    }
+
+    /// ★ DEDICATED HAULERS pinned: the share at its thresholds, and the
+    /// reservation picks the heaviest existing haulers, never a hauler twice,
+    /// identity when the share is met.
+    #[test]
+    fn dedicated_haulers_share_and_reservation_are_pinned() {
+        use common::bastion::WorkType as W;
+        assert_eq!(haulers_needed(HAULER_MIN_ROSTER - 1), 0, "a tiny town keeps everyone working");
+        assert_eq!(haulers_needed(HAULER_MIN_ROSTER), 1, "the floor: one hauler");
+        assert_eq!(haulers_needed(COLONISTS_PER_HAULER * 2), 2);
+        assert_eq!(haulers_needed(COLONISTS_PER_HAULER * 2 - 1), 1);
+        let u = |n: u64| common::uid::Uid(std::num::NonZeroU64::new(n).expect("nonzero"));
+        let mut prof = HashMap::new();
+        prof.insert(u(1), W::Farm);
+        prof.insert(u(2), W::Farm);
+        prof.insert(u(3), W::Mine);
+        prof.insert(u(4), W::Haul);
+        let mut counts = HashMap::new();
+        counts.insert((u(1), W::Haul), 5u32);
+        counts.insert((u(2), W::Haul), 9);
+        counts.insert((u(3), W::Haul), 9);
+        assert!(reserve_haulers(&prof, &counts, 1).is_empty(), "one hauler already: identity");
+        assert_eq!(reserve_haulers(&prof, &counts, 2), vec![u(2)], "the heaviest non-hauler, lowest uid on a tie");
+        assert_eq!(reserve_haulers(&prof, &counts, 3), vec![u(2), u(3)]);
+        assert!(!reserve_haulers(&prof, &counts, 4).contains(&u(4)), "never a hauler twice");
     }
 
     #[test]
