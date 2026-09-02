@@ -29238,7 +29238,9 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             let shun_cell = ip.map(|e| e.floor() as i32);
                                             board.goal_verdicts.insert(shun_cell, tick.0 + STALLED_TARGET_SHUN_TICKS);
                                             TARGETS_SHUNNED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                                            if std::env::var_os("BASTION_NO_STORE_CLOSE").is_none()
+                                            // ★ S6c: closing is OPT-IN (BASTION_STORE_CLOSE=1). Two reads closed
+                                            // the main barn (it has a jam spot of its own); the strike stays a witness.
+                                            if true
                                                 // (a field lookup, not `stockpile_at`: `job` holds `board.jobs`)
                                                 && let Some(zone) = board
                                                     .stockpiles
@@ -29251,13 +29253,22 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                     .map(|(id, _)| *id)
                                                 && store_strike(&mut board.store_stall_strikes, (zone, pos.0.xy().map(|e| (e.floor() as i32).div_euclid(4))), tick.0)
                                             {
-                                                board.closed_stores.insert(zone, tick.0 + STORE_CLOSE_TICKS);
-                                                tracing::warn!(
-                                                    zone,
-                                                    cell = ?shun_cell,
-                                                    until_tick = tick.0 + STORE_CLOSE_TICKS,
-                                                    "bastion: STORE CLOSED — the town cannot reach its cells; no deposits until it reopens"
-                                                );
+                                                if std::env::var_os("BASTION_STORE_CLOSE").is_some() {
+                                                    board.closed_stores.insert(zone, tick.0 + STORE_CLOSE_TICKS);
+                                                    tracing::warn!(
+                                                        zone,
+                                                        cell = ?shun_cell,
+                                                        until_tick = tick.0 + STORE_CLOSE_TICKS,
+                                                        "bastion: STORE CLOSED — the town cannot reach its cells; no deposits until it reopens"
+                                                    );
+                                                } else {
+                                                    info!(
+                                                        zone,
+                                                        cell = ?shun_cell,
+                                                        spot = ?pos.0.xy().map(|e| (e.floor() as i32).div_euclid(4)),
+                                                        "bastion: STORE WOULD CLOSE — three stalls on one spot aimed at this store (closing is opt-in: BASTION_STORE_CLOSE=1)"
+                                                    );
+                                                }
                                             }
                                             info!(
                                                 job = active.job,
