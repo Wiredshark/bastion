@@ -6520,7 +6520,19 @@ pub const FARM_SEED_YIELD: u32 = 2;
 /// `FARM_GROWTH_MAX`. Growth 0 is not reserved; it is UNREACHABLE for a
 /// freshly placed crop, so any arm keyed on it was dead code.
 /// Pinned by `worldgen_wheat_is_placed_mature_not_at_growth_zero`.
-pub const FARM_STAGE_SECS: f64 = 6.0;
+/// ★ BEN'S RULING (live, 2026-09-01): "the grow cycle is way too short, it
+/// should function like real grow cycles". His four-hour session measured a
+/// stage-up every ~49 ticks: sown to mature in 0.3 GAME HOURS (n=72 cells).
+/// The cycle is now a number of GAME DAYS on the day clock (`TimeOfDay`,
+/// `common::resources::DAY` per day), the same clock the seasons read, so a
+/// crop takes the same number of days at any tick rate. The NUMBER is a
+/// design choice, not a measurement: 4.0 is the assumption until Ben names
+/// his; anything under three days is the rejected "short enough to watch in
+/// one session" setting (pinned). Season factors still multiply it.
+pub const FARM_CYCLE_DAYS: f64 = 4.0;
+/// Seconds of day-clock time per growth stage in Spring (see `FARM_CYCLE_DAYS`).
+pub const FARM_STAGE_SECS: f64 =
+    FARM_CYCLE_DAYS * common::resources::DAY / (FARM_GROWTH_MAX - FARM_GROWTH_SOWN) as f64;
 pub const FARM_GROWTH_SOWN: u8 = 1;
 pub const FARM_GROWTH_MAX: u8 = 15;
 
@@ -10853,6 +10865,41 @@ pub(crate) fn venue_and_rank(global_rank: usize, venues: usize) -> (usize, usize
 }
 
 /// The job board resource.
+/// ★ JOB SEQUENCE (Ben, live 2026-09-01: "they do a job, haul, do job,
+/// haul"). One record per colonist per game day of WHAT KIND of job each
+/// claim was -- work or haul -- so the back-and-forth he watched has a
+/// number: `alternations` (work->haul or haul->work transitions) and the
+/// longest run of consecutive work claims. Reset daily by the census.
+#[derive(Default, Clone, Copy, Debug, PartialEq)]
+pub struct JobSeq {
+    pub works: u32,
+    pub hauls: u32,
+    pub alternations: u32,
+    pub streak: u32,
+    pub max_work_streak: u32,
+    pub last_is_haul: Option<bool>,
+}
+
+impl JobSeq {
+    pub fn note(&mut self, is_haul: bool) {
+        if is_haul {
+            self.hauls += 1;
+        } else {
+            self.works += 1;
+        }
+        if self.last_is_haul.is_some_and(|l| l != is_haul) {
+            self.alternations += 1;
+        }
+        if is_haul {
+            self.streak = 0;
+        } else {
+            self.streak += 1;
+            self.max_work_streak = self.max_work_streak.max(self.streak);
+        }
+        self.last_is_haul = Some(is_haul);
+    }
+}
+
 #[derive(Default)]
 pub struct JobBoard {
     /// ★ DETERMINISTIC COST PROXY (roadmap item 39, 2026-08-19).
@@ -12054,6 +12101,8 @@ pub struct JobBoard {
     /// producer/drain split ROW 38 uses for births, and for the same reason:
     /// each half runs where the world it needs is legible.
     pub pending_house: Option<i64>,
+    /// JOB SEQUENCE records for the current game day (see `JobSeq`).
+    pub job_seq: HashMap<common::uid::Uid, JobSeq>,
     /// ★ ALARM v1 (Ben: "a method for colonists to sound a alarm and base
     /// that on sound distance radius"): the live cry, `(where, until)`.
     /// Raised at the colony's Defend transition from the first perceiver's
@@ -21911,6 +21960,40 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // from here. `growth_logged_day` is the sibling of
                     // `immigration_day` in every respect.
                     let day_changed = board.growth_logged_day != Some(today);
+                    // ★ JOB SEQUENCE CENSUS -- Ben's "job, haul, job, haul"
+                    // as a number, per lane per day. `haul_share_pct` is by
+                    // CLAIM COUNT (an errand tally, not hours: row 48's
+                    // caveat applies; the time-held lane tally is beside it).
+                    {
+                        let mut by_lane: HashMap<
+                            Option<common::bastion::WorkType>,
+                            (u32, u32, u32, u32, u32),
+                        > = HashMap::new();
+                        for (u, seq) in board.job_seq.iter() {
+                            let lane = board.professions.get(u).copied();
+                            let e = by_lane.entry(lane).or_default();
+                            e.0 += 1;
+                            e.1 += seq.works;
+                            e.2 += seq.hauls;
+                            e.3 += seq.alternations;
+                            e.4 += seq.max_work_streak;
+                        }
+                        for (lane, (n, works, hauls, alts, streaks)) in by_lane {
+                            info!(
+                                day = today,
+                                ?lane,
+                                colonists = n,
+                                works,
+                                hauls,
+                                alternations = alts,
+                                haul_share_pct = hauls * 100 / (works + hauls).max(1),
+                                mean_alternations = alts as f32 / n.max(1) as f32,
+                                mean_max_work_streak = streaks as f32 / n.max(1) as f32,
+                                "bastion: JOB SEQUENCE CENSUS — work->haul->work alternations per lane per day (Ben, live: \"they do a job, haul, do job, haul\")"
+                            );
+                        }
+                        board.job_seq.clear();
+                    }
                     let target_pop = immigration_target_pop(&households);
                     // ★ BEN'S RULING, 2026-09-01: a colonist with no bed is
                     // ALLOWED and takes a MOOD penalty — "it's only what they
@@ -25626,8 +25709,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     }
                                 } else if g >= FARM_GROWTH_SOWN {
                                     let ck = (cpos.x, cpos.y, cpos.z);
+                                    // Day-clock frame: the stamp and the
+                                    // threshold are both TimeOfDay seconds.
+                                    // A stamp saved in the old sim-seconds
+                                    // frame reads as ancient once, stages up
+                                    // once, and is re-stamped in this frame.
+                                    let now_tod = rtsim.rt_state().data().time_of_day.0;
                                     let last =
-                                        board.farm_growth.get(&ck).copied().unwrap_or(time.0);
+                                        board.farm_growth.get(&ck).copied().unwrap_or(now_tod);
                                     // ITEM 24: the season BITES here. Winter
                                     // pauses growth entirely (None); other
                                     // seasons scale the stage interval.
@@ -25635,7 +25724,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         farm_season(rtsim.rt_state().data().time_of_day.0);
                                     let stage_secs = season_stage_factor(season)
                                         .map(|f| FARM_STAGE_SECS * f);
-                                    if stage_secs.is_some_and(|ss| time.0 - last >= ss) {
+                                    if stage_secs.is_some_and(|ss| now_tod - last >= ss) {
                                         if let Ok(nb) = crop.with_attr(Growth(g + 1)) {
                                             // Treatment beside outcome, per
                                             // subject (the standing lesson).
@@ -25648,7 +25737,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             stage_ups.push((cpos, nb, g + 1));
                                         }
                                     } else {
-                                        board.farm_growth.entry(ck).or_insert(time.0);
+                                        board.farm_growth.entry(ck).or_insert(now_tod);
                                     }
                                 }
                             },
@@ -25839,7 +25928,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
 
             for (cpos, nb, g) in stage_ups {
                 block_change.set(cpos, nb);
-                board.farm_growth.insert((cpos.x, cpos.y, cpos.z), time.0);
+                board.farm_growth.insert(
+                    (cpos.x, cpos.y, cpos.z),
+                    rtsim.rt_state().data().time_of_day.0,
+                );
                 if g == FARM_GROWTH_MAX {
                     info!(pos = ?cpos, "bastion: crop MATURE");
                 }
@@ -33830,7 +33922,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 {
                                     block_change.set(job.pos, nb);
                                     let ck = (job.pos.x, job.pos.y, job.pos.z);
-                                    board.farm_growth.insert(ck, time.0);
+                                    board.farm_growth.insert(ck, rtsim.rt_state().data().time_of_day.0);
                                     // ★★ ROW 53b: A GUESS IS NOT A DECISION,
                                     // AND THIS IS THE ONLY PLACE THAT KNOWS
                                     // THE DIFFERENCE. The census is derived
@@ -41674,6 +41766,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 }
                 let mut claimed_cell = None;
                 let mut claimed_job_pos = None;
+                // JOB SEQUENCE: read the kind before the mutable borrow below.
+                if let Some(is_haul) = board
+                    .jobs
+                    .get(&job_id)
+                    .map(|j| j.work == common::bastion::WorkType::Haul)
+                {
+                    board.job_seq.entry(*uid).or_default().note(is_haul);
+                }
                 if let Some(job) = board.jobs.get_mut(&job_id) {
                     job.claimed_by = Some(*uid);
                     job.reservation = job.reservation.or(fetch_rid);
@@ -47251,6 +47351,52 @@ mod tests {
         // (mutation `gz + 1 >= line_z` -> a redundant lift -> red)
         let on_surface = |_x: i32, _y: i32, _h: i32| Some(9);
         assert_eq!(lift_over_ground(&[a, b], on_surface), vec![a, b], "a line resting on the surface is not lifted");
+    }
+
+    /// ★ BEN'S RULING: real grow cycles. Guards `FARM_CYCLE_DAYS` against the
+    /// rejected setting (under three game days) and `FARM_STAGE_SECS` against
+    /// drifting out of the day-clock frame.
+    #[test]
+    fn the_grow_cycle_is_days_on_the_day_clock_not_minutes() {
+        assert!(
+            FARM_CYCLE_DAYS >= 3.0,
+            "a cycle under three game days is the setting Ben rejected"
+        );
+        let stages = (FARM_GROWTH_MAX - FARM_GROWTH_SOWN) as f64;
+        assert!(
+            (FARM_STAGE_SECS * stages - FARM_CYCLE_DAYS * common::resources::DAY).abs() < 1e-6,
+            "sown->mature must span exactly FARM_CYCLE_DAYS of TimeOfDay"
+        );
+        assert!(
+            FARM_STAGE_SECS > 3600.0,
+            "one stage is longer than a game hour: {FARM_STAGE_SECS}"
+        );
+        // Seasons scale it; winter halts it.
+        assert_eq!(season_stage_factor(common::time::Season::Winter), None);
+        assert!(season_stage_factor(common::time::Season::Summer).unwrap() < 1.0);
+    }
+
+    /// ★ JOB SEQUENCE: the record behind Ben's "job, haul, job, haul".
+    /// Guards `JobSeq::note` -- alternation counts transitions only, the
+    /// work streak counts consecutive WORK claims and is closed by a haul.
+    #[test]
+    fn the_job_sequence_record_counts_alternations_and_work_streaks() {
+        let mut s = JobSeq::default();
+        for h in [false, true, false, true] {
+            s.note(h);
+        }
+        assert_eq!((s.works, s.hauls, s.alternations, s.max_work_streak), (2, 2, 3, 1), "{s:?}");
+        let mut t = JobSeq::default();
+        for h in [false, false, false, true, false] {
+            t.note(h);
+        }
+        assert_eq!((t.works, t.hauls, t.alternations, t.max_work_streak), (4, 1, 2, 3), "{t:?}");
+        // The false direction: a day of pure work is zero alternations.
+        let mut w = JobSeq::default();
+        for _ in 0..5 {
+            w.note(false);
+        }
+        assert_eq!((w.alternations, w.max_work_streak, w.hauls), (0, 5, 0));
     }
 
     #[test]
