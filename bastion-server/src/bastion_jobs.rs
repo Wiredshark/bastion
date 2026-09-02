@@ -8607,6 +8607,36 @@ pub(crate) fn patrol_leg(
 pub static PATROLS_POSTED: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// ★ AN ADOPTED TOWN HAS BEEN LIVING HERE (2026-09-02). Both flat arms
+/// adopted 49 colonists at full hunger; all 49 crossed the "fed" line in
+/// the same 300-tick window 0.45 day later (1.0 -> 0.3 at 0.000889/s is
+/// ~23,600 ticks) -- a cliff no real town has. A colonist's FIRST needs
+/// are drawn from its uid: hunger and rest in 0.55..=1.0, recreation in
+/// 0.7..=1.0, deterministic, so meals spread across the day. Persisted
+/// needs (a restart) are untouched; `BASTION_NO_ADOPT_STAGGER` = full.
+pub fn staggered_initial_needs(uid: u64) -> common::comp::bastion::Needs {
+    if std::env::var_os("BASTION_NO_ADOPT_STAGGER").is_some() || uid == 0 {
+        return common::comp::bastion::Needs::default();
+    }
+    // splitmix64 on the uid: three independent-enough lanes.
+    let mut x = uid.wrapping_mul(0x9E37_79B9_7F4A_7C15);
+    let mut next = || {
+        x = x.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = x;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        ((z ^ (z >> 31)) % 10_000) as f32 / 10_000.0
+    };
+    let h = next();
+    let r = next();
+    let c = next();
+    common::comp::bastion::Needs {
+        hunger: 0.55 + 0.45 * h,
+        rest: 0.55 + 0.45 * r,
+        recreation: 0.7 + 0.3 * c,
+    }
+}
+
 pub const ADOPTED_CONTAINER_MIN_SOLID_BELOW: i32 = 3;
 
 /// How far down the scan looks. One past the threshold is all the ruling can
@@ -48466,6 +48496,27 @@ mod tests {
         // Nothing to fall back on: stays a hauler (not in the output).
         let d2 = cap_haul_lane(&[(u(5), W::Haul, 1), (u(6), W::Haul, 2)], &HashMap::new(), &HashMap::new(), 1);
         assert!(d2.is_empty());
+    }
+
+    /// ★ STAGGERED FIRST NEEDS pinned: in bounds, deterministic, distinct
+    /// across uids, and identity (full) for uid 0.
+    #[test]
+    fn first_needs_are_staggered_deterministically_within_bounds() {
+        let a = staggered_initial_needs(7);
+        let b = staggered_initial_needs(7);
+        assert_eq!((a.hunger, a.rest, a.recreation), (b.hunger, b.rest, b.recreation), "deterministic");
+        let mut lows = 0;
+        for u in 1..=200u64 {
+            let n = staggered_initial_needs(u);
+            assert!((0.55..=1.0).contains(&n.hunger) && (0.55..=1.0).contains(&n.rest), "{u}: {n:?}");
+            assert!((0.7..=1.0).contains(&n.recreation));
+            if n.hunger < 0.8 {
+                lows += 1;
+            }
+        }
+        assert!(lows > 40 && lows < 160, "spread, not clumped: {lows} of 200 below 0.8");
+        let z = staggered_initial_needs(0);
+        assert_eq!(z.hunger, 1.0, "uid 0: identity (full)");
     }
 
     #[test]

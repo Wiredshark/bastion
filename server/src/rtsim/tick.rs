@@ -1607,7 +1607,14 @@ impl<'a> System<'a> for Sys {
                                 // wholesale-replace like the bag (None =
                                 // a genuine first promote keeps defaults).
                                 colonist.needs.map_or_else(
-                                    comp::bastion::Needs::default,
+                                    // A genuine first promote: staggered by uid, so
+                                    // the town does not all get hungry at once
+                                    // (see `staggered_initial_needs`).
+                                    || {
+                                        bastion_server::bastion_jobs::staggered_initial_needs(
+                                            uids.get(entity).map(|u| u.0.get()).unwrap_or(0),
+                                        )
+                                    },
                                     |(hunger, rest, recreation)| comp::bastion::Needs {
                                         hunger,
                                         rest,
