@@ -1261,6 +1261,9 @@ pub static GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
 /// branches can never be credited with each other's work: conflating them is
 /// exactly the mistake that made me attribute 168 embeds to a branch that had
 /// fired 4 times.
+/// ★ W4: assists whose body had a rival kinematic write dropped this tick.
+pub static ASSIST_RIVAL_WRITES_DROPPED: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
 pub static CHASER_GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
@@ -1523,6 +1526,44 @@ pub static ROUTE_PREV_SOLID_ALL: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 pub static ROUTE_PREV_CLEAR_ALL: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
+
+/// ★ W4 (2026-09-02): the window inside which the same cell promised to the
+/// same body again is a FAILED assist, not a new one (5 s at 30 tps).
+pub(crate) const ASSIST_REPEAT_WINDOW_TICKS: u64 = 150;
+
+/// ★ W4 DID NOT STICK: was this body assisted onto this very cell within
+/// the window? A landed vault puts the body ON the cell, the route head
+/// moves on, and the next assist (if any) names a different cell; the same
+/// cell again means a rival writer put the body back.
+pub(crate) fn assist_repeat_is_a_failure(
+    last: Option<(Vec3<i32>, u64)>,
+    head: Vec3<i32>,
+    now: u64,
+) -> bool {
+    last.is_some_and(|(h, t)| h == head && now.saturating_sub(t) <= ASSIST_REPEAT_WINDOW_TICKS)
+}
+
+/// ★ W4 THE ASSIST IS THE LAST WRITER OF ITS TICK. The mover's deferred
+/// writes (a refused-into-rock hold, a chaser hold, an override glide) are
+/// pushed before the assist decides and drained after the assist applies,
+/// each carrying the position the body had BEFORE the assist — so every
+/// assisted move was undone in the same tick (Ben's uid 36: 24 "completed"
+/// vaults at one fence in 45 s; b1: 814 vault assists made of three cells
+/// repeated 687, 127 and 63 times; not one landed). The assist drops the
+/// body's rival writes and leaves ONE entry of its own, so the mover's
+/// drain writes the promised cell and keeps owning the body. Returns how
+/// many rival writes were dropped.
+pub(crate) fn assist_outranks_rival_writes<E: PartialEq + Copy>(
+    pending: &mut Vec<(E, Vec3<f32>, Vec3<f32>, &'static str)>,
+    entity: E,
+    at: Vec3<f32>,
+) -> usize {
+    let before = pending.len();
+    pending.retain(|(e, ..)| *e != entity);
+    let dropped = before - pending.len();
+    pending.push((entity, at, Vec3::zero(), "assist-wins"));
+    dropped
+}
 
 /// Would the search-gap bridge's override be walking a body INTO ROCK?
 ///
@@ -12977,6 +13018,11 @@ pub struct JobBoard {
     /// leniency, not silence: an exploding rate here is the tracked-red
     /// that says the MOVER needs real work, and the fleet judge reads it.
     pub move_assists: HashMap<&'static str, u32>,
+    /// ★ W4: the last cell each body was assisted onto, and when — the DID
+    /// NOT STICK witness reads it (the same cell promised again within
+    /// ASSIST_REPEAT_WINDOW_TICKS means a rival writer undid the move).
+    pub assist_last: HashMap<u64, (Vec3<i32>, u64)>,
+    pub assist_repeats: u32,
     /// ★ BUILDING PURPOSES (Ben: "every building needs to be labeled for
     /// its purpose and uses for the colonists"). The adopted town's
     /// non-residential buildings, registered at founding from worldgen's
@@ -33171,11 +33217,12 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                     // high band. The band excludes tall
                                     // sprite obstacles (a 2m hedge is a
                                     // wall, not a hurdle).
-                                    let vaultable = front_block.is_some_and(|b| {
-                                        b.get_sprite().is_some()
-                                            && b.is_solid()
-                                            && (0.2..=1.6).contains(&b.solid_height())
-                                    }) && (head.z - feet.z) <= 1;
+                                    // ★ W4: the body and the router share
+                                    // one hurdle predicate (a window is not
+                                    // a hurdle).
+                                    let vaultable = front_block
+                                        .is_some_and(|b| common::path::is_hurdle(&b))
+                                        && (head.z - feet.z) <= 1;
                                     let class = if vaultable {
                                         "vault"
                                     } else if head.z > feet.z {
@@ -33284,6 +33331,35 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         .move_assists
                                         .entry(class)
                                         .or_insert(0) += 1;
+                                    // ★ W4 DID NOT STICK (Ben's uid 36: 24
+                                    // "completed" vaults at one fence in
+                                    // 45 s; b1: 814 vaults made of three
+                                    // cells). The same cell promised to the
+                                    // same body again within the window
+                                    // means the move was undone. Exact for
+                                    // the first 16, sampled after.
+                                    if let Some(u) = uids.get(entity).map(|u| u.0.get()) {
+                                        let repeat = assist_repeat_is_a_failure(
+                                            board.assist_last.get(&u).copied(),
+                                            head,
+                                            tick.0,
+                                        );
+                                        board.assist_last.insert(u, (head, tick.0));
+                                        if repeat {
+                                            board.assist_repeats =
+                                                board.assist_repeats.saturating_add(1);
+                                            let n = board.assist_repeats;
+                                            if n <= 16 || n.is_power_of_two() {
+                                                info!(
+                                                    colonist = u,
+                                                    ?head,
+                                                    class,
+                                                    repeats = n,
+                                                    "bastion: MOVE ASSIST DID NOT STICK — the same cell promised to the same body again within 5 s; a rival writer undid the move"
+                                                );
+                                            }
+                                        }
+                                    }
                                     // ★ THE STEP-CLASS DISCRIMINATOR (next
                                     // hunt): 198 step-assists per window are
                                     // the old Empty-front stall mass. The
@@ -37002,9 +37078,34 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
         // ★ MOVE ASSIST apply (deferred past the upkeep join's positions
         // borrow): the router promised these cells; the moves complete.
         for (entity, head) in pending_assists.drain(..) {
+            let at = head.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
+            // ★ W4 THE ASSIST IS THE LAST WRITER OF ITS TICK: the mover's
+            // deferred writes for this body (pushed before the assist
+            // decided, drained after it applies, carrying the pre-assist
+            // position) are dropped and replaced by one entry of the
+            // assist's own — so the mover's drain writes the promised cell
+            // and keeps owning the body. BASTION_NO_ASSIST_OUTRANK restores
+            // today's order (the falsifier's control).
+            if std::env::var_os("BASTION_NO_ASSIST_OUTRANK").is_none() {
+                let dropped = assist_outranks_rival_writes(&mut pending_kinematic, entity, at);
+                if dropped > 0 {
+                    let n = ASSIST_RIVAL_WRITES_DROPPED
+                        .fetch_add(1, core::sync::atomic::Ordering::Relaxed)
+                        + 1;
+                    if n <= 4 || n.is_power_of_two() {
+                        info!(
+                            colonist = uids.get(entity).map(|u| u.0.get()),
+                            ?head,
+                            dropped,
+                            assists_with_rivals = n,
+                            "bastion: MOVE ASSIST OUTRANKS THE MOVER — the mover's stale write for this body was dropped; the assist is the last writer of its tick"
+                        );
+                    }
+                }
+            }
             if let Some(p) = positions.get_mut(entity) {
                 let prev = p.0;
-                p.0 = head.map(|e| e as f32) + Vec3::new(0.5, 0.5, 0.0);
+                p.0 = at;
                 pos_write_diag(
                     "assist-apply",
                     uids.get(entity).map(|u| u.0.get()),
@@ -50149,6 +50250,99 @@ mod tests {
         road.insert(Vec2::new(0, 0));
         assert!(dilate_columns(&cells, 1, &road).contains(&Vec2::new(0, 0)), "the tile's own cell stays");
         assert_eq!(dilate_columns(&cells, EAVES_MARGIN, &none).len(), 81);
+    }
+
+    /// ★ W4 pinned: the assist drops every rival write for ITS body and
+    /// leaves one of its own at the end; other bodies' writes are untouched.
+    /// Planted defect: skip the retain — the stale hold survives and the
+    /// second assert is red.
+    #[test]
+    fn an_assist_is_the_last_writer_of_its_tick() {
+        let stale = Vec3::new(1.5, 1.5, 181.0);
+        let at = Vec3::new(1.5, 3.5, 181.0);
+        let mut pending: Vec<(u32, Vec3<f32>, Vec3<f32>, &'static str)> = vec![
+            (7, stale, Vec3::zero(), "chaser-refused-rock"),
+            (9, Vec3::new(5.0, 5.0, 181.0), Vec3::unit_y(), "chaser-override"),
+            (7, stale, Vec3::zero(), "chaser-hold"),
+        ];
+        let dropped = assist_outranks_rival_writes(&mut pending, 7u32, at);
+        assert_eq!(dropped, 2, "both of the body's rival writes are dropped");
+        assert!(
+            !pending.iter().any(|(e, p, ..)| *e == 7 && *p == stale),
+            "the stale hold is gone"
+        );
+        assert_eq!(
+            pending.last().copied(),
+            Some((7, at, Vec3::zero(), "assist-wins")),
+            "the assist is the last writer"
+        );
+        assert_eq!(
+            pending.iter().filter(|(e, ..)| *e == 9).count(),
+            1,
+            "another body's write is untouched"
+        );
+        assert_eq!(
+            assist_outranks_rival_writes(&mut pending, 11u32, at),
+            0,
+            "no rival: nothing dropped, one entry added"
+        );
+    }
+
+    /// ★ W4 pinned: the DID NOT STICK witness fires only for the same cell
+    /// within the window. Planted defect: compare xy only, or drop the
+    /// window — the third or fourth assert goes red.
+    #[test]
+    fn a_repeated_assist_within_the_window_is_a_failure() {
+        let head = Vec3::new(6627, 25843, 181);
+        assert!(!assist_repeat_is_a_failure(None, head, 1000), "a first assist is not a repeat");
+        assert!(
+            assist_repeat_is_a_failure(Some((head, 1000)), head, 1100),
+            "the same cell 100 ticks later is a failure"
+        );
+        assert!(
+            !assist_repeat_is_a_failure(Some((head, 1000)), head + Vec3::unit_y(), 1100),
+            "a different cell is progress"
+        );
+        assert!(
+            !assist_repeat_is_a_failure(
+                Some((head, 1000)),
+                head,
+                1000 + ASSIST_REPEAT_WINDOW_TICKS + 1
+            ),
+            "outside the window it is a new errand"
+        );
+        assert!(
+            assist_repeat_is_a_failure(Some((head, 1000)), head, 1000 + ASSIST_REPEAT_WINDOW_TICKS),
+            "the window is inclusive"
+        );
+    }
+
+    /// ★ W4 pinned: a fence is a hurdle, a window is not, a tall sprite is
+    /// not. Planted defect: drop the blocks_colonist_body exclusion — the
+    /// window asserts go red.
+    #[test]
+    fn a_window_is_not_a_hurdle_but_a_fence_is() {
+        use common::terrain::{Block, SpriteKind};
+        assert!(
+            common::path::is_hurdle(&Block::air(SpriteKind::FenceWoodWoodland)),
+            "a fence (1.09) is vaulted"
+        );
+        assert!(
+            !common::path::is_hurdle(&Block::air(SpriteKind::Window1)),
+            "a window is not a hurdle"
+        );
+        assert!(
+            !common::path::is_hurdle(&Block::air(SpriteKind::WitchWindow)),
+            "a witch window is a window"
+        );
+        assert!(
+            !common::path::is_hurdle(&Block::air(SpriteKind::Tomato)),
+            "a 1.65 sprite is a wall, not a hurdle"
+        );
+        assert!(
+            !common::path::is_hurdle(&Block::air(SpriteKind::Empty)),
+            "no sprite, no hurdle"
+        );
     }
 
     #[test]

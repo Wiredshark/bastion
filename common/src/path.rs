@@ -1224,11 +1224,26 @@ pub fn blocks_colonist_body(blk: &Block) -> bool {
                 | crate::terrain::SpriteKind::Window2
                 | crate::terrain::SpriteKind::Window3
                 | crate::terrain::SpriteKind::Window4
+                | crate::terrain::SpriteKind::WitchWindow
                 | crate::terrain::SpriteKind::WindowArabic
                 | crate::terrain::SpriteKind::SeaDecorWindowHor
                 | crate::terrain::SpriteKind::SeaDecorWindowVer
         )
     })
+}
+
+/// ★ bastion W4 (2026-09-02): THE ONE HURDLE PREDICATE the router and the
+/// body share. A hurdle is a waist-band solid sprite (0.2..=1.6: a fence at
+/// 1.09, a chest, a counter) that a body vaults in two blocks of travel.
+/// A WINDOW IS NOT A HURDLE: the body's glide already refuses windows
+/// (`blocks_colonist_body`), so a router that vaulted them promised cells
+/// no body could take — Ben's colonist 233 stood at a house window for 16
+/// "completed" vaults. Generator and consumer must agree, so both call this.
+pub fn is_hurdle(blk: &Block) -> bool {
+    blk.get_sprite().is_some()
+        && blk.is_solid()
+        && (0.2..=1.6).contains(&blk.solid_height())
+        && !blocks_colonist_body(blk)
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -1923,12 +1938,10 @@ where
                         .filter_map(move |dir| {
                             let hurdle = pos + dir;
                             let landing = pos + dir * 2;
-                            let is_hurdle = vol.get(hurdle).is_ok_and(|b| {
-                                b.get_sprite().is_some()
-                                    && b.is_solid()
-                                    && (0.2..=1.6).contains(&b.solid_height())
-                            });
-                            (is_hurdle && is_walkable(&landing)).then(|| {
+                            // ★ W4: one predicate with the body
+                            // (`is_hurdle`): a window is not a hurdle.
+                            let hurdle_ok = vol.get(hurdle).is_ok_and(|b| is_hurdle(&b));
+                            (hurdle_ok && is_walkable(&landing)).then(|| {
                                 let next_node = Node {
                                     pos: landing,
                                     last_dir: dir.xy(),
