@@ -16905,6 +16905,20 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             .get(vek::Vec3::new(max_xy.x, max_xy.y, hint_z))
                             .is_ok();
                     if ready {
+                        // ★ ADOPTION REALISM: these are the adopted town's own
+                        // plots, placed here once the chunk loads -- the hand-off
+                        // saw an empty board.farms (plots=0). A farm among them
+                        // starts lived-in (`adopted_sow_stage`) for the first day.
+                        if kind == DesignationKind::Farm {
+                            board.adopted_farm_plots.push((min_xy, max_xy));
+                            info!(
+                                min = ?min_xy,
+                                max = ?max_xy,
+                                plots = board.adopted_farm_plots.len(),
+                                until = ?board.adopted_stagger_until,
+                                "bastion: ADOPTED FIELD marked for lived-in first sows"
+                            );
+                        }
                         // ★ AN ADOPTED HOUSE IS FURNISHED (2026-08-21, found
                         // by playing a village): mapping House -> Bed painted
                         // a BUILD-A-BED job in every cell of every house —
