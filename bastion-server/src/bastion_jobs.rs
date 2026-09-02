@@ -4035,6 +4035,21 @@ pub(crate) const HAUL_CHAIN_RADIUS: f32 = 12.0;
 /// conservative, they deposit with the rest either way).
 pub(crate) const HAUL_CHAIN_MAX_LOAD: u32 = 16;
 
+/// ★ BATCHED HAULS (Ben, live 2026-09-01: "a farmer should till the field
+/// and only haul at the end of the day or when there's a sizable backlog;
+/// the same for all jobs"). A colonist whose lane is not Haul may claim a
+/// haul only in the LAST WORK HOUR or when the town's admitted haul
+/// backlog is at least a full chain; a Haul-lane colonist hauls any time.
+/// `BASTION_NO_HAUL_GATE` restores the old behaviour (identity) for A/B.
+pub const HAUL_BACKLOG_LOADS: u32 = HAUL_CHAIN_MAX_LOAD;
+/// The Work block is 8..=15 (`default_schedule_block`); 15 is shift end.
+pub const LAST_WORK_HOUR: u32 = 15;
+pub(crate) fn haul_admits(is_hauler: bool, hour: u32, backlog_loads: u32) -> bool {
+    is_hauler || hour % 24 == LAST_WORK_HOUR || backlog_loads >= HAUL_BACKLOG_LOADS
+}
+pub static HAUL_CLAIMS_GATED: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+
 /// ★ DEDICATED HAULERS (Ben, live 2026-09-01: "we should have dedicated
 /// haulers"). How many the town keeps in the Haul lane: one per
 /// `COLONISTS_PER_HAULER`, and at least one once the roster reaches
@@ -12634,6 +12649,8 @@ pub struct JobBoard {
     pub pending_house: Option<i64>,
     /// JOB SEQUENCE records for the current game day (see `JobSeq`).
     pub job_seq: HashMap<common::uid::Uid, JobSeq>,
+    /// Loads the haul generator admitted at its last firing (see `haul_admits`).
+    pub haul_backlog_loads: u32,
     /// GUARD CENSUS samples for the current game day: uid -> (plaza,
     /// entrance, street, elsewhere) counts during the Work block.
     pub guard_census: HashMap<common::uid::Uid, (u32, u32, u32, u32)>,
@@ -22805,6 +22822,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 e.9[k] += seq.travel_by_class[k];
                             }
                         }
+                        info!(
+                            day = today,
+                            haul_claims_gated =
+                                HAUL_CLAIMS_GATED.swap(0, core::sync::atomic::Ordering::Relaxed),
+                            backlog_loads = board.haul_backlog_loads,
+                            gate_off = std::env::var_os("BASTION_NO_HAUL_GATE").is_some(),
+                            "bastion: HAUL GATE CENSUS — non-hauler haul claims refused today (Ben: haul at shift end or on a backlog)"
+                        );
                         for (lane, (n, works, hauls, alts, streaks, scoped, in_zone, travel, far, by_class)) in by_lane {
                             info!(
                                 day = today,
@@ -25093,6 +25118,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     colonists = queue_snapshot.len(),
                     "bastion: HAUL-GEN why a load is or is not hauled"
                 );
+                board.haul_backlog_loads = candidates.len() as u32;
                 let candidates = canonical_haul_pickup_order(candidates);
                 for (cell, static_def, iuid) in candidates {
                     if pending >= cap {
@@ -42380,6 +42406,24 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 } else {
                     priority
                 };
+                // ★ BATCHED HAULS (see `haul_admits`): a worker stays on the
+                // work; the haul waits for shift end, a full backlog, or a
+                // hauler. Refusals are counted and printed daily.
+                let priority = if job.work == common::bastion::WorkType::Haul
+                    && priority > 0
+                    && std::env::var_os("BASTION_NO_HAUL_GATE").is_none()
+                    && !haul_admits(
+                        board.professions.get(uid).copied()
+                            == Some(common::bastion::WorkType::Haul),
+                        hour_of_day(rtsim.rt_state().data().time_of_day.0),
+                        board.haul_backlog_loads,
+                    )
+                {
+                    HAUL_CLAIMS_GATED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                    0
+                } else {
+                    priority
+                };
                 if priority == 0 {
                     { census.priority_zero += 1; continue; }
                 }
@@ -48736,6 +48780,20 @@ mod tests {
         let (houses, general) = town_store_frame(&board);
         assert!(!general);
         assert!(town_can_draw(&board, Vec3::new(4, 4, 2), &houses, general), "no general store: the shelf counts, as before");
+    }
+
+    /// ★ BATCHED HAULS pinned at both boundaries: the hour before shift end
+    /// refuses, shift end admits; a backlog one short of a chain refuses,
+    /// a full chain admits; a hauler is admitted whatever the clock says.
+    #[test]
+    fn the_haul_gate_admits_at_shift_end_or_a_full_backlog_or_for_haulers() {
+        assert!(!haul_admits(false, LAST_WORK_HOUR - 1, 0), "mid-shift, no backlog: stay on the work");
+        assert!(haul_admits(false, LAST_WORK_HOUR, 0), "shift end admits");
+        assert!(!haul_admits(false, 10, HAUL_BACKLOG_LOADS - 1), "one short of a chain refuses");
+        assert!(haul_admits(false, 10, HAUL_BACKLOG_LOADS), "a full chain admits");
+        assert!(haul_admits(true, 10, 0), "a hauler hauls any time");
+        assert!(!haul_admits(false, LAST_WORK_HOUR + 24 + 1, 0), "the hour wraps");
+        assert!(haul_admits(false, LAST_WORK_HOUR + 24, 0), "the hour wraps");
     }
 
     #[test]
