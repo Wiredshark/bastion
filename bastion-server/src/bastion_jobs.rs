@@ -17561,6 +17561,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     }
                     let mut running = 0u32;
                     let (mut fed, mut rested, mut total) = (0u32, 0u32, 0u32);
+                    // ★ HUNGER DISTRIBUTION (flat arm b2): `fed` is a 0.3 line and
+                    // the interrupt is 0.2; meals landed at hunger ~0.0. The
+                    // census now carries the distribution, not one line.
+                    let (mut hunger_sum, mut hunger_min, mut below_interrupt, mut starving) =
+                        (0.0f32, 1.0f32, 0u32, 0u32);
                     // ★ ITEM 36 (2026-08-21): DOWNED colonists, surfaced.
                     //
                     // A lethal plant proved the death transition fires
@@ -17600,6 +17605,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         if let Some(n) = needs {
                             if n.hunger > 0.3 {
                                 fed += 1;
+                            }
+                            hunger_sum += n.hunger;
+                            hunger_min = hunger_min.min(n.hunger);
+                            if n.hunger < 0.2 {
+                                below_interrupt += 1;
+                            }
+                            if n.hunger < 0.05 {
+                                starving += 1;
                             }
                             if n.rest > 0.3 {
                                 rested += 1;
@@ -17769,6 +17782,10 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         slowed,
                         idle,
                         fed,
+                        hunger_mean = if total > 0 { hunger_sum / total as f32 } else { 1.0 },
+                        hunger_min,
+                        below_interrupt,
+                        starving,
                         rested,
                         // PEOPLE WALK: `running` is the emergency gait. On a
                         // town at peace this must read ZERO; any sustained
