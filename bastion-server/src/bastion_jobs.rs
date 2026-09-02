@@ -35969,6 +35969,33 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         "bastion: ADOPTED FIELD SOWN AT A LIVED-IN STAGE — the town was here before you"
                                     );
                                 }
+                                // ★ THE FOUNDING HARVEST (H0, Ben live 2026-09-02): a founding
+                                // cell that comes up RIPE is harvested at once -- its yield goes
+                                // into the founding delivery queue (the general store, chunked)
+                                // and the cell restarts freshly sown. The town's own crops are
+                                // its winter stock from the first day. `BASTION_NO_FOUNDING_HARVEST`
+                                // leaves ripe cells standing for the harvest jobs.
+                                let sow_stage = if sow_stage >= FARM_GROWTH_MAX
+                                    && std::env::var_os("BASTION_NO_FOUNDING_HARVEST").is_none()
+                                {
+                                    let (units, _seeds) = wheat_harvest_yield(true);
+                                    match farm_crop_item(plan.crop) {
+                                        Some(item) => {
+                                            pending_seed_items.0.push((job.pos, item.to_string(), units));
+                                            info!(
+                                                pos = ?job.pos,
+                                                crop = ?plan.crop,
+                                                item,
+                                                units,
+                                                "bastion: FOUNDING HARVEST — a ripe founding crop is stocked at once; the cell restarts sown (Ben)"
+                                            );
+                                            FARM_GROWTH_SOWN
+                                        },
+                                        None => sow_stage,
+                                    }
+                                } else {
+                                    sow_stage
+                                };
                                 if let Ok(nb) = Block::air(plan.crop).with_attr(Growth(sow_stage)) {
                                     block_change.set(job.pos, nb);
                                     let ck = (job.pos.x, job.pos.y, job.pos.z);
