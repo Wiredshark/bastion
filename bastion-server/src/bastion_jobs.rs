@@ -47194,6 +47194,65 @@ mod tests {
         );
     }
 
+    /// ★ ROW D (review 2026-09-01): the airborne arm of `off_grade_verdict`
+    /// pinned AT its own boundary. Every earlier fixture with
+    /// `grounded=false` sat far outside OFF_GRADE_BLOCKS on both axes, so
+    /// dropping the distance clause (`!grounded` alone) stayed green.
+    /// Guards: `(!grounded && dest_xy.distance(pos_xy) >= OFF_GRADE_BLOCKS)`.
+    #[test]
+    fn off_grade_airborne_arm_is_pinned_at_its_own_boundary() {
+        let o = Vec2::new(100.0, 100.0);
+        // Airborne but within the lateral bound and at grade: NOT off grade.
+        // (mutation `!grounded` alone -> true -> red)
+        assert!(
+            !off_grade_verdict(false, o, 50.0, Vec2::new(100.0, 100.0 + OFF_GRADE_BLOCKS - 0.1), 50.0),
+            "airborne, 2.9 blocks off and at grade is not a rescue"
+        );
+        // Exactly at the lateral bound: off grade (mutation `>` -> red).
+        assert!(
+            off_grade_verdict(false, o, 50.0, Vec2::new(100.0, 100.0 + OFF_GRADE_BLOCKS), 50.0),
+            "airborne and exactly OFF_GRADE_BLOCKS off laterally is off grade"
+        );
+        // Grounded and far off laterally: NOT off grade -- the lateral arm is
+        // for bodies in the air only (mutation dropping `!grounded` -> red).
+        assert!(
+            !off_grade_verdict(true, o, 50.0, Vec2::new(100.0, 120.0), 50.0),
+            "a grounded body walking is never rescued for lateral distance alone"
+        );
+        // Airborne, no lateral offset, exactly at the vertical bound: off
+        // grade through the vertical arm, which does not care about grounded.
+        assert!(
+            off_grade_verdict(false, o, 50.0, o, 50.0 + OFF_GRADE_BLOCKS),
+            "exactly OFF_GRADE_BLOCKS above the exit is off grade"
+        );
+        assert!(
+            !off_grade_verdict(false, o, 50.0, o, 50.0 + OFF_GRADE_BLOCKS - 0.1),
+            "2.9 blocks above the exit is at grade"
+        );
+    }
+
+    /// ★ ROW D (review 2026-09-01): `lift_over_ground`'s comparison
+    /// `gz + 1 > line_z` pinned at BOTH boundaries. `gz` is the ground
+    /// block; the standable cell is `gz + 1`. Ground AT the line's height
+    /// (feet inside rock) must lift; ground one below (feet exactly on the
+    /// surface) must not.
+    #[test]
+    fn lift_over_ground_is_pinned_at_the_ground_equals_line_boundary() {
+        let a = Vec3::new(0, 0, 10);
+        let b = Vec3::new(6, 0, 10);
+        // Ground block at z=10 in the middle: the line runs THROUGH it.
+        // (mutation `gz > line_z` -> no lift -> red)
+        let in_rock = |x: i32, _y: i32, _h: i32| if (2..=4).contains(&x) { Some(10) } else { Some(9) };
+        let out = lift_over_ground(&[a, b], in_rock);
+        assert!(out.len() > 2, "ground at the line's own height must lift the walker");
+        assert!(out.iter().all(|w| w.z >= 10), "{out:?}");
+        assert!(out.iter().any(|w| w.z == 11), "the lifted waypoint stands on gz + 1 = 11: {out:?}");
+        // Ground block at z=9 everywhere: feet exactly on the surface.
+        // (mutation `gz + 1 >= line_z` -> a redundant lift -> red)
+        let on_surface = |_x: i32, _y: i32, _h: i32| Some(9);
+        assert_eq!(lift_over_ground(&[a, b], on_surface), vec![a, b], "a line resting on the surface is not lifted");
+    }
+
     #[test]
     fn a_trunk_waypoint_takes_its_own_columns_height() {
         // The two grades of the measured town. A tile whose ground is at 185
