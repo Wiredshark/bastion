@@ -1527,6 +1527,14 @@ pub static ROUTE_PREV_SOLID_ALL: core::sync::atomic::AtomicU64 =
 pub static ROUTE_PREV_CLEAR_ALL: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
+/// ★ W6-B (2026-09-02): is this route head a PROMISED CLIMB the body should be
+/// placed on at the stall? One step sideways at most, two or three up (the
+/// router's JUMPS/SCRAMBLES). A one-up step is the mover's own business; four
+/// up is not a move the router emits.
+pub(crate) fn promised_climb_at_stall(d: Vec3<i32>) -> bool {
+    d.xy().map(|e| e.abs()).reduce_max() <= 1 && (2..=3).contains(&d.z)
+}
+
 /// ★ W6 (2026-09-02): may this assist class act at all? A committed (trunk)
 /// walker has one owner and gets no assist -- EXCEPT a promised climb, which
 /// the trunk itself asked for (a waypoint two up). Vanilla travel gets none.
@@ -30308,12 +30316,59 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             blocks = %layers.join(" | "),
                                             "bastion: WEDGE PROBE — the blocks around a stalled fetch and the walker's route (north row first, west to east; # solid . air ~ filled ? unloaded)"
                                         );
+                                        // ★ W6-B: A PROMISED CLIMB IS TAKEN AT THE STALL. The
+                                        // assist's own clock never winds at a step (the
+                                        // override glide's bump resets it every tick); this
+                                        // watcher has just proven the body is not advancing.
+                                        // If the route's next cell is one step sideways and
+                                        // two or three up onto a standable cell, place the
+                                        // body on it through the deferred assist apply (the
+                                        // last writer of its tick) and skip the W2 ban: the
+                                        // climb was taken, not failed.
+                                        let climb_taken = std::env::var_os("BASTION_NO_SCRAMBLE_ASSIST").is_none()
+                                            && snap.as_ref().and_then(|sn| sn.route_head).is_some_and(|h| {
+                                                let air = |q: Vec3<i32>| {
+                                                    terrain.get(q).map(|b| !b.is_solid()).unwrap_or(false)
+                                                };
+                                                let solid = |q: Vec3<i32>| {
+                                                    terrain.get(q).map(|b| b.is_solid()).unwrap_or(false)
+                                                };
+                                                promised_climb_at_stall(h - f)
+                                                    && air(h)
+                                                    && air(h + Vec3::unit_z())
+                                                    && solid(h - Vec3::unit_z())
+                                            });
+                                        if climb_taken {
+                                            let h = snap.as_ref().and_then(|sn| sn.route_head).expect("checked above");
+                                            pending_assists.push((entity, h));
+                                            *board.move_assists.entry("climb-stall").or_insert(0) += 1;
+                                            if let Some(u) = uids.get(entity).map(|u| u.0.get()) {
+                                                let repeat = assist_repeat_is_a_failure(
+                                                    board.assist_last.get(&u).copied(),
+                                                    h,
+                                                    tick.0,
+                                                );
+                                                board.assist_last.insert(u, (h, tick.0));
+                                                if repeat {
+                                                    board.assist_repeats = board.assist_repeats.saturating_add(1);
+                                                }
+                                                info!(
+                                                    job = active.job,
+                                                    colonist = u,
+                                                    head = ?h,
+                                                    feet = ?f,
+                                                    repeat,
+                                                    "bastion: PROMISED CLIMB TAKEN AT THE STALL — the route's next cell is two up and standable; the body is placed on it"
+                                                );
+                                            }
+                                        }
                                         // ★ A WEDGED FETCH BANS THE CLIMB IT COULD NOT MAKE (W2):
                                         // the job leg's remedy, applied to the fetch leg. The
                                         // search profile key carries the bans, so the retained
                                         // route is discarded and the next search goes another
                                         // way. `BASTION_NO_FETCH_CLIMB_BAN` restores the old path.
-                                        if std::env::var_os("BASTION_NO_FETCH_CLIMB_BAN").is_none()
+                                        if !climb_taken
+                                            && std::env::var_os("BASTION_NO_FETCH_CLIMB_BAN").is_none()
                                             && let Some(sn) = snap.as_ref()
                                             && route_head_is_a_climb(f, sn.route_head)
                                         {
@@ -51045,6 +51100,20 @@ mod tests {
         road.insert(Vec2::new(0, 0));
         assert!(dilate_columns(&cells, 1, &road).contains(&Vec2::new(0, 0)), "the tile's own cell stays");
         assert_eq!(dilate_columns(&cells, EAVES_MARGIN, &none).len(), 81);
+    }
+
+    /// ★ W6-B pinned: a promised climb at the stall is one step sideways at
+    /// most and two or three up; a one-up step, a four-up wall and a far
+    /// head are not. Planted defect: accept dz 1 or dz 4 — the asserts go red.
+    #[test]
+    fn a_promised_climb_at_the_stall_is_two_or_three_up_and_adjacent() {
+        assert!(promised_climb_at_stall(Vec3::new(0, -1, 2)), "the terrace step");
+        assert!(promised_climb_at_stall(Vec3::new(1, 0, 3)), "a three-up scramble");
+        assert!(promised_climb_at_stall(Vec3::new(0, 0, 2)), "straight up two");
+        assert!(!promised_climb_at_stall(Vec3::new(0, 1, 1)), "a one-up step is the mover's");
+        assert!(!promised_climb_at_stall(Vec3::new(0, 1, 4)), "four up is a wall");
+        assert!(!promised_climb_at_stall(Vec3::new(2, 0, 2)), "two cells away is not adjacent");
+        assert!(!promised_climb_at_stall(Vec3::new(0, 1, -2)), "a drop is not a climb");
     }
 
     /// ★ W6 pinned: a promised climb is a hop (fires at the hop clock) and is
