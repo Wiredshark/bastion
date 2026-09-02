@@ -294,6 +294,7 @@ mod tests {
         SectionPayloadV1::Identity(IdentitySectionV1 {
             name: "Hedda".into(),
             profession: Some(WorkType::Craft),
+            assigned_zone: None,
             born_tick: Some(54_000),
             born_day_boot_relative: Some(0),
             parent_name: Some("Orm".into()),

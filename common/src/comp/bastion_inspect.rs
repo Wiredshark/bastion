@@ -524,6 +524,9 @@ pub struct IdentitySectionV1 {
     /// hysteresis, recomputed daily. `None` on day 0 or before any lane
     /// work. RUNTIME-ONLY: the board does not survive a restart.
     pub profession: Option<WorkType>,
+    /// ZONE ASSIGNMENT (Ben, 2026-09-01): the work zone this colonist is
+    /// assigned to, and whether a person (true) or the auto-assigner set it.
+    pub assigned_zone: Option<(crate::bastion::ZoneId, bool)>,
     /// `BastionColonist::born_tick`, the PERSISTENT rtsim `Data.tick`
     /// epoch. `None` for founders and settlers, who arrived grown.
     pub born_tick: Option<u64>,
@@ -1202,6 +1205,7 @@ mod tests {
         let ident = IdentitySectionV1 {
             name: "T".into(),
             profession: None,
+            assigned_zone: None,
             born_tick: None,
             born_day_boot_relative: None,
             parent_name: None,

@@ -59,6 +59,11 @@ pub fn provide(ctx: &InspectCtx<'_>) -> SectionPayloadV1 {
         // any lane work, or after a restart until the daily derivation
         // runs again. Not "no trade" — "not yet derived".
         profession: ctx.board.professions.get(&ctx.subject).copied(),
+        assigned_zone: ctx
+            .board
+            .assignments
+            .get(&ctx.subject)
+            .map(|(z, src)| (*z, *src == crate::bastion_jobs::AssignSource::Manual)),
         born_tick: rec.born_tick,
         // Carried ONLY so the panel can show it under a boot-relative
         // label. Never used to compute an age.

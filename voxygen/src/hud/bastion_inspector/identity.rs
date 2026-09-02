@@ -37,6 +37,19 @@ pub fn rows(payload: &SectionPayloadV1, frames: &InspectFramesV1) -> Vec<Inspect
         )
         .scoped("runtime-only; does not survive a restart"),
     );
+    // ZONE ASSIGNMENT (Ben: "we should be able to see that").
+    rows.push(InspectRow::new(
+        "Assigned to",
+        match d.assigned_zone {
+            Some((z, true)) => format!("zone {z} (set by hand)"),
+            Some((z, false)) => format!("zone {z} (auto)"),
+            None => "no zone (lane has none, or not yet assigned today)".to_string(),
+        },
+        "JobBoard::assignments",
+        "",
+        FrameV1::JobBoard,
+    ));
+
 
     // ★ AGE COMES FROM `born_tick` AGAINST `rtsim_tick`, NEVER FROM
     // `born_day`. `born_day` is stamped from `TimeOfDay`, which the server
@@ -195,6 +208,7 @@ mod tests {
         SectionPayloadV1::Identity(IdentitySectionV1 {
             name: "Hedda".into(),
             profession: None,
+            assigned_zone: None,
             born_tick,
             born_day_boot_relative: Some(2),
             parent_name: None,

@@ -10900,6 +10900,59 @@ impl JobSeq {
     }
 }
 
+/// ★ ZONE ASSIGNMENT (Ben, live 2026-09-01: "each work zone should be able
+/// to assign someone, whether through our AI or manually, and we should be
+/// able to SEE that"). Who set an assignment: the daily auto-assigner never
+/// touches a Manual entry; an Erase returns the colonist to Auto.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AssignSource {
+    Auto,
+    Manual,
+}
+
+/// The auto-assigner, pure. Every colonist whose lane has zones of its kind
+/// is placed on the zone with the fewest assignees PER CELL (farms by their
+/// field size, stockpiles for haulers); Manual entries are kept verbatim;
+/// a lane with no zone kind gets no entry (identity, not a guess).
+pub(crate) fn assign_zones(
+    lanes: &[(common::uid::Uid, common::bastion::WorkType)],
+    zones: &[(common::bastion::ZoneId, common::bastion::WorkType, usize)],
+    manual: &HashMap<common::uid::Uid, (common::bastion::ZoneId, AssignSource)>,
+) -> HashMap<common::uid::Uid, (common::bastion::ZoneId, AssignSource)> {
+    let mut out: HashMap<common::uid::Uid, (common::bastion::ZoneId, AssignSource)> = manual
+        .iter()
+        .filter(|(_, (_, src))| *src == AssignSource::Manual)
+        .map(|(u, v)| (*u, *v))
+        .collect();
+    let mut load: HashMap<common::bastion::ZoneId, f32> = HashMap::new();
+    for (z, _, _) in zones {
+        load.entry(*z).or_insert(0.0);
+    }
+    for (_, (z, _)) in out.iter() {
+        *load.entry(*z).or_insert(0.0) += 1.0;
+    }
+    let mut ordered: Vec<_> = lanes.iter().copied().collect();
+    ordered.sort_by_key(|(u, _)| u.0.get());
+    for (u, lane) in ordered {
+        if out.contains_key(&u) {
+            continue;
+        }
+        let best = zones
+            .iter()
+            .filter(|(_, k, cells)| *k == lane && *cells > 0)
+            .min_by(|a, b| {
+                let la = load[&a.0] / a.2 as f32;
+                let lb = load[&b.0] / b.2 as f32;
+                la.partial_cmp(&lb).unwrap_or(core::cmp::Ordering::Equal).then(a.0.cmp(&b.0))
+            });
+        if let Some((z, _, _)) = best {
+            out.insert(u, (*z, AssignSource::Auto));
+            *load.entry(*z).or_insert(0.0) += 1.0;
+        }
+    }
+    out
+}
+
 #[derive(Default)]
 pub struct JobBoard {
     /// ★ DETERMINISTIC COST PROXY (roadmap item 39, 2026-08-19).
@@ -12103,6 +12156,8 @@ pub struct JobBoard {
     pub pending_house: Option<i64>,
     /// JOB SEQUENCE records for the current game day (see `JobSeq`).
     pub job_seq: HashMap<common::uid::Uid, JobSeq>,
+    /// ZONE ASSIGNMENT: colonist -> (zone, who set it). See `assign_zones`.
+    pub assignments: HashMap<common::uid::Uid, (common::bastion::ZoneId, AssignSource)>,
     /// ★ ALARM v1 (Ben: "a method for colonists to sound a alarm and base
     /// that on sound distance radius"): the live cry, `(where, until)`.
     /// Raised at the colony's Defend transition from the first perceiver's
@@ -21960,6 +22015,45 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // from here. `growth_logged_day` is the sibling of
                     // `immigration_day` in every respect.
                     let day_changed = board.growth_logged_day != Some(today);
+                    // ★ ZONE ASSIGNMENT (daily): farms take the Farm lane,
+                    // stockpiles take the Haul lane; Manual entries survive.
+                    // Mine designations carry no ZoneId yet and are not
+                    // assigned here (named gap, not a guess).
+                    {
+                        let mut zones: Vec<(common::bastion::ZoneId, common::bastion::WorkType, usize)> =
+                            Vec::new();
+                        for (z, r) in board.farms.iter() {
+                            let c = ((r.max.x - r.min.x + 1) * (r.max.y - r.min.y + 1)).max(1) as usize;
+                            zones.push((*z, common::bastion::WorkType::Farm, c));
+                        }
+                        for (z, r) in board.stockpiles.iter() {
+                            let c = ((r.max.x - r.min.x + 1) * (r.max.y - r.min.y + 1)).max(1) as usize;
+                            zones.push((*z, common::bastion::WorkType::Haul, c));
+                        }
+                        let lanes: Vec<(common::uid::Uid, common::bastion::WorkType)> =
+                            board.professions.iter().map(|(u, w)| (*u, *w)).collect();
+                        let next = assign_zones(&lanes, &zones, &board.assignments);
+                        let manual = next.values().filter(|(_, s)| *s == AssignSource::Manual).count();
+                        let auto = next.len() - manual;
+                        for (z, kind, cells) in zones.iter() {
+                            let names: Vec<String> = next
+                                .iter()
+                                .filter(|(_, (zz, _))| zz == z)
+                                .map(|(u, (_, src))| format!("{}:{:?}", u.0.get(), src))
+                                .collect();
+                            info!(
+                                day = today,
+                                zone = z,
+                                ?kind,
+                                cells,
+                                assignees = names.len(),
+                                who = ?names,
+                                "bastion: ASSIGNMENT CENSUS — who works this zone, and who decided (Ben: see it)"
+                            );
+                        }
+                        info!(day = today, assigned_auto = auto, assigned_manual = manual, unassigned = lanes.len().saturating_sub(next.len()), zones = zones.len(), "bastion: ASSIGNMENT SUMMARY");
+                        board.assignments = next;
+                    }
                     // ★ JOB SEQUENCE CENSUS -- Ben's "job, haul, job, haul"
                     // as a number, per lane per day. `haul_share_pct` is by
                     // CLAIM COUNT (an errand tally, not hours: row 48's
@@ -47397,6 +47491,34 @@ mod tests {
             w.note(false);
         }
         assert_eq!((w.alternations, w.max_work_streak, w.hauls), (0, 5, 0));
+    }
+
+    /// ★ ZONE ASSIGNMENT pinned: balanced per cell, manual survives, a lane
+    /// with no zone gets nothing, no zones = no entries (identity).
+    #[test]
+    fn zone_assignment_balances_by_cell_keeps_manual_and_never_guesses() {
+        use common::bastion::WorkType as W;
+        let u = |n: u64| common::uid::Uid(std::num::NonZeroU64::new(n).expect("nonzero"));
+        let lanes = [(u(1), W::Farm), (u(2), W::Farm), (u(3), W::Farm), (u(4), W::Haul), (u(5), W::Chop)];
+        let zones = [(10u64, W::Farm, 100usize), (11, W::Farm, 20), (20, W::Haul, 9)];
+        let none = HashMap::new();
+        let a = assign_zones(&lanes, &zones, &none);
+        let big = a.values().filter(|(z, _)| *z == 10).count();
+        let small = a.values().filter(|(z, _)| *z == 11).count();
+        assert!(big > small, "the 100-cell field draws more farmers than the 20-cell one: {a:?}");
+        assert_eq!(a.get(&u(4)), Some(&(20, AssignSource::Auto)), "the hauler goes to the stockpile");
+        assert_eq!(a.get(&u(5)), None, "no Chop zone exists: no entry, not a guess");
+        assert!(a.values().all(|(_, s)| *s == AssignSource::Auto));
+        // Manual survives the daily pass, on a zone of the wrong kind even.
+        let mut manual = HashMap::new();
+        manual.insert(u(1), (20u64, AssignSource::Manual));
+        let b = assign_zones(&lanes, &zones, &manual);
+        assert_eq!(b.get(&u(1)), Some(&(20, AssignSource::Manual)));
+        // Erase = drop the manual entry: the next pass re-assigns automatically.
+        let c = assign_zones(&lanes, &zones, &none);
+        assert_eq!(c.get(&u(1)).map(|(_, s)| *s), Some(AssignSource::Auto));
+        // Identity: no zones, no entries.
+        assert!(assign_zones(&lanes, &[], &none).is_empty());
     }
 
     #[test]
