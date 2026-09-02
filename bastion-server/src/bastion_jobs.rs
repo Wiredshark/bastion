@@ -8050,6 +8050,17 @@ pub fn commitment_factor(
 /// day's plans route around it, short enough that tomorrow retries.
 pub const CLIMB_BAN_SECS: f64 = 300.0;
 
+/// ★ A WEDGED FETCH BANS THE CLIMB IT COULD NOT MAKE (W2, 2026-09-02).
+/// The fetch leg's search admits a two-block climb (a jump node) that the
+/// kinematic mover never makes on a fetch (the step/vault assist and the
+/// climb-ban recorder sit behind `fetch_steer.is_none()`): 26 of 42
+/// stalled fetches on one arm-day stood at one roof edge with
+/// `route_head` two blocks up. True when the route's next node is a
+/// climb (>= 2 up); a doorstep (1 up) is a step the mover takes.
+pub fn route_head_is_a_climb(feet: Vec3<i32>, head: Option<Vec3<i32>>) -> bool {
+    head.is_some_and(|h| h.z - feet.z >= 2)
+}
+
 /// ★ THE VAULT'S OWN CLOCK (contract-window evidence: 79 vaults for one
 /// farmer, each behind the full 10s STUCK_TIMEOUT — walk-freeze-pop on
 /// repeat). A strictly-verified vault (waist-high solid sprite, promised
@@ -29404,6 +29415,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             layers.push(format!("z{:+}:{}", dz, rows.join("/")));
                                         }
                                         let to_item = ip.map(|e| e.floor() as i32) - f;
+                                        let snap = agent.as_deref().map(|a| a.chaser.diagnostic_snapshot());
                                         info!(
                                             job = active.job,
                                             kind = ?job.kind,
@@ -29412,10 +29424,45 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             // The walker's own route (P1b): the first cut read
                                             // `fetch_steer` here, before the fetch assigns it,
                                             // and printed None on every probe.
-                                            chaser = ?agent.as_deref().map(|a| a.chaser.diagnostic_snapshot()),
+                                            chaser = ?snap,
                                             blocks = %layers.join(" | "),
                                             "bastion: WEDGE PROBE — the blocks around a stalled fetch and the walker's route (north row first, west to east; # solid . air ~ filled ? unloaded)"
                                         );
+                                        // ★ A WEDGED FETCH BANS THE CLIMB IT COULD NOT MAKE (W2):
+                                        // the job leg's remedy, applied to the fetch leg. The
+                                        // search profile key carries the bans, so the retained
+                                        // route is discarded and the next search goes another
+                                        // way. `BASTION_NO_FETCH_CLIMB_BAN` restores the old path.
+                                        if std::env::var_os("BASTION_NO_FETCH_CLIMB_BAN").is_none()
+                                            && let Some(sn) = snap.as_ref()
+                                            && route_head_is_a_climb(f, sn.route_head)
+                                        {
+                                            let cols: Vec<Vec2<i32>> = sn
+                                                .route_head
+                                                .iter()
+                                                .chain(sn.route_ahead.iter())
+                                                .map(|n| n.xy())
+                                                .collect();
+                                            let bans = &mut colonist.0.climb_bans;
+                                            bans.retain(|(_, until)| time.0 < *until);
+                                            for col in cols {
+                                                if !bans.iter().any(|(c, _)| *c == col) {
+                                                    bans.push((col, time.0 + CLIMB_BAN_SECS));
+                                                }
+                                            }
+                                            while bans.len() > 8 {
+                                                bans.remove(0);
+                                            }
+                                            board.fetch_progress.remove(&active.job);
+                                            info!(
+                                                job = active.job,
+                                                colonist = uids.get(entity).map(|u| u.0.get()),
+                                                feet = ?f,
+                                                head = ?sn.route_head,
+                                                ahead = ?sn.route_ahead,
+                                                "bastion: CLIMB BANNED (fetch) — the route's next node was a climb the body never makes; the next search goes another way"
+                                            );
+                                        }
                                     }
                                     if expires {
                                         board.fetch_stall_warned.remove(&active.job);
@@ -49874,6 +49921,20 @@ mod tests {
         assert!(deposit_chunks(0, 16).is_empty());
         assert_eq!(deposit_chunks(3, 0), vec![1, 1, 1], "a zero cap cannot loop");
         assert_eq!(deposit_chunks(144, u32::MAX).len(), 1, "the planted defect: no cap, one cell");
+    }
+
+    /// ★ W2 pinned: a route head two or more blocks above the feet is a
+    /// climb; a doorstep is not; no head is not. Planted defect: a
+    /// threshold of 1 would ban every doorstep and the second assert
+    /// goes red.
+    #[test]
+    fn a_route_head_two_up_is_a_climb_and_a_doorstep_is_not() {
+        let feet = Vec3::new(7748, 6328, 181);
+        assert!(route_head_is_a_climb(feet, Some(Vec3::new(7748, 6327, 183))), "the roof edge");
+        assert!(!route_head_is_a_climb(feet, Some(Vec3::new(7748, 6329, 182))), "a doorstep");
+        assert!(!route_head_is_a_climb(feet, Some(Vec3::new(7749, 6328, 181))), "flat");
+        assert!(!route_head_is_a_climb(feet, Some(Vec3::new(7749, 6328, 179))), "a drop");
+        assert!(!route_head_is_a_climb(feet, None), "no route");
     }
 
     #[test]
