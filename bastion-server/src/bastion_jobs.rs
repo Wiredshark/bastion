@@ -23140,7 +23140,17 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         {
                             let diy = common::time::SeasonConfig::current().days_in_year;
                             let tod = rtsim.rt_state().data().time_of_day.0;
-                            let roster_y = board.professions.len() as u32;
+                            // The consumer's roster (live colonists), not the
+                            // professions map: on b2's first compressed-year day
+                            // that map held ONE entry and the census printed a
+                            // par of 16 for 49 colonists.
+                            let roster_y = rtsim
+                                .rt_state()
+                                .data()
+                                .npcs
+                                .values()
+                                .filter(|n| n.bastion_colonist.is_some() && !n.is_dead())
+                                .count() as u32;
                             let stock_y = colony_food_stock((&pickup_items, &positions).join(), &board);
                             let par_y = seasonal_food_par(roster_y, diy, tod);
                             info!(
