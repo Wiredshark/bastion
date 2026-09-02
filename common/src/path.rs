@@ -999,12 +999,23 @@ impl Chaser {
     pub fn drop_route(&mut self) {
         self.route = None;
         self.astar = None;
-        // The tier is kept (P1c, 2026-09-02): resetting it to Small made
-        // every re-search after a climb ban the shortest, most
-        // heuristic-pulled partial path again -- the same stair, ten
-        // times for one job. The next search starts where the last one
-        // left off and escalates from there.
+        // W2c (2026-09-02): a dropped route is a route that FAILED, so the
+        // next search gets the next tier. Keeping the tier (P1c) was not
+        // enough: escalation happens only when a RETAINED search's start
+        // equals the current position, and the drop clears that search,
+        // so every re-search stayed at Medium and returned the same
+        // partial path (seven of seven stalls, one job three times).
+        // Resetting to Small (W2b) was worse. Longest stays Longest.
+        self.path_length = match self.path_length {
+            PathLength::Small => PathLength::Medium,
+            PathLength::Medium => PathLength::Long,
+            PathLength::Long | PathLength::Longest => PathLength::Longest,
+        };
     }
+
+    /// The tier the next search will run at (read by the fetch leg's
+    /// witness, so a drop's escalation shows itself).
+    pub fn path_length(&self) -> PathLength { self.path_length }
 
     /// Test-only: the stored route's nodes (ledger #178 falsifier surface).
     #[cfg(test)]

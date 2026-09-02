@@ -29534,6 +29534,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                             } else {
                                                 false
                                             };
+                                            let tier_after_drop = agent.as_deref().map(|a| a.chaser.path_length());
                                             info!(
                                                 job = active.job,
                                                 colonist = uids.get(entity).map(|u| u.0.get()),
@@ -29541,7 +29542,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                                 head = ?sn.route_head,
                                                 ahead = ?sn.route_ahead,
                                                 route_dropped,
-                                                "bastion: CLIMB BANNED (fetch) — the route's next node was a climb the body never makes; the route is dropped and the next search goes another way"
+                                                tier_after_drop = ?tier_after_drop,
+                                                "bastion: CLIMB BANNED (fetch) — the route's next node was a climb the body never makes; the route is dropped and the next search goes another way, one tier up"
                                             );
                                         }
                                         // ★ AN UNREACHABLE STORE IS WITHDRAWN ON THE SEARCH'S WORD
