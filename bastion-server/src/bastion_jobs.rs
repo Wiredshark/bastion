@@ -22424,6 +22424,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             }
                         }
                         civ.sort_by_key(|(u, ..)| *u);
+                        // ★ THE ALARM LINE NAMES WHAT IT COUNTS (D1, 2026-09-02):
+                        // the shelter jobs this cry inserts, read before the
+                        // list is consumed -- the producer of "civilians
+                        // indoors" that the danger pre-registration lacked.
+                        let shelter_jobs = civ.len() as u32;
                         for (u, ent, home) in civ {
                             let uid = Uid(std::num::NonZeroU64::new(u).expect("uid nonzero"));
                             let id = board.insert_shelter_job(home, until, uid);
@@ -22455,7 +22460,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             cry = ?cry_pos,
                             until,
                             sheltered,
-                            skipped_working,
+                            // Workers whose job was PREEMPTED for a shelter job
+                            // (they run home; nothing is skipped). The old name,
+                            // skipped_working, read as "left at work".
+                            workers_preempted = skipped_working,
+                            shelter_jobs,
                             skipped_bedless,
                             out_of_earshot,
                             "bastion: ★ ALARM RAISED — a colonist cried out and the town heard it"
