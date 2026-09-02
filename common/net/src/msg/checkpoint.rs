@@ -117,6 +117,7 @@ impl CheckpointParticipantV1 for ServerGeneral {
             | S::PluginArtifactData(_)
             | S::BastionDesignation { .. }
             | S::BastionDesignationRemoved { .. }
+            | S::BastionAssignments { .. }
             | S::BastionInspectInfo { .. }
             | S::CommandResult(_) => P::CheckpointedData,
             // `T4.1` chunk 2a: a connection-negotiation message, not
@@ -2306,6 +2307,7 @@ impl CheckpointEntityRefsV1 for ServerGeneral {
             | S::PluginArtifactData(_)
             | S::BastionDesignation { .. }
             | S::BastionDesignationRemoved { .. }
+            | S::BastionAssignments { .. }
             | S::BastionInspectInfo { .. }
             | S::Disconnect(_)
             | S::CheckpointBegin(_)

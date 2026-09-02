@@ -369,6 +369,13 @@ pub enum ServerGeneral {
     /// (spectators included). Always compiled — no feature gate — and
     /// inert unless a bench run is armed on the server.
     RendererBenchFrame(common::renderer_bench::BenchFrameAnnounceV1),
+    /// bastion (ZONE ASSIGNMENT, Ben 2026-09-01): the whole assignment list,
+    /// (colonist, the zone's region, set by hand?), sent on every change and
+    /// every 600 ticks as a fallback, so a zone can SHOW who works it.
+    /// LAST in the enum on purpose: appending keeps every older discriminant.
+    BastionAssignments {
+        entries: Vec<(common::uid::Uid, common::bastion::Region, bool)>,
+    },
 }
 
 impl ServerGeneral {
@@ -604,6 +611,7 @@ impl ServerMsg {
                         | ServerGeneral::Gizmos(_)
                         | ServerGeneral::BastionDesignation { .. }
                         | ServerGeneral::BastionDesignationRemoved { .. }
+                        | ServerGeneral::BastionAssignments { .. }
                         | ServerGeneral::BastionInspectInfo { .. }
                         // W3 renderer-bench: announces reach any in-game
                         // observer, spectators included.

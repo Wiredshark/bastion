@@ -405,6 +405,7 @@ impl Client {
                     | ServerGeneral::Gizmos(_)
                     | ServerGeneral::BastionDesignation { .. }
                     | ServerGeneral::BastionDesignationRemoved { .. }
+                    | ServerGeneral::BastionAssignments { .. }
                     | ServerGeneral::BastionInspectInfo { .. } => {
                         PreparedMsg::new(2, &g, &self.in_game_stream_params)
                     },

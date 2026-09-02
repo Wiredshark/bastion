@@ -1447,6 +1447,12 @@ pub static GROUND_LIFTS: core::sync::atomic::AtomicU64 =
 /// NEVER on terrain change, so a waypoint standing on ground the town later
 /// builds into is solid through no fault of the router. This tests that
 /// instead of assuming it.
+/// Last `assignments_rev` broadcast to clients, and a tick counter for the
+/// periodic fallback (a client that joined after the last change).
+pub static ASSIGN_BROADCAST_LAST_REV: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(u64::MAX);
+pub static ASSIGN_BROADCAST_TICKS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
 pub static WORLD_BUILDS: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 
@@ -12199,6 +12205,9 @@ pub struct JobBoard {
     pub job_seq: HashMap<common::uid::Uid, JobSeq>,
     /// ZONE ASSIGNMENT: colonist -> (zone, who set it). See `assign_zones`.
     pub assignments: HashMap<common::uid::Uid, (common::bastion::ZoneId, AssignSource)>,
+    /// Bumped on every change to `assignments`; the in-game message system
+    /// broadcasts the list to clients when it moves (see `ASSIGN_BROADCAST`).
+    pub assignments_rev: u64,
     /// ★ ALARM v1 (Ben: "a method for colonists to sound a alarm and base
     /// that on sound distance radius"): the live cry, `(where, until)`.
     /// Raised at the colony's Defend transition from the first perceiver's
@@ -22094,6 +22103,7 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                         }
                         info!(day = today, assigned_auto = auto, assigned_manual = manual, unassigned = lanes.len().saturating_sub(next.len()), zones = zones.len(), "bastion: ASSIGNMENT SUMMARY");
                         board.assignments = next;
+                        board.assignments_rev += 1;
                     }
                     // ★ JOB SEQUENCE CENSUS -- Ben's "job, haul, job, haul"
                     // as a number, per lane per day. `haul_share_pct` is by

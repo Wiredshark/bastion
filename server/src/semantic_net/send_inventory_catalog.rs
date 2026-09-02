@@ -17,8 +17,11 @@ use super::SendSiteClassV1::{
     V1EgressMechanism,
 };
 
-pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 200] = [
+pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 203] = [
     ("weather/tick.rs", "lazy_msg = Some(client.prepare(ServerGeneral::WeatherUpdate(", 0, PostAuthCandidate),
+    // W3 renderer-bench announce (bbd0de90a0) never reached this catalog: the pin was red on HEAD.
+    ("sys/renderer_bench_net.rs", "lazy_msg = Some(client.prepare(msg));", 0, PostAuthCandidate),
+    ("sys/renderer_bench_net.rs", "let _ = client.send_prepared(msg);", 0, PostAuthCandidate),
     ("weather/tick.rs", "lazy_msg.as_ref().map(|msg| client.send_prepared(msg));", 0, PostAuthCandidate),
     // APEX-T3.6.03: the legacy-disconnect inventory SCANS for send
     // sites; its own pattern strings match this catalog's grep. Not
@@ -29,7 +32,7 @@ pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 200] = 
     ("save_inventory.rs", ".prepare(\"SELECT version, name, checksum FROM refinery_schema_history ORDER BY version\")", 0, NotAClientSend),
     ("net_checkpoint_disconnect.rs", "let is_send = context.contains(\".send(\")", 0, NotAClientSend),
     ("net_checkpoint_disconnect.rs", "|| context.contains(\"send_fallible(\")", 0, NotAClientSend),
-    ("weather/tick.rs", "let _ = weather_tx.send((grid, lightning_cells, sim));", 0, NotAClientSend),
+    ("weather/tick.rs", "let _ = weather_tx.send((grid, lightning_cells, sim, applied_zone_generation));", 0, NotAClientSend),
     ("weather/tick.rs", "client.send_fallible(ServerGeneral::LocalWindUpdate(", 0, PostAuthCandidate),
     ("weather/tick.rs", "let _ = tx.send(42u32);", 0, NotAClientSend),
     ("weather/tick.rs", "let _ = tx.send(42u32);", 1, NotAClientSend),
@@ -211,6 +214,8 @@ pub(super) const SEND_SITE_CATALOG: [(&str, &str, u32, SendSiteClassV1); 200] = 
     ("sys/terrain.rs", "client.send_fallible(ServerGeneral::TerrainChunkUpdate {", 0, PostAuthCandidate),
     ("sys/msg/in_game.rs", "client.send(ServerGeneral::ExitInGameSuccess)?;", 0, PostAuthCandidate),
     ("sys/msg/in_game.rs", "client.send(ServerGeneral::SetViewDistance(clamped_vds.terrain))?;", 0, PostAuthCandidate),
+    // ZONE ASSIGNMENT mirror (Ben, 2026-09-01): the whole assignment list to every client.
+    ("sys/msg/in_game.rs", "let _ = client.send(ServerGeneral::BastionAssignments { entries: entries.clone() });", 0, PostAuthCandidate),
     // DESIGNATION SYNC (f17a58b278): the three direct BastionDesignation
     // echo sends and the BastionDesignationRemoved echo that used to sit
     // between these server_msg entries moved into client.rs's

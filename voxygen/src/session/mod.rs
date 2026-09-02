@@ -841,8 +841,28 @@ impl SessionState {
                 }
             }
             let point = block.map(|e| e as f32) + Vec3::new(0.5, 0.5, 1.0);
+            // ZONE ASSIGNMENT (Ben: "we should be able to see that"): a zone's
+            // radial title says who works it and how many were set by hand.
+            let title_with_assignees = {
+                let client = self.client.borrow();
+                let hits: Vec<bool> = client
+                    .bastion_assignments()
+                    .iter()
+                    .filter(|(_, r, _)| r.contains_point_xy(block))
+                    .map(|(_, _, by_hand)| *by_hand)
+                    .collect();
+                if hits.is_empty() {
+                    title.to_string()
+                } else {
+                    format!(
+                        "{title} — assigned {} ({} by hand)",
+                        hits.len(),
+                        hits.iter().filter(|m| **m).count()
+                    )
+                }
+            };
             self.hud.bastion_open_radial(BastionRadial::new(
-                title.to_string(),
+                title_with_assignees,
                 ContextTarget::Block(block),
                 point,
                 actions,

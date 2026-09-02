@@ -2437,6 +2437,7 @@ impl<'a> System<'a> for Sys {
                                         colonist,
                                         (z, bastion_server::bastion_jobs::AssignSource::Manual),
                                     );
+                                    job_board.assignments_rev += 1;
                                     tracing::info!(
                                         colonist = colonist.0.get(),
                                         zone = z,
@@ -2453,6 +2454,7 @@ impl<'a> System<'a> for Sys {
                         },
                         None => {
                             let had = job_board.assignments.remove(&colonist).is_some();
+                            job_board.assignments_rev += 1;
                             tracing::info!(
                                 colonist = colonist.0.get(),
                                 had,
@@ -2624,6 +2626,34 @@ impl<'a> System<'a> for Sys {
                     // map, minimap and radial-cancel paths destructure it
                     // away entirely.
                     let _ = client.send_bastion_designation(*region, *kind, None);
+                }
+            }
+        }
+        // ZONE ASSIGNMENT mirror: whole list on change, and every 600 ticks.
+        {
+            use core::sync::atomic::Ordering::Relaxed;
+            let ticks = bastion_server::bastion_jobs::ASSIGN_BROADCAST_TICKS.fetch_add(1, Relaxed);
+            let rev = job_board.assignments_rev;
+            if rev != bastion_server::bastion_jobs::ASSIGN_BROADCAST_LAST_REV.load(Relaxed)
+                || ticks % 600 == 0
+            {
+                bastion_server::bastion_jobs::ASSIGN_BROADCAST_LAST_REV.store(rev, Relaxed);
+                let entries: Vec<(common::uid::Uid, common::bastion::Region, bool)> = job_board
+                    .assignments
+                    .iter()
+                    .filter_map(|(u, (z, src))| {
+                        job_board
+                            .farms
+                            .iter()
+                            .chain(job_board.stockpiles.iter())
+                            .find(|(zz, _)| zz == z)
+                            .map(|(_, r)| {
+                                (*u, *r, *src == bastion_server::bastion_jobs::AssignSource::Manual)
+                            })
+                    })
+                    .collect();
+                for (client, _presence) in (&clients, &presences).join() {
+                    let _ = client.send(ServerGeneral::BastionAssignments { entries: entries.clone() });
                 }
             }
         }

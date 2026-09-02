@@ -546,6 +546,8 @@ pub struct Client {
         Option<common::bastion::ZExtent>,
     )>,
     bastion_designations_rev: u64,
+    /// ZONE ASSIGNMENT mirror: (colonist, zone region, set by hand).
+    bastion_assignments: Vec<(common::uid::Uid, common::bastion::Region, bool)>,
     /// bastion (UI-4 row 62 → UI-5 row 62.2): the latest inspector reply —
     /// (target, payload). `payload: None` = nothing Bastion-tracked sits at
     /// the target (the panel renders nothing). Overwritten per reply; the
@@ -1653,6 +1655,7 @@ impl Client {
             bastion_terrain_anchor: None,
             bastion_designations: Vec::new(),
             bastion_designations_rev: 0,
+            bastion_assignments: Vec::new(),
             bastion_inspect: None,
             target_time_of_day: None,
             dt_adjustment: 1.0,
@@ -2883,6 +2886,11 @@ impl Client {
     }
 
     /// bastion (B2a): designations the server has validated and echoed.
+    /// ZONE ASSIGNMENT mirror (see `ServerGeneral::BastionAssignments`).
+    pub fn bastion_assignments(&self) -> &[(common::uid::Uid, common::bastion::Region, bool)] {
+        &self.bastion_assignments
+    }
+
     pub fn bastion_designations(
         &self,
     ) -> &[(
@@ -4455,6 +4463,9 @@ impl Client {
                 // state.
                 self.bastion_designations.push((region, kind, z_extent));
                 self.bastion_designations_rev += 1;
+            },
+            ServerGeneral::BastionAssignments { entries } => {
+                self.bastion_assignments = entries;
             },
             ServerGeneral::BastionDesignationRemoved { region } => {
                 // bastion (B5.5): subtract the erased region from every

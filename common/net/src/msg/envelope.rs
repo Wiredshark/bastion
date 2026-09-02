@@ -1148,6 +1148,7 @@ impl SemanticRouteV1 for ServerGeneral {
             | S::Gizmos(_)
             | S::BastionDesignation { .. }
             | S::BastionDesignationRemoved { .. }
+            | S::BastionAssignments { .. }
             | S::BastionInspectInfo { .. } => SemanticStreamIdV1::InGame,
             S::TerrainChunkUpdate { .. } | S::LodZoneUpdate { .. } | S::TerrainBlockUpdates(_) => {
                 SemanticStreamIdV1::Terrain
