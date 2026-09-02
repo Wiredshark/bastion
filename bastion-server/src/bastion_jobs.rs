@@ -22884,6 +22884,14 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                             }
                             let units: u32 = per_cell.values().sum();
                             let max_cell = per_cell.values().copied().max().unwrap_or(0);
+                            // WHERE the stack is: the spread's fallback is the zone centre,
+                            // so a heaviest cell AT the centre names the escape path.
+                            let max_cell_at = per_cell
+                                .iter()
+                                .max_by_key(|((x, y), n)| (**n, -(*x as i64), -(*y as i64)))
+                                .map(|((x, y), _)| (*x, *y));
+                            let centre_xy = ((r.min.x + r.max.x) / 2, (r.min.y + r.max.y) / 2);
+                            let max_at_centre = max_cell_at == Some(centre_xy);
                             let inside_house = board
                                 .designated
                                 .iter()
@@ -22900,6 +22908,8 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                 cells,
                                 units,
                                 max_units_on_one_cell = max_cell,
+                                max_cell_at = ?max_cell_at,
+                                max_at_centre,
                                 cells_used = per_cell.len(),
                                 "bastion: STORAGE CENSUS — one stockpile zone, what it holds and how it is spread"
                             );
