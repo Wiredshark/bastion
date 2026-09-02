@@ -115,6 +115,19 @@ impl InspectSubState {
         out
     }
 
+    /// INSPECTOR-M2: the same reply as `lines()`, projected for the
+    /// conrod panel -- every section id, folded or not, so a folded
+    /// heading stays clickable. `None` = nothing to show.
+    pub fn panel(&self) -> Option<bastion_inspector::panel::InspectPanel> {
+        let reply = self.sub.latest()?;
+        Some(bastion_inspector::panel::build(
+            reply,
+            |id| self.sub.section_age_ticks(id),
+            self.expanded,
+            self.verbose,
+        ))
+    }
+
     /// What the route overlay should do this frame.
     ///
     /// Returns OWNED geometry rather than a borrow into `self`: the caller

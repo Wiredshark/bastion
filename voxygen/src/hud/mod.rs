@@ -702,6 +702,8 @@ pub enum Event {
 
     // bastion (B2a): overseer interaction surface
     BastionSelectTool(crate::bastion::tools::ToolMode),
+    /// bastion (INSPECTOR-M2): fold/unfold one inspector section.
+    BastionInspectToggle(common::comp::bastion_inspect::SectionIdV1),
     BastionToggleGodMode,
     /// bastion (B5.6b-2): the tool panel's precision depth stepper —
     /// positive steps dig the selection deeper, negative shallower/upward
@@ -1377,6 +1379,8 @@ pub struct PersistedHudState {
 pub struct Hud {
     ui: Ui,
     ids: Ids,
+    /// bastion (INSPECTOR-M2): widget ids of the inspector panel.
+    bastion_inspect_ids: bastion_inspector::panel::Ids,
     world_map: (/* Id */ Vec<Rotations>, Vec2<u32>),
     imgs: Imgs,
     item_imgs: ItemImgs,
@@ -1432,6 +1436,7 @@ impl Hud {
         ui.set_scaling_mode(settings.interface.ui_scale);
         // Generate ids.
         let ids = Ids::new(ui.id_generator());
+        let bastion_inspect_ids = bastion_inspector::panel::Ids::new(ui.id_generator());
         // Load world map
         let mut layers = Vec::new();
         for layer in client.world_data().map_layers() {
@@ -1497,6 +1502,7 @@ impl Hud {
             item_i18n,
             fonts,
             ids,
+            bastion_inspect_ids,
             failed_block_pickups: HashMap::default(),
             failed_entity_pickups: HashMap::default(),
             new_loot_messages: VecDeque::new(),
@@ -5143,40 +5149,20 @@ impl Hud {
                     .set(self.ids.bastion_selected_text, ui_widgets);
             }
 
-            // --- UI-4 (row 62): the unit-inspector panel — a plain-text
-            // block above the selection info line (placeholder-first: no
-            // art). Empty lines = no panel (nothing/non-colonist
-            // selected); the session feeds it each frame from the
-            // client's inspect reply.
-            if !self.bastion.inspect_lines.is_empty() {
-                let text = self.bastion.inspect_lines.join("\n");
-                // bastion (INSPECTOR-M1): the sectioned panel emits many
-                // more rows than the old flat block -- a full lane table
-                // is 16 rows on its own -- so a long panel anchors to the
-                // TOP of the window and drops a point of font size.
-                // Anchored bottom-left at 13px it ran off the top of the
-                // screen, and the rows that vanished were the FIRST ones:
-                // name, trade, age.
-                //
-                // Deliberately still a plain `Text` block. This row's
-                // scope is the DATA MODEL (a section registry, rows that
-                // name their producer, a two-clock header); a scrollable,
-                // collapsible conrod panel is the next row's work, and
-                // building it before the model settled would have meant
-                // building it twice.
-                let long = self.bastion.inspect_lines.len() > 22;
-                let widget = widget::Text::new(&text)
-                    .font_size(if long { 11 } else { 13 })
-                    .font_id(self.fonts.cyri.conrod_id)
-                    .color(label_color);
-                if long {
-                    widget
-                        .top_left_with_margins_on(ui_widgets.window, 60.0, 10.0)
-                        .set(self.ids.bastion_inspect_text, ui_widgets);
-                } else {
-                    widget
-                        .bottom_left_with_margins_on(ui_widgets.window, 365.0, 10.0)
-                        .set(self.ids.bastion_inspect_text, ui_widgets);
+            // --- UI-4 / INSPECTOR-M2: the unit-inspector panel. A
+            // scrollable, collapsible conrod panel over the INSPECTOR-M1
+            // data model (sections that name their producer, a two-clock
+            // header). None = no panel (nothing/non-colonist selected);
+            // the session feeds it each frame from the client's inspect
+            // reply, and a clicked heading goes back as a fold event.
+            if let Some(panel) = &self.bastion.inspect_panel {
+                for id in bastion_inspector::panel::draw(
+                    &mut self.bastion_inspect_ids,
+                    panel,
+                    &self.fonts,
+                    ui_widgets,
+                ) {
+                    events.push(Event::BastionInspectToggle(id));
                 }
             }
 
@@ -6185,8 +6171,11 @@ impl Hud {
     /// bastion (UI-4, row 62): set/clear the unit-inspector text block
     /// (empty = hidden). The session feeds it each frame from the
     /// client's inspect reply cache.
-    pub fn bastion_set_inspect(&mut self, lines: Vec<String>) {
-        self.bastion.inspect_lines = lines;
+    pub fn bastion_set_inspect(
+        &mut self,
+        panel: Option<bastion_inspector::panel::InspectPanel>,
+    ) {
+        self.bastion.inspect_panel = panel;
     }
 
     /// bastion (B5.6b-1): set the world-anchored zone labels to draw this

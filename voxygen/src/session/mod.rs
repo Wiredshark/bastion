@@ -1246,7 +1246,7 @@ impl SessionState {
         };
         let Some(target) = target else {
             self.bastion_inspect_sent = None;
-            self.hud.bastion_set_inspect(Vec::new());
+            self.hud.bastion_set_inspect(None);
             return;
         };
         let stale = self
@@ -1454,7 +1454,14 @@ impl SessionState {
                 _ => Vec::new(),
             }
         };
-        self.hud.bastion_set_inspect(lines);
+        // INSPECTOR-M2: the legacy flat block rides in the panel header;
+        // empty = hidden, exactly as the flat text block behaved.
+        self.hud.bastion_set_inspect((!lines.is_empty()).then(move || {
+            crate::hud::bastion_inspector::panel::InspectPanel {
+                header: lines,
+                sections: Vec::new(),
+            }
+        }));
     }
 
     /// bastion (INSPECTOR-M1): the modular inspector's per-frame pump.
@@ -1492,8 +1499,8 @@ impl SessionState {
 
         // 3. RENDER. Bound to a local first so the immutable borrow of the
         //    subscription ends before the HUD is touched.
-        let lines = self.bastion_inspect_sub.lines();
-        self.hud.bastion_set_inspect(lines);
+        let panel = self.bastion_inspect_sub.panel();
+        self.hud.bastion_set_inspect(panel);
 
         // 4. DRAW THE ROUTE.
         self.bastion_sync_inspector_path();
@@ -3807,6 +3814,12 @@ impl PlayState for SessionState {
                     HudEvent::BastionToggleFlatFloor => {
                         // B5.6b-2.1: slope-following ↔ flat-floor digging.
                         self.bastion_tools.flat_floor = !self.bastion_tools.flat_floor;
+                    },
+                    HudEvent::BastionInspectToggle(id) => {
+                        // INSPECTOR-M2: fold/unfold one section. The
+                        // subscription stops asking for a folded one, so
+                        // folding is cheaper as well as tidier.
+                        self.bastion_inspect_sub.toggle(id);
                     },
                     HudEvent::BastionSetSimSpeed(speed) => {
                         // TIME-CONTROLS: the HUD cluster's click — same

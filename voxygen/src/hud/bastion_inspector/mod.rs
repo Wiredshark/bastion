@@ -25,6 +25,8 @@ pub mod identity;
 pub mod path;
 pub mod right_now;
 pub mod thinking;
+/// INSPECTOR-M2: the readable panel (scroll + fold) over this model.
+pub mod panel;
 
 /// A section view. Pure.
 pub type ViewFn = fn(&SectionPayloadV1, &InspectFramesV1) -> Vec<InspectRow>;
@@ -221,7 +223,7 @@ pub const ALARM_PREFIX: &str = "!! ";
 
 /// One row per line. Shared by the header and by every section, so
 /// provenance renders identically wherever it appears.
-fn row_lines(rows: &[InspectRow], verbose: bool) -> Vec<String> {
+pub(crate) fn row_lines(rows: &[InspectRow], verbose: bool) -> Vec<String> {
     rows.iter()
         .map(|r| {
             let unit = if r.unit().is_empty() {
@@ -575,5 +577,74 @@ mod tests {
             SectionIdV1::COUNT,
             "the fixture must carry one real payload per registered section"
         );
+    }
+
+    // ----- INSPECTOR-M2: the panel is a projection of the same reply -----
+
+    fn full_reply() -> SectionedInspectV1 {
+        SectionedInspectV1 {
+            subject: Uid(std::num::NonZeroU64::new(1).expect("nonzero")),
+            seq: 1,
+            loaded: true,
+            frames: frames(0),
+            sections: every_payload(),
+        }
+    }
+
+    /// A folded section is still a heading (so it can be unfolded) but
+    /// carries no rows; an open one carries its rows; a fresh section
+    /// carries no age in its title. Every registered id is present in
+    /// registry order, answered or not.
+    #[test]
+    fn a_folded_section_keeps_its_heading_and_loses_its_rows() {
+        use common::comp::bastion_inspect::SectionSetV1;
+        let r = full_reply();
+        let folded = SectionSetV1::all().toggled(SectionIdV1::Identity);
+        let p = panel::build(&r, |_| Some(0), folded, false);
+        assert_eq!(
+            p.sections.iter().map(|s| s.id).collect::<Vec<_>>(),
+            SectionIdV1::ALL.to_vec(),
+            "every registered section is a heading, folded or not, in registry order"
+        );
+        let id = p.sections.iter().find(|s| s.id == SectionIdV1::Identity).unwrap();
+        assert!(!id.expanded && id.rows.is_empty(), "folded: heading only, got {:?}", id.rows);
+        let rn = p.sections.iter().find(|s| s.id == SectionIdV1::RightNow).unwrap();
+        assert!(rn.expanded && !rn.rows.is_empty(), "open: heading and rows");
+        assert_eq!(id.title, SectionIdV1::Identity.title(), "a fresh section carries no age");
+        // The false direction: unfolding it brings the rows back.
+        let p2 = panel::build(&r, |_| Some(0), SectionSetV1::all(), false);
+        let id2 = p2.sections.iter().find(|s| s.id == SectionIdV1::Identity).unwrap();
+        assert!(id2.expanded && !id2.rows.is_empty(), "unfolded: rows return");
+    }
+
+    /// The panel and the flat `to_lines` view are two renderings of ONE
+    /// reply: same rows, same text, same order within a section, the same
+    /// rows marked alarm, and a carried-forward section's age in its title.
+    #[test]
+    fn the_panel_and_the_flat_view_agree_on_every_row_alarm_and_age() {
+        use common::comp::bastion_inspect::SectionSetV1;
+        let r = full_reply();
+        let age = |id: SectionIdV1| if id == SectionIdV1::RightNow { Some(30) } else { Some(0) };
+        let p = panel::build(&r, age, SectionSetV1::all(), true);
+        let rendered = render(&r, age);
+        let mut compared = 0;
+        for s in &p.sections {
+            let rs = rendered
+                .iter()
+                .find(|x| x.id == s.id)
+                .expect("the fixture answers every registered section");
+            let flat = row_lines(&rs.rows, true);
+            let panel_rows: Vec<&str> = s.rows.iter().map(|x| x.text.as_str()).collect();
+            assert_eq!(panel_rows, flat.iter().map(String::as_str).collect::<Vec<_>>(), "{:?}", s.id);
+            let flat_alarms: Vec<bool> = flat.iter().map(|l| l.starts_with(ALARM_PREFIX)).collect();
+            let panel_alarms: Vec<bool> = s.rows.iter().map(|x| x.alarm).collect();
+            assert_eq!(panel_alarms, flat_alarms, "alarm flags for {:?}", s.id);
+            compared += s.rows.len();
+        }
+        assert!(compared > 0, "the fixture must produce rows to compare");
+        let rn = p.sections.iter().find(|s| s.id == SectionIdV1::RightNow).unwrap();
+        assert!(rn.title.contains("as of 30 server ticks ago"), "{}", rn.title);
+        let fresh = p.sections.iter().find(|s| s.id == SectionIdV1::Path).unwrap();
+        assert!(!fresh.title.contains("as of"), "{}", fresh.title);
     }
 }

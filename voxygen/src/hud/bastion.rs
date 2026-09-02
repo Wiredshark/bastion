@@ -89,7 +89,8 @@ pub struct BastionHudState {
     /// per row, plain text (placeholder-first: no icons/art). Empty =
     /// no panel (nothing selected, or a non-colonist). Fed each frame
     /// by the session from the client's inspect reply cache.
-    pub inspect_lines: Vec<String>,
+    /// INSPECTOR-M2: the sectioned panel model; `None` hides the panel.
+    pub inspect_panel: Option<super::bastion_inspector::panel::InspectPanel>,
     pub radial: Option<BastionRadial>,
     /// bastion (B5.6b-1): world-anchored zone labels ("Mine 1"), each at a
     /// world centroid with its kind colour. Set by the session's overlay
