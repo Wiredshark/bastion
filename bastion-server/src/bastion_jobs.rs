@@ -1550,9 +1550,20 @@ pub(crate) fn assist_allowed_for(
         return false;
     }
     if committed_walker {
-        return scramble_assist_on && class == "climb";
+        // ★ W6-C: no exception for a climb. The trunk is this body's mover
+        // and the assist's head is the CHASER's — two frames; the W6 boot
+        // measured the oscillation (step assists 3 -> 185, embeds 1,034 ->
+        // 2,036 on the same pair with the arm on).
+        let _ = (scramble_assist_on, class);
+        return false;
     }
     true
+}
+
+/// ★ W6-C: may the stall-clock climb (W6-B) place this body? Only a chaser-
+/// driven walker: a trunk walker's mover follows a different head.
+pub(crate) fn stall_climb_allowed(committed_walker: bool, scramble_assist_on: bool) -> bool {
+    scramble_assist_on && !committed_walker
 }
 
 /// ★ W6: which classes fire at the hop clock (VAULT_TIMEOUT, 1.5 s) rather than
@@ -30394,8 +30405,13 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                                         // body on it through the deferred assist apply (the
                                         // last writer of its tick) and skip the W2 ban: the
                                         // climb was taken, not failed.
-                                        let climb_taken = std::env::var_os("BASTION_NO_SCRAMBLE_ASSIST").is_none()
-                                            && snap.as_ref().and_then(|sn| sn.route_head).is_some_and(|h| {
+                                        let stall_committed = uids
+                                            .get(entity)
+                                            .is_some_and(|u| board.path_cache.contains_key(u));
+                                        let climb_taken = stall_climb_allowed(
+                                            stall_committed,
+                                            std::env::var_os("BASTION_NO_SCRAMBLE_ASSIST").is_none(),
+                                        ) && snap.as_ref().and_then(|sn| sn.route_head).is_some_and(|h| {
                                                 let air = |q: Vec3<i32>| {
                                                     terrain.get(q).map(|b| !b.is_solid()).unwrap_or(false)
                                                 };
@@ -51388,7 +51404,11 @@ mod tests {
     #[test]
     fn a_promised_scramble_is_taken_like_a_vault() {
         assert!(assist_is_a_hop("climb", true), "a promised climb is a hop");
-        assert!(assist_allowed_for("climb", true, false, true), "a committed walker takes its promised climb");
+        // ★ W6-C: a committed walker gets NO assist, climb included (two frames).
+        assert!(!assist_allowed_for("climb", true, false, true), "a trunk walker's climb is not the chaser's");
+        assert!(stall_climb_allowed(false, true), "a chaser walker may take the stall-clock climb");
+        assert!(!stall_climb_allowed(true, true), "a trunk walker may not");
+        assert!(!stall_climb_allowed(false, false), "off: nobody");
         assert!(!assist_is_a_hop("descend", true), "a descend keeps the long clock");
         assert!(!assist_allowed_for("step", true, false, true), "a committed walker still gets no step assist");
         assert!(!assist_allowed_for("climb", false, true, true), "vanilla travel gets nothing");

@@ -102,6 +102,40 @@ written for. W6-C restores that filter (a committed walker gets no
 assist, climb included) and gates W6-B's stall-clock climb to
 chaser-driven walkers.
 
+## The W6-B read (b2 on cf35b59912, booted 20:19, cut at day-1 15:00; read 21:08)
+
+W6-B moves the promised climb to the stall watcher's clock. This boot
+still carries W6's committed-walker arm (W6-C, which removes it, was
+two chains behind), so the step and embed columns are read with that
+known surge in them.
+
+| by day-1 15:00             | D1c control | W6 (arm on) | switch-off | W6-B  | bar                  |
+|----------------------------|------------:|------------:|-----------:|------:|----------------------|
+| probes                     | 72          | 132         | 93         | 49    | <= 60  PASS          |
+| probes at the terrace cell | 22          | 36          | 19         | 14    | <= 20  PASS          |
+| EatFrom probes             | 37          | 66          | --         | 14    | <= 15  PASS          |
+| starving at the cut / max  | 2 / 7       | 3 / 11      | 4 / --     | 0 / 9 | <= 3  PASS (cut)     |
+| PROMISED CLIMB TAKEN       | --          | --          | --         | 18 (0 repeats) | the mechanism fired |
+| climb assists (hop clock)  | 1           | 4           | 2          | 2     | --                   |
+| step assists               | 21          | 185         | 3          | 235   | W6's arm, still on   |
+| embed / net events         | 1,055       | 2,036       | 1,034      | 1,421 | not above control  FAIL (W6 arm on) |
+| DID NOT STICK (step)       | 13          | 16          | 0          | 19    | --                   |
+| panics                     | 0           | 0           | 0          | 0     | 0  PASS              |
+
+The stall-clock climb fired 18 times and none repeated: every taken
+climb stuck. The three population bars the pre-registration set (probes,
+terrace probes, EatFrom probes) pass for the first time, and nobody was
+starving at the cut. The embed bar fails, with the same step surge the
+switch-off control attributed to W6's committed-walker arm; the W6-C
+boot (arm removed, stall climb kept) decides that column.
+
+Also read: the 19 DID NOT STICK repeats are all one shape — class step,
+route head present, path state Path, not re-targeted, last push site
+`chaser-refused-rock` — i.e. the CHASER branch (not the bridge glide)
+refusing the cell the step assist keeps placing the body on. This is
+the W7 residual's real shape; the bridge-glide reading from the W6
+boot was that boot's, not the class's.
+
 ## Disposition (one replicate each)
 
 W6 FAILED its probe, terrace and embed bars, left the climb assist
