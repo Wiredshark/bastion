@@ -1262,6 +1262,17 @@ pub static GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
 /// exactly the mistake that made me attribute 168 embeds to a branch that had
 /// fired 4 times.
 /// ★ W4: assists whose body had a rival kinematic write dropped this tick.
+/// ★ W7b: assist writes read back one tick later — landed / not landed.
+pub static ASSIST_LANDED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+pub static ASSIST_NOT_LANDED: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+/// ★ W7b: the landing is read exactly ONE tick after the write — the same
+/// tick would read the write itself, two ticks later would let a rival's
+/// move blur into it.
+pub(crate) fn landing_check_due(written_at: u64, now: u64) -> bool {
+    now == written_at.wrapping_add(1)
+}
+
 pub static ASSIST_RIVAL_WRITES_DROPPED: core::sync::atomic::AtomicU64 =
     core::sync::atomic::AtomicU64::new(0);
 pub static CHASER_GLIDE_REFUSED_INTO_ROCK: core::sync::atomic::AtomicU64 =
@@ -13130,6 +13141,9 @@ pub struct JobBoard {
     /// ★ W7a: the job target at each body's last assist — a repeat with a
     /// different target is a re-aim, not a rival writer.
     pub assist_last_target: HashMap<u64, Vec3<i32>>,
+    /// ★ W7b: the cell the assist-apply drain wrote for each body, and the
+    /// tick it wrote it — read back exactly one tick later (did it LAND?).
+    pub assist_landing: HashMap<u64, (Vec3<i32>, u64)>,
     /// ★ BUILDING PURPOSES (Ben: "every building needs to be labeled for
     /// its purpose and uses for the colonists"). The adopted town's
     /// non-residential buildings, registered at founding from worldgen's
@@ -30170,6 +30184,37 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                 to_release.push((entity, ReleaseReason::Other, line!())); if std::env::var_os("BASTION_RELEASE_DIAG").is_some() { info!(release_site_line = line!(), tick = tick.0, "to_release fired (site scan)"); }
                 continue;
             }
+            // ★ W7b: DID THE ASSIST'S WRITE LAND? One tick after the drain
+            // wrote the promised cell, the body's cell against it. A
+            // "not landed" here means the write never took effect (or was
+            // undone within the same physics step) — a different fault
+            // from a rival writer moving a landed body later.
+            if let Some(u) = uids.get(entity).map(|u| u.0.get())
+                && let Some((head, written_at)) = board.assist_landing.get(&u).copied()
+                && landing_check_due(written_at, tick.0)
+            {
+                board.assist_landing.remove(&u);
+                let feet = pos.0.map(|e| e.floor() as i32);
+                if feet == head {
+                    ASSIST_LANDED.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                } else {
+                    let n = ASSIST_NOT_LANDED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                    if n <= 4 || n.is_power_of_two() {
+                        info!(
+                            colonist = u,
+                            ?head,
+                            ?feet,
+                            delta = ?(feet - head),
+                            not_landed = n,
+                            landed_total = ASSIST_LANDED.load(core::sync::atomic::Ordering::Relaxed),
+                            vel = ?velocities.get(entity).map(|v| v.0),
+                            on_ground = physics_states.get(entity).is_some_and(|p| p.on_ground.is_some()),
+                            last_push_site = ?board.last_push_site.get(&Uid(std::num::NonZeroU64::new(u).expect("uid nonzero"))),
+                            "bastion: ASSIST DID NOT LAND — one tick after the drain wrote the promised cell, the body is not on it"
+                        );
+                    }
+                }
+            }
             let is_emergency_access = board.emergency_access_jobs.contains_key(&active.job);
             let emergency_route_claim_owner = board.emergency_access_jobs.get(&active.job).copied();
             let route_owned_access = emergency_route_claim_owner.is_some_and(|owner| {
@@ -38069,6 +38114,11 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
             if let Some(p) = positions.get_mut(entity) {
                 let prev = p.0;
                 p.0 = at;
+                // ★ W7b: remember what was written and when; the completion
+                // loop reads the body's cell back one tick later.
+                if let Some(u) = uids.get(entity).map(|u| u.0.get()) {
+                    board.assist_landing.insert(u, (head, tick.0));
+                }
                 pos_write_diag(
                     "assist-apply",
                     uids.get(entity).map(|u| u.0.get()),
@@ -51425,6 +51475,18 @@ mod tests {
         assert!(!promised_climb_at_stall(Vec3::new(0, 1, 4)), "four up is a wall");
         assert!(!promised_climb_at_stall(Vec3::new(2, 0, 2)), "two cells away is not adjacent");
         assert!(!promised_climb_at_stall(Vec3::new(0, 1, -2)), "a drop is not a climb");
+    }
+
+    /// ★ W7b pinned: the landing is read exactly one tick after the write.
+    /// Planted defect: `now >= written_at + 1` — the "two ticks later" assert
+    /// goes red.
+    #[test]
+    fn a_landing_is_read_exactly_one_tick_after_the_write() {
+        assert!(landing_check_due(100, 101), "one tick after");
+        assert!(!landing_check_due(100, 100), "not the same tick");
+        assert!(!landing_check_due(100, 102), "not two ticks later");
+        assert!(!landing_check_due(100, 99), "never before");
+        assert!(landing_check_due(u64::MAX, 0), "wraps");
     }
 
     /// ★ W6 pinned: a promised climb is a hop (fires at the hop clock) and is
