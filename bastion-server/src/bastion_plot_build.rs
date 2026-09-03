@@ -240,6 +240,26 @@ pub fn plot_cell_is_done(current: Option<Block>, target: Option<Block>) -> bool 
     }
 }
 
+/// ★ G1c-d (2026-09-02): is a designated job at this cell still wanted?
+///
+/// The generator mints a plot cell while it does not match its worldgen
+/// target ([`plot_cell_is_done`]); the phantom check and the mid-travel
+/// moot check retired a Build job while its cell was FILLED (the kind rule:
+/// Build goes into open space). Measured on arm b1 (pair c51f78b672, day 1):
+/// the plan's first ten cells -- solid ground under a floor course -- were
+/// minted and retired 2,814 times each, ate the whole build budget every
+/// pass, and the other 1,868 cells never reached the board (31 placed all
+/// day). The generator and the consumer must agree:
+///
+/// - **With a target**: wanted until the cell MATCHES it.
+/// - **Without one**: the kind rule, byte-for-byte (every non-plot job).
+pub fn plot_job_still_wanted(target: Option<Block>, current: Block, wanted_by_kind: bool) -> bool {
+    match target {
+        Some(t) => !plot_cell_is_done(Some(current), Some(t)),
+        None => wanted_by_kind,
+    }
+}
+
 /// Which of the two house paths the `pending_house` drain takes.
 ///
 /// `true` = ask worldgen for a real plot (G1c); `false` = today's single
@@ -686,6 +706,25 @@ mod tests {
             drain_takes_the_plot_path(false, false, false, false),
             drain_takes_the_plot_path(false, true, true, false),
         );
+    }
+
+    /// ★ G1c-d pinned: a plot cell is wanted until it matches its target,
+    /// whatever the kind rule says of the block that is there now; a cell
+    /// with no target keeps the kind rule. PLANTED DEFECT: `Some(_) =>
+    /// wanted_by_kind` (the old rule for plot cells) -- the first assert
+    /// goes red, and that defect is exactly the b1 churn.
+    #[test]
+    fn a_plot_cell_that_does_not_match_its_target_is_still_wanted() {
+        // solid ground under a wood floor course: the kind rule says "filled,
+        // not wanted"; the target says "not yet a floor" -- wanted.
+        assert!(plot_job_still_wanted(Some(wood()), earth(), false), "earth under a floor target");
+        assert!(plot_job_still_wanted(Some(rock()), air(), true), "air under a wall target");
+        // the cell already IS its target: done, whatever the kind rule says
+        assert!(!plot_job_still_wanted(Some(wood()), wood(), false), "matches: done");
+        assert!(!plot_job_still_wanted(Some(bed()), bed(), true), "a placed bed is done even though it is air");
+        // no target: the kind rule, unchanged
+        assert!(plot_job_still_wanted(None, air(), true), "no target, kind says wanted");
+        assert!(!plot_job_still_wanted(None, earth(), false), "no target, kind says not wanted");
     }
 
     /// ★ G1c-c, the SIZE of the draft — the number the b1 arm never

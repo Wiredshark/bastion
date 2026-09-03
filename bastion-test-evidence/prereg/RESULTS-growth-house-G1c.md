@@ -44,6 +44,39 @@ builders from its biggest trades while a plot plan is open; in an
 isolated build). `BUILD PROGRESS placed=8652` counts the skipped
 foundation as placed; corrected in G1c-c to queued minus remaining.
 
+## The G1c-c boot (pair c51f78b672, the builder draft; b1, booted 20:41, lever on; read at +10 min and day 1)
+
+Pins falsified at the commit before the read: the plan gate deleted
+turned `builders_wanted` red; haulers allowed turned the trade-ranking
+pin red; the tree restored clean.
+
+| witness                 | +10 min                        | day 1 (00:00)                       |
+|-------------------------|--------------------------------|-------------------------------------|
+| COLONY SITE RESOLVED    | site 1, anchor (7722, 6320)    | --                                  |
+| PLOT LAID OUT / QUEUED  | plan 81, the same footprint from the same seed (determinism) | -- |
+| BUILDERS DRAFTED        | -- (drafts at the day line)    | 0                                   |
+| BUILD PROGRESS          | --                             | queued 1,909 placed 31 remaining 1,878 builders 0 |
+| phantom job retired (Build) | --                         | 28,140 over 10 distinct cells, all z 181 (2,814 each) |
+| HOUSEHOLDS              | 58 / 48 occupied               | 58 / 49 occupied                    |
+| panics                  | 0                              | 0                                   |
+
+Two findings, one of them the cause of the slow build all along:
+
+1. **The generator and the phantom check disagree on a plot cell.** The
+   plan drain mints a cell while it does not match its worldgen target
+   (`plot_cell_is_done`); the task-#57 phantom check retires a Build job
+   whose cell is FILLED (`job_wanted(Build) = !is_filled`). The plan's
+   first ten cells are solid ground under a floor course, so they were
+   minted and retired 2,814 times each, ate the whole build budget every
+   pass, and the other 1,868 cells never reached the board. Thirty-one
+   cells a day was never a staffing number. G1c-d (queued): one pure
+   predicate, a plot cell is wanted until it matches its target, at both
+   retirement sites; witness PLOT CELL KEPT.
+2. **No draft fired**, because `builders_now` counts colonists NAMED
+   Build and the hauler cap had just returned four to that trade. With
+   the churn gone those named builders have 1,868 open cells; whether a
+   name is a worker at the plot is the next read, not a fix yet.
+
 ## Disposition
 
 The G1b premise is now TRUE on a live server (owner count 1) and G1c's

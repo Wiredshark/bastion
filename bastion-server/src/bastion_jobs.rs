@@ -1582,6 +1582,10 @@ pub(crate) const ASSIST_REPEAT_WINDOW_TICKS: u64 = 150;
 /// the window? A landed vault puts the body ON the cell, the route head
 /// moves on, and the next assist (if any) names a different cell; the same
 /// cell again means a rival writer put the body back.
+/// ★ G1c-d: plot cells the kind rule would have retired but the target rule
+/// kept (the b1 churn's detector; logged at powers of two).
+pub(crate) static PLOT_CELLS_KEPT: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 pub(crate) fn assist_repeat_is_a_failure(
     last: Option<(Vec3<i32>, u64)>,
     head: Vec3<i32>,
@@ -21824,9 +21828,28 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // lost the whole paint to "phantom job retired".
                     // Unloaded ⇒ still wanted; only a LOADED cell that
                     // stopped matching is a phantom.
-                    let wanted = terrain
-                        .get(j.pos)
-                        .map_or(true, |b| job_still_wanted(&j.kind, b));
+                    // ★ G1c-d: a plot cell is judged by its worldgen TARGET,
+                    // not by the kind rule (b1: ten filled cells under a
+                    // floor course, minted and retired 2,814 times each).
+                    let wanted = terrain.get(j.pos).map_or(true, |b| {
+                        let by_kind = job_still_wanted(&j.kind, b);
+                        let target = board.plot_blocks.get(&j.pos).copied();
+                        let wanted = crate::bastion_plot_build::plot_job_still_wanted(target, *b, by_kind);
+                        if wanted && !by_kind {
+                            let n = PLOT_CELLS_KEPT.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+                            if n <= 4 || n.is_power_of_two() {
+                                info!(
+                                    job = *id,
+                                    pos = ?j.pos,
+                                    current = ?b.kind(),
+                                    target = ?target.map(|t| t.kind()),
+                                    kept = n,
+                                    "bastion: PLOT CELL KEPT — filled but not yet its target; the kind rule would have retired it"
+                                );
+                            }
+                        }
+                        wanted
+                    });
                     (!wanted).then_some(*id)
                 })
                 .collect();
@@ -30718,9 +30741,16 @@ impl<'a, R: RtSimAccess> System<'a> for Sys<R> {
                     // NOT-WANTED. The survey instrument's own law, violated
                     // here). Unloaded ⇒ still wanted: the walk continues
                     // and presence loads the chunk before arrival.
-                    let still_wanted = terrain
-                        .get(job.pos)
-                        .map_or(true, |b| job_still_wanted(&job.kind, b));
+                    // ★ G1c-d: the same target rule as the phantom check —
+                    // a walker arriving at a plot cell that is solid ground
+                    // under a floor course must not moot the job.
+                    let still_wanted = terrain.get(job.pos).map_or(true, |b| {
+                        crate::bastion_plot_build::plot_job_still_wanted(
+                            board.plot_blocks.get(&job.pos).copied(),
+                            *b,
+                            job_still_wanted(&job.kind, b),
+                        )
+                    });
                     if !still_wanted {
                         info!(
                             job = active.job,
